@@ -1,41 +1,3 @@
-export {
-  BillingWebhookError,
-  billingWebhookRoutes,
-  processStripeWebhook,
-} from "@mattrax/enterprise-billing";
-
-export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "@mattrax/enterprise-billing";
-
-export {
-  BillingService,
-  BillingServiceLive,
-  makeEntitlementSync,
-  makeServicesBillingService,
-  makeStripeBillingService,
-  pruneStripeEvents,
-  reconcileSubscriptionSweep,
-} from "@mattrax/enterprise-billing";
-
-export { hostedBillingRoutes, licenseBillingRoutes } from "@mattrax/enterprise-billing";
-
-export type { HostedBillingConfig, LicenseBillingConfig } from "@mattrax/enterprise-billing";
-
-export { makeRemoteBillingService } from "@mattrax/enterprise-billing";
-
-export type { RemoteBillingOptions, ServicesBillingOptions } from "@mattrax/enterprise-billing";
-
-export type {
-  BillingCheckoutInput,
-  BillingError,
-  BillingInvoicesInput,
-  BillingOperations,
-  BillingPortalInput,
-  BillingSummaryInput,
-  BillingTenant,
-  BillingUsage,
-  StripeBillingOptions,
-} from "@mattrax/enterprise-billing";
-
 export { billingEntitlementRoutes } from "./billingEntitlement.ts";
 export type { BillingEntitlementConfig } from "./billingEntitlement.ts";
 
@@ -346,6 +308,7 @@ export {
   runOnboardingEmails,
   runWelcomeEmailSweep,
   sendWelcomeEmailOnce,
+  OnboardingEmailWarnings,
 } from "./Tenant/onboardingEmails.ts";
 
 export type {
@@ -403,9 +366,10 @@ export { settlePendingInvitations } from "@mattrax/enterprise-identity";
 
 export { makeAuthLive, sessionCookie } from "./Account/auth.ts";
 
-export { makeAppAuth } from "@mattrax/enterprise-domain";
+export { makeAppAuth } from "./Account/auth.ts";
+export type { AppAuthService } from "./Account/auth.ts";
 
-export type { AppAuthService, AuthLiveOptions } from "./Account/auth.ts";
+export type { AuthLiveOptions } from "./Account/auth.ts";
 
 export { makeEnterpriseAuthLive } from "./Identity/enterpriseAuth.ts";
 
@@ -725,9 +689,11 @@ export {
   MAX_SOFTWARE_UPDATE_FEED_BYTES,
   SOFA_MACOS_FEED_ID,
   SOFA_MACOS_FEED_URL,
+  SoftwareUpdateCache,
   loadSoftwareUpdateCatalog,
   type LoadSoftwareUpdateCatalogOptions,
   type SoftwareUpdateCatalogState,
+  type SoftwareUpdateFetchResult,
 } from "./Device/softwareUpdates.ts";
 
 export {

@@ -427,6 +427,7 @@ snapshots:
 				"@mattrax/effect-stripe": "workspace:*",
 				"@mattrax/enterprise-api": "workspace:*",
 				"@mattrax/enterprise-backend": "workspace:*",
+				"@mattrax/enterprise-billing": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
 				"@mattrax/google-workspace": "workspace:*",

@@ -1,5 +1,5 @@
 import { Auth, Hooks, Passkey, Sessions, Totp } from "@yielded/auth";
-import type { makeAppAuth } from "@mattrax/enterprise-domain";
+import { makeAppAuth as makeDomainAppAuth } from "@mattrax/enterprise-domain";
 import {
   appSessionConfiguration,
   PASSKEY_MODULE_ID,
@@ -120,7 +120,13 @@ export const deriveTotpSecretKey = async (authSecret: string) =>
 
 type TotpActionProof = { code?: string; grant?: string };
 
-export type AppAuthService = ReturnType<typeof makeAppAuth>;
+/* oxlint-disable-next-line typescript/no-explicit-any -- The upstream auth
+ * service exposes private strategy lambdas that cannot be named portably. This
+ * is the single backend adapter boundary; domain contracts stay unknown/typed. */
+export type AppAuthService = any;
+
+export const makeAppAuth = (...args: Parameters<typeof makeDomainAppAuth>): AppAuthService =>
+  makeDomainAppAuth(...args) as AppAuthService;
 
 export type AuthLiveOptions = {
   readonly appAuth: AppAuthService;

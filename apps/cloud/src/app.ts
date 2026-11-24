@@ -26,6 +26,7 @@ import {
   enterpriseListApi,
   enterpriseWindowsApi,
   enterpriseApprovalApi,
+  EnterpriseErrorDiagnostics,
   fleetMigrationApi,
   parseSuperadminEmails,
   scriptAgentApi,
@@ -35,6 +36,7 @@ import {
 import {
   EnterpriseAnalyticsService,
   EnterpriseService,
+  applicationStoreServiceLayer,
   androidRoutes,
   enterpriseAccountHandlers,
   enterpriseAdminHandlers,
@@ -77,6 +79,7 @@ import {
   runScheduledGoogleSync,
   loadGoogleDirectoryConfig,
   runWelcomeEmailSweep,
+  OnboardingEmailWarnings,
   linkedDeviceIdsForUsers,
   syncAndroidPoliciesForTenant,
   syncDirectoryGroupsForTenant,
@@ -87,15 +90,18 @@ import {
   makeSsoStrategy,
   makeEnterpriseAuthLive,
   sessionCookie,
-  BillingServiceLive,
   billingEntitlementRoutes,
   drainEmailOutbox,
-  makeRemoteBillingService,
-  makeServicesBillingService,
   sendTransactionalEmail,
   loadTrustedScepCaCertificates,
   runServerCertificateCheck,
+  SoftwareUpdateCache,
 } from "@mattrax/enterprise-backend";
+import {
+  BillingServiceLive,
+  makeRemoteBillingService,
+  makeServicesBillingService,
+} from "@mattrax/enterprise-billing";
 import type { CredentialExpiryNotification } from "@mattrax/enterprise-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
@@ -906,7 +912,13 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
-  });
+  }).pipe(
+    // The auth service is built before the API service that depends on it, so
+    // give it the same state Layers explicitly rather than relying on the
+    // later merged request context.
+    Layer.provideMerge(EnterpriseErrorDiagnostics.layer),
+    Layer.provideMerge(OnboardingEmailWarnings.layer),
+  );
 
   const storageBucket: Parameters<typeof R2.layer>[0] = storageBucketFor(env);
 
@@ -1042,6 +1054,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       : undefined);
 
   const servicesLayer = Layer.mergeAll(
+    OnboardingEmailWarnings.layer,
     EnterpriseService({
       superadmins,
       email,
@@ -1072,6 +1085,9 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       windowsFailureRetentionDays,
     }).pipe(
       Layer.provide(billing ? BillingServiceLive(billing) : Layer.empty),
+      Layer.provideMerge(applicationStoreServiceLayer()),
+      Layer.provideMerge(EnterpriseErrorDiagnostics.layer),
+      Layer.provideMerge(SoftwareUpdateCache.layer),
       // Merge auth into the service layer's output so raw routes (the SSE
       // stream) can resolve it from the request context too.
       Layer.provideMerge(enterpriseAuthLive),

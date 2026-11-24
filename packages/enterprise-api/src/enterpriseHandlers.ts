@@ -42,6 +42,9 @@ import {
   EnterpriseInternal,
   EnterpriseStripeError,
   EnterprisePermissionDenied,
+  ApplicationStoreService,
+  ApplicationStorefrontService,
+  EnterpriseApplicationError,
   BUILT_IN_ROLE_PERMISSIONS,
   BUILT_IN_ROLE_LABELS,
   BUILT_IN_TENANT_ROLES,
@@ -124,8 +127,8 @@ import {
   normalizeAppleLockScreenMessage,
   parseAppleLockScreenMessageConfiguration,
   resolveAppleLockScreenMessage,
-  diagnoseError,
-  errorDiagnostic,
+  EnterpriseErrorDiagnostics,
+  makeEnterpriseErrorDiagnostics,
   evaluateDeviceQuery,
   compareVersionStrings,
   normalizeDeviceCommandStatus,
@@ -233,7 +236,7 @@ import type {
   AdminAccountInfo,
   AdminAccountMembership,
 } from "@mattrax/enterprise-domain";
-import { lookupAppStoreApplication } from "./appStore.js";
+import { makeApplicationStoreService } from "./appStore.js";
 import { derivePolicyDelivery, resolvePolicyScopes } from "./policyList.js";
 import { resolvePolicyDeployment } from "./policyDeployment.js";
 import {
@@ -248,6 +251,7 @@ import {
   isUniqueViolationForConstraint,
   listWindowsFailuresForDevice,
   listWindowsFailuresForOrganization,
+  R2,
   R2_IMMUTABLE_CACHE_CONTROL,
   R2_PRIVATE_CACHE_CONTROL,
   recordApplicationInstall,
@@ -255,6 +259,8 @@ import {
   WINDOWS_FAILURE_RETENTION_DAYS,
 } from "@mattrax/enterprise-core";
 import type { PlanLimitsConfig, WindowsFailureRow } from "@mattrax/enterprise-core";
+import type { HttpClient } from "effect/http";
+import type { SoftwareUpdateCache } from "@mattrax/enterprise-backend";
 import {
   and,
   asc,
@@ -764,6 +770,10 @@ export type EnterpriseHandlersConfig = {
    */
   readonly billing?: BillingOperations;
   readonly storage: R2Bucket;
+  /** Effect-native storage port. The Promise bucket remains for legacy helpers. */
+  readonly r2?: R2["Service"];
+  /** Layer-owned operational error detail. */
+  readonly errorDiagnostics?: EnterpriseErrorDiagnostics["Service"];
   /** Application secret used to seal/unseal APNs private keys. */
   readonly authSecret?: string;
   /** Microsoft Graph client used by directory sync and Autopilot (optional). */
@@ -794,6 +804,8 @@ export type EnterpriseHandlersConfig = {
   readonly android?: AndroidDeliveryConfig;
   /** ABM/VPP outbound client overrides (tests use an injected fetch). */
   readonly appleApi?: AppleApiConfig;
+  /** Typed catalogue lookup port; defaults to the bounded iTunes client. */
+  readonly applicationStore?: ApplicationStoreService["Service"];
   /**
    * Deployment-owned platform operators, parsed from `MATTRAX_SUPERADMINS`.
    * Normalised, case-insensitive addresses; empty when unconfigured.
@@ -854,8 +866,10 @@ export type EnterpriseHandlersConfig = {
   readonly softwareUpdateSupportedMajors?: number;
   /** Disable the feed entirely (air-gapped deployments). */
   readonly softwareUpdateDisabled?: boolean;
-  /** Injected fetch for tests. */
-  readonly softwareUpdateFetch?: typeof globalThis.fetch;
+  /** Injectable Effect client for the SOFA feed. */
+  readonly softwareUpdateHttpClient?: HttpClient.HttpClient;
+  /** Layer-owned refresh coalescing and failure memory. */
+  readonly softwareUpdateCache?: SoftwareUpdateCache["Service"];
 };
 
 type ServiceFailure = Error | Schema.Json | null | undefined;
@@ -898,7 +912,11 @@ const expectedClientTags = new Set([
 
 const ErrorMessage = Schema.Struct({ message: Schema.String });
 
-const logServiceFailure = (error: ServiceFailure, causeText?: string) => {
+const logServiceFailure = (
+  error: ServiceFailure,
+  diagnostics: EnterpriseErrorDiagnostics["Service"],
+  causeText?: string,
+) => {
   const tag = errorTag(error);
 
   const message =
@@ -912,8 +930,8 @@ const logServiceFailure = (error: ServiceFailure, causeText?: string) => {
     JSON.stringify({
       tag,
       message,
-      code: errorDiagnostic(error)?.code ?? (tag ? defaultErrorCode(tag) : "internal_error"),
-      diagnostic: errorDiagnostic(error),
+      code: diagnostics.read(error)?.code ?? (tag ? defaultErrorCode(tag) : "internal_error"),
+      diagnostic: diagnostics.read(error),
       cause: causeText?.slice(0, 8_000),
     }),
   );
@@ -925,7 +943,10 @@ const logServiceFailure = (error: ServiceFailure, causeText?: string) => {
  * with a serializable internal error. This prevents raw SQL/provider defects
  * from becoming bodyless 500s that clients cannot explain.
  */
-const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+const mapServiceErrors = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  diagnostics: EnterpriseErrorDiagnostics["Service"],
+) =>
   catchCausePreservingInterrupts((cause) => {
     // SAFETY: Cause.squash always yields the captured Error, tagged data
     // error, primitive, or null/undefined that caused the Effect to fail.
@@ -936,14 +957,14 @@ const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
       const log = expectedClientTags.has(tag)
         ? Effect.void
-        : logServiceFailure(error, Cause.pretty(cause));
+        : logServiceFailure(error, diagnostics, Cause.pretty(cause));
 
       // SAFETY: isModelledError checks the runtime `_tag`; Cause.squash erases
       // the typed error union, so the failure is re-asserted as the channel E.
       return Effect.flatMap(log, () => Effect.fail(error as E));
     }
 
-    const internal = diagnoseError(
+    const internal = diagnostics.diagnose(
       new EnterpriseInternal({
         message: "Something went wrong on our side. Try again shortly.",
       }),
@@ -958,10 +979,18 @@ const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
     // SAFETY: diagnoseError's internal error is the caller's declared failure
     // channel; CatchCause must not widen it to the raw defect.
-    return Effect.flatMap(logServiceFailure(error, Cause.pretty(cause)), () =>
+    return Effect.flatMap(logServiceFailure(error, diagnostics, Cause.pretty(cause)), () =>
       Effect.fail(internal as E),
     );
   })(effect);
+
+const applicationStorefrontFailure = (cause: Cause.Cause<unknown>): EnterpriseApplicationError => {
+  const error = Cause.squash(cause);
+
+  return Schema.is(EnterpriseApplicationError)(error)
+    ? error
+    : new EnterpriseDbError({ message: "Could not refresh application storefronts." });
+};
 
 const PRODUCT_EVENTS = {
   createTenant: "tenant_created",
@@ -1037,6 +1066,7 @@ const wrapServiceErrors = <S extends object>(
   service: S,
   permissions = false,
   fallbackAnalytics?: EnterpriseAnalytics,
+  diagnostics = makeEnterpriseErrorDiagnostics(),
 ): S =>
   new Proxy(service, {
     get(_target, property) {
@@ -1098,7 +1128,7 @@ const wrapServiceErrors = <S extends object>(
           ),
         );
 
-        return mapServiceErrors(withAnalytics);
+        return mapServiceErrors(withAnalytics, diagnostics);
       };
     },
   });
@@ -1439,11 +1469,7 @@ const readBoundedRequestBody = (
         }
 
         return { ok: true, bytes };
-      }).pipe(
-        Effect.catch(() =>
-          Effect.succeed<BoundedBody>({ ok: false, reason: "read_error" }),
-        ),
-      );
+      }).pipe(Effect.catch(() => Effect.succeed<BoundedBody>({ ok: false, reason: "read_error" })));
     }
 
     const chunks: Array<Uint8Array> = [];
@@ -1465,7 +1491,10 @@ const readBoundedRequestBody = (
       Effect.as("ok" as const),
       Effect.catch((error) =>
         Effect.succeed(
-          typeof error === "object" && error !== null && "_tag" in error && error._tag === tooLarge._tag
+          typeof error === "object" &&
+            error !== null &&
+            "_tag" in error &&
+            error._tag === tooLarge._tag
             ? ("too_large" as const)
             : ("read_error" as const),
         ),
@@ -1915,6 +1944,8 @@ export const createEnterpriseService = ({
   branding,
   billing: providedBilling,
   storage,
+  r2,
+  errorDiagnostics,
   auth: authService,
   authSecret,
   cloudAppleVendorCert,
@@ -1922,6 +1953,7 @@ export const createEnterpriseService = ({
   apns: apnsService,
   android: androidConfig,
   appleApi,
+  applicationStore,
   superadmins: configuredSuperadmins,
   email,
   invitationFromEmail,
@@ -1944,9 +1976,13 @@ export const createEnterpriseService = ({
   softwareUpdateTimeoutMs,
   softwareUpdateSupportedMajors,
   softwareUpdateDisabled,
-  softwareUpdateFetch,
+  softwareUpdateHttpClient,
+  softwareUpdateCache,
 }: EnterpriseServiceConfig) => {
   if (!authService) throw new Error("EnterpriseAuth service is required");
+
+  const diagnostics = errorDiagnostics ?? makeEnterpriseErrorDiagnostics();
+  const diagnoseError = diagnostics.diagnose;
 
   /**
    * Normalised once per service instance. The environment allowlist is not
@@ -1970,7 +2006,7 @@ export const createEnterpriseService = ({
     configuredEnrollmentProfileTtlSeconds,
   );
 
-  const auth = wrapServiceErrors(authService);
+  const auth = wrapServiceErrors(authService, false, undefined, diagnostics);
 
   /**
    * Run independent Drizzle reads in one wave.
@@ -2046,6 +2082,7 @@ export const createEnterpriseService = ({
     });
 
   const apns = apnsService ?? makeApnsService(NoopPushTransport());
+  const appStore = applicationStore ?? makeApplicationStoreService(appleApi);
 
   const applePush = applePushService({
     db,
@@ -2191,6 +2228,7 @@ export const createEnterpriseService = ({
     }).pipe(Effect.catch(() => Effect.void));
 
   const r2Layer = R2StorageLive(storage);
+  const effectiveR2 = r2 ?? R2.make(storage);
 
   /**
    * A tenant-wide MFA requirement applies to every role, including token-bound
@@ -2571,9 +2609,9 @@ export const createEnterpriseService = ({
             Effect.gen(function* () {
               if (!isRetryableCollision(error)) return yield* Effect.fail(error);
 
-                // A duplicate-key result can accompany an ambiguously
-                // committed insert. Read the fixed id before retrying so the
-                // committed snapshot is acknowledged without another version.
+              // A duplicate-key result can accompany an ambiguously
+              // committed insert. Read the fixed id before retrying so the
+              // committed snapshot is acknowledged without another version.
               const [committed] = yield* db
                 .select({
                   organizationId: schema.policyDeployment.organizationId,
@@ -5411,7 +5449,8 @@ export const createEnterpriseService = ({
       retryAfterFailureMs: softwareUpdateRetryMs ?? DEFAULT_SOFTWARE_UPDATE_RETRY_MS,
       timeoutMs: softwareUpdateTimeoutMs ?? DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS,
       disabled: softwareUpdateDisabled === true,
-      fetch: softwareUpdateFetch,
+      httpClient: softwareUpdateHttpClient,
+      cache: softwareUpdateCache,
     });
 
   const softwareUpdateFor = (
@@ -6558,10 +6597,27 @@ export const createEnterpriseService = ({
 
       if (before.length > 0) {
         yield* applePush.pushAppleDevices(before.map((device) => device.id));
-        yield* syncAndroidDevices(
-          organizationId,
-          before.flatMap((device) => (device.proto === "android" ? [device.id] : [])),
+        const androidDeviceIds = before.flatMap((device) =>
+          device.proto === "android" ? [device.id] : [],
         );
+        const android =
+          androidDeviceIds.length > 0
+            ? yield* Effect.serviceOption(AndroidManagement)
+            : Option.none();
+
+        // Android delivery is best-effort here. Resolve the optional port from
+        // the request context so this application helper does not require an
+        // Android Layer in deployments that have no Android integration.
+        if (Option.isSome(android))
+          yield* syncAndroidPoliciesForTenant({
+            db,
+            config: androidConfig,
+            organizationId,
+            deviceIds: androidDeviceIds,
+          }).pipe(
+            Effect.provideService(AndroidManagement, android.value),
+            Effect.catch(() => Effect.void),
+          );
       }
 
       return {
@@ -6662,13 +6718,15 @@ export const createEnterpriseService = ({
       // leaves an orphan rather than a row pointing at a missing file.
       for (const row of removed)
         if (row.r2Key)
-          yield* Effect.tryPromise(() => storage.delete(row.r2Key!)).pipe(
-            catchCausePreservingInterrupts((cause) =>
-              Effect.logWarning(
-                `Failed to delete application installer object ${row.r2Key}: ${String(cause)}`,
+          yield* effectiveR2
+            .delete(row.r2Key!)
+            .pipe(
+              catchCausePreservingInterrupts((cause) =>
+                Effect.logWarning(
+                  `Failed to delete application installer object ${row.r2Key}: ${String(cause)}`,
+                ),
               ),
-            ),
-          );
+            );
 
       yield* syncLegacyApplicationInstaller(input.organizationId, input.applicationId);
     });
@@ -10246,6 +10304,161 @@ export const createEnterpriseService = ({
         lastAccount,
       };
     });
+
+  const refreshApplicationStorefronts: ApplicationStorefrontService["Service"]["refresh"] = (
+    request,
+    tenantId,
+    applicationId,
+    payload,
+  ) =>
+    Effect.gen(function* () {
+      const ctx = yield* requireTenant(request, tenantId, "write");
+      yield* assertTenantApplications(ctx.organization.id, [applicationId]);
+
+      const app = yield* db.query.application.findFirst({
+        where: { id: applicationId, organizationId: ctx.organization.id },
+      });
+
+      if (!app)
+        return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
+
+      const existing = yield* applicationStorefronts(ctx.organization.id, applicationId);
+
+      const requested = payload?.regions ?? [];
+      const regions: string[] = [];
+
+      for (const region of requested) {
+        const value = normaliseStorefrontRegion(region);
+
+        if (!value)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: `"${region}" is not a two-letter App Store region (for example US or GB).`,
+            }),
+          );
+
+        if (!regions.includes(value)) regions.push(value);
+      }
+
+      const targets =
+        regions.length > 0
+          ? regions
+          : existing.length > 0
+            ? existing.map((row) => row.region)
+            : [
+                normaliseStorefrontRegion(ctx.organization.appStoreRegion) ??
+                  DEFAULT_STOREFRONT_REGION,
+              ];
+
+      const bundleId = app.bundleId?.trim() || null;
+      const legacyStoreId = app.storeId?.trim() || null;
+
+      if (!bundleId && !legacyStoreId)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({
+            message: "Add an App Store ID or bundle ID before checking availability.",
+          }),
+        );
+
+      const errors: Array<{ region: string; message: string }> = [];
+
+      for (const region of targets) {
+        const current = existing.find((row) => row.region === region);
+
+        const outcome = yield* appStore.lookup({
+          region,
+          storeId: current?.storeId ?? legacyStoreId,
+          bundleId,
+        });
+
+        if (!outcome.ok) {
+          errors.push({ region, message: outcome.error });
+          continue;
+        }
+
+        const lookup = outcome.lookup;
+        const at = now();
+
+        if (lookup.found && lookup.storeId) {
+          yield* upsertApplicationStorefront({
+            organizationId: ctx.organization.id,
+            applicationId,
+            region,
+            storeId: lookup.storeId,
+            available: true,
+            name: lookup.name ?? current?.name ?? app.name,
+            bundleId: lookup.bundleId ?? current?.bundleId ?? bundleId,
+            version: lookup.version ?? current?.version ?? null,
+            source: "lookup",
+            lastSeenAt: at,
+            reason: null,
+            checkedAt: at,
+          });
+
+          continue;
+        }
+
+        // Not found is a definitive answer from Apple, so the row is marked
+        // unavailable. A network/HTTP failure returned above leaves the row
+        // untouched rather than falsely reporting the app as pulled.
+        yield* upsertApplicationStorefront({
+          organizationId: ctx.organization.id,
+          applicationId,
+          region,
+          storeId: current?.storeId ?? legacyStoreId,
+          available: false,
+          name: current?.name ?? app.name,
+          bundleId: current?.bundleId ?? bundleId,
+          version: current?.version ?? null,
+          source: "lookup",
+          lastSeenAt: current?.lastSeenAt ?? null,
+          reason: lookup.reason ?? `Not found in the ${region} App Store`,
+          checkedAt: at,
+        });
+      }
+
+      const summary = yield* recomputeApplicationAvailability(ctx.organization.id, applicationId);
+
+      const storefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
+
+      yield* audit(ctx, "application.storefronts_refreshed", "application", applicationId, {
+        regions: targets,
+        availability: summary.availability,
+        errors: errors.length,
+      });
+
+      let unlinked: { groups: number; userGroups: number; devices: number } | undefined;
+
+      if (
+        summary.availability === "unavailable" &&
+        ctx.organization.autoUnlinkUnavailableApplications
+      ) {
+        const removed = yield* removeApplicationAssignments(ctx.organization.id, applicationId);
+
+        if (removed.groups + removed.userGroups + removed.devices > 0) {
+          unlinked = removed;
+
+          yield* audit(ctx, "application.assignments_unlinked", "application", applicationId, {
+            ...removed,
+            trigger: "auto_unavailable",
+            reason: summary.reason ?? null,
+          });
+        }
+      }
+
+      return {
+        availability: summary.availability,
+        storefronts: storefronts.map(rowStorefront),
+        errors,
+        ...(unlinked ? { unlinked } : {}),
+      };
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? (Effect.failCause(cause) as Effect.Effect<never, EnterpriseApplicationError>)
+          : Effect.fail(applicationStorefrontFailure(cause)),
+      ),
+    );
 
   const service = {
     /**
@@ -20596,9 +20809,7 @@ export const createEnterpriseService = ({
               }),
             );
 
-          freshStartMode = body.freshStartRetainUserData
-            ? "retain-user-data"
-            : "remove-user-data";
+          freshStartMode = body.freshStartRetainUserData ? "retain-user-data" : "remove-user-data";
         }
 
         // Wipe and Return to Service both erase the device; the mode is bound
@@ -26458,150 +26669,7 @@ export const createEnterpriseService = ({
           storefronts: storefronts.map(rowStorefront),
         };
       }),
-    refreshApplicationStorefronts: (request, tenantId, applicationId, payload) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* assertTenantApplications(ctx.organization.id, [applicationId]);
-
-        const app = yield* db.query.application.findFirst({
-          where: { id: applicationId, organizationId: ctx.organization.id },
-        });
-
-        if (!app)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "Application not found" }));
-
-        const existing = yield* applicationStorefronts(ctx.organization.id, applicationId);
-
-        const requested = payload?.regions ?? [];
-        const regions: string[] = [];
-
-        for (const region of requested) {
-          const value = normaliseStorefrontRegion(region);
-
-          if (!value)
-            return yield* Effect.fail(
-              new EnterpriseBadRequest({
-                message: `"${region}" is not a two-letter App Store region (for example US or GB).`,
-              }),
-            );
-
-          if (!regions.includes(value)) regions.push(value);
-        }
-
-        const targets =
-          regions.length > 0
-            ? regions
-            : existing.length > 0
-              ? existing.map((row) => row.region)
-              : [
-                  normaliseStorefrontRegion(ctx.organization.appStoreRegion) ??
-                    DEFAULT_STOREFRONT_REGION,
-                ];
-
-        const bundleId = app.bundleId?.trim() || null;
-        const legacyStoreId = app.storeId?.trim() || null;
-
-        if (!bundleId && !legacyStoreId)
-          return yield* Effect.fail(
-            new EnterpriseBadRequest({
-              message: "Add an App Store ID or bundle ID before checking availability.",
-            }),
-          );
-
-        const errors: Array<{ region: string; message: string }> = [];
-
-        for (const region of targets) {
-          const current = existing.find((row) => row.region === region);
-
-          const outcome = yield* lookupAppStoreApplication({
-            region,
-            storeId: current?.storeId ?? legacyStoreId,
-            bundleId,
-            config: appleApi,
-          });
-
-          if (!outcome.ok) {
-            errors.push({ region, message: outcome.error });
-            continue;
-          }
-
-          const lookup = outcome.lookup;
-          const at = now();
-
-          if (lookup.found && lookup.storeId) {
-            yield* upsertApplicationStorefront({
-              organizationId: ctx.organization.id,
-              applicationId,
-              region,
-              storeId: lookup.storeId,
-              available: true,
-              name: lookup.name ?? current?.name ?? app.name,
-              bundleId: lookup.bundleId ?? current?.bundleId ?? bundleId,
-              version: lookup.version ?? current?.version ?? null,
-              source: "lookup",
-              lastSeenAt: at,
-              reason: null,
-              checkedAt: at,
-            });
-
-            continue;
-          }
-
-          // Not found is a definitive answer from Apple, so the row is marked
-          // unavailable. A network/HTTP failure returned above leaves the row
-          // untouched rather than falsely reporting the app as pulled.
-          yield* upsertApplicationStorefront({
-            organizationId: ctx.organization.id,
-            applicationId,
-            region,
-            storeId: current?.storeId ?? legacyStoreId,
-            available: false,
-            name: current?.name ?? app.name,
-            bundleId: current?.bundleId ?? bundleId,
-            version: current?.version ?? null,
-            source: "lookup",
-            lastSeenAt: current?.lastSeenAt ?? null,
-            reason: lookup.reason ?? `Not found in the ${region} App Store`,
-            checkedAt: at,
-          });
-        }
-
-        const summary = yield* recomputeApplicationAvailability(ctx.organization.id, applicationId);
-
-        const storefronts = yield* applicationStorefronts(ctx.organization.id, applicationId);
-
-        yield* audit(ctx, "application.storefronts_refreshed", "application", applicationId, {
-          regions: targets,
-          availability: summary.availability,
-          errors: errors.length,
-        });
-
-        let unlinked: { groups: number; userGroups: number; devices: number } | undefined;
-
-        if (
-          summary.availability === "unavailable" &&
-          ctx.organization.autoUnlinkUnavailableApplications
-        ) {
-          const removed = yield* removeApplicationAssignments(ctx.organization.id, applicationId);
-
-          if (removed.groups + removed.userGroups + removed.devices > 0) {
-            unlinked = removed;
-
-            yield* audit(ctx, "application.assignments_unlinked", "application", applicationId, {
-              ...removed,
-              trigger: "auto_unavailable",
-              reason: summary.reason ?? null,
-            });
-          }
-        }
-
-        return {
-          availability: summary.availability,
-          storefronts: storefronts.map(rowStorefront),
-          errors,
-          ...(unlinked ? { unlinked } : {}),
-        };
-      }),
+    refreshApplicationStorefronts,
     unlinkApplicationAssignments: (request, tenantId, applicationId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
@@ -29734,7 +29802,9 @@ export const createEnterpriseService = ({
         const lapsPolicy =
           row.proto === "win" ? yield* deviceWindowsLapsConfiguration(row) : undefined;
         const windowsLapsConfigured =
-          row.proto === "win" && lapsPolicy !== undefined && lapsPolicy.backupDirectory !== "disabled";
+          row.proto === "win" &&
+          lapsPolicy !== undefined &&
+          lapsPolicy.backupDirectory !== "disabled";
 
         const baseDevice = rowDevice(
           row,
@@ -29875,10 +29945,7 @@ export const createEnterpriseService = ({
                 "WindowsBitLockerRotateStatus",
               ]),
               inArray(schema.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
-              or(
-                isNull(schema.deviceCommand.expiresAt),
-                gt(schema.deviceCommand.expiresAt, at),
-              ),
+              or(isNull(schema.deviceCommand.expiresAt), gt(schema.deviceCommand.expiresAt, at)),
             ),
           );
 
@@ -29989,7 +30056,9 @@ export const createEnterpriseService = ({
             passwordBackedUpAt: backupAt ? iso(backupAt) : null,
             passwordRefreshAt: lapsMeta?.refreshAt ? iso(lapsMeta.refreshAt) : null,
             passwordExpiresAt: passwordExpiresAt ? iso(passwordExpiresAt) : null,
-            passwordExpired: passwordExpiresAt ? passwordExpiresAt.getTime() <= at.getTime() : false,
+            passwordExpired: passwordExpiresAt
+              ? passwordExpiresAt.getTime() <= at.getTime()
+              : false,
             passwordAgeDays,
             rotationInProgress: lapsRotationInProgress,
             resetStatus: lapsMeta?.resetStatus ?? null,
@@ -30094,59 +30163,62 @@ export const createEnterpriseService = ({
 
         const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
 
-        const info = yield* graph.deviceLocalCredentials(azureTenantId, device.entraDeviceId!.trim()).pipe(
-          Effect.tapError((cause) =>
-            Effect.gen(function* () {
-              const at = now();
-              const message = graphErrorMessage(
-                cause,
-                "Microsoft Graph could not return the LAPS password.",
-              );
+        const info = yield* graph
+          .deviceLocalCredentials(azureTenantId, device.entraDeviceId!.trim())
+          .pipe(
+            Effect.tapError((cause) =>
+              Effect.gen(function* () {
+                const at = now();
+                const message = graphErrorMessage(
+                  cause,
+                  "Microsoft Graph could not return the LAPS password.",
+                );
 
-              yield* db
-                .insert(schema.deviceWindowsLaps)
-                .values({
-                  deviceId: device.id,
-                  organizationId: ctx.organization.id,
-                  accountName: config.accountName ?? null,
-                  accountSid: null,
-                  backupAt: null,
-                  refreshAt: null,
-                  retrievedAt: null,
-                  source: "entra-id",
-                  resetRequestedAt: null,
-                  resetStatus: null,
-                  lastError: message,
-                  updatedAt: at,
-                })
-                .onDuplicateKeyUpdate({
-                  set: { lastError: message, updatedAt: at },
+                yield* db
+                  .insert(schema.deviceWindowsLaps)
+                  .values({
+                    deviceId: device.id,
+                    organizationId: ctx.organization.id,
+                    accountName: config.accountName ?? null,
+                    accountSid: null,
+                    backupAt: null,
+                    refreshAt: null,
+                    retrievedAt: null,
+                    source: "entra-id",
+                    resetRequestedAt: null,
+                    resetStatus: null,
+                    lastError: message,
+                    updatedAt: at,
+                  })
+                  .onDuplicateKeyUpdate({
+                    set: { lastError: message, updatedAt: at },
+                  });
+              }),
+            ),
+            Effect.mapError((cause) => {
+              if (cause._tag === "ConsentRequired")
+                return new EnterpriseNotConfigured({
+                  message:
+                    "Microsoft Graph has not been granted the DeviceLocalCredential.Read.All permission for this tenant. An administrator must consent to it before Windows LAPS passwords can be read.",
                 });
-            }),
-          ),
-          Effect.mapError((cause) => {
-            if (cause._tag === "ConsentRequired")
-              return new EnterpriseNotConfigured({
-                message:
-                  "Microsoft Graph has not been granted the DeviceLocalCredential.Read.All permission for this tenant. An administrator must consent to it before Windows LAPS passwords can be read.",
-              });
 
-            if (cause._tag === "NotFound")
-              return new EnterpriseNotFound({
-                message:
-                  "Microsoft Entra has no local administrator password backed up for this device. Check that the LAPS policy targets it and that the device is Entra joined.",
-              });
+              if (cause._tag === "NotFound")
+                return new EnterpriseNotFound({
+                  message:
+                    "Microsoft Entra has no local administrator password backed up for this device. Check that the LAPS policy targets it and that the device is Entra joined.",
+                });
 
-            if (cause._tag === "Throttled")
+              if (cause._tag === "Throttled")
+                return new EnterpriseUpstreamError({
+                  message:
+                    "Microsoft Graph throttled the LAPS password request. Try again shortly.",
+                });
+
               return new EnterpriseUpstreamError({
-                message: "Microsoft Graph throttled the LAPS password request. Try again shortly.",
+                message: "Microsoft Graph could not return the LAPS password. Try again shortly.",
               });
-
-            return new EnterpriseUpstreamError({
-              message: "Microsoft Graph could not return the LAPS password. Try again shortly.",
-            });
-          }),
-        );
+            }),
+          );
 
         const credentials = info.credentials ?? [];
         const configuredAccount = config.accountName?.trim().toLowerCase();
@@ -30197,8 +30269,13 @@ export const createEnterpriseService = ({
           );
 
         const refreshAt = info.refreshDateTime ? new Date(info.refreshDateTime) : null;
-        const ageDays = Math.max(0, Math.floor((now().getTime() - backupAt.getTime()) / 86_400_000));
-        const expiresAt = new Date(backupAt.getTime() + (config.passwordAgeDays ?? 30) * 86_400_000);
+        const ageDays = Math.max(
+          0,
+          Math.floor((now().getTime() - backupAt.getTime()) / 86_400_000),
+        );
+        const expiresAt = new Date(
+          backupAt.getTime() + (config.passwordAgeDays ?? 30) * 86_400_000,
+        );
         const expired = expiresAt.getTime() <= now().getTime();
 
         const [existingMeta] = yield* db
@@ -30402,27 +30479,25 @@ export const createEnterpriseService = ({
             );
 
           const { graph, azureTenantId } = yield* autopilotContext(ctx.organization.id);
-          const graphKey = yield* graph
-            .getBitlockerRecoveryKey(azureTenantId, key.keyId)
-            .pipe(
-              Effect.mapError((cause) => {
-                if (cause._tag === "ConsentRequired")
-                  return new EnterpriseNotConfigured({
-                    message:
-                      "Microsoft Graph has not been granted the BitlockerKey.Read.All permission for this tenant. An administrator must consent to it before BitLocker keys can be read.",
-                  });
-
-                if (cause._tag === "NotFound")
-                  return new EnterpriseNotFound({
-                    message:
-                      "Microsoft Entra no longer has this BitLocker recovery key. Refresh the Windows security card.",
-                  });
-
-                return new EnterpriseUpstreamError({
-                  message: "Microsoft Graph could not return the BitLocker recovery key.",
+          const graphKey = yield* graph.getBitlockerRecoveryKey(azureTenantId, key.keyId).pipe(
+            Effect.mapError((cause) => {
+              if (cause._tag === "ConsentRequired")
+                return new EnterpriseNotConfigured({
+                  message:
+                    "Microsoft Graph has not been granted the BitlockerKey.Read.All permission for this tenant. An administrator must consent to it before BitLocker keys can be read.",
                 });
-              }),
-            );
+
+              if (cause._tag === "NotFound")
+                return new EnterpriseNotFound({
+                  message:
+                    "Microsoft Entra no longer has this BitLocker recovery key. Refresh the Windows security card.",
+                });
+
+              return new EnterpriseUpstreamError({
+                message: "Microsoft Graph could not return the BitLocker recovery key.",
+              });
+            }),
+          );
 
           if (
             graphKey.deviceId &&
@@ -30442,9 +30517,7 @@ export const createEnterpriseService = ({
               }),
             );
 
-          sealedValue = yield* Effect.tryPromise(() =>
-            sealSecret(authSecret, graphKey.key!),
-          ).pipe(
+          sealedValue = yield* Effect.tryPromise(() => sealSecret(authSecret, graphKey.key!)).pipe(
             Effect.mapError(
               () =>
                 new EnterpriseInternal({
@@ -30465,7 +30538,9 @@ export const createEnterpriseService = ({
             );
         }
 
-        const recoveryKey = yield* Effect.tryPromise(() => openSecret(authSecret, sealedValue!)).pipe(
+        const recoveryKey = yield* Effect.tryPromise(() =>
+          openSecret(authSecret, sealedValue!),
+        ).pipe(
           Effect.mapError(
             () =>
               new EnterpriseBadRequest({
@@ -30754,8 +30829,7 @@ export const createEnterpriseService = ({
         const zipMagic =
           bytes[0] === 0x50 &&
           bytes[1] === 0x4b &&
-          ((bytes[2] === 0x03 && bytes[3] === 0x04) ||
-            (bytes[2] === 0x05 && bytes[3] === 0x06));
+          ((bytes[2] === 0x03 && bytes[3] === 0x04) || (bytes[2] === 0x05 && bytes[3] === 0x06));
 
         if (!zipMagic)
           return {
@@ -30791,7 +30865,11 @@ export const createEnterpriseService = ({
         const archiveDeviceId = archive.deviceId;
 
         const [device] = yield* db
-          .select({ id: schema.device.id, status: schema.device.status, proto: schema.device.proto })
+          .select({
+            id: schema.device.id,
+            status: schema.device.status,
+            proto: schema.device.proto,
+          })
           .from(schema.device)
           .where(
             and(
@@ -30801,8 +30879,7 @@ export const createEnterpriseService = ({
           )
           .limit(1);
 
-        if (!device || device.status !== "enrolled" || device.proto !== "win")
-          return unauthorized;
+        if (!device || device.status !== "enrolled" || device.proto !== "win") return unauthorized;
 
         const digest = yield* sha256Hex(bytesToArrayBuffer(bytes));
         const r2Key = `diagnostics/${archive.organizationId}/${archiveDeviceId}/${archive.id}.zip`;
@@ -32420,7 +32497,7 @@ export const createEnterpriseService = ({
       auth.completeStepUpPasskey(webRequestFromRequest(request, origin), payload),
   } satisfies Record<string, (...args: Array<Dynamic>) => Effect.Effect<Dynamic, Dynamic, Dynamic>>;
 
-  return wrapServiceErrors(service, true, analytics);
+  return wrapServiceErrors(service, true, analytics, diagnostics);
 };
 
 /** Device handover export and one-time download. */
@@ -32778,13 +32855,7 @@ export const enterpriseWindowsHandlers = (
     )
     .handle("revealDeviceBitlockerKey", ({ request, params, query }) =>
       Effect.flatMap(EnterpriseService, (service) =>
-        service.revealDeviceBitlockerKey(
-          request,
-          params.tenantId,
-          params.id,
-          params.keyId,
-          query,
-        ),
+        service.revealDeviceBitlockerKey(request, params.tenantId, params.id, params.keyId, query),
       ),
     )
     .handle("listDeviceDiagnostics", ({ request, params }) =>
@@ -33955,8 +34026,8 @@ export const enterpriseHandlers = (
       ),
     )
     .handle("refreshApplicationStorefronts", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.refreshApplicationStorefronts(request, params.tenantId, params.id, payload),
+      Effect.flatMap(ApplicationStorefrontService, (service) =>
+        service.refresh(request, params.tenantId, params.id, payload),
       ),
     )
     .handle("unlinkApplicationAssignments", ({ request, params, payload }) =>

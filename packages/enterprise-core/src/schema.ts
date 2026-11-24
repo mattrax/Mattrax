@@ -13,7 +13,11 @@ import {
   TOTP_POLICY,
   authenticationRequirement,
 } from "@mattrax/enterprise-domain";
-import type { DeviceViewQuery, DynamicGroupRules } from "@mattrax/enterprise-domain";
+import type {
+  AppAuthDefinition,
+  DeviceViewQuery,
+  DynamicGroupRules,
+} from "@mattrax/enterprise-domain";
 import { defineRelations, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
@@ -218,7 +222,9 @@ export const authPasskeyFlows = mysqlTable(
  * generated table and layout types to `MySqlTable<TableConfig>`, so the concrete
  * drizzle column type is only available from the value itself. Annotating these
  * exports with the erased type breaks every `.update(table).set(...)` call. */
-export const AuthPersistenceConfig: any = AuthPersistence.make(AuthDefinition);
+export const AuthPersistenceConfig: any = AuthPersistence.make(
+  AuthDefinition as AppAuthDefinition & Parameters<typeof AuthPersistence.make>[0],
+);
 
 export const authStorage: any = AuthPersistenceConfig.managed({
   subjects: {

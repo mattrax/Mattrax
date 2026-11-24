@@ -5,6 +5,9 @@ import {
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseForbidden,
+  EnterpriseInternal,
+  EnterpriseErrorDiagnostics,
+  makeEnterpriseErrorDiagnostics,
   EnterpriseNotConfigured,
   EnterpriseNotFound,
   EnterpriseUnauthorized,
@@ -16,9 +19,13 @@ import {
   hasAnyWritePermission,
   hasUnrestrictedCredential,
   normalizeCredentialPermissions,
-  diagnoseError,
 } from "@mattrax/enterprise-domain";
-import type { Permission, StepUpAction, StepUpMethod } from "@mattrax/enterprise-domain";
+import type {
+  EnterpriseAuthFailure,
+  Permission,
+  StepUpAction,
+  StepUpMethod,
+} from "@mattrax/enterprise-domain";
 import { Db, authIdentifiers, schema } from "@mattrax/enterprise-core";
 import { ACCOUNT_AUDIT, clientDescriptor, recordAccountAudit } from "../Account/accountAudit.ts";
 import { sessionCookie } from "../Account/auth.ts";
@@ -26,6 +33,7 @@ import type { AppAuthService } from "../Account/auth.ts";
 import {
   DEFAULT_ONBOARDING_REPLY_TO,
   ONBOARDING_SUPPORT_EMAIL,
+  OnboardingEmailWarnings,
   sendWelcomeEmailOnce,
 } from "../Tenant/onboardingEmails.ts";
 import type { OnboardingEmailBranding } from "../Tenant/onboardingEmail.ts";
@@ -266,6 +274,26 @@ export const emailCodeHash = (authSecret: string, subjectId: string, code: strin
 
 const verified = Effect.succeed({ status: "ok" as const });
 
+const authFailure = (cause: Cause.Cause<unknown>): EnterpriseAuthFailure => {
+  const error = Cause.squash(cause);
+
+  return error instanceof Error || Schema.is(Schema.Json)(error)
+    ? error
+    : new EnterpriseInternal({ message: "Authentication failed unexpectedly." });
+};
+
+/** Keep upstream auth/Drizzle failures inside the bounded backend contract. */
+const bindAuthFailure = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, EnterpriseAuthFailure> =>
+  effect.pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? (Effect.failCause(cause) as Effect.Effect<never, EnterpriseAuthFailure>)
+        : Effect.fail(authFailure(cause)),
+    ),
+  ) as Effect.Effect<A, EnterpriseAuthFailure>;
+
 export type EnterpriseAuthOptions = {
   readonly appAuth: AppAuthService;
   readonly origin: string;
@@ -291,11 +319,18 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
     EnterpriseAuth,
     Effect.gen(function* () {
       const db = yield* Db;
+      const diagnostics =
+        Option.getOrUndefined(yield* Effect.serviceOption(EnterpriseErrorDiagnostics)) ??
+        makeEnterpriseErrorDiagnostics();
+      const diagnoseError = diagnostics.diagnose;
       const auth = yield* options.appAuth;
       // The real auth runtime always provides step-up. A stub that omits it
       // (tests, or an embedding that only uses bearer tokens) fails closed for
       // every interactive factor instead of skipping the check.
       const stepUpOption = yield* Effect.serviceOption(StepUpService);
+      const onboardingWarnings = Option.getOrUndefined(
+        yield* Effect.serviceOption(OnboardingEmailWarnings),
+      );
 
       const stepUp: StepUpService["Service"] = Option.isSome(stepUpOption)
         ? stepUpOption.value
@@ -388,6 +423,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           supportEmail: options.onboardingSupportEmail ?? ONBOARDING_SUPPORT_EMAIL,
           branding: options.onboardingBranding,
           from: onboardingFrom,
+          warnings: onboardingWarnings,
         }).pipe(Effect.catchCause(() => Effect.void));
 
       /**
@@ -1668,22 +1704,38 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         });
 
       return EnterpriseAuth.of({
-        requireUser,
-        requireStepUp,
-        stepUpMethods,
-        stepUpTotp,
-        beginStepUpPasskey,
-        completeStepUpPasskey,
-        listMcpConnections,
-        revokeMcpConnection,
-        listApiTokens,
-        createApiToken,
-        revokeApiToken,
-        requestEmailChange,
-        cancelEmailChange,
-        requestEmailVerification,
-        verifyEmail,
-        verifyEmailChange,
+        requireUser: (...args: Parameters<typeof requireUser>) =>
+          bindAuthFailure(requireUser(...args)),
+        requireStepUp: (...args: Parameters<typeof requireStepUp>) =>
+          bindAuthFailure(requireStepUp(...args)),
+        stepUpMethods: (...args: Parameters<typeof stepUpMethods>) =>
+          bindAuthFailure(stepUpMethods(...args)),
+        stepUpTotp: (...args: Parameters<typeof stepUpTotp>) =>
+          bindAuthFailure(stepUpTotp(...args)),
+        beginStepUpPasskey: (...args: Parameters<typeof beginStepUpPasskey>) =>
+          bindAuthFailure(beginStepUpPasskey(...args)),
+        completeStepUpPasskey: (...args: Parameters<typeof completeStepUpPasskey>) =>
+          bindAuthFailure(completeStepUpPasskey(...args)),
+        listMcpConnections: (...args: Parameters<typeof listMcpConnections>) =>
+          bindAuthFailure(listMcpConnections(...args)),
+        revokeMcpConnection: (...args: Parameters<typeof revokeMcpConnection>) =>
+          bindAuthFailure(revokeMcpConnection(...args)),
+        listApiTokens: (...args: Parameters<typeof listApiTokens>) =>
+          bindAuthFailure(listApiTokens(...args)),
+        createApiToken: (...args: Parameters<typeof createApiToken>) =>
+          bindAuthFailure(createApiToken(...args)),
+        revokeApiToken: (...args: Parameters<typeof revokeApiToken>) =>
+          bindAuthFailure(revokeApiToken(...args)),
+        requestEmailChange: (...args: Parameters<typeof requestEmailChange>) =>
+          bindAuthFailure(requestEmailChange(...args)),
+        cancelEmailChange: (...args: Parameters<typeof cancelEmailChange>) =>
+          bindAuthFailure(cancelEmailChange(...args)),
+        requestEmailVerification: (...args: Parameters<typeof requestEmailVerification>) =>
+          bindAuthFailure(requestEmailVerification(...args)),
+        verifyEmail: (...args: Parameters<typeof verifyEmail>) =>
+          bindAuthFailure(verifyEmail(...args)),
+        verifyEmailChange: (...args: Parameters<typeof verifyEmailChange>) =>
+          bindAuthFailure(verifyEmailChange(...args)),
       });
     }),
   );

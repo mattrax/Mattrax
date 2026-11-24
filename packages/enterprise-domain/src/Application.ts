@@ -227,6 +227,8 @@ export const RefreshApplicationStorefrontsRequest = Schema.Struct({
   regions: Schema.optional(Schema.Array(Schema.String)),
 });
 
+export type RefreshApplicationStorefrontsRequest = typeof RefreshApplicationStorefrontsRequest.Type;
+
 export const RemovedApplicationAssignments = Schema.Struct({
   groups: Schema.Number,
   userGroups: Schema.Number,

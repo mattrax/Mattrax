@@ -38,7 +38,12 @@ The domain and service packages follow Cap's Effect layout:
   own policy, storage or protocol logic.
 - `enterprise-backend` groups implementations by entity (`Account/`, `Tenant/`,
   `Device/`, `Policy/`, `Scep/`, …) and exports the composition helpers the API
-  package needs.
+  package needs. Billing is composed directly from `enterprise-billing` by the
+  applications; it is not re-exported through the backend barrel.
+- Per-isolate caches, refresh coalescing and warning suppression are owned by
+  Effect Layers so tests and embeddings can build isolated state. New verticals
+  expose typed `Context.Service` contracts and keep HTTP handlers thin while the
+  legacy monolithic RPC record is migrated incrementally.
 - `mdm-core` owns the shared policy, command, SCEP and webhook engine;
   `mdm-apple` and `mdm-windows` own only their platform-specific backend.
 

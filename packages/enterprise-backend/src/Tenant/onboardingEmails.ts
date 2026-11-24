@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, isNull, lte } from "drizzle-orm";
 import { DEFAULT_BRAND_COLOR } from "@mattrax/enterprise-domain";
-import { Effect, Ref, Schema } from "effect";
+import { Context, Effect, Layer, Option, Ref, Schema } from "effect";
 import { schema as s } from "../schema.ts";
 import type { EnterpriseDb } from "../schema.ts";
 import { onboardingFollowUpEmail, welcomeEmail } from "./onboardingEmail.ts";
@@ -53,30 +53,56 @@ const EMAIL_ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Bounded fan-out when one tenant notifies several admins at once. */
 const FOLLOW_UP_RECIPIENT_CONCURRENCY = 2;
 
+/** Warning suppression shared by one application Layer, never by the module. */
+export class OnboardingEmailWarnings extends Context.Service<
+  OnboardingEmailWarnings,
+  Ref.Ref<Set<string>>
+>()("@mattrax/enterprise-backend/OnboardingEmailWarnings") {
+  static readonly layer = Layer.effect(OnboardingEmailWarnings, Ref.make(new Set<string>()));
+}
+
 /**
- * Configuration problems already reported by this isolate. A malformed
- * deployment value must warn once, not on every send or sweep iteration (and
- * the module never retries the bad value: it always falls back to the default).
+ * Resolve warning suppression from the current Layer. A malformed deployment
+ * value warns once per Layer, not on every send or sweep iteration, and always
+ * falls back to the default.
  */
-const reportedInvalidAddresses = new Set<string>();
+const warningState = (
+  provided: OnboardingEmailWarnings["Service"] | undefined,
+): Effect.Effect<OnboardingEmailWarnings["Service"]> =>
+  provided
+    ? Effect.succeed(provided)
+    : Effect.serviceOption(OnboardingEmailWarnings).pipe(
+        Effect.flatMap((state) =>
+          Option.isSome(state) ? Effect.succeed(state.value) : Ref.make(new Set<string>()),
+        ),
+      );
 
-const warnInvalidAddressOnce = (variable: string): Effect.Effect<void> =>
-  Effect.suspend(() => {
-    if (reportedInvalidAddresses.has(variable)) return Effect.void;
-    reportedInvalidAddresses.add(variable);
-
-    // Never include the configured value: it is a deployment secret-adjacent
-    // address and only the operator needs to know which variable is wrong.
-    return Effect.logWarning(
-      `${variable} is not a valid email address; using the onboarding default instead`,
-    );
-  });
+const warnInvalidAddressOnce = (
+  reported: OnboardingEmailWarnings["Service"],
+  variable: string,
+): Effect.Effect<void> =>
+  Ref.modify(reported, (current) =>
+    current.has(variable)
+      ? ([false, current] as const)
+      : ([true, new Set(current).add(variable)] as const),
+  ).pipe(
+    Effect.flatMap((claimed) =>
+      claimed
+        ? // Never include the configured value: it is a deployment
+          // secret-adjacent address and only the operator needs the variable.
+          Effect.logWarning(
+            `${variable} is not a valid email address; using the onboarding default instead`,
+          )
+        : Effect.void,
+    ),
+  );
 
 /** Resolve a configured address, warning once and falling back when invalid. */
 const resolveEmailAddress = (
   value: string | null | undefined,
   fallback: string,
   variable: string,
+  reported: OnboardingEmailWarnings["Service"],
 ): Effect.Effect<string> =>
   Effect.gen(function* () {
     const trimmed = value?.trim();
@@ -85,7 +111,7 @@ const resolveEmailAddress = (
 
     if (EMAIL_ADDRESS.test(trimmed)) return trimmed;
 
-    yield* warnInvalidAddressOnce(variable);
+    yield* warnInvalidAddressOnce(reported, variable);
 
     return fallback;
   });
@@ -94,14 +120,20 @@ const resolveEmailAddress = (
 const resolveReplyTo = (
   value: EmailReplyTo | null | undefined,
   variable: string,
+  reported: OnboardingEmailWarnings["Service"],
 ): Effect.Effect<EmailReplyTo> =>
   Effect.gen(function* () {
     if (!value) return DEFAULT_ONBOARDING_REPLY_TO;
 
     if (Schema.is(Schema.String)(value))
-      return yield* resolveEmailAddress(value, DEFAULT_ONBOARDING_REPLY_TO, variable);
+      return yield* resolveEmailAddress(value, DEFAULT_ONBOARDING_REPLY_TO, variable, reported);
 
-    const address = yield* resolveEmailAddress(value.email, DEFAULT_ONBOARDING_REPLY_TO, variable);
+    const address = yield* resolveEmailAddress(
+      value.email,
+      DEFAULT_ONBOARDING_REPLY_TO,
+      variable,
+      reported,
+    );
 
     return address === value.email.trim() ? value : address;
   });
@@ -151,6 +183,8 @@ export type SendWelcomeEmailOptions = {
   readonly branding?: OnboardingEmailBranding | null;
   /** Envelope sender; defaults to the hosted onboarding identity. */
   readonly from?: EmailAddress;
+  /** Optional Layer-owned warning suppression state. */
+  readonly warnings?: OnboardingEmailWarnings["Service"];
   /** Injectable clock for tests. */
   readonly now?: Date;
 };
@@ -190,16 +224,18 @@ export const sendWelcomeEmailOnce = (
     }
 
     const now = options.now ?? new Date();
+    const reported = yield* warningState(options.warnings);
 
     // Validate configuration before claiming: a bad Reply-To would otherwise
     // consume the one-time marker and fail every composition. The fallback is
     // always valid, so this never fails the send.
-    const replyTo = yield* resolveReplyTo(options.replyTo, "MATTRAX_ONBOARDING_REPLY_TO");
+    const replyTo = yield* resolveReplyTo(options.replyTo, "MATTRAX_ONBOARDING_REPLY_TO", reported);
 
     const supportEmail = yield* resolveEmailAddress(
       options.supportEmail,
       ONBOARDING_SUPPORT_EMAIL,
       "MATTRAX_ONBOARDING_SUPPORT_EMAIL",
+      reported,
     );
 
     const claimed = yield* db
@@ -289,6 +325,8 @@ export type WelcomeEmailSweepOptions = {
   /** Maximum accounts examined per run. Defaults to 100. */
   readonly limit?: number;
   readonly concurrency?: number;
+  /** Optional Layer-owned warning suppression state. */
+  readonly warnings?: OnboardingEmailWarnings["Service"];
 };
 
 export type WelcomeEmailSweepResult = {
@@ -317,11 +355,14 @@ export const runWelcomeEmailSweep = (
 
     // Validate the configuration up front so a typo is reported by the
     // scheduled job even when this run has no candidates.
-    yield* resolveReplyTo(options.replyTo, "MATTRAX_ONBOARDING_REPLY_TO");
+    const reported = yield* warningState(options.warnings);
+
+    yield* resolveReplyTo(options.replyTo, "MATTRAX_ONBOARDING_REPLY_TO", reported);
     yield* resolveEmailAddress(
       options.supportEmail,
       ONBOARDING_SUPPORT_EMAIL,
       "MATTRAX_ONBOARDING_SUPPORT_EMAIL",
+      reported,
     );
 
     const now = options.now ?? new Date();
@@ -364,6 +405,7 @@ export const runWelcomeEmailSweep = (
           branding: options.branding,
           from: options.from,
           now,
+          warnings: reported,
         }),
       { concurrency: options.concurrency ?? 4 },
     );
@@ -408,6 +450,8 @@ export type RunOnboardingEmailsOptions = {
    */
   readonly limit?: number;
   readonly concurrency?: number;
+  /** Optional Layer-owned warning suppression state. */
+  readonly warnings?: OnboardingEmailWarnings["Service"];
 };
 
 export type OnboardingEmailRunResult = {
@@ -479,12 +523,14 @@ export const runOnboardingEmails = (
     const cooldownDays = options.cooldownDays ?? 7;
     const limit = options.limit ?? 200;
 
-    const replyTo = yield* resolveReplyTo(options.replyTo, "MATTRAX_ONBOARDING_REPLY_TO");
+    const reported = yield* warningState(options.warnings);
+    const replyTo = yield* resolveReplyTo(options.replyTo, "MATTRAX_ONBOARDING_REPLY_TO", reported);
 
     const fallbackSupportEmail = yield* resolveEmailAddress(
       options.supportEmail,
       ONBOARDING_SUPPORT_EMAIL,
       "MATTRAX_ONBOARDING_SUPPORT_EMAIL",
+      reported,
     );
 
     const upper = new Date(now.getTime() - followUpDays * DAY);

@@ -62,9 +62,17 @@ export {
   policyApplicationPrefix,
 } from "./storage.ts";
 
-export { EnterpriseAuth, EnterpriseService } from "./service.ts";
+export { ApplicationStorefrontService, EnterpriseAuth, EnterpriseService } from "./service.ts";
 
-export type { EnterpriseAuthResolved, EnterpriseAuthUser } from "./service.ts";
+export type {
+  EnterpriseAuthApiToken,
+  EnterpriseAuthFailure,
+  EnterpriseAuthOAuthToken,
+  EnterpriseAuthResolved,
+  EnterpriseAuthSession,
+  EnterpriseAuthUser,
+  EnterpriseStepUpMethods,
+} from "./service.ts";
 
 export * from "./auth.ts";
 
@@ -97,6 +105,7 @@ export * from "./applicationUninstall.js";
 
 export {
   ApplicationAvailability,
+  ApplicationStoreService,
   DEFAULT_STOREFRONT_REGION,
   normaliseStorefrontRegion,
   parseAppleStoreLookup,
@@ -107,6 +116,8 @@ export {
 
 export type {
   AppleStoreLookup,
+  ApplicationStoreLookupInput,
+  ApplicationStoreLookupOutcome,
   ApplicationAvailabilitySummary,
   ResolvedStoreId,
   StorefrontAvailability,
