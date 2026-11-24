@@ -35,6 +35,21 @@ const configuredRateLimitBindings = () => {
     RATE_LIMITER_SCEP: rateLimitBinding("SCEP", 300),
   };
 
+  // A production Worker without these has no shared limiter at all: it falls
+  // back to per-isolate counters, so the effective ceiling is the configured
+  // limit multiplied by however many isolates are warm. That is easy to ship
+  // by accident, so say it loudly in the deploy log.
+  if (process.env.MATTRAX_PRODUCTION === "true") {
+    const missing = Object.entries(candidates)
+      .filter(([, binding]) => binding === undefined)
+      .map(([name]) => name);
+
+    if (missing.length > 0)
+      console.warn(
+        `[rate-limit] ${missing.join(", ")} not configured; those buckets fall back to per-isolate limits. Set MATTRAX_RATE_LIMIT_*_NAMESPACE to enable the shared limiter.`,
+      );
+  }
+
   return Object.fromEntries(Object.entries(candidates).filter((entry) => entry[1] !== undefined));
 };
 
