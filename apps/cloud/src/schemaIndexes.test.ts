@@ -162,6 +162,9 @@ describe("query-driven indexes", () => {
     expect(hasIndex("email_outbox", ["status", "created_at"])).toBe(true);
     expect(hasIndex("invitation", ["status", "expires_at"])).toBe(true);
     expect(hasIndex("android_pubsub_message", ["received_at"])).toBe(true);
+    // Session expiry pages by both values, so mostly-live auth tables do not
+    // fall back to a primary-key scan.
+    expect(hasIndex("auth_sessions", ["expires_at", "session_id"])).toBe(true);
   });
 
   it("orders tenant-scoped audit filters by the keyset cursor", () => {

@@ -1,9 +1,10 @@
-import { Effect } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { getTableName } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import * as pkijs from "pkijs";
 import { Db } from "@mattrax/enterprise-core";
 import { TestConsole } from "effect/testing";
+import { pruneWebhookDeliveries } from "@mattrax/mdm-core";
 import { sweepWindowsStateCommands } from "@mattrax/mdm-windows";
 import { createApnsCsrDer, importApnsKeyJwk } from "@mattrax/apns";
 import { openSecret, sealSecret } from "@mattrax/crypto";
@@ -159,8 +160,8 @@ const runRetention = (db: ReturnType<typeof makeDb>) =>
       staleDeviceDays: 0,
       auditRetentionDays: 365,
       approvalRetentionDays: 90,
-      enrollmentAttemptRetentionDays: 0,
-      androidPubSubRetentionDays: 0,
+      enrollmentAttemptRetentionDays: 30,
+      androidPubSubRetentionDays: 30,
       webhookDeliveryRetentionDays: 30,
       webhookRetry: false,
       credentialAlerts: false,
@@ -193,8 +194,8 @@ describe("maintenance bounded retention", () => {
         sessionId: "session-" + String(index + 1).padStart(4, "0"),
         expiresAt: now.getTime() - DAY,
       })),
-      // Sorts into the first candidate batch but must survive the expiry
-      // re-check, like a session refreshed after the initial scan.
+      // Live sessions are excluded by the expiry-leading query and keep
+      // their descriptors.
       { sessionId: "session-0000", expiresAt: now.getTime() + DAY },
     );
     db.store.account_session_context.push(
@@ -282,6 +283,108 @@ describe("maintenance bounded retention", () => {
         table,
       ).toBe(true);
     }
+  });
+
+  it("keysets more than 500 expired sessions interspersed among live sessions", async () => {
+    const db = makeDb();
+    const queries = observeMaintenanceQueries(db);
+    const total = 1_501;
+    const expiredCount = Math.ceil(total / 2);
+    const sessionId = (index: number) =>
+      "session-" + String((index * 7919) % 100_000).padStart(6, "0");
+    const rows = Array.from({ length: total }, (_, index) => ({
+      sessionId: sessionId(index),
+      expiresAt: now.getTime() + (index % 2 === 0 ? -DAY - (index % 3) : DAY),
+    }));
+    const expiredIds = rows
+      .filter((_, index) => index % 2 === 0)
+      .map((row) => row.sessionId)
+      .sort();
+    const liveIds = rows
+      .filter((_, index) => index % 2 === 1)
+      .map((row) => row.sessionId)
+      .sort();
+
+    db.store.auth_sessions.push(...rows);
+    db.store.account_session_context.push(
+      ...expiredIds.map((id) => ({ sessionId: id, accountId: "account-1" })),
+    );
+
+    const result = await runRetention(db);
+
+    expect(result.expiredAuthSessions).toBe(expiredCount);
+    expect(
+      db.store.auth_sessions.map((row: { sessionId: string }) => row.sessionId).sort(),
+    ).toEqual(liveIds);
+    expect(db.store.account_session_context).toEqual([]);
+
+    const candidateSelects = queries.selects.filter(
+      (query) => query.table === "auth_sessions" && query.fields === "expiresAt,sessionId",
+    );
+    expect(candidateSelects).toHaveLength(2);
+    expect(candidateSelects.every((query) => query.limit === MAINTENANCE_DELETE_BATCH_SIZE)).toBe(
+      true,
+    );
+  });
+
+  it("batches realtime, enrollment-attempt and Android retention without id materialization", async () => {
+    const db = makeDb();
+    const queries = observeMaintenanceQueries(db);
+    const count = MAINTENANCE_DELETE_BATCH_SIZE + 1;
+    const old = new Date(now.getTime() - 40 * DAY);
+    const fresh = new Date(now.getTime() - 10 * DAY);
+
+    db.store.realtime_event.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        seq: index + 1,
+        organizationId: "org-1",
+        kind: "device.checkin",
+        createdAt: old,
+      })),
+      {
+        seq: count + 1,
+        organizationId: "org-1",
+        kind: "device.checkin",
+        createdAt: new Date(now.getTime() - 60 * 60 * 1000),
+      },
+    );
+    db.store.enrollment_attempt.push(
+      ...Array.from({ length: count }, (_, index) => ({ id: "attempt-" + index, createdAt: old })),
+      { id: "attempt-fresh", createdAt: fresh },
+    );
+    db.store.android_pubsub_message.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        messageId: "message-" + index,
+        receivedAt: old,
+      })),
+      { messageId: "message-fresh", receivedAt: fresh },
+    );
+
+    const result = await runRetention(db);
+
+    expect(result.purgedEnrollmentAttempts).toBe(count);
+    expect(result.purgedAndroidPubSubMessages).toBe(count);
+    expect(db.store.realtime_event).toHaveLength(1);
+    expect(db.store.enrollment_attempt.map((row: { id: string }) => row.id)).toEqual([
+      "attempt-fresh",
+    ]);
+    expect(
+      db.store.android_pubsub_message.map((row: { messageId: string }) => row.messageId),
+    ).toEqual(["message-fresh"]);
+
+    for (const table of ["realtime_event", "enrollment_attempt", "android_pubsub_message"]) {
+      const deletes = queries.deletes.filter((query) => query.table === table);
+      expect(deletes, table).toHaveLength(2);
+      expect(
+        deletes.every((query) => query.limit === MAINTENANCE_DELETE_BATCH_SIZE),
+        table,
+      ).toBe(true);
+    }
+    expect(
+      queries.selects.filter(
+        (query) => query.table === "enrollment_attempt" || query.table === "android_pubsub_message",
+      ),
+    ).toEqual([]);
   });
 
   it("claims stale devices in bounded ordered batches", async () => {
@@ -590,6 +693,24 @@ describe("maintenance webhook deliveries", () => {
       "boundary",
       "fresh",
     ]);
+  });
+
+  it("propagates interruption while pruning webhook deliveries", async () => {
+    const db = makeDb();
+    const remove = db.delete.bind(db);
+    db.delete = (table) => {
+      const builder = remove(table);
+      builder[Symbol.iterator] = () => Effect.interrupt[Symbol.iterator]();
+
+      return builder;
+    };
+
+    const exit = await Effect.runPromiseExit(
+      pruneWebhookDeliveries(db, { now, retentionDays: 30 }),
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) expect(Cause.hasInterrupts(exit.cause)).toBe(true);
   });
 
   it("retries a recent failed delivery with the sealed secret", async () => {

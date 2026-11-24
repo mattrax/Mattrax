@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "mysql",
-  "id": "32934135-76e5-4443-8e9e-d747c9583269",
+  "id": "871e3d58-cbf7-40de-84ad-6a09f88bca4f",
   "prevIds": [
     "7c6cc57d-c409-49c1-877c-736ca2f1ce1b"
   ],
@@ -25888,6 +25888,26 @@
         },
         {
           "value": "security_revision",
+          "isExpression": false
+        },
+        {
+          "value": "session_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "auth_sessions",
+      "name": "auth_sessions_expires_session_idx",
+      "columns": [
+        {
+          "value": "expires_at",
           "isExpression": false
         },
         {

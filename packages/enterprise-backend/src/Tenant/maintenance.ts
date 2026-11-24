@@ -11,6 +11,7 @@ import {
 import type { R2Bucket } from "@mattrax/enterprise-core";
 import {
   dispatchWebhookEvent,
+  pruneWebhookDeliveries,
   retryFailedWebhookDeliveries,
   refreshAppleSecurityInfo,
   refreshAppleLocalAccounts,
@@ -393,27 +394,6 @@ const deleteExpiredInBatches = (
     }
   });
 
-/** Webhook history follows the same bounded retention path as the audit streams. */
-const pruneWebhookDeliveryHistory = (
-  db: EnterpriseDb,
-  options: { readonly now: Date; readonly retentionDays: number },
-): Effect.Effect<number, unknown> =>
-  Effect.gen(function* () {
-    if (options.retentionDays <= 0) return 0;
-
-    const cutoff = new Date(options.now.getTime() - options.retentionDays * day);
-
-    return yield* deleteExpiredInBatches(
-      db,
-      s.webhookDelivery,
-      lt(s.webhookDelivery.createdAt, cutoff),
-    );
-  }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.logWarning("Webhook delivery retention failed", { cause }).pipe(Effect.as(0)),
-    ),
-  );
-
 /**
  * Stable log message for a scheduled Apps and Books client that could not be
  * loaded. The sweep is skipped for the run; the next daily tick retries.
@@ -751,36 +731,41 @@ export const runMaintenance = (
     //    `@yielded/auth`, so they are referenced through the shared schema
     //    aliases rather than duplicated table definitions. Their expiry columns
     //    are BIGINT epoch milliseconds, not DATETIME, so compare with millis.
-    //    Page by the primary key because the library-owned table has no expiry
-    //    index; each batch still holds at most 500 candidate ids.
+    //    The expiry-leading index bounds each page to expired rows; keyset on
+    //    both columns so equal expiry timestamps resume without rescanning.
     const nowMillis = now.getTime();
-    let afterSessionId: string | undefined;
+    let afterSession: { readonly expiresAt: number; readonly sessionId: string } | undefined;
+    const SessionCursor = Schema.Struct({ expiresAt: Schema.Number, sessionId: Schema.String });
 
     while (true) {
       const expiredBatch = yield* db.transaction((tx) =>
         Effect.gen(function* () {
           const rows = yield* tx
-            .select({ sessionId: s.authSessions.sessionId })
+            .select({ expiresAt: s.authSessions.expiresAt, sessionId: s.authSessions.sessionId })
             .from(s.authSessions)
             .where(
               and(
                 lt(s.authSessions.expiresAt, nowMillis),
-                afterSessionId ? gt(s.authSessions.sessionId, afterSessionId) : undefined,
+                afterSession
+                  ? or(
+                      gt(s.authSessions.expiresAt, afterSession.expiresAt),
+                      and(
+                        eq(s.authSessions.expiresAt, afterSession.expiresAt),
+                        gt(s.authSessions.sessionId, afterSession.sessionId),
+                      ),
+                    )
+                  : undefined,
               ),
             )
-            .orderBy(asc(s.authSessions.sessionId))
+            .orderBy(asc(s.authSessions.expiresAt), asc(s.authSessions.sessionId))
             .limit(MAINTENANCE_DELETE_BATCH_SIZE);
 
-          if (rows.length === 0) return { deleted: 0, lastId: undefined, size: 0 };
+          if (rows.length === 0) return { deleted: 0, last: undefined, size: 0 };
 
-          const candidateIds = rows.map(
-            (row) =>
-              Schema.decodeUnknownSync(Schema.Struct({ sessionId: Schema.String }))(row).sessionId,
-          );
-          // The library-owned table has no expiry index, so the primary-key
-          // scan can encounter live sessions. Lock and re-check only the
-          // bounded candidate set: a refresh that won the race keeps its row
-          // and descriptor, while fresh rows never become collateral locks.
+          const candidates = rows.map((row) => Schema.decodeUnknownSync(SessionCursor)(row));
+          const candidateIds = candidates.map((row) => row.sessionId);
+          // Lock and re-check only the bounded candidate set: a refresh that
+          // won the race keeps its row and descriptor.
           const expired = yield* tx
             .select({ sessionId: s.authSessions.sessionId })
             .from(s.authSessions)
@@ -797,7 +782,7 @@ export const runMaintenance = (
           );
 
           if (sessionIds.length === 0)
-            return { deleted: 0, lastId: candidateIds.at(-1), size: candidateIds.length };
+            return { deleted: 0, last: candidates.at(-1), size: candidates.length };
 
           // Descriptors have no foreign key to the library-owned session row,
           // so remove them in the same transaction as the sessions they name.
@@ -810,15 +795,15 @@ export const runMaintenance = (
 
           return {
             deleted: Number(deleted.affectedRows),
-            lastId: candidateIds.at(-1),
-            size: candidateIds.length,
+            last: candidates.at(-1),
+            size: candidates.length,
           };
         }),
       );
 
       result.expiredAuthSessions += expiredBatch.deleted;
       if (expiredBatch.size < MAINTENANCE_DELETE_BATCH_SIZE) break;
-      afterSessionId = expiredBatch.lastId;
+      afterSession = expiredBatch.last;
     }
 
     // 4. Audit retention. Opt out with `auditRetentionDays: 0`.
@@ -848,9 +833,11 @@ export const runMaintenance = (
     // reconnect. A day is far longer than any client cursor, so keeping them
     // beyond it has no value and would make the stream table grow with fleet
     // check-in traffic. This is independent of audit retention.
-    yield* db
-      .delete(s.realtimeEvent)
-      .where(lt(s.realtimeEvent.createdAt, new Date(now.getTime() - day)));
+    yield* deleteExpiredInBatches(
+      db,
+      s.realtimeEvent,
+      lt(s.realtimeEvent.createdAt, new Date(now.getTime() - day)),
+    );
 
     // 4c. Approval history is security evidence, not live state. Terminal
     // requests older than the retention window are deleted; MySQL cascades
@@ -872,17 +859,11 @@ export const runMaintenance = (
     if (enrollmentAttemptRetentionDays > 0) {
       const attemptCutoff = new Date(now.getTime() - enrollmentAttemptRetentionDays * day);
 
-      const staleAttempts = yield* db
-        .select({ id: s.enrollmentAttempt.id })
-        .from(s.enrollmentAttempt)
-        .where(lt(s.enrollmentAttempt.createdAt, attemptCutoff));
-
-      if (staleAttempts.length > 0) {
-        yield* db
-          .delete(s.enrollmentAttempt)
-          .where(lt(s.enrollmentAttempt.createdAt, attemptCutoff));
-        result.purgedEnrollmentAttempts = staleAttempts.length;
-      }
+      result.purgedEnrollmentAttempts = yield* deleteExpiredInBatches(
+        db,
+        s.enrollmentAttempt,
+        lt(s.enrollmentAttempt.createdAt, attemptCutoff),
+      );
     }
 
     // 5b. Android Pub/Sub deliveries are deduped by message id; the ledger
@@ -890,17 +871,11 @@ export const runMaintenance = (
     if (androidPubSubRetentionDays > 0) {
       const androidCutoff = new Date(now.getTime() - androidPubSubRetentionDays * day);
 
-      const staleMessages = yield* db
-        .select({ messageId: s.androidPubSubMessage.messageId })
-        .from(s.androidPubSubMessage)
-        .where(lt(s.androidPubSubMessage.receivedAt, androidCutoff));
-
-      if (staleMessages.length > 0) {
-        yield* db
-          .delete(s.androidPubSubMessage)
-          .where(lt(s.androidPubSubMessage.receivedAt, androidCutoff));
-        result.purgedAndroidPubSubMessages = staleMessages.length;
-      }
+      result.purgedAndroidPubSubMessages = yield* deleteExpiredInBatches(
+        db,
+        s.androidPubSubMessage,
+        lt(s.androidPubSubMessage.receivedAt, androidCutoff),
+      );
     }
 
     // 5c. Windows enrollment/management failure history is diagnostic, not an
@@ -1148,7 +1123,7 @@ export const runMaintenance = (
     // 7. Webhook delivery retention and bounded retries. Retention runs even
     //    when no signing secret is configured; retries are skipped without one.
     if (webhookDeliveryRetentionDays > 0)
-      result.purgedWebhookDeliveries = yield* pruneWebhookDeliveryHistory(db, {
+      result.purgedWebhookDeliveries = yield* pruneWebhookDeliveries(db, {
         now,
         retentionDays: webhookDeliveryRetentionDays,
       });

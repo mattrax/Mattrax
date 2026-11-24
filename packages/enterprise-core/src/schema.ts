@@ -219,6 +219,32 @@ export const authPasskeyFlows = mysqlTable(
   ],
 );
 
+/**
+ * Session storage mirrors the managed auth layout, with one application-owned
+ * retention index added. The persistence library has no index-extension hook,
+ * so supplying this table through `tables.sessions` keeps the generated column
+ * contract while making `(expires_at, session_id)` visible to Drizzle Kit.
+ */
+const authSessionsTable = mysqlTable(
+  "auth_sessions",
+  {
+    sessionId: varchar("session_id", { length: 191 }).notNull(),
+    subjectId: varchar("subject_id", { length: 191 }).notNull(),
+    digest: varchar("digest", { length: 191 }).notNull(),
+    securityRevision: varchar("security_revision", { length: 191 }).notNull(),
+    issuedAt: bigint("issued_at", { mode: "number" }).notNull(),
+    expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
+    absoluteExpiresAt: bigint("absolute_expires_at", { mode: "number" }).notNull(),
+    record: text("record").notNull(),
+  },
+  (table) => [
+    uniqueIndex("auth_sessions_key_0").on(table.sessionId),
+    uniqueIndex("auth_sessions_key_1").on(table.digest),
+    index("auth_sessions_index_0").on(table.subjectId, table.securityRevision, table.sessionId),
+    index("auth_sessions_expires_session_idx").on(table.expiresAt, table.sessionId),
+  ],
+);
+
 /* oxlint-disable typescript/no-explicit-any -- The persistence library erases its
  * generated table and layout types to `MySqlTable<TableConfig>`, so the concrete
  * drizzle column type is only available from the value itself. Annotating these
@@ -240,7 +266,7 @@ export const authStorage: any = AuthPersistenceConfig.managed({
     // authenticator code on top of a passkey step-up.
     actionRequirements: () => Effect.succeed(authRequirement),
   },
-  tables: { passkeyFlows: authPasskeyFlows },
+  tables: { passkeyFlows: authPasskeyFlows, sessions: authSessionsTable },
   prefix: "auth",
 });
 
