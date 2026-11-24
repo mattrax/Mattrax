@@ -63,7 +63,7 @@ export default function DeliverySettingsPage() {
         label: "Succeeding",
         value: counts?.succeeded ?? 0,
         hint: "Last push succeeded",
-        tone: "text-success-foreground",
+        tone: "text-success",
         dot: "bg-success",
       },
       {
@@ -100,7 +100,7 @@ export default function DeliverySettingsPage() {
             class={cn(
               "gap-1.5",
               apns.data?.configured
-                ? "border-success/25 bg-success/10 text-success-foreground"
+                ? "border-success/25 bg-success/10 text-success"
                 : "border-warning/25 bg-warning/10 text-warning-foreground",
             )}
           >

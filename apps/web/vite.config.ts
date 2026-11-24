@@ -70,6 +70,7 @@ const clientOnlyPreloadRoutes = [
   "routes/(dashboard)/t/[tenantId]/settings/administrators.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/attributes.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/audit.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/backups.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/billing.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/storage.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/delivery.tsx",
@@ -83,6 +84,8 @@ const clientOnlyPreloadRoutes = [
   "routes/(dashboard)/t/[tenantId]/settings/integrations.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/legal.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/management.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/migration/export.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/os-updates.tsx",
 ];
 
 const emptyRouteConfig = "\0mattrax:client-only-preload";

@@ -20,6 +20,7 @@ import { queryClient } from "~/lib/query-client";
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
+import { StatusChip as Chip } from "~/components/settings/status-chip";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -970,27 +971,7 @@ const formatAttemptTime = (value: string) => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 };
 
-const chipTones = {
-  neutral: "border-border bg-surface text-muted-foreground",
-  success: "border-success/25 bg-success/10 text-success-foreground",
-  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
-  danger: "border-destructive/25 bg-destructive/10 text-destructive",
-} as const;
 
-function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element; class?: string }) {
-  return (
-    <span
-      class={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        chipTones[props.tone],
-        props.class,
-      )}
-    >
-      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-      {props.children}
-    </span>
-  );
-}
 
 function Callout(props: { tone: "warning" | "danger"; children: JSX.Element }) {
   return (

@@ -603,7 +603,7 @@ export default function IdentitySettingsPage() {
                 {saveSso.isPending ? "Saving…" : "Save SSO settings"}
               </Button>
               <Show when={ssoSaved()}>
-                <span role="status" class="self-center text-[12.5px] text-success-foreground">
+                <span role="status" class="self-center text-[12.5px] text-success">
                   Saved.
                 </span>
               </Show>
@@ -624,7 +624,7 @@ export default function IdentitySettingsPage() {
                 role="status"
                 class={`pt-3 text-[13px] ${
                   notice().tone === "success"
-                    ? "text-success-foreground"
+                    ? "text-success"
                     : "text-warning-foreground"
                 }`}
               >

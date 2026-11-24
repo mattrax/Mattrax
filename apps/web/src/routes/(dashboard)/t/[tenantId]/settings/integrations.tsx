@@ -3,7 +3,6 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import type { JSX } from "@solidjs/web";
 import {
   WEBHOOK_EVENT_LABELS,
   WEBHOOK_EVENT_TYPES,
@@ -21,6 +20,7 @@ import type {
 import { FilterBar } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
+import { SectionTabs } from "~/components/settings/section-tabs";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -42,6 +42,7 @@ import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
+import { StatusChip as Chip } from "~/components/settings/status-chip";
 
 /**
  * Settings → Integrations: outbound event webhooks.
@@ -398,32 +399,26 @@ export default function IntegrationsSettingsPage() {
       <QueryError error={webhooks.error} onRetry={() => void webhooks.refetch()} />
       <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
 
-      <div
-        class="no-scrollbar flex gap-0.5 overflow-x-auto border-b border-border"
-        role="tablist"
-        aria-label="Webhook views"
-      >
-        <For each={["endpoints", "deliveries"] as const}>
-          {(section) => (
-            <button
-              type="button"
-              role="tab"
-              id={`webhook-tab-${section}`}
-              aria-selected={tab() === section ? "true" : "false"}
-              aria-controls={`webhook-panel-${section}`}
-              onClick={() => setTab(section)}
-              class={cn(
-                "relative -mb-px shrink-0 rounded-t-md px-3 pb-2.5 pt-2 text-[12.5px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                tab() === section
-                  ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-[2px] after:rounded-full after:bg-foreground"
-                  : "text-muted-foreground hover:bg-hover hover:text-foreground",
-              )}
-            >
-              {section === "endpoints" ? "Endpoints" : "Deliveries"}
-            </button>
-          )}
-        </For>
-      </div>
+      <SectionTabs
+        label="Webhook views"
+        active={tab()}
+        onSelect={(id) => setTab(id === "deliveries" ? "deliveries" : "endpoints")}
+        panelMounted={(id) => tab() === id}
+        tabs={[
+          {
+            id: "endpoints",
+            label: "Endpoints",
+            panelId: "webhook-panel-endpoints",
+            elementId: "webhook-tab-endpoints",
+          },
+          {
+            id: "deliveries",
+            label: "Deliveries",
+            panelId: "webhook-panel-deliveries",
+            elementId: "webhook-tab-deliveries",
+          },
+        ]}
+      />
 
       <Show when={tab() === "endpoints"}>
         <div id="webhook-panel-endpoints" role="tabpanel" aria-labelledby="webhook-tab-endpoints">
@@ -553,7 +548,7 @@ export default function IntegrationsSettingsPage() {
                             class={cn(
                               "mt-3 flex items-start gap-2 rounded-lg border p-2.5 text-xs leading-relaxed",
                               result().status === "succeeded"
-                                ? "border-success/25 bg-success/[0.07] text-success-foreground"
+                                ? "border-success/25 bg-success/[0.07] text-success"
                                 : "border-destructive/25 bg-destructive/[0.07] text-destructive",
                             )}
                           >
@@ -989,7 +984,7 @@ export default function IntegrationsSettingsPage() {
                         class={cn(
                           "rounded-lg border p-2.5 text-xs",
                           result().delivery.status === "succeeded"
-                            ? "border-success/25 bg-success/[0.07] text-success-foreground"
+                            ? "border-success/25 bg-success/[0.07] text-success"
                             : "border-destructive/25 bg-destructive/[0.07] text-destructive",
                         )}
                       >
@@ -1027,26 +1022,5 @@ export default function IntegrationsSettingsPage() {
         </Dialog>
       </Show>
     </div>
-  );
-}
-
-const chipTones = {
-  neutral: "border-border bg-surface text-muted-foreground",
-  success: "border-success/25 bg-success/10 text-success-foreground",
-  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
-  danger: "border-destructive/25 bg-destructive/10 text-destructive",
-} as const;
-
-function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element }) {
-  return (
-    <span
-      class={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        chipTones[props.tone],
-      )}
-    >
-      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-      {props.children}
-    </span>
   );
 }

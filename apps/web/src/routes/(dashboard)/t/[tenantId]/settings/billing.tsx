@@ -19,6 +19,8 @@ import {
   formatPlanUsage,
 } from "~/lib/plan-limits";
 import { cn } from "~/lib/utils";
+import { StatusChip as Chip } from "~/components/settings/status-chip";
+import type { StatusTone } from "~/components/settings/status-chip";
 
 const formatDate = (value: string | null | undefined) => {
   if (!value) return "—";
@@ -39,7 +41,7 @@ const formatAmount = (amount: number, currency: string) => {
   }
 };
 
-const invoiceTone = (status: string | null | undefined): keyof typeof chipTones => {
+const invoiceTone = (status: string | null | undefined): StatusTone => {
   switch (status) {
     case "paid":
       return "success";
@@ -188,7 +190,7 @@ export default function BillingSettingsPage() {
             <span class="font-medium text-foreground">{billing.data?.plan ?? "Free"}</span>
           </Row>
           <Row label="Status">
-            <Chip tone={statusTone(billing.data?.status, configured())}>
+            <Chip capitalize tone={statusTone(billing.data?.status, configured())}>
               {billing.data?.configured === false
                 ? "unavailable"
                 : (billing.data?.status ?? "inactive")}
@@ -314,7 +316,7 @@ export default function BillingSettingsPage() {
                           {invoice.number ?? invoice.id}
                         </td>
                         <td class="py-2.5 pr-3">
-                          <Chip tone={invoiceTone(invoice.status)}>
+                          <Chip capitalize tone={invoiceTone(invoice.status)}>
                             {invoice.status ?? "unknown"}
                           </Chip>
                         </td>
@@ -410,7 +412,7 @@ const calloutTones = {
   },
   success: {
     box: "border-success/25 bg-success/[0.07]",
-    text: "text-success-foreground",
+    text: "text-success",
   },
 } as const;
 
@@ -431,26 +433,5 @@ function Callout(props: {
       </Show>
       <div class={cn("min-w-0 text-[13px] leading-relaxed", tone().text)}>{props.children}</div>
     </div>
-  );
-}
-
-const chipTones = {
-  neutral: "border-border bg-surface text-muted-foreground",
-  success: "border-success/25 bg-success/10 text-success-foreground",
-  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
-  danger: "border-destructive/25 bg-destructive/10 text-destructive",
-} as const;
-
-function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element }) {
-  return (
-    <span
-      class={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize",
-        chipTones[props.tone],
-      )}
-    >
-      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-      {props.children}
-    </span>
   );
 }

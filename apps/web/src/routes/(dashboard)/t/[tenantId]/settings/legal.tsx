@@ -3,7 +3,7 @@ import { queryOptions, useQuery } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Option, Schema } from "effect";
-import { ErrorText, Field, PageHeader, Panel } from "~/components/mdm/common";
+import { ErrorText, Field, Panel } from "~/components/mdm/common";
 import { LoadingState } from "~/components/ui";
 import { ChevronDown } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
@@ -110,11 +110,6 @@ export default function LegalSettingsPage() {
 
   return (
     <div class="space-y-5">
-      <PageHeader
-        title="Legal"
-        description="Open-source software included in this deployment, with the licence notices those projects require."
-      />
-
       <Show when={licences.error}>
         <ErrorText error={licences.error} />
       </Show>

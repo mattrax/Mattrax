@@ -499,7 +499,7 @@ export default function DirectorySyncPage() {
                             "text-[11.5px] leading-relaxed",
                             current().state === "running" && "text-muted-foreground",
                             current().state === "stale" && "text-warning-foreground",
-                            current().state === "succeeded" && "text-success-foreground",
+                            current().state === "succeeded" && "text-success",
                             current().state === "failed" && "text-destructive",
                           )}
                         >
@@ -744,7 +744,7 @@ export default function DirectorySyncPage() {
                             "text-[11.5px] leading-relaxed",
                             current().state === "running" && "text-muted-foreground",
                             current().state === "stale" && "text-warning-foreground",
-                            current().state === "succeeded" && "text-success-foreground",
+                            current().state === "succeeded" && "text-success",
                             current().state === "failed" && "text-destructive",
                           )}
                         >
@@ -987,7 +987,7 @@ export default function DirectorySyncPage() {
                               {user.source}
                             </span>
                             <Show when={user.linked}>
-                              <span class="shrink-0 rounded-full border border-success/25 bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success-foreground">
+                              <span class="shrink-0 rounded-full border border-success/25 bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success">
                                 SSO linked
                               </span>
                             </Show>
@@ -1026,7 +1026,7 @@ export default function DirectorySyncPage() {
                 </Show>
                 <Show when={linkNotice()}>
                   {(notice) => (
-                    <p role="status" class="mt-2 text-[11.5px] text-success-foreground">
+                    <p role="status" class="mt-2 text-[11.5px] text-success">
                       {notice()}
                     </p>
                   )}

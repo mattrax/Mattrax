@@ -12,6 +12,11 @@ import type { JSX } from "@solidjs/web";
 import { authClient } from "~/lib/auth";
 import { meQueryOptions, resolveActiveTenant } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
+import {
+  MIGRATION_MOVE_PERMISSIONS,
+  settingsTabPermissions,
+  tenantSectionPermission,
+} from "~/lib/settings-permissions";
 
 /**
  * A membership with the optional RBAC fields. Fields are optional in the type
@@ -176,63 +181,14 @@ export function AccessDenied(props: { title?: string; message?: string; action?:
   );
 }
 
-/** Read permission for each primary tenant section. */
-export function tenantSectionPermission(section: string): Permission | undefined {
-  switch (section) {
-    case "overview":
-      return "tenant.read";
-    case "dashboards":
-      return "dashboards.read";
-    case "devices":
-    case "os-versions":
-      return "devices.read";
-    case "users":
-      return "members.read";
-    case "groups":
-      return "groups.read";
-    case "policies":
-      return "policies.read";
-    case "applications":
-      return "applications.read";
-    case "scripts":
-      return "scripts.read";
-    case "settings":
-      return "tenant.read";
-    default:
-      return undefined;
-  }
-}
-
-/** Read permission for a settings tab. */
-export function settingsTabPermission(tab: string): Permission {
-  switch (tab) {
-    case "administrators":
-      return "members.read";
-    case "approvals":
-      // Requesters without the queue permission still need to see and cancel
-      // their own requests, so the tab is open to every member. The page and
-      // API hide the full queue behind approvals.read.
-      return "tenant.read";
-    case "identity":
-      return "identity.read";
-    case "enrollment":
-      return "enrollment.read";
-    case "management":
-    case "delivery":
-      return "management.read";
-    case "integrations":
-      return "webhooks.read";
-    case "audit":
-      return "audit.read";
-    case "os-updates":
-    case "migration":
-      return "devices.read";
-    case "billing":
-      return "billing.read";
-    default:
-      return "tenant.read";
-  }
-}
+export {
+  MIGRATION_ACCESS_PERMISSIONS,
+  MIGRATION_MOVE_PERMISSIONS,
+  permissionForTenantPath,
+  settingsTabPermission,
+  settingsTabPermissions,
+  tenantSectionPermission,
+} from "~/lib/settings-permissions";
 
 /** Any of these makes the Settings section worth showing in navigation. */
 export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
@@ -245,12 +201,17 @@ export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
   "audit.read",
   "billing.read",
   "approvals.read",
+  "backups.read",
+  // Export/import can move a tenant without device access.
+  "tenant.export",
+  "tenant.import",
 ];
 
 const SETTINGS_TABS = [
   "",
   "administrators",
   "approvals",
+  "backups",
   "identity",
   "enrollment",
   "attributes",
@@ -262,6 +223,7 @@ const SETTINGS_TABS = [
   "os-updates",
   "billing",
   "storage",
+  "legal",
 ] as const;
 
 const SECTIONS = [
@@ -275,34 +237,6 @@ const SECTIONS = [
   "scripts",
   "settings",
 ] as const;
-
-/**
- * Resolve the permission required by a tenant path. Unknown paths return
- * `undefined` so they fall through instead of becoming accidentally locked.
- */
-export function permissionForTenantPath(path: string, tenantId: string): Permission | undefined {
-  const base = `/t/${tenantId}`;
-
-  if (path === base || path === `${base}/`) return "tenant.read";
-
-  const rest = path.slice(base.length).replace(/^\//, "");
-
-  if (!rest) return "tenant.read";
-
-  const [section, sub] = rest.split("/");
-
-  if (section === "settings") {
-    if (sub === undefined) return "tenant.read";
-
-    return settingsTabPermission(sub);
-  }
-
-  if (section === "software") return "applications.read";
-
-  if (section === "dashboards" && sub) return "dashboards.read";
-
-  return section ? tenantSectionPermission(section) : undefined;
-}
 
 /** The canonical path of one top-level dashboard section. */
 function sectionPath(tenantId: string, section: (typeof SECTIONS)[number]): string {
@@ -330,6 +264,31 @@ function sectionPath(tenantId: string, section: (typeof SECTIONS)[number]): stri
   }
 }
 
+/** The first settings tab the current membership can read, if any. */
+export function firstReadableSettingsTab(
+  can: (permission: Permission) => boolean,
+  tenantId: string,
+): string | undefined {
+  for (const tab of SETTINGS_TABS) {
+    if (!settingsTabPermissions(tab).some((permission) => can(permission))) continue;
+
+    const path = routes.tenant(tenantId).settingsTab(tab);
+
+    // A role that can move a tenant but not browse devices has no cohort
+    // tracker, so send it straight to the deployment tools.
+    if (
+      tab === "migration" &&
+      !can("devices.read") &&
+      MIGRATION_MOVE_PERMISSIONS.some((permission) => can(permission))
+    )
+      return `${path}/export`;
+
+    return path;
+  }
+
+  return undefined;
+}
+
 /** The first tenant section the current membership can read, if any. */
 export function firstReadableTenantSection(
   can: (permission: Permission) => boolean,
@@ -343,11 +302,5 @@ export function firstReadableTenantSection(
     return sectionPath(tenantId, section);
   }
 
-  for (const tab of SETTINGS_TABS) {
-    if (!can(settingsTabPermission(tab))) continue;
-
-    return routes.tenant(tenantId).settingsTab(tab);
-  }
-
-  return undefined;
+  return firstReadableSettingsTab(can, tenantId);
 }

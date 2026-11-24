@@ -342,7 +342,7 @@ deployment exposes.
   is unusable. With no mail transport (or `MATTRAX_EMAIL_DISABLED=1`) `checks.mailer` is
   `skipped` and the overall status is `degraded` (HTTP 200) rather than unhealthy.
 - **Backups and restore.** The daily job writes tenant bundles into the `mattrax-data`
-  volume. Owners can pin, unpin, delete and restore them from Settings → General; a
+  volume. Owners can pin, unpin, delete and restore them from Settings → Backups; a
   restore runs in place and creates a pinned pre-restore snapshot first. See
   [Operations](/admin/operations#restoring-in-place). To move a tenant in or out of
   this deployment without re-enrolling devices, see

@@ -37,9 +37,14 @@ test.describe("RBAC UI gating", () => {
     // profile differs from what the server last returned.
     await page.getByLabel(/^Name/).fill("RBAC Owner Renamed");
     await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Delete tenant", exact: true })).toBeVisible();
+
+    await gotoHydrated(page, `${base}/settings/migration/export`);
     await expect(page.getByRole("button", { name: "Export tenant", exact: true })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Import tenant", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Delete tenant", exact: true })).toBeVisible();
+
+    await gotoHydrated(page, `${base}/settings/backups`);
+    await expect(page.getByText("Automatic tenant backups")).toBeVisible();
 
     await expect(
       primaryNav(page).getByRole("link", { name: "Settings", exact: true }),
@@ -97,8 +102,14 @@ test.describe("RBAC UI gating", () => {
     await expect(member.getByRole("heading", { name: "General", exact: true })).toBeVisible();
     await expect(member.getByRole("button", { name: "Delete tenant", exact: true })).toHaveCount(0);
     await expect(member.getByRole("button", { name: "Save changes", exact: true })).toHaveCount(0);
+
+    await gotoHydrated(member, `/t/${tenant.id}/settings/migration/export`);
+    await expect(member.getByText("No tenant transfer access")).toBeVisible();
     await expect(member.getByRole("button", { name: "Import tenant", exact: true })).toHaveCount(0);
-    await expect(member.getByRole("button", { name: "Export tenant", exact: true })).toBeDisabled();
+    await expect(member.getByRole("button", { name: "Export tenant", exact: true })).toHaveCount(0);
+
+    await gotoHydrated(member, `/t/${tenant.id}/settings/backups`);
+    await expect(member.getByText("Your role cannot view tenant backups")).toBeVisible();
     await expect(member.getByText("Automatic tenant backups")).toHaveCount(0);
 
     // The invitation form belongs to members.write, which a read-only

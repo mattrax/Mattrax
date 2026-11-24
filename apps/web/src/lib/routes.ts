@@ -377,6 +377,7 @@ export const routes = {
           | ""
           | "administrators"
           | "approvals"
+          | "backups"
           | "identity"
           | "attributes"
           | "enrollment"
