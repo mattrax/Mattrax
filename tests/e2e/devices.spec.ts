@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Locator, Page } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 import { addFilter, api, bootstrapTenant, gotoHydrated } from "./helpers";
 
 async function mockFleetSearch(page: Page, tenantId: string, rowCount: number, attributeCount = 0) {
@@ -105,6 +105,136 @@ async function scrollRowCheckboxIntoView(viewport: Locator, name: RegExp) {
   await expect(checkbox).toBeInViewport();
 
   return checkbox;
+}
+
+const fulfillJson = (route: Route, body: unknown) =>
+  route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(body),
+  });
+
+const deviceDetailFixtures = [
+  {
+    proto: "apple",
+    name: "Regression MacBook",
+    actionLabel: "Start lost mode",
+    actions: ["sync", "lock", "wipe", "start-lost-mode"],
+  },
+  {
+    proto: "win",
+    name: "Regression workstation",
+    actionLabel: "Restart",
+    actions: ["sync", "lock", "wipe", "restart"],
+  },
+  {
+    proto: "android",
+    name: "Regression work phone",
+    actionLabel: "Relinquish ownership",
+    actions: ["sync", "lock", "wipe", "relinquish-ownership"],
+  },
+] as const;
+
+/** Mock only the device-detail reads; authentication and shell data stay real. */
+async function mockDeviceDetail(
+  page: Page,
+  tenantId: string,
+  fixture: (typeof deviceDetailFixtures)[number],
+) {
+  const id = `regression-${fixture.proto}`;
+  const at = "2026-11-24T12:00:00.000Z";
+  const row = {
+    id,
+    proto: fixture.proto,
+    name: fixture.name,
+    model: `${fixture.proto} regression model`,
+    serial: `REGRESSION-${fixture.proto.toUpperCase()}`,
+    status: "enrolled",
+    enrolledAt: at,
+    lastSeenAt: at,
+    actions: [...fixture.actions],
+    groups: [],
+    ...(fixture.proto === "apple" ? { apple: { lostMode: null, localAccounts: [] } } : {}),
+  };
+  const base = `**/api/v1/tenants/${tenantId}`;
+
+  await page.route(`${base}/devices/${id}`, (route) => fulfillJson(route, row));
+  await page.route(`${base}/devices/${id}/**`, (route) => {
+    const suffix = new URL(route.request().url()).pathname.split(`/devices/${id}`)[1];
+
+    switch (suffix) {
+      case "/users":
+        return fulfillJson(route, { users: [] });
+      case "/health":
+        return fulfillJson(route, {
+          health: { level: "healthy", reasons: [], lastSeenAt: at, stale: false },
+          declarations: [],
+          certificates: [],
+          managedCertificates: [],
+          push: { configured: false, consecutiveFailures: 0, invalidToken: false },
+        });
+      case "/applications":
+        return fulfillJson(route, { applications: [] });
+      case "/apple-users":
+        return fulfillJson(route, { users: [], enrollmentMode: "device" });
+      case "/activity":
+        return fulfillJson(route, { events: [], hasMore: false });
+      case "/commands":
+        return fulfillJson(route, { commands: [] });
+      case "/effective-policy":
+        return fulfillJson(route, {
+          deviceId: id,
+          configurations: [],
+          policies: [],
+          overridden: [],
+          exclusions: [],
+        });
+      case "/restricted-software":
+        return fulfillJson(route, { violations: [], rules: [] });
+      case "/attributes/collection":
+        return fulfillJson(route, { collection: {} });
+      case "/windows-security":
+        return fulfillJson(route, {
+          platformSupported: true,
+          laps: { supported: true, configured: false, retrievable: false },
+          bitlocker: {
+            encrypted: false,
+            joined: false,
+            rotationInProgress: false,
+            keys: [],
+            escrowMissing: false,
+          },
+        });
+      case "/diagnostics":
+        return fulfillJson(route, { supported: true, archives: [] });
+      default:
+        throw new Error(`Unmocked device detail endpoint: ${suffix}`);
+    }
+  });
+  await page.route(`${base}/devices/handover-impact`, (route) =>
+    fulfillJson(route, { devices: [], canExport: true }),
+  );
+  await page.route(`${base}/devices/search*`, (route) =>
+    fulfillJson(route, { devices: [row], total: 1 }),
+  );
+  await page.route(`${base}/groups`, (route) => fulfillJson(route, { rows: [] }));
+  await page.route(`${base}/directory`, (route) => fulfillJson(route, { users: [], groups: [] }));
+  await page.route(`${base}/attributes`, (route) => fulfillJson(route, { rows: [] }));
+  await page.route(`${base}/scope-tags`, (route) => fulfillJson(route, { tags: [] }));
+  await page.route(`${base}/scope-tags/**`, (route) => fulfillJson(route, { assignments: [] }));
+  await page.route(`${base}/abm`, (route) =>
+    fulfillJson(route, {
+      configured: false,
+      status: "unconfigured",
+      deviceCount: 0,
+      assignedCount: 0,
+    }),
+  );
+  await page.route(`${base}/windows/failures*`, (route) =>
+    fulfillJson(route, { retentionDays: 30, count: 0, failures: [] }),
+  );
+
+  return id;
 }
 
 test.describe("device fleet management", () => {
@@ -681,5 +811,91 @@ test.describe("device fleet management", () => {
         groupName: "Staff",
       }),
     ]);
+  });
+
+  for (const fixture of deviceDetailFixtures) {
+    test(`device detail async routes render ${fixture.proto} without an untracked pending read`, async ({
+      page,
+    }) => {
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      page.on("console", (message) => {
+        if (message.type() === "error") errors.push(message.text());
+      });
+
+      const tenant = await bootstrapTenant(page, `Detail ${fixture.proto}`);
+      const id = await mockDeviceDetail(page, tenant.id, fixture);
+
+      await gotoHydrated(page, `/t/${tenant.id}/devices/${id}`);
+
+      await expect(page.getByRole("heading", { name: fixture.name, exact: true })).toBeVisible();
+      await expect(page.getByRole("table", { name: "Device inventory" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Health", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Remote actions" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Sync device now" })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: fixture.actionLabel, exact: true }),
+      ).toBeVisible();
+      await expect(page.getByText("Check your details")).toHaveCount(0);
+
+      await page.getByRole("button", { name: "Edit device details" }).click();
+      await expect(
+        page.getByRole("dialog").getByRole("heading", { name: "Edit device details" }),
+      ).toBeVisible();
+      await page.getByRole("button", { name: "Cancel", exact: true }).click();
+
+      await page.getByRole("tab", { name: "Scope", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Groups", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Effective policy" })).toBeVisible();
+
+      expect(errors.some((message) => message.includes("PENDING_ASYNC_UNTRACKED_READ"))).toBe(
+        false,
+      );
+    });
+  }
+
+  test("a held Devices search keeps the heading and table loading state visible", async ({
+    page,
+  }) => {
+    const tenant = await bootstrapTenant(page, "Held Search");
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await page.route(`**/api/v1/tenants/${tenant.id}/devices/search*`, async (route) => {
+      if (new URL(route.request().url()).searchParams.get("q") !== "held") {
+        await route.continue();
+
+        return;
+      }
+
+      await held;
+      await fulfillJson(route, { devices: [], total: 0 });
+    });
+
+    try {
+      const request = page.waitForRequest((candidate) => {
+        if (!candidate.url().includes(`/api/v1/tenants/${tenant.id}/devices/search`)) return false;
+
+        return new URL(candidate.url()).searchParams.get("q") === "held";
+      });
+      await page.goto(`/t/${tenant.id}/devices?q=held`, { waitUntil: "domcontentloaded" });
+      await page.waitForFunction(
+        () => document.documentElement.dataset.hydrated === "true",
+        undefined,
+        { timeout: 20_000 },
+      );
+      await request;
+
+      await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+      await expect(page.getByText("Loading rows…")).toBeAttached();
+      await expect(page.getByText("No matches for “held”", { exact: true })).toHaveCount(0);
+    } finally {
+      release();
+    }
+
+    await expect(page.getByText("No matches for “held”", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
   });
 });
