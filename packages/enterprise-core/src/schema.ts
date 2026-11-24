@@ -644,7 +644,7 @@ export const passkeyRegistrationMapping: any = {
       displayName: value.name,
     }),
     eligible: (value: typeof Registration.Type) =>
-      sql`not exists(select 1 from ${account} where ${account.email} = ${value.email})`,
+      sql`not exists(select 1 from ${account} where ${account.email} = ${value.email}) and exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${value.email} and ${registrationVerification.grant} = ${value.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.verifiedAt} <= current_timestamp(3) and ${registrationVerification.expiresAt} > current_timestamp(3))`,
     finalEligibility: ({
       registration,
       subjectId,
@@ -652,7 +652,7 @@ export const passkeyRegistrationMapping: any = {
       registration: typeof Registration.Type;
       subjectId: string;
     }) =>
-      sql`exists(select 1 from ${account} where ${account.id} = ${subjectId} and ${account.email} = ${registration.email} and ${account.disabled} = false)`,
+      sql`exists(select 1 from ${account} where ${account.id} = ${subjectId} and ${account.email} = ${registration.email} and ${account.emailVerified} = true and ${account.disabled} = false) and exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.verifiedAt} <= current_timestamp(3) and ${registrationVerification.expiresAt} > current_timestamp(3))`,
     subject: ({
       registration,
       marker,
@@ -669,11 +669,9 @@ export const passkeyRegistrationMapping: any = {
           id: subjectId,
           name: registration.name,
           email: registration.email,
-          // A guest proves the address with a code before the passkey prompt;
-          // the grant it received is checked here, in the same insert.
-          emailVerified: registration.grant
-            ? sql`exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.expiresAt} > current_timestamp(3))`
-            : false,
+          // The grant is mandatory and is rechecked at eligibility, in this
+          // insert, and by finalEligibility before the credential commits.
+          emailVerified: sql`exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.verifiedAt} <= current_timestamp(3) and ${registrationVerification.expiresAt} > current_timestamp(3))`,
           image: null,
           disabled: false,
           source: "manual",
