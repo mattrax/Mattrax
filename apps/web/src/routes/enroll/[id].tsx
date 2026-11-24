@@ -8,21 +8,21 @@ import { getRequestEvent, isServer } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
 import { EnrollmentDetails } from "~/components/enrollment/enrollment-details";
 import {
+  EnrollmentDeviceLimitNotice,
+  EnrollmentLinkProblem,
   EnrollmentNotice,
   EnrollmentQrPanel,
   EnrollmentSupport,
 } from "~/components/enrollment/enrollment-feedback";
 import { EnrollmentOptions } from "~/components/enrollment/enrollment-platforms";
+import { EnrollmentPasswordInput } from "~/components/enrollment/enrollment-password-input";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { PasswordInput } from "~/components/ui/password-input";
 import { Label } from "~/components/ui/label";
 import { ChevronRight, KeyRound, ShieldCheck } from "~/components/ui/icons";
 import type { EnrollmentResponse } from "~/lib/enterprise";
 import { lookupPublicEnrollment } from "~/lib/enrollment.server";
 import { enrollmentLinkProblemCopy } from "~/lib/enrollment-presentation";
-import type { EnrollmentLinkProblemStatus } from "~/lib/enrollment-presentation";
-import { DEVICE_LIMIT_REACHED_TITLE, deviceLimitReachedMessage } from "~/lib/plan-limits";
 
 const isAuthenticatedEnrollment = (
   value: EnrollmentResponse | undefined,
@@ -192,13 +192,12 @@ function EnrollPage(props: { id: string; code: string }) {
                   <Label id="enrollment-password-label" for="enrollment-password">
                     Enrollment password
                   </Label>
-                  <PasswordInput
+                  <EnrollmentPasswordInput
                     id="enrollment-password"
                     name="code"
                     autocomplete="off"
                     autocapitalize="none"
                     spellcheck={false}
-                    class="h-12 pr-12 text-base sm:text-sm [&>button]:size-11"
                     aria-invalid={passwordInvalid() ? "true" : undefined}
                     aria-describedby={
                       passwordInvalid()
@@ -232,14 +231,9 @@ function EnrollPage(props: { id: string; code: string }) {
               {(authenticatedEnrollment) => (
                 <>
                   <Show when={deviceLimit()?.reached}>
-                    <EnrollmentNotice
-                      tone="warning"
-                      title={DEVICE_LIMIT_REACHED_TITLE}
-                      message={deviceLimitReachedMessage(deviceLimit()?.limit)}
-                      action={{
-                        href: "mailto:" + supportEmail(),
-                        label: "Contact administrator",
-                      }}
+                    <EnrollmentDeviceLimitNotice
+                      limit={deviceLimit()?.limit}
+                      supportEmail={supportEmail()}
                     />
                   </Show>
 
@@ -288,26 +282,6 @@ function EnrollPage(props: { id: string; code: string }) {
         <EnrollmentSupport email={supportEmail()} brandName={brandName()} />
       </div>
     </main>
-  );
-}
-
-function EnrollmentLinkProblem(props: {
-  status: EnrollmentLinkProblemStatus;
-  reloadHref: string;
-  supportEmail: string;
-}) {
-  const copy = () => enrollmentLinkProblemCopy(props.status);
-
-  return (
-    <EnrollmentNotice
-      tone={copy().tone}
-      title={copy().title}
-      message={copy().message}
-      action={{
-        href: copy().action === "reload" ? props.reloadHref : "mailto:" + props.supportEmail,
-        label: copy().actionLabel,
-      }}
-    />
   );
 }
 

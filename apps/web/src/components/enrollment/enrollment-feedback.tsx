@@ -3,7 +3,12 @@ import type { JSX } from "@solidjs/web";
 import { QrCode } from "~/components/mdm/qr-code";
 import { Button } from "~/components/ui/button";
 import { CheckCircle2, CircleAlert, Info } from "~/components/ui/icons";
-import type { EnrollmentNoticeTone } from "~/lib/enrollment-presentation";
+import { enrollmentLinkProblemCopy } from "~/lib/enrollment-presentation";
+import type {
+  EnrollmentLinkProblemStatus,
+  EnrollmentNoticeTone,
+} from "~/lib/enrollment-presentation";
+import { DEVICE_LIMIT_REACHED_TITLE, deviceLimitReachedMessage } from "~/lib/plan-limits";
 
 const noticeTone = {
   info: {
@@ -72,6 +77,37 @@ export function EnrollmentStatus(props: { available: boolean; label: string }) {
       </Show>
       {props.available ? `Ready to enroll` : `${props.label} unavailable`}
     </span>
+  );
+}
+
+export function EnrollmentLinkProblem(props: {
+  status: EnrollmentLinkProblemStatus;
+  reloadHref: string;
+  supportEmail: string;
+}) {
+  const copy = () => enrollmentLinkProblemCopy(props.status);
+
+  return (
+    <EnrollmentNotice
+      tone={copy().tone}
+      title={copy().title}
+      message={copy().message}
+      action={{
+        href: copy().action === "reload" ? props.reloadHref : "mailto:" + props.supportEmail,
+        label: copy().actionLabel,
+      }}
+    />
+  );
+}
+
+export function EnrollmentDeviceLimitNotice(props: { limit?: number; supportEmail: string }) {
+  return (
+    <EnrollmentNotice
+      tone="warning"
+      title={DEVICE_LIMIT_REACHED_TITLE}
+      message={deviceLimitReachedMessage(props.limit)}
+      action={{ href: "mailto:" + props.supportEmail, label: "Contact administrator" }}
+    />
   );
 }
 
