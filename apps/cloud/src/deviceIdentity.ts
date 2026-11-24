@@ -10,6 +10,7 @@ const identityHeaderNames = [
   "x-device-identity-certificate",
   "x-device-identity-certificate-serial",
   "x-device-identity-certificate-sha256",
+  "x-device-identity-certificate-der-base64",
 ] as const;
 
 const TlsClientAuth = Schema.Struct({
@@ -18,6 +19,8 @@ const TlsClientAuth = Schema.Struct({
   certSubjectDN: Schema.optional(Schema.String),
   certSerial: Schema.optional(Schema.String),
   certFingerprintSHA256: Schema.optional(Schema.String),
+  certRFC9440: Schema.optional(Schema.String),
+  certRFC9440TooLarge: Schema.optional(Schema.Boolean),
 });
 
 const RequestCfProperties = Schema.Struct({
@@ -32,6 +35,17 @@ const decodeSubjectHeader = (value: string): string => {
   }
 };
 
+/** Cloudflare exposes the verified leaf as RFC 9440; Windows expects plain base64 DER. */
+const derBase64FromRfc9440 = (value: string | undefined): string | undefined => {
+  const prefix = ":base64-DER:";
+
+  if (!value?.startsWith(prefix) || !value.endsWith(":")) return undefined;
+
+  const encoded = value.slice(prefix.length, -1);
+
+  return encoded.length > 0 ? encoded : undefined;
+};
+
 export type DeviceIdentityOptions = {
   readonly trustIdentityHeaders: boolean;
   readonly trustedPeers: ReadonlySet<string>;
@@ -41,8 +55,9 @@ export type DeviceIdentityOptions = {
 /**
  * Device identity must come from a verified mTLS handshake, never directly from
  * a caller. Cloudflare exposes the certificate subject on `request.cf`; a
- * self-hosted proxy terminates mTLS itself and forwards verified fields only
- * when its actual socket peer was explicitly configured as trusted.
+ * self-hosted proxy terminates mTLS itself and forwards verified fields,
+ * including the leaf DER, only when its actual socket peer was explicitly
+ * configured as trusted.
  */
 export const deviceIdentityHeaders = (
   request: Request,
@@ -53,6 +68,7 @@ export const deviceIdentityHeaders = (
   const certificate = headers.get("x-device-identity-certificate")?.trim();
   const serial = headers.get("x-device-identity-certificate-serial")?.trim();
   const fingerprint = headers.get("x-device-identity-certificate-sha256")?.trim();
+  const certificateDerBase64 = headers.get("x-device-identity-certificate-der-base64")?.trim();
 
   // Every value in this group is untrusted until the branch below rebuilds it.
   // In particular, never leave a caller's certificate behind when its serial or
@@ -83,6 +99,8 @@ export const deviceIdentityHeaders = (
     headers.set("x-device-identity-certificate", certificate);
     headers.set("x-device-identity-certificate-serial", serial);
     if (fingerprint) headers.set("x-device-identity-certificate-sha256", fingerprint);
+    if (certificateDerBase64)
+      headers.set("x-device-identity-certificate-der-base64", certificateDerBase64);
 
     return headers;
   }
@@ -95,6 +113,12 @@ export const deviceIdentityHeaders = (
     if (tls.certSerial) headers.set("x-device-identity-certificate-serial", tls.certSerial);
     if (tls.certFingerprintSHA256)
       headers.set("x-device-identity-certificate-sha256", tls.certFingerprintSHA256);
+    if (!tls.certRFC9440TooLarge) {
+      const certificateDerBase64 = derBase64FromRfc9440(tls.certRFC9440);
+
+      if (certificateDerBase64)
+        headers.set("x-device-identity-certificate-der-base64", certificateDerBase64);
+    }
   }
 
   return headers;

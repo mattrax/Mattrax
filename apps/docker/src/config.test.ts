@@ -36,13 +36,21 @@ describe("self-hosted compose configuration", () => {
     expect(caddyExample).toContain(
       "header_up x-device-identity-certificate-sha256 {tls_client_fingerprint}",
     );
+    expect(caddyExample).toContain(
+      "header_up x-device-identity-certificate-der-base64 {tls_client_certificate_der_base64}",
+    );
     expect(caddyExample).not.toContain('x-device-identity-certificate-sha256 ""');
-    expect(selfHostingDocs).toContain("serial-only fallback is no longer valid");
+    expect(selfHostingDocs).toMatch(/serial-only fallback is no longer valid/i);
+    expect(selfHostingDocs).toContain("Global proxy trust is not tenant authorization");
+    expect(selfHostingDocs).toContain("identityCertificateDerBase64");
+    expect(selfHostingDocs).toContain("derives its issuer fingerprint");
     expect(selfHostingDocs).toContain("every tenant SCEP CA that signs Windows identities");
     expect(selfHostingDocs).toContain("SELECT cert_pem FROM scep_ca");
     expect(selfHostingDocs).toContain("SELECT cert_pem FROM scep_ca_trust");
     expect(selfHostingDocs).toContain("trust_until > UTC_TIMESTAMP()");
     expect(selfHostingDocs).toContain("caddy reload --config /etc/caddy/Caddyfile");
+    expect(selfHostingDocs).toContain("For an external MySQL database");
+    expect(selfHostingDocs).toContain("--defaults-extra-file=/secure/mattrax-ca-export.cnf");
   });
 });
 

@@ -152,6 +152,7 @@ mdm.example.com {
 		header_up x-device-identity-certificate {tls_client_subject}
 		header_up x-device-identity-certificate-serial {tls_client_serial}
 		header_up x-device-identity-certificate-sha256 {tls_client_fingerprint}
+		header_up x-device-identity-certificate-der-base64 {tls_client_certificate_der_base64}
 	}
 }
 ```
@@ -178,26 +179,67 @@ run it on the database host, then validate the bundle, replace it atomically,
 and reload Caddy:
 
 ```bash
-bundle=$(mktemp /path/to/tenant-scep-ca-bundle.pem.XXXXXX)
-trap 'rm -f "$bundle"' EXIT
-mysql --batch --raw --skip-column-names -h 127.0.0.1 -u mattrax -p mattrax -e '
-  SELECT cert_pem FROM scep_ca
-  UNION
-  SELECT cert_pem FROM scep_ca_trust
-  WHERE trust_until > UTC_TIMESTAMP();
-' > "$bundle"
+set -euo pipefail
+
+live=/path/to/tenant-scep-ca-bundle.pem
+bundle=$(mktemp /path/to/.tenant-scep-ca-bundle.pem.XXXXXX)
+previous=$(mktemp /path/to/.tenant-scep-ca-bundle.pem.previous.XXXXXX)
+trap 'rm -f "$bundle" "$previous"' EXIT
+had_previous=0
+if [[ -f "$live" ]]; then
+  cp -p "$live" "$previous"
+  had_previous=1
+fi
+
+docker compose -f apps/docker/docker-compose.yml exec -T mysql \
+  sh -c 'mysql --batch --raw --skip-column-names -umattrax -p"$MYSQL_PASSWORD" mattrax -e "
+    SELECT cert_pem FROM scep_ca
+    UNION
+    SELECT cert_pem FROM scep_ca_trust
+    WHERE trust_until > UTC_TIMESTAMP();
+  "' > "$bundle"
+
 openssl crl2pkcs7 -nocrl -certfile "$bundle" |
   openssl pkcs7 -print_certs -noout >/dev/null
 chmod 0644 "$bundle"
-mv -f "$bundle" /path/to/tenant-scep-ca-bundle.pem
-trap - EXIT
-caddy reload --config /etc/caddy/Caddyfile
+mv -f "$bundle" "$live"
+
+if ! caddy reload --config /etc/caddy/Caddyfile; then
+  if (( had_previous )); then
+    mv -f "$previous" "$live"
+    caddy reload --config /etc/caddy/Caddyfile || true
+  else
+    rm -f "$live"
+  fi
+  echo "Caddy reload failed; previous CA bundle restored." >&2
+  exit 1
+fi
 ```
 
-Caddy loads trust-pool files when the configuration is adapted, so a file change
-alone is not enough; reload after every update. An Apple-only pool rejects Windows
-client certificates. Android management requests do not present an mTLS client
-certificate and continue through `verify_if_given` without identity headers.
+The script exits on a failed query or certificate validation before replacing the
+live bundle. If Caddy rejects the new bundle, it restores the previous file and
+attempts to reload it before exiting nonzero.
+
+For an external MySQL database, replace the `docker compose exec` command with a
+mysql client invocation on the database host. Use a protected option file rather
+than a password on the command line:
+
+```bash
+mysql --defaults-extra-file=/secure/mattrax-ca-export.cnf \
+  --batch --raw --skip-column-names mattrax -e '
+    SELECT cert_pem FROM scep_ca
+    UNION
+    SELECT cert_pem FROM scep_ca_trust
+    WHERE trust_until > UTC_TIMESTAMP();
+  ' > "$bundle"
+```
+
+Keep the same validation, atomic replacement and rollback steps for either
+database. Caddy loads trust-pool files when the configuration is adapted, so a
+file change alone is not enough; reload after every update. An Apple-only pool
+rejects Windows client certificates. Android management requests do not present
+an mTLS client certificate and continue through `verify_if_given` without
+identity headers.
 
 Set `TRUST_DEVICE_IDENTITY_HEADERS=1` **only** when the proxy verifies device
 certificates and overwrites the headers as above. Also set
@@ -210,12 +252,24 @@ trusted-header mode is enabled without this allowlist.
 
 The API compares the allowlist with the actual Node socket peer, not with
 `X-Forwarded-For` or any caller-supplied header. It strips all incoming identity
-headers and restores them only for an allowlisted peer. The verified certificate
-must include a CN and a serial; an incomplete bundle is discarded rather than
-allowing tenant routing by OU alone. For Apple MDM, forwarding the verified
-SHA-256 fingerprint is mandatory: serial-only fallback is no longer valid.
-Exposing the container without a verifying, overwriting proxy would otherwise
-let a caller claim any tenant by setting the certificate OU.
+headers, including `x-device-identity-certificate-der-base64`, and restores them
+only for an allowlisted peer. Caddy's `{tls_client_certificate_der_base64}`
+placeholder supplies the verified leaf certificate as plain base64 DER; the
+Cloudflare boundary converts its verified RFC 9440 leaf into the same header.
+The Windows request context exposes the rebuilt value as
+`identityCertificateDerBase64`. The verified certificate must include a CN and a
+serial; an incomplete bundle is discarded rather than allowing tenant routing by
+OU alone. For Apple MDM, forwarding the verified SHA-256 fingerprint is mandatory.
+Serial-only fallback is no longer valid. Exposing the container without a
+verifying, overwriting proxy would otherwise let a caller claim any tenant by
+setting the certificate OU.
+
+Global proxy trust is not tenant authorization. The Windows backend parses the
+forwarded DER certificate, derives its issuer fingerprint, and compares that
+fingerprint with the asserted tenant's current and still-trusted retired SCEP CAs
+before accepting the certificate identity or serial. A valid certificate issued
+by Tenant A therefore cannot authenticate a request that asserts Tenant B, even
+though both CAs are present in the proxy's global trust pool.
 
 Apple signs MDM check-ins with the SCEP identity certificate and sends its subject
 distinguished name in the TLS handshake. The tenant is the `OU` in that subject.

@@ -6,6 +6,7 @@ const identityHeaders = {
   "x-device-identity-certificate": "O=Mattrax,OU=org-dummy,CN=device-dummy",
   "x-device-identity-certificate-serial": "A1:B2:C3",
   "x-device-identity-certificate-sha256": "a".repeat(64),
+  "x-device-identity-certificate-der-base64": "ZHVtbXktZGVy",
 };
 
 const trustedPeers = parseTrustedPeerAddresses("127.0.0.1,::1");
@@ -20,18 +21,21 @@ const identity = (headers: Headers) => ({
   certificate: headers.get("x-device-identity-certificate"),
   serial: headers.get("x-device-identity-certificate-serial"),
   fingerprint: headers.get("x-device-identity-certificate-sha256"),
+  derBase64: headers.get("x-device-identity-certificate-der-base64"),
 });
 
 const expectedIdentity = {
   certificate: identityHeaders["x-device-identity-certificate"],
   serial: identityHeaders["x-device-identity-certificate-serial"],
   fingerprint: identityHeaders["x-device-identity-certificate-sha256"],
+  derBase64: identityHeaders["x-device-identity-certificate-der-base64"],
 };
 
 const noIdentity = {
   certificate: null,
   serial: null,
   fingerprint: null,
+  derBase64: null,
 };
 
 describe("device identity trust boundary", () => {
@@ -106,6 +110,8 @@ describe("device identity trust boundary", () => {
         "x-device-identity-certificate": "O=Mattrax,OU=org-dummy",
         "x-device-identity-certificate-serial": "A1:B2:C3",
         "x-device-identity-certificate-sha256": "a".repeat(64),
+        "x-device-identity-certificate-der-base64":
+          identityHeaders["x-device-identity-certificate-der-base64"],
         [NODE_PEER_ADDRESS_HEADER]: "127.0.0.1",
       }),
       { trustIdentityHeaders: true, trustedPeers, trustForwarded: false },
@@ -120,6 +126,8 @@ describe("device identity trust boundary", () => {
         "x-device-identity-certificate": identityHeaders["x-device-identity-certificate"],
         "x-device-identity-certificate-sha256":
           identityHeaders["x-device-identity-certificate-sha256"],
+        "x-device-identity-certificate-der-base64":
+          identityHeaders["x-device-identity-certificate-der-base64"],
         [NODE_PEER_ADDRESS_HEADER]: "127.0.0.1",
       }),
       { trustIdentityHeaders: true, trustedPeers, trustForwarded: false },
@@ -158,7 +166,7 @@ describe("device identity trust boundary", () => {
     expect(headers.get("x-mattrax-client-address")).toBe("198.51.100.4");
   });
 
-  it("never honors the internal peer header on Cloudflare", () => {
+  it("rebuilds Cloudflare identity and plain DER from the verified RFC 9440 leaf", () => {
     const headers = deviceIdentityHeaders(
       request(
         { ...identityHeaders, [NODE_PEER_ADDRESS_HEADER]: "127.0.0.1" },
@@ -167,6 +175,7 @@ describe("device identity trust boundary", () => {
             certVerified: "SUCCESS",
             certSubjectDN: "CN=edge-verified,OU=org-edge",
             certSerial: "ED:GE",
+            certRFC9440: ":base64-DER:Y2xvdWRmbGFyZS1kZXI=:",
           },
         },
       ),
@@ -177,7 +186,27 @@ describe("device identity trust boundary", () => {
       certificate: "CN=edge-verified,OU=org-edge",
       serial: "ED:GE",
       fingerprint: null,
+      derBase64: "Y2xvdWRmbGFyZS1kZXI=",
     });
     expect(headers.get(NODE_PEER_ADDRESS_HEADER)).toBeNull();
+  });
+
+  it("does not forward a Cloudflare DER value that is malformed or too large", () => {
+    for (const tlsClientAuth of [
+      { certVerified: "SUCCESS", certRFC9440: "not-rfc-9440" },
+      {
+        certVerified: "SUCCESS",
+        certRFC9440: ":base64-DER:Y2xvdWRmbGFyZS1kZXI=:",
+        certRFC9440TooLarge: true,
+      },
+    ]) {
+      const headers = deviceIdentityHeaders(request(identityHeaders, { tlsClientAuth }), {
+        trustIdentityHeaders: true,
+        trustedPeers,
+        trustForwarded: false,
+      });
+
+      expect(headers.get("x-device-identity-certificate-der-base64")).toBeNull();
+    }
   });
 });
