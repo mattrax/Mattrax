@@ -9,6 +9,7 @@ import {
   Field,
   formatDate,
   Page,
+  PageBreadcrumbs,
   PageHeader,
   Panel,
   QueryError,
@@ -656,6 +657,7 @@ export default function PolicyDetailPage() {
         />
       </Show>
 
+      <PageBreadcrumbs resourceName={row()?.name} section="Overview" />
       <PageHeader
         title={row()?.name ?? "Policy"}
         description="Configure what this policy deploys to its device scope."

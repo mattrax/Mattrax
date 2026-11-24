@@ -8,6 +8,7 @@ import { createSignal, For, Show } from "solid-js";
 import {
   formatDate,
   Page,
+  PageBreadcrumbs,
   PageHeader,
   Panel,
   QueryError,
@@ -202,6 +203,7 @@ export default function PolicyDeploymentPage() {
 
   return (
     <Page>
+      <PageBreadcrumbs resourceName={row()?.name} />
       <PageHeader
         eyebrow="Policy"
         title={`Deployment — ${row()?.name ?? "Policy"}`}
@@ -263,7 +265,7 @@ export default function PolicyDeploymentPage() {
               variant="outline"
               href={`/t/${params.tenantId}/policies/${params.policyId}`}
             >
-              Back to policy
+              Back to {row()?.name ?? "policy"}
             </Button>
           </div>
         }

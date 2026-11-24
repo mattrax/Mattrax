@@ -1951,14 +1951,16 @@ export const enterprise = {
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
       }),
     ),
+  /**
+   * Creating a script is additive, so it does not need a step-up. Editing,
+   * assigning, renaming or deleting an existing script still does.
+   */
   createScript: (tenantId: RouteParam, payload: CreateScriptRequest) =>
-    scriptEndpoint(
-      (api) =>
-        api.createScript({
-          params: { tenantId: required(tenantId, "tenantId") },
-          payload,
-        }),
-      { stepUp: "script-change" },
+    scriptEndpoint((api) =>
+      api.createScript({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
     ),
   patchScript: (tenantId: RouteParam, id: RouteParam, payload: PatchScriptRequest) =>
     scriptEndpoint(

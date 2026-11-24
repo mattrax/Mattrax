@@ -19182,8 +19182,10 @@ export const createEnterpriseService = ({
     createScript: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-change");
 
+        // Creating a script is additive and must work for an administrator
+        // whose passkey lives on another device. Changes to an existing script
+        // still require a step-up below.
         if (!ctx.organization.scriptsEnabled)
           return yield* Effect.fail(
             new EnterpriseForbidden({

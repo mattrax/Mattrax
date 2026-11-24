@@ -53,7 +53,7 @@ export default function NewScriptPage() {
         <PageHeader
           eyebrow="Scripts"
           title="New script"
-          description="Scripts execute arbitrary code on managed devices. Saving requires a fresh confirmation."
+          description="Scripts execute arbitrary code on managed devices. Editing one later requires a fresh confirmation."
         />
         <Show when={scripts.data && !scripts.data.enabled}>
           <Panel title="Scripts are disabled">

@@ -7,24 +7,25 @@ import { Input } from "~/components/ui/input";
 import { ArrowLeft } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { rememberTenantAlias } from "~/lib/tenant";
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .trim()
-    .replaceAll(/[^a-z0-9]+/g, "-")
-    .replaceAll(/^-|-$/g, "");
+import {
+  initialTenantSlugDraft,
+  tenantSlugFor,
+  updateTenantName,
+  updateTenantSlug,
+} from "~/lib/tenant-slug";
 
 export default function NewTenantPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [name, setName] = createSignal("");
-  const [slug, setSlug] = createSignal("");
+  const [slugDraft, setSlugDraft] = createSignal(initialTenantSlugDraft);
   const [error, setError] = createSignal<string | null>(null);
   let nameInput: HTMLInputElement | undefined;
 
+  const slug = () => tenantSlugFor(slugDraft(), name());
+
   const createTenant = useMutation(() => ({
-    mutationFn: () => enterprise.createTenant({ name: name(), slug: slug() || slugify(name()) }),
+    mutationFn: () => enterprise.createTenant({ name: name(), slug: slug() }),
     onSuccess: ({ id }) => {
       // Land on the canonical slug: an id URL would be rewritten to the slug
       // moments later, which churns the tenant route's query keys for nothing.
@@ -79,9 +80,10 @@ export default function NewTenantPage() {
               class="h-9"
               value={name()}
               onInput={(event) => {
-                setName(event.currentTarget.value);
+                const value = event.currentTarget.value;
 
-                if (!slug()) setSlug(slugify(event.currentTarget.value));
+                setName(value);
+                setSlugDraft((draft) => updateTenantName(draft, value));
               }}
               placeholder="Acme Operations"
             />
@@ -92,8 +94,8 @@ export default function NewTenantPage() {
           >
             <Input
               class="h-9 font-mono text-[13px]"
-              value={slug()}
-              onInput={(event) => setSlug(slugify(event.currentTarget.value))}
+              value={slugDraft().slug}
+              onInput={(event) => setSlugDraft(updateTenantSlug(event.currentTarget.value))}
               placeholder="acme-operations"
             />
           </Field>
