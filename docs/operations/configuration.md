@@ -100,14 +100,19 @@ stream with the actor, target and before/after state.
 
 ## Billing
 
-| Variable              | Purpose                                                            |
-| --------------------- | ------------------------------------------------------------------ |
-| `SERVICES_URL`        | Hosted services origin; defaults to `https://services.mattrax.app` |
-| `SERVICES_TOKEN`      | Shared Cloud-to-services bearer token                              |
-| `STRIPE_*`            | Configured on the services deployment, not the application         |
-| `MATTRAX_PLAN_LIMITS` | JSON plan/seat catalogue                                           |
+| Variable              | Purpose                                                    |
+| --------------------- | ---------------------------------------------------------- |
+| `SERVICES_TOKEN`      | Shared Cloud-to-services bearer token                      |
+| `STRIPE_*`            | Configured on the services deployment, not the application |
+| `MATTRAX_PLAN_LIMITS` | JSON plan/seat catalogue                                   |
 
 All are optional. Without them billing reports `configured: false`.
+
+The hosted services origin is built into the application at
+`https://services.mattrax.app`; it is not deployment configuration. Cloud and
+self-hosted installs both use it, so the billing endpoints
+(`/v1/billing/hosted/*` and `/api/platform/billing/*`) and the APNs relay
+(`/v1/apns/push`) are derived from the same origin.
 
 ```json
 {
@@ -128,12 +133,13 @@ All are optional. Without them billing reports `configured: false`.
 | `APPLE_PROFILE_SIGNING_CERT`             | Leaf certificate used to CMS-sign Apple profiles                                                |
 | `APPLE_PROFILE_SIGNING_KEY`              | RSA PKCS#8 PEM private key for profile signing                                                  |
 | `APPLE_PROFILE_SIGNING_CHAIN`            | Optional intermediate/root PEM bundle                                                           |
-| `APNS_RELAY_URL`                         | APNs relay URL; defaults to `https://services.mattrax.app/v1/apns/push`                         |
 | `APNS_RELAY_SECRET`                      | Optional relay HMAC secret; self-hosted installs use `MATTRAX_LICENSE_KEY` instead              |
 | `MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS` | Lifetime of the bearer SCEP challenge in an enrollment profile, 60–86400 seconds (default 3600) |
 
-Without the vendor key, tenants upload a manually signed APNs certificate. Without the
-relay, hosted multi-tenant Cloud has no push transport and devices poll.
+Without the vendor key, tenants upload a manually signed APNs certificate. Pushes
+go through the hosted relay at `https://services.mattrax.app/v1/apns/push`;
+without `APNS_RELAY_SECRET` (or a self-hosted `MATTRAX_LICENSE_KEY`) Cloud has
+no authorised push transport and devices poll.
 
 When the profile signing identity is absent, the owning tenant's SCEP CA signs profile
 downloads. The CA is created on first use, so there is no unsigned window. A configured

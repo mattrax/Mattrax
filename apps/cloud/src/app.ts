@@ -154,6 +154,7 @@ import {
   withSessionPresence,
   loginAttemptObserver,
   credentialExpiryEmail,
+  servicesUrls,
 } from "@mattrax/cloud-services";
 import type { AnalyticsProperties, SendEmail } from "@mattrax/cloud-services";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
@@ -663,10 +664,11 @@ const dashboardReportsJob = (env: Env) =>
     });
   }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
-const DEFAULT_APNS_RELAY_URL = "https://services.mattrax.app/v1/apns/push";
+/** Hosted endpoints derived from the single services origin. */
+const services = servicesUrls(apiEnv.MATTRAX_SERVICES_URL);
 
 const makeHostedApns = (env: Env) => {
-  const url = env.APNS_RELAY_URL ?? DEFAULT_APNS_RELAY_URL;
+  const url = services.apnsRelay;
   // A self-hosted deployment already holds a licence key; reusing it for the
   // relay keeps push working without a second shared secret.
   const licenseKey =
@@ -768,10 +770,9 @@ type CryptoLayer = AuthLiveOptions["cryptoLayer"];
  * binding set.
  */
 const remoteBillingConfig = () => {
-  const url = process.env.MATTRAX_BILLING_URL?.trim();
   const licenseKey = process.env.MATTRAX_LICENSE_KEY?.trim();
 
-  return url && licenseKey ? { url, licenseKey } : undefined;
+  return licenseKey ? { url: services.billing, licenseKey } : undefined;
 };
 
 /** Report deployment usage to the cloud licence so seats stay in sync. */
@@ -980,14 +981,13 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
   // Hosted Cloud forwards tenant billing to the services deployment. A
   // self-hosted deployment uses the licence API on the same service; neither
   // path needs a Stripe secret in the application.
-  const servicesBilling =
-    env.SERVICES_URL && env.SERVICES_TOKEN
-      ? makeServicesBillingService({
-          url: env.SERVICES_URL,
-          token: env.SERVICES_TOKEN,
-          origin: env.ORIGIN,
-        })
-      : undefined;
+  const servicesBilling = env.SERVICES_TOKEN
+    ? makeServicesBillingService({
+        url: services.origin,
+        token: env.SERVICES_TOKEN,
+        origin: env.ORIGIN,
+      })
+    : undefined;
   const remoteBilling = servicesBilling ? undefined : remoteBillingConfig();
   const billing =
     servicesBilling ??
@@ -1758,16 +1758,15 @@ export const createApiRuntime = (
 
       const daily = Effect.gen(function* () {
         const db = yield* Db;
-        const cronBilling =
-          apiEnv.SERVICES_URL && apiEnv.SERVICES_TOKEN
-            ? makeServicesBillingService({
-                url: apiEnv.SERVICES_URL,
-                token: apiEnv.SERVICES_TOKEN,
-                origin: env.ORIGIN,
-              })
-            : remoteBillingConfig()
-              ? makeRemoteBillingService({ ...remoteBillingConfig()!, origin: env.ORIGIN })
-              : undefined;
+        const cronBilling = apiEnv.SERVICES_TOKEN
+          ? makeServicesBillingService({
+              url: services.origin,
+              token: apiEnv.SERVICES_TOKEN,
+              origin: env.ORIGIN,
+            })
+          : remoteBillingConfig()
+            ? makeRemoteBillingService({ ...remoteBillingConfig()!, origin: env.ORIGIN })
+            : undefined;
 
         yield* reportLicenseUsage(db, env).pipe(
           Effect.catch((error) =>

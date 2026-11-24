@@ -370,12 +370,12 @@ The command prints the only copy of the key and stores a SHA-256 hash in
 `services_deployment_license`. Give the operator:
 
 ```bash
-MATTRAX_BILLING_URL=https://services.mattrax.app
-APNS_RELAY_URL=https://services.mattrax.app/v1/apns/push
 MATTRAX_LICENSE_KEY=mtx_lic_...
 ```
 
-The deployment calls `POST /api/platform/billing/{summary,portal,checkout,invoices,usage}`
+The billing and push-relay endpoints are derived from the built-in services
+origin, so the key is the only value the operator sets. The deployment calls
+`POST /api/platform/billing/{summary,portal,checkout,invoices,usage}`
 with that key. The first authenticated call binds the licence to the
 deployment's public origin; later calls from another origin are rejected. The
 daily maintenance job reports enrolled-device and tenant counts, and the cloud

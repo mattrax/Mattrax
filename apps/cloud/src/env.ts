@@ -32,8 +32,11 @@ const ApiEnvSchema = Schema.Struct({
   // Signs sessions, SSR tokens, step-up grants, SSO assertions and email
   // tokens; a short operator-chosen value makes every artifact forgeable.
   AUTH_SECRET: Schema.String.check(Schema.isMinLength(32)),
-  /** Hosted services deployment; a token enables hosted billing through it. */
-  SERVICES_URL: Schema.optional(urlString),
+  /**
+   * Internal override for the hosted services origin. It defaults to
+   * `https://services.mattrax.app` and deployments should not set it.
+   */
+  MATTRAX_SERVICES_URL: Schema.optional(urlString),
   SERVICES_TOKEN: Schema.optional(nonEmptyString),
   /**
    * Optional JSON plan catalogue mapping plan names to device/tenant limits.
@@ -55,8 +58,10 @@ const ApiEnvSchema = Schema.Struct({
   APPLE_PROFILE_SIGNING_CERT: Schema.optional(Schema.String),
   APPLE_PROFILE_SIGNING_KEY: Schema.optional(Schema.String),
   APPLE_PROFILE_SIGNING_CHAIN: Schema.optional(Schema.String),
-  /** Hosted Cloud push relay. When set, APNs pushes go through the relay. */
-  APNS_RELAY_URL: Schema.optional(urlString),
+  /**
+   * Hosted Cloud push relay secret. The relay URL is derived from
+   * `MATTRAX_SERVICES_URL`; self-hosted installs use `MATTRAX_LICENSE_KEY`.
+   */
   APNS_RELAY_SECRET: Schema.optional(nonEmptyString),
   /** Microsoft Entra ID app used for tenant SSO. */
   AZURE_CLIENT_ID: Schema.optional(nonEmptyString),
@@ -244,7 +249,7 @@ const optionalString = Schema.optional(Schema.String);
 const RawApiEnvSchema = Schema.Struct({
   ORIGIN: optionalString,
   AUTH_SECRET: optionalString,
-  SERVICES_URL: optionalString,
+  MATTRAX_SERVICES_URL: optionalString,
   SERVICES_TOKEN: optionalString,
   MATTRAX_PLAN_LIMITS: optionalString,
   MATTRAX_SUPERADMINS: optionalString,
@@ -253,7 +258,6 @@ const RawApiEnvSchema = Schema.Struct({
   APPLE_PROFILE_SIGNING_CERT: optionalString,
   APPLE_PROFILE_SIGNING_KEY: optionalString,
   APPLE_PROFILE_SIGNING_CHAIN: optionalString,
-  APNS_RELAY_URL: optionalString,
   APNS_RELAY_SECRET: optionalString,
   AZURE_CLIENT_ID: optionalString,
   AZURE_CLIENT_SECRET: optionalString,
@@ -328,7 +332,7 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   // `.dev.vars`; whitelabel deployments set their own origin.
   ORIGIN: emptyStringAsUndefined(rawEnv.ORIGIN) ?? "https://e.mattrax.app",
   AUTH_SECRET: emptyStringAsUndefined(rawEnv.AUTH_SECRET),
-  SERVICES_URL: emptyStringAsUndefined(rawEnv.SERVICES_URL) ?? "https://services.mattrax.app",
+  MATTRAX_SERVICES_URL: emptyStringAsUndefined(rawEnv.MATTRAX_SERVICES_URL),
   SERVICES_TOKEN: emptyStringAsUndefined(rawEnv.SERVICES_TOKEN),
   MATTRAX_PLAN_LIMITS: emptyStringAsUndefined(rawEnv.MATTRAX_PLAN_LIMITS),
   MATTRAX_SUPERADMINS: emptyStringAsUndefined(rawEnv.MATTRAX_SUPERADMINS),
@@ -337,7 +341,6 @@ export const env = Schema.decodeUnknownSync(ApiEnvSchema)({
   APPLE_PROFILE_SIGNING_CERT: emptyStringAsUndefined(rawEnv.APPLE_PROFILE_SIGNING_CERT),
   APPLE_PROFILE_SIGNING_KEY: emptyStringAsUndefined(rawEnv.APPLE_PROFILE_SIGNING_KEY),
   APPLE_PROFILE_SIGNING_CHAIN: emptyStringAsUndefined(rawEnv.APPLE_PROFILE_SIGNING_CHAIN),
-  APNS_RELAY_URL: emptyStringAsUndefined(rawEnv.APNS_RELAY_URL),
   APNS_RELAY_SECRET: emptyStringAsUndefined(rawEnv.APNS_RELAY_SECRET),
   AZURE_CLIENT_ID: emptyStringAsUndefined(rawEnv.AZURE_CLIENT_ID),
   AZURE_CLIENT_SECRET: emptyStringAsUndefined(rawEnv.AZURE_CLIENT_SECRET),

@@ -29,8 +29,12 @@ export declare const apiWorker: {
     ORIGIN: import("cf/config").TextBinding<string>;
     TRUSTED_ORIGINS: import("cf/config").SecretBinding;
     AUTH_SECRET: import("cf/config").SecretBinding;
-    /** Hosted services deployment for APNs billing and entitlements. */
-    SERVICES_URL: import("cf/config").TextBinding<string>;
+    /**
+     * Hosted services deployment for APNs, billing and entitlements. Empty
+     * selects the built-in `https://services.mattrax.app`; only tests and
+     * previews set it.
+     */
+    MATTRAX_SERVICES_URL: import("cf/config").TextBinding<string>;
     SERVICES_TOKEN: import("cf/config").SecretBinding;
     /** Optional JSON plan catalogue; absent means unlimited plans. */
     MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
@@ -47,7 +51,6 @@ export declare const apiWorker: {
     MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: import("cf/config").TextBinding<"3600">;
     CLOUD_APPLE_VENDOR_CERT: import("cf/config").SecretBinding;
     CLOUD_APPLE_VENDOR_KEY: import("cf/config").SecretBinding;
-    APNS_RELAY_URL: import("cf/config").SecretBinding;
     APNS_RELAY_SECRET: import("cf/config").SecretBinding;
     AZURE_CLIENT_ID: import("cf/config").SecretBinding;
     AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
@@ -159,8 +162,12 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) =>
           ORIGIN: import("cf/config").TextBinding<string>;
           TRUSTED_ORIGINS: import("cf/config").SecretBinding;
           AUTH_SECRET: import("cf/config").SecretBinding;
-          /** Hosted services deployment for APNs billing and entitlements. */
-          SERVICES_URL: import("cf/config").TextBinding<string>;
+          /**
+           * Hosted services deployment for APNs, billing and entitlements. Empty
+           * selects the built-in `https://services.mattrax.app`; only tests and
+           * previews set it.
+           */
+          MATTRAX_SERVICES_URL: import("cf/config").TextBinding<string>;
           SERVICES_TOKEN: import("cf/config").SecretBinding;
           /** Optional JSON plan catalogue; absent means unlimited plans. */
           MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
@@ -177,7 +184,6 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) =>
           MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: import("cf/config").TextBinding<"3600">;
           CLOUD_APPLE_VENDOR_CERT: import("cf/config").SecretBinding;
           CLOUD_APPLE_VENDOR_KEY: import("cf/config").SecretBinding;
-          APNS_RELAY_URL: import("cf/config").SecretBinding;
           APNS_RELAY_SECRET: import("cf/config").SecretBinding;
           AZURE_CLIENT_ID: import("cf/config").SecretBinding;
           AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
@@ -287,8 +293,12 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) =>
           ORIGIN: import("cf/config").TextBinding<string>;
           TRUSTED_ORIGINS: import("cf/config").SecretBinding;
           AUTH_SECRET: import("cf/config").SecretBinding;
-          /** Hosted services deployment for APNs billing and entitlements. */
-          SERVICES_URL: import("cf/config").TextBinding<string>;
+          /**
+           * Hosted services deployment for APNs, billing and entitlements. Empty
+           * selects the built-in `https://services.mattrax.app`; only tests and
+           * previews set it.
+           */
+          MATTRAX_SERVICES_URL: import("cf/config").TextBinding<string>;
           SERVICES_TOKEN: import("cf/config").SecretBinding;
           /** Optional JSON plan catalogue; absent means unlimited plans. */
           MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
@@ -305,7 +315,6 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) =>
           MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: import("cf/config").TextBinding<"3600">;
           CLOUD_APPLE_VENDOR_CERT: import("cf/config").SecretBinding;
           CLOUD_APPLE_VENDOR_KEY: import("cf/config").SecretBinding;
-          APNS_RELAY_URL: import("cf/config").SecretBinding;
           APNS_RELAY_SECRET: import("cf/config").SecretBinding;
           AZURE_CLIENT_ID: import("cf/config").SecretBinding;
           AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;

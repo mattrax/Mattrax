@@ -40,7 +40,8 @@ services:
       # Optional support form or calendar URL shown in the app menu.
       SUPPORT_URL: ${SUPPORT_URL:-}
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
-      APNS_RELAY_URL: ${APNS_RELAY_URL:-https://services.mattrax.app/v1/apns/push}
+      # The relay URL is derived from the built-in services origin; only the
+      # optional HMAC secret is configured.
       APNS_RELAY_SECRET: ${APNS_RELAY_SECRET:-}
       CLOUD_APPLE_VENDOR_CERT: ${CLOUD_APPLE_VENDOR_CERT:-}
       CLOUD_APPLE_VENDOR_KEY: ${CLOUD_APPLE_VENDOR_KEY:-}
@@ -65,8 +66,8 @@ services:
       MAIL_SMTP_USER: ${MAIL_SMTP_USER:-}
       MAIL_SMTP_PASSWORD: ${MAIL_SMTP_PASSWORD:-}
       MAIL_SMTP_HELO: ${MAIL_SMTP_HELO:-}
-      # Deployment licence billing from the Mattrax cloud.
-      MATTRAX_BILLING_URL: ${MATTRAX_BILLING_URL:-https://services.mattrax.app}
+      # Deployment licence billing from the Mattrax cloud. The billing URL is
+      # derived from the built-in services origin.
       MATTRAX_LICENSE_KEY: ${MATTRAX_LICENSE_KEY:-}
       MAINTENANCE_ONBOARDING_EMAILS: ${MAINTENANCE_ONBOARDING_EMAILS:-true}
       MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: ${MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS:-7}

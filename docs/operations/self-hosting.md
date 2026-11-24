@@ -281,27 +281,27 @@ set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
 
 A self-hosted install owns its database, storage, email and TLS. Two optional
 features use the hosted services origin at `https://services.mattrax.app`, and
-they are the only calls it makes there:
+they are the only calls it makes there. The origin is built into the release:
+there is no endpoint to configure.
 
-| Feature         | Configuration                                                                                    | Data sent                                                                                                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| APNs push relay | `APNS_RELAY_URL` (default `https://services.mattrax.app/v1/apns/push`) and `MATTRAX_LICENSE_KEY` | Each device push: push token, push magic, topic and the tenant's APNs certificate and private key, which the relay uses to authenticate the request to Apple. It stores none. |
-| Licence billing | `MATTRAX_BILLING_URL` (default `https://services.mattrax.app`) and `MATTRAX_LICENSE_KEY`         | A daily count of enrolled devices and tenants, plus the licence summary, portal, checkout and invoice requests an owner starts.                                               |
+| Feature         | Configuration         | Data sent                                                                                                                                                                     |
+| --------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| APNs push relay | `MATTRAX_LICENSE_KEY` | Each device push: push token, push magic, topic and the tenant's APNs certificate and private key, which the relay uses to authenticate the request to Apple. It stores none. |
+| Licence billing | `MATTRAX_LICENSE_KEY` | A daily count of enrolled devices and tenants, plus the licence summary, portal, checkout and invoice requests an owner starts.                                               |
 
 The licence key is issued against the cloud billing account (see
 [Operations](/admin/operations#deployment-licences)). It authenticates both
 calls, so the deployment needs no second shared secret; `APNS_RELAY_SECRET`
 exists only for a caller that authenticates to the relay with an HMAC secret.
 The hosted relay holds the Apple connectivity and the Stripe secret, so the
-install does not need vendor APNs credentials to wake devices. Point
-`APNS_RELAY_URL` at your own relay to keep push inside your network; it must
-accept the same request format.
+install does not need vendor APNs credentials to wake devices. The release has
+no separate relay URL: a self-hosted install always wakes devices through the
+hosted relay.
 
 Self-hosted deployments are billed to the operator for the whole deployment,
 based on enrolled devices. The install does not need its own Stripe account:
 
 ```bash
-MATTRAX_BILLING_URL=https://services.mattrax.app
 MATTRAX_LICENSE_KEY=mtx_lic_...
 ```
 
