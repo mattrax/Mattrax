@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Effect, Layer, Option, Redacted, Schema } from "effect";
@@ -23,11 +23,11 @@ import { StripeService } from "@mattrax/effect-stripe";
 import { createRelayAnalytics } from "./analytics.ts";
 import type { RelayAnalyticsAuth } from "./analytics.ts";
 import { migrateDatabase } from "./migrate.ts";
+import { verifyRelaySignature } from "./relayAuth.ts";
 
 const port = Number(process.env.PORT ?? 8788);
 const databaseUrl = process.env.DATABASE_URL?.trim();
 const stripeKey = process.env.STRIPE_SECRET_KEY?.trim();
-const relaySecret = process.env.APNS_RELAY_SECRET?.trim();
 const servicesToken = process.env.SERVICES_TOKEN?.trim();
 const cloudUrl = process.env.MATTRAX_CLOUD_URL?.trim();
 const deviceMonthlyPriceId = process.env.STRIPE_DEVICE_MONTHLY_PRICE_ID?.trim();
@@ -93,18 +93,6 @@ const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(
 
 const problem = (message: string, status: number) => json({ message }, status);
 
-const relaySignature = (timestamp: string, body: string) =>
-  createHmac("sha256", relaySecret ?? "")
-    .update(`${timestamp}.${body}`)
-    .digest("hex");
-
-const safeEqual = (left: string, right: string) => {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-
-  return a.length === b.length && timingSafeEqual(a, b);
-};
-
 const ApnsBody = Schema.Struct({
   pushToken: Schema.String,
   pushMagic: Schema.String,
@@ -122,22 +110,23 @@ const apnsHandler = (request: HttpServerRequest.HttpServerRequest) =>
     if (body.length > 64 * 1024) return problem("Request body too large.", 413);
 
     let authorized = false;
-    // Only a licence-authenticated request has a deployment to identify; a
-    // shared-secret caller is the hosted Cloud relay.
+    // Only a licence-authenticated request has a deployment to identify; the
+    // hosted Cloud relay authenticates with the shared services token.
     let deployment: RelayAnalyticsAuth = { kind: "shared-secret" };
     const timestamp = request.headers["x-apns-timestamp"];
     const signature = request.headers["x-apns-signature"];
     const timestampValue = Array.isArray(timestamp) ? timestamp[0] : timestamp;
     const signatureValue = Array.isArray(signature) ? signature[0] : signature;
+    const signatureResult = verifyRelaySignature({
+      token: servicesToken,
+      timestamp: timestampValue,
+      signature: signatureValue,
+      body,
+    });
 
-    if (relaySecret && timestampValue && signatureValue) {
-      if (Math.abs(Math.floor(Date.now() / 1000) - Number(timestampValue)) > 300)
-        return problem("Stale signature.", 401);
-      if (!safeEqual(relaySignature(timestampValue, body), signatureValue))
-        return problem("Invalid signature.", 401);
-
-      authorized = true;
-    }
+    if (signatureResult === "stale") return problem("Stale signature.", 401);
+    if (signatureResult === "invalid") return problem("Invalid signature.", 401);
+    if (signatureResult === "ok") authorized = true;
 
     if (!authorized) {
       const value = request.headers.authorization;

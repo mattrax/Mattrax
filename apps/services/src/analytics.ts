@@ -43,7 +43,7 @@ export type RelayAnalytics = {
 export const hashDeploymentId = (licenseId: string): string =>
   createHash("sha256").update(licenseId).digest("hex");
 
-/** Shared-secret callers are the hosted Cloud relay; it has no deployment id. */
+/** Hosted Cloud authenticates the relay with SERVICES_TOKEN; it has no deployment id. */
 const sharedSecretIdentity = "relay:shared-secret";
 
 export const createRelayAnalytics = (config: RelayAnalyticsConfig = {}): RelayAnalytics => {

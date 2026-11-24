@@ -16,6 +16,12 @@ boundary keeps protocol handling independent from product state.
 | Hosted services     | `cloud-services`                                                                                                                                        | Mail, SSO, analytics, rate limits, readiness       |
 | Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                                                                                                             | Dashboard, API and push relay                      |
 
+`apps/apns-relay` is a standalone development/custom-fork relay, not a supported
+alternative to the hosted services relay. The application no longer exposes an
+operator setting that targets it; only the internal `MATTRAX_SERVICES_URL` test
+override can. Hosted Cloud uses `apps/services`, and self-hosted production
+deployments use the hosted relay with a licence.
+
 ## Module conventions
 
 The domain and service packages follow Cap's Effect layout:
@@ -128,8 +134,8 @@ The container uses the same application code with Node entry points instead of W
 | ----------------------------------------- | ------------------------------------------------------------------------ |
 | `AUTH_SECRET`                             | Sessions, sealed APNs/SCEP/device secrets, webhook secrets, WSTEP tokens |
 | `CLOUD_APPLE_VENDOR_*`                    | APNs CSR signing                                                         |
-| `APNS_RELAY_SECRET`                       | HMAC to the push relay                                                   |
-| `SERVICES_URL` / `SERVICES_TOKEN`         | Hosted billing and APNs services                                         |
+| `SERVICES_TOKEN`                          | Hosted billing, entitlements and the APNs relay HMAC                     |
+| `MATTRAX_LICENSE_KEY`                     | Self-hosted licence, billing and APNs relay bearer                       |
 | `AZURE_CLIENT_SECRET`                     | Entra OIDC/Graph                                                         |
 | `ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON` | AMAPI                                                                    |
 

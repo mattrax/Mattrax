@@ -36,7 +36,6 @@ Repository variables (Settings → Secrets and variables → Actions → Variabl
 | `PREVIEW_HYPERDRIVE_ID`  | Hyperdrive config for the preview database.                                            |
 | `PREVIEW_STORAGE_BUCKET` | R2 bucket for preview uploads and backups. Must exist before the first preview deploy. |
 | `PRODUCTION_ORIGIN`      | Optional. Defaults to `https://e.mattrax.app`.                                         |
-| `SERVICES_TOKEN`         | Shared token for the hosted services deployment (billing and entitlements).            |
 
 The Workers' own secrets are shared by production and every Preview of that
 Worker, so they only need to be set once (for example with `cf secrets put`):
@@ -47,10 +46,29 @@ Worker, so they only need to be set once (for example with `cf secrets put`):
   defaults to `http://localhost:9050`.
 - `AUTH_SECRET`, `TRUSTED_ORIGINS`, the Stripe keys, Apple/Android/Entra
   credentials and `POSTHOG_*` as used by production.
+- `SERVICES_TOKEN` on the API Worker, matching the services deployment. It
+  authorises hosted billing and signs APNs relay requests.
 - `DEV_MAILBOX_SECRET` on **both** Workers. Previews opt into
   `DEV_MAILBOX=true` + `DEV_MAILBOX_ALLOW_REMOTE=true`, which requires this
   secret; it lets a tester read sign-up codes from `/api/debug/emails` without
   sending real mail. Do not publish the secret with a preview link.
+
+### Services token rollout
+
+`SERVICES_TOKEN` must be byte-for-byte identical on the API Worker and the
+services deployment. It authenticates hosted billing and now also signs APNs
+relay requests, so the two releases must move together:
+
+1. Set `SERVICES_TOKEN` on both sides where only the former relay secret
+   existed.
+2. Deploy the services release and the Cloud release together. Alternatively,
+   stage a services release that accepts both credentials first, then deploy
+   Cloud, then remove the old secret.
+3. Remove `APNS_RELAY_SECRET` from both once Cloud is signing with
+   `SERVICES_TOKEN`.
+
+A self-hosted deployment is unaffected: it authenticates the relay and billing
+with `MATTRAX_LICENSE_KEY` and needs no coordinated rollout.
 
 ## Cloudflare resources
 
