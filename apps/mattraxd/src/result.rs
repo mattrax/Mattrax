@@ -7,8 +7,9 @@
 //! Restricted-software results use a persisted queue and one bounded worker so
 //! network failures cannot stall local enforcement. Delivery is at-least-once:
 //! a crash after a successful POST but before queue removal can replay the same
-//! result. Retries preserve `occurredAt`, so audit consumers should tolerate
-//! duplicate rows with the same rule, action and occurrence timestamp.
+//! result. Retries preserve `occurredAt`, but server audit rows use receipt time,
+//! so consumers should tolerate duplicate rule/action rows with different receipt
+//! timestamps.
 
 use crate::logging::Logger;
 use crate::profiles::InstalledScript;
@@ -159,8 +160,9 @@ fn restricted_curl_arguments(server_url: &str, device_token: &str) -> Vec<String
 
 /// A single network worker drains persisted enforcement results. Enqueueing
 /// never performs network I/O, so an endpoint outage cannot delay later rules.
-/// Delivery is at-least-once; retries keep the original `occurredAt` value and
-/// audit consumers should tolerate duplicate rows for that occurrence.
+/// Delivery is at-least-once; retries keep the original `occurredAt` value, but
+/// server audit rows use receipt time. Consumers should tolerate duplicate
+/// rule/action rows with different receipt timestamps.
 #[derive(Clone)]
 pub struct RestrictedResultQueue {
     path: PathBuf,
