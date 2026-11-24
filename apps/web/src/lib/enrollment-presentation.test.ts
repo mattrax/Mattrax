@@ -36,7 +36,10 @@ describe("enrollment platform readiness", () => {
   it("recognises each usable enrollment payload", () => {
     expect(enrollmentPlatformAvailable("apple", { profile: "plist" })).toBe(true);
     expect(
-      enrollmentPlatformAvailable("windows", { discoveryUrl: "https://mdm.test/windows" }),
+      enrollmentPlatformAvailable("windows", {
+        discoveryUrl: "https://mdm.test/windows",
+        tenantScoped: true,
+      }),
     ).toBe(true);
     expect(
       enrollmentPlatformAvailable("android", {
@@ -102,11 +105,11 @@ describe("enrollment platform readiness", () => {
 
 describe("enrollment branding and dates", () => {
   it("chooses a readable foreground for light and dark brand colours", () => {
-    expect(accessibleBrandForeground("#1c1917")).toBe("#ffffff");
-    expect(accessibleBrandForeground("#2563eb")).toBe("#ffffff");
-    expect(accessibleBrandForeground("#facc15")).toBe("#111111");
-    expect(accessibleBrandForeground("#fff")).toBe("#111111");
-    expect(accessibleBrandForeground("not-a-colour")).toBe("#ffffff");
+    expect(accessibleBrandForeground("#1c1917")).toBe("white");
+    expect(accessibleBrandForeground("#2563eb")).toBe("white");
+    expect(accessibleBrandForeground("#facc15")).toBe("black");
+    expect(accessibleBrandForeground("#fff")).toBe("black");
+    expect(accessibleBrandForeground("not-a-colour")).toBe("white");
   });
 
   it("formats expiry dates consistently for SSR and hydration", () => {

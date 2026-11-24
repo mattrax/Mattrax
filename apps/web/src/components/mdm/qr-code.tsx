@@ -8,7 +8,8 @@ import { qrPath } from "~/lib/qr";
  */
 export function QrCode(props: { value: string; label?: string; class?: string; size?: number }) {
   const qr = createMemo(() => (props.value ? qrPath(props.value) : null));
-  const classes = () => "block h-auto max-w-full bg-white" + (props.class ? " " + props.class : "");
+  const classes = () =>
+    "block h-auto max-w-full bg-[var(--qr-background)]" + (props.class ? " " + props.class : "");
 
   return (
     <Show when={qr()}>
@@ -26,8 +27,8 @@ export function QrCode(props: { value: string; label?: string; class?: string; s
           {/* QR codes need absolute contrast to scan. These colours stay fixed
               in every theme; the quiet zone is part of the SVG viewBox, not CSS
               padding, so screenshots and prints preserve it. */}
-          <rect width={code().size} height={code().size} fill="#ffffff" />
-          <path d={code().path} fill="#000000" />
+          <rect width={code().size} height={code().size} fill="var(--qr-background)" />
+          <path d={code().path} fill="var(--qr-foreground)" />
         </svg>
       )}
     </Show>

@@ -33,6 +33,12 @@ html {
   background-color: var(--background);
 }
 
+:root {
+  /* QR modules keep absolute contrast in every theme and in forced colors. */
+  --qr-background: #ffffff;
+  --qr-foreground: #000000;
+}
+
 body {
   min-height: 100svh;
 }

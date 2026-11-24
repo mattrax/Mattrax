@@ -275,8 +275,8 @@ test.describe("device enrollment", () => {
     await expect(page.getByText(/scan to open this page/i)).toBeVisible();
     const qr = page.getByRole("img", { name: /qr code for this enrollment link/i });
     await expect(qr).toBeVisible();
-    await expect(qr.locator("rect")).toHaveAttribute("fill", "#ffffff");
-    await expect(qr.locator("path")).toHaveAttribute("fill", "#000000");
+    await expect(qr.locator("rect")).toHaveAttribute("fill", "var(--qr-background)");
+    await expect(qr.locator("path")).toHaveAttribute("fill", "var(--qr-foreground)");
 
     const decoded = await decodeQr(page, qr);
     expect(decoded?.data).toBe(new URL(`/enroll/${enrollment.id}`, page.url()).toString());

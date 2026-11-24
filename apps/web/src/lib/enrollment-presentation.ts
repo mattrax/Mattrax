@@ -125,7 +125,7 @@ export const enrollmentPlatformUnavailableCopy = (
 };
 
 /** Pick the higher-contrast foreground for an arbitrary tenant brand colour. */
-export const accessibleBrandForeground = (colour: string): "#ffffff" | "#111111" => {
+export const accessibleBrandForeground = (colour: string): "white" | "black" => {
   const hex = colour.trim().replace(/^#/, "");
   const expanded = /^[0-9a-f]{3}$/i.test(hex)
     ? hex
@@ -134,7 +134,7 @@ export const accessibleBrandForeground = (colour: string): "#ffffff" | "#111111"
         .join("")
     : hex;
 
-  if (!/^[0-9a-f]{6}$/i.test(expanded)) return "#ffffff";
+  if (!/^[0-9a-f]{6}$/i.test(expanded)) return "white";
 
   const channels = [0, 2, 4].map((offset) => {
     const channel = Number.parseInt(expanded.slice(offset, offset + 2), 16) / 255;
@@ -146,7 +146,7 @@ export const accessibleBrandForeground = (colour: string): "#ffffff" | "#111111"
   const whiteContrast = 1.05 / (luminance + 0.05);
   const darkContrast = (luminance + 0.05) / 0.05;
 
-  return whiteContrast >= darkContrast ? "#ffffff" : "#111111";
+  return whiteContrast >= darkContrast ? "white" : "black";
 };
 
 /** Stable across SSR and hydration, and explicit about the time zone. */
