@@ -349,6 +349,42 @@ describe("OnboardingChecklist dismissal", () => {
     expect(errors).toEqual([]);
   });
 
+  it("marks the cache when the PATCH succeeds before cancellation settles", async () => {
+    const client = makeClient();
+    const errors: unknown[] = [];
+    const cancellation = deferred<void>();
+    api.getTenantOnboarding.mockResolvedValue(onboardingState());
+    api.patchTenantOnboarding.mockResolvedValue({ status: "ok" });
+    vi.spyOn(client, "cancelQueries").mockReturnValueOnce(cancellation.promise);
+
+    const host = mount(() => <OnboardingChecklist tenantId="tenant-1" />, client, errors);
+    flush();
+    await vi.waitFor(() => expect(host.textContent).toContain("Get started"));
+    expect(api.getTenantOnboarding).toHaveBeenCalledTimes(1);
+
+    dismissButton(host)!.click();
+    await Promise.resolve();
+    flush();
+
+    await vi.waitFor(() =>
+      expect(readOnboardingDismissal(storage, "account-1", "tenant-1")).toBe(true),
+    );
+    await vi.waitFor(() => {
+      flush();
+      expect(host.querySelector("#onboarding-title")).toBeNull();
+    });
+
+    cancellation.resolve();
+    flush();
+    await Promise.resolve();
+    flush();
+
+    expect(readOnboardingDismissal(storage, "account-1", "tenant-1")).toBe(true);
+    expect(host.querySelector("#onboarding-title")).toBeNull();
+    expect(api.getTenantOnboarding).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([]);
+  });
+
   it("keeps a successful dismissal and remembers it for the next mount", async () => {
     const client = makeClient();
     const errors: unknown[] = [];
