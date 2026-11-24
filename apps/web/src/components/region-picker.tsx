@@ -461,7 +461,7 @@ export function RegionPicker(props: {
                         <radialGradient id="globe-shade" cx="34%" cy="28%" r="78%">
                           <stop offset="0%" stop-color="var(--card)" stop-opacity="0" />
                           <stop offset="72%" stop-color="var(--foreground)" stop-opacity="0.02" />
-                          <stop offset="100%" stop-color="var(--foreground)" stop-opacity="0.14" />
+                          <stop offset="100%" stop-color="var(--foreground)" stop-opacity="0.08" />
                         </radialGradient>
                       </defs>
                       <path

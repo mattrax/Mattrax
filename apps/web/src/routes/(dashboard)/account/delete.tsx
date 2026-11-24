@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/solid-query";
 import { CheckboxField } from "@mattrax/ui";
 import { createSignal, For, Show } from "solid-js";
-import { Page, PageHeader, Panel } from "~/components/mdm/common";
+import { Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { Skeleton } from "~/components/ui/skeleton";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseQueries, meQueryOptions } from "~/lib/enterprise";
@@ -20,21 +21,28 @@ export default function DeleteAccountPage() {
   const email = () => me.data?.account.email ?? session().data?.user?.email ?? "";
   const preview = useQuery(() => enterpriseQueries.accountDeletion());
   const [acknowledged, setAcknowledged] = createSignal(false);
+  const [confirmEmail, setConfirmEmail] = createSignal("");
   const [pending, setPending] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+
+  const emailMatches = () => {
+    const expected = email().trim().toLowerCase();
+
+    return expected.length > 0 && confirmEmail().trim().toLowerCase() === expected;
+  };
 
   const remove = async () => {
     setError(null);
     setPending(true);
 
     try {
-      await enterprise.deleteAccount({ confirmEmail: email() });
+      await enterprise.deleteAccount({ confirmEmail: confirmEmail() });
       window.location.href = "/";
     } catch (error_) {
       setError(
         errorMessage(
           raisedFailure(error_),
-          "Could not complete account deletion. Retry; if the tenant was already deleted, the retry finishes removing the account.",
+          "Could not complete account deletion. Nothing else was changed, so your sign-in still works; retry to finish.",
         ),
       );
       void preview.refetch();
@@ -205,10 +213,23 @@ export default function DeleteAccountPage() {
                 title="Confirm deletion"
                 description="This is the last step. The account and tenant are removed immediately."
               >
+                <Field
+                  label="Type your email address to confirm"
+                  hint={email() ? `The account is ${email()}.` : undefined}
+                >
+                  <Input
+                    type="email"
+                    autocomplete="email"
+                    value={confirmEmail()}
+                    onInput={(event) => setConfirmEmail(event.currentTarget.value)}
+                  />
+                </Field>
+
                 <CheckboxField
+                  class="mt-2"
                   checked={acknowledged()}
                   onCheckedChange={setAcknowledged}
-                  disabled={pending()}
+                  disabled={!emailMatches() || pending()}
                   label={
                     check().tenant
                       ? `I understand that deleting my account also deletes ${check().tenant!.name} and cannot be undone.`
@@ -232,7 +253,7 @@ export default function DeleteAccountPage() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    disabled={!acknowledged() || pending()}
+                    disabled={!emailMatches() || !acknowledged() || pending()}
                     onClick={() => void remove()}
                   >
                     {pending() ? "Deleting…" : "Delete account and tenant"}

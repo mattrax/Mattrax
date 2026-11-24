@@ -97,10 +97,10 @@ export function Hero() {
                 <Show
                   when={cta()}
                   fallback={
-                    <div
-                      class="h-10 w-32 animate-pulse rounded-lg bg-secondary"
-                      aria-hidden="true"
-                    />
+                    <Button as="a" href="/register" size="lg" class="h-10 px-5">
+                      Start free
+                      <ArrowRight class="size-3.5" />
+                    </Button>
                   }
                 >
                   {(action) => (

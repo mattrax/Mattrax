@@ -71,8 +71,9 @@ shared tenant; account deletion is the separate, self-service flow below.
 
 **Account → Delete account** deletes the dashboard account *and* the tenant it owns.
 The button opens an email dialog, then navigates to `/account/delete` as a separate page.
-That page lists the tenant, its member and device counts, and every effect of the cascade
-before the acknowledgement and destructive button are shown.
+That page lists the tenant, its member and device counts, and every effect of the cascade.
+The email is typed again there, then acknowledged, before the destructive button is
+enabled.
 
 The API enforces the same rules as the page:
 
@@ -104,10 +105,10 @@ nobody signed in; registration remains open, and a new account can create a fres
 
 ### Signed-in visitors on public pages
 
-When a signed-in account visits a public or marketing page, its main call to action
-becomes **Open dashboard** and the sign-in/register links are hidden. The login and
-registration pages keep their forms, but replace their cross-link with **Open dashboard**
-and explain that a second account needs a fresh sign-in.
+On marketing pages, a signed-in visitor's main call to action becomes **Open dashboard**
+and the sign-in/register links are hidden. The login and registration pages keep their
+forms; their cross-link becomes **Open dashboard**, and the sign-up warning explains that
+a second account needs a fresh sign-in.
 
 ## Onboarding email
 

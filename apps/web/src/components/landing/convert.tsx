@@ -96,10 +96,14 @@ export function Pricing() {
                   <Show
                     when={action(plan)}
                     fallback={
-                      <div
-                        class="h-9 w-full animate-pulse rounded-lg bg-hover"
-                        aria-hidden="true"
-                      />
+                      <Button
+                        as="a"
+                        href="/register"
+                        variant={plan.secondary ? "outline" : "default"}
+                        class="w-full"
+                      >
+                        Start free
+                      </Button>
                     }
                   >
                     {(value) => (
@@ -259,7 +263,10 @@ export function Closing() {
             <Show
               when={cta()}
               fallback={
-                <div class="h-10 w-32 animate-pulse rounded-lg bg-secondary" aria-hidden="true" />
+                <Button as="a" href="/register" size="lg" class="h-10 px-5">
+                  Start free
+                  <ArrowRight class="size-3.5" />
+                </Button>
               }
             >
               {(action) => (

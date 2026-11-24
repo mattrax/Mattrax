@@ -351,8 +351,13 @@ describe("deleting an account", () => {
     expect(db.store.organization).toHaveLength(1);
   });
 
-  it("reports that the tenant is gone when only the account cleanup fails, and retries", async () => {
+  it("rolls back auth and audit when the account delete fails, then retries", async () => {
     const { db, service } = makeContext();
+
+    // The user's live session and passkey must survive a failed cleanup.
+    db.store.auth_sessions.push({ id: "session-1", subjectId: "user-1" });
+    db.store.auth_credentials.push({ id: "credential-1", subjectId: "user-1" });
+    db.store.auth_passkeyCredentials.push({ id: "passkey-1", subjectId: "user-1" });
 
     const originalDelete = db.delete;
     const tableName = (table: any) => {
@@ -374,10 +379,22 @@ describe("deleting an account", () => {
 
     expect(failureTag(failed)).toBe("EnterpriseDbError");
     expect((failed as any).failure.message).toContain("tenant was deleted");
+    expect((failed as any).failure.message).toContain("sign-in still works");
     expect(db.store.account).toHaveLength(1);
     expect(db.store.organization).toHaveLength(0);
+    expect(db.store.auth_sessions).toHaveLength(1);
+    expect(db.store.auth_credentials).toHaveLength(1);
+    expect(db.store.auth_passkeyCredentials).toHaveLength(1);
+    expect(
+      Object.values(db.store)
+        .flat()
+        .filter((row: any) => row.action === "account.deleted"),
+    ).toHaveLength(0);
 
     db.delete = originalDelete;
+
+    // The real tenant delete cascades the member row; model that before retry.
+    db.store.member = [];
 
     const retried = await submit(
       service.deleteMe(request(headers), { confirmEmail: "owner@example.com" }),
@@ -386,6 +403,12 @@ describe("deleting an account", () => {
     expect((retried as any)._tag).toBe("Success");
     expect((retried as any).success.deletedTenants).toEqual([]);
     expect(db.store.account).toHaveLength(0);
+    expect(db.store.auth_sessions).toHaveLength(0);
+    expect(
+      Object.values(db.store)
+        .flat()
+        .filter((row: any) => row.action === "account.deleted"),
+    ).toHaveLength(1);
   });
 
   it("deletes the account, cascades the solo tenant and records the cascade", async () => {
@@ -404,11 +427,12 @@ describe("deleting an account", () => {
     expect(db.store.organization).toHaveLength(0);
     expect(db.store.member).toHaveLength(0);
 
-    const audit = Object.values(db.store)
+    const audits = Object.values(db.store)
       .flat()
-      .find((row: any) => row.action === "account.deleted");
+      .filter((row: any) => row.action === "account.deleted");
 
-    expect(audit).toMatchObject({
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
       targetType: "account",
       targetId: "user-1",
       metadata: {

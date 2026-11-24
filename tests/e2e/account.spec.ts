@@ -101,6 +101,7 @@ test.describe("account deletion", () => {
     await expect(
       page.getByRole("heading", { name: "Delete your account and tenant", exact: true }),
     ).toBeVisible();
+    await page.getByLabel("Type your email address to confirm").fill(email);
   };
 
   test("deletes the account and its solo tenant after a client-side confirmation", async ({
