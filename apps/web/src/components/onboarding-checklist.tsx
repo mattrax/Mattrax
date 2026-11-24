@@ -35,6 +35,14 @@ import { resolveTenantId } from "~/lib/tenant";
  * aggregate query stays disabled until membership permissions are known and
  * remains disabled for a dismissed checklist.
  */
+/** Read secondary query data only after success so pending async values never throw or suspend during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export function OnboardingChecklist(props: { tenantId: string }) {
   const { can, canAny, known, tenant } = useTenantPermissions();
   const session = authClient.useSession();
@@ -84,20 +92,24 @@ export function OnboardingChecklist(props: { tenantId: string }) {
   // phase is the supported place for this synchronisation, and keeping it out
   // of the options getter avoids making `enabled` depend on its own result.
   createEffect(
-    () => onboardingIsDismissed(state.data),
+    () => onboardingIsDismissed(settledQueryData(state)),
     (isDismissed) => {
       setDismissed(isDismissed);
     },
   );
 
-  const steps = createMemo(() =>
-    state.data ? deriveOnboardingSteps(props.tenantId, state.data, can) : [],
-  );
+  // One settled read per computation keeps the narrowing local to the memo.
+  const steps = createMemo(() => {
+    const data = settledQueryData(state);
 
-  const visible = createMemo(
-    () =>
-      state.data !== undefined && !locallyDismissed() && shouldShowOnboarding(state.data, steps()),
-  );
+    return data ? deriveOnboardingSteps(props.tenantId, data, can) : [];
+  });
+
+  const visible = createMemo(() => {
+    const data = settledQueryData(state);
+
+    return data !== undefined && !locallyDismissed() && shouldShowOnboarding(data, steps());
+  });
 
   const progress = createMemo(() => onboardingProgress(steps()));
 

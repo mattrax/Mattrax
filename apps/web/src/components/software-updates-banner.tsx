@@ -18,6 +18,14 @@ const plural = (count: number, singular: string, pluralForm = `${singular}s`) =>
  * unavailable, so this component makes no network call of its own and cannot
  * turn a SOFA outage into a dashboard error.
  */
+/** Read secondary query data only after success so pending async values never throw or suspend during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export function SoftwareUpdatesBanner(props: { tenantId: string }) {
   const { can } = useCan();
 
@@ -26,7 +34,7 @@ export function SoftwareUpdatesBanner(props: { tenantId: string }) {
     enabled: can("devices.read"),
   }));
 
-  const counts = () => summary.data?.counts;
+  const counts = () => settledQueryData(summary)?.counts;
   const behind = () => counts()?.behind ?? 0;
 
   const breakdown = () => {
@@ -61,7 +69,7 @@ export function SoftwareUpdatesBanner(props: { tenantId: string }) {
           <Show when={breakdown()}>
             <p class="mt-0.5 text-muted-foreground">{breakdown()}</p>
           </Show>
-          <Show when={summary.data?.feed.stale}>
+          <Show when={settledQueryData(summary)?.feed.stale}>
             <p class="mt-0.5 text-[11px] text-muted-foreground">
               The update feed is stale; these statuses may be out of date.
             </p>

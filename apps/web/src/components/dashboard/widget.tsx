@@ -58,6 +58,14 @@ const isWeakKey = (value: unknown): value is object =>
  * Widget config is immutable JSON: a new version arrives as a new object.
  * Cache the decoded value so the batch provider and widget view can share it.
  */
+/** Read query data only after success so pending async values never suspend during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export const createDashboardWidgetConfigResolver = (
   decode: (config: unknown) => Option.Option<QueryConfig>,
 ) => {
@@ -345,7 +353,9 @@ export function DashboardWidgetBatchProvider(props: {
 
     return {
       get data() {
-        return batch()?.data?.results[offset];
+        const current = batch();
+
+        return current ? settledQueryData(current)?.results[offset] : undefined;
       },
       get pending() {
         return batch()?.isPending ?? true;
@@ -407,7 +417,7 @@ export function DashboardWidgetView(props: {
     enabled: !isServer && !props.batch && props.widget.type !== "markdown",
   }));
 
-  const data = () => props.batch?.data ?? result.data;
+  const data = () => props.batch?.data ?? settledQueryData(result);
   const pending = () => props.batch?.pending ?? result.isPending;
   const error = () => props.batch?.error ?? result.error;
   const retry = () => (props.batch ? props.batch.retry() : void result.refetch());
