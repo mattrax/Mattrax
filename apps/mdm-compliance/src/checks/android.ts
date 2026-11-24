@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { Schema } from "effect";
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
+import { Digest } from "effect/crypto";
 import {
   PolicyMergeError,
   androidPolicyHash,
@@ -14,6 +15,7 @@ import {
   mergeAndroidPolicies,
   notificationType,
 } from "@mattrax/dm-android";
+import type { AndroidPolicyConfiguration } from "@mattrax/dm-android";
 import type { AndroidPubSubResult } from "@mattrax/enterprise-backend";
 import type { Check } from "../types.ts";
 import { createAndroidHarness } from "../harness/android.ts";
@@ -85,6 +87,12 @@ const rejectsKind = async (work: Promise<object>, kind: string): Promise<void> =
     return true;
   });
 };
+
+const hashPolicy = (policy: Schema.JsonObject) =>
+  androidPolicyHash(policy).pipe(Effect.provide(Digest.layerWebCrypto));
+
+const compileWithHash = (configurations: ReadonlyArray<AndroidPolicyConfiguration>) =>
+  compileAndroidPolicyWithHash(configurations).pipe(Effect.provide(Digest.layerWebCrypto));
 
 export const androidChecks: ReadonlyArray<Check> = [
   check(
@@ -252,19 +260,21 @@ export const androidChecks: ReadonlyArray<Check> = [
     "Android policies merge deterministically",
     "Scalars win in order, objects merge deeply and arrays de-duplicate by canonical value.",
     () =>
-      Effect.sync(() => {
-        const merged = mergeAndroidPolicies([
-          {
-            cameraDisabled: true,
-            applications: [{ packageName: "com.example", installType: "AVAILABLE" }],
-            statusReportingSettings: { deviceSettingsEnabled: true },
-          },
-          {
-            cameraDisabled: false,
-            applications: [{ installType: "AVAILABLE", packageName: "com.example" }],
-            statusReportingSettings: { softwareInfoEnabled: true },
-          },
-        ]);
+      Effect.gen(function* () {
+        const merged = yield* Effect.fromResult(
+          mergeAndroidPolicies([
+            {
+              cameraDisabled: true,
+              applications: [{ packageName: "com.example", installType: "AVAILABLE" }],
+              statusReportingSettings: { deviceSettingsEnabled: true },
+            },
+            {
+              cameraDisabled: false,
+              applications: [{ installType: "AVAILABLE", packageName: "com.example" }],
+              statusReportingSettings: { softwareInfoEnabled: true },
+            },
+          ]),
+        );
 
         assert.deepEqual(merged, {
           applications: [{ installType: "AVAILABLE", packageName: "com.example" }],
@@ -288,11 +298,13 @@ export const androidChecks: ReadonlyArray<Check> = [
     "name and policyName identify Google resources and must be rejected at the top level.",
     () =>
       Effect.sync(() => {
-        assert.throws(
-          () => mergeAndroidPolicies([{ name: "enterprises/LC123/policies/other" }]),
-          PolicyMergeError,
-        );
-        assert.throws(() => mergeAndroidPolicies([{ policyName: "other" }]), PolicyMergeError);
+        for (const key of ["name", "policyName"]) {
+          const result = mergeAndroidPolicies([{ [key]: "enterprises/LC123/policies/other" }]);
+          assert.equal(Result.isFailure(result), true);
+
+          if (Result.isFailure(result))
+            assert.equal(result.failure instanceof PolicyMergeError, true);
+        }
       }),
   ),
   check(
@@ -301,15 +313,17 @@ export const androidChecks: ReadonlyArray<Check> = [
     "Android policy compiler filters platform and strips drafts",
     "Only mttx.android.policy.* configurations contribute, and designer draft state is never sent to Google.",
     () =>
-      Effect.sync(() => {
-        const policy = compileAndroidPolicy([
-          { kind: "mttx.apple.custom.designer", data: { content: "ignored" } },
-          {
-            kind: "mttx.android.policy.designer",
-            data: { policy: { cameraDisabled: true }, draft: { name: "draft" } },
-          },
-          { kind: "mttx.android.policy.handwritten", data: { screenCaptureDisabled: true } },
-        ]);
+      Effect.gen(function* () {
+        const policy = yield* Effect.fromResult(
+          compileAndroidPolicy([
+            { kind: "mttx.apple.custom.designer", data: { content: "ignored" } },
+            {
+              kind: "mttx.android.policy.designer",
+              data: { policy: { cameraDisabled: true }, draft: { name: "draft" } },
+            },
+            { kind: "mttx.android.policy.handwritten", data: { screenCaptureDisabled: true } },
+          ]),
+        );
 
         assert.deepEqual(policy, { cameraDisabled: true, screenCaptureDisabled: true });
       }),
@@ -321,37 +335,26 @@ export const androidChecks: ReadonlyArray<Check> = [
     "A no-op policy rewrite must not produce a new AMAPI policy id.",
     () =>
       Effect.gen(function* () {
-        const first = yield* Effect.promise(async () =>
-          compileAndroidPolicyWithHash([
-            { kind: "mttx.android.policy.designer", data: { policy: { cameraDisabled: true } } },
-          ]),
-        );
+        const first = yield* compileWithHash([
+          { kind: "mttx.android.policy.designer", data: { policy: { cameraDisabled: true } } },
+        ]);
 
-        const second = yield* Effect.promise(async () =>
-          compileAndroidPolicyWithHash([
-            {
-              kind: "mttx.android.policy.designer",
-              data: { policy: { cameraDisabled: true, screenCaptureDisabled: false } },
-            },
-          ]),
-        );
+        const second = yield* compileWithHash([
+          {
+            kind: "mttx.android.policy.designer",
+            data: { policy: { cameraDisabled: true, screenCaptureDisabled: false } },
+          },
+        ]);
 
-        const reordered = yield* Effect.promise(async () =>
-          androidPolicyHash({
-            screenCaptureDisabled: false,
-            cameraDisabled: true,
-          }),
-        );
+        const reordered = yield* hashPolicy({
+          screenCaptureDisabled: false,
+          cameraDisabled: true,
+        });
 
-        assert.equal(
-          first.hash,
-          yield* Effect.promise(async () => androidPolicyHash({ cameraDisabled: true })),
-        );
+        assert.equal(first.hash, yield* hashPolicy({ cameraDisabled: true }));
         assert.equal(
           reordered,
-          yield* Effect.promise(async () =>
-            androidPolicyHash({ cameraDisabled: true, screenCaptureDisabled: false }),
-          ),
+          yield* hashPolicy({ cameraDisabled: true, screenCaptureDisabled: false }),
         );
         assert.notEqual(first.hash, second.hash);
         assert.match(androidPolicyIdForHash(first.hash), /^mattrax-[a-z0-9]{1,24}$/);
@@ -649,6 +652,48 @@ export const androidChecks: ReadonlyArray<Check> = [
       }),
   ),
   check(
+    "route.pubsub-oidc-cache",
+    "authentication",
+    "Android Pub/Sub route shares its scoped JWKS cache",
+    "Authenticated requests through the production route must reuse one scoped verifier and signing-key fetch.",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* Effect.promise(async () => createAndroidHarness());
+        const token = yield* Effect.promise(async () => harness.signToken());
+        const body = harness.pushBody(
+          { name: deviceName, state: "ACTIVE" },
+          "ENROLLMENT",
+          "route-message-1",
+        );
+        const deliver = () =>
+          harness.routeHandler(
+            new Request("https://mdm.example.test/api/v1/android/pubsub", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify(body),
+            }),
+          );
+
+        const first = yield* Effect.promise(async () => deliver());
+        const duplicate = yield* Effect.promise(async () => deliver());
+
+        assert.equal(first.status, 200);
+        assert.equal(duplicate.status, 200);
+        assert.deepEqual(yield* Effect.promise(async () => first.json()), {
+          status: "ok",
+          type: "ENROLLMENT",
+        });
+        assert.deepEqual(yield* Effect.promise(async () => duplicate.json()), {
+          status: "duplicate",
+          type: "ENROLLMENT",
+        });
+        assert.equal(harness.calls.jwksRequests, 1);
+      }),
+  ),
+  check(
     "pubsub.malformed-payload",
     "errors",
     "Malformed Pub/Sub payload is a 400-class delivery error",
@@ -725,33 +770,25 @@ export const androidChecks: ReadonlyArray<Check> = [
     "Day-N policy edits must re-sync only when the compiled policy actually changes.",
     () =>
       Effect.gen(function* () {
-        const before = yield* Effect.promise(async () =>
-          compileAndroidPolicyWithHash([
-            { kind: "mttx.android.policy.designer", data: { policy: { cameraDisabled: true } } },
-          ]),
-        );
+        const before = yield* compileWithHash([
+          { kind: "mttx.android.policy.designer", data: { policy: { cameraDisabled: true } } },
+        ]);
 
-        const after = yield* Effect.promise(async () =>
-          compileAndroidPolicyWithHash([
-            { kind: "mttx.android.policy.designer", data: { policy: { cameraDisabled: false } } },
-          ]),
-        );
+        const after = yield* compileWithHash([
+          { kind: "mttx.android.policy.designer", data: { policy: { cameraDisabled: false } } },
+        ]);
 
         assert.notEqual(before.hash, after.hash);
         assert.notEqual(androidPolicyIdForHash(before.hash), androidPolicyIdForHash(after.hash));
-        assert.equal(
-          before.hash,
-          yield* Effect.promise(async () =>
-            androidPolicyHash(
-              compileAndroidPolicy([
-                {
-                  kind: "mttx.android.policy.designer",
-                  data: { policy: { cameraDisabled: true } },
-                },
-              ]),
-            ),
-          ),
+        const compiled = yield* Effect.fromResult(
+          compileAndroidPolicy([
+            {
+              kind: "mttx.android.policy.designer",
+              data: { policy: { cameraDisabled: true } },
+            },
+          ]),
         );
+        assert.equal(before.hash, yield* hashPolicy(compiled));
       }),
     true,
   ),

@@ -1,13 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { Context, Effect, Exit, Fiber, Layer, Scope } from "effect";
 import type { Schema } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { TestClock } from "effect/testing";
 import {
   PubSubAuthError,
   PubSubOidcVerifier,
   PubSubOidcVerifierLive,
   base64UrlEncode,
-  verifyPubSubOidcToken,
 } from "../src/index.js";
 import type { PubSubOidcVerifierConfig } from "../src/index.js";
 import { mockFetch } from "./helpers.js";
@@ -77,16 +77,6 @@ function claims(overrides: Schema.JsonObject = {}): Schema.JsonObject {
   );
 }
 
-function config(overrides: Partial<PubSubOidcVerifierConfig> = {}): PubSubOidcVerifierConfig {
-  return {
-    audience,
-    serviceAccountEmail,
-    jwksUri,
-    fetch: async () => jwksResponse(),
-    ...overrides,
-  };
-}
-
 function scopedConfig(overrides: Partial<PubSubOidcVerifierConfig> = {}): PubSubOidcVerifierConfig {
   return {
     audience,
@@ -99,13 +89,28 @@ function scopedConfig(overrides: Partial<PubSubOidcVerifierConfig> = {}): PubSub
   };
 }
 
+const fetchLayer = FetchHttpClient.layer.pipe(
+  Layer.provide(Layer.succeed(FetchHttpClient.Fetch, async () => jwksResponse())),
+  Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })),
+);
+
+const verifyEffect = (token: string, overrides: Partial<PubSubOidcVerifierConfig> = {}) =>
+  Effect.gen(function* () {
+    const verifier = yield* PubSubOidcVerifier;
+
+    return yield* verifier.verify(token);
+  }).pipe(
+    Effect.provide(PubSubOidcVerifierLive(scopedConfig(overrides))),
+    Effect.provide(fetchLayer),
+  );
+
 const verify = (token: string, overrides: Partial<PubSubOidcVerifierConfig> = {}) =>
-  Effect.runPromise(verifyPubSubOidcToken(token, config(overrides)));
+  Effect.runPromise(verifyEffect(token, overrides));
 
 const rejection = (token: string, overrides: Partial<PubSubOidcVerifierConfig> = {}) =>
-  Effect.runPromise(Effect.flip(verifyPubSubOidcToken(token, config(overrides))));
+  Effect.runPromise(Effect.flip(verifyEffect(token, overrides)));
 
-describe("verifyPubSubOidcToken", () => {
+describe("PubSubOidcVerifier", () => {
   beforeAll(async () => {
     const pair = await crypto.subtle.generateKey(
       {

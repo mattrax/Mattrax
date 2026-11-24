@@ -170,7 +170,7 @@ function canonicalizeApplications<T extends Record<string, Schema.Json>>(policy:
  */
 export type PolicyDocumentInput = { readonly [key: string]: Schema.Json | undefined };
 
-export function mergeAndroidPoliciesResult(
+export function mergeAndroidPolicies(
   policies: ReadonlyArray<PolicyDocumentInput>,
 ): Result.Result<Schema.JsonObject, PolicyMergeError> {
   return Result.gen(function* () {
@@ -201,15 +201,8 @@ export function mergeAndroidPoliciesResult(
   });
 }
 
-/** Throwing compatibility wrapper for existing synchronous callers. */
-export function mergeAndroidPolicies(
-  policies: ReadonlyArray<PolicyDocumentInput>,
-): Schema.JsonObject {
-  return Result.getOrThrow(mergeAndroidPoliciesResult(policies));
-}
-
 /** Typed SHA-256 hash of the canonical JSON representation of a policy. */
-export const androidPolicyHashEffect = Effect.fnUntraced(function* (
+export const androidPolicyHash = Effect.fnUntraced(function* (
   policy: Schema.JsonObject,
 ): Effect.fn.Return<string, AndroidPolicyHashError, Digest.Digest> {
   const digest = yield* Digest.Digest;
@@ -227,16 +220,6 @@ export const androidPolicyHashEffect = Effect.fnUntraced(function* (
       ),
     );
 });
-
-/**
- * Promise compatibility wrapper. New Effect code should use
- * `androidPolicyHashEffect` so crypto failures stay in the typed error channel.
- */
-export async function androidPolicyHash(policy: Schema.JsonObject): Promise<string> {
-  return Effect.runPromise(
-    androidPolicyHashEffect(policy).pipe(Effect.provide(Digest.layerWebCrypto)),
-  );
-}
 
 /** True for tenant configuration kinds that contribute to an AMAPI policy. */
 export const isAndroidPolicyKind = (kind: string): boolean =>
@@ -297,7 +280,7 @@ function policyFromConfiguration(
  * AMAPI policy. Non-Android configuration kinds are ignored, so the same
  * resolved policy set used for Apple/Windows can be passed in.
  */
-export function compileAndroidPolicyResult(
+export function compileAndroidPolicy(
   configurations: ReadonlyArray<AndroidPolicyConfiguration>,
 ): Result.Result<Schema.JsonObject, PolicyMergeError> {
   return Result.gen(function* () {
@@ -309,15 +292,8 @@ export function compileAndroidPolicyResult(
       }
     }
 
-    return yield* mergeAndroidPoliciesResult(policies);
+    return yield* mergeAndroidPolicies(policies);
   });
-}
-
-/** Throwing compatibility wrapper for existing synchronous callers. */
-export function compileAndroidPolicy(
-  configurations: ReadonlyArray<AndroidPolicyConfiguration>,
-): Schema.JsonObject {
-  return Result.getOrThrow(compileAndroidPolicyResult(configurations));
 }
 
 /**
@@ -336,30 +312,21 @@ export function androidPolicyIdForHash(hash: string): string {
 }
 
 /** Compile and hash with typed validation and crypto failures. */
-export const compileAndroidPolicyWithHashEffect = Effect.fnUntraced(function* (
+export const compileAndroidPolicyWithHash = Effect.fnUntraced(function* (
   configurations: ReadonlyArray<AndroidPolicyConfiguration>,
 ): Effect.fn.Return<
   { policy: Schema.JsonObject; hash: string },
   PolicyMergeError | AndroidPolicyHashError,
   Digest.Digest
 > {
-  const compiled = compileAndroidPolicyResult(configurations);
+  const compiled = compileAndroidPolicy(configurations);
 
   if (Result.isFailure(compiled)) return yield* Effect.fail(compiled.failure);
 
   const policy = compiled.success;
 
-  return { policy, hash: yield* androidPolicyHashEffect(policy) };
+  return { policy, hash: yield* androidPolicyHash(policy) };
 });
-
-/** Promise compatibility wrapper for existing callers. */
-export async function compileAndroidPolicyWithHash(
-  configurations: ReadonlyArray<AndroidPolicyConfiguration>,
-): Promise<{ policy: Schema.JsonObject; hash: string }> {
-  return Effect.runPromise(
-    compileAndroidPolicyWithHashEffect(configurations).pipe(Effect.provide(Digest.layerWebCrypto)),
-  );
-}
 
 /** One application assignment the Android management API should apply. */
 export type AndroidAssignedApplication = {

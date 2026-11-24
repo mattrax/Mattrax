@@ -4,34 +4,45 @@ import { Digest } from "effect/crypto";
 import {
   AndroidPolicyHashError,
   PolicyMergeError,
-  androidPolicyHashEffect,
   androidPolicyHash,
   androidPolicyIdForHash,
   canonicalPolicyJson,
   compileAndroidPolicy,
-  compileAndroidPolicyResult,
   compileAndroidPolicyWithHash,
-  compileAndroidPolicyWithHashEffect,
   mergeAndroidPolicies,
-  mergeAndroidPoliciesResult,
   mergeAssignedAndroidApplications,
 } from "../src/index.js";
+import type { AndroidPolicyConfiguration, PolicyDocumentInput } from "../src/index.js";
+
+const merge = (...policies: ReadonlyArray<PolicyDocumentInput>) =>
+  Result.getOrThrow(mergeAndroidPolicies(policies));
+
+const compile = (...configurations: ReadonlyArray<AndroidPolicyConfiguration>) =>
+  Result.getOrThrow(compileAndroidPolicy(configurations));
+
+const hash = (policy: Schema.JsonObject) =>
+  Effect.runPromise(androidPolicyHash(policy).pipe(Effect.provide(Digest.layerWebCrypto)));
+
+const compileWithHash = (...configurations: ReadonlyArray<AndroidPolicyConfiguration>) =>
+  Effect.runPromise(
+    compileAndroidPolicyWithHash(configurations).pipe(Effect.provide(Digest.layerWebCrypto)),
+  );
 
 describe("mergeAndroidPolicies", () => {
   it("lets later policies win for scalar values", () => {
-    const merged = mergeAndroidPolicies([
+    const merged = merge(
       { screenCaptureDisabled: false, minimumApiLevel: 30 },
       { screenCaptureDisabled: true },
-    ]);
+    );
 
     expect(merged).toEqual({ minimumApiLevel: 30, screenCaptureDisabled: true });
   });
 
   it("deeply merges nested objects", () => {
-    const merged = mergeAndroidPolicies([
+    const merged = merge(
       { statusReportingSettings: { deviceSettingsEnabled: true, softwareInfoEnabled: true } },
       { statusReportingSettings: { softwareInfoEnabled: false } },
-    ]);
+    );
 
     expect(merged).toEqual({
       statusReportingSettings: { deviceSettingsEnabled: true, softwareInfoEnabled: false },
@@ -39,10 +50,10 @@ describe("mergeAndroidPolicies", () => {
   });
 
   it("concatenates arrays and drops duplicates in first-seen order", () => {
-    const merged = mergeAndroidPolicies([
+    const merged = merge(
       { accountTypesWithManagementDisabled: ["a", "b"] },
       { accountTypesWithManagementDisabled: ["b", "c"] },
-    ]);
+    );
 
     expect(merged).toEqual({ accountTypesWithManagementDisabled: ["a", "b", "c"] });
   });
@@ -50,10 +61,10 @@ describe("mergeAndroidPolicies", () => {
   it("dedupes arrays of objects by canonical value", () => {
     const app = { packageName: "com.example", installType: "AVAILABLE" };
 
-    const merged = mergeAndroidPolicies([
+    const merged = merge(
       { applications: [app] },
       { applications: [{ installType: "AVAILABLE", packageName: "com.example" }] },
-    ]);
+    );
 
     expect(merged).toEqual({ applications: [app] });
   });
@@ -61,22 +72,19 @@ describe("mergeAndroidPolicies", () => {
   it("skips null and undefined instead of erasing earlier values", () => {
     const invalid = { cameraDisabled: null, applications: undefined };
 
-    const merged = mergeAndroidPolicies([
-      { cameraDisabled: true, applications: [{ packageName: "a" }] },
-      invalid,
-    ]);
+    const merged = merge({ cameraDisabled: true, applications: [{ packageName: "a" }] }, invalid);
 
     expect(merged).toEqual({ applications: [{ packageName: "a" }], cameraDisabled: true });
   });
 
   it("replaces a scalar with an object and vice versa", () => {
-    expect(mergeAndroidPolicies([{ x: { a: 1 } }, { x: { b: 2 } }])).toEqual({ x: { a: 1, b: 2 } });
-    expect(mergeAndroidPolicies([{ x: 1 }, { x: { a: 2 } }])).toEqual({ x: { a: 2 } });
-    expect(mergeAndroidPolicies([{ x: { a: 2 } }, { x: [1] }])).toEqual({ x: [1] });
+    expect(merge({ x: { a: 1 } }, { x: { b: 2 } })).toEqual({ x: { a: 1, b: 2 } });
+    expect(merge({ x: 1 }, { x: { a: 2 } })).toEqual({ x: { a: 2 } });
+    expect(merge({ x: { a: 2 } }, { x: [1] })).toEqual({ x: [1] });
   });
 
   it("sorts keys deterministically", () => {
-    const merged = mergeAndroidPolicies([{ zeta: 1, alpha: { beta: 2, gamma: 3 } }]);
+    const merged = merge({ zeta: 1, alpha: { beta: 2, gamma: 3 } });
     expect(Object.keys(merged)).toEqual(["alpha", "zeta"]);
 
     const alpha = merged["alpha"];
@@ -89,60 +97,57 @@ describe("mergeAndroidPolicies", () => {
   it("does not mutate its inputs", () => {
     const first = { applications: [{ packageName: "a" }] };
     const snapshot = Schema.decodeUnknownSync(Schema.Json)(structuredClone(first));
-    mergeAndroidPolicies([first, { applications: [{ packageName: "b" }] }]);
+    merge(first, { applications: [{ packageName: "b" }] });
     expect(first).toEqual(snapshot);
   });
 
-  it("rejects resource name keys at the top level", () => {
-    expect(() => mergeAndroidPolicies([{ name: "enterprises/LC123/policies/other" }])).toThrow(
-      PolicyMergeError,
-    );
-    expect(() => mergeAndroidPolicies([{ policyName: "other" }])).toThrow(PolicyMergeError);
+  it("returns PolicyMergeError as data for resource name keys", () => {
+    for (const key of ["name", "policyName"]) {
+      const result = mergeAndroidPolicies([{ [key]: "enterprises/LC123/policies/other" }]);
+
+      expect(Result.isFailure(result)).toBe(true);
+
+      if (Result.isFailure(result)) {
+        expect(result.failure).toBeInstanceOf(PolicyMergeError);
+        expect(result.failure).toMatchObject({ key, path: key });
+      }
+    }
   });
 
   it("keeps nested application-defined name keys", () => {
     expect(
-      mergeAndroidPolicies([
-        {
-          applications: [{ packageName: "com.example", managedConfiguration: { name: "value" } }],
-        },
-      ]),
+      merge({
+        applications: [{ packageName: "com.example", managedConfiguration: { name: "value" } }],
+      }),
     ).toEqual({
       applications: [{ packageName: "com.example", managedConfiguration: { name: "value" } }],
     });
   });
 });
 
-describe("typed Android policy validation", () => {
-  it("returns a successful Result for a valid policy", () => {
-    const result = mergeAndroidPoliciesResult([
-      { cameraDisabled: true },
-      { screenCaptureDisabled: true },
-    ]);
+describe("compileAndroidPolicy", () => {
+  it("unwraps designer configurations and ignores other platforms", () => {
+    const policy = compile(
+      { kind: "mttx.apple.custom.designer", data: { content: "ignored" } },
+      {
+        kind: "mttx.android.policy.designer",
+        data: { policy: { cameraDisabled: true }, draft: { name: "draft" } },
+      },
+      { kind: "mttx.android.policy.handwritten", data: { screenCaptureDisabled: true } },
+    );
 
-    expect(Result.isSuccess(result)).toBe(true);
-
-    if (Result.isSuccess(result)) {
-      expect(result.success).toEqual({
-        cameraDisabled: true,
-        screenCaptureDisabled: true,
-      });
-    }
+    expect(policy).toEqual({ cameraDisabled: true, screenCaptureDisabled: true });
+    expect(policy).not.toHaveProperty("draft");
+    expect(policy).not.toHaveProperty("policy");
   });
 
-  it("returns PolicyMergeError as data instead of throwing", () => {
-    const result = mergeAndroidPoliciesResult([{ name: "enterprises/LC123/policies/other" }]);
-
-    expect(Result.isFailure(result)).toBe(true);
-
-    if (Result.isFailure(result)) {
-      expect(result.failure).toBeInstanceOf(PolicyMergeError);
-      expect(result.failure).toMatchObject({ key: "name", path: "name" });
-    }
+  it("returns an empty policy when no Android configuration exists", () => {
+    expect(compile()).toEqual({});
+    expect(compile({ kind: "mttx.windows.custom.x", data: {} })).toEqual({});
   });
 
   it("returns typed configuration validation failures", () => {
-    const result = compileAndroidPolicyResult([
+    const result = compileAndroidPolicy([
       { kind: "mttx.android.policy.designer", data: { policy: "not an object" } },
     ]);
 
@@ -153,49 +158,42 @@ describe("typed Android policy validation", () => {
       expect(result.failure.path).toBe("mttx.android.policy.designer.policy");
     }
   });
+
+  it("rejects read-only Google resource fields", () => {
+    const result = compileAndroidPolicy([
+      { kind: "mttx.android.policy.designer", data: { policy: { name: "enterprises/x" } } },
+    ]);
+
+    expect(Result.isFailure(result)).toBe(true);
+
+    if (Result.isFailure(result)) expect(result.failure).toBeInstanceOf(PolicyMergeError);
+  });
 });
 
 describe("androidPolicyHash", () => {
   it("returns a deterministic 64-character hex digest", async () => {
-    const hash = await androidPolicyHash({ screenCaptureDisabled: true });
-    expect(hash).toMatch(/^[0-9a-f]{64}$/);
-    await expect(androidPolicyHash({ screenCaptureDisabled: true })).resolves.toBe(hash);
+    const first = await hash({ screenCaptureDisabled: true });
+    expect(first).toMatch(/^[0-9a-f]{64}$/);
+    await expect(hash({ screenCaptureDisabled: true })).resolves.toBe(first);
   });
 
   it("is independent of key insertion order", async () => {
     const a = { applications: [{ packageName: "a" }], cameraDisabled: true };
     const b = { cameraDisabled: true, applications: [{ packageName: "a" }] };
     expect(canonicalPolicyJson(a)).toBe(canonicalPolicyJson(b));
-    await expect(androidPolicyHash(a)).resolves.toBe(await androidPolicyHash(b));
+    await expect(hash(a)).resolves.toBe(await hash(b));
   });
 
   it("changes when policy content changes", async () => {
-    const a = await androidPolicyHash({ screenCaptureDisabled: true });
-    const b = await androidPolicyHash({ screenCaptureDisabled: false });
+    const a = await hash({ screenCaptureDisabled: true });
+    const b = await hash({ screenCaptureDisabled: false });
     expect(a).not.toBe(b);
   });
 
   it("hashes the merged form consistently", async () => {
-    const merged = mergeAndroidPolicies([
-      { cameraDisabled: true },
-      { screenCaptureDisabled: true },
-    ]);
-
+    const merged = merge({ cameraDisabled: true }, { screenCaptureDisabled: true });
     const reordered = { screenCaptureDisabled: true, cameraDisabled: true };
-    await expect(androidPolicyHash(merged)).resolves.toBe(await androidPolicyHash(reordered));
-  });
-});
-
-describe("typed Android policy hashing", () => {
-  it("hashes through the injectable Digest service", async () => {
-    const hash = await Effect.runPromise(
-      androidPolicyHashEffect({ screenCaptureDisabled: true }).pipe(
-        Effect.provide(Digest.layerWebCrypto),
-      ),
-    );
-
-    expect(hash).toMatch(/^[0-9a-f]{64}$/);
-    await expect(androidPolicyHash({ screenCaptureDisabled: true })).resolves.toBe(hash);
+    await expect(hash(merged)).resolves.toBe(await hash(reordered));
   });
 
   it("maps crypto defects to AndroidPolicyHashError", async () => {
@@ -206,70 +204,41 @@ describe("typed Android policy hashing", () => {
     });
 
     const error = await Effect.runPromise(
-      Effect.flip(androidPolicyHashEffect({ cameraDisabled: true }).pipe(Effect.provide(digest))),
+      Effect.flip(androidPolicyHash({ cameraDisabled: true }).pipe(Effect.provide(digest))),
     );
 
     expect(error).toBeInstanceOf(AndroidPolicyHashError);
     expect(error.cause).toBe(cause);
   });
+});
 
-  it("compiles and hashes with typed validation failures", async () => {
+describe("compileAndroidPolicyWithHash", () => {
+  it("renders stable policy ids and hashes", async () => {
+    const first = await compileWithHash({
+      kind: "mttx.android.policy.a",
+      data: { cameraDisabled: true },
+    });
+
+    const second = await compileWithHash({
+      kind: "mttx.android.policy.b",
+      data: { cameraDisabled: true },
+    });
+
+    expect(first.hash).toBe(second.hash);
+    expect(androidPolicyIdForHash(first.hash)).toMatch(/^mattrax-[a-z0-9]+$/);
+    expect(androidPolicyIdForHash(first.hash).length).toBeLessThanOrEqual(32);
+  });
+
+  it("fails with typed validation errors before hashing", async () => {
     const error = await Effect.runPromise(
       Effect.flip(
-        compileAndroidPolicyWithHashEffect([
+        compileAndroidPolicyWithHash([
           { kind: "mttx.android.policy.designer", data: { policy: { name: "read-only" } } },
         ]).pipe(Effect.provide(Digest.layerWebCrypto)),
       ),
     );
 
     expect(error).toBeInstanceOf(PolicyMergeError);
-  });
-});
-
-describe("compileAndroidPolicy", () => {
-  it("unwraps designer configurations and ignores other platforms", () => {
-    const policy = compileAndroidPolicy([
-      { kind: "mttx.apple.custom.designer", data: { content: "ignored" } },
-      {
-        kind: "mttx.android.policy.designer",
-        data: { policy: { cameraDisabled: true }, draft: { name: "draft" } },
-      },
-      {
-        kind: "mttx.android.policy.handwritten",
-        data: { screenCaptureDisabled: true },
-      },
-    ]);
-
-    expect(policy).toEqual({ cameraDisabled: true, screenCaptureDisabled: true });
-    expect(policy).not.toHaveProperty("draft");
-    expect(policy).not.toHaveProperty("policy");
-  });
-
-  it("returns an empty policy when no Android configuration exists", () => {
-    expect(compileAndroidPolicy([])).toEqual({});
-    expect(compileAndroidPolicy([{ kind: "mttx.windows.custom.x", data: {} }])).toEqual({});
-  });
-
-  it("rejects read-only Google resource fields", () => {
-    expect(() =>
-      compileAndroidPolicy([
-        { kind: "mttx.android.policy.designer", data: { policy: { name: "enterprises/x" } } },
-      ]),
-    ).toThrow(PolicyMergeError);
-  });
-
-  it("renders stable policy ids and hashes", async () => {
-    const first = await compileAndroidPolicyWithHash([
-      { kind: "mttx.android.policy.a", data: { cameraDisabled: true } },
-    ]);
-
-    const second = await compileAndroidPolicyWithHash([
-      { kind: "mttx.android.policy.b", data: { cameraDisabled: true } },
-    ]);
-
-    expect(first.hash).toBe(second.hash);
-    expect(androidPolicyIdForHash(first.hash)).toMatch(/^mattrax-[a-z0-9]+$/);
-    expect(androidPolicyIdForHash(first.hash).length).toBeLessThanOrEqual(32);
   });
 });
 
@@ -346,7 +315,7 @@ describe("mergeAssignedAndroidApplications", () => {
 
 describe("applications canonicalisation", () => {
   it("keeps one entry per package with the later definition winning", () => {
-    const merged = mergeAndroidPolicies([
+    const merged = merge(
       {
         applications: [
           { packageName: "com.example.app", installType: "AVAILABLE" },
@@ -356,10 +325,8 @@ describe("applications canonicalisation", () => {
       {
         applications: [{ packageName: "com.example.app", installType: "BLOCKED" }],
       },
-    ]);
+    );
 
-    // Google rejects a policy that lists a package twice, so the deep merge
-    // must collapse it. Later policies win, as they do for scalars.
     expect(merged["applications"]).toEqual([
       { installType: "BLOCKED", packageName: "com.example.app" },
       { installType: "FORCE_INSTALLED", packageName: "com.example.other" },
@@ -367,10 +334,10 @@ describe("applications canonicalisation", () => {
   });
 
   it("preserves entries that carry no package name", () => {
-    const merged = mergeAndroidPolicies([
+    const merged = merge(
       { applications: [{ installType: "KIOSK" }] },
       { applications: [{ packageName: "com.example.app" }] },
-    ]);
+    );
 
     expect(merged["applications"]).toHaveLength(2);
   });

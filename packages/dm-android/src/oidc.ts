@@ -1,6 +1,5 @@
 import { Clock, Context, Data, Duration, Effect, Layer, Schema } from "effect";
 import { SecureRandom, Signature } from "effect/crypto";
-import { FetchHttpClient } from "effect/http";
 import { JoseError, Jwt, Jwks } from "effect/jose";
 
 /**
@@ -36,13 +35,6 @@ export type PubSubOidcVerifierConfig = {
   readonly jwksUri?: string;
   /** Accepted issuers; defaults to Google's. */
   readonly issuers?: ReadonlyArray<string>;
-  /**
-   * Fetch implementation used by the compatibility verifier. Scoped service
-   * consumers should inject `HttpClient.HttpClient` instead.
-   */
-  readonly fetch?: typeof globalThis.fetch;
-  /** Clock override retained for compatibility; prefer the Effect Clock service. */
-  readonly now?: () => number;
   /** Reject tokens older than this even if `exp` is still in the future. */
   readonly maxAgeSeconds?: number;
   /** How long a fetched JWKS remains cached. Defaults to one hour. */
@@ -253,60 +245,9 @@ export const PubSubOidcVerifierLive = (config: PubSubOidcVerifierConfig) =>
     Layer.provide(Signature.layerWebCrypto.pipe(Layer.provide(SecureRandom.layerWebCrypto))),
   );
 
-function clockWithOverride(clock: Clock.Clock, now: (() => number) | undefined): Clock.Clock {
-  if (now === undefined) return clock;
-
-  const currentTimeMillis = () => Math.trunc(now());
-  const currentTimeNanos = () => BigInt(currentTimeMillis()) * 1_000_000n;
-
-  return {
-    currentTimeMillisUnsafe: currentTimeMillis,
-    currentTimeMillis: Effect.sync(currentTimeMillis),
-    currentTimeNanosUnsafe: currentTimeNanos,
-    currentTimeNanos: Effect.sync(currentTimeNanos),
-    monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
-    monotonicTimeNanos: clock.monotonicTimeNanos,
-    sleep: (duration) => clock.sleep(duration),
-  };
-}
-
-/**
- * Verify a Pub/Sub OIDC bearer token and return its claims.
- *
- * This compatibility entry point creates a scoped JWKS service per call. Use
- * `PubSubOidcVerifierLive` when keys should be cached across requests.
- */
-export function verifyPubSubOidcToken(
-  token: string,
-  config: PubSubOidcVerifierConfig,
-): Effect.Effect<PubSubOidcClaims, PubSubAuthError> {
-  const fetchLayer = FetchHttpClient.layer.pipe(
-    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, config.fetch ?? globalThis.fetch)),
-    Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })),
-  );
-
-  return Clock.clockWith((clock) =>
-    Effect.gen(function* () {
-      const verifier = yield* PubSubOidcVerifier;
-
-      return yield* verifier.verify(token);
-    }).pipe(
-      Effect.provide(PubSubOidcVerifierLive(config)),
-      Effect.provide(fetchLayer),
-      Effect.provideService(Clock.Clock, clockWithOverride(clock, config.now)),
-      Effect.mapError((cause) => (JoseError.isJoseError(cause) ? mapJwtError(cause) : cause)),
-    ),
-  );
-}
-
 /** Extract a bearer token from an `Authorization` header value. */
 export function bearerToken(header: string | undefined): string | undefined {
   const match = /^Bearer\s+(.+)$/i.exec((header ?? "").trim());
 
   return match?.[1]?.trim() || undefined;
-}
-
-/** @deprecated JWKS caches are now scoped to their verifier layer. */
-export function clearJwksCache(): void {
-  return;
 }

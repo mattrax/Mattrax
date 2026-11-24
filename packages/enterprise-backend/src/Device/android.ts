@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, like, lt } from "drizzle-orm";
-import { Data, Effect, Option, Schema } from "effect";
+import { Data, Effect, Option, Result, Schema } from "effect";
+import { Digest } from "effect/crypto";
 import {
   AndroidManagement,
   androidPolicyHash,
@@ -11,7 +12,7 @@ import {
   GoogleApiError,
   isAndroidPackageName,
   mergeAssignedAndroidApplications,
-  verifyPubSubOidcToken,
+  PubSubOidcVerifier,
 } from "@mattrax/dm-android";
 import type { AndroidPolicyConfiguration, IssueCommandParams } from "@mattrax/dm-android";
 import {
@@ -1511,7 +1512,10 @@ const compileEffectiveAndroidPolicy = (input: {
   readonly db: EnterpriseDb;
   readonly organizationId: string;
   readonly deviceId: string;
-}): Effect.Effect<{ readonly policy: Schema.JsonObject; readonly hash: string }, unknown> =>
+}): Effect.Effect<
+  { readonly policy: Schema.JsonObject; readonly hash: string },
+  AndroidDeliveryError
+> =>
   Effect.gen(function* () {
     const effective = yield* resolveEffectivePolicyForDevice(input.db, {
       id: input.deviceId,
@@ -1550,7 +1554,17 @@ const compileEffectiveAndroidPolicy = (input: {
           eq(schema.tenantOsPolicy.platform, "android"),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new AndroidDeliveryError({
+              kind: "upstream",
+              message: `Could not load the Android OS policy: ${describeAndroidError(cause)}`,
+              cause,
+            }),
+        ),
+      );
 
     const osPolicyRule = osPolicyRows[0] ? osPolicyRuleFromRow(osPolicyRows[0]) : null;
     const systemUpdate = androidSystemUpdatePolicy(osPolicyRule);
@@ -1567,7 +1581,16 @@ const compileEffectiveAndroidPolicy = (input: {
     const assignedApplications = yield* assignedAndroidApplications(input.db, {
       organizationId: input.organizationId,
       deviceId: input.deviceId,
-    });
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new AndroidDeliveryError({
+            kind: "upstream",
+            message: `Could not load assigned Android applications: ${describeAndroidError(cause)}`,
+            cause,
+          }),
+      ),
+    );
 
     for (const application of assignedApplications) {
       if (!isAndroidPackageName(application.packageName))
@@ -1576,26 +1599,40 @@ const compileEffectiveAndroidPolicy = (input: {
         );
     }
 
-    return yield* Effect.tryPromise({
-      try: async () => {
-        // Mattrax needs software and application status to inventory a
-        // device, and Google disables both by default. The baseline sits
-        // underneath the tenant's own reporting settings, so an operator can
-        // still turn either off (at the cost of that inventory).
-        const policy = mergeAssignedAndroidApplications(
-          withStatusReporting(compileAndroidPolicy(configurations)),
-          assignedApplications,
-        );
+    const compiled = compileAndroidPolicy(configurations);
 
-        return { policy, hash: await androidPolicyHash(policy) };
-      },
-      catch: (cause) =>
+    if (Result.isFailure(compiled)) {
+      return yield* Effect.fail(
         new AndroidDeliveryError({
           kind: "invalid_payload",
-          message: `Could not compile the Android policy: ${describeAndroidError(cause)}`,
-          cause,
+          message: `Could not compile the Android policy: ${describeAndroidError(compiled.failure)}`,
+          cause: compiled.failure,
         }),
-    });
+      );
+    }
+
+    // Mattrax needs software and application status to inventory a device,
+    // and Google disables both by default. The baseline sits underneath the
+    // tenant's own reporting settings, so an operator can still turn either
+    // off (at the cost of that inventory).
+    const policy = mergeAssignedAndroidApplications(
+      withStatusReporting(compiled.success),
+      assignedApplications,
+    );
+
+    const hash = yield* androidPolicyHash(policy).pipe(
+      Effect.mapError(
+        (cause) =>
+          new AndroidDeliveryError({
+            kind: "invalid_payload",
+            message: `Could not hash the Android policy: ${describeAndroidError(cause)}`,
+            cause,
+          }),
+      ),
+      Effect.provide(Digest.layerWebCrypto),
+    );
+
+    return { policy, hash };
   });
 
 const syncAndroidPolicyForDevice = (input: {
@@ -2705,10 +2742,12 @@ export const handleAndroidPubSub = (input: {
   readonly origin: string;
   readonly authorization?: string;
   readonly body: Schema.Json;
-  readonly fetch?: typeof globalThis.fetch;
-  readonly now?: () => number;
   readonly planLimits?: PlanLimitsConfig;
-}): Effect.Effect<AndroidPubSubResult, AndroidDeliveryError, AndroidManagement> =>
+}): Effect.Effect<
+  AndroidPubSubResult,
+  AndroidDeliveryError,
+  AndroidManagement | PubSubOidcVerifier
+> =>
   Effect.gen(function* () {
     const config = input.config;
 
@@ -2722,14 +2761,9 @@ export const handleAndroidPubSub = (input: {
           message: "Missing Pub/Sub OIDC bearer token.",
         }),
       );
-    yield* verifyPubSubOidcToken(token, {
-      audience:
-        config.pubsubAudience ?? `${input.origin.replace(/\/+$/, "")}/api/v1/android/pubsub`,
-      serviceAccountEmail: config.serviceAccount.clientEmail,
-      jwksUri: config.jwksUri,
-      fetch: input.fetch,
-      now: input.now,
-    }).pipe(
+    const verifier = yield* PubSubOidcVerifier;
+
+    yield* verifier.verify(token).pipe(
       Effect.mapError(
         (cause) =>
           new AndroidDeliveryError({
