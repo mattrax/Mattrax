@@ -464,7 +464,12 @@ export { importTenantCutover, previewTenantCutover } from "./Tenant/cutoverImpor
 
 export type { CutoverActor, CutoverImportOptions, CutoverTarget } from "./Tenant/cutoverImport.ts";
 
-export { applyTenantBundle } from "./Tenant/tenantRestore.ts";
+export {
+  applyTenantBundle,
+  isTenantApplicationObjectKey,
+  redactAuditObjectKeys,
+  tenantApplicationObjectPrefix,
+} from "./Tenant/tenantRestore.ts";
 
 export type { TenantRestoreApplied, TenantRestoreTransaction } from "./Tenant/tenantRestore.ts";
 

@@ -117,6 +117,7 @@ const APPLICATION_READ = new Set([
   "getApplication",
   "getApplicationInventory",
   "downloadApplication",
+  "downloadApplicationInstaller",
   "searchSoftwareCatalogue",
   "getSoftwareCatalogueTitle",
 ]);
@@ -132,6 +133,7 @@ const APPLICATION_WRITE = new Set([
   "installApplication",
   "uninstallApplication",
   "uploadApplication",
+  "uploadApplicationInstaller",
   "addSoftwareCatalogueTitle",
 ]);
 
@@ -199,6 +201,7 @@ const ENROLLMENT_READ = new Set([
   "listEnrollmentAttempts",
   "getAppleEnrollmentProfile",
   "getAdeEnrollmentProfile",
+  "getAppleByodConfig",
 ]);
 
 const ENROLLMENT_WRITE = new Set([
@@ -207,6 +210,9 @@ const ENROLLMENT_WRITE = new Set([
   "rotateTenantScepCa",
   "importTenantScepCa",
   "patchEnrollmentQuestions",
+  "patchAppleByodConfig",
+  "testAppleByodConfig",
+  "confirmAppleByodHardware",
 ]);
 
 const IDENTITY_READ = new Set([
@@ -326,6 +332,21 @@ const EXPLICIT = {
   // read-only member can still hide their own card.
   getTenantOnboarding: "tenant.read",
   patchTenantOnboarding: "tenant.read",
+  // Tenant security settings are tenant-wide, not a device or member surface.
+  getTenantSecurity: "tenant.read",
+  patchTenantSecurity: "tenant.write",
+  // Approving a break-glass recovery grants account access to this tenant, so
+  // it stays behind the tenant write permission and the handler's step-up.
+  approveAccountRecovery: "tenant.write",
+  // Assigning a member's scope tags changes what that member can reach. The
+  // handler also requires members.write; the method permission keeps a custom
+  // role from reaching the handler through the old tenant.write fallback.
+  setMemberScopeTags: "members.write",
+  // The FileVault escrow certificate is tenant configuration. Reading it is a
+  // tenant read; replacing the key pair is a tenant write.
+  getAppleFdeEscrowKey: "tenant.read",
+  generateAppleFdeEscrowKey: "tenant.write",
+  uploadAppleFdeEscrowKey: "tenant.write",
   // Directory lists expose member names and email addresses, so they need the
   // same permission as the member list rather than plain tenant read.
   listDirectory: "members.read",
@@ -427,9 +448,90 @@ const ACCOUNT_METHODS = new Set([
   // rather than tenant-permission-gated ones.
   "extractMobileconfig",
   "previewMobileconfig",
+  // Account settings, sessions, credentials and step-up ceremonies. These
+  // resolve the caller's account, not a tenant membership, so a tenant role
+  // cannot grant or widen them. Superadmin checks remain in the handlers.
+  "me",
+  "updateMe",
+  "getAccountDeletion",
+  "deleteMe",
+  "listAccountSessions",
+  "listLoginAttempts",
+  "revokeAccountSession",
+  "revokeAllAccountSessions",
+  "searchAccountAuditLog",
+  "exportAccountAuditLog",
+  "requestAccountRecovery",
+  "verifyAccountRecovery",
+  "cancelEmailChange",
+  "listTenants",
+  "createTenant",
+  "listAdminAccounts",
+  "patchAdminAccountSuperadmin",
+  "requestEmailVerification",
+  "requestRegistrationCode",
+  "verifyRegistrationCode",
+  "verifyEmail",
+  "requestEmailChange",
+  "verifyEmailChange",
+  "listApiTokens",
+  "listMcpConnections",
+  "revokeMcpConnection",
+  "createApiToken",
+  "revokeApiToken",
+  "removeAccountPasskey",
+  "stepUpMethods",
+  "stepUpTotp",
+  "beginStepUpPasskey",
+  "completeStepUpPasskey",
 ]);
 
 export const isAccountMethod = (method: string): boolean => ACCOUNT_METHODS.has(method);
+
+/**
+ * Endpoints that resolve no tenant membership. They are either account-scoped
+ * or deliberately public/token-bound, so `requireTenant` must not apply a
+ * tenant permission. Keep this list explicit: a new tenant method that is not
+ * mapped below fails closed instead of inheriting the coarse tenant fallback.
+ */
+const PUBLIC_METHODS = new Set([
+  // Public invitations: accepting and previewing are token-bound and gated by
+  // the caller layer's rate limit instead of a tenant membership.
+  "acceptInvitation",
+  "previewInvitation",
+  "acceptTenantOwnershipTransfer",
+  "previewTenantOwnershipTransfer",
+  // A target may decline without member-management rights; the handler still
+  // enforces requester/target/owner before touching the row.
+  "cancelTenantOwnershipTransfer",
+  "getEnrollment",
+  "submitEnrollmentAnswers",
+  // Public BYOD discovery and the token-bound enrollment/ADE/agent surfaces.
+  // Each verifies its own credential, device signature or bearer token in the
+  // handler before touching tenant data.
+  "appleByodDiscovery",
+  "getAppleByodEnrollmentProfile",
+  "enrollAdeDevice",
+  "syncScriptAgent",
+  "reportScriptAgentResult",
+  "reportRestrictedSoftwareAgentResult",
+  "reportWindowsActivation",
+  "uploadWindowsDiagnostics",
+]);
+
+/**
+ * Methods that deliberately resolve no tenant membership. Kept separate from
+ * account methods so the exhaustive matrix can tell "public by design" apart
+ * from "forgot to classify".
+ */
+export const isPublicMethod = (method: string): boolean => PUBLIC_METHODS.has(method);
+
+/**
+ * Permission returned for a method with no resource mapping. It is not part of
+ * the catalogue, so neither a built-in role nor a custom role can hold it: an
+ * endpoint added without a mapping is denied until the mapping is added.
+ */
+export const UNMAPPED_METHOD_PERMISSION = "tenant.unmapped" as Permission;
 
 export const permissionForMethod = (method: string): Permission | undefined => {
   if (ACCOUNT_METHODS.has(method)) return undefined;
@@ -494,26 +596,12 @@ export const permissionForMethod = (method: string): Permission | undefined => {
 
   if (SCOPE_TAG_WRITE.has(method)) return "scope_tags.write";
 
-  // Public invitations: accepting and previewing are token-bound and gated by
-  // the caller layer's rate limit instead of a tenant membership.
-  if (
-    method === "acceptInvitation" ||
-    method === "previewInvitation" ||
-    method === "acceptTenantOwnershipTransfer" ||
-    method === "previewTenantOwnershipTransfer" ||
-    // A target may decline without member-management rights; the handler
-    // still enforces requester/target/owner before touching the row.
-    method === "cancelTenantOwnershipTransfer" ||
-    method === "getEnrollment" ||
-    method === "submitEnrollmentAnswers"
-  )
-    return undefined;
+  if (PUBLIC_METHODS.has(method)) return undefined;
 
-  // Unknown methods fail safe to tenant write for mutations and tenant read for
-  // obvious reads. This keeps future endpoints permission-checked by default.
-  if (/^(list|get|search|export|preview|download)/.test(method)) return "tenant.read";
-
-  return "tenant.write";
+  // Fail closed. The exhaustive permission-matrix test keeps every known
+  // service method mapped, so this is only reached by a method that was added
+  // without its resource permission.
+  return UNMAPPED_METHOD_PERMISSION;
 };
 
 const rolesOf = (role: string) =>

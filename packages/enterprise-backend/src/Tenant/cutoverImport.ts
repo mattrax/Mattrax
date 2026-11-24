@@ -15,7 +15,11 @@ import type {
 } from "@mattrax/enterprise-domain";
 import { sealSecret } from "@mattrax/crypto";
 import { describeScepCa, importScepCa, sealCaPrivateKey } from "@mattrax/scep";
-import { applyTenantBundle, parseTenantRestoreBundle } from "./tenantRestore.ts";
+import {
+  applyTenantBundle,
+  parseTenantRestoreBundle,
+  redactAuditObjectKeys,
+} from "./tenantRestore.ts";
 import type { TenantRestoreTransaction } from "./tenantRestore.ts";
 import { TenantCutoverError } from "./cutover.ts";
 import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
@@ -880,6 +884,16 @@ export const importTenantCutover = (
           // ─── Configuration ───────────────────────────────────────
           const applied = yield* applyTenantBundle(tx, organization, parsed, options.actor, now);
 
+          if (applied.applicationsWithoutFiles > 0)
+            needsReissue.push({
+              kind: "application_files",
+              item: `${applied.applicationsWithoutFiles} application${
+                applied.applicationsWithoutFiles === 1 ? "" : "s"
+              }`,
+              reason:
+                "Uploaded application files are not part of an archive, or referenced an object outside the target tenant. Re-upload them after import.",
+            });
+
           // Full device membership/assignment set, including devices that the
           // configuration bundle did not reference.
           let groupMemberships = 0;
@@ -1325,7 +1339,10 @@ export const importTenantCutover = (
               action: entry.action,
               targetType: entry.targetType,
               targetId: entry.targetId ?? null,
-              metadata: entry.metadata === undefined ? null : entry.metadata,
+              metadata:
+                entry.metadata === undefined
+                  ? null
+                  : (redactAuditObjectKeys(entry.metadata) as typeof entry.metadata),
               ip: null,
               userAgent: null,
               createdAt: new Date(entry.createdAt),

@@ -52,7 +52,11 @@ import type {
   scriptAgentApi,
   scriptApi,
 } from "@mattrax/enterprise-domain";
-import { enterpriseDeviceHandoverApi } from "@mattrax/enterprise-domain";
+import {
+  enterpriseDeviceHandoverApi,
+  MOBILECONFIG_REQUEST_MAX_BYTES,
+  MobileconfigRequest,
+} from "@mattrax/enterprise-domain";
 import {
   applicationKey,
   EnterpriseBadRequest,
@@ -391,9 +395,11 @@ import {
 } from "@mattrax/mdm-windows";
 import {
   LOGIN_ATTEMPT_LIST_LIMIT,
+  isTenantApplicationObjectKey,
   listLoginAttempts,
   loginAttemptEntry,
   normalizeEntityListQuery,
+  redactAuditObjectKeys,
 } from "@mattrax/enterprise-backend";
 import type {
   NormalizedEntityListQuery,
@@ -1168,9 +1174,7 @@ const requestHeader = (request: unknown, name: string): string | undefined => {
 export const mcpActivityResponseStatus = (value: unknown): number => {
   if (value === undefined) return 204;
 
-  const envelope = Schema.decodeUnknownOption(
-    Schema.Struct({ status: Schema.Number }),
-  )(value);
+  const envelope = Schema.decodeUnknownOption(Schema.Struct({ status: Schema.Number }))(value);
 
   return Option.isSome(envelope)
     ? Math.max(100, Math.min(599, Math.trunc(envelope.value.status)))
@@ -1486,6 +1490,45 @@ const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 const ok = { status: "ok" as const };
 
+/**
+ * A rate limit bounds requests per minute, not how many parses occupy the
+ * isolate at once. Mobileconfig parsing is CPU-bound, so this small gate keeps
+ * a burst from starving ordinary API work. Slots release in an ensuring block,
+ * including on failure or interruption.
+ */
+export const MOBILECONFIG_MAX_CONCURRENT = 2;
+
+export type ConcurrencyGate = {
+  readonly tryAcquire: () => (() => void) | undefined;
+  readonly active: () => number;
+};
+
+export const createConcurrencyGate = (limit: number): ConcurrencyGate => {
+  if (!Number.isSafeInteger(limit) || limit < 1)
+    throw new RangeError("Concurrency limit must be a positive integer");
+
+  let active = 0;
+
+  return {
+    tryAcquire: () => {
+      if (active >= limit) return undefined;
+
+      active += 1;
+      let released = false;
+
+      return () => {
+        if (released) return;
+
+        released = true;
+        active -= 1;
+      };
+    },
+    active: () => active,
+  };
+};
+
+const mobileconfigParses = createConcurrencyGate(MOBILECONFIG_MAX_CONCURRENT);
+
 const APPLE_PROFILE_WINDOW_MS = 60_000;
 
 const APPLE_PROFILE_PER_IP_LIMIT = 60;
@@ -1704,6 +1747,53 @@ const readBoundedRequestBody = (
     return { ok: true, bytes };
   });
 
+/**
+ * Read a mobileconfig helper body before JSON parsing, with the raw byte cap
+ * enforced on the stream. The domain schema still caps the decoded string, and
+ * the backend keeps its own base64/plist limits for direct service callers.
+ *
+ * A null result means "too large" so the handler can answer 413 rather than
+ * turning a body-size problem into a generic validation error.
+ */
+const readMobileconfigPayload = (
+  request: HttpServerRequest,
+): Effect.Effect<{ mobileconfig: string } | null, EnterpriseBadRequest> =>
+  Effect.gen(function* () {
+    const declared = Number(request.headers["content-length"] ?? "");
+
+    if (Number.isFinite(declared) && declared > MOBILECONFIG_REQUEST_MAX_BYTES) return null;
+
+    const body = yield* readBoundedRequestBody(request, MOBILECONFIG_REQUEST_MAX_BYTES);
+
+    if (!body.ok || !body.bytes) {
+      if (body.reason === "too_large") return null;
+
+      return yield* Effect.fail(
+        new EnterpriseBadRequest({ message: "Could not read the mobileconfig request body." }),
+      );
+    }
+
+    let json: unknown;
+
+    try {
+      json = JSON.parse(new TextDecoder().decode(body.bytes));
+    } catch {
+      return yield* Effect.fail(
+        new EnterpriseBadRequest({ message: "The mobileconfig request body must be valid JSON." }),
+      );
+    }
+
+    return yield* Schema.decodeUnknownEffect(MobileconfigRequest)(json).pipe(
+      Effect.mapError(
+        () =>
+          new EnterpriseBadRequest({
+            message:
+              "The mobileconfig request must be a JSON object with a mobileconfig string of at most 8 MB.",
+          }),
+      ),
+    );
+  });
+
 const DEVICE_HANDOVER_PASSPHRASE_MIN_LENGTH = 12;
 
 const DEVICE_HANDOVER_REASON_MAX_LENGTH = 500;
@@ -1801,8 +1891,11 @@ const auditEntry = (entry: {
   deviceCertificateSerial: entry.deviceCertificateSerial ?? null,
   principalId: entry.principalId ?? null,
   protocol: entry.protocol ?? null,
-  // Drizzle types a `json` column as unknown; only valid JSON reaches a response.
-  metadata: Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(entry.metadata)),
+  // Object keys are not part of an audit read. Redacting here covers rows
+  // written before the import/backup writers sanitised their metadata.
+  metadata: Option.getOrNull(
+    Schema.decodeUnknownOption(Schema.Json)(redactAuditObjectKeys(entry.metadata)),
+  ),
   createdAt: iso(entry.createdAt),
 });
 
@@ -1857,11 +1950,8 @@ const webRequestFromRequest = (request: HttpServerRequest, origin: string) =>
   });
 
 /** Authenticate with the original method, path and headers intact. */
-const requireUser = (
-  auth: EnterpriseAuth["Service"],
-  request: HttpServerRequest,
-  origin: string,
-) => auth.requireUser(webRequestFromRequest(request, origin));
+const requireUser = (auth: EnterpriseAuth["Service"], request: HttpServerRequest, origin: string) =>
+  auth.requireUser(webRequestFromRequest(request, origin));
 
 /** Require a recent step-up for a sensitive action. */
 const requireStepUp = (
@@ -2456,6 +2546,44 @@ export const createEnterpriseService = ({
     organization: { readonly requireMfa: boolean },
   ) => !hasMfaFactor(user) && organization.requireMfa;
 
+  /**
+   * Account-scoped helpers still need a verified address: parsing a profile is
+   * not tenant data, but an unverified throw-away account must not use the API
+   * as a free parser either.
+   */
+  const requireVerifiedUser = (request: HttpServerRequest) =>
+    Effect.gen(function* () {
+      const { user } = yield* requireUser(auth, request, origin);
+
+      if (!user.emailVerified)
+        return yield* Effect.fail(
+          new EnterpriseForbidden({
+            message: "Verify your email address before using this endpoint.",
+          }),
+        );
+
+      return user;
+    });
+
+  const withMobileconfigSlot = <A, E, R>(
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | EnterpriseBadRequest, R> =>
+    Effect.suspend((): Effect.Effect<A, E | EnterpriseBadRequest, R> => {
+      const release = mobileconfigParses.tryAcquire();
+
+      if (!release)
+        return Effect.fail(
+          diagnoseError(
+            new EnterpriseBadRequest({
+              message: "Too many mobileconfig requests are being parsed. Try again shortly.",
+            }),
+            { code: "rate_limited", retryable: true },
+          ),
+        );
+
+      return effect.pipe(Effect.ensuring(Effect.sync(release)));
+    });
+
   const requireTenant = (
     request: HttpServerRequest,
     tenantId: string,
@@ -2712,7 +2840,10 @@ export const createEnterpriseService = ({
         .from(schema.memberScopeTag)
         .where(eq(schema.memberScopeTag.memberId, member.id));
 
-      if (tags.length === 0 || tags.some((row: { tagId: string }) => !ctx.scopeTagIds.has(row.tagId)))
+      if (
+        tags.length === 0 ||
+        tags.some((row: { tagId: string }) => !ctx.scopeTagIds.has(row.tagId))
+      )
         return yield* Effect.fail(
           new EnterpriseForbidden({
             message: "That member's scope is outside your own scope.",
@@ -4439,9 +4570,9 @@ export const createEnterpriseService = ({
       // channel can each hold the same request type without colliding on the
       // `(deviceId, dedupeKey)` unique index.
       const dedupeKey = yield* commandDedupeKeyEffect(
-          input.userId ? `user:${input.userId}:${input.requestType}` : input.requestType,
-          input.payload,
-        );
+        input.userId ? `user:${input.userId}:${input.requestType}` : input.requestType,
+        input.payload,
+      );
 
       const insertValues = {
         id,
@@ -6206,8 +6337,7 @@ export const createEnterpriseService = ({
 
         const status = rows.find(
           (row) =>
-            row.requestType === statusType &&
-            row.createdAt.getTime() >= exec.createdAt.getTime(),
+            row.requestType === statusType && row.createdAt.getTime() >= exec.createdAt.getTime(),
         );
         const value = status?.resultDetail?.replace(/^Status /, "").trim() ?? "";
         const terminal = windowsRotationTerminalOutcome(kind, value);
@@ -7213,9 +7343,9 @@ export const createEnterpriseService = ({
       // Remove the objects only after their rows are gone, so a failed delete
       // leaves an orphan rather than a row pointing at a missing file.
       for (const row of removed)
-        if (row.r2Key)
+        if (isTenantApplicationObjectKey(input.organizationId, row.r2Key))
           yield* effectiveR2
-            .delete(row.r2Key!)
+            .delete(row.r2Key)
             .pipe(
               catchCausePreservingInterrupts((cause) =>
                 Effect.logWarning(
@@ -8308,21 +8438,12 @@ export const createEnterpriseService = ({
       return groups;
     });
 
-  const loadAuditEntries = (
-    ctx: ScopeContext,
-    filters: AuditSearchFilters,
-    take: number,
-  ) =>
+  const loadAuditEntries = (ctx: ScopeContext, filters: AuditSearchFilters, take: number) =>
     Effect.gen(function* () {
       const rows = yield* db
         .select()
         .from(schema.auditLog)
-        .where(
-          and(
-            auditWhere(schema, ctx.organization.id, filters),
-            auditScopeCondition(db, ctx),
-          ),
-        )
+        .where(and(auditWhere(schema, ctx.organization.id, filters), auditScopeCondition(db, ctx)))
         .orderBy(...auditOrder(schema))
         .limit(take)
         .offset(filters.offset);
@@ -15742,8 +15863,7 @@ export const createEnterpriseService = ({
         return {
           tags: tags
             .filter(
-              (tag: typeof schema.scopeTag.$inferSelect) =>
-                !allowed || allowed.includes(tag.id),
+              (tag: typeof schema.scopeTag.$inferSelect) => !allowed || allowed.includes(tag.id),
             )
             .map((tag: typeof schema.scopeTag.$inferSelect) => ({
               id: tag.id,
@@ -16020,7 +16140,9 @@ export const createEnterpriseService = ({
             and(
               eq(schema.scopeTagAssignment.organizationId, ctx.organization.id),
               eq(schema.scopeTagAssignment.resourceType, query.resourceType),
-              resourceIds ? inArray(schema.scopeTagAssignment.resourceId, [...resourceIds]) : undefined,
+              resourceIds
+                ? inArray(schema.scopeTagAssignment.resourceId, [...resourceIds])
+                : undefined,
               allowed ? inArray(schema.scopeTagAssignment.tagId, [...allowed]) : undefined,
             ),
           );
@@ -16076,33 +16198,25 @@ export const createEnterpriseService = ({
             }),
           );
 
-        yield* assertResourcesScope(
-          ctx,
-          db,
-          body.resourceType,
-          resourceIds,
-          "This resource",
-        );
+        yield* assertResourcesScope(ctx, db, body.resourceType, resourceIds, "This resource");
 
         const at = now();
 
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx
-              .delete(schema.scopeTagAssignment)
-              .where(
-                and(
-                  eq(schema.scopeTagAssignment.organizationId, ctx.organization.id),
-                  eq(schema.scopeTagAssignment.resourceType, body.resourceType),
-                  inArray(schema.scopeTagAssignment.resourceId, [...resourceIds]),
-                  // A scoped administrator only replaces the tags they can
-                  // see. Tags outside their scope stay attached, so editing a
-                  // shared resource cannot silently drop another region.
-                  ctx.scopeUnrestricted
-                    ? undefined
-                    : inArray(schema.scopeTagAssignment.tagId, [...ctx.scopeTagIds]),
-                ),
-              );
+            yield* tx.delete(schema.scopeTagAssignment).where(
+              and(
+                eq(schema.scopeTagAssignment.organizationId, ctx.organization.id),
+                eq(schema.scopeTagAssignment.resourceType, body.resourceType),
+                inArray(schema.scopeTagAssignment.resourceId, [...resourceIds]),
+                // A scoped administrator only replaces the tags they can
+                // see. Tags outside their scope stay attached, so editing a
+                // shared resource cannot silently drop another region.
+                ctx.scopeUnrestricted
+                  ? undefined
+                  : inArray(schema.scopeTagAssignment.tagId, [...ctx.scopeTagIds]),
+              ),
+            );
 
             if (tagIds.length > 0)
               yield* tx.insert(schema.scopeTagAssignment).values(
@@ -16667,14 +16781,17 @@ export const createEnterpriseService = ({
               : [];
 
             if (!existing && invitedTags.length > 0)
-              yield* tx.insert(schema.memberScopeTag).ignore().values(
-                invitedTags.map((tagId: string) => ({
-                  organizationId: invitation.organizationId,
-                  memberId,
-                  tagId,
-                  createdAt: acceptedAt,
-                })),
-              );
+              yield* tx
+                .insert(schema.memberScopeTag)
+                .ignore()
+                .values(
+                  invitedTags.map((tagId: string) => ({
+                    organizationId: invitation.organizationId,
+                    memberId,
+                    tagId,
+                    createdAt: acceptedAt,
+                  })),
+                );
 
             for (const siblingId of siblingIds)
               yield* tx
@@ -17817,9 +17934,7 @@ export const createEnterpriseService = ({
 
                 if (
                   targetTags.length === 0 ||
-                  targetTags.some(
-                    (row: { tagId: string }) => !ctx.scopeTagIds.has(row.tagId),
-                  )
+                  targetTags.some((row: { tagId: string }) => !ctx.scopeTagIds.has(row.tagId))
                 ) {
                   failed.push({ id: accountId, reason: "forbidden" });
                   continue;
@@ -18961,7 +19076,7 @@ export const createEnterpriseService = ({
         const domains = yield* appleByodDomainOptions(organizationId);
         const requestedDomain =
           payload.domain === undefined
-            ? existing?.domain ?? null
+            ? (existing?.domain ?? null)
             : payload.domain === null
               ? null
               : normalizeAppleByodDomain(payload.domain);
@@ -19020,8 +19135,8 @@ export const createEnterpriseService = ({
           hardwareValidationRequired:
             payload.hardwareValidationRequired ?? existing?.hardwareValidationRequired ?? true,
           // A different domain or flow has not been checked or validated yet.
-          validatedAt: domainChanged ? null : existing?.validatedAt ?? null,
-          hardwareValidatedAt: domainChanged ? null : existing?.hardwareValidatedAt ?? null,
+          validatedAt: domainChanged ? null : (existing?.validatedAt ?? null),
+          hardwareValidatedAt: domainChanged ? null : (existing?.hardwareValidatedAt ?? null),
           updatedAt: timestamp,
         };
 
@@ -19054,8 +19169,7 @@ export const createEnterpriseService = ({
           where: { organizationId },
         });
         const domains = yield* appleByodDomainOptions(organizationId);
-        const domain =
-          normalizeAppleByodDomain(payload.domain) ?? config?.domain ?? null;
+        const domain = normalizeAppleByodDomain(payload.domain) ?? config?.domain ?? null;
 
         if (!domain || !domains.some((option) => option.domain === domain))
           return yield* Effect.fail(
@@ -20871,8 +20985,7 @@ export const createEnterpriseService = ({
         // A scoped administrator may only delete devices they can see. Checked
         // before the rows are read so a mixed batch is refused before any
         // secret is revoked or any row is removed.
-        if (!ctx.scopeUnrestricted)
-          yield* assertResourcesScope(ctx, db, "device", ids, "Device");
+        if (!ctx.scopeUnrestricted) yield* assertResourcesScope(ctx, db, "device", ids, "Device");
 
         // Resolve the rows first: revocation also has to match certificates
         // recorded against the legacy `dmIdentifier`, not just the row id.
@@ -21385,11 +21498,7 @@ export const createEnterpriseService = ({
     listDevicePreRegistrations: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
-        yield* assertTenantWideRead(
-          ctx,
-          "devices.read",
-          "Device pre-registrations",
-        );
+        yield* assertTenantWideRead(ctx, "devices.read", "Device pre-registrations");
 
         const rows = yield* db
           .select()
@@ -21924,9 +22033,7 @@ export const createEnterpriseService = ({
             ),
           );
 
-        const visibleIds = new Set(
-          visible.map((row: { resourceId: string }) => row.resourceId),
-        );
+        const visibleIds = new Set(visible.map((row: { resourceId: string }) => row.resourceId));
 
         return {
           ...result,
@@ -24756,7 +24863,9 @@ export const createEnterpriseService = ({
           { concurrency: "unbounded" },
         );
 
-        const inventoryCertificates = Schema.is(Schema.Array(Schema.Json))(device.managedCertificates)
+        const inventoryCertificates = Schema.is(Schema.Array(Schema.Json))(
+          device.managedCertificates,
+        )
           ? device.managedCertificates.flatMap((entry) => {
               if (!Schema.is(Schema.JsonObject)(entry)) return [];
               const identifier = entry["identifier"];
@@ -24773,9 +24882,7 @@ export const createEnterpriseService = ({
                   fingerprintSha256: Schema.is(Schema.String)(entry["fingerprintSha256"])
                     ? entry["fingerprintSha256"]
                     : null,
-                  notAfter: Schema.is(Schema.String)(entry["notAfter"])
-                    ? entry["notAfter"]
-                    : null,
+                  notAfter: Schema.is(Schema.String)(entry["notAfter"]) ? entry["notAfter"] : null,
                   source: "apple-inventory" as const,
                 },
               ];
@@ -24806,10 +24913,9 @@ export const createEnterpriseService = ({
                 .where(
                   and(
                     eq(schema.policyCertificateMaterial.organizationId, ctx.organization.id),
-                    inArray(
-                      schema.policyCertificateMaterial.policyId,
-                      [...new Set(certificateConfigurations.map((entry) => entry.policyId))],
-                    ),
+                    inArray(schema.policyCertificateMaterial.policyId, [
+                      ...new Set(certificateConfigurations.map((entry) => entry.policyId)),
+                    ]),
                   ),
                 )
             : [];
@@ -26940,10 +27046,10 @@ export const createEnterpriseService = ({
         // configuration cannot leave the policy half-updated.
         const finalKinds = [
           ...new Set([...existingScopes.keys(), ...prepared.map((entry) => entry.kind)]),
-        ].filter((kind) => !configurations.some(([removed, data]) => removed === kind && data === null));
-        const finalScopes = Object.fromEntries(
-          finalKinds.map((kind) => [kind, scopeFor(kind)]),
+        ].filter(
+          (kind) => !configurations.some(([removed, data]) => removed === kind && data === null),
         );
+        const finalScopes = Object.fromEntries(finalKinds.map((kind) => [kind, scopeFor(kind)]));
 
         yield* validatePolicyConfigurations({
           organizationId: ctx.organization.id,
@@ -27588,9 +27694,7 @@ export const createEnterpriseService = ({
         // Material rows are not versioned with the configuration snapshot. A
         // rollback that claims an old certificate would leave the current PFX
         // in place and silently deliver the wrong identity, so refuse it.
-        const identityEntries = entries.filter(([kind]) =>
-          parseCertificateConfigurationKind(kind),
-        );
+        const identityEntries = entries.filter(([kind]) => parseCertificateConfigurationKind(kind));
 
         if (identityEntries.length > 0) {
           const materialRows = yield* db
@@ -27604,9 +27708,7 @@ export const createEnterpriseService = ({
 
             if (!parsed || parsed.type === "trusted-root") continue;
             const material = materialByKind.get(kind);
-            const wanted = Schema.is(Schema.JsonObject)(data)
-              ? data["materialSha256"]
-              : undefined;
+            const wanted = Schema.is(Schema.JsonObject)(data) ? data["materialSha256"] : undefined;
 
             if (material && wanted === material.materialSha256) continue;
 
@@ -29567,7 +29669,7 @@ export const createEnterpriseService = ({
               for (const key of [
                 ...installerRows.flatMap((row) => (row.r2Key ? [row.r2Key] : [])),
                 ...(existing.r2Key ? [existing.r2Key] : []),
-              ])
+              ].filter((key) => isTenantApplicationObjectKey(ctx.organization.id, key)))
                 yield* r2
                   .delete(key)
                   .pipe(
@@ -30715,7 +30817,11 @@ export const createEnterpriseService = ({
             })
             .where(eq(schema.applicationInstaller.id, primary.id));
 
-          if (primary.r2Key && primary.r2Key !== key) yield* r2.delete(primary.r2Key);
+          if (
+            primary.r2Key !== key &&
+            isTenantApplicationObjectKey(ctx.organization.id, primary.r2Key)
+          )
+            yield* r2.delete(primary.r2Key);
         } else {
           const at = now();
 
@@ -30743,7 +30849,11 @@ export const createEnterpriseService = ({
 
         yield* syncLegacyApplicationInstaller(ctx.organization.id, applicationId);
 
-        if (existing?.r2Key && existing.r2Key !== key) yield* r2.delete(existing.r2Key);
+        if (
+          existing?.r2Key !== key &&
+          isTenantApplicationObjectKey(ctx.organization.id, existing?.r2Key)
+        )
+          yield* r2.delete(existing.r2Key);
         yield* audit(ctx, "application.uploaded", "application", applicationId, {
           fileName: body.fileName,
           sha256,
@@ -30771,7 +30881,7 @@ export const createEnterpriseService = ({
 
         yield* assertResourceScope(ctx, db, "application", applicationId, "This application");
 
-        if (app.sha256 !== sha256 || !app.r2Key)
+        if (app.sha256 !== sha256 || !isTenantApplicationObjectKey(ctx.organization.id, app.r2Key))
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Application file not found" }),
           );
@@ -30845,7 +30955,11 @@ export const createEnterpriseService = ({
           })
           .where(eq(schema.applicationInstaller.id, installer.id));
 
-        if (installer.r2Key && installer.r2Key !== key) yield* r2.delete(installer.r2Key);
+        if (
+          installer.r2Key !== key &&
+          isTenantApplicationObjectKey(ctx.organization.id, installer.r2Key)
+        )
+          yield* r2.delete(installer.r2Key);
 
         yield* syncLegacyApplicationInstaller(ctx.organization.id, applicationId);
         yield* audit(ctx, "application.uploaded", "application", applicationId, {
@@ -30880,7 +30994,11 @@ export const createEnterpriseService = ({
           )
           .limit(1);
 
-        if (!installer || installer.sha256 !== sha256 || !installer.r2Key)
+        if (
+          !installer ||
+          installer.sha256 !== sha256 ||
+          !isTenantApplicationObjectKey(ctx.organization.id, installer.r2Key)
+        )
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Application file not found" }),
           );
@@ -30995,29 +31113,37 @@ export const createEnterpriseService = ({
 
         return { id: newId };
       }),
-    extractMobileconfig: (payload) =>
+    extractMobileconfig: (request, payload) =>
       Effect.gen(function* () {
+        yield* requireVerifiedUser(request);
+
         const body: { mobileconfig: string } = payload;
 
-        return yield* Effect.tryPromise({
-          try: async () => ({ plist: await extractMobileconfigPlist(body.mobileconfig) }),
-          catch: (cause) =>
-            new EnterpriseBadRequest({
-              message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
-            }),
-        });
+        return yield* withMobileconfigSlot(
+          Effect.tryPromise({
+            try: async () => ({ plist: await extractMobileconfigPlist(body.mobileconfig) }),
+            catch: (cause) =>
+              new EnterpriseBadRequest({
+                message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
+              }),
+          }),
+        );
       }),
-    previewMobileconfig: (payload) =>
+    previewMobileconfig: (request, payload) =>
       Effect.gen(function* () {
+        yield* requireVerifiedUser(request);
+
         const body: { mobileconfig: string } = payload;
 
-        return yield* Effect.tryPromise({
-          try: () => parseMobileconfigPreview(body.mobileconfig),
-          catch: (cause) =>
-            new EnterpriseBadRequest({
-              message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
-            }),
-        });
+        return yield* withMobileconfigSlot(
+          Effect.tryPromise({
+            try: () => parseMobileconfigPreview(body.mobileconfig),
+            catch: (cause) =>
+              new EnterpriseBadRequest({
+                message: cause instanceof Error ? cause.message : "Invalid mobileconfig",
+              }),
+          }),
+        );
       }),
     search: (request, tenantId, query) =>
       Effect.gen(function* () {
@@ -34346,9 +34472,7 @@ export const createEnterpriseService = ({
               (() => {
                 const devices = scopedResourceIds(db, ctx, "device");
 
-                return devices
-                  ? inArray(schema.deviceApplication.deviceId, devices)
-                  : undefined;
+                return devices ? inArray(schema.deviceApplication.deviceId, devices) : undefined;
               })(),
             ),
           );
@@ -36132,11 +36256,41 @@ export const enterpriseAttributeHandlers = (
         service.submitEnrollmentAnswers(params.id, payload),
       ),
     )
-    .handle("extractMobileconfig", ({ payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.extractMobileconfig(payload)),
+    .handleRaw("extractMobileconfig", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.gen(function* () {
+          const payload = yield* readMobileconfigPayload(request);
+
+          if (payload === null)
+            return HttpServerResponse.jsonUnsafe(
+              {
+                error: "payload_too_large",
+                message: "The mobileconfig request body is too large.",
+              },
+              { status: 413 },
+            );
+
+          return yield* service.extractMobileconfig(request, payload);
+        }),
+      ),
     )
-    .handle("previewMobileconfig", ({ payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.previewMobileconfig(payload)),
+    .handleRaw("previewMobileconfig", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        Effect.gen(function* () {
+          const payload = yield* readMobileconfigPayload(request);
+
+          if (payload === null)
+            return HttpServerResponse.jsonUnsafe(
+              {
+                error: "payload_too_large",
+                message: "The mobileconfig request body is too large.",
+              },
+              { status: 413 },
+            );
+
+          return yield* service.previewMobileconfig(request, payload);
+        }),
+      ),
     )
     .handle("importDeviceAttributes", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>

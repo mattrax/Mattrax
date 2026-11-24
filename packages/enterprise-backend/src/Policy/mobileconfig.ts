@@ -185,6 +185,46 @@ const textFromBytes = async (bytes: Uint8Array): Promise<string> => {
   return extracted ? decoder.decode(extracted) : text;
 };
 
+/**
+ * The parser is deliberately given a shape budget before it runs. The string
+ * cap alone still allows a small document with pathological nesting or node
+ * counts; both make recursive decode and preview traversal expensive.
+ */
+const MAX_PLIST_DEPTH = 64;
+
+const MAX_PLIST_NODES = 100_000;
+
+const PLIST_TAG = /<(\/?)([A-Za-z][A-Za-z0-9._-]*)([^>]*)>/g;
+
+const assertPlistWithinLimits = (text: string): void => {
+  let depth = 0;
+  let nodes = 0;
+  let match: RegExpExecArray | null;
+
+  PLIST_TAG.lastIndex = 0;
+
+  while ((match = PLIST_TAG.exec(text)) !== null) {
+    const closing = match[1] === "/";
+    const tag = match[2].toLowerCase();
+    const selfClosing = !closing && /\/\s*$/.test(match[3]);
+
+    if (tag === "dict" || tag === "array") {
+      if (closing) depth -= 1;
+      else if (!selfClosing) depth += 1;
+
+      if (depth > MAX_PLIST_DEPTH)
+        throw new Error("The mobileconfig is nested too deeply to preview");
+    }
+
+    if (!closing) {
+      nodes += 1;
+
+      if (nodes > MAX_PLIST_NODES)
+        throw new Error("The mobileconfig contains too many values to preview");
+    }
+  }
+};
+
 const payloadPreview = (payload: PlistDictionary): MobileconfigPayloadPreview => {
   const type = plistString(payload.PayloadType) ?? "Unknown";
 
@@ -215,6 +255,8 @@ export const parseMobileconfigPreview = async (base64: string): Promise<Mobileco
   }
 
   const text = await textFromBytes(bytes);
+
+  assertPlistWithinLimits(text);
 
   const plist = await Effect.runPromise(
     parsePlist(text).pipe(

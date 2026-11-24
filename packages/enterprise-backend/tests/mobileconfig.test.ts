@@ -87,6 +87,20 @@ describe("mobileconfig preview", () => {
     await expect(parseMobileconfigPreview(btoa("not a plist"))).rejects.toThrow();
   });
 
+  it("rejects a profile nested beyond the parser depth guard", async () => {
+    const nested = `<plist><dict>${"<array>".repeat(70)}${"</array>".repeat(
+      70,
+    )}</dict></plist>`;
+
+    await expect(parseMobileconfigPreview(btoa(nested))).rejects.toThrow("nested too deeply");
+  });
+
+  it("rejects a profile with too many values before parsing", async () => {
+    const wide = `<plist><array>${"<true/>".repeat(100_001)}</array></plist>`;
+
+    await expect(parseMobileconfigPreview(btoa(wide))).rejects.toThrow("too many values");
+  });
+
   it("maps unknown payload types to themselves", () => {
     expect(payloadCategory("com.example.custom")).toBe("com.example.custom");
   });

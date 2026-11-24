@@ -33,7 +33,19 @@ import { BulkUpdateResult } from "../Common.js";
 import { AddUserGroupMembersRequest } from "../Directory.js";
 import { PatchTenantAccountRolesRequest } from "../Tenant.js";
 
-const MobileconfigRequest = Schema.Struct({ mobileconfig: Schema.String });
+/** Largest decoded mobileconfig the preview/extract helpers will process. */
+export const MOBILECONFIG_MAX_CHARS = 8 * 1024 * 1024;
+
+/**
+ * Raw HTTP body cap for the stateless helpers. Base64 expands by 4/3, so this
+ * leaves room for the encoded limit and JSON framing while keeping the body
+ * bounded before it is materialised as a string.
+ */
+export const MOBILECONFIG_REQUEST_MAX_BYTES = 12 * 1024 * 1024;
+
+export const MobileconfigRequest = Schema.Struct({
+  mobileconfig: Schema.String.check(Schema.isMaxLength(MOBILECONFIG_MAX_CHARS)),
+});
 
 const MobileconfigExtractResponse = Schema.Struct({ plist: Schema.String });
 

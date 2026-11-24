@@ -365,9 +365,8 @@ describe("mobileconfig preview scope", () => {
       ),
     );
 
-    // SAFETY: the preview endpoint is account-scoped and takes no request.
     const preview = await runEffect(
-      context.service.previewMobileconfig({ mobileconfig: userProfile }),
+      context.service.previewMobileconfig(request(headers), { mobileconfig: userProfile }),
     );
 
     expect(preview.scope).toBe("user");

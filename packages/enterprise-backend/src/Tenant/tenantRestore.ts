@@ -23,6 +23,67 @@ import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
 /** Restore obeys the same bundle size limit as a fresh import. */
 export const TENANT_RESTORE_MAX_BYTES = TENANT_IMPORT_MAX_BYTES;
 
+/**
+ * Every uploaded application/installer object this tenant may read or delete
+ * lives under `a/<tenantId>/`. Ownership is checked again at each R2 sink so a
+ * row written before this validation (or by a bug) cannot reach another
+ * tenant's bytes.
+ */
+export const tenantApplicationObjectPrefix = (organizationId: string) => `a/${organizationId}/`;
+
+export const isTenantApplicationObjectKey = (
+  organizationId: string,
+  key: string | null | undefined,
+): key is string =>
+  typeof key === "string" &&
+  key.length > 0 &&
+  key.startsWith(tenantApplicationObjectPrefix(organizationId));
+
+const AUDIT_OBJECT_KEY_PROPERTIES = new Set(["r2Key", "objectKey", "backupKey"]);
+
+/** Object-key shapes that must never be exposed through audit metadata. */
+const AUDIT_OBJECT_KEY_VALUE = /^(?:a|p|backups|diagnostics|handover|handovers)\//;
+
+type AuditJson = string | number | boolean | null | AuditJson[] | { [key: string]: AuditJson };
+
+/**
+ * Remove R2 object keys from audit metadata before it is stored or returned.
+ * `audit.read` is separate from `backups.read` and application permissions, so
+ * a key visible here would let a read-only role acquire another resource's
+ * object path.
+ */
+export const redactAuditObjectKeys = (value: unknown, depth = 0): AuditJson => {
+  if (depth > 20) return "[redacted]";
+
+  if (Array.isArray(value)) return value.map((entry) => redactAuditObjectKeys(entry, depth + 1));
+
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  )
+    return value;
+
+  if (typeof value !== "object") return "[redacted]";
+
+  const output: Record<string, AuditJson> = {};
+
+  for (const [name, entry] of Object.entries(value)) {
+    if (AUDIT_OBJECT_KEY_PROPERTIES.has(name)) {
+      output[name] = "[redacted]";
+      continue;
+    }
+
+    output[name] =
+      name === "key" && typeof entry === "string" && AUDIT_OBJECT_KEY_VALUE.test(entry)
+        ? "[redacted]"
+        : redactAuditObjectKeys(entry, depth + 1);
+  }
+
+  return output;
+};
+
 export class TenantRestoreError extends Data.TaggedError("TenantRestoreError")<{
   readonly reason: "invalid_bundle" | "snapshot_failed" | "write_failed";
   readonly message: string;
@@ -1189,6 +1250,15 @@ export const applyTenantBundle = (
       for (const application of bundle.applications) {
         const applicationId = newId();
         applicationIdByKey.set(application.key, applicationId);
+
+        // A bundle can only reference objects this tenant owns. Restore and
+        // cutover both pass through here, so a foreign key is never persisted:
+        // the row is kept (so assignments survive) with the object reference
+        // stripped and the file reported for re-upload.
+        const primaryR2Key = isTenantApplicationObjectKey(organization.id, application.r2Key)
+          ? application.r2Key
+          : null;
+
         yield* tx.insert(schema.application).values({
           id: applicationId,
           organizationId: organization.id,
@@ -1203,8 +1273,9 @@ export const applyTenantBundle = (
           contentType: application.contentType,
           size: application.size,
           sha256: application.sha256,
-          // Same tenant, so the object under `a/<tenant>/` still exists.
-          r2Key: application.r2Key,
+          // Same tenant, so the object under `a/<tenant>/` still exists. A key
+          // under another prefix is dropped rather than trusted.
+          r2Key: primaryR2Key,
           notes: application.notes,
           catalogueTitleId: application.catalogueTitleId ?? null,
           catalogueMethodId: application.catalogueMethodId ?? null,
@@ -1236,7 +1307,17 @@ export const applyTenantBundle = (
               },
             ];
 
-        for (const installer of installerInputs)
+        // A primary upload with no object is also a file the operator must
+        // supply again, not just a missing installer.
+        let missingObject = application.source === "upload" && primaryR2Key === null;
+
+        for (const installer of installerInputs) {
+          const installerR2Key = isTenantApplicationObjectKey(organization.id, installer.r2Key)
+            ? installer.r2Key
+            : null;
+
+          if (installer.source === "upload" && installerR2Key === null) missingObject = true;
+
           yield* tx.insert(schema.applicationInstaller).values({
             id: newId(),
             organizationId: organization.id,
@@ -1251,7 +1332,7 @@ export const applyTenantBundle = (
             contentType: installer.contentType ?? null,
             size: installer.size ?? null,
             sha256: installer.sha256 ?? null,
-            r2Key: installer.r2Key ?? null,
+            r2Key: installerR2Key,
             minOsVersion: installer.minOsVersion ?? null,
             requiredCapability: installer.requiredCapability ?? null,
             priority: installer.priority ?? 0,
@@ -1261,9 +1342,9 @@ export const applyTenantBundle = (
             createdAt: timestamp,
             updatedAt: timestamp,
           });
+        }
 
-        if (installerInputs.some((installer) => installer.source === "upload" && !installer.r2Key))
-          applicationsWithoutFiles++;
+        if (missingObject) applicationsWithoutFiles++;
       }
 
       const applicationGroupValues: Array<{ groupId: string; applicationId: string }> = [];
@@ -1491,21 +1572,6 @@ export const restoreTenantFromBackup = (
     const bundle = yield* parseTenantRestoreBundle(loaded.text, {
       escrowCertificateFingerprintSha256: escrowKey?.certificateFingerprintSha256 ?? null,
     });
-
-    // A bundle can only reference objects this tenant owns. Accepting an
-    // arbitrary key would make the download endpoint read another tenant's
-    // bytes (or an object the restore never created).
-    const foreignObject = bundle.applications.find(
-      (application) =>
-        application.r2Key != null &&
-        application.r2Key !== "" &&
-        !application.r2Key.startsWith(`a/${organization.id}/`),
-    );
-
-    if (foreignObject)
-      return yield* Effect.fail(
-        invalid(`Application "${foreignObject.name}" references an object outside this tenant`),
-      );
 
     const timestamp = options.now ?? new Date();
 
