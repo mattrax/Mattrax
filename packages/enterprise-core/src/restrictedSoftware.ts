@@ -18,7 +18,7 @@ import {
   restrictedSoftwareCapability,
   restrictedSoftwareScopeApplies,
 } from "@mattrax/enterprise-domain";
-import type { RestrictedSoftwarePlatform } from "@mattrax/enterprise-domain";
+import type { InventoryApplication, RestrictedSoftwarePlatform } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "./db.ts";
 import {
   restrictedSoftware,
@@ -200,6 +200,10 @@ const enforcementFor = (
  * The unique `(rule, device)` row is the de-duplication boundary: a repeated
  * report refreshes `lastDetectedAt` and the occurrence count without producing
  * another violation event. A rule that stops matching resolves the open row.
+ * Callers reporting a fresh inventory can supply it to avoid reading the stored
+ * rows again. Rule and assignment changes omit it and use the saved inventory.
+ * Rescans also close stale violations when no rules apply, without reading the
+ * application inventory in that case.
  */
 export const reconcileRestrictedSoftwareForDevice = (
   db: EnterpriseDb,
@@ -207,6 +211,8 @@ export const reconcileRestrictedSoftwareForDevice = (
     readonly organizationId: string;
     readonly deviceId: string;
     readonly at: Date;
+    readonly applications?: ReadonlyArray<InventoryApplication>;
+    readonly rescan?: boolean;
   },
 ): Effect.Effect<
   {
@@ -220,18 +226,23 @@ export const reconcileRestrictedSoftwareForDevice = (
   Effect.gen(function* () {
     const resolved = yield* resolveRestrictedSoftwareForDevice(db, input);
     const deviceRow = resolved.device;
+    const rulesApply = resolved.rules.length > 0;
 
-    if (!deviceRow) return { detected: 0, reopened: 0, refreshed: 0, resolved: 0 };
+    if (!deviceRow || (!rulesApply && !input.rescan))
+      return { detected: 0, reopened: 0, refreshed: 0, resolved: 0 };
 
-    const applications = yield* db
-      .select()
-      .from(deviceApplication)
-      .where(
-        and(
-          eq(deviceApplication.deviceId, input.deviceId),
-          eq(deviceApplication.organizationId, input.organizationId),
-        ),
-      );
+    const applications = rulesApply
+      ? (input.applications ??
+        (yield* db
+          .select()
+          .from(deviceApplication)
+          .where(
+            and(
+              eq(deviceApplication.deviceId, input.deviceId),
+              eq(deviceApplication.organizationId, input.organizationId),
+            ),
+          )))
+      : [];
 
     const existing = yield* db
       .select()
@@ -377,8 +388,9 @@ export const reconcileRestrictedSoftwareForDevice = (
           status: "resolved",
           resolvedAt: input.at,
           updatedAt: input.at,
-          enforcementDetail:
-            prior.enforcementState === "failed"
+          enforcementDetail: !rulesApply
+            ? "No restricted-software rules currently apply to this device."
+            : prior.enforcementState === "failed"
               ? prior.enforcementDetail
               : "The application is no longer present in the device inventory.",
         })
@@ -404,7 +416,8 @@ export const reconcileRestrictedSoftwareForDevice = (
  * Re-evaluate one tenant, optionally limited to certain devices.
  *
  * Used after a rule or assignment change so existing inventory is judged
- * immediately rather than waiting for the next daily report.
+ * immediately rather than waiting for the next daily report. It also resolves
+ * stale violations for devices that no longer have an applicable rule.
  */
 export const reconcileRestrictedSoftwareForOrganization = (
   db: EnterpriseDb,
@@ -435,6 +448,7 @@ export const reconcileRestrictedSoftwareForOrganization = (
           organizationId: input.organizationId,
           deviceId: row.id,
           at: input.at,
+          rescan: true,
         }),
       { concurrency: 5, discard: true },
     );
