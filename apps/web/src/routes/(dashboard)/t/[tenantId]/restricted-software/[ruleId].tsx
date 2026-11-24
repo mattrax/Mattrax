@@ -1,5 +1,4 @@
 import { useParams } from "@solidjs/router";
-import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Page, PageHeader, Panel, QueryError, formatDate } from "~/components/mdm/common";
@@ -23,19 +22,8 @@ import {
   restrictedSoftwareProblem,
 } from "@mattrax/enterprise-domain/client";
 import { useNavigate } from "~/lib/navigation";
-import { preloadPage } from "~/lib/page-data";
 import { AccessDenied, useCan } from "~/lib/permissions";
-import { queryClient } from "~/lib/query-client";
-
-export const route = {
-  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
-    if (intent === "initial") return;
-
-    return preloadPage([
-      () => queryClient.ensureQueryData(enterpriseQueries.restrictedSoftware(params.tenantId)),
-    ]);
-  },
-};
+import { restrictedSoftwareQueryAccess } from "./query-access";
 
 type Draft = {
   name: string;
@@ -81,11 +69,29 @@ export default function RestrictedSoftwareEditorPage() {
   const writable = () => can("restricted_software.write");
   const isNew = () => params.ruleId === "new";
 
-  const detail = useQuery(() => ({
-    ...enterpriseQueries.restrictedSoftwareRule(params.tenantId, isNew() ? "" : params.ruleId),
-    enabled: !isNew() && Boolean(params.ruleId),
-  }));
-  const targets = useQuery(() => enterpriseQueries.restrictedSoftwareTargets(params.tenantId));
+  const queryAccess = () =>
+    restrictedSoftwareQueryAccess({
+      read: can("restricted_software.read"),
+      write: writable(),
+      isNew: isNew(),
+      violationsView: false,
+    });
+  const detail = useQuery(() => {
+    const options = enterpriseQueries.restrictedSoftwareRule(
+      params.tenantId,
+      isNew() ? "" : params.ruleId,
+    );
+
+    return {
+      ...options,
+      enabled: options.enabled && queryAccess().detail && Boolean(params.ruleId),
+    };
+  });
+  const targets = useQuery(() => {
+    const options = enterpriseQueries.restrictedSoftwareTargets(params.tenantId);
+
+    return { ...options, enabled: options.enabled && queryAccess().targets };
+  });
 
   const [draft, setDraft] = createSignal<Draft>(emptyDraft());
   const [assignments, setAssignments] = createSignal<RestrictedSoftwareAssignmentInfo[]>([]);

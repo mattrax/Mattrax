@@ -3,7 +3,7 @@ import { Option, Schema } from "effect";
 import type { RaisedFailure } from "~/lib/errors";
 import { registerPostHogReader } from "./posthog-context";
 import { sanitizePostHogCapture } from "./posthog-sanitize";
-import { AnalyticsQueue } from "./analytics-queue";
+import { AnalyticsQueue, AnalyticsStorageQueue } from "./analytics-queue";
 
 /**
  * Minimal browser analytics client.
@@ -43,6 +43,8 @@ const STORAGE_KEY = "mattrax.posthog";
 const SESSION_IDLE_MILLIS = 30 * 60 * 1000;
 
 const FLUSH_AFTER_MILLIS = 2_000;
+
+const PERSIST_AFTER_MILLIS = 5_000;
 
 const MAX_QUEUE = 20;
 
@@ -104,9 +106,13 @@ let lastPage: string | undefined;
 
 let analyticsQueue: AnalyticsQueue<CapturedEvent> | undefined;
 
+let identityQueue: AnalyticsStorageQueue<StoredIdentity> | undefined;
+
 const persist = (): void => {
-  writeStorage({ distinctId, sessionId, activeAt: sessionActiveAt });
+  identityQueue?.set({ distinctId, sessionId, activeAt: sessionActiveAt });
 };
+
+const flushIdentity = (): void => identityQueue?.flush();
 
 const ensureSession = (): void => {
   const now = Date.now();
@@ -251,7 +257,14 @@ const start = (): void => {
   distinctId = stored.distinctId ?? randomId();
   sessionId = stored.sessionId ?? randomId();
   sessionActiveAt = stored.activeAt ?? Date.now();
+  identityQueue = new AnalyticsStorageQueue({
+    delay: PERSIST_AFTER_MILLIS,
+    persist: writeStorage,
+  });
   ensureSession();
+  // Establish the initial identity immediately; subsequent event-time updates
+  // are coalesced until the throttle window or a page lifecycle flush.
+  flushIdentity();
   ready = true;
 
   registerPostHogReader(() => ({ distinctId, sessionId }));
@@ -283,15 +296,15 @@ const start = (): void => {
     true,
   );
 
-  window.addEventListener("pagehide", () => {
+  const leave = () => {
     enqueue("$pageleave", { $pathname: location.pathname });
+    flushIdentity();
     void flush(true);
-  });
+  };
 
+  window.addEventListener("pagehide", leave);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "hidden") return;
-    enqueue("$pageleave", { $pathname: location.pathname });
-    void flush(true);
+    if (document.visibilityState === "hidden") leave();
   });
 };
 
@@ -333,6 +346,7 @@ export const syncPostHogUser = (user: PostHogUser | null): void => {
     identifySignature = undefined;
     lastPage = undefined;
     persist();
+    flushIdentity();
     void flush();
 
     return;
@@ -365,7 +379,6 @@ export const syncPostHogUser = (user: PostHogUser | null): void => {
   });
 
   identifySignature = signature;
-  persist();
 };
 
 /** Group pageviews and interactions by the active tenant. */

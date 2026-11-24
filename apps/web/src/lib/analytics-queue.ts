@@ -7,6 +7,70 @@ export type AnalyticsQueueOptions<T> = {
   readonly schedule?: TimerSchedule;
 };
 
+export type AnalyticsStorageQueueOptions<T> = {
+  readonly delay: number;
+  readonly persist: (value: T) => void;
+  /** Injection seam for tests; production uses the browser timer. */
+  readonly schedule?: TimerSchedule;
+};
+
+/** Coalesce frequent snapshots into one write of the latest value per window. */
+export class AnalyticsStorageQueue<T> {
+  private pending: T | undefined;
+  private hasPending = false;
+  private cancelTimer: (() => void) | undefined;
+  private disposed = false;
+  private readonly delay: number;
+  private readonly persist: (value: T) => void;
+  private readonly schedule: TimerSchedule;
+
+  constructor(options: AnalyticsStorageQueueOptions<T>) {
+    this.delay = options.delay;
+    this.persist = options.persist;
+    this.schedule =
+      options.schedule ??
+      ((run, delay) => {
+        const timer = setTimeout(run, delay);
+
+        return () => clearTimeout(timer);
+      });
+  }
+
+  set(value: T): void {
+    if (this.disposed) return;
+    this.pending = value;
+    this.hasPending = true;
+
+    if (this.cancelTimer) return;
+    this.cancelTimer = this.schedule(() => {
+      this.cancelTimer = undefined;
+      this.flush();
+    }, this.delay);
+  }
+
+  flush = (): void => {
+    this.clearTimer();
+
+    if (!this.hasPending) return;
+
+    const value = this.pending as T;
+    this.pending = undefined;
+    this.hasPending = false;
+    this.persist(value);
+  };
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.flush();
+  }
+
+  private clearTimer(): void {
+    this.cancelTimer?.();
+    this.cancelTimer = undefined;
+  }
+}
+
 /** Owns one analytics queue, its debounce timer and at most one in-flight send. */
 export class AnalyticsQueue<T> {
   private pending: T[] = [];

@@ -38,6 +38,8 @@ import { useCan } from "~/lib/permissions";
 import { PinDashboardButton } from "~/components/pin-dashboard-button";
 import { routes } from "~/lib/routes";
 import { resolveTenantId } from "~/lib/tenant";
+import { createDashboardLayoutResolver } from "./dashboard-layout";
+import type { DashboardLayout } from "./dashboard-layout";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -51,8 +53,6 @@ export const route = {
     ]);
   },
 };
-
-type Layout = { x: number; y: number; w: number; h: number };
 
 type MutableJsonObject = { [key: string]: Schema.Json };
 
@@ -201,45 +201,12 @@ const pieDimensionFor = (dataset: "devices" | "software" | "users") =>
     Match.orElse(() => "platform"),
   );
 
-const overlaps = (left: Layout, right: Layout) =>
-  left.x < right.x + right.w &&
-  left.x + left.w > right.x &&
-  left.y < right.y + right.h &&
-  left.y + left.h > right.y;
-
-/**
- * Push widgets down until a move or resize no longer overlaps them. Keeping
- * this client-side makes drag feedback instant; only the final positions are
- * persisted, and only for widgets that actually changed.
- */
-const resolveLayout = (input: Record<string, Layout>, priorityId?: string) => {
-  const placed: Record<string, Layout> = {};
-
-  const ordered = Object.entries(input).sort(([leftId, left], [rightId, right]) => {
-    if (leftId === priorityId) return -1;
-
-    if (rightId === priorityId) return 1;
-
-    return left.y - right.y || left.x - right.x;
-  });
-
-  for (const [id, layout] of ordered) {
-    const next = { ...layout };
-
-    for (let guard = 0; guard < 100; guard++) {
-      const blockers = Object.entries(placed).filter(([, other]) => overlaps(next, other));
-
-      if (blockers.length === 0) break;
-      next.y = Math.max(...blockers.map(([, other]) => other.y + other.h));
-    }
-
-    placed[id] = next;
-  }
-
-  return placed;
-};
-
-const clampLayout = (layout: Layout, mode: "move" | "resize", dx: number, dy: number): Layout => {
+const clampLayout = (
+  layout: DashboardLayout,
+  mode: "move" | "resize",
+  dx: number,
+  dy: number,
+): DashboardLayout => {
   if (mode === "move")
     return {
       ...layout,
@@ -288,7 +255,7 @@ export default function DashboardPage() {
     setSearchParams({ edit: next ? "1" : undefined }, { replace: true });
   };
 
-  const [layout, setLayout] = createSignal<Record<string, Layout>>({});
+  const [layout, setLayout] = createSignal<Record<string, DashboardLayout>>({});
   const [editorOpen, setEditorOpen] = createSignal(false);
   const [editingWidget, setEditingWidget] = createSignal<DashboardWidget | null>(null);
 
@@ -308,13 +275,15 @@ export default function DashboardPage() {
   const [confirmDeleteDashboard, setConfirmDeleteDashboard] = createSignal(false);
   const [removeWidgetTarget, setRemoveWidgetTarget] = createSignal<DashboardWidget | null>(null);
   const [layoutError, setLayoutError] = createSignal<unknown>(null);
-  const [pendingLayout, setPendingLayout] = createSignal<Array<{ id: string } & Layout>>([]);
+  const [pendingLayout, setPendingLayout] = createSignal<Array<{ id: string } & DashboardLayout>>(
+    [],
+  );
   let gridRef: HTMLDivElement | undefined;
   let cleanDrag: (() => void) | undefined;
 
   const widgets = () => dashboard.data?.widgets ?? [];
 
-  const currentLayout = (widget: DashboardWidget): Layout => layout()[widget.id] ?? widget;
+  const currentLayout = (widget: DashboardWidget): DashboardLayout => layout()[widget.id] ?? widget;
 
   createEffect(
     () => dashboard.data,
@@ -561,7 +530,7 @@ export default function DashboardPage() {
 
   const saveLayout = useMutation(() => ({
     meta: { inlineError: true },
-    mutationFn: (widgets: Array<{ id: string } & Layout>) =>
+    mutationFn: (widgets: Array<{ id: string } & DashboardLayout>) =>
       enterprise.patchDashboardLayout(params.tenantId, params.dashboardId, widgets),
     onMutate: (widgets) => {
       setLayoutError(null);
@@ -618,15 +587,19 @@ export default function DashboardPage() {
     const row = rowHeight + gap;
     const before = { ...layout() };
     const origin = { ...currentLayout(widget) };
+    const resolve = createDashboardLayoutResolver(before, widget.id);
     const startX = event.clientX;
     const startY = event.clientY;
     let latest = before;
+    let frame: number | undefined;
+    let queued: DashboardLayout | undefined;
 
-    const move = (pointer: PointerEvent) => {
-      const dx = Math.round((pointer.clientX - startX) / column);
-      const dy = Math.round((pointer.clientY - startY) / row);
-      const next = clampLayout(origin, mode, dx, dy);
+    const commit = () => {
+      frame = undefined;
+      const next = queued;
+      queued = undefined;
 
+      if (!next) return;
       if (
         next.x === latest[widget.id]!.x &&
         next.y === latest[widget.id]!.y &&
@@ -634,11 +607,25 @@ export default function DashboardPage() {
         next.h === latest[widget.id]!.h
       )
         return;
-      latest = resolveLayout({ ...before, [widget.id]: next }, widget.id);
+
+      latest = resolve(next);
       setLayout(latest);
     };
 
+    const move = (pointer: PointerEvent) => {
+      const dx = Math.round((pointer.clientX - startX) / column);
+      const dy = Math.round((pointer.clientY - startY) / row);
+      queued = clampLayout(origin, mode, dx, dy);
+
+      // Coalesce pointer events into one resolver run and render per frame.
+      if (frame === undefined) frame = window.requestAnimationFrame(commit);
+    };
+
     const up = () => {
+      // Persist the final pointer position even when it arrived after the last
+      // animation frame.
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      commit();
       cleanDrag?.();
 
       const changed = Object.entries(latest).filter(([id, position]) => {
@@ -658,6 +645,9 @@ export default function DashboardPage() {
     };
 
     cleanDrag = () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
+      frame = undefined;
+      queued = undefined;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);

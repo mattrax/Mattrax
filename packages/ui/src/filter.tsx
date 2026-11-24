@@ -1,6 +1,14 @@
 import type { JSX } from "@solidjs/web";
-import type { Component } from "solid-js";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import type { Accessor, Component } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  onSettled,
+  Show,
+} from "solid-js";
 import {
   Popover,
   PopoverContent,
@@ -18,6 +26,13 @@ import {
   normaliseNumericFilterValues,
   splitFilterValues,
 } from "./filter-values";
+import {
+  FILTER_GROUP_HEIGHT,
+  FILTER_OPTION_HEIGHT,
+  positionFilterRows,
+  visibleFilterRows,
+} from "./filter-windowing";
+import type { FilterPickerRow } from "./filter-windowing";
 
 /**
  * Filter primitives.
@@ -136,13 +151,26 @@ const surface =
 const optionClass =
   "flex h-7 w-full cursor-default select-none items-center gap-2 rounded-[6px] px-2 text-left text-[12.5px] font-[450] text-foreground outline-none transition-colors duration-[var(--duration-press)] hover:bg-hover focus-visible:bg-hover [&_svg]:shrink-0";
 
-function FieldOptionRow(props: { option: FilterOption; selected?: boolean; onClick: () => void }) {
+function FieldOptionRow(props: {
+  id?: string;
+  option: FilterOption;
+  selected?: boolean;
+  position: number;
+  setSize: number;
+  onFocus?: () => void;
+  onClick: () => void;
+}) {
   return (
     <button
+      id={props.id}
       type="button"
       role="option"
-      aria-selected={props.selected ? "true" : undefined}
+      aria-selected={props.selected ? "true" : "false"}
+      aria-posinset={props.position}
+      aria-setsize={props.setSize}
+      tabindex={-1}
       class={optionClass}
+      onFocus={props.onFocus}
       onClick={props.onClick}
     >
       <Show when={props.option.icon}>
@@ -160,11 +188,154 @@ function FieldOptionRow(props: { option: FilterOption; selected?: boolean; onCli
   );
 }
 
+type VirtualPickerListProps = {
+  id: string;
+  label: string;
+  maxHeight: number;
+  multiselectable?: boolean;
+  rows: Accessor<ReadonlyArray<FilterPickerRow>>;
+  optionCount: Accessor<number>;
+  renderRow: (row: FilterPickerRow, focusOption: (optionIndex: number) => void) => JSX.Element;
+  onActivate: (optionIndex: number) => void;
+};
+
+/**
+ * One focusable listbox with a roving active descendant. Only the viewport and
+ * a small overscan are mounted, but arrow keys can still reach every option
+ * because moving the active descendant scrolls its row into view.
+ */
+function VirtualPickerList(props: VirtualPickerListProps) {
+  const positioned = createMemo(() => positionFilterRows(props.rows()));
+  const [scrollTop, setScrollTop] = createSignal(0);
+  const [viewportHeight, setViewportHeight] = createSignal(props.maxHeight);
+  const [activeIndex, setActiveIndex] = createSignal(0);
+  let listRef: HTMLDivElement | undefined;
+
+  const renderedRows = createMemo(() => {
+    const visible = visibleFilterRows(positioned(), scrollTop(), viewportHeight());
+    const active = positioned().byOption.get(activeIndex());
+
+    if (!active || visible.some((entry) => entry.row.key === active.row.key)) return visible;
+
+    return [...visible, active].sort((left, right) => left.top - right.top);
+  });
+
+  createEffect(
+    () => props.rows(),
+    () => {
+      setActiveIndex(0);
+      setScrollTop(0);
+      if (listRef) listRef.scrollTop = 0;
+    },
+  );
+
+  createEffect(
+    () => [positioned().byOption.get(activeIndex()), viewportHeight()] as const,
+    ([active]) => {
+      if (!active || !listRef) return;
+
+      const top = listRef.scrollTop;
+      const bottom = top + viewportHeight();
+
+      if (active.top < top) listRef.scrollTop = active.top;
+      else if (active.top + active.row.height > bottom)
+        listRef.scrollTop = active.top + active.row.height - viewportHeight();
+    },
+  );
+
+  onSettled(() => {
+    if (!listRef) return;
+
+    const measure = () => setViewportHeight(listRef?.clientHeight || props.maxHeight);
+    measure();
+
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(listRef);
+
+    return () => observer.disconnect();
+  });
+
+  const moveActive = (delta: number) => {
+    const count = props.optionCount();
+
+    if (count === 0) return;
+    setActiveIndex((current) => (current + delta + count) % count);
+  };
+
+  const activate = () => {
+    if (positioned().byOption.has(activeIndex())) props.onActivate(activeIndex());
+  };
+
+  return (
+    <div
+      id={props.id}
+      ref={(element) => {
+        listRef = element;
+      }}
+      role="listbox"
+      aria-label={props.label}
+      aria-multiselectable={props.multiselectable ? "true" : undefined}
+      aria-activedescendant={
+        positioned().byOption.has(activeIndex()) ? `${props.id}-option-${activeIndex()}` : undefined
+      }
+      tabindex={0}
+      class="overflow-y-auto overscroll-contain py-1 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
+      style={{ "max-height": `${props.maxHeight}px` }}
+      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          moveActive(1);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          moveActive(-1);
+        } else if (event.key === "Home") {
+          event.preventDefault();
+          setActiveIndex(0);
+        } else if (event.key === "End") {
+          event.preventDefault();
+          setActiveIndex(Math.max(0, props.optionCount() - 1));
+        } else if (event.key === "Enter" && event.target === event.currentTarget) {
+          event.preventDefault();
+          activate();
+        } else if (event.key === " " && event.target === event.currentTarget) {
+          event.preventDefault();
+        }
+      }}
+      onKeyUp={(event) => {
+        if (event.key === " " && event.target === event.currentTarget) {
+          event.preventDefault();
+          activate();
+        }
+      }}
+    >
+      <div class="relative" style={{ height: `${positioned().height}px` }}>
+        <For each={renderedRows()}>
+          {(entry) => (
+            <div
+              class="absolute inset-x-0"
+              style={{ top: `${entry.top}px`, height: `${entry.row.height}px` }}
+            >
+              {props.renderRow(entry.row, (optionIndex) => {
+                setActiveIndex(optionIndex);
+                listRef?.focus();
+              })}
+            </div>
+          )}
+        </For>
+      </div>
+    </div>
+  );
+}
+
 function FieldPicker(props: {
   fields: ReadonlyArray<FilterField>;
   onPick: (field: FilterField) => void;
 }) {
   const [search, setSearch] = createSignal("");
+  const listId = createUniqueId();
 
   const matches = createMemo(() => {
     const term = search().trim().toLowerCase();
@@ -179,11 +350,53 @@ function FieldPicker(props: {
 
     for (const field of matches()) {
       const key = field.group ?? "";
-      map.set(key, [...(map.get(key) ?? []), field]);
+      const group = map.get(key);
+
+      // Append in place: copying the accumulated array for every field made
+      // grouping quadratic on tenants with many custom attributes.
+      if (group) group.push(field);
+      else map.set(key, [field]);
     }
 
     return [...map.entries()];
   });
+
+  const fieldById = createMemo(() => new Map(props.fields.map((field) => [field.id, field])));
+  const model = createMemo(() => {
+    const rows: FilterPickerRow[] = [];
+    const options: FilterPickerRow[] = [];
+    let optionIndex = 0;
+    let groupIndex = 0;
+
+    for (const [group, groupFields] of groups()) {
+      if (group) {
+        rows.push({
+          key: `${listId}-group-${groupIndex}`,
+          height: FILTER_GROUP_HEIGHT,
+          group,
+        });
+      }
+
+      for (const field of groupFields) {
+        const row: FilterPickerRow = {
+          key: `${listId}-field-${field.id}`,
+          height: FILTER_OPTION_HEIGHT,
+          optionIndex: optionIndex++,
+          fieldId: field.id,
+          label: field.label,
+          group,
+        };
+        rows.push(row);
+        options.push(row);
+      }
+
+      groupIndex++;
+    }
+
+    return { rows, options };
+  });
+
+  const focusList = () => document.getElementById(listId)?.focus();
 
   return (
     <div>
@@ -193,8 +406,15 @@ function FieldPicker(props: {
           type="text"
           value={search()}
           onInput={(event) => setSearch(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              focusList();
+            }
+          }}
           placeholder="Filter by…"
           aria-label="Search filters"
+          aria-controls={listId}
           class="h-7 min-w-0 flex-1 bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-subtle-foreground"
         />
         <Show when={search()}>
@@ -209,44 +429,44 @@ function FieldPicker(props: {
         </Show>
       </div>
 
-      <Show when={matches().length > 0}>
-        <div
-          role="listbox"
-          aria-label="Filter by"
-          class="max-h-[292px] overflow-y-auto overscroll-contain py-1"
-        >
-          <For each={groups()}>
-            {([group, groupFields], groupIndex) => (
-              <div
-                role={group ? "group" : undefined}
-                aria-labelledby={group ? `filter-group-${groupIndex()}` : undefined}
-              >
-                <Show when={group}>
-                  <p
-                    id={`filter-group-${groupIndex()}`}
-                    class="label-caps flex h-6 items-center px-2"
-                  >
-                    {group}
-                  </p>
-                </Show>
-                <For each={groupFields}>
-                  {(field) => (
-                    <FieldOptionRow
-                      option={{
-                        value: field.id,
-                        label: field.label,
-                        icon: field.icon,
-                      }}
-                      onClick={() => props.onPick(field)}
-                    />
-                  )}
-                </For>
-              </div>
-            )}
-          </For>
-        </div>
+      <Show when={model().options.length > 0}>
+        <VirtualPickerList
+          id={listId}
+          label="Filter by"
+          maxHeight={292}
+          rows={() => model().rows}
+          optionCount={() => model().options.length}
+          onActivate={(index) => {
+            const field = fieldById().get(model().options[index]!.fieldId!);
+
+            if (field) props.onPick(field);
+          }}
+          renderRow={(row, focusOption) => {
+            if (row.fieldId === undefined)
+              return (
+                <p role="presentation" class="label-caps flex h-6 items-center px-2">
+                  {row.group}
+                </p>
+              );
+
+            const field = fieldById().get(row.fieldId);
+
+            if (!field) return null;
+
+            return (
+              <FieldOptionRow
+                id={`${listId}-option-${row.optionIndex}`}
+                option={{ value: field.id, label: field.label, icon: field.icon }}
+                position={row.optionIndex! + 1}
+                setSize={model().options.length}
+                onFocus={() => focusOption(row.optionIndex!)}
+                onClick={() => props.onPick(field)}
+              />
+            );
+          }}
+        />
       </Show>
-      <Show when={matches().length === 0}>
+      <Show when={model().options.length === 0}>
         <p class="px-2 py-6 text-center text-[12px] text-muted-foreground">No fields match.</p>
       </Show>
     </div>
@@ -260,6 +480,7 @@ function ValueEditor(props: {
   onDone: (values: string[]) => void;
 }) {
   const [search, setSearch] = createSignal("");
+  const listId = createUniqueId();
 
   const options = createMemo(() => {
     const term = search().trim().toLowerCase();
@@ -268,6 +489,16 @@ function ValueEditor(props: {
       (option) => !term || option.label.toLowerCase().includes(term),
     );
   });
+  const optionById = createMemo(() => new Map(options().map((option) => [option.value, option])));
+  const rows = createMemo<ReadonlyArray<FilterPickerRow>>(() =>
+    options().map((option, optionIndex) => ({
+      key: `${listId}-value-${optionIndex}`,
+      height: FILTER_OPTION_HEIGHT,
+      optionIndex,
+      fieldId: option.value,
+      label: option.label,
+    })),
+  );
 
   const toggle = (value: string) => {
     if (isMultiFilterValue(props.field, props.condition.operator)) {
@@ -284,6 +515,8 @@ function ValueEditor(props: {
     props.onDone([value]);
   };
 
+  const focusList = () => document.getElementById(listId)?.focus();
+
   return (
     <div>
       <Show when={(props.field.options?.length ?? 0) > 6}>
@@ -293,32 +526,51 @@ function ValueEditor(props: {
             type="text"
             value={search()}
             onInput={(event) => setSearch(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                focusList();
+              }
+            }}
             placeholder={`Search ${props.field.label.toLowerCase()}…`}
             aria-label={`Search ${props.field.label} values`}
+            aria-controls={listId}
             class="h-7 min-w-0 flex-1 bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-subtle-foreground"
           />
         </div>
       </Show>
 
       <Show when={options().length > 0}>
-        <div
-          role="listbox"
-          aria-label={`${props.field.label} value`}
-          aria-multiselectable={
-            isMultiFilterValue(props.field, props.condition.operator) ? "true" : undefined
-          }
-          class="max-h-[260px] overflow-y-auto overscroll-contain py-1"
-        >
-          <For each={options()}>
-            {(option) => (
+        <VirtualPickerList
+          id={listId}
+          label={`${props.field.label} value`}
+          maxHeight={260}
+          multiselectable={isMultiFilterValue(props.field, props.condition.operator)}
+          rows={rows}
+          optionCount={() => options().length}
+          onActivate={(index) => {
+            const option = options()[index];
+
+            if (option) toggle(option.value);
+          }}
+          renderRow={(row, focusOption) => {
+            const option = optionById().get(row.fieldId!);
+
+            if (!option) return null;
+
+            return (
               <FieldOptionRow
+                id={`${listId}-option-${row.optionIndex}`}
                 option={option}
                 selected={props.condition.values.includes(option.value)}
+                position={row.optionIndex! + 1}
+                setSize={options().length}
+                onFocus={() => focusOption(row.optionIndex!)}
                 onClick={() => toggle(option.value)}
               />
-            )}
-          </For>
-        </div>
+            );
+          }}
+        />
       </Show>
       <Show when={options().length === 0}>
         <p class="px-2 py-6 text-center text-[12px] text-muted-foreground">No values.</p>
