@@ -241,7 +241,7 @@ describe("restricted software detection", () => {
     const marked = await runEffect(
       markAndroidRestrictedSoftwarePolicyDelivered(db, {
         organizationId: "org-1",
-        deviceId: "device-1",
+        deviceIds: ["device-1"],
         at: now,
       }),
     );
