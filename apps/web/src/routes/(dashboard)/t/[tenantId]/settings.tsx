@@ -109,15 +109,10 @@ export default function TenantSettingsLayout(props: ParentProps) {
           ?.querySelector<HTMLElement>('[aria-current="page"]')
           ?.scrollIntoView({ inline: "nearest", block: "nearest" });
 
-        // The settings pane, not the window, owns the scroll. Reset it here
-        // and move focus into it so keyboard users scroll the right element.
+        // The settings pane, not the window, owns the scroll. Reset it here;
+        // focus is left to the shell, which already moves it to `#main` once
+        // per pathname change.
         contentPane?.scrollTo({ top: 0 });
-
-        // A dialog owns focus while it is open.
-        if (document.querySelector('[data-slot="dialog-content"], [data-slot="command-palette"]'))
-          return;
-
-        contentPane?.focus({ preventScroll: true });
       });
     },
   );
@@ -192,9 +187,8 @@ export default function TenantSettingsLayout(props: ParentProps) {
             ref={(element) => {
               contentPane = element;
             }}
-            tabindex="-1"
             class={cn(
-              "settings-sections min-h-0 min-w-0 overflow-y-auto px-4 py-5 outline-none focus:outline-none sm:px-6 sm:py-6 xl:px-8 xl:py-7",
+              "settings-sections min-h-0 min-w-0 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 xl:px-8 xl:py-7",
               (draft.dirty() || draft.saving() || draft.saved()) && "pb-28",
             )}
           >
