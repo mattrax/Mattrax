@@ -16,6 +16,36 @@ type CachedMe = typeof CachedMe.Type;
 const decodeCachedMe = Schema.decodeUnknownOption(CachedMe);
 
 /**
+ * The last stored value and its decoded form. `meQueryOptions` runs for every
+ * shell, guard and `useCan` observer on a page; re-parsing the same JSON each
+ * time is a synchronous cost paid during navigation. Keying the memo on the raw
+ * string keeps it correct when another tab (or a caller) rewrites storage.
+ */
+let lastRaw: string | null | undefined;
+let lastDecoded: CachedMe | undefined;
+
+const decodeStored = (raw: string | null): CachedMe | undefined => {
+  if (raw === lastRaw) return lastDecoded;
+
+  lastRaw = raw;
+
+  if (!raw) {
+    lastDecoded = undefined;
+
+    return undefined;
+  }
+
+  try {
+    lastDecoded = Option.getOrUndefined(decodeCachedMe(JSON.parse(raw)));
+  } catch {
+    // A partial write or foreign value is ignored until the next write.
+    lastDecoded = undefined;
+  }
+
+  return lastDecoded;
+};
+
+/**
  * The dashboard shell needs the account and tenant list on every page. Cache it
  * per account so a reload paints immediately while TanStack Query refreshes in
  * the background. The account id check prevents one account's cache leaking
@@ -25,11 +55,7 @@ export function readMeCache(userId: string | undefined): CachedMe | undefined {
   if (!userId || typeof localStorage === "undefined") return undefined;
 
   try {
-    const raw = localStorage.getItem(ME_CACHE_KEY);
-
-    if (!raw) return undefined;
-
-    const cached = Option.getOrUndefined(decodeCachedMe(JSON.parse(raw)));
+    const cached = decodeStored(localStorage.getItem(ME_CACHE_KEY));
 
     if (cached === undefined) return undefined;
 
@@ -50,15 +76,21 @@ export function readMeCache(userId: string | undefined): CachedMe | undefined {
 export function writeMeCache(data: MeResponse): void {
   if (typeof localStorage === "undefined") return;
 
+  const value: CachedMe = {
+    userId: data.account.id,
+    updatedAt: Date.now(),
+    data,
+  };
+
   try {
-    localStorage.setItem(
-      ME_CACHE_KEY,
-      JSON.stringify({
-        userId: data.account.id,
-        updatedAt: Date.now(),
-        data,
-      } satisfies CachedMe),
-    );
+    const serialized = JSON.stringify(value);
+
+    localStorage.setItem(ME_CACHE_KEY, serialized);
+
+    // Keep the memo in step with this write, so an immediately following read
+    // does not parse the payload we just serialised.
+    lastRaw = serialized;
+    lastDecoded = value;
   } catch {
     // Quota/private-mode failures only cost the instant-paint optimisation.
   }
@@ -71,5 +103,8 @@ export function clearMeCache(): void {
     localStorage.removeItem(ME_CACHE_KEY);
   } catch {
     // Best effort.
+  } finally {
+    lastRaw = null;
+    lastDecoded = undefined;
   }
 }

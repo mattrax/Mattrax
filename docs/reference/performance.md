@@ -140,6 +140,29 @@ deferred command palette.
   available: the launcher mounts it as soon as the chunk arrives, rather than
   waiting for the first keypress.
 
+### Dashboard navigation cache
+
+The signed-in shell (`/me`) is shared by the layout, tenant guard and every
+permission check, but each page mounts its own observer. It previously used a zero
+stale window, so the first observer mounted by a route change refetched the payload
+that had just painted. That also made the shell cache do synchronous localStorage
+work on every observer.
+
+`me` now stays fresh for 60 seconds (`ME_QUERY_STALE_TIME`), with a 30-minute
+retention window. Explicit invalidations cover every membership or role mutation
+(tenant create, invitations, administrators, profile), and cross-tab invalidation
+uses the same key, so the stale window is a read optimisation rather than a
+correctness compromise. A stale entry still refreshes on the next mount or window
+focus.
+
+Measured with the query observer sequence in `me-query.test.ts` (ten simulated
+page mounts inside the stale window):
+
+| Policy                | `/me` requests |
+| --------------------- | --------------- |
+| Before (`staleTime: 0`) | 10              |
+| After (60 s)          | 1               |
+
 ### Measured and rejected
 
 These looked like wins and were not, so the code stays simpler:

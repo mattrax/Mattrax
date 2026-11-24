@@ -23,7 +23,6 @@ test.describe("top navigation", () => {
       ["Groups", `${base}/groups`, "Groups"],
       ["Policies", `${base}/policies`, "Policies"],
       ["Applications", `${base}/applications`, "Applications"],
-      ["Settings", `${base}/settings`, "General"],
     ] as const) {
       await primaryNav(page).getByRole("link", { name: label, exact: true }).click();
       await expect(page).toHaveURL(
@@ -32,6 +31,18 @@ test.describe("top navigation", () => {
 
       await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
     }
+
+    // Settings sits in the sidebar footer above the account row, not among the
+    // daily sections.
+    await expect(
+      primaryNav(page).getByRole("link", { name: "Settings", exact: true }),
+    ).toHaveCount(0);
+    await page
+      .getByRole("navigation", { name: "Tenant settings" })
+      .getByRole("link", { name: "Settings", exact: true })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`${base}/settings$`));
+    await expect(page.getByRole("heading", { name: "General", exact: true }).first()).toBeVisible();
   });
 
   test("mounts exactly one application shell", async ({ page }) => {

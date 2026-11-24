@@ -19,6 +19,7 @@ import {
 } from "~/lib/approval-retry";
 import type { ApprovalRetryInput } from "~/lib/approval-retry";
 import { readMeCache, writeMeCache } from "~/lib/me-cache";
+import { meQueryCachePolicy } from "~/lib/me-query";
 import { getPreloadedSession, readClientPreloadedMe } from "~/lib/session-store";
 import { rememberTenants, resolveTenant, resolveTenantId } from "~/lib/tenant";
 import {
@@ -3195,14 +3196,39 @@ export const enterprise = {
     accountEndpoint((api) => api.completeStepUpPasskey({ payload })),
 };
 
+/**
+ * The browser's preloaded shell is static for the life of the tab. Decoding the
+ * full membership payload again for every observer would repeat schema work on
+ * every navigation; keep the one decode and let account-id checks reject a
+ * payload from a previous session in this tab.
+ */
+let browserPreload: MeResponse | undefined;
+
+const readPreloadedMe = (): MeResponse | undefined => {
+  if (isServer) {
+    const event = getRequestEvent();
+
+    return event ? getPreloadedSession(event.request)?.me : undefined;
+  }
+
+  // Only a present payload is cached. The session script is a sibling of the
+  // hydration root, so an early observer can legitimately read before it has
+  // run; the next one must see the payload rather than a cached "no session".
+  if (browserPreload === undefined) browserPreload = readClientPreloadedMe();
+
+  return browserPreload;
+};
+
+/** The SSR preload skips the queryFn, so persist it once for the next cold load. */
+let persistedPreloadFor: string | undefined;
+
 export const meQueryOptions = (userId?: string, enabled = true) => {
   const cached = readMeCache(userId);
 
   // The SSR preload carries the same `/me` payload, so the first paint can
   // render the tenant shell, guard and permission-aware navigation without a
   // second request. Only data for the signed-in account is accepted.
-  const event = isServer ? getRequestEvent() : undefined;
-  const preloaded = event ? getPreloadedSession(event.request)?.me : readClientPreloadedMe();
+  const preloaded = readPreloadedMe();
 
   const initialData: MeResponse | undefined =
     preloaded && (!userId || preloaded.account.id === userId) ? preloaded : undefined;
@@ -3211,9 +3237,13 @@ export const meQueryOptions = (userId?: string, enabled = true) => {
   // keep the membership list available to that translation after SSR.
   rememberTenants(initialData?.tenants ?? cached?.data.tenants);
 
-  // The SSR preload skips the queryFn, which is normally what refreshes the
-  // local cache. Persist it here so the next cold load still paints instantly.
-  if (!isServer && initialData) writeMeCache(initialData);
+  // Persist the preload at most once per account. Writing it from every
+  // observer made navigation do synchronous localStorage work for a payload
+  // the queryFn also persists.
+  if (!isServer && initialData && persistedPreloadFor !== initialData.account.id) {
+    persistedPreloadFor = initialData.account.id;
+    writeMeCache(initialData);
+  }
 
   const options = {
     queryKey: enterpriseKeys.me(),
@@ -3225,21 +3255,27 @@ export const meQueryOptions = (userId?: string, enabled = true) => {
       return data;
     },
     enabled: !isServer && enabled,
-    // A cold load paints the last known shell immediately; the query still
-    // refreshes in the background.
-    placeholderData: initialData ?? cached?.data,
-    // Paint from the SSR/cached shell immediately, but always revalidate on
-    // mount: tenant creation, invitations and role changes must show up without
-    // waiting for the five-minute SSR token to expire.
-    staleTime: 0,
+    ...meQueryCachePolicy(),
   };
 
-  // TanStack renders this observer snapshot immediately without writing it into
-  // the shared cache. On the server that is essential: the module-level query
-  // client outlives a request, so `initialData` there could show one account's
-  // shell to the next visitor. In the browser the client is per-tab and we also
-  // seed the cache so the query is considered fresh.
-  if (!isServer && initialData !== undefined) Object.assign(options, { initialData });
+  if (isServer) {
+    // TanStack renders this observer snapshot immediately without writing it
+    // into the shared cache. That is essential on the server: the module-level
+    // query client outlives a request, so `initialData` there could show one
+    // account's shell to the next visitor.
+    Object.assign(options, { placeholderData: initialData ?? cached?.data });
+  } else {
+    // In the browser the client is per-tab, so seed the cache instead. The
+    // stored timestamp makes an old localStorage entry stale immediately while
+    // a payload from this request stays fresh for the policy window.
+    const seeded = initialData ?? cached?.data;
+
+    if (seeded !== undefined)
+      Object.assign(options, {
+        initialData: seeded,
+        ...(initialData === undefined && cached ? { initialDataUpdatedAt: cached.updatedAt } : {}),
+      });
+  }
 
   return queryOptions(options);
 };

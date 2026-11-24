@@ -2,7 +2,7 @@ import { useIsRouting, useLocation, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import { createEffect, Show } from "solid-js";
+import { createEffect, Loading, Show } from "solid-js";
 import type { ParentProps } from "solid-js";
 import { authClient } from "~/lib/auth";
 import { meQueryOptions, resolveActiveTenant } from "~/lib/enterprise";
@@ -15,6 +15,7 @@ import {
   useCan,
 } from "~/lib/permissions";
 import { startTenantRealtime } from "~/lib/realtime";
+import { LoadingState } from "@mattrax/ui";
 
 /**
  * Guards every tenant-scoped route. The tenant id in the URL is the source of
@@ -169,7 +170,19 @@ export default function TenantLayout(props: ParentProps) {
           />
         }
       >
-        {props.children}
+        {/* Keep this guard (and the shell around it) mounted while a nested
+            route's chunk loads. Without its own boundary, the router's root
+            loading state replaces the entire dashboard on every settings tab
+            change. */}
+        <Loading
+          fallback={
+            <div class="flex flex-1 items-center justify-center py-24">
+              <LoadingState label="Loading section…" size={18} />
+            </div>
+          }
+        >
+          {props.children}
+        </Loading>
         <RealtimeTenantSync tenantId={tenant()?.id ?? ""} />
       </Show>
     </Show>

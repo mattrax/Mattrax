@@ -104,6 +104,9 @@ export function resolveLandingTenant<T extends TenantKey>(
  */
 let directory: readonly TenantKey[] = [];
 
+/** The array the directory was built from, so observers reusing one payload skip the map. */
+let directorySource: readonly TenantKey[] | undefined;
+
 /** Slugs saved in this tab that the membership shell has not seen yet. */
 const aliases = new Map<string, string>();
 
@@ -112,12 +115,13 @@ export function rememberTenantAlias(slug: string, id: string): void {
 }
 
 export function rememberTenants(tenants: readonly TenantKey[] | undefined): void {
-  if (!tenants) return;
+  if (!tenants || tenants === directorySource) return;
 
   // Snapshot plain values: callers hand us reactive query stores, and the
   // directory is read from untracked scopes (query keys, API helpers) where a
   // pending async property read would suspend or trip the strict-read
   // diagnostic.
+  directorySource = tenants;
   directory = tenants.map((tenant) => ({
     id: tenant.id,
     slug: tenant.slug ?? null,
@@ -137,8 +141,29 @@ export function resolveTenantId(value: string | undefined): string | undefined {
   return directory.find((tenant) => tenant.slug === value)?.id ?? aliases.get(value) ?? value;
 }
 
+/**
+ * Where `/t` (and every other unscoped tenant URL) should land once the
+ * membership list is known. The account default wins over the browser's
+ * last-used tenant, exactly as `/dashboard` resolves its redirect.
+ *
+ * `tail` is appended verbatim; callers pass the current `?search#hash` so a
+ * redirect never drops a filter, a deep link or an in-page anchor.
+ */
+export function tenantLandingHref(
+  tenants: readonly TenantKey[] | undefined,
+  preference: TenantLandingPreference = {},
+  tail = "",
+): string | undefined {
+  const tenant = resolveLandingTenant(tenants, preference);
+
+  if (!tenant) return undefined;
+
+  return `/t/${encodeURIComponent(canonicalTenantParam(tenant))}${tail}`;
+}
+
 /** Test hook: clears the process/isolate-level membership directory. */
 export function resetTenantDirectory(): void {
   directory = [];
+  directorySource = undefined;
   aliases.clear();
 }
