@@ -28,16 +28,22 @@ import type {
 } from "~/lib/policy-designer/cis";
 import {
   beginCisApply,
+  beginCisIndexLoad,
   beginCisLoad,
   cisApplyLabel,
   cisDialogLoading,
   cisDialogPending,
   cisLoadingLabel,
+  createCisRequestGate,
   finishCisApply,
   finishCisLoad,
   initialCisDialogActivity,
+  initialCisIndexState,
+  rejectCisIndexLoad,
+  resolveCisIndexLoad,
   toggleCisControlSelection,
 } from "~/lib/policy-designer/cis-dialog";
+import type { CisIndexState } from "~/lib/policy-designer/cis-dialog";
 import type { Selection } from "~/lib/policy-designer/build";
 import { cn } from "~/lib/utils";
 
@@ -73,8 +79,7 @@ const controlsLabel = (stats: { controls: number; mapped: number }) =>
  * disabled rather than hidden: the gap is part of the information.
  */
 export function CisTemplateDialog(props: CisTemplateDialogProps) {
-  const [summaries, setSummaries] = createSignal<CisTemplateSummary[]>();
-  const [indexError, setIndexError] = createSignal<string>();
+  const [index, setIndex] = createSignal<CisIndexState>(initialCisIndexState);
   const [summary, setSummary] = createSignal<CisTemplateSummary>();
   const [template, setTemplate] = createSignal<CompiledCisTemplate>();
   const [templateError, setTemplateError] = createSignal<string>();
@@ -88,6 +93,10 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
   const loading = () => cisDialogLoading(activity());
   const pending = () => cisDialogPending(activity());
+  const summaries = () => index().templates;
+  const indexError = () => index().error;
+  // Only the newest benchmark selection may write its template.
+  const requests = createCisRequestGate();
 
   const available = createMemo(() =>
     (summaries() ?? []).filter(
@@ -127,6 +136,10 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
   });
 
   const choose = (next: CisTemplateSummary | undefined) => {
+    // Invalidate the previous request even when the selection is cleared: a
+    // late response must not resurrect a benchmark the dialog no longer shows.
+    const token = requests.begin();
+
     setSummary(next);
     setTemplate(undefined);
     setTemplateError(undefined);
@@ -138,12 +151,44 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
     setActivity(beginCisLoad);
     void loadCisTemplate(next)
       .then((loaded) => {
+        if (!requests.isCurrent(token)) return;
+
         setTemplate(loaded);
         setSelected(new Set(cisControlIds(loaded)));
       })
-      .catch((error: unknown) =>
-        setTemplateError(error instanceof Error ? error.message : "Could not load the template."),
-      )
+      .catch((error: unknown) => {
+        if (!requests.isCurrent(token)) return;
+
+        setTemplateError(error instanceof Error ? error.message : "Could not load the template.");
+      })
+      .finally(() => setActivity(finishCisLoad));
+  };
+
+  const loadIndex = () => {
+    // A retry is ignored while another load is still running; the button is
+    // also disabled, so this is only a guard against duplicate events.
+    if (loading()) return;
+
+    setIndex(beginCisIndexLoad);
+    setActivity(beginCisLoad);
+    void loadCisTemplateIndex()
+      .then((result) => {
+        setIndex((state) => resolveCisIndexLoad(state, result.templates));
+
+        const first = result.templates.find(
+          (candidate) => props.platform === undefined || candidate.platform === props.platform,
+        );
+
+        if (first) choose(first);
+      })
+      .catch((error: unknown) => {
+        setIndex((state) =>
+          rejectCisIndexLoad(
+            state,
+            error instanceof Error ? error.message : "Could not load the CIS templates.",
+          ),
+        );
+      })
       .finally(() => setActivity(finishCisLoad));
   };
 
@@ -161,23 +206,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
         return;
       }
 
-      setActivity(beginCisLoad);
-      void loadCisTemplateIndex()
-        .then((index) => {
-          setSummaries([...index.templates]);
-
-          const first = index.templates.find(
-            (candidate) => props.platform === undefined || candidate.platform === props.platform,
-          );
-
-          if (first) choose(first);
-        })
-        .catch((error: unknown) =>
-          setIndexError(
-            error instanceof Error ? error.message : "Could not load the CIS templates.",
-          ),
-        )
-        .finally(() => setActivity(finishCisLoad));
+      loadIndex();
     },
   );
 
@@ -243,12 +272,20 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
         <Show when={indexError()}>
           {(error) => (
-            <p
+            <div
               role="alert"
-              class="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive"
+              class="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive"
             >
-              Could not load the CIS templates: {error()}
-            </p>
+              <p class="min-w-0 flex-1">Could not load the CIS templates: {error()}</p>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={loading()}
+                onClick={() => loadIndex()}
+              >
+                Retry
+              </Button>
+            </div>
           )}
         </Show>
 
@@ -258,8 +295,9 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
               <label class="block">
                 <span class="mb-1 block text-[11px] font-medium text-foreground">Benchmark</span>
                 <select
-                  class="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[12px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                  class="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[12px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
                   value={summary()?.id ?? ""}
+                  disabled={loading() || pending()}
                   onChange={(event) => {
                     choose(available().find((item) => item.id === event.currentTarget.value));
                   }}

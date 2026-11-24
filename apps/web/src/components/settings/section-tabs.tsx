@@ -92,6 +92,7 @@ export function SectionTabs(props: {
       props.tabs.map((tab) => tab.id),
       activeId(),
       event.key,
+      event,
     );
 
     if (!next) return;

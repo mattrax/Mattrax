@@ -1,8 +1,8 @@
-import { useParams } from "@solidjs/router";
+import { useLocation, useParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useQueryClient } from "@tanstack/solid-query";
 import { Option, Schema } from "effect";
-import { createMemo, createSignal, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import {
   TENANT_IMPORT_MAX_BYTES,
   TenantImportRequest as TenantImportRequestSchema,
@@ -32,6 +32,7 @@ import {
 } from "~/lib/approval-retry";
 import type { ApprovalRetryInput } from "~/lib/approval-retry";
 import { downloadBlob } from "~/lib/download";
+import { scrollToHashTarget } from "~/lib/hash-scroll";
 import { resolveTenantId } from "~/lib/tenant";
 import { useNavigate } from "~/lib/navigation";
 import { CutoverPanel } from "../cutover-panel";
@@ -61,6 +62,7 @@ const decodeTenantImport = Schema.decodeUnknownOption(TenantImportRequestSchema)
  */
 export default function MigrationExportPage() {
   const params = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { can } = useCan();
@@ -80,6 +82,28 @@ export default function MigrationExportPage() {
   const [importResult, setImportResult] = createSignal<TenantImportResponse | null>(null);
 
   let importFileInput: HTMLInputElement | undefined;
+
+  // Import used to be General's `#restore` anchor. The settings pane resets
+  // its scrollport when the pathname changes, and on a cold load the browser
+  // looks for the fragment before this section exists. Wait a frame so the
+  // reset has run, then scroll to the import section ourselves.
+  let restoreFrame: number | undefined;
+  createEffect(
+    () => location.hash,
+    (hash) => {
+      if (hash !== "#restore" || typeof document === "undefined") return;
+
+      if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame);
+
+      restoreFrame = requestAnimationFrame(() => {
+        restoreFrame = undefined;
+        scrollToHashTarget(hash, (id) => document.getElementById(id));
+      });
+    },
+  );
+  onCleanup(() => {
+    if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame);
+  });
 
   const download = (body: string, filename: string) =>
     downloadBlob(new Blob([body], { type: "application/json" }), filename);
@@ -258,7 +282,8 @@ export default function MigrationExportPage() {
               </label>
               <Show when={tenant.data && !canExport()}>
                 <p class="mt-2 text-xs text-muted-foreground">
-                  Your role cannot export or import tenant data.
+                  Your role cannot export tenant data. Ask a tenant owner for the tenant.export
+                  permission.
                 </p>
               </Show>
               <ErrorText error={exportError()} />

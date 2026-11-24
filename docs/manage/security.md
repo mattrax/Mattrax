@@ -105,8 +105,14 @@ Most additive writes need the resource's write permission but no step-up: creati
 policy or a script has no existing object to protect. Credential creation is the
 exception — creating an API token (`api-token-create`) or a SCIM token
 (`scim-token-create`) still requires step-up, because the token itself is a durable
-credential. Changing, assigning, running or deleting something that already exists also
-asks for a fresh confirmation.
+credential. Changing an existing object is not enough on its own: editing a
+policy, group, tenant profile or device assignment needs only the write permission.
+Step-up is reserved for the actions listed above — deleting a tenant, changing its MFA
+or SSO policy, editing/assigning/running/deleting a script or toggling scripts for the
+tenant, changing or removing a sign-in credential, changing the account email or
+revoking every session, issuing a device command or handover, disconnecting Android,
+rotating/importing the SCEP CA, downloading/pinning/deleting/restoring a backup, and
+exporting/importing a cutover archive.
 
 If a grant is missing or expired, the API returns a 403 `StepUpRequired` with the action
 and available factors. The browser retries with `x-mattrax-step-up: <grant>`.

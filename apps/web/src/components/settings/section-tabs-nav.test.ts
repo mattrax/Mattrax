@@ -27,4 +27,31 @@ describe("section tab keyboard navigation", () => {
     expect(sectionTabTarget(tabs, "endpoints", "Enter")).toBeUndefined();
     expect(sectionTabTarget([], "endpoints", "ArrowRight")).toBeUndefined();
   });
+
+  it("leaves browser shortcuts with a modifier to the browser", () => {
+    const modifiers = [
+      { altKey: true },
+      { ctrlKey: true },
+      { metaKey: true },
+      { shiftKey: true },
+    ];
+
+    for (const modifier of modifiers) {
+      expect(sectionTabTarget(tabs, "endpoints", "ArrowRight", modifier)).toBeUndefined();
+      expect(sectionTabTarget(tabs, "endpoints", "ArrowLeft", modifier)).toBeUndefined();
+      expect(sectionTabTarget(tabs, "endpoints", "Home", modifier)).toBeUndefined();
+      expect(sectionTabTarget(tabs, "endpoints", "End", modifier)).toBeUndefined();
+    }
+  });
+
+  it("still handles unmodified keys alongside modifier state that is false", () => {
+    expect(
+      sectionTabTarget(tabs, "endpoints", "ArrowRight", {
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+      }),
+    ).toBe("deliveries");
+  });
 });
