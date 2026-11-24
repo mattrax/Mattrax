@@ -68,11 +68,12 @@ export function Capabilities() {
           </p>
         </div>
 
-        <div class="lr-cap-grid lr-reveal" data-reveal="pending">
+        <div class="lr-cap-grid">
           <For each={capabilities}>
             {(capability, index) => (
               <article
-                class={`lr-cap-card lr-cap-card--${capability.visual} lr-stagger`}
+                class={`lr-cap-card lr-cap-card--${capability.visual} lr-reveal`}
+                data-reveal="pending"
                 style={`--i:${index()}`}
               >
                 <div class="lr-cap-card__copy">

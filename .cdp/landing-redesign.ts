@@ -120,6 +120,34 @@ export default {
       },
     },
     {
+      name: "Tablet navigation remains available",
+      note: "At 768×1024 the hamburger opens a visible native popover.",
+      run: async (page) => {
+        await page.keyboard.press("Escape");
+        await page.setViewportSize({ width: 768, height: 1024 });
+        await page.goto("/?cdp=landing-redesign-tablet", { waitUntil: "domcontentloaded" });
+        await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+        await page.getByRole("button", { name: "Open navigation menu" }).click();
+        await page.getByRole("navigation", { name: "Site" }).waitFor();
+        await page.waitForTimeout(250);
+      },
+    },
+    {
+      name: "Capability cards reveal on short phones",
+      note: "375×667 with motion enabled; the first card reaches full opacity when scrolled into view.",
+      run: async (page) => {
+        await page.keyboard.press("Escape");
+        await page.setViewportSize({ width: 375, height: 667 });
+        await page.goto("/?cdp=landing-redesign-short-phone", { waitUntil: "domcontentloaded" });
+        await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+        const firstCard = page.locator(".lr-cap-card").first();
+        await firstCard.scrollIntoViewIfNeeded();
+        await page.waitForFunction(
+          () => getComputedStyle(document.querySelector(".lr-cap-card")!).opacity === "1",
+        );
+      },
+    },
+    {
       name: "Reduced motion keeps every section readable",
       note: "No entrance or spatial animation runs; content is visible immediately.",
       run: async (page) => {

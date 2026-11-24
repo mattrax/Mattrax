@@ -44,13 +44,14 @@ export function Platforms() {
           </p>
         </div>
 
-        <div class="lr-platform-grid lr-reveal" data-reveal="pending">
+        <div class="lr-platform-grid">
           <For each={platforms}>
             {(platform, index) => (
               <a
                 href={platform.href}
                 target="_self"
-                class="lr-platform-card lr-stagger"
+                class="lr-platform-card lr-reveal"
+                data-reveal="pending"
                 style={`--i:${index()}`}
               >
                 <div class="lr-platform-card__top">

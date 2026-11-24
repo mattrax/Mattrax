@@ -222,4 +222,26 @@ test.describe("landing redesign interactions", () => {
     expect(overflow.document).toBeLessThanOrEqual(overflow.viewport);
     await expect(page.getByRole("button", { name: /Needs attention/ })).toBeVisible();
   });
+
+  test("keeps navigation available at tablet widths", async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await gotoHydrated(page, landingUrl());
+
+    await page.getByRole("button", { name: "Open navigation menu" }).click();
+    await expect(page.getByRole("navigation", { name: "Site" })).toBeVisible();
+    await expect(
+      page.getByRole("navigation", { name: "Site" }).getByRole("link", { name: "Product" }),
+    ).toBeVisible();
+  });
+
+  test("reveals capability cards on short phone viewports", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await gotoHydrated(page, landingUrl());
+
+    const firstCard = page.locator(".lr-cap-card").first();
+    await firstCard.scrollIntoViewIfNeeded();
+    await expect
+      .poll(async () => firstCard.evaluate((element) => getComputedStyle(element).opacity))
+      .toBe("1");
+  });
 });

@@ -197,7 +197,7 @@ export function Hero() {
             </div>
             <div class="lr-stage__address">
               <span class="lr-stage__lock" aria-hidden="true" />
-              app.mattrax.com / overview
+              e.mattrax.app / overview
             </div>
             <span class="lr-stage__demo">Demo data</span>
           </div>

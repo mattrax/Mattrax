@@ -109,6 +109,8 @@
 }
 
 .lr-link:focus-visible,
+.lr-platform-card:focus-visible,
+.lr-hero__note a:focus-visible,
 .lr-button:focus-visible,
 .lr-filters button:focus-visible,
 .lr-trace__views button:focus-visible,
@@ -228,6 +230,10 @@
 @media (min-width: 48rem) and (max-width: 63.99rem) {
   .lr-header button[popovertarget="landing-site-menu"] {
     display: flex;
+  }
+
+  .lr-header #landing-site-menu:popover-open {
+    display: block;
   }
 }
 
@@ -2248,6 +2254,15 @@
   }
 }
 
+@keyframes lr-title-enter {
+  from {
+    transform: translateY(14px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
 @keyframes lr-stage-enter {
   from {
     opacity: 0;
@@ -2283,12 +2298,16 @@
 
 @media (prefers-reduced-motion: no-preference) {
   html.js .lr-hero__eyebrow,
-  html.js .lr-hero__title,
   html.js .lr-hero__lead,
   html.js .lr-hero__actions,
   html.js .lr-hero__note,
   html.js .lr-proof {
     animation: lr-enter var(--lr-enter) var(--ease-swift) both;
+    animation-delay: calc(var(--order, 0) * var(--lr-stagger));
+  }
+
+  html.js .lr-hero__title {
+    animation: lr-title-enter var(--lr-enter) var(--ease-swift) both;
     animation-delay: calc(var(--order, 0) * var(--lr-stagger));
   }
 
@@ -2350,6 +2369,14 @@
   }
   to {
     transform: scaleX(1);
+  }
+}
+
+@media (pointer: coarse) {
+  .lr-filters button,
+  .lr-trace__views button,
+  .lr-deploy__switch button {
+    min-block-size: 2.75rem;
   }
 }
 
