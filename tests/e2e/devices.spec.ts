@@ -113,6 +113,142 @@ test.describe("device fleet management", () => {
     await expect(page).toHaveURL(new RegExp(`/groups/(${alpha.id}|${beta.id})$`));
   });
 
+  test("virtualizes wide fleet tables while preserving keyboard and range selection", async ({
+    page,
+  }) => {
+    const tenant = await bootstrapTenant(page, "Virtual Fleet");
+    const attributes = Array.from({ length: 24 }, (_, index) => ({
+      id: `attribute-${index}`,
+      key: `custom_${index}`,
+      label: `Custom attribute ${index + 1}`,
+      type: "text",
+      required: false,
+      visibility: "visible",
+      source: "manual",
+      sortOrder: index,
+      createdAt: "2026-11-01T00:00:00.000Z",
+      updatedAt: "2026-11-01T00:00:00.000Z",
+    }));
+    const devices = Array.from({ length: 200 }, (_, index) => ({
+      id: `device-${index}`,
+      proto: "apple",
+      name: `Virtual Device ${String(index + 1).padStart(3, "0")}`,
+      model: "MacBook Pro",
+      serial: `SERIAL-${index}`,
+      status: "enrolled",
+      enrolledAt: "2026-11-01T00:00:00.000Z",
+      lastSeenAt: "2026-11-18T00:00:00.000Z",
+      groups: [],
+      health: { level: "healthy", reasons: [], stale: false, online: true },
+      attributes: Object.fromEntries(
+        attributes.map((attribute, attributeIndex) => [
+          attribute.key,
+          `value-${index}-${attributeIndex}-${"x".repeat(80)}`,
+        ]),
+      ),
+    }));
+
+    await page.route(`**/api/v1/tenants/${tenant.id}/attributes`, (route) =>
+      route.fulfill({ json: { rows: attributes } }),
+    );
+    await page.route(`**/api/v1/tenants/${tenant.id}/devices/search*`, async (route) => {
+      const url = new URL(route.request().url());
+      const query = url.searchParams.get("q")?.toLowerCase() ?? "";
+      const direction = url.searchParams.get("direction") ?? "asc";
+      const offset = Number(url.searchParams.get("offset") ?? 0);
+      const limit = Number(url.searchParams.get("limit") ?? 50);
+      const matching = devices.filter((device) => device.name.toLowerCase().includes(query));
+      const ordered = direction === "desc" ? [...matching].reverse() : matching;
+
+      await route.fulfill({
+        json: { devices: ordered.slice(offset, offset + limit), total: ordered.length },
+      });
+    });
+
+    await gotoHydrated(page, `/t/${tenant.slug}/devices?pageSize=200`);
+
+    const viewport = page.getByRole("region", { name: "Data table" });
+    const table = page.getByRole("table", { name: "Data table" });
+    const rows = viewport.locator("tbody tr[data-row-id]");
+
+    await expect(viewport).toHaveAttribute("data-virtualized", "true");
+    await expect(viewport).toHaveAttribute("data-columns-virtualized", "true");
+    await expect(table).toHaveAttribute("aria-rowcount", "201");
+    await expect(table).toHaveAttribute("aria-colcount", "34");
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
+    expect(await rows.count()).toBeGreaterThan(0);
+    expect(await rows.count()).toBeLessThanOrEqual(40);
+    expect(await viewport.locator("tbody td").count()).toBeLessThanOrEqual(650);
+    expect(await viewport.locator("thead th").count()).toBeLessThanOrEqual(16);
+
+    await viewport.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    await expect(page.getByRole("columnheader", { name: "Custom attribute 24" })).toBeInViewport();
+    expect(await viewport.locator("thead th").count()).toBeLessThanOrEqual(16);
+
+    await viewport.evaluate((element) => {
+      element.scrollTop = 1_200;
+    });
+    await expect(rows.first()).not.toHaveAttribute("data-row-id", "device-0");
+    expect(await rows.count()).toBeLessThanOrEqual(40);
+
+    const viewportBox = await viewport.boundingBox();
+    const headerBox = await viewport.locator("thead").boundingBox();
+    expect(viewportBox).not.toBeNull();
+    expect(headerBox).not.toBeNull();
+    expect(Math.abs((headerBox?.y ?? 0) - (viewportBox?.y ?? 0))).toBeLessThanOrEqual(2);
+
+    await viewport.evaluate((element) => {
+      element.scrollTop = 0;
+      element.scrollLeft = 0;
+    });
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
+    await rows.first().focus();
+
+    for (let index = 0; index < 35; index++) await page.keyboard.press("ArrowDown");
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-row-id")))
+      .toBe("device-35");
+    expect(await rows.count()).toBeLessThanOrEqual(40);
+
+    await viewport.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await page.getByRole("checkbox", { name: /Select Virtual Device 001/ }).check();
+    const rangeTarget = page.getByRole("checkbox", { name: /Select Virtual Device 035/ });
+    await rangeTarget.scrollIntoViewIfNeeded();
+    await rangeTarget.focus();
+    await page.keyboard.press("Shift+Space");
+    await expect(page.getByRole("group", { name: "Bulk actions" })).toContainText("36 selected");
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("group", { name: "Bulk actions" })).toHaveCount(0);
+
+    await viewport.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    const nameSort = page.getByRole("button", { name: "Name", exact: true });
+    await expect(nameSort).toBeInViewport();
+    await nameSort.click();
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-199");
+    expect(await rows.count()).toBeLessThanOrEqual(40);
+    await nameSort.click();
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
+
+    const search = page.getByLabel("Search table");
+    await search.fill("Virtual Device 199");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-199");
+    await expect(viewport).not.toHaveAttribute("data-virtualized", "true");
+
+    await search.fill("no-such-device");
+    await expect(page.getByText(/No matches for/)).toBeVisible();
+    await search.fill("");
+    await expect(viewport).toHaveAttribute("data-virtualized", "true");
+    expect(await rows.count()).toBeLessThanOrEqual(40);
+  });
+
   test("keeps typed device search and sends it to the search endpoint", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Search Tenant");
     const search = page.getByPlaceholder(/search name/i);

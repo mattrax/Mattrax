@@ -1,4 +1,13 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  onCleanup,
+  onSettled,
+  Show,
+} from "solid-js";
 import { useNavigate } from "~/lib/navigation";
 import type { JSX } from "@solidjs/web";
 import { Button, buttonVariants } from "~/components/ui/button";
@@ -26,6 +35,19 @@ import { cn } from "~/lib/utils";
 import { QueryError } from "./common";
 import { toggleVisibleColumnIds } from "./table-columns";
 import { readTableColumnVisibility } from "~/lib/table-column-visibility";
+import {
+  TABLE_COLUMN_OVERSCAN,
+  TABLE_COLUMN_WIDTH,
+  TABLE_HEADER_HEIGHT,
+  TABLE_INITIAL_VIEWPORT_HEIGHT,
+  TABLE_INITIAL_VIEWPORT_WIDTH,
+  TABLE_MAX_RENDERED_COLUMNS,
+  TABLE_MAX_VIEWPORT_HEIGHT,
+  TABLE_ROW_HEIGHT,
+  getTableRenderWindow,
+  shouldVirtualizeTableColumns,
+  shouldVirtualizeTableRows,
+} from "./table-render-window";
 
 export { readTableColumnVisibility } from "~/lib/table-column-visibility";
 
@@ -151,6 +173,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const [internalSort, setInternalSort] = createSignal<SortState>(null);
   const [activeRow, setActiveRow] = createSignal(-1);
   const [tableFocused, setTableFocused] = createSignal(false);
+  const [pendingRowFocus, setPendingRowFocus] = createSignal<number | null>(null);
   // Shift-click / Shift+Space anchor. The anchor is a row id, not an index, so
   // it survives sorting and filtering of the visible rows.
   const [selectionAnchor, setSelectionAnchor] = createSignal<string | null>(null);
@@ -166,7 +189,22 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const navigate = useNavigate();
   let searchRef: HTMLDivElement | undefined;
   let tableRef: HTMLTableElement | undefined;
-  const rowRefs: Array<HTMLTableRowElement | undefined> = [];
+  let viewportRef: HTMLDivElement | undefined;
+  const rowRefs = new Map<string, HTMLTableRowElement>();
+  const columnRefs = new Map<string, HTMLTableCellElement>();
+  const captionId = createUniqueId();
+  const [viewportHeight, setViewportHeight] = createSignal(TABLE_INITIAL_VIEWPORT_HEIGHT);
+  const [viewportWidth, setViewportWidth] = createSignal(TABLE_INITIAL_VIEWPORT_WIDTH);
+  const [scrollTop, setScrollTop] = createSignal(0);
+  const [scrollLeft, setScrollLeft] = createSignal(0);
+  const [rowHeights, setRowHeights] = createSignal<Record<string, number>>({});
+  const [columnWidths, setColumnWidths] = createSignal<Record<string, number>>({});
+  let viewportResizeObserver: ResizeObserver | undefined;
+  let rowResizeObserver: ResizeObserver | undefined;
+  let columnResizeObserver: ResizeObserver | undefined;
+  let scrollFrame: number | undefined;
+  let latestScrollTop = 0;
+  let latestScrollLeft = 0;
 
   const serverMode = () => props.mode === "server";
   const selectable = () => props.selectable ?? true;
@@ -238,6 +276,204 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     return result;
   });
 
+  const virtualized = () => shouldVirtualizeTableRows(rows().length);
+
+  /** Prefix sums turn binary search into a row range without per-scroll layout reads. */
+  const rowOffsets = createMemo(() => {
+    const allRows = rows();
+    const offsets = new Array<number>(allRows.length + 1);
+    const heights = rowHeights();
+    offsets[0] = 0;
+
+    for (let index = 0; index < allRows.length; index++) {
+      offsets[index + 1] = offsets[index] + (heights[allRows[index]!.id] ?? TABLE_ROW_HEIGHT);
+    }
+
+    return offsets;
+  });
+
+  const renderWindow = createMemo(() =>
+    virtualized()
+      ? getTableRenderWindow({
+          rowCount: rows().length,
+          offsets: rowOffsets(),
+          scrollTop: scrollTop(),
+          viewportHeight: Math.max(1, viewportHeight() - TABLE_HEADER_HEIGHT),
+          focusIndex: activeRow(),
+        })
+      : { start: 0, end: rows().length, top: 0, bottom: 0 },
+  );
+
+  const renderedRows = createMemo(() => rows().slice(renderWindow().start, renderWindow().end));
+  const tabRowIndex = createMemo(() => {
+    const active = activeRow();
+    const window = renderWindow();
+
+    return active >= window.start && active < window.end ? active : window.start;
+  });
+  const columnOffsets = createMemo(() => {
+    const columns = visibleColumns();
+    const widths = columnWidths();
+    const offsets = new Array<number>(columns.length + 1);
+    offsets[0] = 0;
+
+    for (let index = 0; index < columns.length; index++) {
+      offsets[index + 1] = offsets[index] + (widths[columns[index]!.id] ?? TABLE_COLUMN_WIDTH);
+    }
+
+    return offsets;
+  });
+  const columnMode = createMemo<"off" | "fit" | "window">(() => {
+    if (!shouldVirtualizeTableColumns(visibleColumns().length)) return "off";
+
+    return (columnOffsets().at(-1) ?? 0) > viewportWidth() ? "window" : "fit";
+  });
+  const columnsVirtualized = () => columnMode() === "window";
+  const columnWindow = createMemo(() =>
+    columnsVirtualized()
+      ? getTableRenderWindow({
+          rowCount: visibleColumns().length,
+          offsets: columnOffsets(),
+          scrollTop: scrollLeft(),
+          viewportHeight: viewportWidth(),
+          overscan: TABLE_COLUMN_OVERSCAN,
+          maxRows: TABLE_MAX_RENDERED_COLUMNS,
+        })
+      : { start: 0, end: visibleColumns().length, top: 0, bottom: 0 },
+  );
+  const renderedColumns = createMemo(() =>
+    visibleColumns().slice(columnWindow().start, columnWindow().end),
+  );
+  const leadingColumnCount = () => (selectable() ? 1 : 0) + ((props.rowNumbers ?? true) ? 1 : 0);
+  const columnCount = () => leadingColumnCount() + visibleColumns().length;
+  const renderedColumnCount = () =>
+    leadingColumnCount() +
+    renderedColumns().length +
+    (columnWindow().top > 0 ? 1 : 0) +
+    (columnWindow().bottom > 0 ? 1 : 0);
+
+  const observeRow = (element: HTMLTableRowElement) => {
+    if (!virtualized() || typeof ResizeObserver === "undefined") return;
+
+    rowResizeObserver ??= new ResizeObserver((entries) => {
+      if (!virtualized()) return;
+
+      const updates: Record<string, number> = {};
+
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.rowId;
+        const height = Math.max(TABLE_ROW_HEIGHT, Math.ceil(entry.contentRect.height));
+
+        if (id && height > 0) updates[id] = height;
+      }
+
+      setRowHeights((previous) => {
+        let changed = false;
+        const next = { ...previous };
+
+        for (const [id, height] of Object.entries(updates)) {
+          if (next[id] === height) continue;
+          next[id] = height;
+          changed = true;
+        }
+
+        return changed ? next : previous;
+      });
+    });
+    rowResizeObserver.observe(element);
+  };
+
+  const observeColumn = (element: HTMLTableCellElement) => {
+    if (columnMode() === "off" || typeof ResizeObserver === "undefined") return;
+
+    columnResizeObserver ??= new ResizeObserver((entries) => {
+      if (columnMode() === "off") return;
+
+      const updates: Record<string, number> = {};
+
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.columnId;
+        const size = Array.isArray(entry.borderBoxSize)
+          ? entry.borderBoxSize[0]?.inlineSize
+          : undefined;
+        const width = Math.max(1, Math.ceil(size ?? entry.contentRect.width));
+
+        if (id && width > 0) updates[id] = width;
+      }
+
+      setColumnWidths((previous) => {
+        let changed = false;
+        const next = { ...previous };
+
+        for (const [id, width] of Object.entries(updates)) {
+          if (next[id] === width) continue;
+          next[id] = width;
+          changed = true;
+        }
+
+        return changed ? next : previous;
+      });
+    });
+    columnResizeObserver.observe(element);
+  };
+
+  createEffect(
+    () => virtualized(),
+    (isVirtualized) => {
+      if (isVirtualized) {
+        if (typeof ResizeObserver !== "undefined") {
+          for (const element of rowRefs.values()) observeRow(element);
+        }
+
+        return;
+      }
+
+      rowResizeObserver?.disconnect();
+      setRowHeights({});
+    },
+  );
+
+  createEffect(
+    () => columnMode(),
+    (mode) => {
+      if (mode !== "off") {
+        if (typeof ResizeObserver !== "undefined") {
+          for (const element of columnRefs.values()) observeColumn(element);
+        }
+
+        return;
+      }
+
+      columnResizeObserver?.disconnect();
+      setColumnWidths({});
+    },
+  );
+
+  createEffect(
+    () =>
+      rows()
+        .map((row) => row.id)
+        .join("\u0000"),
+    (order, previous) => {
+      if (order === previous) return;
+      setPendingRowFocus(null);
+      if (viewportRef) viewportRef.scrollTop = 0;
+      setScrollTop(0);
+    },
+  );
+
+  createEffect(
+    () =>
+      visibleColumns()
+        .map((column) => column.id)
+        .join("\u0000"),
+    (order, previous) => {
+      if (order === previous) return;
+      if (viewportRef) viewportRef.scrollLeft = 0;
+      setScrollLeft(0);
+    },
+  );
+
   /**
    * Selection is scoped to the visible row set. When a filter, page or search
    * changes the visible ids, ids that are no longer on screen must not linger
@@ -285,7 +521,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const animateRowMoves = () => {
     const table = tableRef;
 
-    if (!table) {
+    if (!table || virtualized()) {
       // The table is showing the loading skeleton or no rows; a later render
       // starts from a fresh capture instead of animating in from stale offsets.
       rowTops = new Map();
@@ -365,6 +601,10 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
   onCleanup(() => {
     if (rowMoveFrame !== undefined) cancelAnimationFrame(rowMoveFrame);
+    if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
+    viewportResizeObserver?.disconnect();
+    rowResizeObserver?.disconnect();
+    columnResizeObserver?.disconnect();
   });
 
   const selectedRows = createMemo(() => rows().filter((row) => isSelected(row.id)));
@@ -377,6 +617,26 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     (length) => {
       if (length === 0) setActiveRow(-1);
       else if (activeRow() < 0 || activeRow() >= length) setActiveRow(0);
+    },
+  );
+
+  createEffect(
+    () => {
+      const index = pendingRowFocus();
+      const window = renderWindow();
+
+      if (index === null || index < window.start || index >= window.end) return null;
+      const row = rows()[index];
+
+      return row ? { index, id: row.id } : null;
+    },
+    (target) => {
+      if (!target) return;
+      const element = rowRefs.get(target.id);
+
+      if (!element) return;
+      element.focus({ preventScroll: true });
+      setPendingRowFocus(null);
     },
   );
 
@@ -438,6 +698,30 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   // Keyboard focus stays on a single row so the table is one tab stop, the
   // roving-tabindex pattern.
 
+  const revealRow = (index: number) => {
+    if (!virtualized() || !viewportRef) return;
+
+    const offsets = rowOffsets();
+    const currentTop = scrollTop();
+    const visibleTop = currentTop + TABLE_HEADER_HEIGHT;
+    const visibleBottom = currentTop + viewportHeight();
+    const rowTop = TABLE_HEADER_HEIGHT + (offsets[index] ?? 0);
+    const rowBottom = TABLE_HEADER_HEIGHT + (offsets[index + 1] ?? 0);
+    let nextTop = currentTop;
+
+    if (rowTop < visibleTop) nextTop = rowTop - TABLE_HEADER_HEIGHT;
+    else if (rowBottom > visibleBottom) nextTop = rowBottom - viewportHeight();
+
+    nextTop = Math.max(
+      0,
+      Math.min(nextTop, TABLE_HEADER_HEIGHT + (offsets.at(-1) ?? 0) - viewportHeight()),
+    );
+
+    if (nextTop === currentTop) return;
+    viewportRef.scrollTop = nextTop;
+    setScrollTop(nextTop);
+  };
+
   const moveRow = (event: KeyboardEvent, index: number, row: T) => {
     if (!props.rowHref || event.defaultPrevented || event.isComposing) return;
 
@@ -450,7 +734,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       );
 
       setActiveRow(next);
-      rowRefs[next]?.focus();
+      setPendingRowFocus(next);
+      revealRow(next);
 
       return;
     }
@@ -963,7 +1248,62 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         }
       >
         <div class="relative" aria-busy={props.loading || props.isFetching ? "true" : undefined}>
-          <div class="page-enter overflow-x-auto rounded-xl border border-border bg-card shadow-card">
+          {/* oxlint-disable jsx-a11y/no-noninteractive-tabindex -- Overflow regions need keyboard scrolling access. */}
+          <div
+            ref={(element) => {
+              viewportRef = element;
+              setViewportHeight(element.clientHeight);
+              setViewportWidth(element.clientWidth);
+              setScrollTop(0);
+              setScrollLeft(0);
+              latestScrollTop = 0;
+              latestScrollLeft = 0;
+              viewportResizeObserver?.disconnect();
+
+              if (typeof ResizeObserver !== "undefined") {
+                viewportResizeObserver = new ResizeObserver((entries) => {
+                  const size = entries[0]?.contentRect;
+
+                  if (size?.height) setViewportHeight(size.height);
+                  if (size?.width) setViewportWidth(size.width);
+                });
+                viewportResizeObserver.observe(element);
+              }
+
+              onCleanup(() => {
+                viewportResizeObserver?.disconnect();
+                viewportResizeObserver = undefined;
+                viewportRef = undefined;
+              });
+            }}
+            role="region"
+            aria-labelledby={captionId}
+            tabindex={0}
+            data-virtualized={virtualized() ? "true" : undefined}
+            data-columns-virtualized={columnsVirtualized() ? "true" : undefined}
+            style={
+              virtualized()
+                ? ({
+                    "max-block-size": `min(65vh, ${TABLE_MAX_VIEWPORT_HEIGHT}px)`,
+                  } as JSX.CSSProperties)
+                : undefined
+            }
+            class={cn(
+              "page-enter overflow-x-auto rounded-xl border border-border bg-card shadow-card outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+              virtualized() && "overflow-y-auto",
+            )}
+            onScroll={(event) => {
+              latestScrollTop = event.currentTarget.scrollTop;
+              latestScrollLeft = event.currentTarget.scrollLeft;
+
+              if (scrollFrame !== undefined || typeof requestAnimationFrame === "undefined") return;
+              scrollFrame = requestAnimationFrame(() => {
+                scrollFrame = undefined;
+                setScrollTop(latestScrollTop);
+                setScrollLeft(latestScrollLeft);
+              });
+            }}
+          >
             <p class="border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground sm:hidden">
               Swipe the table sideways to see more columns.
             </p>
@@ -972,7 +1312,9 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
               ref={(element) => {
                 tableRef = element;
               }}
-              class="w-full caption-bottom border-collapse text-[12.5px]"
+              class="w-full caption-bottom border-separate border-spacing-0 text-[12.5px]"
+              aria-rowcount={rows().length + 1}
+              aria-colcount={columnCount()}
               onKeyDown={onTableKeyDown}
               onFocusIn={() => {
                 setTableFocused(true);
@@ -986,9 +1328,11 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                   setTableFocused(false);
               }}
             >
-              <caption class="sr-only">{props.caption ?? "Data table"}</caption>
-              <thead class="border-b border-border bg-surface text-left">
-                <tr>
+              <caption id={captionId} class="sr-only">
+                {props.caption ?? "Data table"}
+              </caption>
+              <thead class="sticky top-0 z-20 bg-surface text-left">
+                <tr class="border-b border-border">
                   <Show when={selectable()}>
                     <th scope="col" class="h-8 w-10 pl-4 pr-0">
                       <input
@@ -1014,8 +1358,16 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                       <span aria-hidden="true">#</span>
                     </th>
                   </Show>
-                  <For each={visibleColumns()}>
-                    {(col) => {
+                  <Show when={columnWindow().top > 0}>
+                    <th
+                      aria-hidden="true"
+                      data-column-spacer="left"
+                      style={{ width: `${columnWindow().top}px`, padding: 0, border: 0 }}
+                    />
+                  </Show>
+                  <For each={renderedColumns()}>
+                    {(col, index) => {
+                      const columnIndex = () => columnWindow().start + index();
                       const label = () => (
                         <span class="inline-flex items-center gap-1.5 whitespace-nowrap">
                           <Show when={col.icon}>
@@ -1027,7 +1379,18 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
                       return (
                         <th
+                          ref={(element) => {
+                            columnRefs.set(col.id, element);
+                            observeColumn(element);
+
+                            onCleanup(() => {
+                              columnResizeObserver?.unobserve(element);
+                              if (columnRefs.get(col.id) === element) columnRefs.delete(col.id);
+                            });
+                          }}
+                          data-column-id={col.id}
                           scope="col"
+                          aria-colindex={leadingColumnCount() + columnIndex() + 1}
                           aria-sort={
                             sort()?.id === sortColumnId(col)
                               ? sort()!.dir === "asc"
@@ -1077,6 +1440,13 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                       );
                     }}
                   </For>
+                  <Show when={columnWindow().bottom > 0}>
+                    <th
+                      aria-hidden="true"
+                      data-column-spacer="right"
+                      style={{ width: `${columnWindow().bottom}px`, padding: 0, border: 0 }}
+                    />
+                  </Show>
                 </tr>
               </thead>
               <tbody
@@ -1085,17 +1455,36 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                   props.isFetching && "opacity-60",
                 )}
               >
-                <For each={rows()}>
+                <Show when={renderWindow().top > 0}>
+                  <tr
+                    aria-hidden="true"
+                    data-table-spacer="top"
+                    style={{ height: `${renderWindow().top}px`, padding: 0, border: 0 }}
+                  >
+                    <td colspan={renderedColumnCount()} style={{ padding: 0, border: 0 }} />
+                  </tr>
+                </Show>
+                <For each={renderedRows()}>
                   {(row, index) => {
-                    const rowIndex = () => index();
+                    const rowIndex = () => renderWindow().start + index();
 
                     return (
                       <tr
                         ref={(element) => {
-                          rowRefs[rowIndex()] = element;
+                          rowRefs.set(row.id, element);
+                          observeRow(element);
+
+                          onCleanup(() => {
+                            rowResizeObserver?.unobserve(element);
+                            if (rowRefs.get(row.id) === element) rowRefs.delete(row.id);
+                          });
                         }}
                         data-row-id={row.id}
-                        tabindex={props.rowHref ? (activeRow() === rowIndex() ? 0 : -1) : undefined}
+                        data-row-index={rowIndex()}
+                        aria-rowindex={rowIndex() + 2}
+                        tabindex={
+                          props.rowHref ? (tabRowIndex() === rowIndex() ? 0 : -1) : undefined
+                        }
                         onFocus={() => setActiveRow(rowIndex())}
                         onKeyDown={(event) => moveRow(event, rowIndex(), row)}
                         class={cn(
@@ -1131,20 +1520,49 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                             {(props.rowNumberStart ?? 0) + rowIndex() + 1}
                           </td>
                         </Show>
-                        <For each={visibleColumns()}>
-                          {(col) => (
-                            <td class={cn("h-9 whitespace-nowrap px-3 align-middle", col.class)}>
+                        <Show when={columnWindow().top > 0}>
+                          <td
+                            aria-hidden="true"
+                            data-column-spacer="left"
+                            style={{ width: `${columnWindow().top}px`, padding: 0, border: 0 }}
+                          />
+                        </Show>
+                        <For each={renderedColumns()}>
+                          {(col, index) => (
+                            <td
+                              aria-colindex={
+                                leadingColumnCount() + columnWindow().start + index() + 1
+                              }
+                              class={cn("h-9 whitespace-nowrap px-3 align-middle", col.class)}
+                            >
                               {col.cell(row)}
                             </td>
                           )}
                         </For>
+                        <Show when={columnWindow().bottom > 0}>
+                          <td
+                            aria-hidden="true"
+                            data-column-spacer="right"
+                            style={{ width: `${columnWindow().bottom}px`, padding: 0, border: 0 }}
+                          />
+                        </Show>
                       </tr>
                     );
                   }}
                 </For>
+                <Show when={renderWindow().bottom > 0}>
+                  <tr
+                    aria-hidden="true"
+                    data-table-spacer="bottom"
+                    style={{ height: `${renderWindow().bottom}px`, padding: 0, border: 0 }}
+                  >
+                    <td colspan={renderedColumnCount()} style={{ padding: 0, border: 0 }} />
+                  </tr>
+                </Show>
               </tbody>
             </table>
           </div>
+          {/* oxlint-enable jsx-a11y/no-noninteractive-tabindex */}
           <span
             class="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-xl bg-gradient-to-l from-card to-transparent sm:hidden"
             aria-hidden="true"
