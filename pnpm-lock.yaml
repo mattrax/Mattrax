@@ -197,6 +197,10 @@ snapshots:
 					"specifier": "^0.16.1",
 					"version": "0.16.1",
 				},
+				"@mbakereth/ldapjs-dn": {
+					"specifier": "^1.1.2",
+					"version": "1.1.2",
+				},
 				"@paralleldrive/cuid2": {
 					"specifier": "^3.3.0",
 					"version": "3.3.0",
@@ -849,6 +853,7 @@ snapshots:
 			"dependencies": {
 				"@effect/sql-mysql2": "catalog:",
 				"@mattrax/enterprise-domain": "workspace:*",
+				"@mattrax/management-backend": "workspace:*",
 				"@yielded/auth": "catalog:",
 				"@yielded/auth-persistence-drizzle": "catalog:",
 				"drizzle-orm": "catalog:",
@@ -863,6 +868,7 @@ snapshots:
 			"name": "@mattrax/enterprise-domain",
 			"dependencies": {
 				"@mattrax/crypto": "workspace:*",
+				"@mattrax/management-backend": "workspace:*",
 				"@xmldom/xmldom": "catalog:",
 				"@yielded/auth": "catalog:",
 				"effect": "catalog:",
@@ -1005,11 +1011,15 @@ snapshots:
 				"@mattrax/management-backend": "workspace:*",
 				"@mattrax/mdm-core": "workspace:*",
 				"@mattrax/scep": "workspace:*",
+				"@mbakereth/ldapjs-dn": "catalog:",
 				"drizzle-orm": "catalog:",
 				"effect": "catalog:",
 			},
 			"devDependencies": {
+				"@mattrax/crypto": "workspace:*",
 				"@types/node": "catalog:",
+				"asn1js": "catalog:",
+				"pkijs": "catalog:",
 				"typescript": "catalog:",
 				"vitest": "catalog:",
 			},
@@ -2703,6 +2713,18 @@ snapshots:
 				"js-yaml": "5.5.0",
 				"lighthouse": "13.6.0",
 				"tree-kill": "1.2.2",
+			},
+		},
+
+		"@mbakereth/ldapjs-asn1@2.0.2": {
+			"integrity": "sha512-i+r5LgX+ixyEapquIW77Mk4Tyn36YM3kdOH4x/ECFKiJNOHvSH8hVJo4NDhzc7+iYNJQWWENHp4ze/fKCSqXOw==",
+		},
+
+		"@mbakereth/ldapjs-dn@1.1.2": {
+			"integrity": "sha512-k5Vq4zHWG8uYYGDLl0LUvzPaDv33dK/GqB3I1WU+Ib+0lVKCknbZAKbQ9LPGhn0Q8xpoC04ZvFaHGd9pKLhtPg==",
+			"dependencies": {
+				"@mbakereth/ldapjs-asn1": "2.0.2",
+				"process-warning": "2.3.2",
 			},
 		},
 
@@ -10913,6 +10935,10 @@ snapshots:
 			"dependencies": {
 				"parse-ms": "4.0.0",
 			},
+		},
+
+		"process-warning@2.3.2": {
+			"integrity": "sha512-n9wh8tvBe5sFmsqlg+XQhaQLumwpqoAUruLwjCopgTmUBjJ/fjtBsJzKleCaIGBOMXYEhp1YfKl4d7rJ5ZKJGA==",
 		},
 
 		"prompts@2.4.2": {

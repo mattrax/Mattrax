@@ -9,6 +9,8 @@ import {
   createWindowsEnrollmentToken,
   createWindowsTenantToken,
   createWindowsBackend,
+  certificateAttribute,
+  makeFederatedTokenVerifier,
   verifyWindowsEnrollmentToken,
   verifyWindowsEnrollmentTokenDetailed,
   verifyWindowsTenantToken,
@@ -240,8 +242,9 @@ const makeFederatedSigner = async () => {
 const makeFederatedToken = async (
   signer: Awaited<ReturnType<typeof makeFederatedSigner>>,
   overrides: Row = {},
+  kid = "federated-test-key",
 ) => {
-  const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT", kid: "federated-test-key" }));
+  const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT", kid }));
   const now = Math.floor(Date.now() / 1000);
 
   const payload = base64Url(
@@ -280,6 +283,13 @@ const federatedSsoConfig = (organizationId: string) => ({
   requireMfa: false,
   createdAt: new Date("2024-01-01T00:00:00Z"),
   updatedAt: new Date("2024-01-01T00:00:00Z"),
+});
+
+const withKeyId = (signer: Awaited<ReturnType<typeof makeFederatedSigner>>, kid: string) => ({
+  ...signer,
+  jwks: {
+    keys: signer.jwks.keys.map((key) => ({ ...key, kid })),
+  },
 });
 
 describe("Windows enterprise backend", () => {
@@ -396,6 +406,46 @@ describe("Windows enterprise backend", () => {
     const serialBytes = certificate.serialNumber.valueBlock.valueHexView;
     expect(serialBytes.byteLength).toBeGreaterThanOrEqual(8);
     expect(serialBytes[0] & 0x80).toBe(0);
+  });
+
+  it("rolls back a new device when the issued-certificate write fails", async () => {
+    const { backend, db } = await setup();
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    db.failInsertTable = tableName(schema.scepIssuedCertificate);
+
+    await expect(
+      run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr()))),
+    ).rejects.toMatchObject({ _tag: "InternalServerError" });
+    expect(dbRows(db, tableName(schema.device))).toEqual([]);
+    expect(dbRows(db, tableName(schema.scepIssuedCertificate))).toEqual([]);
+  });
+
+  it("rolls back an existing device update when the issued-certificate write fails", async () => {
+    const now = new Date("2024-03-01T00:00:00Z");
+    const { backend, db } = await setup({
+      devices: [
+        {
+          id: "existing",
+          organizationId: "org-early",
+          proto: "win",
+          status: "pending",
+          name: "ORIGINAL",
+          dmIdentifier: "device-1",
+          enrolledAt: now,
+          lastSeenAt: now,
+        },
+      ],
+    });
+    const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    db.failInsertTable = tableName(schema.scepIssuedCertificate);
+
+    await expect(
+      run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr()))),
+    ).rejects.toMatchObject({ _tag: "InternalServerError" });
+    expect(dbRows(db, tableName(schema.device))).toMatchObject([
+      { id: "existing", status: "pending", name: "ORIGINAL" },
+    ]);
+    expect(dbRows(db, tableName(schema.scepIssuedCertificate))).toEqual([]);
   });
 
   it("rejects a new Windows device when the plan device limit is reached", async () => {
@@ -1203,6 +1253,18 @@ describe("Windows tenant enrollment tokens", () => {
 });
 
 describe("Windows identity lifecycle", () => {
+  it("parses escaped and multi-valued certificate subjects without regex ambiguity", () => {
+    expect(certificateAttribute(String.raw`CN=DESKTOP\,ONE+OU=org-early,O=Mattrax`, "CN")).toBe(
+      "DESKTOP,ONE",
+    );
+    expect(certificateAttribute(String.raw`CN=DESKTOP\,ONE+OU=org-early,O=Mattrax`, "OU")).toBe(
+      "org-early",
+    );
+    expect(certificateAttribute("CN=DESKTOP%5C%2CONE%2COU%3Dorg-early", "OU")).toBe("org-early");
+    expect(certificateAttribute("OU=one,OU=two,CN=device", "OU")).toBeNull();
+    expect(certificateAttribute("not a distinguished name", "OU")).toBeNull();
+  });
+
   const checkin = (backend: Awaited<ReturnType<typeof setup>>["backend"], scope: any) =>
     run(
       backend.windowsManagementCheckin(scope, {
@@ -1430,6 +1492,127 @@ describe("Windows federated Entra enrollment", () => {
     expect(result.signedCertificate).toContain("BEGIN CERTIFICATE");
     const devices = dbRows(db, tableName(schema.device));
     expect(devices.some((device) => device.dmIdentifier === "device-1")).toBe(true);
+  });
+
+  it("refreshes JWKS once for an unknown kid and then reuses the rotated key", async () => {
+    const current = await makeFederatedSigner();
+    const rotated = withKeyId(await makeFederatedSigner(), "rotated-key");
+    let fetches = 0;
+    const { backend } = await setup({
+      ssoConfig: [federatedSsoConfig("org-early")],
+      federated: {
+        enabled: true,
+        audience: federatedAudience,
+        jwksUri: () => "https://example.test/keys",
+        fetch: async () => {
+          fetches++;
+
+          return new Response(JSON.stringify(fetches === 1 ? current.jwks : rotated.jwks), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      },
+    });
+    const tenantToken = await createWindowsTenantToken("org-early", authSecret);
+
+    await run(
+      backend.getWindowsEnrollmentPolicy(await makeFederatedToken(current), { tenantToken }),
+    );
+    expect(fetches).toBe(1);
+
+    const rotatedToken = await makeFederatedToken(rotated, {}, "rotated-key");
+
+    await expect(
+      run(backend.getWindowsEnrollmentPolicy(rotatedToken, { tenantToken })),
+    ).resolves.toMatchObject({ authToken: expect.any(String) });
+    expect(fetches).toBe(2);
+    await run(backend.getWindowsEnrollmentPolicy(rotatedToken, { tenantToken }));
+    expect(fetches).toBe(2);
+  });
+
+  it("coalesces concurrent unknown-kid refreshes", async () => {
+    const current = await makeFederatedSigner();
+    const rotated = withKeyId(await makeFederatedSigner(), "rotated-key");
+    let fetches = 0;
+    const { backend } = await setup({
+      ssoConfig: [federatedSsoConfig("org-early")],
+      federated: {
+        enabled: true,
+        audience: federatedAudience,
+        jwksUri: () => "https://example.test/keys",
+        fetch: async () => {
+          fetches++;
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
+
+          return new Response(JSON.stringify(fetches === 1 ? current.jwks : rotated.jwks), {
+            status: 200,
+          });
+        },
+      },
+    });
+    const tenantToken = await createWindowsTenantToken("org-early", authSecret);
+    const rotatedToken = await makeFederatedToken(rotated, {}, "rotated-key");
+
+    await Promise.all([
+      run(backend.getWindowsEnrollmentPolicy(rotatedToken, { tenantToken })),
+      run(backend.getWindowsEnrollmentPolicy(rotatedToken, { tenantToken })),
+    ]);
+
+    expect(fetches).toBe(2);
+  });
+
+  it("respects the refresh cooldown for repeated unknown kids", async () => {
+    const current = await makeFederatedSigner();
+    const signer = await makeFederatedSigner();
+    let fetches = 0;
+    const { backend } = await setup({
+      ssoConfig: [federatedSsoConfig("org-early")],
+      federated: {
+        enabled: true,
+        audience: federatedAudience,
+        jwksUri: () => "https://example.test/keys",
+        fetch: async () => {
+          fetches++;
+
+          return new Response(JSON.stringify(current.jwks), { status: 200 });
+        },
+      },
+    });
+    const tenantToken = await createWindowsTenantToken("org-early", authSecret);
+    const unknown = await makeFederatedToken(signer, {}, "unknown-key");
+
+    await expect(
+      run(backend.getWindowsEnrollmentPolicy(unknown, { tenantToken })),
+    ).rejects.toBeInstanceOf(UnknownDevice);
+    expect(fetches).toBe(2);
+    await expect(
+      run(backend.getWindowsEnrollmentPolicy(unknown, { tenantToken })),
+    ).rejects.toMatchObject({ _tag: "InternalServerError" });
+    expect(fetches).toBe(2);
+  });
+
+  it("exposes JWKS outages as typed federation failures", async () => {
+    const signer = await makeFederatedSigner();
+    const verifier = makeFederatedTokenVerifier();
+    const result = await run(
+      verifier
+        .validate({
+          token: await makeFederatedToken(signer),
+          tenantId: federatedTenantId,
+          audience: federatedAudience,
+          jwksUri: "https://example.test/keys",
+          fetch: async () => new Response("unavailable", { status: 503 }),
+        })
+        .pipe(Effect.result),
+    );
+
+    expect(result).toMatchObject({
+      _tag: "Failure",
+      failure: { _tag: "FederatedTokenError", reason: "jwks" },
+    });
   });
 });
 

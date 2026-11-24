@@ -69,12 +69,13 @@ catalog:
   vite-plus: ^1.7.0
   vitest: ^5.1.0
   yaml: ^2.9.1
+  "@mbakereth/ldapjs-dn": ^1.1.2
 catalogMode: prefer
 
 overrides:
   vite: "catalog:"
 patchedDependencies:
-  '@tanstack/solid-query@6.0.0-rc.5': patches/@tanstack__solid-query@6.0.0-rc.5.patch
+  "@tanstack/solid-query@6.0.0-rc.5": patches/@tanstack__solid-query@6.0.0-rc.5.patch
   "@yielded/auth-persistence-drizzle@0.1.0-beta.47": patches/@yielded__auth-persistence-drizzle@0.1.0-beta.47.patch
   "@yielded/auth-persistence@0.1.0-beta.47": patches/@yielded__auth-persistence@0.1.0-beta.47.patch
 

@@ -16,6 +16,7 @@
     "composite": false
   },
   "include": [
+    "../*/src/**/*.d.ts",
     "../*/src/**/*.test.ts",
     "../*/src/**/*.test.tsx",
     "../*/tests/**/*.ts",

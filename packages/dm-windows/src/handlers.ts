@@ -46,7 +46,11 @@ function encodeFault(
   message: string,
 ): Effect.Effect<string, never> {
   return service.fault(message).pipe(
-    Effect.catchCause(() => Effect.succeed(fallbackFaultEnvelope(message))),
+    Effect.catchCause((cause) =>
+      Cause.hasInterrupts(cause)
+        ? Effect.failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
+        : Effect.succeed(fallbackFaultEnvelope(message)),
+    ),
     Effect.map((encoded) => (encoded.trim() ? encoded : fallbackFaultEnvelope(message))),
   );
 }
@@ -95,7 +99,11 @@ function soapHandler(
 
       const response = yield* handle(service, body, requestContext(request)).pipe(
         Effect.catchCause((cause) =>
-          encodeFault(service, describeFailure(cause, "Invalid SOAP request")),
+          Cause.hasInterrupts(cause)
+            ? Effect.failCause(
+                Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)),
+              )
+            : encodeFault(service, describeFailure(cause, "Invalid SOAP request")),
         ),
       );
 
@@ -114,7 +122,11 @@ function managementHandler(request: HttpServerRequest.HttpServerRequest) {
       .management(body, requestContext(request))
       .pipe(
         Effect.catchCause((cause) =>
-          encodeFault(service, describeFailure(cause, "Invalid SyncML request")),
+          Cause.hasInterrupts(cause)
+            ? Effect.failCause(
+                Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)),
+              )
+            : encodeFault(service, describeFailure(cause, "Invalid SyncML request")),
         ),
       );
 

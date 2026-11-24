@@ -1,11 +1,12 @@
 import { Cause, Effect, Predicate, Schema } from "effect";
 import {
-  deserializeSoapElement,
-  extractSoapBody,
-  extractSoapHeader,
+  deserializeSoapElementNode,
+  parseSoapEnvelope,
   serializeSoapElement,
   serializeSoapEnvelope,
 } from "@mattrax/soap";
+import type { ParsedSoapEnvelope } from "@mattrax/soap";
+import { WssSecurityExtNs } from "@mattrax/soap";
 import { MdmOrigin } from "@mattrax/management-backend";
 import type {
   ManagementBackend,
@@ -51,13 +52,23 @@ const action = {
   fault: "http://www.w3.org/2005/08/addressing/fault",
 };
 
-function extractBinarySecurityToken(xml: string): string | null {
-  const match = xml.match(
-    /<[^>]*BinarySecurityToken\b[^>]*>([\s\S]*?)<\/[^>]*BinarySecurityToken>/i,
+function extractBinarySecurityToken(envelope: ParsedSoapEnvelope): string | null {
+  const tokens = (envelope.security?.children ?? []).filter(
+    (child) => child.namespaceURI === WssSecurityExtNs && child.localName === "BinarySecurityToken",
   );
 
-  return match?.[1]?.replaceAll(/\s/g, "") ?? null;
+  if (tokens.length !== 1) return null;
+
+  return tokens[0]!.textContent?.replaceAll(/\s/g, "") ?? null;
 }
+
+const envelopeError = (phase: WindowsFailurePhase, cause: unknown) =>
+  new WindowsMdmError({
+    message: "Invalid SOAP request",
+    cause,
+    phase,
+    code: "invalid_envelope",
+  });
 
 function contextMap(request: RequestSecurityToken) {
   const entries: Record<string, string> = {};
@@ -184,7 +195,7 @@ export const makeWindowsMdmService = (
       const record = backend.windowsRecordFailure;
 
       // A shutdown or client abort is not a Windows failure.
-      if (!record || Cause.hasInterruptsOnly(cause)) return Effect.void;
+      if (!record || Cause.hasInterrupts(cause)) return Effect.void;
 
       let error: unknown;
 
@@ -217,7 +228,15 @@ export const makeWindowsMdmService = (
         deviceId,
         clientIp: context.clientIp,
         userAgent: context.userAgent,
-      }).pipe(Effect.catchCause(() => Effect.void));
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterrupts(cause)
+            ? Effect.failCause(
+                Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)),
+              )
+            : Effect.void,
+        ),
+      );
     });
 
   const envelope = (body: string, relatesTo: string | undefined, actionValue: string) =>
@@ -231,28 +250,34 @@ export const makeWindowsMdmService = (
     });
 
   const fault = (message: string, relatesTo?: string) =>
-    Effect.succeed(
-      envelope(
-        Effect.runSync(
-          serializeSoapElement(SoapFault, {
-            code: { value: "s:Receiver" },
-            reason: { text: { lang: "en-us", content: message } },
-          }),
+    Effect.gen(function* () {
+      const body = yield* serializeSoapElement(SoapFault, {
+        code: { value: "s:Receiver" },
+        reason: { text: { lang: "en-us", content: message } },
+      }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new WindowsMdmError({
+              message: "Failed to serialize SOAP fault",
+              cause,
+              code: "fault_serialization_failed",
+            }),
         ),
-        relatesTo,
-        action.fault,
-      ),
-    );
+      );
+
+      return envelope(body, relatesTo, action.fault);
+    });
 
   return WindowsMdmService.of({
     mdmOrigin,
     fault,
     discovery: (xml, context = {}) =>
       Effect.gen(function* () {
-        const header = extractSoapHeader(xml);
-        const body = extractSoapBody(xml);
+        const parsed = yield* parseSoapEnvelope(xml).pipe(
+          Effect.mapError((cause) => envelopeError("discovery", cause)),
+        );
 
-        const req = yield* deserializeSoapElement(body, DiscoverRequest).pipe(
+        const req = yield* deserializeSoapElementNode(parsed.body, DiscoverRequest).pipe(
           Effect.mapError(
             (cause) =>
               new WindowsMdmError({
@@ -297,7 +322,7 @@ export const makeWindowsMdmService = (
           ),
         );
 
-        return envelope(responseBody, header.messageId, action.discovery);
+        return envelope(responseBody, parsed.header.messageId, action.discovery);
       }).pipe(
         Effect.tapCause((cause) =>
           recordFault("discovery", context, cause, "Invalid SOAP request"),
@@ -305,8 +330,10 @@ export const makeWindowsMdmService = (
       ),
     policy: (xml, context = {}) =>
       Effect.gen(function* () {
-        const header = extractSoapHeader(xml);
-        const token = extractBinarySecurityToken(header.securityXml ?? "");
+        const parsed = yield* parseSoapEnvelope(xml).pipe(
+          Effect.mapError((cause) => envelopeError("policy", cause)),
+        );
+        const token = extractBinarySecurityToken(parsed);
 
         if (!token)
           return yield* Effect.fail(
@@ -316,8 +343,7 @@ export const makeWindowsMdmService = (
               code: "missing_token",
             }),
           );
-        const body = extractSoapBody(xml);
-        yield* deserializeSoapElement(body, GetPolicies).pipe(
+        yield* deserializeSoapElementNode(parsed.body, GetPolicies).pipe(
           Effect.mapError(
             (cause) =>
               new WindowsMdmError({
@@ -352,7 +378,7 @@ export const makeWindowsMdmService = (
           ),
         );
 
-        return envelope(responseBody, header.messageId, action.policy);
+        return envelope(responseBody, parsed.header.messageId, action.policy);
       }).pipe(
         Effect.tapCause((cause) => recordFault("policy", context, cause, "Invalid SOAP request")),
       ),
@@ -360,8 +386,10 @@ export const makeWindowsMdmService = (
       let requestDeviceId: string | undefined;
 
       return Effect.gen(function* () {
-        const header = extractSoapHeader(xml);
-        const token = extractBinarySecurityToken(header.securityXml ?? "");
+        const parsed = yield* parseSoapEnvelope(xml).pipe(
+          Effect.mapError((cause) => envelopeError("enrollment", cause)),
+        );
+        const token = extractBinarySecurityToken(parsed);
 
         if (!token)
           return yield* Effect.fail(
@@ -372,7 +400,7 @@ export const makeWindowsMdmService = (
             }),
           );
 
-        const req = yield* deserializeSoapElement(extractSoapBody(xml), RequestSecurityToken).pipe(
+        const req = yield* deserializeSoapElementNode(parsed.body, RequestSecurityToken).pipe(
           Effect.mapError(
             (cause) =>
               new WindowsMdmError({
@@ -454,7 +482,7 @@ export const makeWindowsMdmService = (
           ),
         );
 
-        return envelope(responseBody, header.messageId, action.enroll);
+        return envelope(responseBody, parsed.header.messageId, action.enroll);
       }).pipe(
         Effect.tapCause((cause) =>
           recordFault("enrollment", context, cause, "Invalid SOAP request", requestDeviceId),
@@ -504,9 +532,13 @@ export const makeWindowsMdmService = (
           .windowsDeviceEvent(scope, ManagementCheckinEvent.make({ deviceId: scope.deviceId }))
           .pipe(
             Effect.catchCause((cause) =>
-              Effect.logWarning(
-                `Windows device event failed for ${scope.deviceId}: ${String(cause)}`,
-              ),
+              Cause.hasInterrupts(cause)
+                ? Effect.failCause(
+                    Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)),
+                  )
+                : Effect.logWarning(
+                    `Windows device event failed for ${scope.deviceId}: ${String(cause)}`,
+                  ),
             ),
           );
         const response: SyncMLType = fromManagementResponse(sync, backendResponse);

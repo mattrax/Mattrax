@@ -112,4 +112,61 @@ describe("SOAP Deserializer", () => {
 
     expect(result._tag).toBe("Failure");
   });
+
+  it("lets Schema choose the matching union branch", async () => {
+    const Choice = Schema.Union([
+      Schema.Struct({
+        kind: Schema.Literal("text"),
+        value: Schema.String,
+      }).pipe(Schema.annotate({ identifier: "TextChoice" })),
+      Schema.Struct({
+        kind: Schema.Literal("count"),
+        value: Schema.Number,
+      }).pipe(Schema.annotate({ identifier: "CountChoice" })),
+    ]);
+
+    const result = await runPromise(
+      deserializeSoapElement(
+        "<CountChoice><kind>count</kind><value>2</value></CountChoice>",
+        Choice,
+      ),
+    );
+
+    expect(result).toEqual({ kind: "count", value: 2 });
+  });
+
+  it("accepts the complete XML Schema boolean lexical space", async () => {
+    const Value = Schema.Struct({ value: Schema.Boolean }).pipe(
+      Schema.annotate({ identifier: "Value" }),
+    );
+
+    await expect(
+      runPromise(deserializeSoapElement("<Value><value>1</value></Value>", Value)),
+    ).resolves.toEqual({ value: true });
+    await expect(
+      runPromise(deserializeSoapElement("<Value><value>0</value></Value>", Value)),
+    ).resolves.toEqual({ value: false });
+    await expect(
+      runPromise(
+        deserializeSoapElement("<Value><value>yes</value></Value>", Value).pipe(Effect.result),
+      ),
+    ).resolves.toMatchObject({ _tag: "Failure" });
+  });
+
+  it("matches struct children by namespace instead of local name alone", async () => {
+    const Root = Schema.Struct({
+      value: Schema.String.pipe(
+        Schema.annotateKey({ soapElementName: "Value", soapNamespace: "urn:right" }),
+      ),
+    }).pipe(Schema.annotate({ identifier: "Root", soapNamespace: "urn:root" }));
+
+    const result = await runPromise(
+      deserializeSoapElement(
+        '<Root xmlns="urn:root" xmlns:wrong="urn:wrong"><wrong:Value>bad</wrong:Value><Value xmlns="urn:right">good</Value></Root>',
+        Root,
+      ),
+    );
+
+    expect(result).toEqual({ value: "good" });
+  });
 });

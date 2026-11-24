@@ -6,6 +6,9 @@ import { AutopilotDeviceInfo } from "./Autopilot.js";
 import { GroupMembershipKind } from "./Group.js";
 import { NullableString } from "./Errors.js";
 import { WindowsActivationStatus } from "./deviceInventory.js";
+import { WindowsFailurePhase } from "@mattrax/management-backend";
+
+export { WindowsFailurePhase };
 
 export const DeviceProtocol = Schema.Literals(["apple", "win", "android"]);
 
@@ -142,17 +145,6 @@ export const WindowsPolicyInfo = Schema.Struct({
 });
 
 export type WindowsPolicyInfo = typeof WindowsPolicyInfo.Type;
-
-/** Where in the Windows protocol a recorded failure happened. */
-export const WindowsFailurePhase = Schema.Literals([
-  "discovery",
-  "wstep",
-  "enrollment",
-  "policy",
-  "command",
-]);
-
-export type WindowsFailurePhase = typeof WindowsFailurePhase.Type;
 
 /**
  * One failed Windows enrollment or management request.
