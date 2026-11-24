@@ -5,8 +5,9 @@ import { Button } from "~/components/ui/button";
 import { createSignal, onSettled, Show, untrack } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
-import { Building2, KeyRound } from "~/components/ui/icons";
-import { errorMessage, raisedFailure } from "~/lib/errors";
+import { KeyRound } from "~/components/ui/icons";
+import { redirectToProvider, startOrganisationSso } from "~/lib/sso-start";
+import { passkeySignInFailureMessage } from "~/lib/passkey-sign-in";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
 const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
@@ -36,18 +37,28 @@ export default function LoginPage() {
 
   const [email, setEmail] = createSignal(initialEmail ?? "");
   const [step, setStep] = createSignal<"email" | "choose">(initialEmail ? "choose" : "email");
-  const [ssoUrl, setSsoUrl] = createSignal<string | null>(null);
-  const [ssoAvailable, setSsoAvailable] = createSignal(false);
   const [emailError, setEmailError] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [ssoError, setSsoError] = createSignal<string | null>(null);
   const [passkeyPending, setPasskeyPending] = createSignal(false);
+  const [passkeyFailed, setPasskeyFailed] = createSignal(false);
   const [checkingEmail, setCheckingEmail] = createSignal(false);
+  const [redirecting, setRedirecting] = createSignal(false);
   const [mfaPending, setMfaPending] = createSignal(false);
   const created = untrack(() => searchParams.created === "1");
+  let emailLookup = 0;
+  let lookupInFlight = false;
+  let passkeyAttempt = 0;
+  let passkeyInFlight = false;
+  let redirectStarted = false;
 
   onSettled(() => {
     document.title = "Sign in · Mattrax";
+
+    // Registration can return here with the address prefilled. Run the same
+    // SSO decision once, without starting a passkey ceremony automatically.
+    if (typeof window !== "undefined" && initialEmail && looksLikeEmail(initialEmail))
+      void inspectEmail();
   });
 
   const returnTo = () =>
@@ -59,7 +70,9 @@ export default function LoginPage() {
    * Browser-flow destinations such as an OAuth authorize URL are served by the
    * API Worker, not the Solid router, so resume them with a full navigation.
    */
-  const finishSignIn = async () => {
+  const finishSignIn = async (isCurrent: () => boolean = () => true) => {
+    if (!isCurrent()) return;
+
     const typed = email().trim().toLowerCase();
 
     // Discoverable passkeys let the browser offer any credential for this
@@ -67,11 +80,16 @@ export default function LoginPage() {
     // device does not silently sign in as somebody else.
     if (typed) {
       const current = await authClient.session();
+
+      if (!isCurrent()) return;
       const actual = current.data?.claims.email?.trim().toLowerCase();
 
       if (actual && actual !== typed) {
         await authClient.signOut().catch(() => undefined);
+
+        if (!isCurrent()) return;
         setMfaPending(false);
+        setPasskeyFailed(true);
         setError("That passkey belongs to a different account. Use the email you signed up with.");
         setStep("choose");
 
@@ -79,6 +97,8 @@ export default function LoginPage() {
       }
     }
 
+    // A changed email or a newer redirect owns the screen now.
+    if (!isCurrent()) return;
     const destination = returnTo() ?? "/dashboard";
 
     if (destination.startsWith("/api/")) window.location.assign(destination);
@@ -86,11 +106,9 @@ export default function LoginPage() {
   };
 
   /** Ask the API whether this address has an organisation identity provider. */
-  const continueWithEmail = async (event: SubmitEvent) => {
-    event.preventDefault();
-    setEmailError(null);
-    setError(null);
-    setSsoError(null);
+  const inspectEmail = async () => {
+    if (lookupInFlight || passkeyInFlight || redirectStarted) return;
+
     const value = email().trim();
 
     if (!looksLikeEmail(value)) {
@@ -99,78 +117,137 @@ export default function LoginPage() {
       return;
     }
 
+    lookupInFlight = true;
     setEmail(value);
+    setEmailError(null);
+    setError(null);
+    setSsoError(null);
     setCheckingEmail(true);
+    const lookup = ++emailLookup;
 
     try {
-      const result = await authClient.startSso(value, returnTo());
-      const url = result.error ? undefined : result.data?.url;
+      const result = await startOrganisationSso(value, returnTo());
 
-      setSsoUrl(url ?? null);
-      setSsoAvailable(Boolean(url));
-    } catch {
-      // An unreachable SSO service must not block passkey sign-in.
-      setSsoUrl(null);
-      setSsoAvailable(false);
-    } finally {
-      setCheckingEmail(false);
+      // A stale lookup must never replace a newer email step or launch a
+      // second navigation after the first redirect has started.
+      if (lookup !== emailLookup || redirectStarted) return;
+
+      if (result.kind === "redirect") {
+        redirectStarted = true;
+        lookupInFlight = false;
+        setRedirecting(true);
+        setCheckingEmail(false);
+        setStep("choose");
+
+        try {
+          redirectToProvider(result.url);
+        } catch {
+          redirectStarted = false;
+          setRedirecting(false);
+          setSsoError(
+            "We couldn't open organisation sign-in. Check your connection and try again.",
+          );
+          setStep("choose");
+        }
+
+        return;
+      }
+
+      if (result.kind === "unavailable") {
+        setStep("choose");
+
+        return;
+      }
+
+      // Provider and malformed-response failures are ambiguous. Keep both a
+      // manual SSO retry and the passkey path instead of blocking sign-in.
+      setSsoError(result.message);
       setStep("choose");
+    } catch {
+      if (lookup !== emailLookup || redirectStarted) return;
+
+      setSsoError("We couldn't start organisation sign-in. Check your connection and try again.");
+      setStep("choose");
+    } finally {
+      if (lookup === emailLookup) {
+        lookupInFlight = false;
+        setCheckingEmail(false);
+      }
     }
   };
 
-  const chooseSso = () => {
-    const url = ssoUrl();
-
-    if (url) {
-      window.location.assign(url);
-
-      return;
-    }
-
-    setSsoError(
-      "Single sign-on is not available for that email. Use your passkey or contact your administrator.",
-    );
+  const continueWithEmail = async (event: SubmitEvent) => {
+    event.preventDefault();
+    await inspectEmail();
   };
 
   const signInWithPasskey = async () => {
+    if (passkeyInFlight || lookupInFlight || redirectStarted) return;
+
+    const attempt = ++passkeyAttempt;
+    const current = () => attempt === passkeyAttempt && !redirectStarted;
+
+    passkeyInFlight = true;
     setError(null);
     setSsoError(null);
+    setPasskeyFailed(false);
     setPasskeyPending(true);
-    let result = await authClient.passkeySignIn();
 
-    // A fresh browser profile (or one that just signed out) can reject the
-    // first assertions while the credential settles. Retry only that transient
-    // rejection: a dismissed prompt must not open another sheet.
-    for (let attempt = 0; result.error?.tag === "PasskeyRejected" && attempt < 10; attempt++) {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 400);
-      });
-      result = await authClient.passkeySignIn();
+    try {
+      const result = await authClient.passkeySignIn();
+
+      // Changing the email during a ceremony must invalidate its result before
+      // any alert, MFA state or navigation can replace the newer step.
+      if (!current()) {
+        if (!result.error && !result.data?.pending)
+          await authClient.signOut().catch(() => undefined);
+
+        return;
+      }
+
+      if (result.error) {
+        setPasskeyFailed(true);
+        setError(passkeySignInFailureMessage(result.error.tag));
+
+        return;
+      }
+
+      if (result.data?.pending) {
+        setMfaPending(true);
+
+        return;
+      }
+
+      await finishSignIn(current);
+    } catch {
+      if (!current()) return;
+
+      setPasskeyFailed(true);
+      setError(passkeySignInFailureMessage(undefined));
+    } finally {
+      if (current()) {
+        passkeyInFlight = false;
+        setPasskeyPending(false);
+      }
     }
-
-    setPasskeyPending(false);
-
-    if (result.error) {
-      setError(errorMessage(raisedFailure(result.error), "That passkey wasn't accepted"));
-
-      return;
-    }
-
-    if (result.data?.pending) {
-      setMfaPending(true);
-
-      return;
-    }
-
-    await finishSignIn();
   };
 
   const changeEmail = () => {
+    // Invalidate any lookup or ceremony already in flight before showing the
+    // email field; their late results must not write to this newer step.
+    emailLookup += 1;
+    passkeyAttempt += 1;
+    lookupInFlight = false;
+    passkeyInFlight = false;
     setStep("email");
+    setEmailError(null);
     setError(null);
     setSsoError(null);
-    setSsoAvailable(false);
-    setSsoUrl(null);
+    setPasskeyFailed(false);
+    setPasskeyPending(false);
+    setCheckingEmail(false);
+    setRedirecting(false);
+    redirectStarted = false;
   };
 
   return (
@@ -180,13 +257,13 @@ export default function LoginPage() {
           <a href="/" class="inline-flex items-center gap-2 mb-6">
             <BrandLogo class="h-4" />
           </a>
-          <h1 class="text-2xl font-semibold text-stone-900">Sign in to Mattrax</h1>
+          <h1 id="login-heading" class="text-2xl font-semibold text-stone-900">
+            Sign in to Mattrax
+          </h1>
           <p class="text-stone-500 text-sm mt-1">
             {step() === "email"
-              ? "Enter your work email to continue with your organisation or a passkey."
-              : ssoAvailable()
-                ? "Continue with your organisation or use the passkey saved on this device."
-                : "Use the passkey saved on this device or a nearby device."}
+              ? "Enter your work email to continue."
+              : "Use the passkey saved on this device or a nearby device."}
           </p>
         </div>
 
@@ -218,82 +295,126 @@ export default function LoginPage() {
                   </button>
                 </div>
 
-                <Show when={error()}>
-                  {(message) => (
-                    <p
-                      id="login-error"
-                      role="alert"
-                      class={`text-sm text-destructive ${feedbackEnter}`}
+                <Show when={redirecting()}>
+                  <p role="status" class="text-center text-sm text-stone-600">
+                    Redirecting to your organisation…
+                  </p>
+                  <p class="text-center text-[12.5px] text-stone-500">
+                    Taking too long?{" "}
+                    <button
+                      type="button"
+                      onClick={changeEmail}
+                      class="font-medium text-stone-900 underline underline-offset-2"
                     >
-                      {message()}
-                    </p>
-                  )}
-                </Show>
-                <Show when={ssoError()}>
-                  {(message) => (
-                    <p role="alert" class={`text-sm text-destructive ${feedbackEnter}`}>
-                      {message()}
-                    </p>
-                  )}
+                      Cancel and change email
+                    </button>
+                  </p>
                 </Show>
 
-                <Show
-                  when={ssoAvailable()}
-                  fallback={
+                <Show when={!redirecting()}>
+                  <Show when={error()}>
+                    {(message) => (
+                      <p
+                        id="login-error"
+                        role="alert"
+                        aria-atomic="true"
+                        class={`text-sm text-destructive ${feedbackEnter}`}
+                      >
+                        {message()}
+                      </p>
+                    )}
+                  </Show>
+                  <Show when={ssoError()}>
+                    {(message) => (
+                      <p
+                        id="sso-error"
+                        role="alert"
+                        aria-atomic="true"
+                        class={`text-sm text-destructive ${feedbackEnter}`}
+                      >
+                        {message()}
+                      </p>
+                    )}
+                  </Show>
+                  <Show when={checkingEmail()}>
+                    <p role="status" class="text-center text-[12.5px] text-stone-500">
+                      Checking your organisation…
+                    </p>
+                  </Show>
+                  <Show when={passkeyPending()}>
+                    <p role="status" class="text-center text-[12.5px] text-stone-500">
+                      Waiting for your device…
+                    </p>
+                  </Show>
+
+                  <Show
+                    when={ssoError()}
+                    fallback={
+                      <Button
+                        type="button"
+                        class="h-10 w-full rounded-lg px-4 text-sm"
+                        pending={passkeyPending()}
+                        disabled={checkingEmail()}
+                        aria-describedby={error() ? "login-error" : undefined}
+                        onClick={() => void signInWithPasskey()}
+                      >
+                        <KeyRound class="size-4" />
+                        {passkeyPending()
+                          ? "Waiting for your device…"
+                          : passkeyFailed()
+                            ? "Try passkey again"
+                            : "Sign in with a passkey"}
+                      </Button>
+                    }
+                  >
                     <Button
                       type="button"
                       class="h-10 w-full rounded-lg px-4 text-sm"
+                      pending={checkingEmail()}
+                      disabled={passkeyPending()}
+                      onClick={() => void inspectEmail()}
+                    >
+                      {checkingEmail() ? "Trying again…" : "Try organisation sign-in again"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      class="h-10 w-full rounded-lg px-4 text-sm"
                       pending={passkeyPending()}
+                      disabled={checkingEmail()}
+                      aria-describedby={error() ? "login-error" : undefined}
                       onClick={() => void signInWithPasskey()}
                     >
                       <KeyRound class="size-4" />
-                      {passkeyPending() ? "Waiting for your device…" : "Sign in with a passkey"}
+                      {passkeyPending()
+                        ? "Waiting for your device…"
+                        : passkeyFailed()
+                          ? "Try passkey again"
+                          : "Use a passkey instead"}
                     </Button>
-                  }
-                >
-                  <Button
-                    type="button"
-                    class="h-10 w-full rounded-lg px-4 text-sm"
-                    onClick={chooseSso}
-                  >
-                    <Building2 class="size-4" />
-                    Continue with SSO
-                  </Button>
+                  </Show>
 
-                  <div class="relative py-1 text-center">
-                    <span class="absolute inset-x-0 top-1/2 h-px bg-stone-300/70" />
-                    <span class="relative bg-background px-2 text-[11px] uppercase tracking-wide text-stone-500">
-                      or
-                    </span>
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    class="h-10 w-full rounded-lg px-4 text-sm"
-                    pending={passkeyPending()}
-                    onClick={() => void signInWithPasskey()}
-                  >
-                    <KeyRound class="size-4" />
-                    {passkeyPending() ? "Waiting for your device…" : "Use a passkey instead"}
-                  </Button>
-                </Show>
-
-                <Show when={!ssoAvailable()}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    class="h-10 w-full rounded-lg px-4 text-sm"
-                    onClick={chooseSso}
-                  >
-                    <Building2 class="size-4" />
-                    Sign in with your organisation
-                  </Button>
+                  <Show when={error()}>
+                    <p class="text-center text-[12.5px] text-stone-500">
+                      Need another way in?{" "}
+                      <a
+                        href="/recover"
+                        class="text-stone-900 font-medium underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-stone-700"
+                      >
+                        Email me a recovery link
+                      </a>
+                    </p>
+                  </Show>
                 </Show>
               </div>
             }
           >
-            <form onSubmit={continueWithEmail} class="space-y-4" novalidate>
+            <form
+              onSubmit={continueWithEmail}
+              class="space-y-4"
+              novalidate
+              aria-labelledby="login-heading"
+            >
               <div class="space-y-1.5">
                 <label for="email" class="text-sm font-medium text-stone-700">
                   Work email
@@ -309,23 +430,41 @@ export default function LoginPage() {
                   spellcheck={false}
                   placeholder="you@company.com"
                   value={email()}
-                  onInput={(event) => setEmail(event.currentTarget.value)}
+                  disabled={checkingEmail() || redirecting()}
+                  aria-invalid={emailError() ? "true" : "false"}
+                  aria-describedby={emailError() ? "login-email-error" : undefined}
+                  onInput={(event) => {
+                    setEmail(event.currentTarget.value);
+                    setEmailError(null);
+                  }}
                   class="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
                 />
               </div>
               <Show when={emailError()}>
                 {(message) => (
-                  <p role="alert" class={`text-sm text-destructive ${feedbackEnter}`}>
+                  <p
+                    id="login-email-error"
+                    role="alert"
+                    aria-atomic="true"
+                    class={`text-sm text-destructive ${feedbackEnter}`}
+                  >
                     {message()}
                   </p>
                 )}
               </Show>
+              <Show when={checkingEmail() || redirecting()}>
+                <p role="status" class="text-center text-[12.5px] text-stone-500">
+                  {redirecting()
+                    ? "Redirecting to your organisation…"
+                    : "Checking your organisation…"}
+                </p>
+              </Show>
               <Button
                 type="submit"
                 class="h-10 w-full rounded-lg px-4 text-sm"
-                pending={checkingEmail()}
+                pending={checkingEmail() || redirecting()}
               >
-                {checkingEmail() ? "Checking…" : "Continue"}
+                {redirecting() ? "Redirecting…" : checkingEmail() ? "Checking…" : "Continue"}
               </Button>
             </form>
           </Show>

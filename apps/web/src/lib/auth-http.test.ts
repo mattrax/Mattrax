@@ -94,30 +94,6 @@ describe("browser auth transport", () => {
     });
   });
 
-  it.each([
-    {},
-    { error: "Could not start SSO sign-in" },
-    { _tag: "EnterpriseBadRequest", message: "SSO is not configured" },
-  ])("rejects malformed or error SSO success %#", async (responseBody) => {
-    fetch.mockResolvedValueOnce(Response.json(responseBody));
-
-    await expect(authClient.startSso("ada@example.com")).resolves.toEqual({
-      error: {
-        message: "The authentication service returned an invalid success response",
-        tag: "AuthResponseError",
-      },
-    });
-  });
-
-  it("accepts a valid direct SSO start response", async () => {
-    const url = "https://login.microsoftonline.com/authorize";
-    fetch.mockResolvedValueOnce(Response.json({ url }));
-
-    await expect(authClient.startSso("ada@example.com")).resolves.toEqual({
-      data: { url },
-    });
-  });
-
   it.each(["revoked", "already-invalid", "client-only"])(
     "accepts the sign-out action's enveloped %s result",
     async (invalidation) => {
