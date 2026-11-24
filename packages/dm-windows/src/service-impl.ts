@@ -415,19 +415,25 @@ export const makeWindowsMdmService = (
         const ctx = contextMap(req);
         requestDeviceId = ctx.DeviceID ?? ctx.DeviceId;
 
+        const enrollment = {
+          authToken: token,
+          csr: req.binarySecurityToken.content,
+          deviceId: ctx.DeviceID ?? ctx.DeviceId,
+          deviceName: ctx.DeviceName,
+          enrollmentType: ctx.EnrollmentType,
+          context: ctx,
+          mdmOrigin,
+          tenantToken: context.tenantToken,
+          clientIp: context.clientIp,
+          userAgent: context.userAgent,
+          // Trusted edge identity, not AdditionalContext. The backend requires
+          // this proof before it will renew an existing DeviceID.
+          identityCertificate: context.identityCertificate,
+          identityCertificateSerial: context.identityCertificateSerial,
+        };
+
         const result = yield* backend
-          .windowsEnroll({
-            authToken: token,
-            csr: req.binarySecurityToken.content,
-            deviceId: ctx.DeviceID ?? ctx.DeviceId,
-            deviceName: ctx.DeviceName,
-            enrollmentType: ctx.EnrollmentType,
-            context: ctx,
-            mdmOrigin,
-            tenantToken: context.tenantToken,
-            clientIp: context.clientIp,
-            userAgent: context.userAgent,
-          })
+          .windowsEnroll(enrollment)
           .pipe(Effect.mapError((cause) => backendError("Enrollment backend failed", cause)));
 
         // Keep the tenant token on the management URL too. The certificate

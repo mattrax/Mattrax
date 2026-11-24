@@ -550,6 +550,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
   const findDeviceByIssuedCertificate = (
     organizationId: string,
     serial: string | undefined,
+    options: { readonly activeAt?: Date } = {},
   ): Effect.Effect<typeof s.device.$inferSelect | null, unknown> =>
     Effect.gen(function* () {
       const candidates = serial ? certificateSerialCandidates(serial) : [];
@@ -568,6 +569,11 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
       for (const certificate of certificates) {
         if (!certificate.deviceId) continue;
+        if (
+          options.activeAt &&
+          (certificate.revokedAt != null || certificate.notAfter <= options.activeAt)
+        )
+          continue;
 
         const [byId] = yield* db
           .select()
@@ -774,52 +780,6 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
       yield* syncDynamicGroupsForDevice(db, organizationId, deviceId, { now: timestamp }).pipe(
         Effect.catch(() => Effect.void),
       );
-    });
-
-  /**
-   * Reject a device presenting an identity certificate whose serial was
-   * revoked. The edge may forward the serial as hex or decimal, so compare
-   * canonical forms. Certificate rows can be keyed by the internal device id or
-   * the legacy Windows DeviceID.
-   */
-  const identityCertificateRevoked = (
-    organizationId: string,
-    device: { readonly id: string; readonly dmIdentifier?: string | null },
-    serial: string | undefined,
-  ): Effect.Effect<boolean, unknown> =>
-    Effect.gen(function* () {
-      const trimmed = serial?.trim();
-
-      if (!trimmed) return false;
-      const candidates = certificateSerialCandidates(trimmed);
-
-      if (candidates.length === 0) return false;
-
-      for (const deviceId of certificateDeviceIdsFor(device)) {
-        const rows = yield* db
-          .select({
-            serial: s.scepIssuedCertificate.serial,
-            revokedAt: s.scepIssuedCertificate.revokedAt,
-          })
-          .from(s.scepIssuedCertificate)
-          .where(
-            and(
-              eq(s.scepIssuedCertificate.organizationId, organizationId),
-              eq(s.scepIssuedCertificate.deviceId, deviceId),
-            ),
-          );
-
-        if (
-          rows.some(
-            (row) =>
-              row.revokedAt != null &&
-              candidates.includes(normalizeIssuedCertificateSerial(row.serial)),
-          )
-        )
-          return true;
-      }
-
-      return false;
     });
 
   /**
@@ -1314,6 +1274,46 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         const existing = yield* findDevice(organizationId, deviceIdentifier);
         attributableDevice = existing;
 
+        if (existing) {
+          // The HTTP layer forwards these fields only from the verified mTLS
+          // handshake. They are deliberately separate from the caller-owned
+          // AdditionalContext map. A tenant enrollment capability may create a
+          // new identity, but reusing this DeviceID requires the current
+          // device certificate's private key.
+          const identityProof = request as WindowsEnrollmentRequest & {
+            readonly identityCertificate?: unknown;
+            readonly identityCertificateSerial?: unknown;
+          };
+          const proofSerial = Schema.is(Schema.String)(identityProof.identityCertificateSerial)
+            ? identityProof.identityCertificateSerial.trim()
+            : undefined;
+          const proofCertificate = Schema.is(Schema.String)(identityProof.identityCertificate)
+            ? identityProof.identityCertificate
+            : undefined;
+          const proofCn = certificateAttribute(proofCertificate, "CN");
+          const proofOu = certificateAttribute(proofCertificate, "OU");
+          const proofDevice = proofSerial
+            ? yield* findDeviceByIssuedCertificate(organizationId, proofSerial, {
+                activeAt: new Date(),
+              })
+            : null;
+
+          if (
+            !proofDevice ||
+            proofDevice.id !== existing.id ||
+            (proofCn && proofCn !== deviceIdentifier) ||
+            (proofOu && proofOu !== organizationId)
+          ) {
+            yield* report(
+              "enrollment",
+              "enrollment_identity_required",
+              "Windows enrollment was rejected: an existing device must present its current identity certificate before its identity can be renewed.",
+            );
+
+            return yield* Effect.fail(new UnknownDevice());
+          }
+        }
+
         // The same DeviceID can enroll into a different tenant after the
         // machine is re-enrolled. Keep a note of the old rows now and remove
         // them once this enrollment is durable; otherwise the previous tenant
@@ -1718,19 +1718,12 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
         attributableOrganizationId = organizationId;
 
-        if (requireDeviceIdentity) {
-          const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
-
-          if (subjectCn && subjectCn !== scope.deviceId) {
-            yield* report(
-              "certificate_identity_mismatch",
-              "Windows check-in was rejected: the client certificate does not match the device id in the SyncML header.",
-            );
-
-            return yield* Effect.fail(new UnknownDevice());
-          }
-        }
-
+        const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
+        const certificateDevice = requireDeviceIdentity
+          ? yield* findDeviceByIssuedCertificate(organizationId, scope.identityCertificateSerial, {
+              activeAt: new Date(),
+            })
+          : null;
         const device = yield* findDevice(organizationId, scope.deviceId);
 
         if (!device) {
@@ -1744,27 +1737,15 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
         if (
           requireDeviceIdentity &&
-          (yield* identityCertificateRevoked(
-            organizationId,
-            device,
-            scope.identityCertificateSerial,
-          ))
+          (!scope.identityCertificateSerial?.trim() ||
+            (subjectCn && subjectCn !== scope.deviceId) ||
+            !certificateDevice ||
+            certificateDevice.id !== device.id)
         ) {
-          reported = true;
-          boundaryRecorded =
-            (yield* reportFailure({
-              organizationId,
-              deviceId: device.id,
-              deviceIdentifier: scope.deviceId,
-              serial: device.serial,
-              hostname: device.name,
-              phase: "command",
-              code: "certificate_revoked",
-              message:
-                "Windows check-in was rejected: this device's identity certificate has been revoked. Enroll the device again.",
-              clientIp: scope.clientIp,
-              userAgent: scope.userAgent,
-            })) || boundaryRecorded;
+          yield* report(
+            "certificate_identity_mismatch",
+            "Windows check-in was rejected: the client certificate is not an active identity issued to this device.",
+          );
 
           return yield* Effect.fail(new UnknownDevice());
         }
@@ -2973,26 +2954,31 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
         attributableOrganizationId = organizationId;
 
-        if (requireDeviceIdentity && !isEnrollmentEvent) {
-          const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
-
-          if (subjectCn && subjectCn !== deviceId) return yield* Effect.fail(new UnknownDevice());
-        }
-
+        const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
+        const certificateDevice =
+          requireDeviceIdentity && !isEnrollmentEvent
+            ? yield* findDeviceByIssuedCertificate(
+                organizationId,
+                scope.identityCertificateSerial,
+                {
+                  activeAt: new Date(),
+                },
+              )
+            : null;
         const device = yield* findDevice(organizationId, deviceId);
         attributableDevice = device ?? null;
         const timestamp = new Date();
 
-        if (requireDeviceIdentity && !isEnrollmentEvent && device) {
-          if (
-            yield* identityCertificateRevoked(
-              organizationId,
-              device,
-              scope.identityCertificateSerial,
-            )
-          )
-            return yield* Effect.fail(new UnknownDevice());
-        }
+        if (
+          requireDeviceIdentity &&
+          !isEnrollmentEvent &&
+          (!device ||
+            !scope.identityCertificateSerial?.trim() ||
+            (subjectCn && subjectCn !== deviceId) ||
+            !certificateDevice ||
+            certificateDevice.id !== device.id)
+        )
+          return yield* Effect.fail(new UnknownDevice());
 
         if (Predicate.isTagged("Enrolled")(event)) {
           const previousStatus = device?.status;

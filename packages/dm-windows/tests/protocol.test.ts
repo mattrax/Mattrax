@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
+import type { WindowsEnrollmentRequest } from "@mattrax/management-backend";
 import { WindowsMdmService, WindowsMdmServiceLive } from "../src/service.js";
 import { mockManagementBackend } from "./helpers.js";
 
@@ -134,6 +135,63 @@ describe("Windows SOAP protocol boundaries", () => {
     );
 
     expect(token).toBe("token-123");
+  });
+
+  it("forwards renewal possession proof only from trusted request identity", async () => {
+    const EnrollmentProof = Schema.Struct({
+      identityCertificate: Schema.optional(Schema.String),
+      identityCertificateSerial: Schema.optional(Schema.String),
+    });
+    type CapturedEnrollment = Pick<WindowsEnrollmentRequest, "tenantToken" | "context"> &
+      typeof EnrollmentProof.Type;
+    const requests: CapturedEnrollment[] = [];
+    const implementation = await Effect.runPromise(
+      service({
+        windowsEnroll: (request: WindowsEnrollmentRequest) => {
+          requests.push({
+            tenantToken: request.tenantToken,
+            context: request.context,
+            ...Schema.decodeUnknownSync(EnrollmentProof)(request),
+          });
+
+          return Effect.succeed({
+            deviceId: "device-1",
+            signedCertificate: "signed",
+            identityCertificate: "identity",
+            username: "device-1",
+            secret: "secret",
+            providerId: "Mattrax",
+          });
+        },
+      }),
+    );
+    const body =
+      '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512"><TokenType>token</TokenType><RequestType>issue</RequestType><BinarySecurityToken ValueType="pkcs10" EncodingType="base64">csr</BinarySecurityToken><ac:AdditionalContext xmlns:ac="http://schemas.xmlsoap.org/ws/2006/12/authorization"><ContextItem Name="DeviceID"><Value>device-1</Value></ContextItem><ContextItem Name="identityCertificateSerial"><Value>spoofed-serial</Value></ContextItem></ac:AdditionalContext></wst:RequestSecurityToken>';
+
+    await Effect.runPromise(
+      implementation.enroll(
+        envelope(body, "<wsse:BinarySecurityToken>token</wsse:BinarySecurityToken>"),
+        {
+          identityCertificate: "CN=device-1,OU=org-1",
+          identityCertificateSerial: "trusted-serial",
+          tenantToken: "tenant-token",
+        },
+      ),
+    );
+    await Effect.runPromise(
+      implementation.enroll(
+        envelope(body, "<wsse:BinarySecurityToken>token</wsse:BinarySecurityToken>"),
+      ),
+    );
+
+    expect(requests[0]).toMatchObject({
+      identityCertificate: "CN=device-1,OU=org-1",
+      identityCertificateSerial: "trusted-serial",
+      tenantToken: "tenant-token",
+      context: { identityCertificateSerial: "spoofed-serial" },
+    });
+    expect(requests[1].identityCertificate).toBeUndefined();
+    expect(requests[1].identityCertificateSerial).toBeUndefined();
   });
 
   it("ignores tokens in the wrong namespace, nested tokens, and ambiguous duplicates", async () => {
