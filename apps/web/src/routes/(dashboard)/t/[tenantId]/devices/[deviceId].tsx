@@ -81,7 +81,12 @@ import {
   Settings as SettingsIcon,
   Smartphone,
 } from "~/components/ui/icons";
-import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import {
+  enterprise,
+  enterpriseKeys,
+  enterpriseQueries,
+  entitySummaryPlaceholder,
+} from "~/lib/enterprise";
 import type { DeviceApplication } from "~/lib/enterprise";
 import {
   DeviceHandoverDialog,
@@ -256,8 +261,11 @@ function MetaRow(props: { label: string; children: JSX.Element }) {
 const formatArchiveBytes = (value?: number | null) =>
   value === null || value === undefined
     ? "—"
-    : new Intl.NumberFormat(undefined, { style: "unit", unit: "megabyte", maximumFractionDigits: 1 })
-        .format(value / 1024 / 1024);
+    : new Intl.NumberFormat(undefined, {
+        style: "unit",
+        unit: "megabyte",
+        maximumFractionDigits: 1,
+      }).format(value / 1024 / 1024);
 
 function WindowsSecretPrompt(): string | undefined {
   const reason = window.prompt(
@@ -320,7 +328,9 @@ function WindowsSecurityCard(props: {
           result.username +
           "\nPassword: " +
           result.password +
-          (result.expired ? "\n\nWarning: this password is past the policy age and may no longer work." : ""),
+          (result.expired
+            ? "\n\nWarning: this password is past the policy age and may no longer work."
+            : ""),
       );
       await refresh();
     },
@@ -349,23 +359,26 @@ function WindowsSecurityCard(props: {
   }));
 
   const rotateBitlocker = useMutation(() => ({
-    mutationFn: () => enterprise.deviceAction(props.tenantId, props.deviceId, {
-      action: "rotate-bitlocker-key",
-    }),
+    mutationFn: () =>
+      enterprise.deviceAction(props.tenantId, props.deviceId, {
+        action: "rotate-bitlocker-key",
+      }),
     onSuccess: refresh,
   }));
 
   const rotateLaps = useMutation(() => ({
-    mutationFn: () => enterprise.deviceAction(props.tenantId, props.deviceId, {
-      action: "rotate-local-admin-password",
-    }),
+    mutationFn: () =>
+      enterprise.deviceAction(props.tenantId, props.deviceId, {
+        action: "rotate-local-admin-password",
+      }),
     onSuccess: refresh,
   }));
 
   const collectDiagnostics = useMutation(() => ({
-    mutationFn: () => enterprise.deviceAction(props.tenantId, props.deviceId, {
-      action: "collect-diagnostics",
-    }),
+    mutationFn: () =>
+      enterprise.deviceAction(props.tenantId, props.deviceId, {
+        action: "collect-diagnostics",
+      }),
     onSuccess: refresh,
   }));
 
@@ -447,7 +460,8 @@ function WindowsSecurityCard(props: {
                     : "Not reported"}
                 </MetaRow>
                 <MetaRow label="Password age">
-                  {state().laps.passwordAgeDays === null || state().laps.passwordAgeDays === undefined
+                  {state().laps.passwordAgeDays === null ||
+                  state().laps.passwordAgeDays === undefined
                     ? "Unknown"
                     : state().laps.passwordAgeDays + " day(s)"}
                 </MetaRow>
@@ -481,9 +495,7 @@ function WindowsSecurityCard(props: {
                 </Show>
                 <Show when={state().laps.resetStatus}>
                   {(status) => (
-                    <span class="text-[11px] text-muted-foreground">
-                      Reset status: {status()}
-                    </span>
+                    <span class="text-[11px] text-muted-foreground">Reset status: {status()}</span>
                   )}
                 </Show>
               </div>
@@ -520,9 +532,9 @@ function WindowsSecurityCard(props: {
                 when={state().bitlocker.keys.length > 0}
                 fallback={
                   <p class="mt-2 text-[11.5px] text-muted-foreground">
-                    No recovery key is stored in Microsoft Entra ID. The device must be
-                    encrypted, Entra joined or hybrid joined, and configured to back up
-                    BitLocker recovery information to Entra.
+                    No recovery key is stored in Microsoft Entra ID. The device must be encrypted,
+                    Entra joined or hybrid joined, and configured to back up BitLocker recovery
+                    information to Entra.
                   </p>
                 }
               >
@@ -531,16 +543,16 @@ function WindowsSecurityCard(props: {
                     {(key) => (
                       <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[11.5px]">
                         <span class="min-w-0">
-                          <span class="block font-medium text-foreground">
-                            {key.volumeType}
-                          </span>
+                          <span class="block font-medium text-foreground">{key.volumeType}</span>
                           <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
                             key {key.keyId} · {key.keyType} · captured {formatDate(key.capturedAt)}
                           </span>
                         </span>
                         <span class="flex items-center gap-2">
                           <Chip tone={key.health === "stale" ? "warning" : "muted"}>
-                            {key.health === "stale" ? "Stale · " + key.ageDays + "d" : key.ageDays + "d"}
+                            {key.health === "stale"
+                              ? "Stale · " + key.ageDays + "d"
+                              : key.ageDays + "d"}
                           </Chip>
                           <span class="text-[10.5px] text-muted-foreground" title={key.source}>
                             {key.keyAvailable ? "cached" : "fetch on reveal"}
@@ -552,8 +564,7 @@ function WindowsSecurityCard(props: {
                               disabled={revealBitlocker.isPending}
                               onClick={() => {
                                 const reason = WindowsSecretPrompt();
-                                if (reason)
-                                  revealBitlocker.mutate({ keyId: key.id, reason });
+                                if (reason) revealBitlocker.mutate({ keyId: key.id, reason });
                               }}
                             >
                               Reveal
@@ -566,7 +577,9 @@ function WindowsSecurityCard(props: {
                 </ul>
               </Show>
               <div class="mt-2 flex flex-wrap items-center gap-2">
-                <Show when={props.canCommand && state().bitlocker.encrypted && state().bitlocker.joined}>
+                <Show
+                  when={props.canCommand && state().bitlocker.encrypted && state().bitlocker.joined}
+                >
                   <Button
                     variant="outline"
                     size="sm"
@@ -589,7 +602,11 @@ function WindowsSecurityCard(props: {
                   )}
                 </Show>
                 <Show when={state().bitlocker.lastRotationAt}>
-                  {(at) => <span class="text-[11px] text-muted-foreground">Key replaced {formatDate(at())}</span>}
+                  {(at) => (
+                    <span class="text-[11px] text-muted-foreground">
+                      Key replaced {formatDate(at())}
+                    </span>
+                  )}
                 </Show>
                 <Show when={state().bitlocker.lastSyncedAt}>
                   {(at) => (
@@ -634,7 +651,8 @@ function WindowsSecurityCard(props: {
                       <p class="mt-2 text-[11.5px] text-muted-foreground">
                         {list().supported
                           ? "No diagnostic archives have been requested. Collection runs quietly and expires after 24 hours."
-                          : (list().reason ?? "Diagnostic collection is unavailable on this device.")}
+                          : (list().reason ??
+                            "Diagnostic collection is unavailable on this device.")}
                       </p>
                     }
                   >
@@ -647,11 +665,23 @@ function WindowsSecurityCard(props: {
                                 {formatDate(archive.requestedAt)}
                               </span>
                               <span class="block text-muted-foreground">
-                                {archive.status} · {archive.sizeBytes ? formatArchiveBytes(archive.sizeBytes) : "size pending"} · expires {formatDate(archive.expiresAt)}
+                                {archive.status} ·{" "}
+                                {archive.sizeBytes
+                                  ? formatArchiveBytes(archive.sizeBytes)
+                                  : "size pending"}{" "}
+                                · expires {formatDate(archive.expiresAt)}
                               </span>
                             </span>
                             <span class="flex items-center gap-2">
-                              <Chip tone={archive.status === "uploaded" ? "success" : archive.status === "failed" ? "danger" : "muted"}>
+                              <Chip
+                                tone={
+                                  archive.status === "uploaded"
+                                    ? "success"
+                                    : archive.status === "failed"
+                                      ? "danger"
+                                      : "muted"
+                                }
+                              >
                                 {archive.status}
                               </Chip>
                               <Show when={props.canCommand && archive.downloadPath}>
@@ -681,7 +711,12 @@ function WindowsSecurityCard(props: {
                   <p class="whitespace-pre-wrap break-all font-mono text-[11.5px] text-foreground">
                     {value()}
                   </p>
-                  <Button variant="outline" size="sm" class="mt-2" onClick={() => setRevealed(null)}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    class="mt-2"
+                    onClick={() => setRevealed(null)}
+                  >
                     Hide
                   </Button>
                 </div>
@@ -911,19 +946,24 @@ export default function DeviceDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { can } = useCan();
-  const writable = () => can("devices.write");
-  const canCommand = () => can("devices.command");
+  // A list row is enough to paint the page, never enough to authorise a write
+  // against detail-only fields. Wait for the authoritative response first.
+  const authoritative = () => Boolean(row()) && !device.isPlaceholderData;
+  const writable = () => can("devices.write") && authoritative();
+  const canCommand = () => can("devices.command") && authoritative();
   /** The server derives the legal action set from platform, status and reported capabilities. */
   const supports = (action: DeviceActionName) =>
     (
       Option.getOrUndefined(Schema.decodeUnknownOption(DeviceActionNameList)(row()?.actions)) ?? []
     ).includes(action);
-  const canRevealKey = () => can("devices.recovery_key");
-  const canHandover = () => can("devices.handover");
+  const canRevealKey = () => can("devices.recovery_key") && authoritative();
+  const canHandover = () => can("devices.handover") && authoritative();
 
   const device = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
     queryFn: () => enterprise.get(params.tenantId, "device", params.deviceId),
+    placeholderData: () =>
+      entitySummaryPlaceholder(queryClient, params.tenantId, "device", params.deviceId),
   }));
 
   const row = () => Option.getOrUndefined(decodeDeviceRow(device.data));
@@ -1139,8 +1179,13 @@ export default function DeviceDetailPage() {
   const currentApplyName = () => defaultApplyNameToDevice(row()?.namePushEnabled);
 
   createEffect(
-    () => row()?.id,
-    () => {
+    () => ({ id: row()?.id, placeholder: device.isPlaceholderData }),
+    ({ placeholder }) => {
+      // Seed editors only from detail data. The id stays the same when a
+      // placeholder is replaced, so the placeholder transition is what must
+      // trigger the reseed.
+      if (placeholder) return;
+
       const device = row();
 
       if (device) {
@@ -1168,6 +1213,9 @@ export default function DeviceDetailPage() {
     await Promise.all([
       queryClient.invalidateQueries({
         queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.entitySummary(params.tenantId, "device", params.deviceId),
       }),
       queryClient.invalidateQueries({
         queryKey: enterpriseKeys.list(params.tenantId, "device"),
@@ -1696,19 +1744,17 @@ export default function DeviceDetailPage() {
       }
 
       if (result.freshStart) {
-        toast[result.freshStart.retainUserData ? "success" : "warning"](
-          "Fresh Start requested",
-          {
-            description:
-              result.freshStart.warning ??
-              "The device removes OEM and user-installed applications on its next check-in.",
-          },
-        );
+        toast[result.freshStart.retainUserData ? "success" : "warning"]("Fresh Start requested", {
+          description:
+            result.freshStart.warning ??
+            "The device removes OEM and user-installed applications on its next check-in.",
+        });
       }
 
       if (result.diagnostics)
         toast.success("Diagnostics requested", {
-          description: "The archive uploads quietly, appears here when ready and expires after 24 hours.",
+          description:
+            "The archive uploads quietly, appears here when ready and expires after 24 hours.",
         });
 
       await invalidate();
@@ -3504,11 +3550,9 @@ export default function DeviceDetailPage() {
                         </div>
 
                         <Show
-                          when={
-                            (health.data?.managedCertificates ?? []).some(
-                              (certificate) => certificate.source !== "scep",
-                            )
-                          }
+                          when={(health.data?.managedCertificates ?? []).some(
+                            (certificate) => certificate.source !== "scep",
+                          )}
                         >
                           <div class="space-y-2 border-t border-border pt-3">
                             <p class="label-caps">Managed certificates</p>
@@ -5406,6 +5450,9 @@ function DeviceAttributesPanel(props: {
       setCleared({});
       await queryClient.invalidateQueries({
         queryKey: enterpriseKeys.item(props.tenantId, "device", props.deviceId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: enterpriseKeys.entitySummary(props.tenantId, "device", props.deviceId),
       });
       await queryClient.invalidateQueries({
         queryKey: enterpriseKeys.deviceSearch(props.tenantId),
