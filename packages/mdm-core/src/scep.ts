@@ -17,7 +17,7 @@ import type { ScepAuthentication, ScepCaScope, ScepPkcsReq } from "@mattrax/scep
 const databaseError =
   (message: string) =>
   (cause: unknown): ScepError =>
-    cause instanceof ScepError ? cause : new ScepError({ message, cause });
+    cause instanceof ScepError ? cause : new ScepError({ message, reason: "internal", cause });
 
 const sha256Hex = async (value: string): Promise<string> => {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -106,12 +106,14 @@ export const issueScepChallenge = (
           // gets its own one-time row even within the same second.
           nonce: crypto.randomUUID(),
         }),
-      catch: (cause) => new ScepError({ message: "Failed to create SCEP challenge", cause }),
+      catch: (cause) =>
+        new ScepError({ message: "Failed to create SCEP challenge", reason: "internal", cause }),
     });
 
     const id = yield* Effect.tryPromise({
       try: () => scepChallengeId(challenge),
-      catch: (cause) => new ScepError({ message: "Failed to hash SCEP challenge", cause }),
+      catch: (cause) =>
+        new ScepError({ message: "Failed to hash SCEP challenge", reason: "internal", cause }),
     });
 
     const expiresAt = new Date(scepChallengeExpiresAt(options.ttlSeconds, now) * 1000);
@@ -130,7 +132,7 @@ export const issueScepChallenge = (
     Effect.mapError((cause) =>
       cause instanceof ScepError
         ? cause
-        : new ScepError({ message: "Failed to store SCEP challenge", cause }),
+        : new ScepError({ message: "Failed to store SCEP challenge", reason: "internal", cause }),
     ),
   );
 
@@ -150,6 +152,7 @@ export class ScepRepositoryLive extends ScepRepository {
           return yield* Effect.fail(
             new ScepError({
               message: "SCEP challenge verification is not configured (AUTH_SECRET is missing)",
+              reason: "internal",
             }),
           );
         }
@@ -157,16 +160,25 @@ export class ScepRepositoryLive extends ScepRepository {
         const challenge = req.challengePassword;
 
         if (!challenge) {
-          return yield* Effect.fail(new ScepError({ message: "Invalid SCEP challenge" }));
+          return yield* Effect.fail(
+            new ScepError({ message: "Invalid SCEP challenge", reason: "invalid_request" }),
+          );
         }
 
         const verification = yield* Effect.tryPromise({
           try: () => verifyScepChallenge(challenge, secret),
-          catch: (cause) => new ScepError({ message: "Failed to verify SCEP challenge", cause }),
+          catch: (cause) =>
+            new ScepError({
+              message: "Failed to verify SCEP challenge",
+              reason: "internal",
+              cause,
+            }),
         });
 
         if (!verification) {
-          return yield* Effect.fail(new ScepError({ message: "Invalid SCEP challenge" }));
+          return yield* Effect.fail(
+            new ScepError({ message: "Invalid SCEP challenge", reason: "invalid_request" }),
+          );
         }
 
         const [enrollment] = yield* db
@@ -176,18 +188,27 @@ export class ScepRepositoryLive extends ScepRepository {
           .limit(1)
           .pipe(
             Effect.mapError(
-              (cause) => new ScepError({ message: "Failed to resolve SCEP enrollment", cause }),
+              (cause) =>
+                new ScepError({
+                  message: "Failed to resolve SCEP enrollment",
+                  reason: "internal",
+                  cause,
+                }),
             ),
           );
 
         if (!enrollment) {
-          return yield* Effect.fail(new ScepError({ message: "Unknown SCEP enrollment" }));
+          return yield* Effect.fail(
+            new ScepError({ message: "Unknown SCEP enrollment", reason: "invalid_request" }),
+          );
         }
 
         // A challenge minted for one tenant must only be redeemable against
         // that tenant's SCEP URL (and therefore its CA).
         if (enrollment.organizationId !== scope.organizationId) {
-          return yield* Effect.fail(new ScepError({ message: "Invalid SCEP challenge" }));
+          return yield* Effect.fail(
+            new ScepError({ message: "Invalid SCEP challenge", reason: "invalid_request" }),
+          );
         }
 
         // Consume the persisted challenge before issuance. One conditional
@@ -197,7 +218,12 @@ export class ScepRepositoryLive extends ScepRepository {
         // response does not distinguish the failure modes.
         const challengeId = yield* Effect.tryPromise({
           try: () => scepChallengeId(challenge),
-          catch: (cause) => new ScepError({ message: "Failed to hash SCEP challenge", cause }),
+          catch: (cause) =>
+            new ScepError({
+              message: "Failed to hash SCEP challenge",
+              reason: "internal",
+              cause,
+            }),
         });
 
         const consumed = yield* db
@@ -214,7 +240,9 @@ export class ScepRepositoryLive extends ScepRepository {
           );
 
         if (consumed.affectedRows !== 1) {
-          return yield* Effect.fail(new ScepError({ message: "Invalid SCEP challenge" }));
+          return yield* Effect.fail(
+            new ScepError({ message: "Invalid SCEP challenge", reason: "invalid_request" }),
+          );
         }
 
         // Authenticated tenant id becomes the issued certificate's OU. It is
@@ -227,7 +255,11 @@ export class ScepRepositoryLive extends ScepRepository {
         Effect.mapError((cause) =>
           cause instanceof ScepError
             ? cause
-            : new ScepError({ message: "Failed to authenticate SCEP request", cause }),
+            : new ScepError({
+                message: "Failed to authenticate SCEP request",
+                reason: "internal",
+                cause,
+              }),
         ),
       );
 
@@ -278,8 +310,12 @@ export class ScepRepositoryLive extends ScepRepository {
           try: () => openCaPrivateKey(stored, authSecret()),
           catch: (cause) =>
             cause instanceof ScepCaKeyError
-              ? new ScepError({ message: cause.message })
-              : new ScepError({ message: "Failed to read the SCEP CA private key" }),
+              ? new ScepError({ message: cause.message, reason: "internal", cause })
+              : new ScepError({
+                  message: "Failed to read the SCEP CA private key",
+                  reason: "internal",
+                  cause,
+                }),
         });
 
         if (opened.migrated) {
@@ -294,6 +330,7 @@ export class ScepRepositoryLive extends ScepRepository {
                   new ScepError({
                     message:
                       "Failed to persist the encrypted SCEP CA private key; the CA was not used",
+                    reason: "internal",
                   }),
               ),
             );
@@ -316,7 +353,10 @@ export class ScepRepositoryLive extends ScepRepository {
 
         if (Option.isNone(stored))
           return yield* Effect.fail(
-            new ScepError({ message: "Stored SCEP CA private key is not valid JSON" }),
+            new ScepError({
+              message: "Stored SCEP CA private key is not valid JSON",
+              reason: "internal",
+            }),
           );
 
         const privateKeyJwk = yield* loadCaPrivateKey(organizationId, stored.value);
@@ -348,8 +388,12 @@ export class ScepRepositoryLive extends ScepRepository {
         try: () => sealCaPrivateKey(authSecret(), ca.privateKeyJwk),
         catch: (cause) =>
           cause instanceof ScepCaKeyError
-            ? new ScepError({ message: cause.message })
-            : new ScepError({ message: "Failed to encrypt the SCEP CA private key" }),
+            ? new ScepError({ message: cause.message, reason: "internal", cause })
+            : new ScepError({
+                message: "Failed to encrypt the SCEP CA private key",
+                reason: "internal",
+                cause,
+              }),
       });
 
     return ScepRepository.of({
@@ -539,7 +583,11 @@ export class ScepRepositoryLive extends ScepRepository {
           Effect.mapError((cause) =>
             cause instanceof ScepError
               ? cause
-              : new ScepError({ message: "Failed to read SCEP trust anchors", cause }),
+              : new ScepError({
+                  message: "Failed to read SCEP trust anchors",
+                  reason: "internal",
+                  cause,
+                }),
           ),
         ),
 
@@ -562,7 +610,11 @@ export class ScepRepositoryLive extends ScepRepository {
           Effect.mapError((cause) =>
             cause instanceof ScepError
               ? cause
-              : new ScepError({ message: "Failed to read retired SCEP CAs", cause }),
+              : new ScepError({
+                  message: "Failed to read retired SCEP CAs",
+                  reason: "internal",
+                  cause,
+                }),
           ),
         ),
 
@@ -600,6 +652,7 @@ export class ScepRepositoryLive extends ScepRepository {
               new ScepError({
                 message:
                   "SCEP serial number collision: refusing to overwrite another identity's certificate",
+                reason: "internal",
               }),
             );
           }
@@ -619,7 +672,11 @@ export class ScepRepositoryLive extends ScepRepository {
           Effect.mapError((cause) =>
             cause instanceof ScepError
               ? cause
-              : new ScepError({ message: "Failed to record certificate", cause }),
+              : new ScepError({
+                  message: "Failed to record certificate",
+                  reason: "internal",
+                  cause,
+                }),
           ),
         ),
       findIssuedCertificate: (scope, serial) =>
@@ -636,7 +693,12 @@ export class ScepRepositoryLive extends ScepRepository {
             .limit(1)
             .pipe(
               Effect.mapError(
-                (cause) => new ScepError({ message: "Failed to read certificate", cause }),
+                (cause) =>
+                  new ScepError({
+                    message: "Failed to read certificate",
+                    reason: "internal",
+                    cause,
+                  }),
               ),
             );
 
@@ -648,6 +710,7 @@ export class ScepRepositoryLive extends ScepRepository {
             return yield* Effect.fail(
               new ScepError({
                 message: "SCEP renewal rejected: the issued identity certificate has been revoked",
+                reason: "invalid_request",
               }),
             );
           }
@@ -664,6 +727,7 @@ export class ScepRepositoryLive extends ScepRepository {
                 new ScepError({
                   message:
                     "SCEP renewal rejected: the device is no longer enrolled or no longer exists",
+                  reason: "invalid_request",
                 }),
               );
             }

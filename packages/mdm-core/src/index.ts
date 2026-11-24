@@ -6,6 +6,8 @@ export * from "./applications.js";
 
 export * from "./audit.js";
 
+export * from "./backgroundDelivery.js";
+
 export * from "./commandMaintenance.js";
 
 export * from "./commands.js";

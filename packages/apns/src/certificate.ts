@@ -19,6 +19,14 @@ export type ParsedApnsCertificate = {
   readonly certificate: pkijs.Certificate;
 };
 
+/** Public certificate fields; the pkijs object stays an implementation detail. */
+export type CertificateMetadata = {
+  readonly topic: string | null;
+  readonly commonName: string | null;
+  readonly notBefore: Date;
+  readonly notAfter: Date;
+};
+
 const AttributeValueBlock = Schema.Struct({
   valueBlock: Schema.optional(
     Schema.Struct({
@@ -58,21 +66,36 @@ export const isApnsMdmTopic = (topic: string | null | undefined): topic is strin
  *
  * Async because pkijs is loaded on first use, not at module evaluation.
  */
-export async function parseApnsCertificate(pem: string): Promise<ParsedApnsCertificate> {
+const parseCertificate = async (
+  pem: string,
+): Promise<{ readonly metadata: CertificateMetadata; readonly certificate: pkijs.Certificate }> => {
   const der = pemDecode("CERTIFICATE", pem);
   const { Certificate } = await loadPkijs();
   const certificate = Certificate.fromBER(der);
   const topic = findAttribute(certificate, UID_OID);
 
-  if (!topic) throw new Error("APNs certificate is missing the UID (topic) subject attribute");
-
   return {
-    topic,
-    commonName: findAttribute(certificate, COMMON_NAME_OID),
-    notBefore: certificate.notBefore.value,
-    notAfter: certificate.notAfter.value,
+    metadata: {
+      topic,
+      commonName: findAttribute(certificate, COMMON_NAME_OID),
+      notBefore: certificate.notBefore.value,
+      notAfter: certificate.notAfter.value,
+    },
     certificate,
   };
+};
+
+/** Parse public X.509 fields without exposing the PKI library's types. */
+export const parseCertificateMetadata = async (pem: string): Promise<CertificateMetadata> =>
+  (await parseCertificate(pem)).metadata;
+
+export async function parseApnsCertificate(pem: string): Promise<ParsedApnsCertificate> {
+  const { metadata, certificate } = await parseCertificate(pem);
+
+  if (!metadata.topic)
+    throw new Error("APNs certificate is missing the UID (topic) subject attribute");
+
+  return { ...metadata, topic: metadata.topic, certificate };
 }
 
 /**

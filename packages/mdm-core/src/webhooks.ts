@@ -1,4 +1,4 @@
-import { Data, Effect, Layer, Option, Result, Schema } from "effect";
+import { Cause, Data, Effect, Layer, Option, Result, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 import type { Db } from "@mattrax/enterprise-core";
@@ -15,7 +15,7 @@ import {
   webhookUrlProblem,
 } from "@mattrax/enterprise-domain";
 import type { WebhookDeliveryStatus, WebhookEventType } from "@mattrax/enterprise-domain";
-import { constantTimeEqual, hmacSha256Hex, openSecret } from "@mattrax/crypto";
+import { Crypto, constantTimeEqual, hmacSha256Hex } from "@mattrax/crypto";
 
 /**
  * Signature, delivery and retry helpers for customer webhooks.
@@ -101,6 +101,14 @@ const errorText = (cause: unknown): string => {
 
   return truncate(text || "Delivery failed");
 };
+
+/** Recover expected failures and defects, but never consume interruption. */
+const recoverBestEffort =
+  <A>(onFailure: (cause: unknown) => Effect.Effect<A>) =>
+  <E>(effect: Effect.Effect<A, E>): Effect.Effect<A> =>
+    effect.pipe(
+      Effect.catchCauseIf((cause) => !Cause.hasInterrupts(cause), onFailure),
+    ) as Effect.Effect<A>;
 
 /**
  * The transport cause is what an operator can act on ("connection refused"), so
@@ -226,10 +234,10 @@ const postWebhook = (input: {
     const timestamp = Math.floor(Date.now() / 1000);
     const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-    const signature = yield* Effect.tryPromise({
-      try: () => signWebhookDelivery(input.secret, timestamp, body),
-      catch: (cause) => new WebhookDeliveryError({ message: errorText(cause) }),
-    });
+    const signature = yield* Crypto.hmacSha256Hex(
+      input.secret,
+      webhookSignatureMessage(timestamp, body),
+    ).pipe(Effect.mapError((cause) => new WebhookDeliveryError({ message: errorText(cause) })));
 
     const client = yield* HttpClient.HttpClient;
 
@@ -298,10 +306,9 @@ const attemptDelivery = (input: {
         durationMs: Date.now() - startedAt,
       };
 
-    const opened = yield* Effect.tryPromise({
-      try: () => openSecret(input.authSecret, input.endpoint.secret),
-      catch: (cause) => cause,
-    }).pipe(Effect.result);
+    const opened = yield* Crypto.openSecret(input.authSecret, input.endpoint.secret).pipe(
+      Effect.result,
+    );
 
     if (Result.isFailure(opened))
       return {
@@ -379,7 +386,7 @@ const recordDelivery = (
 
     return id;
   }).pipe(
-    Effect.catchCause((cause) =>
+    recoverBestEffort<string | undefined>((cause) =>
       Effect.logWarning(
         `Failed to record webhook delivery for ${input.endpoint.id}: ${String(cause)}`,
       ).pipe(Effect.as(undefined)),
@@ -461,7 +468,7 @@ export const dispatchWebhookEvent = (
       },
     );
   }).pipe(
-    Effect.catchCause((cause) =>
+    recoverBestEffort<void>((cause) =>
       Effect.logWarning(`Webhook dispatch failed for ${event.type}: ${String(cause)}`),
     ),
   );
@@ -669,7 +676,7 @@ export const retryFailedWebhookDeliveries = (
             })
             .where(eq(s.webhookEndpoint.id, endpoint.id));
         }).pipe(
-          Effect.catchCause((cause) =>
+          recoverBestEffort<void>((cause) =>
             Effect.logWarning(`Webhook retry failed for ${row.id}: ${String(cause)}`),
           ),
         ),
@@ -681,7 +688,7 @@ export const retryFailedWebhookDeliveries = (
 
     return result;
   }).pipe(
-    Effect.catchCause((cause) =>
+    recoverBestEffort<WebhookRetryResult>((cause) =>
       Effect.logWarning(`Webhook retry pass failed: ${String(cause)}`).pipe(
         Effect.as({ retried: 0, succeeded: 0, failed: 0 }),
       ),
@@ -709,7 +716,7 @@ export const pruneWebhookDeliveries = (
     yield* db.delete(s.webhookDelivery).where(lt(s.webhookDelivery.createdAt, cutoff));
 
     return stale.length;
-  }).pipe(Effect.catchCause(() => Effect.succeed(0)));
+  }).pipe(recoverBestEffort<number>(() => Effect.succeed(0)));
 
 export const WEBHOOK_DELIVERY_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
 

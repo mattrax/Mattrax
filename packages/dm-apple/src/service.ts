@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Predicate, Schema } from "effect";
+import { Cause, Context, Effect, Layer, Option, Predicate, Schema } from "effect";
 import { DeviceUnenrolled, MdmError, resolveCheckinChannel } from "./schema.js";
 import type {
   AuthenticatePlist,
@@ -297,16 +297,28 @@ export class AppleMdmTopic extends Context.Service<AppleMdmTopic, AppleMdmTopic.
   "AppleMdmTopic",
 ) {
   static readonly make = (config: AppleMdmConfig.Service): AppleMdmTopic.Service => {
-    let cached: string | undefined;
+    let pending: Promise<string | null> | undefined;
+    let warned = false;
+
+    const get = Effect.gen(function* () {
+      if (!config.cloudAppleVendorCert) return placeholderTopic;
+
+      pending ??= extractTopicFromCertPem(config.cloudAppleVendorCert);
+      const parsed = pending;
+      const topic = yield* Effect.promise(() => parsed);
+
+      if (!topic && !warned) {
+        warned = true;
+        yield* Effect.logWarning(
+          "Configured Apple MDM vendor certificate could not supply an APNs topic; using the placeholder topic",
+        );
+      }
+
+      return topic ?? placeholderTopic;
+    });
 
     return AppleMdmTopic.of({
-      get: Effect.sync(() => {
-        cached ??= config.cloudAppleVendorCert
-          ? (extractTopicFromCertPem(config.cloudAppleVendorCert) ?? placeholderTopic)
-          : placeholderTopic;
-
-        return cached;
-      }),
+      get,
     });
   };
 
@@ -1031,13 +1043,13 @@ const makeAppleMdmService = (
    */
   const recordFailure = (report: AppleFailureReport): Effect.Effect<void> =>
     backend.appleRecordFailure
-      ? backend
-          .appleRecordFailure(report)
-          .pipe(
-            Effect.catchCause((cause) =>
+      ? (backend.appleRecordFailure(report).pipe(
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterrupts(cause),
+            (cause) =>
               Effect.logWarning(`Failed to record the Apple check-in failure: ${String(cause)}`),
-            ),
-          )
+          ),
+        ) as Effect.Effect<void>)
       : Effect.void;
 
   return AppleMdmService.of({

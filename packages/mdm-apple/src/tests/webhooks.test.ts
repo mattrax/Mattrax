@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Fiber, Schema } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { schema } from "@mattrax/enterprise-core";
 import { sealSecret } from "@mattrax/crypto";
@@ -375,6 +375,41 @@ describe("webhook delivery", () => {
       responseStatus: null,
       error: "Error: connection refused",
     });
+  });
+
+  it("preserves interruption instead of turning it into a delivery failure", async () => {
+    const { db } = await setup();
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          started();
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          dispatchWebhookEvent(
+            webhookDb(db),
+            { organizationId: "org-1", type: "device.enrolled" },
+            { authSecret, fetch, now },
+          ),
+          { startImmediately: true },
+        );
+        yield* Effect.promise(() => startedPromise);
+        yield* Fiber.interrupt(fiber);
+        const exit = yield* Fiber.await(fiber);
+
+        expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
+      }),
+    );
   });
 
   it("does not deliver when no signing secret is configured", async () => {

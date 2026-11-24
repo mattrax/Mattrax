@@ -96,7 +96,7 @@ export function NodePushTransport(defaults?: {
         );
 
       return Effect.tryPromise({
-        try: () => {
+        try: (signal) => {
           const request = buildApnsRequest(input, endpoint);
           const url = new URL(request.url);
           const body = Buffer.from(request.body);
@@ -117,6 +117,8 @@ export function NodePushTransport(defaults?: {
             const timeoutError = () =>
               new ApnsError({ message: `APNs request timed out after ${timeoutMs}ms` });
 
+            const onAbort = () => fail(new ApnsError({ message: "APNs request was interrupted" }));
+
             const close = () => {
               // `close` only waits for existing streams; `destroy` guarantees
               // the socket (and any in-flight TLS handshake) is released.
@@ -131,6 +133,8 @@ export function NodePushTransport(defaults?: {
               } catch {
                 // Already destroyed by a concurrent failure path.
               }
+
+              signal.removeEventListener("abort", onAbort);
             };
 
             const fail = (cause: unknown) => {
@@ -144,6 +148,11 @@ export function NodePushTransport(defaults?: {
 
             timer = setTimeout(() => fail(timeoutError()), timeoutMs);
             timer.unref?.();
+
+            // Parent interruption must release a TLS handshake or in-flight
+            // stream immediately rather than waiting for the deadline.
+            signal.addEventListener("abort", onAbort, { once: true });
+            if (signal.aborted) onAbort();
 
             // Covers a stalled TCP/TLS connect as well as an idle socket.
             client.setTimeout(timeoutMs, () => fail(timeoutError()));

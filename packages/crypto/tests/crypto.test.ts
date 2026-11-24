@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import {
+  Crypto,
+  CryptoError,
   generateCaKeyPair,
   importPrivateKeyJwk,
   openWithPassphrase,
@@ -13,6 +16,30 @@ import {
   signData,
   verifyScopedToken,
 } from "../src/index.ts";
+
+describe("Effect crypto API", () => {
+  it("reports invalid key material as a typed CryptoError", async () => {
+    const error = await Crypto.importPrivateKeyJwk({}).pipe(Effect.flip, Effect.runPromise);
+
+    expect(error).toBeInstanceOf(CryptoError);
+    expect(error._tag).toBe("CryptoError");
+  });
+
+  it("reports malformed ciphertext as a typed CryptoError", async () => {
+    const error = await Crypto.openSecret("secret", "AAAA").pipe(Effect.flip, Effect.runPromise);
+
+    expect(error).toBeInstanceOf(CryptoError);
+  });
+
+  it("reports malformed PEM as a typed CryptoError", async () => {
+    const error = await Crypto.pemDecode("CERTIFICATE", "not-a-pem").pipe(
+      Effect.flip,
+      Effect.runPromise,
+    );
+
+    expect(error).toBeInstanceOf(CryptoError);
+  });
+});
 
 describe("crypto boundaries", () => {
   it("generates keys with the fixed RSA/SHA-256 parameters", async () => {

@@ -1,10 +1,11 @@
-import { Effect, Option, Schema } from "effect";
+import { Cause, Effect, Option, Schema } from "effect";
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { AnyColumn, SQL } from "drizzle-orm";
 import type { Db } from "@mattrax/enterprise-core";
 import { schema as s } from "@mattrax/enterprise-core";
 import { publishRealtimeEvent } from "./realtime.ts";
 import { dispatchWebhookEvent, webhookEventForAuditAction } from "./webhooks.ts";
+import type { WebhookEventInput } from "./webhooks.ts";
 
 /**
  * Actor recorded on events that are not initiated by a signed-in user. The
@@ -128,6 +129,8 @@ export type SystemAuditEvent = {
 export type SystemAuditOptions = {
   readonly authSecret?: string;
   readonly webhookFetch?: typeof globalThis.fetch;
+  /** Enqueue instead of awaiting delivery (used by the scoped MDM worker). */
+  readonly webhookDispatch?: (event: WebhookEventInput) => Effect.Effect<void>;
   /** Disable delivery for a specific call site (tests). */
   readonly webhooks?: boolean;
   /**
@@ -410,23 +413,28 @@ export const writeSystemAudit = (
         ? {}
         : { metadata: event.metadata };
 
-    yield* dispatchWebhookEvent(
-      db,
-      {
-        organizationId: event.organizationId,
-        type: webhookEvent,
-        data: Object.assign(
-          { targetType: event.targetType, targetId: event.targetId ?? null },
-          metadata,
-        ),
-      },
-      { authSecret: options.authSecret, fetch: options.webhookFetch },
-    );
+    const webhookEventInput: WebhookEventInput = {
+      organizationId: event.organizationId,
+      type: webhookEvent,
+      data: Object.assign(
+        { targetType: event.targetType, targetId: event.targetId ?? null },
+        metadata,
+      ),
+    };
+
+    yield* options.webhookDispatch
+      ? options.webhookDispatch(webhookEventInput)
+      : dispatchWebhookEvent(db, webhookEventInput, {
+          authSecret: options.authSecret,
+          fetch: options.webhookFetch,
+        });
   }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.logWarning(`Failed to write system audit event ${event.action}: ${String(cause)}`),
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterrupts(cause),
+      (cause) =>
+        Effect.logWarning(`Failed to write system audit event ${event.action}: ${String(cause)}`),
     ),
-  );
+  ) as Effect.Effect<void>;
 
 const normalizeEnum = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
 

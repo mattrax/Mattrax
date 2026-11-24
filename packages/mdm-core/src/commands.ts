@@ -1,4 +1,6 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { Crypto } from "@mattrax/crypto";
+import type { CryptoError } from "@mattrax/crypto";
 import {
   DEVICE_COMMAND_ACTIVE_STATUSES,
   DEVICE_COMMAND_RECONCILED_RESULT_STATUS,
@@ -160,6 +162,15 @@ export const canonicalCommandPayload = (payload: Schema.Json | null | undefined)
 /** Stable string hashed into `device_command.dedupe_key`. */
 export const commandDedupeSource = (requestType: string, payload: CommandPayload | undefined) =>
   `${requestType}\u0000${canonicalCommandPayload(payload)}`;
+
+/** Effect-native command hashing; digest failures stay in the error channel. */
+export const commandDedupeKeyEffect = (
+  requestType: string,
+  payload: CommandPayload | undefined,
+): Effect.Effect<string, CryptoError> =>
+  Crypto.sha256(new TextEncoder().encode(commandDedupeSource(requestType, payload)).buffer).pipe(
+    Effect.map((digest) => hex(new Uint8Array(digest))),
+  );
 
 const hex = (bytes: Uint8Array) =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");

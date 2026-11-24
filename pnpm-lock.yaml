@@ -698,6 +698,7 @@ snapshots:
 		"packages/dm-apple": {
 			"name": "@mattrax/dm-apple",
 			"dependencies": {
+				"@mattrax/apns": "workspace:*",
 				"@mattrax/crypto": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
 				"@mattrax/plist": "workspace:*",

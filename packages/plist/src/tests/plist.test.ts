@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { Effect, Exit, Schema } from "effect";
-import { parsePlist, PlistParseError, PlistValue, serializePlist } from "../index.js";
+import {
+  parsePlist,
+  PlistParseError,
+  PlistSerializeError,
+  PlistValue,
+  serializePlist,
+} from "../index.js";
 
 const PlistDictionary = Schema.Record(Schema.String, PlistValue);
 
@@ -94,5 +100,24 @@ describe("plist", () => {
       const result = await parsePlist("not xml").pipe(Effect.flip, Effect.runPromise);
       expect(result).toBeInstanceOf(PlistParseError);
     });
+
+    it.each(["NaN", "Infinity", "-Infinity"])("rejects a non-finite <%s> real", async (value) => {
+      const xml = `<plist version="1.0"><real>${value}</real></plist>`;
+      const result = await parsePlist(xml).pipe(Effect.flip, Effect.runPromise);
+
+      expect(result).toBeInstanceOf(PlistParseError);
+    });
+
+    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
+      "rejects a non-finite number before serialization (%s)",
+      async (value) => {
+        const result = await serializePlist({ nested: [value] }).pipe(
+          Effect.flip,
+          Effect.runPromise,
+        );
+
+        expect(result).toBeInstanceOf(PlistSerializeError);
+      },
+    );
   });
 });

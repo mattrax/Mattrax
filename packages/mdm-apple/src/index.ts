@@ -1,4 +1,4 @@
-import { Effect, Layer, Match, Option, Predicate, Schema } from "effect";
+import { Cause, Effect, Layer, Match, Option, Predicate, Schema } from "effect";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import {
   Db,
@@ -101,6 +101,12 @@ import { setupIsReady } from "@mattrax/mdm-core";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
 import { deleteDepartedTenantDevice } from "@mattrax/mdm-core";
 import { ScepRepositoryLive } from "@mattrax/mdm-core";
+import {
+  BackgroundDelivery,
+  BackgroundDeliveryLive,
+  dispatchWebhookEvent,
+} from "@mattrax/mdm-core";
+import type { BackgroundDeliveryOptions, BackgroundDeliveryService } from "@mattrax/mdm-core";
 import { ensureScepCa } from "@mattrax/scep";
 import {
   SYSTEM_AUDIT_ACTIONS,
@@ -133,7 +139,7 @@ import {
   DEVICE_COMMAND_ACTIVE_LIMIT,
   DEVICE_COMMAND_INSTALL_ATTEMPT_WINDOW_MS,
   RECONCILED_RESULT_STATUS,
-  commandDedupeKey,
+  commandDedupeKeyEffect,
   commandStatusIsActive,
   deviceCommandExpiresAt,
   installApplicationTarget,
@@ -995,7 +1001,7 @@ const updateInventoryFromStatus = (
   deviceId: string,
   organizationId: string,
   statusItems: PlistInput,
-  options: { readonly authSecret?: string } = {},
+  options: SystemAuditOptions = {},
 ): Effect.Effect<AppleStatusReportOutcome, unknown, Db> =>
   Effect.gen(function* () {
     const root = record(statusItems);
@@ -1066,7 +1072,7 @@ const updateInventoryFromStatus = (
                 reasons: next.reasons.map((reason) => reason.code).slice(0, 10),
               },
             },
-            { authSecret: options.authSecret },
+            options,
           ).pipe(Effect.as(true))
         : Effect.succeed(false);
 
@@ -1399,7 +1405,7 @@ const enqueueSecurityInfo = (
     const db = yield* Db;
     const commandId = crypto.randomUUID();
     const payload = {};
-    const dedupeKey = yield* Effect.promise(() => commandDedupeKey("SecurityInfo", payload));
+    const dedupeKey = yield* commandDedupeKeyEffect("SecurityInfo", payload);
 
     yield* db
       .insert(s.deviceCommand)
@@ -1809,7 +1815,7 @@ const queueAppleCommand = (
   Effect.gen(function* () {
     const db = yield* Db;
     const id = crypto.randomUUID();
-    const dedupeKey = yield* Effect.promise(() => commandDedupeKey(requestType, payload));
+    const dedupeKey = yield* commandDedupeKeyEffect(requestType, payload);
 
     yield* (
       db
@@ -2156,9 +2162,7 @@ export const rotateAppleLocalAdminPasswords = (
           guid: device.localAdminGuid,
           passwordHash,
         });
-        const dedupeKey = yield* Effect.promise(() =>
-          commandDedupeKey("SetAutoAdminPassword", payload),
-        );
+        const dedupeKey = yield* commandDedupeKeyEffect("SetAutoAdminPassword", payload);
         const sealedValue = yield* Effect.tryPromise(() => sealSecret(authSecret, password));
         const rotationId = crypto.randomUUID();
 
@@ -2398,8 +2402,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     readonly origin: string;
     /** Push transport for the immediate post-enrollment check-in. */
     readonly apns?: ApnsService.Service;
+    /** Scoped queue used by the production Layer; direct `make` calls may omit it. */
+    readonly backgroundDelivery?: BackgroundDeliveryService;
     /** Application secret used to unseal the tenant APNs private key and sign Windows WSTEP tokens. */
     readonly authSecret?: string;
+    /** Injectable webhook transport for tests and self-hosted adapters. */
+    readonly webhookFetch?: typeof globalThis.fetch;
     /**
      * Tenant that owns Windows devices. When omitted, Windows enrollment fails
      * closed: Windows discovery/enrollment carries no tenant identity, so
@@ -2442,7 +2450,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
     const auditOptions: SystemAuditOptions = {
       authSecret,
+      webhookFetch: options.webhookFetch,
       coalesceWindowMs: options.auditCheckinCoalesceWindowMs,
+      webhookDispatch: options.backgroundDelivery
+        ? (event) =>
+            options
+              .backgroundDelivery!.enqueue(
+                `webhook:${event.type}`,
+                dispatchWebhookEvent(db, event, { authSecret, fetch: options.webhookFetch }),
+              )
+              .pipe(Effect.asVoid)
+        : undefined,
     };
 
     const appleProfileSigner = options.appleProfileSigning
@@ -2555,8 +2573,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
      * token, so the freshly enrolled device receives its configuration without
      * waiting for the next poll. Failures are logged and ignored.
      */
-    const pushEnrolledDevice = (deviceId: string, organizationId: string) =>
-      Effect.gen(function* () {
+    const pushEnrolledDevice = (deviceId: string, organizationId: string) => {
+      const delivery = Effect.gen(function* () {
         if (!apns || !authSecret) return;
 
         const [apple] = yield* db
@@ -2577,12 +2595,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         // SAFETY: The APNs key is stored as a JWK by the settings writer, and
         // importPrivateKeyJwk validates the key material before use.
-        const jwk = JSON.parse(
-          yield* Effect.tryPromise({
-            try: () => openSecret(authSecret, certificate.encryptedKey!),
-            catch: () => new Error("Failed to decrypt the APNs private key"),
-          }),
-        ) as JsonWebKey;
+        const sealed = yield* Effect.tryPromise({
+          try: () => openSecret(authSecret, certificate.encryptedKey!),
+          catch: () => new Error("Failed to decrypt the APNs private key"),
+        });
+        const jwk = yield* Effect.try({
+          try: () => JSON.parse(sealed) as JsonWebKey,
+          catch: () => new Error("Failed to parse the APNs private key"),
+        });
 
         const key = yield* Effect.tryPromise({
           try: () => importPrivateKeyJwk(jwk),
@@ -2601,11 +2621,16 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           certPem: certificate.certPem,
           privateKeyPem: pemEncode("PRIVATE KEY", pkcs8),
         });
-      }).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning(`Failed to send post-enrollment APNs push: ${String(error)}`),
-        ),
-      );
+      });
+
+      return options.backgroundDelivery
+        ? options.backgroundDelivery.enqueue("apns:post-enrollment", delivery).pipe(Effect.asVoid)
+        : delivery.pipe(
+            Effect.catch((error) =>
+              Effect.logWarning(`Failed to send post-enrollment APNs push: ${String(error)}`),
+            ),
+          );
+    };
 
     /**
      * Queue `SecurityInfo` so a Mac's FileVault key and Activation Lock state
@@ -3948,9 +3973,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
           if (!shouldRetryInstall(history, { ...install, now: at })) continue;
 
-          const dedupeKey = yield* Effect.promise(() =>
-            commandDedupeKey(install.requestType, install.payload),
-          );
+          const dedupeKey = yield* commandDedupeKeyEffect(install.requestType, install.payload);
 
           yield* (
             db
@@ -4463,10 +4486,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           );
         }),
       ).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning(`Could not record the Apple check-in failure: ${String(cause)}`),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterrupts(cause),
+          (cause) =>
+            Effect.logWarning(`Could not record the Apple check-in failure: ${String(cause)}`),
         ),
-      );
+      ) as Effect.Effect<void>;
 
     return ManagementBackend.of({
       appleRecordFailure,
@@ -4807,9 +4832,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         requestType,
                         payload,
                         status: "queued",
-                        dedupeKey: yield* Effect.promise(() =>
-                          commandDedupeKey(requestType, payload),
-                        ),
+                        dedupeKey: yield* commandDedupeKeyEffect(requestType, payload),
                         expiresAt: deviceCommandExpiresAt(requestType, at),
                         createdAt: at,
                         updatedAt: at,
@@ -4834,6 +4857,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       device: departed,
                       reason: "Apple Authenticate enrolled the same serial in another tenant",
                       authSecret,
+                      webhookDispatch: auditOptions.webhookDispatch,
                     }).pipe(
                       Effect.catch((error) =>
                         Effect.logWarning(
@@ -5059,7 +5083,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                             model: device.model ?? null,
                           },
                         },
-                        { authSecret },
+                        auditOptions,
                       );
 
                     yield* queueLocalAdminAccount(device, authSecret, timestamp).pipe(
@@ -5090,7 +5114,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                           model: device.model ?? null,
                         },
                       },
-                      { authSecret },
+                      auditOptions,
                     );
                     yield* pushEnrolledDevice(device.id, device.organizationId);
                     yield* syncDeviceGroups(device.organizationId, device.id);
@@ -5146,7 +5170,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         protocol: "apple",
                         metadata: { platform: "apple", serial: device.serial ?? null },
                       },
-                      { authSecret },
+                      auditOptions,
                     );
                   }
                 }
@@ -5262,7 +5286,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       protocol: "apple",
                       metadata: { platform: "apple", previousStatus: device.status },
                     },
-                    { authSecret },
+                    auditOptions,
                   );
                 yield* db
                   .update(s.deviceApple)
@@ -5592,7 +5616,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       protocol: "apple",
                       metadata: { platform: "apple", serial: device.serial ?? null },
                     },
-                    { authSecret },
+                    auditOptions,
                   );
                   yield* writeSystemAudit(
                     db,
@@ -5609,7 +5633,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         model: device.model ?? null,
                       },
                     },
-                    { authSecret },
+                    auditOptions,
                   );
                   yield* pushEnrolledDevice(device.id, device.organizationId);
                   yield* syncDeviceGroups(device.organizationId, device.id);
@@ -5775,7 +5799,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   }
                 }
 
-                yield* applySecurityInfo(device, queryResponses, { authSecret });
+                yield* applySecurityInfo(device, queryResponses, auditOptions);
                 yield* applyInstalledApplications(device, queryResponses, {
                   releaseVppLicence: options.releaseAppleVppLicence,
                 });
@@ -5983,7 +6007,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   device.id,
                   device.organizationId,
                   Option.getOrUndefined(Schema.decodeUnknownOption(PlistValue)(event.statusItems)),
-                  { authSecret },
+                  auditOptions,
                 );
 
                 // A report is only an event when it changed something. Polls
@@ -7242,6 +7266,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     origin: string,
     options?: {
       readonly apns?: ApnsService.Service;
+      readonly webhookFetch?: typeof globalThis.fetch;
+      readonly deliveryQueue?: BackgroundDeliveryOptions;
       readonly authSecret?: string;
       readonly windowsOrganizationId?: string;
       readonly requireWindowsDeviceIdentity?: boolean;
@@ -7259,10 +7285,16 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       ManagementBackend,
       Effect.gen(function* () {
         const db = yield* Db;
+        const backgroundDelivery = yield* BackgroundDelivery;
 
-        return ManagementBackendEnterpriseLive.make({ db, origin, ...options });
+        return ManagementBackendEnterpriseLive.make({
+          db,
+          origin,
+          ...options,
+          backgroundDelivery,
+        });
       }),
-    );
+    ).pipe(Layer.provideMerge(BackgroundDeliveryLive(options?.deliveryQueue)));
 }
 
 export const policyHash = jsonHash;
@@ -7319,16 +7351,6 @@ export {
 
 export * from "@mattrax/mdm-core";
 
-export * from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
 export { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
 
 export {
@@ -7338,12 +7360,6 @@ export {
 } from "@mattrax/mdm-core";
 
 export type { DesiredScriptProfile, ScriptProfileChanges } from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-windows";
-
-export * from "@mattrax/mdm-windows";
-
-export * from "@mattrax/mdm-windows";
 
 export * from "@mattrax/mdm-windows";
 
