@@ -12,7 +12,7 @@ import {
   isDeclarationFailure,
   pushInvalidTokenTransition,
   writeSystemAudit,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
 import type { Row } from "./fake-db.js";
 

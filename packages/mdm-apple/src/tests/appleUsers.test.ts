@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { parseAppleUserProfiles } from "@mattrax/mdm-core";
+import { parseAppleUserProfiles } from "../appleUsers.js";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
 import type { Row, Store } from "./fake-db.js";
 

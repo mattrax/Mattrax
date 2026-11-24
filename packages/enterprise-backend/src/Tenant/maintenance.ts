@@ -13,13 +13,15 @@ import {
   retryFailedWebhookDeliveries,
   refreshAppleSecurityInfo,
   refreshAppleLocalAccounts,
-  rotateAppleLocalAdminPasswords,
   sweepDeviceCommands,
-  sweepWindowsStateCommands,
   syncDirectoryGroupsForTenant,
   syncDynamicGroupsForTenant,
+} from "@mattrax/mdm-core";
+import { rotateAppleLocalAdminPasswords } from "@mattrax/mdm-apple";
+import {
+  sweepWindowsStateCommands,
   WINDOWS_STATE_COMMAND_RETENTION_DAYS,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-windows";
 import { sweepScriptExecutions } from "../Policy/scripts.ts";
 import { sweepFleetMigrations } from "../Device/fleetMigration.ts";
 import { loadCredentialHealth } from "../Device/credentialHealth.ts";
@@ -33,7 +35,7 @@ import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
 import { refreshAppleApplicationInventory } from "../Device/appleInventory.ts";
 import { TENANT_DELETION_LOG_RETENTION_DAYS } from "./tenantTeardown.ts";
 import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
-import type { WebhookDeliveryOptions } from "@mattrax/mdm-apple";
+import type { WebhookDeliveryOptions } from "@mattrax/mdm-core";
 import type { EnterpriseDb } from "../schema.ts";
 import type { EmailAddress, EmailTransport } from "@mattrax/email";
 import { drainEmailOutbox, purgeEmailOutbox } from "../Mail/emailOutbox.ts";

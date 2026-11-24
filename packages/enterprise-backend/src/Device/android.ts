@@ -40,7 +40,7 @@ const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed
 import {
   ACTIVE_COMMAND_STATUSES,
   assignedApplicationIdsForDevice,
-  commandDedupeKey,
+  commandDedupeKeyEffect,
   commandIsExpired,
   deviceCommandExpiresAt,
   RECONCILED_RESULT_STATUS,
@@ -48,7 +48,7 @@ import {
   syncDynamicGroupsForDevice,
   writeSystemAudit,
   SYSTEM_AUDIT_ACTIONS,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 /**
@@ -2992,9 +2992,7 @@ export const issueAndroidCommand = (input: {
     const timestamp = now();
     const dedupePayload = { type: command.type };
 
-    const dedupeKey = yield* Effect.promise(() =>
-      commandDedupeKey(command.requestType, dedupePayload),
-    );
+    const dedupeKey = yield* commandDedupeKeyEffect(command.requestType, dedupePayload);
 
     // Android issues commands directly, so de-duplicate before the network
     // call: a double-clicked erase must not reach Google twice. Rows queued

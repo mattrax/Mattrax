@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { substitutePolicyVariables } from "@mattrax/enterprise-domain";
-import {
-  buildConfigurationDeclaration,
-  policyDataHash,
-  windowsPolicyNodes,
-} from "@mattrax/mdm-core";
+import { policyDataHashEffect, windowsPolicyNodes } from "@mattrax/mdm-core";
+import { buildConfigurationDeclaration } from "../policy.js";
 
 /**
  * Variables are resolved before the platform compilers see a payload, so these
@@ -104,6 +102,8 @@ describe("resolution changes the declaration token", () => {
       attributes: { cost_centre: "AMER" },
     });
 
-    expect(await policyDataHash(first)).not.toBe(await policyDataHash(second));
+    expect(await Effect.runPromise(policyDataHashEffect(first))).not.toBe(
+      await Effect.runPromise(policyDataHashEffect(second)),
+    );
   });
 });

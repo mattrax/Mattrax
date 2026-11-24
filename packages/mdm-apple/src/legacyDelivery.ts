@@ -1,7 +1,6 @@
 import { Option, Schema } from "effect";
 import { applyEscrowCertificate, buildLegacyProfile, inspectMobileconfig } from "./policy.ts";
-import type { PolicyConfigurationRow } from "./policy.ts";
-import type { SkippedConfiguration } from "./policySupport.ts";
+import type { PolicyConfigurationRow, SkippedConfiguration } from "@mattrax/mdm-core";
 
 /**
  * Legacy (pre-declarative) policy delivery.

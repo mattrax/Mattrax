@@ -393,6 +393,130 @@ const recordDelivery = (
     ),
   );
 
+const updateEndpointDelivery = (
+  db: Db["Service"],
+  endpoint: WebhookEndpointRow,
+  outcome: WebhookDeliveryOutcome,
+  now: Date,
+) =>
+  db
+    .update(s.webhookEndpoint)
+    .set({
+      lastDeliveryAt: now,
+      lastDeliveryStatus: outcome.status,
+      consecutiveFailures:
+        outcome.status === "succeeded" ? 0 : Math.max(1, (endpoint.consecutiveFailures ?? 0) + 1),
+      updatedAt: now,
+    })
+    .where(eq(s.webhookEndpoint.id, endpoint.id));
+
+/**
+ * Persist one delivery row per matching endpoint before the request path
+ * acknowledges the event. `attempt: 0` means durably queued but not attempted;
+ * the existing maintenance retry pass can recover these rows after a crash.
+ */
+export const enqueueWebhookEvent = (
+  db: Db["Service"],
+  event: WebhookEventInput,
+  options: WebhookDeliveryOptions = {},
+): Effect.Effect<ReadonlyArray<string>, unknown> =>
+  Effect.gen(function* () {
+    if (!options.authSecret) return [];
+    const payload = buildWebhookPayload(event, options.now);
+    const endpoints = yield* db
+      .select()
+      .from(s.webhookEndpoint)
+      .where(
+        and(
+          eq(s.webhookEndpoint.organizationId, event.organizationId),
+          eq(s.webhookEndpoint.enabled, true),
+        ),
+      );
+    const matching = endpoints.filter((endpoint) => eventMatchesFilters(endpoint, payload.type));
+    const now = options.now ?? new Date();
+    const ids = yield* Effect.forEach(
+      matching,
+      (endpoint) =>
+        Effect.gen(function* () {
+          const id = `whd_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
+          yield* db.insert(s.webhookDelivery).values({
+            id,
+            endpointId: endpoint.id,
+            organizationId: endpoint.organizationId,
+            event: payload.type,
+            eventId: payload.id,
+            payload,
+            status: "failed",
+            attempt: 0,
+            responseStatus: null,
+            error: null,
+            createdAt: now,
+          });
+
+          return id;
+        }),
+      { concurrency: Math.max(1, Math.floor(options.concurrency ?? DEFAULT_CONCURRENCY)) },
+    );
+
+    return ids;
+  });
+
+/** Deliver and complete a row previously written by {@link enqueueWebhookEvent}. */
+export const deliverQueuedWebhook = (
+  db: Db["Service"],
+  deliveryId: string,
+  options: WebhookDeliveryOptions = {},
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const [row] = yield* db
+      .select()
+      .from(s.webhookDelivery)
+      .where(eq(s.webhookDelivery.id, deliveryId))
+      .limit(1);
+
+    if (!row || row.attempt !== 0) return;
+    const [endpoint] = yield* db
+      .select()
+      .from(s.webhookEndpoint)
+      .where(
+        and(
+          eq(s.webhookEndpoint.id, row.endpointId),
+          eq(s.webhookEndpoint.organizationId, row.organizationId),
+        ),
+      )
+      .limit(1);
+    const payload = Schema.decodeUnknownOption(WebhookPayload)(row.payload);
+
+    if (!endpoint || !endpoint.enabled || Option.isNone(payload)) return;
+    const now = options.now ?? new Date();
+    const outcome: WebhookDeliveryOutcome = options.authSecret
+      ? yield* attemptDelivery({
+          endpoint,
+          payload: payload.value,
+          authSecret: options.authSecret,
+          fetch: options.fetch,
+          timeoutMs: options.timeoutMs,
+          allowUnsafeUrl: options.allowUnsafeUrl,
+        })
+      : {
+          status: "failed",
+          responseStatus: null,
+          error: "Webhook signing is not configured on this deployment",
+          durationMs: 0,
+        };
+
+    yield* db
+      .update(s.webhookDelivery)
+      .set({
+        status: outcome.status,
+        attempt: 1,
+        responseStatus: outcome.responseStatus,
+        error: outcome.error,
+      })
+      .where(eq(s.webhookDelivery.id, deliveryId));
+    yield* updateEndpointDelivery(db, endpoint, outcome, now);
+  });
+
 /**
  * Deliver one event to one endpoint, recording the outcome. Never fails.
  */

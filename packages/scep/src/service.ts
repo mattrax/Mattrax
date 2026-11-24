@@ -2,7 +2,11 @@ import { Context, Effect, Layer, Schema } from "effect";
 import type * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
 import { ScepRepository } from "./repository.js";
-import type { ScepCaScope, ScepIssuedCertificate } from "./repository.js";
+import type {
+  ScepAuthenticationRequest,
+  ScepCaScope,
+  ScepIssuedCertificate,
+} from "./repository.js";
 import { randomCertificateSerial } from "./crypto.js";
 import { certificateFingerprintSha256, ensureScepCa } from "./ca.js";
 import {
@@ -185,10 +189,32 @@ export const ScepService = Layer.effect(
             : undefined;
         } else {
           // Allow repository to authenticate/validate the incoming request before issuance.
+          const authenticationRequest: ScepAuthenticationRequest = {
+            transactionId: req.transactionId,
+            challengePassword: req.challengePassword,
+            renewal: req.renewal,
+            subject: req.csr.subject.typesAndValues.flatMap((attribute) => {
+              const value = attributeValue(attribute);
+
+              return value === undefined ? [] : [{ type: attribute.type, value }];
+            }),
+            signerCertificates: req.signerCerts.map((certificate) => {
+              const ou = certificate.subject.typesAndValues.find(
+                (attribute) => attribute.type === "2.5.4.11",
+              );
+              const organizationalUnit = ou ? attributeValue(ou) : undefined;
+
+              return {
+                serial: certificateSerialHex(certificate),
+                notAfter: certificate.notAfter.value,
+                organizationalUnit,
+              };
+            }),
+          };
           // Only an expected challenge rejection becomes a SCEP failure
           // CertRep. Database, key and configuration outages remain internal
           // failures so the HTTP layer can report and metric them as 500s.
-          const authenticated = yield* repo.authenticatePkcsReq(scope, req).pipe(
+          const authenticated = yield* repo.authenticatePkcsReq(scope, authenticationRequest).pipe(
             Effect.catchIf(
               (error) => error.reason !== "internal",
               () => Effect.succeed(null),

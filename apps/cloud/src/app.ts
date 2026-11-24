@@ -108,7 +108,8 @@ import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
 import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmConfig, AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
 import { ScepService } from "@mattrax/scep";
-import { ManagementBackendEnterpriseLive, ScepRepositoryLive } from "@mattrax/mdm-apple";
+import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
+import { ScepRepositoryLive } from "@mattrax/mdm-core";
 import { managementWebhookOpenApi } from "@mattrax/management-backend-http";
 import {
   Db,
@@ -403,7 +404,7 @@ const handlersLayer = Layer.mergeAll(
   // The DiagnosticLog CSP uploads its ZIP to this scoped URL. It is a raw
   // route because the body is binary and the device presents a signed token,
   // not a tenant session.
-  ...[("PUT" as const), ("POST" as const)].map((method) =>
+  ...["PUT" as const, "POST" as const].map((method) =>
     HttpRouter.add(method, "/api/v1/windows-diagnostics/upload", (request) =>
       Effect.flatMap(EnterpriseServiceTag, (service) =>
         Effect.map(

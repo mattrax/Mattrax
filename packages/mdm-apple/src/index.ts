@@ -35,7 +35,7 @@ import {
   resolveAppleLockScreenMessage,
 } from "@mattrax/enterprise-domain";
 import type { ApnsService } from "@mattrax/apns";
-import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
+import { Crypto, pemEncode } from "@mattrax/crypto";
 import { PlistValue } from "@mattrax/plist";
 import {
   appleOsFamily,
@@ -47,15 +47,43 @@ import {
   signAppleProfilePlist,
   appleInstallAssetExpiresAt,
   scriptProfileIdentifier,
-  signAppleAssetToken,
+  signAppleAssetTokenEffect,
   appleUploadKind,
   appleUploadSupportsDevice,
   buildRemoveApplicationPayload,
   isAppleIpaUpload,
-  verifyAppleAssetToken,
+  verifyAppleAssetTokenEffect,
 } from "@mattrax/dm-apple";
 import { serializePlist } from "@mattrax/plist";
 import { buildAdeEnrollmentProfile } from "./adeProfile.js";
+import { applePolicySupport } from "./applePolicySupport.js";
+import { parseAppleUserProfiles } from "./appleUsers.js";
+import { appleDeliveryModeChanged, decideAppleDelivery } from "./deliveryMode.js";
+import { appleStatusItemsForDevice, DEVICE_INFORMATION_BASE_STATUS_ITEMS } from "./statusItems.js";
+import {
+  APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX,
+  appleLockScreenProfileIdentifier,
+  applyEscrowCertificate,
+  buildAppleLockScreenProfile,
+  buildAssetContent,
+  buildAssetDeclaration,
+  buildConfigurationDeclaration,
+  buildLegacyProfile,
+  certificateAllowsOrganization,
+  configurationAssetServerToken,
+  configurationServerToken,
+  parseAppleApplicationConfiguration,
+  readAppleLockScreenProfile,
+  verifyAssetRequestToken,
+} from "./policy.js";
+import type { AppleApplicationConfiguration, DeclarationContext } from "./policy.js";
+import {
+  buildLegacyProfiles,
+  installProfilePayload,
+  installedProfiles,
+  planLegacyProfileChanges,
+  profileDigest,
+} from "./legacyDelivery.js";
 import { policyApplicationKey } from "@mattrax/enterprise-domain";
 import { resolveAssignedScriptIds, scriptAgentToken } from "@mattrax/enterprise-domain";
 import {
@@ -104,7 +132,8 @@ import { ScepRepositoryLive } from "@mattrax/mdm-core";
 import {
   BackgroundDelivery,
   BackgroundDeliveryLive,
-  dispatchWebhookEvent,
+  deliverQueuedWebhook,
+  enqueueWebhookEvent,
 } from "@mattrax/mdm-core";
 import type { BackgroundDeliveryOptions, BackgroundDeliveryService } from "@mattrax/mdm-core";
 import { ensureScepCa } from "@mattrax/scep";
@@ -116,21 +145,8 @@ import {
   writeSystemAudit,
 } from "@mattrax/mdm-core";
 import type { SystemAuditOptions } from "@mattrax/mdm-core";
-import { DEVICE_INFORMATION_BASE_STATUS_ITEMS, appleStatusItemsForDevice } from "@mattrax/mdm-core";
-import { appleDeliveryModeChanged, decideAppleDelivery } from "@mattrax/mdm-core";
 import { describeSkippedConfigurations, scopeConfigurationsToDevice } from "@mattrax/mdm-core";
 import type { SkippedConfiguration } from "@mattrax/mdm-core";
-import {
-  APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX,
-  appleLockScreenProfileIdentifier,
-  buildAppleLockScreenProfile,
-  buildLegacyProfiles,
-  installProfilePayload,
-  installedProfiles,
-  planLegacyProfileChanges,
-  profileDigest,
-  readAppleLockScreenProfile,
-} from "@mattrax/mdm-core";
 import { isScriptProfileIdentifier, planScriptProfileChanges } from "@mattrax/mdm-core";
 import type { DesiredScriptProfile } from "@mattrax/mdm-core";
 import {
@@ -150,34 +166,19 @@ import {
   shouldRetryInstallBundle,
 } from "@mattrax/mdm-core";
 import type { CommandPayload } from "@mattrax/mdm-core";
-import { parseAppleUserProfiles } from "@mattrax/mdm-core";
 import {
-  applyEscrowCertificate,
-  buildAssetContent,
-  buildAssetDeclaration,
-  buildConfigurationDeclaration,
-  buildLegacyProfile,
   CATALOGUE_APPLICATION_ASSET_KIND,
   catalogueApplicationAssetIdentifier,
-  certificateAllowsOrganization,
   configurationAssetIdentifier,
-  configurationAssetServerToken,
   configurationDeclarationIdentifier,
-  configurationServerToken,
   isApplicationKind,
   isCertificateKind,
-  parseAppleApplicationConfiguration,
   parseCatalogueApplicationAssetIdentifier,
   parseConfigurationKind,
   splitConfigurationAssetIdentifier,
   splitConfigurationDeclarationIdentifier,
-  verifyAssetRequestToken,
 } from "@mattrax/mdm-core";
-import type {
-  AppleApplicationConfiguration,
-  DeclarationContext,
-  PolicyConfigurationRow,
-} from "@mattrax/mdm-core";
+import type { PolicyConfigurationRow } from "@mattrax/mdm-core";
 
 const DEVICE_INFORMATION_ACTIVATION_ID = "DAAF574F-36D4-4089-B2E3-D2008B65D5BE";
 
@@ -459,7 +460,9 @@ const scopedConfigurations = (
     }));
 
     const scoped = yield* Effect.promise(() =>
-      scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, mode),
+      scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, mode, {
+        apple: applePolicySupport,
+      }),
     );
 
     return {
@@ -821,7 +824,9 @@ const userDeclarationItems = (
       }));
 
     const scoped = yield* Effect.promise(() =>
-      scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, "ddm"),
+      scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, "ddm", {
+        apple: applePolicySupport,
+      }),
     );
 
     const delivered = scoped.delivered;
@@ -1346,10 +1351,7 @@ const writeDeviceSecret = (
       .where(and(eq(s.deviceSecret.deviceId, device.id), eq(s.deviceSecret.kind, kind)))
       .limit(1);
 
-    const sealed = yield* Effect.tryPromise({
-      try: () => sealSecret(authSecret, plaintext),
-      catch: internal,
-    });
+    const sealed = yield* Crypto.sealSecret(authSecret, plaintext).pipe(Effect.mapError(internal));
 
     const timestamp = now();
 
@@ -1371,10 +1373,9 @@ const writeDeviceSecret = (
 
     // Compare without logging either value; a malformed/old seal is treated as
     // a rotation so the fresh value replaces it.
-    const unchanged = yield* Effect.promise(() =>
-      openSecret(authSecret, existing.sealedValue)
-        .then((value) => value === plaintext)
-        .catch(() => false),
+    const unchanged = yield* Crypto.openSecret(authSecret, existing.sealedValue).pipe(
+      Effect.map((value) => value === plaintext),
+      Effect.orElseSucceed(() => false),
     );
 
     const secretUpdate: Partial<typeof s.deviceSecret.$inferInsert> = {
@@ -2163,7 +2164,9 @@ export const rotateAppleLocalAdminPasswords = (
           passwordHash,
         });
         const dedupeKey = yield* commandDedupeKeyEffect("SetAutoAdminPassword", payload);
-        const sealedValue = yield* Effect.tryPromise(() => sealSecret(authSecret, password));
+        const sealedValue = yield* Crypto.sealSecret(authSecret, password).pipe(
+          Effect.mapError(internal),
+        );
         const rotationId = crypto.randomUUID();
 
         // Queue the command and write its pending secret together, so a crash
@@ -2337,8 +2340,8 @@ const readAppleBootstrapToken = (
       .limit(1);
 
     if (sealed && authSecret) {
-      const token = yield* Effect.promise(() =>
-        openSecret(authSecret, sealed.sealedValue).catch(() => null),
+      const token = yield* Crypto.openSecret(authSecret, sealed.sealedValue).pipe(
+        Effect.orElseSucceed(() => null),
       );
 
       if (token) return token;
@@ -2454,12 +2457,21 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       coalesceWindowMs: options.auditCheckinCoalesceWindowMs,
       webhookDispatch: options.backgroundDelivery
         ? (event) =>
-            options
-              .backgroundDelivery!.enqueue(
-                `webhook:${event.type}`,
-                dispatchWebhookEvent(db, event, { authSecret, fetch: options.webhookFetch }),
-              )
-              .pipe(Effect.asVoid)
+            Effect.gen(function* () {
+              const deliveryOptions = { authSecret, fetch: options.webhookFetch };
+              // Persist every delivery before acknowledging the audit event.
+              // If the process dies or the queue is full, attempt-0 rows are
+              // recovered by the existing webhook maintenance retry pass.
+              const ids = yield* enqueueWebhookEvent(db, event, deliveryOptions);
+
+              for (const id of ids)
+                yield* options
+                  .backgroundDelivery!.enqueue(
+                    `webhook:${event.type}`,
+                    deliverQueuedWebhook(db, id, deliveryOptions),
+                  )
+                  .pipe(Effect.asVoid);
+            })
         : undefined,
     };
 
@@ -2571,7 +2583,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     /**
      * mttx pushes a check-in immediately after a device first reports its push
      * token, so the freshly enrolled device receives its configuration without
-     * waiting for the next poll. Failures are logged and ignored.
+     * waiting for the next poll. This wake-up hint is intentionally
+     * non-durable: a crash or full queue may drop it, and devices still poll.
      */
     const pushEnrolledDevice = (deviceId: string, organizationId: string) => {
       const delivery = Effect.gen(function* () {
@@ -2595,19 +2608,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         // SAFETY: The APNs key is stored as a JWK by the settings writer, and
         // importPrivateKeyJwk validates the key material before use.
-        const sealed = yield* Effect.tryPromise({
-          try: () => openSecret(authSecret, certificate.encryptedKey!),
-          catch: () => new Error("Failed to decrypt the APNs private key"),
-        });
+        const sealed = yield* Crypto.openSecret(authSecret, certificate.encryptedKey!).pipe(
+          Effect.mapError(() => new Error("Failed to decrypt the APNs private key")),
+        );
         const jwk = yield* Effect.try({
           try: () => JSON.parse(sealed) as JsonWebKey,
           catch: () => new Error("Failed to parse the APNs private key"),
         });
 
-        const key = yield* Effect.tryPromise({
-          try: () => importPrivateKeyJwk(jwk),
-          catch: () => new Error("Failed to import the APNs private key"),
-        });
+        const key = yield* Crypto.importPrivateKeyJwk(jwk).pipe(
+          Effect.mapError(() => new Error("Failed to import the APNs private key")),
+        );
 
         const pkcs8 = yield* Effect.tryPromise({
           try: () => crypto.subtle.exportKey("pkcs8", key),
@@ -3817,16 +3828,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               ? catalogueApplicationAssetIdentifier(assetOwnerId)
               : configurationAssetIdentifier(row.policyId, row.kind);
 
-            const token = yield* Effect.tryPromise({
-              try: () =>
-                signAppleAssetToken(authSecret ?? "", {
-                  policyId: assetOwnerId ?? row.policyId,
-                  kind: assetOwnerId ? CATALOGUE_APPLICATION_ASSET_KIND : row.kind,
-                  deviceId: device.id,
-                  expiresAt: appleInstallAssetExpiresAt(at.getTime()),
-                }),
-              catch: internal,
-            });
+            const token = yield* signAppleAssetTokenEffect(authSecret ?? "", {
+              policyId: assetOwnerId ?? row.policyId,
+              kind: assetOwnerId ? CATALOGUE_APPLICATION_ASSET_KIND : row.kind,
+              deviceId: device.id,
+              expiresAt: appleInstallAssetExpiresAt(at.getTime()),
+            }).pipe(Effect.mapError(internal));
 
             if (uploadKind === "pkg") {
               const url = `${serverOrigin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
@@ -6955,14 +6962,10 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
               if (!application?.r2Key || !application.sha256) return null;
 
-              const assetToken = yield* Effect.tryPromise({
-                try: () =>
-                  verifyAppleAssetToken(authSecret ?? "", token, {
-                    policyId: catalogueApplicationId,
-                    kind: CATALOGUE_APPLICATION_ASSET_KIND,
-                  }),
-                catch: internal,
-              });
+              const assetToken = yield* verifyAppleAssetTokenEffect(authSecret ?? "", token, {
+                policyId: catalogueApplicationId,
+                kind: CATALOGUE_APPLICATION_ASSET_KIND,
+              }).pipe(Effect.mapError(internal));
 
               if (!assetToken) return null;
 
@@ -7109,15 +7112,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               .select()
               .from(s.applicationInstaller)
               .where(eq(s.applicationInstaller.id, catalogueApplicationId))
-              .limit(1)
-              .pipe(Effect.mapError(internal));
+              .limit(1);
 
             const [application] = yield* db
               .select()
               .from(s.application)
               .where(eq(s.application.id, installer?.applicationId ?? catalogueApplicationId))
-              .limit(1)
-              .pipe(Effect.mapError(internal));
+              .limit(1);
 
             const file = installer ?? application;
 
@@ -7138,13 +7139,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             if (!bundleId) return null;
 
-            const assetToken = yield* Effect.tryPromise({
-              try: () =>
-                verifyAppleAssetToken(authSecret ?? "", token, {
-                  policyId: catalogueApplicationId,
-                  kind: CATALOGUE_APPLICATION_ASSET_KIND,
-                }),
-              catch: internal,
+            const assetToken = yield* verifyAppleAssetTokenEffect(authSecret ?? "", token, {
+              policyId: catalogueApplicationId,
+              kind: CATALOGUE_APPLICATION_ASSET_KIND,
             });
 
             if (!assetToken) return null;
@@ -7153,8 +7150,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               .select({ organizationId: s.device.organizationId, status: s.device.status })
               .from(s.device)
               .where(eq(s.device.id, assetToken.deviceId))
-              .limit(1)
-              .pipe(Effect.mapError(internal));
+              .limit(1);
 
             if (
               assetDevice?.organizationId !== application.organizationId ||
@@ -7172,13 +7168,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 version: installer?.version ?? application.version ?? "0",
                 title: application.name,
               }),
-            ).pipe(Effect.mapError(internal));
+            );
 
             return {
               content: new TextEncoder().encode(content),
               contentType: "application/xml",
             };
-          }),
+          }).pipe(Effect.mapError(internal)),
         ),
 
       getAppleProfile: (policyId, kind, deviceId) =>
@@ -7301,158 +7297,9 @@ export const policyHash = jsonHash;
 
 export * from "./adeProfile.js";
 
-export {
-  SYSTEM_AUDIT_ACTOR,
-  SYSTEM_AUDIT_ACTIONS,
-  commandFailureTransition,
-  declarationFailedTransition,
-  isDeclarationFailure,
-  pushInvalidTokenTransition,
-  writeSystemAudit,
-  type SystemAuditEvent,
-  type SystemAuditOptions,
-} from "@mattrax/mdm-core";
-
-export {
-  WEBHOOK_DELIVERY_RETENTION_DAYS,
-  WEBHOOK_DELIVERY_TIMEOUT_MS,
-  WEBHOOK_MAX_RETRY_ATTEMPTS,
-  buildWebhookPayload,
-  dispatchWebhookEvent,
-  generateWebhookSecret,
-  pruneWebhookDeliveries,
-  replayWebhookDelivery,
-  retryFailedWebhookDeliveries,
-  sendTestWebhook,
-  signWebhookDelivery,
-  toWebhookEndpointInfo,
-  verifyWebhookSignature,
-  webhookEventForAuditAction,
-  webhookSecretPrefix,
-  type WebhookDeliveryOptions,
-  type WebhookDeliveryOutcome,
-  type WebhookEndpointRow,
-  type WebhookEventInput,
-  WebhookPayload,
-  type WebhookReplayResult,
-  type WebhookRetryOptions,
-  type WebhookRetryResult,
-} from "@mattrax/mdm-core";
-
-export { createScepChallenge, verifyScepChallenge } from "@mattrax/scep";
-
-export {
-  ScepRepositoryLive,
-  issueScepChallenge,
-  scepChallengeId,
-  type IssueScepChallengeOptions,
-  type IssuedScepChallenge,
-} from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
-export { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
-
-export {
-  SCRIPT_PROFILE_IDENTIFIER_PREFIX,
-  isScriptProfileIdentifier,
-  planScriptProfileChanges,
-} from "@mattrax/mdm-core";
-
-export type { DesiredScriptProfile, ScriptProfileChanges } from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-windows";
-
-export {
-  OS_UPDATE_INSTALL_STATES,
-  parseDeviceInventory,
-  normalizeBatteryHealth,
-  normalizeBoolean,
-  normalizeCapabilities,
-  statusItemValue,
-  type DeviceInventory,
-  type ManagementAppStatus,
-} from "@mattrax/mdm-core";
-
-export {
-  parseActivationLockBypassCode,
-  parseRecoveryLockVerification,
-  parseRotatedRecoveryKey,
-  parseSecurityInfo,
-  type FileVaultStatus,
-  type RecoveryKeyFormat,
-  type SecurityInfoReport,
-} from "@mattrax/mdm-core";
-
-export {
-  ADDITIONAL_STATUS_ITEMS,
-  DEVICE_INFORMATION_BASE_STATUS_ITEMS,
-  appleStatusItemsForDevice,
-} from "@mattrax/mdm-core";
-
-export {
-  appleDeclarativeCapability,
-  appleDeliveryModeChanged,
-  decideAppleDelivery,
-  type AppleCapabilitySupport,
-  type AppleDeliveryDecision,
-  type AppleDeliveryMode,
-} from "@mattrax/mdm-core";
-
-export {
-  describeSkippedConfigurations,
-  scopeConfigurationsToDevice,
-  type OsScopedConfigurations,
-  type PolicyDeliveryDevice,
-  type SkippedConfiguration,
-} from "@mattrax/mdm-core";
-
-export {
-  buildLegacyProfiles,
-  installProfilePayload,
-  installedProfiles,
-  planLegacyProfileChanges,
-  profileDigest,
-  type LegacyProfile,
-  type LegacyProfileBuild,
-  type LegacyProfileChanges,
-} from "@mattrax/mdm-core";
-
-export {
-  APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX,
-  appleLockScreenProfileIdentifier,
-  buildAppleLockScreenProfile,
-  readAppleLockScreenProfile,
-  type AppleLockScreenProfileContent,
-} from "@mattrax/mdm-core";
-
-export {
-  APPLE_APPLICATION_INVENTORY_PAYLOAD,
-  APPLE_DEVICE_INFORMATION_PAYLOAD,
-  parseInstalledApplications,
-  type InstalledApplicationReport,
-} from "@mattrax/mdm-core";
-
-export {
-  syncDynamicGroup,
-  syncDynamicGroupDependents,
-  syncDynamicGroupsForDevice,
-  syncDynamicGroupsForTenant,
-  previewDynamicGroup,
-  type DynamicGroupPreview,
-  type DynamicGroupPreviewReference,
-  type DynamicGroupSyncOptions,
-  type DynamicGroupSyncResult,
-} from "@mattrax/mdm-core";
-
-export {
-  syncDirectoryGroup,
-  syncDirectoryGroupsForTenant,
-  type DirectoryGroupSyncOptions,
-  type DirectoryGroupSyncResult,
-} from "@mattrax/mdm-core";
-
-export {
-  assignedApplicationIdsForDevice,
-  assignedDeviceIdsForApplication,
-} from "@mattrax/mdm-core";
+export * from "./applePolicySupport.js";
+export * from "./appleUsers.js";
+export * from "./deliveryMode.js";
+export * from "./statusItems.js";
+export * from "./policy.js";
+export * from "./legacyDelivery.js";

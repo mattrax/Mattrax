@@ -284,61 +284,69 @@ import {
 import type { AnyColumn, SQL } from "drizzle-orm";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import {
-  certificateDeviceIdsFor,
+  applePolicySupport,
   buildAdeEnrollmentProfile,
-  createWindowsTenantToken,
-  dispatchWebhookEvent,
   enterpriseEnrollmentProfile,
-  federatedAuthServiceUrl,
-  federatedRealm,
+  appleLockScreenProfileIdentifier,
+  buildAppleLockScreenProfile,
+  installProfilePayload,
+  profileDigest,
+} from "@mattrax/mdm-apple";
+import {
+  ACTIVE_COMMAND_STATUSES,
+  COMMAND_EXPIRED_DETAIL,
+  RECONCILED_RESULT_STATUS,
+  CATALOGUE_APPLICATION_ASSET_KIND,
+  WebhookPayload,
+  applePasswordHash,
+  assignedDeviceIdsForApplication,
+  catalogueApplicationAssetIdentifier,
+  commandDeadline,
+  commandDedupeKeyEffect,
+  commandIsExpired,
+  commandStatusIsActive,
+  deviceCommandExpiresAt,
+  dispatchWebhookEvent,
+  extendedCommandDeadline,
+  generateLocalAdminPassword,
   generateWebhookSecret,
-  previewDynamicGroup,
-  replayWebhookDelivery as redeliverWebhook,
   groupHierarchyProblem,
   groupIdsWithAncestors,
+  installCommandTargetsApplication,
+  isApplicationKind,
+  issueScepChallenge,
   loadGroupHierarchyEdges,
-  syncGroupInheritance,
   loadPolicyScopeResolutionInput,
+  planCommandQueueing,
+  previewDynamicGroup,
+  replayWebhookDelivery as redeliverWebhook,
+  resolveEffectivePolicyForDevice,
   resolveGroupScope,
   resolvePolicyScope,
-  resolveEffectivePolicyForDevice,
+  ScepRepositoryLive,
   sendTestWebhook,
+  setAutoAdminPasswordPayload,
   syncDirectoryGroup,
   syncDirectoryGroupsForTenant,
   syncDynamicGroup,
   syncDynamicGroupDependents,
   syncDynamicGroupsForDevice,
-  assignedDeviceIdsForApplication,
+  syncGroupInheritance,
   toWebhookEndpointInfo,
   webhookEventForAuditAction,
   webhookSecretPrefix,
+  writeSystemAudit,
+} from "@mattrax/mdm-core";
+import type { CommandPayload } from "@mattrax/mdm-core";
+import {
+  certificateDeviceIdsFor,
+  createWindowsTenantToken,
+  federatedAuthServiceUrl,
+  federatedRealm,
   windowsTenantTokenExpiresAt,
   WINDOWS_UNENROLL_REQUEST_TYPE,
   windowsUnenrollUri,
-  ACTIVE_COMMAND_STATUSES,
-  COMMAND_EXPIRED_DETAIL,
-  RECONCILED_RESULT_STATUS,
-  applePasswordHash,
-  appleLockScreenProfileIdentifier,
-  buildAppleLockScreenProfile,
-  generateLocalAdminPassword,
-  installProfilePayload,
-  profileDigest,
-  CATALOGUE_APPLICATION_ASSET_KIND,
-  catalogueApplicationAssetIdentifier,
-  commandDeadline,
-  commandDedupeKey,
-  commandIsExpired,
-  commandStatusIsActive,
-  deviceCommandExpiresAt,
-  extendedCommandDeadline,
-  installCommandTargetsApplication,
-  planCommandQueueing,
-  setAutoAdminPasswordPayload,
-  WebhookPayload,
-  writeSystemAudit,
-} from "@mattrax/mdm-apple";
-import type { CommandPayload } from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-windows";
 import {
   LOGIN_ATTEMPT_LIST_LIMIT,
   listLoginAttempts,
@@ -369,13 +377,7 @@ import {
   windowsMsiUninstallPayload,
 } from "@mattrax/enterprise-backend";
 import type { AutopilotProfileValues } from "@mattrax/enterprise-backend";
-import {
-  ScepRepositoryLive,
-  isApplicationKind,
-  issueScepChallenge,
-  parseAppleApplicationConfiguration,
-  validateConfiguration,
-} from "@mattrax/mdm-apple";
+import { parseAppleApplicationConfiguration, validateConfiguration } from "@mattrax/mdm-apple";
 import { serializePlist } from "@mattrax/plist";
 import { certificateDer } from "@mattrax/scep";
 import { extractMobileconfigPlist, parseMobileconfigPreview } from "@mattrax/enterprise-backend";
@@ -393,6 +395,7 @@ import {
   validateApnsCertificate,
 } from "@mattrax/apns";
 import {
+  Crypto,
   exportPrivateKeyJwk,
   openSecret,
   sealSecret,
@@ -4047,12 +4050,10 @@ export const createEnterpriseService = ({
       // Namespace the de-duplication key by channel so the device and a user
       // channel can each hold the same request type without colliding on the
       // `(deviceId, dedupeKey)` unique index.
-      const dedupeKey = yield* Effect.promise(() =>
-        commandDedupeKey(
+      const dedupeKey = yield* commandDedupeKeyEffect(
           input.userId ? `user:${input.userId}:${input.requestType}` : input.requestType,
           input.payload,
-        ),
-      );
+        );
 
       const insertValues = {
         id,
@@ -21796,15 +21797,13 @@ export const createEnterpriseService = ({
 
               const password = generateLocalAdminPassword();
               const passwordHash = yield* applePasswordHash(password);
-              const sealedValue = yield* Effect.tryPromise(() => sealSecret(authSecret, password));
+              const sealedValue = yield* Crypto.sealSecret(authSecret, password);
 
               const payload = setAutoAdminPasswordPayload({
                 guid: apple.localAdminGuid,
                 passwordHash,
               });
-              const dedupeKey = yield* Effect.promise(() =>
-                commandDedupeKey("SetAutoAdminPassword", payload),
-              );
+              const dedupeKey = yield* commandDedupeKeyEffect("SetAutoAdminPassword", payload);
 
               // The command and its pending secret are written together so a
               // crash cannot leave a password bound to no command. The pending
@@ -31787,7 +31786,9 @@ export const createEnterpriseService = ({
           policyId,
         });
 
-        return yield* Effect.promise(() => resolvePolicyScope(input, policyId));
+        return yield* Effect.promise(() =>
+          resolvePolicyScope(input, policyId, { apple: applePolicySupport }),
+        );
       }),
     getGroupScope: (request, tenantId, groupId) =>
       Effect.gen(function* () {
@@ -31803,7 +31804,9 @@ export const createEnterpriseService = ({
           groupId,
         });
 
-        return yield* Effect.promise(() => resolveGroupScope(input, groupId));
+        return yield* Effect.promise(() =>
+          resolveGroupScope(input, groupId, { apple: applePolicySupport }),
+        );
       }),
     storageUsage: (request, tenantId) =>
       Effect.gen(function* () {

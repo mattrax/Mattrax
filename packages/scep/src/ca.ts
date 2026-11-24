@@ -1,8 +1,8 @@
 import { Effect, Option, Schema } from "effect";
 import type * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
-import { loadPkijs } from "./pkijs.js";
-import type { Asn1jsModule, PkijsModule } from "./pkijs.js";
+import { loadPkijs } from "@mattrax/mdm-pki";
+import type { Asn1jsModule, PkijsModule } from "@mattrax/mdm-pki";
 import type { ScepCaScope, ScepRepository, ScepStoredCa } from "./repository.js";
 import {
   generateCaKeyPair,

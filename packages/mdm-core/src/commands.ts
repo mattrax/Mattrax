@@ -6,7 +6,7 @@ import {
   DEVICE_COMMAND_RECONCILED_RESULT_STATUS,
   normalizeDeviceCommandStatus,
 } from "@mattrax/enterprise-domain";
-import { parseCatalogueApplicationAssetIdentifier } from "./policy.js";
+import { parseCatalogueApplicationAssetIdentifier } from "./configuration.js";
 import type { DeviceCommandStatus } from "@mattrax/enterprise-domain";
 
 const MINUTE = 60 * 1000;

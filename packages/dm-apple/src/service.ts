@@ -1,4 +1,5 @@
 import { Cause, Context, Effect, Layer, Option, Predicate, Schema } from "effect";
+import { Crypto } from "@mattrax/crypto";
 import { DeviceUnenrolled, MdmError, resolveCheckinChannel } from "./schema.js";
 import type {
   AuthenticatePlist,
@@ -23,7 +24,7 @@ import { extractTopicFromCertPem } from "./cert.js";
 import { AppleMdmConfig } from "./config.js";
 import { buildAppleEnrollmentProfile } from "./enrollment.js";
 import { PlistValue, serializePlist } from "@mattrax/plist";
-import { verifyAppleProfileToken } from "./tokens.js";
+import { verifyAppleProfileTokenEffect } from "./tokens.js";
 import { verifyMdmSignature } from "./signature.js";
 import type { VerifiedMdmSignature } from "./signature.js";
 import { AppleMdmTrust } from "./trust.js";
@@ -40,9 +41,8 @@ function base64ToHex(base64: string): string {
 }
 
 function deterministicUuid(input: string): Effect.Effect<string, MdmError> {
-  return Effect.tryPromise({
-    try: async () => {
-      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Crypto.sha256(new TextEncoder().encode(input).buffer).pipe(
+    Effect.map((hash) => {
       const bytes = new Uint8Array(hash).slice(0, 16);
       bytes[6] = (bytes[6] & 0x0f) | 0x50;
       bytes[8] = (bytes[8] & 0x3f) | 0x80;
@@ -52,9 +52,11 @@ function deterministicUuid(input: string): Effect.Effect<string, MdmError> {
         .join("");
 
       return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-    },
-    catch: (cause) => new MdmError({ message: "Failed to create deterministic UUID", cause }),
-  });
+    }),
+    Effect.mapError(
+      (cause) => new MdmError({ message: "Failed to create deterministic UUID", cause }),
+    ),
+  );
 }
 
 const declarationsTimestamp = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -891,14 +893,16 @@ const makeAppleMdmService = (
 
       // The device id and expiry are in the signed message, not trusted from
       // the URL alone. A leaked link stops working and cannot be re-pointed.
-      const valid = yield* Effect.promise(() =>
-        verifyAppleProfileToken(secret, token, {
-          policyId,
-          kind,
-          deviceToken,
-          deviceId,
-          expiresAt,
-        }),
+      const valid = yield* verifyAppleProfileTokenEffect(secret, token, {
+        policyId,
+        kind,
+        deviceToken,
+        deviceId,
+        expiresAt,
+      }).pipe(
+        Effect.mapError(
+          (cause) => new MdmError({ message: "Failed to verify profile token", cause }),
+        ),
       );
 
       if (!valid) return null;

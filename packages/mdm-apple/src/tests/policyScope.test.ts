@@ -1,14 +1,23 @@
 import type { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
-  derivePolicyPlatformSupport,
+  derivePolicyPlatformSupport as derivePolicyPlatformSupportBase,
   MAX_SCOPE_DEVICES,
-  resolveGroupScope,
-  resolvePolicyScope,
-} from "./policyScope.ts";
-import type { PolicyScopeResolutionInput } from "./policyScope.ts";
-import { resolveEffectivePolicy } from "./policyResolution.ts";
-import type { PolicyResolutionConfiguration, PolicyResolutionPolicy } from "./policyResolution.ts";
+  resolveGroupScope as resolveGroupScopeBase,
+  resolvePolicyScope as resolvePolicyScopeBase,
+} from "@mattrax/mdm-core";
+import type { PolicyScopeResolutionInput } from "@mattrax/mdm-core";
+import { resolveEffectivePolicy } from "@mattrax/mdm-core";
+import type { PolicyResolutionConfiguration, PolicyResolutionPolicy } from "@mattrax/mdm-core";
+import { applePolicySupport } from "../applePolicySupport.js";
+
+const options = { apple: applePolicySupport };
+const derivePolicyPlatformSupport: typeof derivePolicyPlatformSupportBase = (configurations) =>
+  derivePolicyPlatformSupportBase(configurations, options);
+const resolvePolicyScope: typeof resolvePolicyScopeBase = (input, policyId) =>
+  resolvePolicyScopeBase(input, policyId, options);
+const resolveGroupScope: typeof resolveGroupScopeBase = (input, groupId) =>
+  resolveGroupScopeBase(input, groupId, options);
 
 const policy = (
   id: string,

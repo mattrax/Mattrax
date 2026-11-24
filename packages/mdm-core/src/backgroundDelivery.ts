@@ -45,10 +45,11 @@ const failed = Metric.counter("mdm_background_delivery_failed_total", { incremen
  * exponential backoff, and shutdown first closes the queue, then gives workers
  * a grace period to drain before interrupting them.
  *
- * This queue is process-local. Webhook attempts still use the existing
- * `webhook_delivery` rows and maintenance retries; a crash before an attempt
- * can lose an unprocessed in-memory job. Durable pre-attempt outbox semantics
- * require a separate schema-backed queue.
+ * This queue is process-local. Webhook callers persist attempt-0
+ * `webhook_delivery` rows before enqueueing, so a crash or full queue does not
+ * lose the event: maintenance retries recover those rows. APNs wake-up pushes
+ * are intentionally non-durable and may be dropped on crash or queue pressure;
+ * devices still poll for commands.
  */
 export const BackgroundDeliveryLive = (
   options: BackgroundDeliveryOptions = {},

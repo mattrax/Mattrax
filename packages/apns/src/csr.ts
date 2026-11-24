@@ -9,8 +9,8 @@ import {
   pemEncode,
   uint8ArrayToBase64,
 } from "@mattrax/crypto";
-import { loadPkijs } from "./pkijs.js";
-import type { Asn1jsModule, PkijsModule } from "./pkijs.js";
+import { loadPkijs } from "@mattrax/mdm-pki";
+import type { Asn1jsModule, PkijsModule } from "@mattrax/mdm-pki";
 import {
   APPLE_ROOT_CA,
   APPLE_WORLDWIDE_DEVELOPER_RELATIONS_CERTIFICATION_AUTHORITY,

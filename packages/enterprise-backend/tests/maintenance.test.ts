@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as pkijs from "pkijs";
 import { Db } from "@mattrax/enterprise-core";
 import { TestConsole } from "effect/testing";
-import { sweepWindowsStateCommands } from "@mattrax/mdm-apple";
+import { sweepWindowsStateCommands } from "@mattrax/mdm-windows";
 import { createApnsCsrDer, importApnsKeyJwk } from "@mattrax/apns";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 import { generateScepCa, sealCaPrivateKey } from "@mattrax/scep";

@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { schema as s } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { isConfirmedMacOsDevice } from "@mattrax/enterprise-domain";
-import { commandDedupeKey, deviceCommandExpiresAt } from "./commands.ts";
+import { commandDedupeKeyEffect, deviceCommandExpiresAt } from "./commands.ts";
 
 /**
  * Scheduled `UserList` refresh.
@@ -150,7 +150,7 @@ export const refreshAppleLocalAccounts = (
 
     const payload = {};
 
-    const dedupeKey = yield* Effect.promise(() => commandDedupeKey("UserList", payload));
+    const dedupeKey = yield* commandDedupeKeyEffect("UserList", payload);
 
     for (const device of due)
       yield* (

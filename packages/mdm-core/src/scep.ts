@@ -12,7 +12,7 @@ import {
   sealCaPrivateKey,
   verifyScepChallenge,
 } from "@mattrax/scep";
-import type { ScepAuthentication, ScepCaScope, ScepPkcsReq } from "@mattrax/scep";
+import type { ScepAuthentication, ScepAuthenticationRequest, ScepCaScope } from "@mattrax/scep";
 
 const databaseError =
   (message: string) =>
@@ -143,7 +143,7 @@ export class ScepRepositoryLive extends ScepRepository {
   ): ScepRepository["Service"] => {
     const authenticatePkcsReq = (
       scope: ScepCaScope,
-      req: ScepPkcsReq,
+      req: ScepAuthenticationRequest,
     ): Effect.Effect<ScepAuthentication, ScepError> =>
       Effect.gen(function* () {
         const secret = options.authSecret ?? processEnvSecret();

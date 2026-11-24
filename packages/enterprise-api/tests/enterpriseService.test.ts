@@ -29,7 +29,8 @@ import {
   scriptAgentToken,
 } from "@mattrax/enterprise-domain";
 import type { DeviceSearchQuery } from "@mattrax/enterprise-domain";
-import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/mdm-apple";
+import { ScepRepositoryLive } from "@mattrax/mdm-core";
+import { makeWindowsBackend } from "@mattrax/mdm-windows";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
 import { certToPem, createCaCertificate } from "@mattrax/scep";
 import { appleEnrollmentProfileResponse, createEnterpriseService } from "@mattrax/enterprise-api";

@@ -1,7 +1,7 @@
 import type * as pkijs from "pkijs";
 import { Option, Schema } from "effect";
 import { pemDecode } from "@mattrax/crypto";
-import { loadPkijs } from "./pkijs.js";
+import { loadPkijs } from "@mattrax/mdm-pki";
 
 const UID_OID = "0.9.2342.19200300.100.1.1";
 
@@ -16,7 +16,6 @@ export type ParsedApnsCertificate = {
   readonly commonName: string | null;
   readonly notBefore: Date;
   readonly notAfter: Date;
-  readonly certificate: pkijs.Certificate;
 };
 
 /** Public certificate fields; the pkijs object stays an implementation detail. */
@@ -90,28 +89,30 @@ export const parseCertificateMetadata = async (pem: string): Promise<Certificate
   (await parseCertificate(pem)).metadata;
 
 export async function parseApnsCertificate(pem: string): Promise<ParsedApnsCertificate> {
-  const { metadata, certificate } = await parseCertificate(pem);
+  const { metadata } = await parseCertificate(pem);
 
   if (!metadata.topic)
     throw new Error("APNs certificate is missing the UID (topic) subject attribute");
 
-  return { ...metadata, topic: metadata.topic, certificate };
+  return { ...metadata, topic: metadata.topic };
 }
 
-/**
- * Verify that the certificate was signed for the given private key. WebCrypto
- * only needs the public half, which is embedded in the certificate.
- */
-export async function certificateMatchesKey(
+const certificateMatchesKey = async (
   certificate: pkijs.Certificate,
   privateKey: CryptoKey,
-): Promise<boolean> {
+): Promise<boolean> => {
   const publicKey = await certificate.getPublicKey();
   const data = crypto.getRandomValues(new Uint8Array(32));
   const signature = await crypto.subtle.sign({ name: "RSASSA-PKCS1-v1_5" }, privateKey, data);
 
   return crypto.subtle.verify({ name: "RSASSA-PKCS1-v1_5" }, publicKey, signature, data);
-}
+};
+
+/** Verify a PEM certificate against a private key without exposing pkijs types. */
+export const certificatePemMatchesKey = async (
+  pem: string,
+  privateKey: CryptoKey,
+): Promise<boolean> => certificateMatchesKey((await parseCertificate(pem)).certificate, privateKey);
 
 export type ValidateApnsCertificateOptions = {
   /** The private key that produced the CSR, when available. */
@@ -132,7 +133,11 @@ export async function validateApnsCertificate(
   pem: string,
   options: ValidateApnsCertificateOptions = {},
 ): Promise<ParsedApnsCertificate> {
-  const parsed = await parseApnsCertificate(pem);
+  const { metadata, certificate } = await parseCertificate(pem);
+
+  if (!metadata.topic)
+    throw new Error("APNs certificate is missing the UID (topic) subject attribute");
+  const parsed: ParsedApnsCertificate = { ...metadata, topic: metadata.topic };
 
   if (!isApnsMdmTopic(parsed.topic)) throw new Error(`Invalid APNs topic: ${parsed.topic}`);
 
@@ -145,7 +150,7 @@ export async function validateApnsCertificate(
     throw new Error("The APNs certificate has expired");
 
   if (options.privateKey) {
-    const matches = await certificateMatchesKey(parsed.certificate, options.privateKey);
+    const matches = await certificateMatchesKey(certificate, options.privateKey);
 
     if (!matches)
       throw new Error(

@@ -17,8 +17,8 @@
 import type * as pkijs from "pkijs";
 import { Effect, Schema } from "effect";
 import { parsePlist, PlistValue } from "@mattrax/plist";
-import { loadPkijs } from "./pkijs.js";
-import type { PkijsModule } from "./pkijs.js";
+import { loadPkijs } from "@mattrax/mdm-pki";
+import type { PkijsModule } from "@mattrax/mdm-pki";
 
 // pkijs is loaded on first use (see `loadPkijs`) rather than at module
 // evaluation: it stays out of the Worker's startup closure and is only loaded

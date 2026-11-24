@@ -9,19 +9,21 @@ import {
 } from "@mattrax/enterprise-domain";
 import {
   dispatchWebhookEvent,
+  deliverQueuedWebhook,
+  enqueueWebhookEvent,
   retryFailedWebhookDeliveries,
   sendTestWebhook,
   signWebhookDelivery,
   verifyWebhookSignature,
-} from "@mattrax/mdm-apple";
-import type { WebhookEndpointRow } from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
+import type { WebhookEndpointRow } from "@mattrax/mdm-core";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
 
 const authSecret = "webhook-test-secret";
 
 const now = new Date("2026-11-11T10:00:00.000Z");
 
-const run = <A>(effect: Effect.Effect<A, never, never>) => Effect.runPromise(effect);
+const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
 const endpoint = (overrides: Partial<WebhookEndpointRow> = {}): WebhookEndpointRow => ({
   id: "wh_1",
@@ -235,6 +237,49 @@ describe("webhook URL guard", () => {
 });
 
 describe("webhook delivery", () => {
+  it("durably enqueues before any network I/O and recovers queued rows", async () => {
+    const { db } = await setup();
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
+    const event = {
+      organizationId: "org-1",
+      type: "device.enrolled" as const,
+      id: "evt_durable",
+    };
+
+    const ids = await run(enqueueWebhookEvent(webhookDb(db), event, { authSecret, fetch, now }));
+
+    expect(ids).toHaveLength(1);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(deliveries(db)[0]).toMatchObject({ attempt: 0, eventId: "evt_durable" });
+
+    // Simulate a crash before the in-process worker runs: maintenance finds
+    // the persisted attempt-0 row and completes it.
+    const retried = await run(
+      retryFailedWebhookDeliveries(webhookDb(db), { authSecret, fetch, now }),
+    );
+
+    expect(retried).toMatchObject({ retried: 1, succeeded: 1, failed: 0 });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(deliveries(db)[0]).toMatchObject({ attempt: 1, status: "succeeded" });
+  });
+
+  it("completes a durable queue row without inserting a duplicate attempt", async () => {
+    const { db } = await setup();
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
+    const [id] = await run(
+      enqueueWebhookEvent(
+        webhookDb(db),
+        { organizationId: "org-1", type: "device.enrolled" },
+        { authSecret, fetch, now },
+      ),
+    );
+
+    await run(deliverQueuedWebhook(webhookDb(db), id!, { authSecret, fetch, now }));
+
+    expect(deliveries(db)).toHaveLength(1);
+    expect(deliveries(db)[0]).toMatchObject({ attempt: 1, status: "succeeded" });
+  });
+
   it("filters by event and records a successful delivery", async () => {
     const { db, secret } = await setup({ eventFilters: ["device.enrolled"] });
 

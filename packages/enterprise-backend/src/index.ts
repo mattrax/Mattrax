@@ -490,9 +490,9 @@ export type {
   ScheduledGoogleSyncResult,
 } from "@mattrax/google-workspace";
 
-export { syncDirectoryGroup, syncDirectoryGroupsForTenant } from "@mattrax/mdm-apple";
+export { syncDirectoryGroup, syncDirectoryGroupsForTenant } from "@mattrax/mdm-core";
 
-export type { DirectoryGroupSyncOptions, DirectoryGroupSyncResult } from "@mattrax/mdm-apple";
+export type { DirectoryGroupSyncOptions, DirectoryGroupSyncResult } from "@mattrax/mdm-core";
 
 export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,
@@ -504,13 +504,13 @@ export {
   sendTestWebhook,
   signWebhookDelivery,
   verifyWebhookSignature,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 
 export type {
   WebhookDeliveryOutcome,
   WebhookRetryOptions,
   WebhookRetryResult,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 
 export {
   APNS_RENEWAL_URL,

@@ -5,7 +5,7 @@ import {
   isLegacyKind,
   parseConfigurationKind,
   splitConfigurationDeclarationIdentifier,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 
 /**
  * Bulk policy scope and delivery derivation for the policy list.

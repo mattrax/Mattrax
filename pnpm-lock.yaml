@@ -437,6 +437,7 @@ snapshots:
 				"@mattrax/google-workspace": "workspace:*",
 				"@mattrax/management-backend-http": "workspace:*",
 				"@mattrax/mdm-apple": "workspace:*",
+				"@mattrax/mdm-core": "workspace:*",
 				"@mattrax/scep": "workspace:*",
 				"@yielded/auth": "catalog:",
 				"@yielded/auth-platform-workerd": "catalog:",
@@ -572,6 +573,7 @@ snapshots:
 			"name": "@mattrax/apns",
 			"dependencies": {
 				"@mattrax/crypto": "workspace:*",
+				"@mattrax/mdm-pki": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"asn1js": "catalog:",
 				"effect": "catalog:",
@@ -701,6 +703,7 @@ snapshots:
 				"@mattrax/apns": "workspace:*",
 				"@mattrax/crypto": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
+				"@mattrax/mdm-pki": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"asn1js": "catalog:",
 				"effect": "catalog:",
@@ -780,6 +783,8 @@ snapshots:
 				"@mattrax/entra-id": "workspace:*",
 				"@mattrax/google-workspace": "workspace:*",
 				"@mattrax/mdm-apple": "workspace:*",
+				"@mattrax/mdm-core": "workspace:*",
+				"@mattrax/mdm-windows": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
 				"drizzle-orm": "catalog:",
@@ -815,6 +820,8 @@ snapshots:
 				"@mattrax/entra-id": "workspace:*",
 				"@mattrax/google-workspace": "workspace:*",
 				"@mattrax/mdm-apple": "workspace:*",
+				"@mattrax/mdm-core": "workspace:*",
+				"@mattrax/mdm-windows": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
 				"@simplewebauthn/server": "catalog:",
@@ -988,7 +995,6 @@ snapshots:
 			"dependencies": {
 				"@mattrax/apns": "workspace:*",
 				"@mattrax/crypto": "workspace:*",
-				"@mattrax/dm-apple": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
@@ -1001,6 +1007,14 @@ snapshots:
 				"@types/node": "catalog:",
 				"typescript": "catalog:",
 				"vitest": "catalog:",
+			},
+		},
+
+		"packages/mdm-pki": {
+			"name": "@mattrax/mdm-pki",
+			"dependencies": {
+				"asn1js": "catalog:",
+				"pkijs": "catalog:",
 			},
 		},
 
@@ -1041,6 +1055,7 @@ snapshots:
 			"name": "@mattrax/scep",
 			"dependencies": {
 				"@mattrax/crypto": "workspace:*",
+				"@mattrax/mdm-pki": "workspace:*",
 				"asn1js": "catalog:",
 				"effect": "catalog:",
 				"pkijs": "catalog:",

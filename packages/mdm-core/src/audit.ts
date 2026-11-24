@@ -130,7 +130,7 @@ export type SystemAuditOptions = {
   readonly authSecret?: string;
   readonly webhookFetch?: typeof globalThis.fetch;
   /** Enqueue instead of awaiting delivery (used by the scoped MDM worker). */
-  readonly webhookDispatch?: (event: WebhookEventInput) => Effect.Effect<void>;
+  readonly webhookDispatch?: (event: WebhookEventInput) => Effect.Effect<void, unknown>;
   /** Disable delivery for a specific call site (tests). */
   readonly webhooks?: boolean;
   /**

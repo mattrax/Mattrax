@@ -12,7 +12,7 @@ import {
   syncDynamicGroupDependents,
   syncDynamicGroupsForDevice,
   syncDynamicGroupsForTenant,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 import { makeDb, runEffect } from "./helpers.js";
 
 const now = new Date("2026-11-10T12:00:00.000Z");
