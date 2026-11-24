@@ -23,6 +23,12 @@ describe("rate limit rule selection", () => {
     expect(rateLimitRuleFor(request("/api/v1/recoverySignIn", { method: "POST" }))?.bucket).toBe(
       "auth",
     );
+    expect(rateLimitRuleFor(request("/api/v1/account/recovery", { method: "POST" }))?.bucket).toBe(
+      "auth",
+    );
+    expect(
+      rateLimitRuleFor(request("/api/v1/account/recovery/verify", { method: "POST" }))?.bucket,
+    ).toBe("auth");
     expect(rateLimitRuleFor(request("/api/v1/sso/azure/callback", { method: "GET" }))?.bucket).toBe(
       "auth",
     );

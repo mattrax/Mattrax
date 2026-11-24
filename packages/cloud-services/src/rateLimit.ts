@@ -67,6 +67,8 @@ export const SENSITIVE_AUTH_PATHS = new Set([
   "/api/v1/account/email-change",
   "/api/v1/account/email-change/verify",
   "/api/v1/account/email-verification",
+  "/api/v1/account/recovery",
+  "/api/v1/account/recovery/verify",
   "/api/v1/register/verification",
   "/api/v1/register/verification/verify",
   "/api/v1/verifytotppending",

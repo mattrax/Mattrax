@@ -71,8 +71,10 @@ Revoking a client under **Account → Agent access (MCP)** immediately invalidat
 its access and refresh tokens. Revoking an API token invalidates that key.
 
 The legacy `/v1/tenants/:tenantId/mcp/activity` POST remains only as a rollout
-shim: it answers `403` and never writes an audit row. It can be removed once no
-supported gateway release posts there (after the release cycle that introduced
+shim: it answers `403` and never writes an audit row. Deploy the API before the
+MCP gateway: new API code derives audit entries from real dispatches, while the
+old gateway POST is rejected by design. It can be removed once no supported
+gateway release posts there (after the release cycle that introduced
 dispatch-derived activity has reached every deployment).
 
 ## Protocol details

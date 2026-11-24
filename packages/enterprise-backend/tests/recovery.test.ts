@@ -436,6 +436,127 @@ describe("break-glass recovery approval", () => {
       "account.recovery_approved",
     );
   });
+  it("mints a completion when approval commits while proof verification is in flight", async () => {
+    const { db, sent, deps } = makeDeps(shared());
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    const proof = tokenFrom(sent, "owner@example.com");
+    const approval = tokenFrom(sent, "colleague@example.com", "recoveryToken");
+    const originalTransaction = db.transaction;
+    let entered!: () => void;
+    let release!: () => void;
+    let paused = false;
+    const proofEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const resume = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    db.transaction = ((work: any) => {
+      if (paused) return originalTransaction(work);
+      paused = true;
+
+      return Effect.gen(function* () {
+        entered();
+        yield* Effect.promise(() => resume);
+
+        return yield* originalTransaction(work);
+      });
+    }) as typeof db.transaction;
+
+    try {
+      const proofRun = runEffect(verifyAccountRecoveryProof(deps, { token: proof }));
+      await proofEntered;
+
+      await expect(
+        runEffect(
+          approveAccountRecovery(deps, {
+            token: approval,
+            organizationId: "tenant-1",
+            approverAccountId: "user-2",
+          }),
+        ),
+      ).resolves.toEqual({ status: "ok" });
+
+      release();
+      const verified = await proofRun;
+
+      expect(verified.status).toBe("ready");
+
+      if (verified.status !== "ready") throw new Error("expected a completion token");
+
+      await expect(
+        runEffect(redeemRecoveryToken(db, verified.signInToken, new Date(start))),
+      ).resolves.toEqual({ accountId: "user-1" });
+      expect(db.store.account_recovery[0]!.status).toBe("completed");
+    } finally {
+      release();
+      db.transaction = originalTransaction;
+    }
+  });
+
+  it("mints a completion when proof commits while approval is in flight", async () => {
+    const { db, sent, deps } = makeDeps(shared());
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    const proof = tokenFrom(sent, "owner@example.com");
+    const approval = tokenFrom(sent, "colleague@example.com", "recoveryToken");
+    const originalTransaction = db.transaction;
+    let entered!: () => void;
+    let release!: () => void;
+    let paused = false;
+    const approvalEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const resume = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    db.transaction = ((work: any) => {
+      if (paused) return originalTransaction(work);
+      paused = true;
+
+      return Effect.gen(function* () {
+        entered();
+        yield* Effect.promise(() => resume);
+
+        return yield* originalTransaction(work);
+      });
+    }) as typeof db.transaction;
+
+    try {
+      const approvalRun = runEffect(
+        approveAccountRecovery(deps, {
+          token: approval,
+          organizationId: "tenant-1",
+          approverAccountId: "user-2",
+        }),
+      );
+      await approvalEntered;
+
+      await expect(runEffect(verifyAccountRecoveryProof(deps, { token: proof }))).resolves.toEqual({
+        status: "pending_approval",
+      });
+
+      release();
+      await expect(approvalRun).resolves.toEqual({ status: "ok" });
+
+      const message = sent.filter((item) => item.to === "owner@example.com").at(-1)!;
+      const completion = decodeURIComponent(
+        message.text.match(/recover\/complete\?token=([^\s]+)/)?.[1] ?? "",
+      );
+
+      expect(completion).not.toBe("");
+      await expect(
+        runEffect(redeemRecoveryToken(db, completion, new Date(start))),
+      ).resolves.toEqual({ accountId: "user-1" });
+      expect(db.store.account_recovery[0]!.status).toBe("completed");
+    } finally {
+      release();
+      db.transaction = originalTransaction;
+    }
+  });
   it("rejects an approval token for a different tenant", async () => {
     const initial = shared();
     initial.organization.push(organization("tenant-2"));

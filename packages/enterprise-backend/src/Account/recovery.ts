@@ -380,19 +380,36 @@ export const verifyAccountRecoveryProof = (
       return yield* Effect.fail(invalid);
 
     if (record.approvalRequired && record.approvedAt == null) {
-      const consumed = yield* deps.db
-        .update(schema.accountRecovery)
-        .set({ status: "pending_approval", updatedAt: now })
-        .where(
-          and(
-            eq(schema.accountRecovery.id, record.id),
-            eq(schema.accountRecovery.status, "pending_proof"),
-          ),
-        );
+      return yield* deps.db.transaction((tx) =>
+        Effect.gen(function* () {
+          const consumed = yield* tx
+            .update(schema.accountRecovery)
+            .set({ status: "pending_approval", updatedAt: now })
+            .where(
+              and(
+                eq(schema.accountRecovery.id, record.id),
+                eq(schema.accountRecovery.status, "pending_proof"),
+                isNull(schema.accountRecovery.cancelledAt),
+              ),
+            );
 
-      if (!consumed || consumed.affectedRows === 0) return yield* Effect.fail(invalid);
+          if (!consumed || consumed.affectedRows === 0) return yield* Effect.fail(invalid);
 
-      return { status: "pending_approval" as const };
+          // An approval can commit between the read above and this update.
+          // Re-read the row inside the transaction: if the ceremony is now
+          // approval-ready, mint here instead of stranding it forever.
+          const current = yield* tx.query.accountRecovery.findFirst({
+            where: { id: record.id },
+          });
+
+          if (!current) return yield* Effect.fail(invalid);
+
+          if (current.status === "pending_approval" && current.approvedAt != null)
+            return yield* mintCompletion({ db: tx }, current, now);
+
+          return { status: "pending_approval" as const };
+        }),
+      );
     }
 
     const completion = yield* mintCompletion(deps, record, now);
@@ -515,10 +532,19 @@ export const approveAccountRecovery = (
 
         if (!approved || approved.affectedRows === 0) return yield* Effect.fail(invalid);
 
+        // The proof link may have been consumed concurrently. Re-read the
+        // row inside the transaction and mint when it is approval-ready,
+        // regardless of the status observed before the transaction.
+        const current = yield* tx.query.accountRecovery.findFirst({
+          where: { id: record.id },
+        });
+
+        if (!current) return yield* Effect.fail(invalid);
+
         // The proof link has already been used, so the completion link is
         // emailed to the account rather than returned to the approver.
-        if (record.status === "pending_approval")
-          completionToken = (yield* mintCompletion({ db: tx }, record, now)).signInToken;
+        if (current.status === "pending_approval" && current.approvedAt != null)
+          completionToken = (yield* mintCompletion({ db: tx }, current, now)).signInToken;
 
         yield* recordAccountAudit(tx, {
           subjectAccountId: record.accountId,

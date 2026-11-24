@@ -110,17 +110,19 @@ const camel = (value: string) =>
  * same-scope re-consent is modelled as `affectedRows: 0`.
  */
 const sameValue = (left: RowValue | undefined, right: RowValue): boolean => {
-  if (left instanceof Date && right instanceof Date) return left.getTime() === right.getTime();
+  // MySQL has one NULL value: assigning undefined/null over NULL is unchanged.
+  const a = left === undefined ? null : left;
+  const b = right === undefined ? null : right;
 
-  if (Array.isArray(left) && Array.isArray(right))
-    return (
-      left.length === right.length && left.every((item, index) => sameValue(item, right[index]!))
-    );
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
 
-  if (left !== null && right !== null && typeof left === "object" && typeof right === "object")
-    return JSON.stringify(left) === JSON.stringify(right);
+  if (Array.isArray(a) && Array.isArray(b))
+    return a.length === b.length && a.every((item, index) => sameValue(item, b[index]!));
 
-  return left === right;
+  if (a !== null && b !== null && typeof a === "object" && typeof b === "object")
+    return JSON.stringify(a) === JSON.stringify(b);
+
+  return a === b;
 };
 
 /** Values the fake orders and compares: everything normalises to one of these. */
@@ -872,10 +874,11 @@ class UpdateBuilder {
           for (const [key, value] of Object.entries(this.patch)) {
             if (value === undefined) continue;
 
-            if (!sameValue(row[key], value)) {
-              changed = true;
-              row[key] = value;
-            }
+            if (!sameValue(row[key], value)) changed = true;
+
+            // Store the assigned value even for a NULL no-op so fake rows
+            // match the column state a real MySQL row would have.
+            row[key] = value;
           }
 
           // MySQL reports changed rows, not matched rows, unless the driver

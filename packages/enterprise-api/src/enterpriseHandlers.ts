@@ -11868,7 +11868,8 @@ export const createEnterpriseService = ({
         // self-hosted deployment without a trusted address has no client
         // identity: a shared `unknown` bucket would let one caller exhaust
         // everyone else's recovery budget, so only the account window applies
-        // and the edge/network limiter handles anonymous floods.
+        // here. Both recovery POST routes are in SENSITIVE_AUTH_PATHS, so the
+        // edge auth bucket still bounds anonymous floods.
         const allowed =
           recoveryLimiter.allow(`account:${email}`) &&
           (address === null || recoveryLimiter.allow(`client:${address}`));
