@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
+import { createEffect, createSignal, flush, For, onSettled, Show } from "solid-js";
 import { cn } from "~/lib/utils";
 import { sectionTabTarget } from "./section-tabs-nav";
 
@@ -88,7 +88,15 @@ export function SectionTabs(props: {
     if (!next) return;
 
     event.preventDefault();
+    // Solid 2 batches writes and normally commits them when the event
+    // finishes. This handler is attached directly to the tab button, so the
+    // write (a signal in the parent or a router search-param navigation) can
+    // still be pending when the browser moves focus; without an explicit
+    // flush the keyboard selection only reached the focused button and never
+    // the active state. The browser suite caught that as a selected tab with
+    // aria-selected="false".
     props.onSelect?.(next);
+    flush();
     queueMicrotask(() => anchors.get(next)?.focus());
   };
 
