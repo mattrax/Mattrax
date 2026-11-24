@@ -1,39 +1,15 @@
-import { Effect, Predicate, Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { parse as fastPlistParse } from "fast-plist";
 import { PlistParseError, PlistSerializeError, PlistValue } from "./schema.js";
 import type { PlistValue as PlistValueType } from "./schema.js";
 
 export * from "./schema.js";
 
-const PlistArray = Schema.Array(PlistValue);
-
-const PlistDictionary = Schema.Record(Schema.String, PlistValue);
-
-const PlistBytes = Schema.instanceOf(Uint8Array);
-
-const PlistDate = Schema.instanceOf(Date);
-
 type PlistSerializationInput = PlistValueType | null | undefined;
 
-const normalizeForSerialization = (value: PlistSerializationInput): PlistValueType => {
-  if (value === null || value === undefined) return "";
-  if (Array.isArray(value)) return value.map(normalizeForSerialization);
-
-  if (
-    Predicate.isObject(value) &&
-    !(value instanceof Date) &&
-    !(value instanceof Uint8Array) &&
-    !(value instanceof ArrayBuffer)
-  )
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        normalizeForSerialization(item as PlistSerializationInput),
-      ]),
-    );
-
-  return value as PlistValueType;
-};
+const plistPrefix = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">`;
 
 export const parsePlist = (content: string): Effect.Effect<PlistValue, PlistParseError> =>
   Effect.try({
@@ -50,16 +26,23 @@ function escapeXml(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
-function serializeValue(value: PlistValueType): string {
+function serializeValue(value: unknown, allowNullish: boolean): string {
   if (value === null || value === undefined) {
-    return "<string></string>";
+    if (allowNullish) return "<string></string>";
+    throw new TypeError("Expected a plist value");
   }
 
-  if (Schema.is(Schema.Boolean)(value)) {
+  if (typeof value === "string") {
+    return `<string>${escapeXml(value)}</string>`;
+  }
+
+  if (typeof value === "boolean") {
     return value ? "<true/>" : "<false/>";
   }
 
-  if (Schema.is(Schema.Finite)(value)) {
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new TypeError("Expected a finite number");
+
     if (Number.isInteger(value)) {
       return `<integer>${value}</integer>`;
     }
@@ -67,51 +50,64 @@ function serializeValue(value: PlistValueType): string {
     return `<real>${value}</real>`;
   }
 
-  if (Schema.is(Schema.String)(value)) {
-    return `<string>${escapeXml(value)}</string>`;
+  if (typeof value === "object") {
+    if (value instanceof Uint8Array) {
+      return `<data>${btoa(String.fromCharCode(...value))}</data>`;
+    }
+
+    if (value instanceof ArrayBuffer) {
+      return `<data>${btoa(String.fromCharCode(...new Uint8Array(value)))}</data>`;
+    }
+
+    if (value instanceof Date && Number.isFinite(value.getTime())) {
+      return `<date>${value.toISOString().replace(/\.\d{3}Z$/, "Z")}</date>`;
+    }
+
+    if (Array.isArray(value)) {
+      const items: string[] = [];
+
+      for (let index = 0; index < value.length; index++) {
+        if (allowNullish && !(index in value)) throw new TypeError("Expected a dense plist array");
+        items.push(serializeValue(value[index], allowNullish));
+      }
+
+      return `<array>${items.join("")}</array>`;
+    }
+
+    const entries = Object.entries(value).map(
+      ([key, item]) => `<key>${escapeXml(key)}</key>${serializeValue(item, allowNullish)}`,
+    );
+
+    return `<dict>${entries.join("")}</dict>`;
   }
 
-  if (Schema.is(PlistBytes)(value)) {
-    return `<data>${btoa(String.fromCharCode(...value))}</data>`;
-  }
-
-  if (Schema.is(Schema.instanceOf(ArrayBuffer))(value)) {
-    return `<data>${btoa(String.fromCharCode(...new Uint8Array(value)))}</data>`;
-  }
-
-  if (Schema.is(PlistDate)(value)) {
-    return `<date>${value.toISOString().replace(/\.\d{3}Z$/, "Z")}</date>`;
-  }
-
-  if (Schema.is(PlistArray)(value)) {
-    const items = value.map((item) => serializeValue(item)).join("");
-
-    return `<array>${items}</array>`;
-  }
-
-  if (Schema.is(PlistDictionary)(value)) {
-    const entries = Object.entries(value)
-      .map(([key, item]) => `<key>${escapeXml(key)}</key>${serializeValue(item)}`)
-      .join("");
-
-    return `<dict>${entries}</dict>`;
-  }
-
-  return `<string>${escapeXml(String(value))}</string>`;
+  throw new TypeError(`Unsupported plist value of type ${typeof value}`);
 }
 
-export const serializePlist = (value: PlistValueType): Effect.Effect<string, PlistSerializeError> =>
+const serialize = (
+  value: unknown,
+  allowNullish: boolean,
+): Effect.Effect<string, PlistSerializeError> =>
   Effect.try({
-    try: () => {
-      // Validate before emitting XML. In particular, NaN and infinities are
-      // valid JavaScript numbers but not valid plist <real> values.
-      const body = serializeValue(
-        Schema.decodeUnknownSync(PlistValue)(normalizeForSerialization(value)),
-      );
-
-      return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">${body}</plist>`;
-    },
+    try: () => `${plistPrefix}${serializeValue(value, allowNullish)}</plist>`,
     catch: (cause) => new PlistSerializeError({ message: String(cause), cause }),
   });
+
+/**
+ * Validate and serialize a plist in one traversal, without cloning the tree.
+ * Null and undefined retain their historical empty-string representation.
+ */
+export const serializePlist = (
+  value: PlistSerializationInput,
+): Effect.Effect<string, PlistSerializeError> => serialize(value, true);
+
+/**
+ * Serialize an already validated plist in one traversal.
+ *
+ * Callers must provide a value that satisfies PlistValue. Non-finite numbers
+ * and unsupported leaves still fail closed, but null/undefined are not
+ * normalized as they are by serializePlist.
+ */
+export const serializePlistTrusted = (
+  value: PlistValueType,
+): Effect.Effect<string, PlistSerializeError> => serialize(value, false);
