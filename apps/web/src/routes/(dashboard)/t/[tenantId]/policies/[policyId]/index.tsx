@@ -19,6 +19,7 @@ import {
 import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
 import { PolicyProgressBar } from "~/components/mdm/policy-progress";
 import { PolicyViewTabs } from "~/components/mdm/policy-view-tabs";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
@@ -815,6 +816,17 @@ export default function PolicyDetailPage() {
               </Button>
             </Show>
           </form>
+        </Panel>
+
+        <Panel
+          title="Scope tags"
+          description="Limit which delegated administrators can see and change this policy."
+        >
+          <ScopeTagAssignmentEditor
+            tenantId={params.tenantId!}
+            resourceType="policy"
+            resourceIds={[params.policyId!]}
+          />
         </Panel>
 
         <Panel

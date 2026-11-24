@@ -9,6 +9,7 @@ import { Input } from "~/components/ui/input";
 import { Package } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { AccessDenied, useCan } from "~/lib/permissions";
+import { ScopeTagSelect } from "~/components/scope-tags/scope-tag-select";
 
 const selectClass =
   "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
@@ -82,6 +83,7 @@ export default function NewApplicationPage() {
   const [manifestUrl, setManifestUrl] = createSignal("");
   const [storeId, setStoreId] = createSignal("");
   const [notes, setNotes] = createSignal("");
+  const [scopeTags, setScopeTags] = createSignal<Array<string>>([]);
 
   const create = useMutation(() => ({
     mutationFn: () =>
@@ -95,7 +97,22 @@ export default function NewApplicationPage() {
         storeId: storeId() || null,
         notes: notes() || null,
       }),
-    onSuccess: ({ id }) => {
+    onSuccess: async ({ id }) => {
+      // Tagging is a second request. If it fails, keep the created resource
+      // and let the detail page's tag editor retry rather than leaving the
+      // form ready to create a duplicate on the next click.
+      if (scopeTags().length > 0) {
+        try {
+          await enterprise.setScopeTagAssignments(params.tenantId, {
+            resourceType: "application",
+            resourceIds: [id],
+            tagIds: scopeTags(),
+          });
+        } catch {
+          // The resource exists; its tag editor remains available.
+        }
+      }
+
       // Navigate immediately: the detail page is a cold load for the new id, and
       // the catalogue list refreshes in the background.
       navigate(`/t/${params.tenantId}/applications/${id}`);
@@ -223,6 +240,11 @@ export default function NewApplicationPage() {
                   placeholder="Where this app comes from, licensing notes, …"
                 />
               </Field>
+              <ScopeTagSelect
+                tenantId={params.tenantId!}
+                value={scopeTags()}
+                onChange={setScopeTags}
+              />
               <ErrorText error={create.error} />
               <div class="flex flex-wrap items-center gap-2 pt-1">
                 <Button type="submit" disabled={create.isPending}>

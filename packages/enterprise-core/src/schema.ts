@@ -814,6 +814,119 @@ export const member = mysqlTable(
 );
 
 /**
+ * A tenant-defined scope tag for delegated administration.
+ *
+ * Intune calls these "scope tags": a resource carries one or more tags and a
+ * member assignment lists the tags its holder may reach. Tags are deliberately
+ * data rather than code so a regional IT team can be carved out without
+ * creating a separate tenant. A resource with no tag is tenant-wide and is
+ * visible only to unscoped memberships, which keeps an upgrade from widening a
+ * scoped role's reach.
+ */
+export const scopeTag = mysqlTable(
+  "scope_tag",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    // The unique index leads with the tenant, so it also serves the
+    // organisation-scoped tag list; a separate organisation index would be a
+    // redundant prefix.
+    uniqueIndex("scope_tag_organization_name_unique").on(table.organizationId, table.name),
+  ],
+);
+
+/**
+ * The tags carried by one tagged resource.
+ *
+ * `resourceId` is polymorphic because devices, groups, policies, applications,
+ * scripts and dashboards each live in their own table. It intentionally has no
+ * foreign key: the owning row's delete path removes the assignments (and a
+ * tenant teardown cascades by organisation), but MySQL cannot enforce one
+ * reference across six tables.
+ */
+export const scopeTagAssignment = mysqlTable(
+  "scope_tag_assignment",
+  {
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    resourceType: varchar("resource_type", {
+      length: 24,
+      enum: ["device", "group", "policy", "application", "script", "dashboard"],
+    }).notNull(),
+    // Resource ids are generated 24-character strings. A 64-character bound
+    // keeps the composite primary key under InnoDB's 3072-byte index limit
+    // (organisation 255 + type 24 + resource 64 + tag 255 = 598 characters).
+    resourceId: varchar("resource_id", { length: 64 }).notNull(),
+    tagId: id("tag_id")
+      .notNull()
+      .references(() => scopeTag.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.organizationId, table.resourceType, table.resourceId, table.tagId],
+    }),
+    // Scope checks select resource ids for one tenant, resource type and set of
+    // tags; without this the tag predicate filters every resource of that kind
+    // in the tenant. The primary key cannot serve it because resource_id sits
+    // between resource_type and tag_id.
+    index("scope_tag_assignment_scope_idx").on(
+      table.organizationId,
+      table.resourceType,
+      table.tagId,
+    ),
+    // Foreign-key support for tag deletion.
+    index("scope_tag_assignment_tag_idx").on(table.tagId),
+    // No resource-leading index is needed: the primary key is
+    // (organization, resource_type, resource_id, tag_id), so its prefix
+    // answers "which tags does this resource carry?".
+  ],
+);
+
+/**
+ * The scope tags a membership may reach. An empty set means the membership is
+ * unscoped (tenant-wide); this is the upgrade default and cannot silently
+ * narrow access for an existing member. Built-in owners are always unscoped
+ * regardless of rows here, so a tenant can never be locked out.
+ */
+export const memberScopeTag = mysqlTable(
+  "member_scope_tag",
+  {
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    memberId: id("member_id")
+      .notNull()
+      .references(() => member.id, { onDelete: "cascade" }),
+    tagId: id("tag_id")
+      .notNull()
+      // Restrict, not cascade: deleting the last tag on a member must never
+      // silently turn a scoped membership into an unscoped one. The API
+      // requires the tag to be removed from members first.
+      .references(() => scopeTag.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.memberId, table.tagId] }),
+    // The organisation foreign key and the "members allowed to see this tag"
+    // lookup both need a tenant-leading index.
+    index("member_scope_tag_organization_idx").on(table.organizationId, table.tagId),
+    // Foreign-key support for tag deletion.
+    index("member_scope_tag_tag_idx").on(table.tagId),
+    // Member deletion is served by the (member_id, tag_id) primary key.
+  ],
+);
+
+/**
  * A tenant's four-eyes policy for one destructive action.
  *
  * Policies are optional: when no row matches an action, the endpoint behaves
@@ -1196,6 +1309,12 @@ export const invitation = mysqlTable(
     email: varchar("email", { length: 320 }).notNull(),
     role: varchar("role", { length: 32 }),
     customRoleId: id("custom_role_id").references(() => tenantRole.id, { onDelete: "set null" }),
+    /**
+     * Scope tags to apply when the invitation is accepted. Copied into
+     * `member_scope_tag` in the acceptance transaction so an invitee never
+     * starts with wider reach than the inviter chose. Null means unscoped.
+     */
+    scopeTagIds: json("scope_tag_ids").$type<string[]>(),
     status: varchar("status", { length: 32 }).notNull(),
     /** SHA-256 of the one-time acceptance token; the raw token is only in the invite link. */
     tokenHash: varchar("token_hash", { length: 255 }),

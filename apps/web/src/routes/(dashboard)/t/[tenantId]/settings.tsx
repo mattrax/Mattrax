@@ -19,6 +19,7 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Tag,
   UsersRound,
 } from "~/components/ui/icons";
 import {
@@ -54,6 +55,7 @@ const icons: Record<SettingsTabId, SectionIcon> = {
   identity: KeyRound,
   enrollment: MonitorSmartphone,
   attributes: SlidersHorizontal,
+  tags: Tag,
   management: Boxes,
   migration: ArrowRightLeft,
   delivery: Activity,

@@ -21,6 +21,7 @@ import type {
 import { Match, Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, Errored, For, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import type { JSX } from "@solidjs/web";
 import {
   DevicePresenceBadge,
@@ -3748,6 +3749,16 @@ export default function DeviceDetailPage() {
                     >
                       {(content) => <Markdown content={content()} />}
                     </Show>
+                  </DetailCard>
+                  <DetailCard
+                    title="Scope tags"
+                    description="Limit which delegated administrators can see and command this device."
+                  >
+                    <ScopeTagAssignmentEditor
+                      tenantId={params.tenantId!}
+                      resourceType="device"
+                      resourceIds={[params.deviceId!]}
+                    />
                   </DetailCard>
                   <DetailCard
                     title="Users"

@@ -388,6 +388,7 @@ export const routes = {
           | "backups"
           | "identity"
           | "attributes"
+          | "tags"
           | "enrollment"
           | "management"
           | "migration"

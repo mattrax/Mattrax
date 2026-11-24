@@ -10,6 +10,7 @@ import { Input } from "~/components/ui/input";
 import { ShieldCheck } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { AccessDenied, useCan } from "~/lib/permissions";
+import { ScopeTagSelect } from "~/components/scope-tags/scope-tag-select";
 import { policyToConfigurations } from "~/lib/policy-designer/build";
 import type { PolicyDraft } from "~/lib/policy-designer/build";
 
@@ -23,6 +24,7 @@ export default function NewPolicyPage() {
   const { can } = useCan();
   const [name, setName] = createSignal("");
   const [notes, setNotes] = createSignal("");
+  const [scopeTags, setScopeTags] = createSignal<Array<string>>([]);
   const [cisOpen, setCisOpen] = createSignal(false);
   const [cisTemplate, setCisTemplate] = createSignal<CisTemplateOutcome | null>(null);
 
@@ -49,6 +51,21 @@ export default function NewPolicyPage() {
       return { ...policy, fromTemplate: template !== null };
     },
     onSuccess: async ({ id, fromTemplate }) => {
+      // Tagging is a second request. If it fails, keep the created resource
+      // and let the detail page's tag editor retry rather than leaving the
+      // form ready to create a duplicate on the next click.
+      if (scopeTags().length > 0) {
+        try {
+          await enterprise.setScopeTagAssignments(params.tenantId, {
+            resourceType: "policy",
+            resourceIds: [id],
+            tagIds: scopeTags(),
+          });
+        } catch {
+          // The resource exists; its tag editor remains available.
+        }
+      }
+
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
       await qc.invalidateQueries({
         queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, "policy"),
@@ -143,6 +160,11 @@ export default function NewPolicyPage() {
                   )}
                 </Show>
               </Field>
+              <ScopeTagSelect
+                tenantId={params.tenantId!}
+                value={scopeTags()}
+                onChange={setScopeTags}
+              />
               <ErrorText error={create.error} />
               <div class="flex flex-wrap items-center gap-2 pt-1">
                 <Button type="submit" disabled={create.isPending}>

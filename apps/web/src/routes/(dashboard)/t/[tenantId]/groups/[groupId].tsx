@@ -55,6 +55,7 @@ import {
   policyScopeStatusTone,
 } from "~/lib/policy-scope";
 import { useCan } from "~/lib/permissions";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -886,6 +887,16 @@ export default function GroupDetailPage() {
               </Show>
               <ErrorText error={save.error || dup.error || del.error} />
             </form>
+          </Panel>
+          <Panel
+            title="Scope tags"
+            description="Limit which delegated administrators can see and change this group."
+          >
+            <ScopeTagAssignmentEditor
+              tenantId={params.tenantId!}
+              resourceType="group"
+              resourceIds={[params.groupId!]}
+            />
           </Panel>
           <Show
             when={kind() === "dynamic"}

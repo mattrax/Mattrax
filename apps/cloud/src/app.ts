@@ -28,6 +28,7 @@ import {
   enterpriseWindowsApi,
   enterpriseApprovalApi,
   EnterpriseErrorDiagnostics,
+  enterpriseScopeTagApi,
   fleetMigrationApi,
   parseSuperadminEmails,
   scriptAgentApi,
@@ -52,6 +53,7 @@ import {
   enterpriseGroupHandlers,
   enterpriseHandlers,
   appleByodRoutes,
+  enterpriseScopeTagHandlers,
   enterpriseApplicationHandlers,
   enterpriseCutoverHandlers,
   enterpriseSoftwareUpdateHandlers,
@@ -296,6 +298,7 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseSoftwareCatalogueApi)
   .add(enterpriseWindowsApi)
   .add(enterpriseApprovalApi)
+  .add(enterpriseScopeTagApi)
   .add(fleetMigrationApi)
   .add(scriptApi)
   .add(scriptAgentApi)
@@ -371,6 +374,7 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseSoftwareCatalogue", enterpriseSoftwareCatalogueHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseApproval", enterpriseApprovalHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseScopeTag", enterpriseScopeTagHandlers),
   HttpApiBuilder.group(apiRoot, "FleetMigration", fleetMigrationHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),

@@ -45,6 +45,8 @@ export const PERMISSIONS = [
   "members.write",
   "roles.read",
   "roles.write",
+  "scope_tags.read",
+  "scope_tags.write",
   "approvals.read",
   "approvals.write",
 ] as const;
@@ -282,6 +284,23 @@ export const PERMISSION_GROUPS: ReadonlyArray<{
     permissions: [
       { id: "roles.read", label: "View roles", description: "See role definitions." },
       { id: "roles.write", label: "Manage roles", description: "Create, edit and delete roles." },
+    ],
+  },
+  {
+    id: "scope_tags",
+    label: "Scope tags",
+    description: "Regional or team scopes for delegated administrators.",
+    permissions: [
+      {
+        id: "scope_tags.read",
+        label: "View scope tags",
+        description: "See tags and which resources carry them.",
+      },
+      {
+        id: "scope_tags.write",
+        label: "Manage scope tags",
+        description: "Create tags, rename them and tag resources.",
+      },
     ],
   },
   {

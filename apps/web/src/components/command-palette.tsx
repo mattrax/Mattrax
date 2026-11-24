@@ -369,6 +369,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
       identity: ["sso", "scim", "entra", "directory", "single sign-on"],
       enrollment: ["enroll", "onboarding", "link"],
       attributes: ["custom fields", "registry", "device attributes"],
+      tags: ["scope", "scope tags", "regions", "delegation", "sites"],
       management: ["apns", "apple push", "scep", "android", "certificate", "abm"],
       migration: ["migrate", "jamf", "intune", "kandji", "cutover", "export", "import"],
       delivery: ["apns", "push", "failing", "invalid token", "diagnostics"],
