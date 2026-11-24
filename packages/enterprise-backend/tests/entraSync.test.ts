@@ -107,8 +107,9 @@ describe("syncEntraDirectory pagination", () => {
     expect(result).toMatchObject({ users: 2, groups: 1, domains: 1 });
     expect(result.usersDelta).toBe("users-delta");
     expect(result.groupsDelta).toBe("groups-delta");
-    // Two user pages + one group page, each in its own transaction.
-    expect(transactions).toBe(3);
+    // Two user pages + one group page, plus one reconciliation/checkpoint
+    // transaction for each resource class.
+    expect(transactions).toBe(5);
     expect(progress).toHaveLength(2);
     expect(progress[0]).toMatchObject({ users: 2, usersDelta: "users-delta" });
     expect(progress[1]).toMatchObject({ groups: 1, groupsDelta: "groups-delta" });

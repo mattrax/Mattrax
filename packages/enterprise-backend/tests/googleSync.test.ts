@@ -1,13 +1,19 @@
 import { Effect } from "effect";
+import { TestConsole } from "effect/testing";
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { sealSecret } from "@mattrax/crypto";
+import { defineDirectoryProvider, syncDirectory } from "@mattrax/directory-sync";
 import {
+  googleWorkspaceDirectoryUserDirectory,
   loadGoogleDirectoryConfig,
   runGoogleDirectorySyncForTenant,
   runScheduledGoogleSync,
 } from "@mattrax/google-workspace";
 import type { GoogleWorkspaceCredentials, GoogleWorkspaceService } from "@mattrax/google-workspace";
+import { GoogleWorkspaceError } from "@mattrax/google-workspace";
 import { EnterpriseBadRequest } from "@mattrax/enterprise-domain";
+import { schema } from "@mattrax/enterprise-core";
 import { linkDirectoryUserSso } from "@mattrax/enterprise-backend";
 import { makeDb } from "./helpers.js";
 
@@ -42,22 +48,26 @@ const user = (
   isAdmin: false,
 });
 
-const service = (options: {
-  users?: ReadonlyArray<ReturnType<typeof user>>;
-  groups?: ReadonlyArray<{
-    id: string;
-    email: string;
-    name: string;
-    directMembersCount: number;
-  }>;
-  members?: Record<string, ReadonlyArray<{ id: string; type: string }>>;
-}): GoogleWorkspaceService => ({
+const service = (
+  options: {
+    users?: ReadonlyArray<ReturnType<typeof user>>;
+    groups?: ReadonlyArray<{
+      id: string;
+      email: string;
+      name: string;
+      directMembersCount: number;
+    }>;
+    members?: Record<string, ReadonlyArray<{ id: string; type: string }>>;
+  },
+  overrides: Partial<GoogleWorkspaceService> = {},
+): GoogleWorkspaceService => ({
   listUsers: () => Effect.succeed({ users: options.users ?? [] }),
   listGroups: () => Effect.succeed({ groups: options.groups ?? [] }),
   listGroupMembers: () => Effect.succeed({ members: [] }),
   listAllGroupMembers: (groupKey) => Effect.succeed(options.members?.[groupKey] ?? []),
   getUser: () => Effect.succeed(null),
   validate: () => Effect.succeed({ ok: true, message: "ok" }),
+  ...overrides,
 });
 
 const timestamp = new Date("2026-11-01T00:00:00.000Z");
@@ -262,6 +272,295 @@ describe("Google Workspace directory sync", () => {
       disabled: false,
     });
     expect(db.store.user.find((row: any) => row.externalId === "google-4")).toBeUndefined();
+  });
+
+  it("removes memberships missing from a later complete listing and converges once", async () => {
+    const db = seedDirectory();
+    const changed: Array<ReadonlyArray<string>> = [];
+    const onMembershipsChanged = (_organizationId: string, userIds: ReadonlyArray<string>) =>
+      Effect.sync(() => {
+        changed.push(userIds);
+      });
+    const users = [user("google-1", "one@example.com"), user("google-2", "two@example.com")];
+    const groups = [
+      { id: "google-g1", email: "staff@example.com", name: "Staff", directMembersCount: 2 },
+    ];
+
+    await Effect.runPromise(
+      runGoogleDirectorySyncForTenant({
+        db,
+        organizationId: "org-1",
+        credentials,
+        service: service({
+          users,
+          groups,
+          members: {
+            "google-g1": [
+              { id: "google-1", type: "USER" },
+              { id: "google-2", type: "USER" },
+            ],
+          },
+        }),
+        onMembershipsChanged,
+      }),
+    );
+
+    expect(changed).toEqual([]);
+
+    await Effect.runPromise(
+      runGoogleDirectorySyncForTenant({
+        db,
+        organizationId: "org-1",
+        credentials,
+        service: service({
+          users,
+          groups,
+          members: { "google-g1": [{ id: "google-2", type: "USER" }] },
+        }),
+        onMembershipsChanged,
+      }),
+    );
+
+    expect(db.store.user_group_member).toContainEqual({ groupId: "group-1", userId: "dir-2" });
+    expect(db.store.user_group_member).not.toContainEqual({ groupId: "group-1", userId: "dir-1" });
+    expect(changed).toEqual([["dir-1"]]);
+
+    await Effect.runPromise(
+      runGoogleDirectorySyncForTenant({
+        db,
+        organizationId: "org-1",
+        credentials,
+        service: service({
+          users,
+          groups,
+          members: { "google-g1": [{ id: "google-2", type: "USER" }] },
+        }),
+        onMembershipsChanged,
+      }),
+    );
+
+    expect(changed).toEqual([["dir-1"]]);
+  });
+
+  it("marks disabled users seen and does not wake devices on repeated listings", async () => {
+    const db = seedDirectory();
+    const changed: Array<ReadonlyArray<string>> = [];
+    const onMembershipsChanged = (_organizationId: string, userIds: ReadonlyArray<string>) =>
+      Effect.sync(() => {
+        changed.push(userIds);
+      });
+    const suspended = user("google-1", "one@example.com", { suspended: true });
+    const users = [suspended, user("google-2", "two@example.com")];
+    const groups = [
+      { id: "google-g1", email: "staff@example.com", name: "Staff", directMembersCount: 2 },
+    ];
+    const members = {
+      "google-g1": [
+        { id: "google-1", type: "USER" },
+        { id: "google-2", type: "USER" },
+      ],
+    };
+
+    await Effect.runPromise(
+      runGoogleDirectorySyncForTenant({
+        db,
+        organizationId: "org-1",
+        credentials,
+        now: new Date("2026-11-20T12:00:00.000Z"),
+        service: service({ users, groups, members }),
+        onMembershipsChanged,
+      }),
+    );
+
+    const disabled = db.store.user.find((row: any) => row.id === "dir-1");
+    const firstUpdatedAt = disabled.updatedAt;
+
+    expect(disabled.disabled).toBe(true);
+    expect(db.store.user_group_member).not.toContainEqual({ groupId: "group-1", userId: "dir-1" });
+    expect(changed).toEqual([["dir-1"]]);
+
+    await Effect.runPromise(
+      runGoogleDirectorySyncForTenant({
+        db,
+        organizationId: "org-1",
+        credentials,
+        now: new Date("2026-11-21T12:00:00.000Z"),
+        service: service({ users, groups, members }),
+        onMembershipsChanged,
+      }),
+    );
+
+    expect(db.store.user.find((row: any) => row.id === "dir-1").updatedAt).toEqual(firstUpdatedAt);
+    expect(changed).toEqual([["dir-1"]]);
+  });
+
+  it("rolls back authoritative reconciliation when the cursor checkpoint fails", async () => {
+    const db = seedDirectory();
+    db.store.user.push({
+      id: "dir-entra-missing",
+      organizationId: "org-1",
+      name: "Missing",
+      email: "missing@example.com",
+      externalId: "entra-missing",
+      source: "entra",
+      disabled: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    db.store.entra_directory_sync.push({
+      organizationId: "org-1",
+      usersDeltaLink: "old-cursor",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    const provider = defineDirectoryProvider({
+      id: "entra",
+      label: "Microsoft Entra ID",
+      shortLabel: "Entra",
+      capabilities: {
+        users: true,
+        groups: false,
+        ssoSignIn: true,
+        deepLink: true,
+        incremental: true,
+      },
+      userSource: "entra",
+      groupSource: "graph",
+      adminDirectoryUrl: "https://entra.test",
+      credentials: "deployment-and-tenant",
+      deepLink: () => null,
+    });
+    let checkpointAttempted = false;
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        syncDirectory({
+          db,
+          organizationId: "org-1",
+          directory: {
+            provider,
+            discoverUsers: () =>
+              Effect.succeed({
+                users: [],
+                deltaCursor: "new-cursor",
+                authoritative: true,
+              }),
+            discoverGroups: () => Effect.succeed({ groups: [], authoritative: false }),
+            resolveProfile: () => Effect.succeed(null),
+            validate: () => Effect.succeed({ ok: true }),
+          },
+          onUsersComplete: (progress, tx) =>
+            Effect.gen(function* () {
+              checkpointAttempted = true;
+              yield* tx
+                .update(schema.entraDirectorySync)
+                .set({ usersDeltaLink: progress.cursor })
+                .where(eq(schema.entraDirectorySync.organizationId, "org-1"));
+
+              return yield* Effect.fail(new Error("checkpoint failed"));
+            }),
+        }),
+      ),
+    );
+
+    expect(error._tag).toBe("DirectorySyncTransactionError");
+    expect(checkpointAttempted).toBe(true);
+    expect(db.store.user.find((row: any) => row.id === "dir-entra-missing").disabled).toBe(false);
+    expect(db.store.entra_directory_sync[0].usersDeltaLink).toBe("old-cursor");
+  });
+
+  it("does not advance a cursor when a later provider page fails", async () => {
+    const db = makeDb();
+    const failure = new GoogleWorkspaceError({ message: "page unavailable", status: 503 });
+    let checkpointAttempted = false;
+    const provider = defineDirectoryProvider({
+      id: "entra",
+      label: "Microsoft Entra ID",
+      shortLabel: "Entra",
+      capabilities: {
+        users: true,
+        groups: false,
+        ssoSignIn: true,
+        deepLink: true,
+        incremental: true,
+      },
+      userSource: "entra",
+      groupSource: "graph",
+      adminDirectoryUrl: "https://entra.test",
+      credentials: "deployment-and-tenant",
+      deepLink: () => null,
+    });
+
+    const error = await Effect.runPromise(
+      Effect.flip(
+        syncDirectory({
+          db,
+          organizationId: "org-1",
+          directory: {
+            provider,
+            discoverUsers: (cursor) =>
+              cursor
+                ? Effect.fail(failure)
+                : Effect.succeed({
+                    users: [],
+                    nextCursor: "page-2",
+                    authoritative: false,
+                  }),
+            discoverGroups: () => Effect.succeed({ groups: [], authoritative: false }),
+            resolveProfile: () => Effect.succeed(null),
+            validate: () => Effect.succeed({ ok: true }),
+          },
+          onUsersComplete: () =>
+            Effect.sync(() => {
+              checkpointAttempted = true;
+            }),
+        }),
+      ),
+    );
+
+    expect(error).toBe(failure);
+    expect(checkpointAttempted).toBe(false);
+  });
+
+  it("preserves typed Google provider failures through the shared pipeline", async () => {
+    const db = seedDirectory();
+    const failure = new GoogleWorkspaceError({ message: "provider unavailable", status: 503 });
+    const directory = googleWorkspaceDirectoryUserDirectory({
+      service: service({}, { listUsers: () => Effect.fail(failure) }),
+    });
+
+    const error = await Effect.runPromise(
+      Effect.flip(syncDirectory({ db, organizationId: "org-1", directory })),
+    );
+
+    expect(error).toBe(failure);
+  });
+
+  it("redacts provider credentials from status errors and structured logs", async () => {
+    const db = seedDirectory();
+    const secret = credentials.serviceAccount.privateKeyPem;
+    const failure = new GoogleWorkspaceError({ message: `provider failed: ${secret}` });
+
+    const { outcome, errors } = await Effect.runPromise(
+      Effect.gen(function* () {
+        const outcome = yield* runGoogleDirectorySyncForTenant({
+          db,
+          organizationId: "org-1",
+          credentials,
+          service: service({}, { listUsers: () => Effect.fail(failure) }),
+        });
+        const errors = yield* TestConsole.errorLines;
+
+        return { outcome, errors };
+      }).pipe(Effect.provide(TestConsole.layer)),
+    );
+
+    expect(outcome.status).toBe("error");
+    expect(outcome.message).toContain("[redacted]");
+    expect(outcome.message).not.toContain(secret);
+    expect(JSON.stringify(errors)).not.toContain(secret);
+    expect(db.store.google_directory_sync[0].lastError).toBe(outcome.message);
   });
 
   it("disables people missing from an authoritative full listing", async () => {

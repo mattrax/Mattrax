@@ -12202,16 +12202,16 @@ export const createEnterpriseService = ({
 
         // Validate before storing: a key that cannot read the directory must
         // not replace working credentials. The check issues one small read.
-        yield* makeGoogleWorkspaceService({ credentials })
-          .validate()
-          .pipe(
-            Effect.mapError(
-              (error) =>
-                new EnterpriseBadRequest({
-                  message: "Google Workspace rejected these credentials: " + error.message,
-                }),
-            ),
-          );
+        const service = yield* makeGoogleWorkspaceService({ credentials });
+
+        yield* service.validate().pipe(
+          Effect.mapError(
+            (error) =>
+              new EnterpriseBadRequest({
+                message: "Google Workspace rejected these credentials: " + error.message,
+              }),
+          ),
+        );
 
         const sealed = yield* Effect.tryPromise({
           try: () => sealSecret(authSecret, body.serviceAccountJson),
