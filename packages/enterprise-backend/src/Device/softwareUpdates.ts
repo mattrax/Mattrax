@@ -43,6 +43,9 @@ export const DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS = 5_000;
 /** SOFA is ~350 KB today; cap the response so a bad mirror cannot exhaust memory. */
 export const MAX_SOFTWARE_UPDATE_FEED_BYTES = 4 * 1_024 * 1_024;
 
+/** Bound retained source URLs across both positive catalogs and failure cooldowns. */
+export const MAX_SOFTWARE_UPDATE_CACHE_URLS = 16;
+
 export type SoftwareUpdateCatalogState = {
   readonly catalog: MacOsUpdateCatalog | null;
   readonly sourceUrl: string;
@@ -65,6 +68,8 @@ export type LoadSoftwareUpdateCatalogOptions = {
   readonly disabled?: boolean;
   /** Injectable Effect client. Omit only for explicitly offline callers. */
   readonly httpClient?: HttpClient.HttpClient;
+  /** Request-lifetime hook for work that must outlive the response. */
+  readonly background?: SoftwareUpdateBackground["Service"]["run"];
   /** Per-layer catalog, in-flight refresh and failure memory. */
   readonly cache?: SoftwareUpdateCache["Service"];
   /** Injectable clock so cache/cooldown boundaries are testable. */
@@ -86,8 +91,15 @@ type CachedSoftwareUpdateCatalog = {
   readonly fetchedAt: Date;
 };
 
+type SoftwareUpdateCacheEntry = {
+  readonly catalog?: CachedSoftwareUpdateCatalog;
+  readonly failure?: FailureCooldown;
+};
+
 /**
- * Catalog, refresh coalescing and failure memory belong to a Layer, not the module.
+ * Catalog, refresh coalescing and failure memory live in the service Layer.
+ * The default Layer shares one I/O-free instance across requests in an isolate;
+ * callers can still use make to build an isolated cache for tests.
  * Deferred shares the Effect result (including interruption) without leaving a
  * Promise behind or continuing an abandoned fetch for another waiter.
  */
@@ -98,16 +110,14 @@ export class SoftwareUpdateCache extends Context.Service<
       key: string,
       load: Effect.Effect<SoftwareUpdateFetchResult>,
     ) => Effect.Effect<SoftwareUpdateFetchResult>;
-    readonly failures: Ref.Ref<Map<string, FailureCooldown>>;
-    readonly catalogs: Ref.Ref<Map<string, CachedSoftwareUpdateCatalog>>;
+    readonly entries: Ref.Ref<Map<string, SoftwareUpdateCacheEntry>>;
   }
 >()("@mattrax/enterprise-backend/SoftwareUpdateCache") {
   static readonly make = Effect.gen(function* () {
     const inFlight = yield* Ref.make(
       new Map<string, Deferred.Deferred<SoftwareUpdateFetchResult>>(),
     );
-    const failures = yield* Ref.make(new Map<string, FailureCooldown>());
-    const catalogs = yield* Ref.make(new Map<string, CachedSoftwareUpdateCatalog>());
+    const entries = yield* Ref.make(new Map<string, SoftwareUpdateCacheEntry>());
 
     const refresh = Effect.fnUntraced(function* (
       key: string,
@@ -141,11 +151,25 @@ export class SoftwareUpdateCache extends Context.Service<
       );
     });
 
-    return SoftwareUpdateCache.of({ refresh, failures, catalogs });
+    return SoftwareUpdateCache.of({ refresh, entries });
   });
 
-  static readonly layer = Layer.effect(SoftwareUpdateCache, SoftwareUpdateCache.make);
+  // Ref and Deferred are I/O-free. Sharing this value keeps the positive cache
+  // alive when a host rebuilds Layers per request without retaining request DB
+  // or HTTP bindings across Worker invocation contexts.
+  static readonly layer = Layer.succeed(
+    SoftwareUpdateCache,
+    Effect.runSync(SoftwareUpdateCache.make),
+  );
 }
+
+/** Request-scoped host hook, backed by ctx.waitUntil on Cloudflare Workers. */
+export class SoftwareUpdateBackground extends Context.Service<
+  SoftwareUpdateBackground,
+  {
+    readonly run: (effect: Effect.Effect<unknown>) => void;
+  }
+>()("@mattrax/enterprise-backend/SoftwareUpdateBackground") {}
 
 class PayloadTooLarge extends Data.TaggedError("PayloadTooLarge")<{
   readonly reason: "payload_too_large";
@@ -318,6 +342,47 @@ const failureCooldownActive = (
   return age >= 0 && age < retryAfterFailureMs;
 };
 
+const pruneExpiredFailures = (
+  current: Map<string, SoftwareUpdateCacheEntry>,
+  now: Date,
+  retryAfterFailureMs: number,
+) => {
+  let next: Map<string, SoftwareUpdateCacheEntry> | undefined;
+
+  for (const [key, entry] of current) {
+    if (!entry.failure || failureCooldownActive(entry.failure, now, retryAfterFailureMs)) continue;
+
+    next ??= new Map(current);
+
+    if (entry.catalog) next.set(key, { catalog: entry.catalog });
+    else next.delete(key);
+  }
+
+  return next ?? current;
+};
+
+/** Insertion-order eviction is deterministic and bounds catalogs plus failures together. */
+const putCacheEntry = (
+  current: Map<string, SoftwareUpdateCacheEntry>,
+  key: string,
+  entry: SoftwareUpdateCacheEntry,
+) => {
+  const next = new Map(current);
+  next.delete(key);
+
+  if (entry.catalog || entry.failure) next.set(key, entry);
+
+  while (next.size > MAX_SOFTWARE_UPDATE_CACHE_URLS) {
+    const oldest = next.keys().next().value;
+
+    if (oldest === undefined) break;
+
+    next.delete(oldest);
+  }
+
+  return next;
+};
+
 type FeedRow = {
   readonly payload: Schema.Json | null;
   readonly sourceUrl: string;
@@ -345,11 +410,19 @@ export const loadSoftwareUpdateCatalog = (
     const timeoutMs = options.timeoutMs ?? DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS;
     const maxBytes = options.maxBytes ?? MAX_SOFTWARE_UPDATE_FEED_BYTES;
     const httpClient = options.httpClient;
+    const background =
+      options.background ??
+      Option.getOrUndefined(yield* Effect.serviceOption(SoftwareUpdateBackground))?.run;
     const cache = options.cache ?? (yield* SoftwareUpdateCache.make);
 
     if (options.disabled) return unavailableState(sourceUrl, "feed_disabled");
 
-    const memoryCatalog = (yield* Ref.get(cache.catalogs)).get(key);
+    yield* Ref.update(cache.entries, (current) =>
+      pruneExpiredFailures(current, now, retryAfterFailureMs),
+    );
+
+    const memoryEntry = (yield* Ref.get(cache.entries)).get(key);
+    const memoryCatalog = memoryEntry?.catalog;
     const memoryAge = memoryCatalog
       ? now.getTime() - memoryCatalog.fetchedAt.getTime()
       : Number.POSITIVE_INFINITY;
@@ -376,7 +449,6 @@ export const loadSoftwareUpdateCatalog = (
           })
           .onDuplicateKeyUpdate({
             set: {
-              sourceUrl: failureSourceUrl,
               checkedAt: now,
               lastError: failure.slice(0, 64),
             },
@@ -393,12 +465,15 @@ export const loadSoftwareUpdateCatalog = (
       );
 
     const rememberFailure = (error: string) =>
-      Ref.update(cache.failures, (current) =>
-        new Map(current).set(key, {
-          at: now.getTime(),
-          error,
-        }),
-      );
+      Ref.update(cache.entries, (current) => {
+        const pruned = pruneExpiredFailures(current, now, retryAfterFailureMs);
+        const existing = pruned.get(key);
+
+        return putCacheEntry(pruned, key, {
+          catalog: existing?.catalog,
+          failure: { at: now.getTime(), error },
+        });
+      });
 
     // The whole refresh, including persistence and memory publication, runs
     // behind the Layer's in-flight claim. Waiters therefore cannot duplicate a
@@ -408,7 +483,12 @@ export const loadSoftwareUpdateCatalog = (
       previousSourceUrl: string,
     ): Effect.Effect<SoftwareUpdateFetchResult> =>
       Effect.gen(function* () {
-        const cached = (yield* Ref.get(cache.catalogs)).get(key);
+        yield* Ref.update(cache.entries, (current) =>
+          pruneExpiredFailures(current, now, retryAfterFailureMs),
+        );
+
+        const entry = (yield* Ref.get(cache.entries)).get(key);
+        const cached = entry?.catalog;
         const cachedAge = cached
           ? now.getTime() - cached.fetchedAt.getTime()
           : Number.POSITIVE_INFINITY;
@@ -416,7 +496,7 @@ export const loadSoftwareUpdateCatalog = (
         if (cached && cachedAge >= 0 && cachedAge < cacheTtlMs)
           return { ok: true, catalog: cached.catalog } as const;
 
-        const pendingFailure = (yield* Ref.get(cache.failures)).get(key);
+        const pendingFailure = entry?.failure;
 
         if (failureCooldownActive(pendingFailure, now, retryAfterFailureMs))
           return { ok: false, error: pendingFailure.error } as const;
@@ -471,15 +551,13 @@ export const loadSoftwareUpdateCatalog = (
           return { ok: true, catalog: result.catalog, cacheWriteFailed: true } as const;
         }
 
-        yield* Ref.update(cache.failures, (current) => {
-          const next = new Map(current);
-          next.delete(key);
+        yield* Ref.update(cache.entries, (current) => {
+          const pruned = pruneExpiredFailures(current, now, retryAfterFailureMs);
 
-          return next;
+          return putCacheEntry(pruned, key, {
+            catalog: { catalog: result.catalog, fetchedAt: now },
+          });
         });
-        yield* Ref.update(cache.catalogs, (current) =>
-          new Map(current).set(key, { catalog: result.catalog, fetchedAt: now }),
-        );
 
         return { ok: true, catalog: result.catalog } as const;
       });
@@ -488,7 +566,7 @@ export const loadSoftwareUpdateCatalog = (
       cache.refresh(key, refreshFeed(client, previousSourceUrl));
 
     if (memoryCatalog) {
-      const memoryFailure = (yield* Ref.get(cache.failures)).get(key);
+      const memoryFailure = memoryEntry?.failure;
 
       if (failureCooldownActive(memoryFailure, now, retryAfterFailureMs))
         return unavailableState(
@@ -511,9 +589,10 @@ export const loadSoftwareUpdateCatalog = (
           iso(memoryCatalog.fetchedAt),
         );
 
-      yield* Effect.forkDetach(
-        refresh(httpClient, sourceUrl).pipe(Effect.catch(() => Effect.void)),
-      );
+      const revalidate = refresh(httpClient, sourceUrl).pipe(Effect.catch(() => Effect.void));
+
+      if (background) background(revalidate);
+      else yield* Effect.forkDetach(revalidate);
 
       return catalogState(sourceUrl, memoryCatalog.catalog, memoryCatalog.fetchedAt, true);
     }
@@ -560,9 +639,11 @@ export const loadSoftwareUpdateCatalog = (
     // feed URL. Changing SOFA_FEED_URL must not keep serving the old mirror for
     // the remainder of its TTL.
     if (catalog && row?.sourceUrl === sourceUrl && fetchedAt && age >= 0 && age < cacheTtlMs) {
-      yield* Ref.update(cache.catalogs, (current) =>
-        new Map(current).set(key, { catalog, fetchedAt }),
-      );
+      yield* Ref.update(cache.entries, (current) => {
+        const pruned = pruneExpiredFailures(current, now, retryAfterFailureMs);
+
+        return putCacheEntry(pruned, key, { catalog: { catalog, fetchedAt } });
+      });
 
       return catalogState(sourceUrl, catalog, fetchedAt);
     }
@@ -572,7 +653,7 @@ export const loadSoftwareUpdateCatalog = (
     if (lastError && sinceAttempt >= 0 && sinceAttempt < retryAfterFailureMs)
       return unavailableState(sourceUrl, lastError, catalog, catalog !== null, iso(fetchedAt));
 
-    const memoryFailure = (yield* Ref.get(cache.failures)).get(key);
+    const memoryFailure = (yield* Ref.get(cache.entries)).get(key)?.failure;
 
     if (failureCooldownActive(memoryFailure, now, retryAfterFailureMs))
       return unavailableState(
@@ -610,7 +691,7 @@ export const loadSoftwareUpdateCatalog = (
         error: "cache_write_failed",
       };
 
-    const refreshedAt = (yield* Ref.get(cache.catalogs)).get(key)?.fetchedAt ?? now;
+    const refreshedAt = (yield* Ref.get(cache.entries)).get(key)?.catalog?.fetchedAt ?? now;
 
     return catalogState(sourceUrl, result.catalog, refreshedAt);
   }).pipe(Effect.catch(() => Effect.succeed(unavailableState(configuredUrl, "unexpected_error"))));

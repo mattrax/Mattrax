@@ -1,11 +1,12 @@
 import type { Schema } from "effect";
-import { Effect, Exit, Fiber } from "effect";
+import { Effect, Exit, Fiber, Ref } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { describe, expect, it } from "vitest";
 import { deriveSoftwareUpdate, parseSofaFeed } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
   loadSoftwareUpdateCatalog,
+  MAX_SOFTWARE_UPDATE_CACHE_URLS,
   SoftwareUpdateCache,
   SOFA_MACOS_FEED_ID,
 } from "../src/Device/softwareUpdates.ts";
@@ -383,6 +384,89 @@ describe("software update feed cache", () => {
     expect(suppressed.error).toBe("http_503");
     expect(fetch.calls()).toBe(2);
     expect(selects()).toBe(1);
+  });
+
+  it("bounds catalog and failure URLs together and prunes expired failures", async () => {
+    const cache = Effect.runSync(SoftwareUpdateCache.make);
+    const urls = Array.from({ length: MAX_SOFTWARE_UPDATE_CACHE_URLS + 1 }, () => feedUrl());
+
+    for (const [index, configured] of urls.entries()) {
+      const { db } = makeFeedDb();
+      const fetch = countingFetch(() =>
+        index % 2 === 0 ? jsonResponse(feedBody()) : jsonResponse({ error: "down" }, 503),
+      );
+
+      await runEffect(
+        loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: configured, cache })),
+      );
+    }
+
+    const entries = Effect.runSync(Ref.get(cache.entries));
+    const firstKey = `${SOFA_MACOS_FEED_ID}:${urls[0]}`;
+    const lastKey = `${SOFA_MACOS_FEED_ID}:${urls.at(-1)}`;
+    const failedKey = `${SOFA_MACOS_FEED_ID}:${urls[1]}`;
+
+    expect(entries.size).toBe(MAX_SOFTWARE_UPDATE_CACHE_URLS);
+    expect(entries.has(firstKey)).toBe(false);
+    expect(entries.has(lastKey!)).toBe(true);
+    expect(entries.get(failedKey!)?.failure?.error).toBe("http_503");
+
+    const { db } = makeFeedDb({
+      row: {
+        sourceUrl: urls[1],
+        checkedAt: now,
+        lastError: "http_503",
+      },
+    });
+
+    await runEffect(
+      loadSoftwareUpdateCatalog(
+        optionsFor(db, undefined, {
+          feedUrl: urls[1],
+          cache,
+          now: new Date(now.getTime() + 60_001),
+        }),
+      ),
+    );
+
+    expect(Effect.runSync(Ref.get(cache.entries)).has(failedKey!)).toBe(false);
+  });
+
+  it("does not rewrite a durable payload source during A to B to A failed revalidation", async () => {
+    const firstUrl = feedUrl();
+    const secondUrl = feedUrl();
+    const { db, rows } = makeFeedDb();
+    const cache = Effect.runSync(SoftwareUpdateCache.make);
+    let version = "26.7.2";
+    let down = false;
+    const fetch = countingFetch(() =>
+      down ? jsonResponse({ error: "down" }, 503) : jsonResponse(feedBody(version)),
+    );
+
+    await runEffect(
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: firstUrl, cache })),
+    );
+
+    version = "26.7.3";
+
+    await runEffect(
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: secondUrl, cache })),
+    );
+
+    down = true;
+
+    const expiresAt = new Date(now.getTime() + 60_000);
+    const stale = await runEffect(
+      loadSoftwareUpdateCatalog({
+        ...optionsFor(db, fetch.client, { feedUrl: firstUrl, cache }),
+        now: expiresAt,
+      }),
+    );
+
+    expect(stale.stale).toBe(true);
+    await expect.poll(() => rows[0]?.lastError).toBe("http_503");
+    expect(rows[0]?.sourceUrl).toBe(secondUrl);
+    expect(rows[0]?.payload).toEqual(catalog("26.7.3"));
   });
 
   it("times out without throwing", async () => {

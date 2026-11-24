@@ -106,6 +106,7 @@ import {
   loadTrustedScepCaCertificates,
   runServerCertificateCheck,
   SoftwareUpdateCache,
+  SoftwareUpdateBackground,
 } from "@mattrax/enterprise-backend";
 import {
   BillingServiceLive,
@@ -139,6 +140,7 @@ import { resolveDeploymentBranding } from "./onboardingBranding.js";
 import { metricsResponse, telemetry } from "./telemetry.js";
 import { logBestEffortFailure } from "./bestEffort.js";
 import { runScheduledJobs, scheduledRuntimeLayer } from "./scheduledRuntime.js";
+import { softwareUpdateRequestService } from "./softwareUpdateRuntime.js";
 import {
   DAILY_CRON,
   HOURLY_CRON,
@@ -653,11 +655,7 @@ const restrictedSoftwareNotificationsJob = (env: Env) =>
       authSecret: env.AUTH_SECRET,
       email: resolveMailer(env).transport,
     });
-  }).pipe(
-    Effect.orDie,
-    Effect.provide(Db.layer),
-    Effect.provide(databaseLayer(env)),
-  );
+  }).pipe(Effect.orDie, Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
 /**
  * Review the deployment origin's TLS certificate. Runs from the hourly trigger
@@ -1074,6 +1072,8 @@ const makeAppLayer = (
       Layer.provide(billing ? BillingServiceLive(billing) : Layer.empty),
       Layer.provideMerge(applicationStoreServiceLayer()),
       Layer.provideMerge(EnterpriseErrorDiagnostics.layer),
+      // This Layer is an isolate-wide, I/O-free singleton even though the
+      // surrounding request service graph is rebuilt for each Worker request.
       Layer.provideMerge(SoftwareUpdateCache.layer),
       // Merge auth into the service layer's output so raw routes (the SSE
       // stream) can resolve it from the request context too.
@@ -1546,6 +1546,7 @@ export const createApiRuntime = (
           // trace ids on the log line join up.
           const requestServices = new Map<string, unknown>([
             [EnterpriseAnalyticsService.key, analytics],
+            [SoftwareUpdateBackground.key, softwareUpdateRequestService(ctx)],
           ]);
 
           if (trace) requestServices.set(Tracer.ParentSpan.key, trace.span);
