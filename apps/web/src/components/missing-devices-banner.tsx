@@ -33,6 +33,14 @@ const browserSessionStorage = (): MiaBannerStorage | undefined => {
  * the banner is a nudge, not a modal, and a tenant with a permanently lost
  * device must not be warned again on every navigation.
  */
+/** Read secondary query data only after success so pending async values never throw or suspend during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export function MissingDevicesBanner(props: { tenantId: string }) {
   const { can } = useCan();
   // Dismissal is per tenant. The component survives a tenant switch, so the
@@ -50,7 +58,7 @@ export function MissingDevicesBanner(props: { tenantId: string }) {
     enabled: can("devices.read"),
   }));
 
-  const count = () => missingDeviceCount(summary.data?.counts);
+  const count = () => missingDeviceCount(settledQueryData(summary)?.counts);
 
   const visible = () =>
     shouldShowMiaBanner({
