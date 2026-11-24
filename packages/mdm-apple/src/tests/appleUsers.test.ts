@@ -107,6 +107,16 @@ const setup = (initial: Store = {}) => {
       organization("org-1", "first"),
       organization("org-2", "second"),
     ],
+    [tableName(schema.scepIssuedCertificate)]: [
+      {
+        serial: "a1b2c3",
+        organizationId: "org-1",
+        deviceId: "device-1",
+        notAfter: new Date("2099-01-01T00:00:00.000Z"),
+        revokedAt: null,
+        createdAt: now,
+      },
+    ],
     ...initial,
   };
 
@@ -128,6 +138,7 @@ const deviceScope = (overrides: Row = {}) => ({
   // The OU is the tenant, exactly as the SCEP subject encodes it.
   identityCertificate: "CN=Device,OU=org-1",
   identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
   ...overrides,
 });
@@ -142,6 +153,7 @@ const userScope = (
   source,
   identityCertificate: "CN=Device,OU=org-1",
   identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
   ...overrides,
 });
@@ -289,7 +301,7 @@ describe("Apple user channel", () => {
     ]);
   });
 
-  it("keys a Shared iPad channel by its Managed Apple Account and binds the person", async () => {
+  it("keys a Shared iPad channel by its asserted account without binding the person", async () => {
     const account = "student@example.test";
 
     const { db, backend } = setup({
@@ -313,6 +325,7 @@ describe("Apple user channel", () => {
 
     // Apple sends the sentinel UserID for every Shared iPad login, so the
     // protocol layer keys the channel by the Managed Apple Account instead.
+    // That device-asserted string is not proof of the directory identity.
     await run(
       backend.appleDeviceEvent(userScope({ userId: account, userShortName: account }), {
         _tag: "TokenUpdate" as const,
@@ -325,15 +338,11 @@ describe("Apple user channel", () => {
       }),
     );
 
-    expect(dbRows(db, tableName(schema.deviceAppleUser))).toMatchObject([
-      {
-        deviceId: "device-1",
-        userId: account,
-        directoryUserId: "dir-1",
-        identitySource: "managed-apple-account",
-        identityUpn: account,
-      },
-    ]);
+    const [channel] = dbRows(db, tableName(schema.deviceAppleUser));
+    expect(channel).toMatchObject({ deviceId: "device-1", userId: account });
+    expect(channel?.directoryUserId ?? null).toBeNull();
+    expect(channel?.identitySource ?? null).toBeNull();
+    expect(channel?.identityVerifiedAt ?? null).toBeNull();
   });
 
   it("leaves a Shared iPad channel unbound when the account is not in the directory", async () => {
@@ -362,6 +371,51 @@ describe("Apple user channel", () => {
 
     expect(channel).toMatchObject({ userId: account });
     expect(channel?.directoryUserId ?? null).toBeNull();
+  });
+
+  it("preserves a pre-provisioned Shared iPad binding across TokenUpdate", async () => {
+    const account = "student@example.test";
+
+    const { db, backend } = setup({
+      [tableName(schema.device)]: [
+        { ...deviceRow("device-1", "udid-1"), osEdition: "iPadOS 18.4" },
+      ],
+      [tableName(schema.deviceApple)]: [appleState("device-1")],
+      [tableName(schema.deviceAppleUser)]: [
+        appleUser({
+          userId: account,
+          directoryUserId: "dir-1",
+          identitySource: "manual",
+          identityUpn: account,
+          identityVerifiedAt: now,
+          ddmDeclarationsToken: "existing-token",
+        }),
+      ],
+    });
+
+    await run(
+      backend.appleDeviceEvent(
+        userScope({ userId: account, userShortName: "someone-else@example.test" }),
+        {
+          _tag: "TokenUpdate" as const,
+          pushToken: "736861726564",
+          pushMagic: "shared-magic",
+          topic: "com.apple.mgmt.External.org-1",
+          channel: "user" as const,
+          userId: account,
+          userShortName: "someone-else@example.test",
+        },
+      ),
+    );
+
+    expect(dbRows(db, tableName(schema.deviceAppleUser))[0]).toMatchObject({
+      userId: account,
+      directoryUserId: "dir-1",
+      identitySource: "manual",
+      identityUpn: account,
+      identityVerifiedAt: now,
+      ddmDeclarationsToken: "existing-token",
+    });
   });
 
   it("binds an EnrollmentUserID channel through its BYOD profile certificate", async () => {

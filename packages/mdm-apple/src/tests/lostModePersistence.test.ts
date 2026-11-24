@@ -43,6 +43,7 @@ const setup = (apple: Row = {}, commands: Array<Row> = [], secrets: Array<Row> =
         status: "enrolled",
         name: "Mac",
         dmIdentifier: "udid-local-1",
+        dmIdentityFingerprint: "fingerprint-local-1",
         osEdition: "macOS 15.1",
         enrolledAt: now,
         lastSeenAt: now,
