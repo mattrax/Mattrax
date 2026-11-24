@@ -63,10 +63,10 @@ describe("ApprovalApi", () => {
         expect(approved?.status).toBe("approved");
         expect(approved?.decisions).toHaveLength(1);
 
-        // NOTE: `atLeast` does not wait for a projection whose `from` is a view:
-        // the projection's caughtUp only traces aggregate sources, so it sees
-        // the receipt as consuming nothing. Poll instead until the batch lands.
-        // Projecting straight from the aggregate would make read-your-write work.
+        // beta.87 (pinned here) predates #3380: `atLeast` does not wait for a
+        // projection whose `from` is a view (upstream issue #3358). On a build
+        // with the fix, pass the receipt as `atLeast` and delete this poll.
+        // Projecting from the aggregate is the workaround on this version.
         const page = yield* Effect.gen(function* () {
           const page = yield* samClient.ApprovalQueue({});
           return page.entries.length > 0 ? page : yield* Effect.fail("projection-not-ready");

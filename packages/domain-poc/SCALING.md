@@ -40,10 +40,10 @@ snapshot"; replay is a **rebuild/backfill** operation.
 In-memory host, 1,000 RequestApproval commands on distinct approval ids, this
 machine (Node 26, M-series):
 
-| scenario | total | per op |
-| --- | ---: | ---: |
-| sequential, distinct keys | 142 ms | ~142 us/op |
-| 32-way concurrent, distinct keys | 48 ms | ~48 us/op |
+| scenario                            |  total |       per op |
+| ----------------------------------- | -----: | -----------: |
+| sequential, distinct keys           | 142 ms |   ~142 us/op |
+| 32-way concurrent, distinct keys    |  48 ms |    ~48 us/op |
 | same command id twice (dedupe path) | 462 ms | ~231 us/send |
 
 This is the **framework CPU only** — no network, no DO RPC, no durable storage.
@@ -61,9 +61,67 @@ Two costs showed up even in memory:
 - Delivery is asynchronous and batched. A read immediately after a write can
   miss it. That is why the POC polls the queue in its API test; see below.
 
+## Consistency in practice
+
+The gap is between a command committing and the reads that depend on it
+applying it. It is not lost data: deliveries are at least once and ordered per
+source. It is **staleness**, and how much of it a screen tolerates is a product
+decision.
+
+Version note: this POC pins `2.0.0-beta.87` (2026-11-12). Two upstream fixes
+landed after it and are on main, not in the published beta: **#3380** (a
+projection fed by a view is waited for again) and **#3469** (`consistency:
+"strong"` on commands). Re-test the findings below on a build containing them.
+
+The toolbox, strongest to weakest:
+
+1. **`consistency: "strong"` on a command** (main, #3469). The Api's command
+   handler waits until every _view_ the command's events reach has applied them,
+   including all keys they route to. The default stays `"eventual"`; set
+   `Domain.DefaultConsistency` on a client, toolkit or the HTTP Api. After 10s it
+   fails `ConsistencyTimeout` — the command is committed, so resend the same
+   `commandId` to get the receipt. It does **not** wait for projections: those
+   batch and write your own store.
+2. **`atLeast: receipt`.** View `get`/`snapshot`/`list`, a stream's `list`, and a
+   query whose `waitsFor` names the store wait until that command's events have
+   been applied. Only the named stores are covered; 10s -> `ConsistencyTimeout`.
+3. **`waitsFor` may name views and streams** (main, #3469), and the engine waits
+   for the keys the command's events reach. A projection fed by a view follows
+   aggregate -> view -> projection after #3380.
+4. **Read the aggregate for one key.** A query handler may resolve the aggregate
+   client and `get(ref)` its current state (docs: "Read an aggregate's current
+   state"). That is always at the commit and needs no `atLeast`. It does not
+   help lists.
+5. **Lists: patch by `commandId`.** Return the receipt and merge the row into
+   the cache optimistically, or read with `atLeast` once #3380 is available.
+   Keyset paging prevents skips and duplicates, but a row created between pages
+   still only appears when you refresh.
+6. **Exports, reports and backups: wait for completeness.** Wait on the
+   projection's `caughtUp` (and a view's `History.complete` while it is still
+   backfilling), or record a watermark and label the output "as of". A report
+   generated straight after a write can silently omit it.
+7. **Poll** as a last resort (what the beta.87 API test does): bounded backoff,
+   never a fixed sleep.
+
+Two things not to build on a lagging projection: **authorization and
+entitlements** (a stale role is a security bug) and **completeness-critical
+exports**. Also note that beta.87 predates #3414 (merged 2026-11-15): view reads
+evaluate client-supplied `atLeast`/`where` before `validate`, which can
+disclose whether a key has history (#2906). Our HTTP surface exposes `atLeast`;
+do not expose it to untrusted callers on this version.
+
+Is it a problem? Detail screens: no, with a receipt. Lists and dashboards:
+manageable with an optimistic merge plus `atLeast`, but "exactly what the
+server has now" is not free. Exports and authorization: yes, design a wait or a
+watermark in.
+
 ## What grows without bound
 
-There is no retention or compaction in the store in this version:
+In `2.0.0-beta.87` there is no retention or compaction in the store. Upstream,
+#3221 (Effect Cluster, merged) and #3689 (Durable Objects, open) prune receipts,
+policy delivery marks and consumer input logs, with a configurable window
+(default 30 days); events, state, view entries and streams are still kept for
+good. In this beta:
 
 - aggregate **event:<seq>** — every event, forever;
 - aggregate **receipt:<commandId>** — one receipt per accepted command;
@@ -188,14 +246,14 @@ One object per **aggregate id**, per **view key**, per **policy key**, per
 
 So the scope is whatever you choose as the aggregate key:
 
-| Model | Key | Objects |
-| --- | --- | --- |
-| Approval (this POC) | ApprovalId | one per approval, plus one view key and one policy key per approval |
-| Device | DeviceId | one per device (plus per-device views/policies) |
-| User | UserId | one per user |
-| Tenant | TenantId | one per tenant |
-| fleet list / dashboard projection | TenantId | **one per tenant** — a single writer for the whole fleet |
-| tenant feed stream | TenantId | **one per tenant** — same hot spot |
+| Model                             | Key        | Objects                                                             |
+| --------------------------------- | ---------- | ------------------------------------------------------------------- |
+| Approval (this POC)               | ApprovalId | one per approval, plus one view key and one policy key per approval |
+| Device                            | DeviceId   | one per device (plus per-device views/policies)                     |
+| User                              | UserId     | one per user                                                        |
+| Tenant                            | TenantId   | one per tenant                                                      |
+| fleet list / dashboard projection | TenantId   | **one per tenant** — a single writer for the whole fleet            |
+| tenant feed stream                | TenantId   | **one per tenant** — same hot spot                                  |
 
 A rough count for a device fleet: device aggregate + device detail view + health
 view + presence stream = about 4-5 objects per device. 10,000 devices = about

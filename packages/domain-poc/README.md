@@ -122,12 +122,15 @@ ConsumeApproval ─┘                              ├─▶ ApprovalDetail vie
    list/search/report must be a projection or a query over a store. For Mattrax,
    device lists, global search, dashboards and exports are the _majority_ of the
    API surface, not the exception.
-2. **Read-your-write has a sharp edge.** A projection built from a view
-   (`from: [ApprovalDetail]`) is invisible to the query's `atLeast` wait: the
-   implementation only traces aggregate sources, so `waitsFor` returns
-   immediately. Our API test has to poll the queue. Projecting from the
-   aggregate fixes it but pushes every field a list needs into events. Either
-   way, "return the updated list immediately" is no longer free.
+2. **Read-your-write needs `atLeast` — and the published beta has a bug there.**
+   A projection built from a view (`from: [ApprovalDetail]`) is not waited for
+   by `atLeast`/`waitsFor` in `2.0.0-beta.87` (2026-11-12): `caughtUp` only
+   traces aggregate sources, so the query returns stale rows. Upstream, #3358
+   was fixed by #3380 (merged 2026-11-15) and #3469 (merged 2026-11-18) adds
+   `consistency: "strong"`; neither is in that published beta, so re-test on a
+   newer build. Until then our API test polls, and projecting from the
+   aggregate is the workaround. Either way, a list read right after a write
+   needs a deliberate decision.
 3. **Event versioning is a permanent tax.** Events are kept forever, so field
    changes must be additive or be new events; corrections are compensating
    events. The current schema can migrate a nullable column in a minute.
