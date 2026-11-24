@@ -146,7 +146,14 @@ const oauthMetadata = (url: URL): Response | undefined => {
 };
 
 const middleware: StartMiddleware = async (event, next) => {
-  const metadata = oauthMetadata(new URL(event.request.url));
+  const requestUrl = new URL(event.request.url);
+
+  // Apple's account-driven enrollment discovery document belongs to the API:
+  // only it can resolve the tenant by host and read the BYOD configuration.
+  if (requestUrl.pathname === "/.well-known/com.apple.remotemanagement")
+    return fetchApi(event.request);
+
+  const metadata = oauthMetadata(requestUrl);
 
   if (metadata) return metadata;
 
@@ -194,7 +201,6 @@ const middleware: StartMiddleware = async (event, next) => {
   // Canonical tenant URLs: an id link from a bookmark or an older integration
   // is redirected to the tenant's slug before rendering. Doing this on the
   // server avoids a client-side rewrite that races the router transition.
-  const requestUrl = new URL(event.request.url);
   const tenantSegment = /^\/t\/([^/]+)(\/.*)?$/.exec(requestUrl.pathname);
 
   if (

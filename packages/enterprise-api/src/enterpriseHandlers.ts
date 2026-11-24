@@ -98,6 +98,7 @@ import {
   policyApplicationKey,
   normalizeBrandColor,
   resolveTenantBranding,
+  isWebhookUrlAllowed,
   validateTenantBranding,
   dynamicGroupRulesProblem,
   dynamicGroupRuleGroupIds,
@@ -390,6 +391,12 @@ import {
 import type { AutopilotProfileValues } from "@mattrax/enterprise-backend";
 import { parseAppleApplicationConfiguration, validateConfiguration } from "@mattrax/mdm-apple";
 import { serializePlist } from "@mattrax/plist";
+import {
+  appleByodBlockers,
+  appleByodDiscoveryDocument,
+  appleByodDocumentJson,
+  normalizeAppleByodDomain,
+} from "./appleByodDocument.js";
 import { certificateDer } from "@mattrax/scep";
 import { extractMobileconfigPlist, parseMobileconfigPreview } from "@mattrax/enterprise-backend";
 import { parseStoredCredentialScopes } from "@mattrax/enterprise-backend";
@@ -667,6 +674,7 @@ import {
   appleUploadKind,
   appleUploadSupportsDevice,
   buildAppleManifest,
+  buildAppleEnrollmentProfile,
   buildInstallApplicationPayload,
   buildInstallEnterpriseApplicationPayload,
   buildRemoveApplicationPayload,
@@ -777,6 +785,8 @@ export class EnterpriseAnalyticsService extends Context.Service<
 
 export type EnterpriseHandlersConfig = {
   readonly origin: string;
+  /** True on Mattrax Cloud, where per-tenant custom hostnames do not exist yet. */
+  readonly hosted?: boolean;
   /** Deployment branding for account email sent before a tenant exists. */
   readonly branding?: OnboardingEmailBranding | null;
   /**
@@ -1960,6 +1970,7 @@ export const createEnterpriseService = ({
   db,
   schema,
   origin,
+  hosted: configuredHosted,
   branding,
   billing: providedBilling,
   storage,
@@ -6955,6 +6966,274 @@ export const createEnterpriseService = ({
           isNull(schema.scepChallenge.consumedAt),
         ),
       );
+
+  const deploymentHostname = () => {
+    try {
+      return new URL(origin).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  };
+
+  const hostedDeployment = configuredHosted === true;
+
+  /**
+   * Domains an administrator may expose the Apple discovery document on.
+   *
+   * A verified Entra domain is proof the tenant controls the namespace. The
+   * deployment hostname is only usable when it is also a verified domain; on
+   * Cloud it is the shared service host, not the tenant's identity domain.
+   */
+  const appleByodDomainOptions = (organizationId: string) =>
+    Effect.gen(function* () {
+      const verified = yield* db
+        .select({ domain: schema.ssoDomain.domain })
+        .from(schema.ssoDomain)
+        .where(
+          and(
+            eq(schema.ssoDomain.organizationId, organizationId),
+            eq(schema.ssoDomain.isVerified, true),
+          ),
+        )
+        .orderBy(asc(schema.ssoDomain.domain));
+
+      const options: Array<{
+        domain: string;
+        source: "entra";
+        isVerified: boolean;
+      }> = verified.map((row) => ({
+        domain: row.domain.toLowerCase(),
+        source: "entra",
+        isVerified: true,
+      }));
+
+      return options;
+    });
+
+  /**
+   * Resolve the tenant a discovery request belongs to from its public host.
+   *
+   * This deliberately reads apple_byod_config.domain for the exact FQDN Apple
+   * used. A tenant document on another tenant's host would answer for the wrong
+   * organisation, so there is no slug/header fallback.
+   */
+  const tenantByByodDomain = (host: string) =>
+    Effect.gen(function* () {
+      const domain = normalizeAppleByodDomain(host);
+
+      if (!domain) return null;
+      const config = yield* db.query.appleByodConfig.findFirst({ where: { domain } });
+
+      if (!config) return null;
+
+      return { config, domain };
+    });
+
+  const appleByodConfigInfo = (organizationId: string) =>
+    Effect.gen(function* () {
+      const [config, domains, sso, apns] = yield* Effect.all([
+        db.query.appleByodConfig.findFirst({ where: { organizationId } }),
+        appleByodDomainOptions(organizationId),
+        db.query.ssoConfig.findFirst({ where: { organizationId } }),
+        db.query.applePushCertificate.findFirst({ where: { organizationId } }),
+      ]);
+
+      const domain = config?.domain ?? null;
+      const ssoEnabled = Boolean(sso?.enabled && sso.azureTenantId);
+      const apnsConfigured = Boolean(apns?.topic);
+      const blockers = appleByodBlockers({
+        domain,
+        domains,
+        ssoEnabled,
+        apnsConfigured,
+        hosted: hostedDeployment,
+        deploymentHost: deploymentHostname(),
+      });
+      const hardwareRequired = config?.hardwareValidationRequired ?? true;
+
+      return {
+        enabled: config?.enabled ?? false,
+        domain,
+        domains,
+        deploymentOrigin: origin,
+        hosted: hostedDeployment,
+        wellKnownUrl: domain
+          ? "https://" + domain + "/.well-known/com.apple.remotemanagement"
+          : undefined,
+        expectedDocument: domain
+          ? appleByodDocumentJson({
+              organizationId,
+              domain,
+              publicOrigin: "https://" + domain,
+            })
+          : undefined,
+        ssoEnabled,
+        apnsConfigured,
+        validatedAt: config?.validatedAt ? iso(config.validatedAt) : undefined,
+        hardwareValidationRequired: hardwareRequired,
+        hardwareValidatedAt: config?.hardwareValidatedAt
+          ? iso(config.hardwareValidatedAt)
+          : undefined,
+        ready:
+          Boolean(config?.enabled) &&
+          blockers.length === 0 &&
+          Boolean(config?.validatedAt) &&
+          (!hardwareRequired || Boolean(config?.hardwareValidatedAt)),
+        blockers,
+      };
+    });
+
+  /**
+   * Fetch the discovery document over the public origin, following only
+   * same-domain redirects. Workers cannot inspect DNS, so the selected domain
+   * is the SSRF bound; the same limitation is documented for webhooks.
+   */
+  const fetchAppleByodDiscovery = (input: {
+    readonly organizationId: string;
+    readonly domain: string;
+  }) =>
+    Effect.gen(function* () {
+      const allowedHosts = new Set([input.domain]);
+      const failures: string[] = [];
+      let current = new URL(
+        "https://" +
+          input.domain +
+          "/.well-known/com.apple.remotemanagement?user-identifier=" +
+          encodeURIComponent("byod-check@" + input.domain) +
+          "&model-family=iPhone",
+      );
+
+      if (!isWebhookUrlAllowed(current.toString())) {
+        return {
+          ok: false as const,
+          status: undefined,
+          contentType: undefined,
+          body: undefined,
+          errors: ["The selected domain is not a public HTTPS hostname."],
+        };
+      }
+
+      let response: Response | undefined;
+
+      for (let hop = 0; hop < 3; hop++) {
+        response = yield* Effect.tryPromise({
+          try: () =>
+            fetch(current, {
+              method: "GET",
+              redirect: "manual",
+              headers: { accept: "application/json" },
+              signal: AbortSignal.timeout(5_000),
+            }),
+          catch: () => new Error("request failed"),
+        }).pipe(Effect.catch(() => Effect.succeed(undefined)));
+
+        if (!response) {
+          failures.push("Could not reach https://" + current.host + "/.");
+
+          break;
+        }
+
+        if (response.status < 300 || response.status >= 400) break;
+
+        const location = response.headers.get("location");
+
+        if (!location) {
+          failures.push("The discovery endpoint redirected without a Location header.");
+
+          break;
+        }
+
+        const next = new URL(location, current);
+
+        if (
+          !allowedHosts.has(next.hostname.toLowerCase()) ||
+          !isWebhookUrlAllowed(next.toString())
+        ) {
+          failures.push("The discovery endpoint redirected outside the selected domain.");
+
+          break;
+        }
+
+        current = next;
+      }
+
+      if (!response) {
+        return {
+          ok: false as const,
+          status: undefined,
+          contentType: undefined,
+          body: undefined,
+          errors: failures.length > 0 ? failures : ["The discovery endpoint did not respond."],
+        };
+      }
+
+      const contentType = response.headers.get("content-type") ?? undefined;
+      const text = yield* Effect.tryPromise(() => response!.text()).pipe(
+        Effect.catch(() => Effect.succeed("")),
+      );
+      const body = text.length > 2_000 ? text.slice(0, 2_000) + "..." : text;
+
+      if (response.status !== 200) {
+        failures.push("The discovery endpoint answered HTTP " + response.status + ".");
+      }
+
+      if (!contentType?.toLowerCase().includes("application/json")) {
+        failures.push("The discovery endpoint did not answer with application/json.");
+      }
+
+      let decoded: unknown;
+
+      try {
+        decoded = JSON.parse(text);
+      } catch {
+        decoded = undefined;
+        failures.push("The discovery response is not valid JSON.");
+      }
+
+      const servers =
+        decoded && typeof decoded === "object" && "Servers" in decoded
+          ? (decoded as { Servers?: unknown }).Servers
+          : undefined;
+      const first = Array.isArray(servers) && servers.length === 1 ? servers[0] : undefined;
+      const version =
+        first && typeof first === "object" && "Version" in first
+          ? (first as { Version?: unknown }).Version
+          : undefined;
+      const baseUrl =
+        first && typeof first === "object" && "BaseURL" in first
+          ? (first as { BaseURL?: unknown }).BaseURL
+          : undefined;
+
+      if (version !== "mdm-byod") {
+        failures.push('The document must contain exactly one server with Version "mdm-byod".');
+      }
+
+      if (typeof baseUrl !== "string") {
+        failures.push("The document is missing a string BaseURL.");
+      } else {
+        try {
+          const parsed = new URL(baseUrl);
+
+          if (parsed.protocol !== "https:") failures.push("BaseURL must use https.");
+
+          if (!allowedHosts.has(parsed.hostname.toLowerCase()))
+            failures.push("BaseURL points at a host outside this tenant.");
+
+          if (parsed.pathname !== "/mdm/apple/byod/" + input.organizationId + "/enroll")
+            failures.push("BaseURL does not point at this tenant's BYOD enrollment endpoint.");
+        } catch {
+          failures.push("BaseURL is not a valid absolute URL.");
+        }
+      }
+
+      return {
+        ok: failures.length === 0,
+        status: String(response.status),
+        contentType,
+        body,
+        errors: failures,
+      };
+    });
 
   /**
    * Append an enrollment diagnostic. Diagnostics must never break enrollment,
@@ -17109,6 +17388,128 @@ export const createEnterpriseService = ({
           filename,
         };
       }),
+    /**
+     * The Apple service-discovery document for one public host.
+     *
+     * Resolution is by exact configured domain so a request can never select a
+     * tenant with a path, port or Host header trick. A host that is a verified
+     * domain but has no BYOD configuration gets a setup message instead of a
+     * generic 404, which is what the admin test and a curious operator see.
+     */
+    appleByodDiscovery: (host: string) =>
+      Effect.gen(function* () {
+        const resolved = yield* tenantByByodDomain(host);
+
+        if (!resolved) {
+          const domain = normalizeAppleByodDomain(host);
+          const known = domain
+            ? yield* db.query.ssoDomain.findFirst({
+                where: { domain, isVerified: true },
+              })
+            : undefined;
+
+          return {
+            status: 404,
+            body: {
+              error: known
+                ? "Account-driven enrollment is not configured for this domain. Ask your administrator to set it up in Mattrax."
+                : "No Apple device management service is published for this domain.",
+            },
+          };
+        }
+
+        const { config, domain } = resolved;
+
+        if (!config.enabled)
+          return {
+            status: 403,
+            body: {
+              error:
+                "Account-driven enrollment is disabled for this organisation. Ask your administrator to enable it in Mattrax.",
+            },
+          };
+
+        if (config.hardwareValidationRequired && !config.hardwareValidatedAt)
+          return {
+            status: 403,
+            body: {
+              error:
+                "Account-driven enrollment is not yet released for this organisation. An administrator must complete real-device validation in Mattrax.",
+            },
+          };
+
+        return {
+          status: 200,
+          body: appleByodDiscoveryDocument({
+            organizationId: config.organizationId,
+            domain,
+          }),
+        };
+      }),
+    /**
+     * A signed BYOD profile for a redeemed enrollment token. The SCEP challenge
+     * carries the Apple BYOD request id so the identity certificate installed
+     * from this profile can be traced back to the directory person who signed
+     * in, without trusting a user-supplied account string at check-in.
+     */
+    getAppleByodEnrollmentProfile: (input: {
+      readonly organizationId: string;
+      readonly managedAppleAccount: string;
+      readonly byodEnrollmentId: string;
+    }) =>
+      Effect.gen(function* () {
+        const [apns, organization] = yield* Effect.all([
+          db.query.applePushCertificate.findFirst({
+            where: { organizationId: input.organizationId },
+          }),
+          db.query.organization.findFirst({ where: { id: input.organizationId } }),
+        ]);
+
+        if (!apns?.topic)
+          return yield* Effect.fail(
+            new EnterpriseNotConfigured({
+              message: "Apple push notifications are not configured for this tenant.",
+            }),
+          );
+
+        if (!organization)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Tenant not found." }));
+
+        const branding = resolveTenantBranding(organization);
+        const enrollment = yield* getOrCreateEnrollment(input.organizationId);
+
+        const { challenge } = yield* issueScepChallenge(db, {
+          enrollmentId: enrollment.id,
+          organizationId: input.organizationId,
+          authSecret: authSecret ?? "",
+          ttlSeconds: enrollmentProfileTtlSeconds,
+          referenceId: input.byodEnrollmentId,
+        }).pipe(
+          Effect.mapError(
+            () =>
+              new EnterpriseBadRequest({
+                message: "Could not create the SCEP challenge for the BYOD profile.",
+              }),
+          ),
+        );
+
+        const plist = yield* serializePlist(
+          buildAppleEnrollmentProfile({
+            origin,
+            topic: apns.topic,
+            organizationId: input.organizationId,
+            organizationName: branding.displayName,
+            supportEmail: branding.supportEmail,
+            challenge,
+            userEnrollment: { managedAppleAccount: input.managedAppleAccount },
+          }),
+        );
+
+        return {
+          profile: yield* signAppleEnrollmentProfile(plist, input.organizationId),
+          filename: safeFilename(organization.slug || branding.displayName) + "-byod.mobileconfig",
+        };
+      }),
     enrollAdeDevice: (body: Uint8Array) =>
       Effect.gen(function* () {
         // The Setup Assistant request is a CMS-signed MachineInfo plist. A
@@ -17505,6 +17906,184 @@ export const createEnterpriseService = ({
         yield* audit(ctx, "enrollment.reset", "enrollment", newId);
 
         return { id: newId };
+      }),
+    getAppleByodConfig: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        return yield* appleByodConfigInfo(ctx.organization.id);
+      }),
+    patchAppleByodConfig: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const organizationId = ctx.organization.id;
+        const existing = yield* db.query.appleByodConfig.findFirst({
+          where: { organizationId },
+        });
+        const domains = yield* appleByodDomainOptions(organizationId);
+        const requestedDomain =
+          payload.domain === undefined
+            ? existing?.domain ?? null
+            : payload.domain === null
+              ? null
+              : normalizeAppleByodDomain(payload.domain);
+
+        if (payload.domain !== undefined && payload.domain !== null && !requestedDomain)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "Enter a fully-qualified domain name, such as school.example.edu, without a scheme or path.",
+            }),
+          );
+
+        if (requestedDomain && !domains.some((option) => option.domain === requestedDomain))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                requestedDomain +
+                " is not a verified domain for this tenant. Refresh Entra domains.",
+            }),
+          );
+
+        if (hostedDeployment && requestedDomain && requestedDomain !== deploymentHostname())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "Custom tenant hostnames are not available on Mattrax Cloud yet (issues 460 and 526). Account-driven enrollment needs a self-hosted deployment on the tenant's verified domain.",
+            }),
+          );
+
+        const enabled = payload.enabled ?? existing?.enabled ?? false;
+        const [sso, apns] = yield* Effect.all([
+          db.query.ssoConfig.findFirst({ where: { organizationId } }),
+          db.query.applePushCertificate.findFirst({ where: { organizationId } }),
+        ]);
+        const blockers = appleByodBlockers({
+          domain: requestedDomain,
+          domains,
+          ssoEnabled: Boolean(sso?.enabled && sso.azureTenantId),
+          apnsConfigured: Boolean(apns?.topic),
+          hosted: hostedDeployment,
+          deploymentHost: deploymentHostname(),
+        });
+
+        if (enabled && blockers.length > 0)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Resolve the BYOD prerequisites first: " + blockers.join(" "),
+            }),
+          );
+
+        const domainChanged = requestedDomain !== (existing?.domain ?? null);
+        const timestamp = now();
+        const values = {
+          enabled,
+          domain: requestedDomain,
+          hardwareValidationRequired:
+            payload.hardwareValidationRequired ?? existing?.hardwareValidationRequired ?? true,
+          // A different domain or flow has not been checked or validated yet.
+          validatedAt: domainChanged ? null : existing?.validatedAt ?? null,
+          hardwareValidatedAt: domainChanged ? null : existing?.hardwareValidatedAt ?? null,
+          updatedAt: timestamp,
+        };
+
+        if (existing)
+          yield* db
+            .update(schema.appleByodConfig)
+            .set(values)
+            .where(eq(schema.appleByodConfig.organizationId, organizationId));
+        else
+          yield* db.insert(schema.appleByodConfig).values({
+            organizationId,
+            ...values,
+            createdAt: timestamp,
+          });
+
+        yield* audit(ctx, "apple_byod.updated", "enrollment", null, {
+          enabled,
+          domain: requestedDomain,
+          hardwareValidationRequired: values.hardwareValidationRequired,
+          fields: Object.keys(payload),
+        });
+
+        return yield* appleByodConfigInfo(organizationId);
+      }),
+    testAppleByodConfig: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const organizationId = ctx.organization.id;
+        const config = yield* db.query.appleByodConfig.findFirst({
+          where: { organizationId },
+        });
+        const domains = yield* appleByodDomainOptions(organizationId);
+        const domain =
+          normalizeAppleByodDomain(payload.domain) ?? config?.domain ?? null;
+
+        if (!domain || !domains.some((option) => option.domain === domain))
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Select a verified domain before testing the discovery document.",
+            }),
+          );
+
+        const result = yield* fetchAppleByodDiscovery({ organizationId, domain });
+        const checkedAt = now();
+
+        // Only a test of the saved domain may stamp it; testing a different
+        // selection is useful before saving but says nothing about what the
+        // discovery endpoint currently serves.
+        if (config?.domain === domain)
+          yield* db
+            .update(schema.appleByodConfig)
+            .set({ validatedAt: result.ok ? checkedAt : null, updatedAt: checkedAt })
+            .where(eq(schema.appleByodConfig.organizationId, organizationId));
+
+        yield* audit(ctx, "apple_byod.tested", "enrollment", null, {
+          domain,
+          saved: config?.domain === domain,
+          ok: result.ok,
+          status: result.status ?? null,
+        });
+
+        return {
+          ok: result.ok,
+          checkedAt: iso(checkedAt),
+          status: result.status,
+          contentType: result.contentType,
+          body: result.body,
+          errors: result.errors,
+        };
+      }),
+    confirmAppleByodHardware: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        const organizationId = ctx.organization.id;
+        const existing = yield* db.query.appleByodConfig.findFirst({
+          where: { organizationId },
+        });
+
+        if (!existing)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Configure Apple BYOD enrollment before recording hardware validation.",
+            }),
+          );
+
+        const timestamp = now();
+
+        yield* db
+          .update(schema.appleByodConfig)
+          .set({
+            hardwareValidatedAt: payload.validated ? timestamp : null,
+            updatedAt: timestamp,
+          })
+          .where(eq(schema.appleByodConfig.organizationId, organizationId));
+
+        yield* audit(ctx, "apple_byod.hardware_validation", "enrollment", null, {
+          validated: payload.validated,
+        });
+
+        return yield* appleByodConfigInfo(organizationId);
       }),
     listAttributes: (request, tenantId) =>
       Effect.gen(function* () {
@@ -34123,6 +34702,26 @@ export const enterpriseHandlers = (
     .handle("resetTenantEnrollment", ({ request, params }) =>
       Effect.flatMap(EnterpriseService, (service) =>
         service.resetTenantEnrollment(request, params.tenantId),
+      ),
+    )
+    .handle("getAppleByodConfig", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getAppleByodConfig(request, params.tenantId),
+      ),
+    )
+    .handle("patchAppleByodConfig", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchAppleByodConfig(request, params.tenantId, payload),
+      ),
+    )
+    .handle("testAppleByodConfig", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.testAppleByodConfig(request, params.tenantId, payload),
+      ),
+    )
+    .handle("confirmAppleByodHardware", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.confirmAppleByodHardware(request, params.tenantId, payload),
       ),
     )
     .handle("getApns", ({ request, params }) =>

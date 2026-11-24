@@ -49,6 +49,7 @@ import {
   enterpriseDeviceHandoverHandlers,
   enterpriseGroupHandlers,
   enterpriseHandlers,
+  appleByodRoutes,
   enterpriseApplicationHandlers,
   enterpriseCutoverHandlers,
   enterpriseSoftwareUpdateHandlers,
@@ -407,6 +408,7 @@ const handlersLayer = Layer.mergeAll(
 const apiLayer = Layer.mergeAll(
   HttpApiBuilder.layer(apiRoot).pipe(Layer.provide(handlersLayer)),
   appleMdmRoutes,
+  appleByodRoutes,
   scepRoutes,
   scimRoutes,
 );
@@ -1008,6 +1010,7 @@ const makeAppLayer = (
   const servicesLayer = Layer.mergeAll(
     OnboardingEmailWarnings.layer,
     EnterpriseService({
+      hosted: Boolean(env.CF_VERSION_METADATA),
       superadmins,
       email,
       // `MAIL_FROM` decides the envelope sender for every provider; the

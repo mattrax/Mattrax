@@ -72,6 +72,11 @@ export type IssueScepChallengeOptions = {
   readonly authSecret: string;
   /** Lifetime of the challenge in seconds. */
   readonly ttlSeconds: number;
+  /**
+   * Opaque per-enrollment reference (the Apple BYOD request id) that follows
+   * the challenge into the issued identity row.
+   */
+  readonly referenceId?: string;
   /** Injectable clock for tests. */
   readonly now?: number;
 };
@@ -122,6 +127,7 @@ export const issueScepChallenge = (
       id,
       organizationId: options.organizationId,
       enrollmentId: options.enrollmentId,
+      byodEnrollmentId: options.referenceId ?? null,
       expiresAt,
       consumedAt: null,
       createdAt: new Date(now),
@@ -245,11 +251,18 @@ export class ScepRepositoryLive extends ScepRepository {
           );
         }
 
+        const [storedChallenge] = yield* db
+          .select({ byodEnrollmentId: schema.scepChallenge.byodEnrollmentId })
+          .from(schema.scepChallenge)
+          .where(eq(schema.scepChallenge.id, challengeId))
+          .limit(1);
+
         // Authenticated tenant id becomes the issued certificate's OU. It is
         // never derived from attacker-controlled CSR content.
         return {
           organizationalUnit: enrollment.organizationId,
           enrollmentId: enrollment.id,
+          referenceId: storedChallenge?.byodEnrollmentId ?? undefined,
         };
       }).pipe(
         Effect.mapError((cause) =>
@@ -633,6 +646,7 @@ export class ScepRepositoryLive extends ScepRepository {
               organizationId: certificate.organizationId,
               enrollmentId: certificate.enrollmentId ?? null,
               deviceId: certificate.deviceId ?? null,
+              byodEnrollmentId: certificate.referenceId ?? null,
               caFingerprintSha256: certificate.caFingerprintSha256 ?? null,
               notAfter: certificate.notAfter,
               createdAt: new Date(),
@@ -661,6 +675,7 @@ export class ScepRepositoryLive extends ScepRepository {
             .update(schema.scepIssuedCertificate)
             .set({
               enrollmentId: certificate.enrollmentId ?? null,
+              byodEnrollmentId: certificate.referenceId ?? null,
               caFingerprintSha256: certificate.caFingerprintSha256 ?? null,
               notAfter: certificate.notAfter,
               // `revokedAt` is intentionally preserved. A duplicate serial is a
@@ -738,6 +753,7 @@ export class ScepRepositoryLive extends ScepRepository {
             organizationId: row.organizationId,
             enrollmentId: row.enrollmentId ?? undefined,
             deviceId: row.deviceId ?? undefined,
+            referenceId: row.byodEnrollmentId ?? undefined,
             caFingerprintSha256: row.caFingerprintSha256 ?? undefined,
             notAfter: row.notAfter,
           };

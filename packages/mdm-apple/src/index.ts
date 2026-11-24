@@ -393,6 +393,24 @@ const bindAppleIdentityCertificate = (
           ),
         )
     );
+
+    // A BYOD identity was minted for one account-driven request. Record the
+    // Apple EnrollmentID and device so the user channel can prove the same
+    // profile (not a different tenant member's assertion) owns the channel.
+    if (certificate.byodEnrollmentId)
+      yield* db
+        .update(s.appleByodEnrollment)
+        .set({
+          deviceId: device.id,
+          appleEnrollmentId: scope._tag === "user" ? (scope.enrollmentId ?? null) : null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(s.appleByodEnrollment.id, certificate.byodEnrollmentId),
+            eq(s.appleByodEnrollment.organizationId, device.organizationId),
+          ),
+        );
   });
 
 type ScopedConfiguration = PolicyConfigurationRow & { readonly groupId: string };
@@ -677,6 +695,122 @@ const declarationItemsForDevice = (
       ],
     };
   });
+
+/**
+ * Bind an Apple User Enrollment (BYOD) user channel to the directory person
+ * who completed the account-driven sign-in.
+ *
+ * The identity certificate installed from the profile is the proof: it carries
+ * the BYOD request id from the SCEP challenge, which in turn names the account
+ * and directory person the IdP authenticated. A channel that presents that
+ * certificate is the enrollment Apple created from that one-time profile. When
+ * Apple also reports a UserShortName it must match the Managed Apple Account;
+ * a mismatch is logged and left unbound rather than trusted.
+ */
+const bindByodUserChannel = (
+  device: DeviceRow,
+  scope: CheckinScope,
+  appleUserId: string,
+): Effect.Effect<void, unknown, Db> =>
+  Effect.gen(function* () {
+    if (scope._tag !== "user") return;
+    if (scope.source !== "user-enrollment") return;
+    if (!scope.identityCertificateSerial) return;
+
+    const db = yield* Db;
+
+    const [certificate] = yield* db
+      .select({ byodEnrollmentId: s.scepIssuedCertificate.byodEnrollmentId })
+      .from(s.scepIssuedCertificate)
+      .where(
+        and(
+          eq(
+            s.scepIssuedCertificate.serial,
+            normalizeIssuedCertificateSerial(scope.identityCertificateSerial),
+          ),
+          eq(s.scepIssuedCertificate.organizationId, device.organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!certificate?.byodEnrollmentId) return;
+
+    const [byod] = yield* db
+      .select()
+      .from(s.appleByodEnrollment)
+      .where(
+        and(
+          eq(s.appleByodEnrollment.id, certificate.byodEnrollmentId),
+          eq(s.appleByodEnrollment.organizationId, device.organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!byod?.directoryUserId) return;
+
+    const reported = (scope.userShortName ?? "").trim().toLowerCase();
+
+    if (
+      reported &&
+      reported.includes("@") &&
+      byod.managedAppleAccount &&
+      reported !== byod.managedAppleAccount
+    ) {
+      yield* Effect.logWarning(
+        "Refusing to bind a BYOD user channel whose Managed Apple Account does not match its profile",
+      );
+
+      return;
+    }
+
+    const at = now();
+    const [channel] = yield* db
+      .select({
+        directoryUserId: s.deviceAppleUser.directoryUserId,
+        identitySource: s.deviceAppleUser.identitySource,
+        identityUpn: s.deviceAppleUser.identityUpn,
+      })
+      .from(s.deviceAppleUser)
+      .where(
+        and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
+      )
+      .limit(1);
+    const bindingChanged =
+      channel?.directoryUserId !== byod.directoryUserId ||
+      channel?.identitySource !== "byod-sign-in" ||
+      channel?.identityUpn !== (byod.managedAppleAccount ?? null);
+
+    yield* db
+      .update(s.deviceAppleUser)
+      .set({
+        directoryUserId: byod.directoryUserId,
+        identitySource: "byod-sign-in",
+        identityUpn: byod.managedAppleAccount ?? null,
+        identityVerifiedAt: at,
+        // A changed identity changes the declaration set; an unchanged
+        // check-in must not throw away the token and force a full resync.
+        ...(bindingChanged ? { ddmDeclarationsToken: null } : {}),
+        updatedAt: at,
+      })
+      .where(
+        and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
+      );
+
+    yield* db
+      .update(s.appleByodEnrollment)
+      .set({
+        deviceId: device.id,
+        appleEnrollmentId: scope.enrollmentId ?? byod.appleEnrollmentId,
+        updatedAt: at,
+      })
+      .where(eq(s.appleByodEnrollment.id, byod.id));
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning(
+        `Failed to bind the BYOD user channel for ${appleUserId} on ${device.id}: ${String(error)}`,
+      ),
+    ),
+  );
 
 /**
  * Bind a Shared iPad channel to the directory person its Managed Apple Account
@@ -5000,6 +5134,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   // A Shared iPad login identifies itself only by its Managed
                   // Apple Account, so this is where that account is correlated
                   // with the directory.
+                  if (scope.source === "user-enrollment")
+                    yield* bindByodUserChannel(device, scope, event.userId);
+
                   if (sharedIpad)
                     yield* bindManagedAppleAccountIdentity(
                       device,

@@ -1430,7 +1430,7 @@ export const deviceAppleUser = mysqlTable(
      */
     identitySource: varchar("identity_source", {
       length: 32,
-      enum: ["certificate", "managed-apple-account", "manual"],
+      enum: ["certificate", "managed-apple-account", "byod-sign-in", "manual"],
     }),
     /** The IdP subject (UPN/email) the binding was verified against. */
     identityUpn: shortText("identity_upn"),
@@ -1592,6 +1592,92 @@ export const ssoDomain = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [index("sso_domain_organization_idx").on(table.organizationId)],
+);
+
+/**
+ * Account-driven Apple User Enrollment (BYOD) configuration.
+ *
+ * Apple discovers the MDM by fetching
+ * `https://<managed-apple-account-domain>/.well-known/com.apple.remotemanagement`.
+ * That document can only be served from a hostname the tenant controls and has
+ * pointed at this deployment, so `domain` is an explicit, verified choice
+ * rather than a value derived from the tenant's directory. `validatedAt` is
+ * written only by the admin "test" action after a public-origin fetch of the
+ * document succeeds.
+ *
+ * `hardwareValidationRequired` keeps an unvalidated implementation from being
+ * exposed by default: the discovery document answers 403 until an operator has
+ * confirmed a real-device enrollment and set `hardwareValidatedAt` (or turned
+ * the requirement off for a controlled test).
+ */
+export const appleByodConfig = mysqlTable(
+  "apple_byod_config",
+  {
+    organizationId: id("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(false),
+    /** FQDN of the Managed Apple Account domain, pointed at this deployment. */
+    domain: shortText("domain"),
+    /** Last successful public-origin verification of the discovery document. */
+    validatedAt: timestamp("validated_at"),
+    hardwareValidationRequired: boolean("hardware_validation_required")
+      .notNull()
+      .default(true),
+    /** Set by an operator after a real-device account-driven enrollment. */
+    hardwareValidatedAt: timestamp("hardware_validated_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [uniqueIndex("apple_byod_config_domain_unique").on(table.domain)],
+);
+
+/**
+ * One account-driven BYOD enrollment request, from the device's first signed
+ * POST to the signed profile download.
+ *
+ * `requestHash` binds the access token to the bytes of the device request, so
+ * a token captured from the browser callback cannot be redeemed for a
+ * different device request. `tokenHash` stores only a SHA-256 digest and is
+ * consumed by one conditional UPDATE, which makes redemption single-use.
+ */
+export const appleByodEnrollment = mysqlTable(
+  "apple_byod_enrollment",
+  {
+    id: shortText("id").primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** User identifier from discovery, and the profile's AssignedManagedAppleID. */
+    managedAppleAccount: varchar("managed_apple_account", { length: 320 }),
+    /** SHA-256 of the first signed enrollment request body. */
+    requestHash: varchar("request_hash", { length: 64 }).notNull(),
+    /** Mattrax account authenticated by the tenant's IdP. */
+    accountId: id("account_id").references(() => account.id, { onDelete: "set null" }),
+    /** Directory person the resulting EnrollmentUserID channel binds to. */
+    directoryUserId: id("directory_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** SHA-256 of the one-time access token returned to Apple. */
+    tokenHash: varchar("token_hash", { length: 64 }),
+    tokenExpiresAt: timestamp("token_expires_at"),
+    tokenConsumedAt: timestamp("token_consumed_at"),
+    challengeExpiresAt: timestamp("challenge_expires_at").notNull(),
+    authorizedAt: timestamp("authorized_at"),
+    /** Apple's per-enrollment identifier, learned on the first device check-in. */
+    appleEnrollmentId: shortText("apple_enrollment_id"),
+    deviceId: id("device_id").references(() => device.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("apple_byod_enrollment_token_unique").on(table.tokenHash),
+    index("apple_byod_enrollment_organization_idx").on(table.organizationId),
+    index("apple_byod_enrollment_device_idx").on(table.deviceId),
+    index("apple_byod_enrollment_account_idx").on(table.accountId),
+    index("apple_byod_enrollment_directory_user_idx").on(table.directoryUserId),
+    index("apple_byod_enrollment_challenge_expires_idx").on(table.challengeExpiresAt),
+  ],
 );
 
 /** Microsoft Graph directory sync state and delta cursors. */
@@ -4585,6 +4671,16 @@ export const scepIssuedCertificate = mysqlTable(
     enrollmentId: shortText("enrollment_id"),
     deviceId: shortText("device_id"),
     /**
+     * Apple User Enrollment (BYOD) request this identity was issued for. It
+     * links the certificate presented after profile installation back to the
+     * directory person who signed in, so the EnrollmentUserID channel binds
+     * without guessing from a user-supplied account string.
+     */
+    byodEnrollmentId: shortText("byod_enrollment_id").references(
+      () => appleByodEnrollment.id,
+      { onDelete: "set null" },
+    ),
+    /**
      * SHA-256 of the issuing CA certificate. Rows issued before rotation keep
      * naming the CA that signed them so the overlap can be audited and a
      * retired CA is only dropped once no identity still chains to it.
@@ -4597,6 +4693,7 @@ export const scepIssuedCertificate = mysqlTable(
   },
   (table) => [
     index("scep_issued_certificate_device_idx").on(table.deviceId),
+    index("scep_issued_certificate_byod_idx").on(table.byodEnrollmentId),
     // Tenant-scoped reads (device certificates, CA overlap) lead with the
     // organisation, which also covers the organisation foreign key.
     index("scep_issued_certificate_ca_idx").on(table.organizationId, table.caFingerprintSha256),
@@ -4616,6 +4713,11 @@ export const scepChallenge = mysqlTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     enrollmentId: shortText("enrollment_id").notNull(),
+    /** Set for a BYOD profile challenge; copied to the issued identity row. */
+    byodEnrollmentId: shortText("byod_enrollment_id").references(
+      () => appleByodEnrollment.id,
+      { onDelete: "set null" },
+    ),
     expiresAt: timestamp("expires_at").notNull(),
     consumedAt: timestamp("consumed_at"),
     createdAt: timestamp("created_at").notNull(),
@@ -4626,6 +4728,7 @@ export const scepChallenge = mysqlTable(
     // enrollment's challenge history.
     index("scep_challenge_org_idx").on(table.organizationId),
     index("scep_challenge_expires_at_idx").on(table.expiresAt),
+    index("scep_challenge_byod_idx").on(table.byodEnrollmentId),
   ],
 );
 
@@ -5012,6 +5115,8 @@ export const relations = defineRelations(
     webhookDelivery,
     ssoConfig,
     ssoDomain,
+    appleByodConfig,
+    appleByodEnrollment,
     entraDirectorySync,
     googleDirectorySync,
     ssoIdentity,

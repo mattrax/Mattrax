@@ -898,6 +898,7 @@ export type AppleDeviceUserProfile = typeof AppleDeviceUserProfile.Type;
 export const AppleUserIdentitySource = Schema.Literals([
   "certificate",
   "managed-apple-account",
+  "byod-sign-in",
   "manual",
 ]);
 

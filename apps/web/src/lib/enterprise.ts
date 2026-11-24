@@ -488,6 +488,7 @@ export const enterpriseKeys = {
   billingInvoices: (tenantId: RouteParam) =>
     ["enterprise", "billing-invoices", keyTenant(tenantId)] as const,
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", keyTenant(tenantId)] as const,
+  appleByod: (tenantId: RouteParam) => ["enterprise", "apple-byod", keyTenant(tenantId)] as const,
   scepCa: (tenantId: RouteParam) => ["enterprise", "scep-ca", keyTenant(tenantId)] as const,
   enrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
     ["enterprise", "enrollment-attempts", keyTenant(tenantId), limit] as const,
@@ -2914,6 +2915,34 @@ export const enterprise = {
     endpoint((api) =>
       api.patchTenantEnrollment({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
+  getAppleByodConfig: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getAppleByodConfig({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  patchAppleByodConfig: (
+    tenantId: RouteParam,
+    payload: { enabled?: boolean; domain?: string | null; hardwareValidationRequired?: boolean },
+  ) =>
+    endpoint((api) =>
+      api.patchAppleByodConfig({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  testAppleByodConfig: (tenantId: RouteParam, domain: string | null) =>
+    endpoint((api) =>
+      api.testAppleByodConfig({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { domain },
+      }),
+    ),
+  confirmAppleByodHardware: (tenantId: RouteParam, validated: boolean) =>
+    endpoint((api) =>
+      api.confirmAppleByodHardware({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { validated },
+      }),
+    ),
   resetTenantEnrollment: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.resetTenantEnrollment({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -3915,6 +3944,12 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.enrollment(tenantId),
       queryFn: () => enterprise.getTenantEnrollment(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  appleByod: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.appleByod(tenantId),
+      queryFn: () => enterprise.getAppleByodConfig(tenantId),
       enabled: Boolean(tenantId),
     }),
   enrollmentAttempts: (tenantId: RouteParam, limit = 20) =>
