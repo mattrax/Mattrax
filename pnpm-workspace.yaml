@@ -72,6 +72,7 @@ catalog:
   vitest: ^5.1.0
   yaml: ^2.9.1
   "@mbakereth/ldapjs-dn": ^1.1.2
+  jsqr: ^1.4.0
 catalogMode: prefer
 
 overrides:

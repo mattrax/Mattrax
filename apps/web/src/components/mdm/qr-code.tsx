@@ -8,6 +8,7 @@ import { qrPath } from "~/lib/qr";
  */
 export function QrCode(props: { value: string; label?: string; class?: string; size?: number }) {
   const qr = createMemo(() => (props.value ? qrPath(props.value) : null));
+  const classes = () => "block h-auto max-w-full bg-white" + (props.class ? " " + props.class : "");
 
   return (
     <Show when={qr()}>
@@ -20,12 +21,13 @@ export function QrCode(props: { value: string; label?: string; class?: string; s
           role="img"
           aria-label={props.label ?? "Enrollment QR code"}
           {...{ "shape-rendering": "crispEdges" }}
-          class={props.class ?? "rounded-lg bg-[var(--qr-background)] p-2"}
+          class={classes()}
         >
-          {/* QR codes need absolute contrast to scan, so these two tokens are
-              fixed white/black in every theme rather than theme surfaces. */}
-          <rect width={code().size} height={code().size} class="fill-[var(--qr-background)]" />
-          <path d={code().path} class="fill-[var(--qr-foreground)]" />
+          {/* QR codes need absolute contrast to scan. These colours stay fixed
+              in every theme; the quiet zone is part of the SVG viewBox, not CSS
+              padding, so screenshots and prints preserve it. */}
+          <rect width={code().size} height={code().size} fill="#ffffff" />
+          <path d={code().path} fill="#000000" />
         </svg>
       )}
     </Show>

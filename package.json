@@ -50,6 +50,7 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "effect": "catalog:",
+    "jsqr": "catalog:",
     "mysql2": "catalog:",
     "oxlint": "catalog:",
     "oxlint-tsgolint": "catalog:",

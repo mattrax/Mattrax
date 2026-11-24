@@ -297,6 +297,10 @@ snapshots:
 					"specifier": "^21.0.4",
 					"version": "21.0.4",
 				},
+				"jsqr": {
+					"specifier": "^1.4.0",
+					"version": "1.4.0",
+				},
 				"mysql2": {
 					"specifier": "^3.24.6",
 					"version": "3.24.6",
@@ -396,6 +400,7 @@ snapshots:
 				"@types/node": "catalog:",
 				"@types/react": "catalog:",
 				"effect": "catalog:",
+				"jsqr": "catalog:",
 				"mysql2": "catalog:",
 				"oxlint": "catalog:",
 				"oxlint-tsgolint": "catalog:",
@@ -9040,6 +9045,10 @@ snapshots:
 			"optionalDependencies": {
 				"graceful-fs": "4.2.12",
 			},
+		},
+
+		"jsqr@1.4.0": {
+			"integrity": "sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==",
 		},
 
 		"keyv@5.6.0": {
