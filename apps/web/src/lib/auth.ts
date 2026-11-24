@@ -342,6 +342,26 @@ const ClientSessionGlobal = Schema.Struct({
 });
 
 const StatusOk = Schema.Struct({ status: Schema.Literal("ok") });
+
+/**
+ * The sign-out action answers with the session module's result, not the
+ * Enterprise routes' `{status:"ok"}` acknowledgement. The transport still
+ * clears this browser's session cookie; the value reports whether the
+ * server-side session was revoked.
+ *
+ * `SessionSignOutUnavailable` is part of the action's declared success union
+ * (a store outage that still clears the client credential), so a person is
+ * signed out locally either way instead of being left on the dashboard.
+ */
+const SignOutResult = Schema.Struct({
+  clearCredential: Schema.Literal(true),
+  invalidation: Schema.Literals(["revoked", "already-invalid", "client-only"]),
+});
+const SignOutUnavailable = Schema.Struct({
+  _tag: Schema.Literal("SessionSignOutUnavailable"),
+  clearCredential: Schema.Literal(true),
+});
+const SignOutSuccess = Schema.Union([SignOutResult, SignOutUnavailable]);
 const SessionResponse = Schema.NullOr(SessionPayload);
 const CredentialDescriptor = Schema.Struct({
   type: Schema.Literal("public-key"),
@@ -864,7 +884,7 @@ export const authClient = {
     result(async () => request("/getSession", SessionResponse, { method: "POST", body: "{}" })),
   signOut: () =>
     result(async () => {
-      await request("/signOut", StatusOk, { method: "POST", body: "{}" });
+      await request("/signOut", SignOutSuccess, { method: "POST", body: "{}" });
       commitSession(null);
 
       return { status: "ok" as const };
