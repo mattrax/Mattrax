@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect";
+import { Effect } from "effect";
 import type { HttpServerRequest } from "effect/http";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { and, eq, gt, isNull } from "drizzle-orm";
@@ -464,7 +464,6 @@ const recordFailure = (
     if (accountId == null) return;
     const client = loginAttemptClient(
       input.request.headers,
-      Option.getOrUndefined(input.request.remoteAddress) ?? null,
     );
 
     yield* recordLoginAttempt(input.db, {
@@ -489,7 +488,6 @@ const recordSuccess = (
   Effect.gen(function* () {
     const client = loginAttemptClient(
       input.request.headers,
-      Option.getOrUndefined(input.request.remoteAddress) ?? null,
     );
 
     yield* recordLoginAttempt(input.db, {

@@ -35,7 +35,11 @@ import { ScepRepositoryLive } from "@mattrax/mdm-core";
 import { makeWindowsBackend } from "@mattrax/mdm-windows";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
 import { certToPem, createCaCertificate } from "@mattrax/scep";
-import { appleEnrollmentProfileResponse, createEnterpriseService } from "@mattrax/enterprise-api";
+import {
+  appleEnrollmentProfileResponse,
+  createEnterpriseService,
+  mcpActivityResponseStatus,
+} from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { EmailTransport, OutboundEmailMessage } from "@mattrax/email";
 import { makeDb, request, requireField, runEffect, schema } from "./helpers.js";
@@ -1051,6 +1055,13 @@ describe("enterprise service tenant flow", () => {
     ).toHaveLength(1);
   });
 
+  it("derives MCP activity status from the actual service response", () => {
+    expect(mcpActivityResponseStatus({ status: 201, body: { id: "device-1" } })).toBe(201);
+    expect(mcpActivityResponseStatus({ status: 204 })).toBe(204);
+    expect(mcpActivityResponseStatus(undefined)).toBe(204);
+    expect(mcpActivityResponseStatus({ status: "ok" })).toBe(200);
+    expect(mcpActivityResponseStatus({ id: "device-1" })).toBe(200);
+  });
   it("rejects a direct client-authored activity payload without writing an audit row", async () => {
     const base = await makeContext();
     const tenant = await runEffect(

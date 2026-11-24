@@ -410,7 +410,7 @@ export const verifyAccountRecoveryProof = (
 
 /** Mint the single-use completion link and mark the ceremony ready. */
 const mintCompletion = (
-  deps: RecoveryDeps,
+  deps: { readonly db: Pick<EnterpriseDb, "update"> },
   record: {
     readonly id: string;
     readonly accountId: string;
@@ -489,35 +489,52 @@ export const approveAccountRecovery = (
 
     if (!approver || !isBuiltInOwnerMember(approver)) return yield* Effect.fail(invalid);
 
-    const approved = yield* deps.db
-      .update(schema.accountRecovery)
-      .set({
-        approvedByAccountId: input.approverAccountId,
-        approvedAt: now,
-        updatedAt: now,
-      })
-      .where(
-        and(eq(schema.accountRecovery.id, record.id), isNull(schema.accountRecovery.approvedAt)),
-      );
+    let completionToken: string | undefined;
 
-    if (!approved || approved.affectedRows === 0) return yield* Effect.fail(invalid);
+    // The approval, completion mint and audit row move together. A concurrent
+    // cancellation makes the conditional update miss, and a mint or audit
+    // failure rolls the approval back instead of leaving a half-approved
+    // ceremony. The status predicate is re-checked inside the transaction.
+    yield* deps.db.transaction((tx) =>
+      Effect.gen(function* () {
+        const approved = yield* tx
+          .update(schema.accountRecovery)
+          .set({
+            approvedByAccountId: input.approverAccountId,
+            approvedAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(schema.accountRecovery.id, record.id),
+              isNull(schema.accountRecovery.approvedAt),
+              isNull(schema.accountRecovery.cancelledAt),
+              inArray(schema.accountRecovery.status, ["pending_proof", "pending_approval"]),
+            ),
+          );
 
-    yield* recordAccountAudit(deps.db, {
-      subjectAccountId: record.accountId,
-      subjectEmail: record.email,
-      actorAccountId: input.approverAccountId,
-      action: ACCOUNT_AUDIT.recoveryApproved,
-      targetType: "account_recovery",
-      targetId: record.id,
-      metadata: { organizationId: input.organizationId },
-      at: now,
-    });
+        if (!approved || approved.affectedRows === 0) return yield* Effect.fail(invalid);
 
-    // The proof link has already been used, so the completion link is emailed
-    // to the account rather than returned to the approver.
-    if (record.status === "pending_approval") {
-      const completion = yield* mintCompletion(deps, record, now);
-      const link = linkFor(deps.origin, "/recover/complete", completion.signInToken);
+        // The proof link has already been used, so the completion link is
+        // emailed to the account rather than returned to the approver.
+        if (record.status === "pending_approval")
+          completionToken = (yield* mintCompletion({ db: tx }, record, now)).signInToken;
+
+        yield* recordAccountAudit(tx, {
+          subjectAccountId: record.accountId,
+          subjectEmail: record.email,
+          actorAccountId: input.approverAccountId,
+          action: ACCOUNT_AUDIT.recoveryApproved,
+          targetType: "account_recovery",
+          targetId: record.id,
+          metadata: { organizationId: input.organizationId },
+          at: now,
+        });
+      }),
+    );
+
+    if (completionToken !== undefined) {
+      const link = linkFor(deps.origin, "/recover/complete", completionToken);
       const brand = recoveryBrand(deps);
 
       const completionHtml = emailDocument({

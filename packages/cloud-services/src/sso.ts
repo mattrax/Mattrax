@@ -1,4 +1,4 @@
-import { Effect, Layer, Option, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import type { HttpServerRequest } from "effect/http";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { AzureOidc } from "@mattrax/azure-oidc";
@@ -221,7 +221,6 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
           const client = loginAttemptClient(
             request.headers,
-            Option.getOrUndefined(request.remoteAddress) ?? null,
           );
 
           yield* recordLoginAttempt(db, {

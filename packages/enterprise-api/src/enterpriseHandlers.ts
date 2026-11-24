@@ -1160,6 +1160,23 @@ const requestHeader = (request: unknown, name: string): string | undefined => {
   return typeof text === "string" ? text.trim() || undefined : undefined;
 };
 
+/**
+ * The success status the service actually returned. Most handlers resolve a
+ * domain value (HTTP 200); handlers that expose a status envelope carry the
+ * real 201/204/… value, and an explicit void result is the endpoint's 204.
+ */
+export const mcpActivityResponseStatus = (value: unknown): number => {
+  if (value === undefined) return 204;
+
+  const envelope = Schema.decodeUnknownOption(
+    Schema.Struct({ status: Schema.Number }),
+  )(value);
+
+  return Option.isSome(envelope)
+    ? Math.max(100, Math.min(599, Math.trunc(envelope.value.status)))
+    : 200;
+};
+
 const mcpActivityErrorStatus = (error: unknown): number => {
   const tag = Schema.is(Schema.Struct({ _tag: Schema.String }))(error) ? error._tag : "";
 
@@ -1220,6 +1237,12 @@ const wrapServiceErrors = <S extends object>(
               })
             : result;
 
+        // The gateway marker says "this dispatch came from the MCP tool
+        // surface". Keying only on the credential type would also label
+        // ordinary REST calls made with an API token as MCP tool calls and
+        // inflate the same action with unrelated traffic; direct API-token
+        // calls keep their own audit trail and are not MCP invocations. Every
+        // gateway-dispatched call still carries this marker.
         const activity =
           observeMcpActivity &&
           permission &&
@@ -1235,13 +1258,13 @@ const wrapServiceErrors = <S extends object>(
             : undefined;
         const withMcpActivity = activity
           ? mapped.pipe(
-              Effect.tap(() =>
+              Effect.tap((value) =>
                 activity.observe({
                   request: activity.request,
                   tenantId: activity.tenantId,
                   method: activity.method,
                   permission: activity.permission,
-                  status: 200,
+                  status: mcpActivityResponseStatus(value),
                 }),
               ),
               Effect.tapError((error) =>
@@ -11841,10 +11864,14 @@ export const createEnterpriseService = ({
         const address = clientAddress(request.headers);
 
         // Two independent windows: one per account and one per client, so
-        // neither a single mailbox nor a single host can drive a loop.
+        // neither a single mailbox nor a single host can drive a loop. A
+        // self-hosted deployment without a trusted address has no client
+        // identity: a shared `unknown` bucket would let one caller exhaust
+        // everyone else's recovery budget, so only the account window applies
+        // and the edge/network limiter handles anonymous floods.
         const allowed =
           recoveryLimiter.allow(`account:${email}`) &&
-          recoveryLimiter.allow(`client:${address ?? "unknown"}`);
+          (address === null || recoveryLimiter.allow(`client:${address}`));
 
         if (!allowed)
           return yield* Effect.fail(
@@ -11867,7 +11894,10 @@ export const createEnterpriseService = ({
         // the only barrier for a 256-bit secret.
         const address = clientAddress(request.headers);
 
-        if (!recoveryLimiter.allow(`verify:${address ?? "unknown"}`))
+        // Unknown addresses share no bucket: proof tokens carry 256 bits of
+        // entropy, so skipping the per-client window is safer than letting a
+        // single caller lock every self-hosted recovery proof out.
+        if (address !== null && !recoveryLimiter.allow(`verify:${address}`))
           return yield* Effect.fail(
             new EnterpriseBadRequest({
               message: "Too many recovery attempts. Try again in an hour.",
@@ -35146,6 +35176,15 @@ export const createEnterpriseService = ({
       auth.listMcpConnections(webRequestFromRequest(request, origin)),
     revokeMcpConnection: (request, connectionId) =>
       auth.revokeMcpConnection(webRequestFromRequest(request, origin), connectionId),
+    /**
+     * Rollout-window shim. While supported gateways may still be on the
+     * previous image, this route deliberately answers 403 instead of
+     * accepting caller-authored metadata; the new API records the same
+     * `mcp.tool_called` entry from the authenticated dispatch. Remove this
+     * method (and the domain endpoint) once no supported gateway posts here —
+     * i.e. after the next major release or a release cycle with the derived
+     * path live on every deployment.
+     */
     recordMcpActivity: (
       _request: HttpServerRequest,
       _tenantId: string,

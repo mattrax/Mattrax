@@ -795,7 +795,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                   clientName: client?.name.slice(0, 160) ?? connection.clientId,
                   connectionId: connection.id,
                   scopes: [...scopes],
-                  permissions: [...credentialPermissions(scopes)].map(permissionLabel),
+                  // Legacy `mcp` is an unrestricted grant; expanding it into
+                  // every permission label would bloat the audit row without
+                  // making the grant clearer.
+                  permissions: scopes.includes("mcp")
+                    ? ["mcp"]
+                    : [...credentialPermissions(scopes)].map(permissionLabel),
                 },
                 at: revokedAt,
               });

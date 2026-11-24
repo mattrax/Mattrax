@@ -124,7 +124,7 @@ const storedScopes = (value: unknown): ReadonlyArray<string> =>
     : ["mcp"];
 
 const permissionNames = (scopes: ReadonlyArray<string>) =>
-  [...credentialPermissions(scopes)].map(permissionLabel);
+  scopes.includes("mcp") ? ["mcp"] : [...credentialPermissions(scopes)].map(permissionLabel);
 
 const oauthAuditMetadata = (
   client: ClientRow,
@@ -685,7 +685,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       yield* db.transaction((tx) =>
         Effect.gen(function* () {
           if (existing) {
-            const previousScopes = storedScopes(existing.scopes);
+            let previousScopes = storedScopes(existing.scopes);
             const updated = yield* tx
               .update(schema.mcpOAuthConnection)
               .set({ scopes })
@@ -697,8 +697,27 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
                 ),
               );
 
-            if (!updated || updated.affectedRows === 0)
-              return yield* Effect.fail(new Error("MCP OAuth connection is no longer active"));
+            // MySQL counts changed rows, so re-consenting to the same scopes
+            // reports affectedRows: 0. Only a vanished or revoked connection
+            // is a failure; an unchanged active row is a valid grant.
+            if (!updated || updated.affectedRows === 0) {
+              const active = yield* tx.query.mcpOAuthConnection.findFirst({
+                where: {
+                  id: connectionId,
+                  accountId: me.account.id,
+                  revokedAt: { isNull: true },
+                },
+              });
+
+              if (!active)
+                return yield* Effect.fail(new Error("MCP OAuth connection is no longer active"));
+              previousScopes = storedScopes(active.scopes);
+
+              if (previousScopes.join("\n") !== scopes.join("\n"))
+                return yield* Effect.fail(
+                  new Error("MCP OAuth connection scopes could not be updated"),
+                );
+            }
 
             const changed = previousScopes.join("\n") !== scopes.join("\n");
 

@@ -104,6 +104,25 @@ const queryFor = (condition: any) =>
 const camel = (value: string) =>
   value.replaceAll(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
+/**
+ * MySQL considers a row changed only when at least one assigned value differs.
+ * Dates compare by instant and JSON-shaped values compare structurally so a
+ * same-scope re-consent is modelled as `affectedRows: 0`.
+ */
+const sameValue = (left: RowValue | undefined, right: RowValue): boolean => {
+  if (left instanceof Date && right instanceof Date) return left.getTime() === right.getTime();
+
+  if (Array.isArray(left) && Array.isArray(right))
+    return (
+      left.length === right.length && left.every((item, index) => sameValue(item, right[index]!))
+    );
+
+  if (left !== null && right !== null && typeof left === "object" && typeof right === "object")
+    return JSON.stringify(left) === JSON.stringify(right);
+
+  return left === right;
+};
+
 /** Values the fake orders and compares: everything normalises to one of these. */
 type Comparable = number | string;
 
@@ -848,15 +867,24 @@ class UpdateBuilder {
 
       for (const row of this.store[this.table]) {
         if (matches(condition, row)) {
-          affectedRows++;
+          let changed = false;
 
-          for (const [key, value] of Object.entries(this.patch))
-            if (value !== undefined) row[key] = value;
+          for (const [key, value] of Object.entries(this.patch)) {
+            if (value === undefined) continue;
+
+            if (!sameValue(row[key], value)) {
+              changed = true;
+              row[key] = value;
+            }
+          }
+
+          // MySQL reports changed rows, not matched rows, unless the driver
+          // enables CLIENT_FOUND_ROWS. Same-value updates therefore resolve
+          // with affectedRows: 0 and must not be mistaken for a lost row.
+          if (changed) affectedRows++;
         }
       }
 
-      // Drizzle's MySQL update resolves to a result with `affectedRows`, which
-      // conditional claims rely on for compare-and-set semantics.
       return Effect.succeed({ affectedRows });
     });
   }

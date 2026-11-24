@@ -378,19 +378,17 @@ describe("login attempt presentation", () => {
     expect(loginAttemptClient({})).toEqual({ ip: null, userAgent: null });
   });
 
-  it("ignores spoofable forwarding headers and the transport peer", () => {
+  it("ignores spoofable forwarding headers", () => {
     expect(
-      loginAttemptClient(
-        {
-          "cf-connecting-ip": "203.0.113.7",
-          "x-forwarded-for": "203.0.113.7, 198.51.100.9",
-          "x-real-ip": "203.0.113.7",
-        },
-        "198.51.100.9",
-      ),
+      loginAttemptClient({
+        "cf-connecting-ip": "203.0.113.7",
+        "x-forwarded-for": "203.0.113.7, 198.51.100.9",
+        "x-real-ip": "203.0.113.7",
+      }),
     ).toEqual({ ip: null, userAgent: null });
-    expect(loginAttemptClient({ "x-mattrax-client-address": "not-an-ip" }, "198.51.100.9")).toEqual(
-      { ip: null, userAgent: null },
-    );
+    expect(loginAttemptClient({ "x-mattrax-client-address": "not-an-ip" })).toEqual({
+      ip: null,
+      userAgent: null,
+    });
   });
 });

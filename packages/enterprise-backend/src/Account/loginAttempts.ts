@@ -140,7 +140,6 @@ export const approximateNetwork = (address: string | null | undefined): string |
 /** The bounded client fields for one request, or nulls when the host supplies none. */
 export const loginAttemptClient = (
   headers: Readonly<Record<string, string | string[] | undefined>>,
-  _remoteAddress?: string | null,
 ) => {
   const rawUserAgent = headers["user-agent"];
 
@@ -470,7 +469,6 @@ export const recordObservedLoginAttempt = (
   input: {
     readonly path: string;
     readonly headers: Readonly<Record<string, string | string[] | undefined>>;
-    readonly remoteAddress?: string | null;
     readonly body: string | null;
   },
 ): Effect.Effect<void> =>
@@ -480,7 +478,7 @@ export const recordObservedLoginAttempt = (
     if (factor === undefined) return;
 
     const outcome = decodeLoginAttemptOutcome(input.body);
-    const client = loginAttemptClient(input.headers, input.remoteAddress);
+    const client = loginAttemptClient(input.headers);
 
     // A pending MFA step is not a completed sign-in; the completion request
     // writes the row that represents the login.

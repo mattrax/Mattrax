@@ -35,11 +35,15 @@ const KNOWN_ACTIONS = [
   "account.email_change_cancelled",
   "account.api_token_created",
   "account.api_token_revoked",
+  "account.mcp_oauth_granted",
+  "account.mcp_oauth_scopes_changed",
+  "account.mcp_oauth_revoked",
   "account.session_revoked",
   "account.sessions_revoked",
   "account.recovery_requested",
   "account.recovery_approved",
   "account.recovery_completed",
+  "account.recovery_cancelled",
   "account.deleted",
 ];
 

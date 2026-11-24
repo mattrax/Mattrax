@@ -59,8 +59,9 @@ Path parameters are named exactly as they appear in the API path
 
 ## Audit and revocation
 
-Every MCP tool call writes an `mcp.tool_called` audit entry. Other actions an
-agent takes are recorded like dashboard actions. Audit entries include the
+Every MCP tool call writes an `mcp.tool_called` audit entry derived from the
+authenticated API dispatch, not from a gateway-supplied payload. Other actions
+an agent takes are recorded like dashboard actions. Audit entries include the
 credential that made the call:
 
 - `credential.type = "oauth"` with the client name, for an OAuth client
@@ -68,6 +69,11 @@ credential that made the call:
 
 Revoking a client under **Account → Agent access (MCP)** immediately invalidates
 its access and refresh tokens. Revoking an API token invalidates that key.
+
+The legacy `/v1/tenants/:tenantId/mcp/activity` POST remains only as a rollout
+shim: it answers `403` and never writes an audit row. It can be removed once no
+supported gateway release posts there (after the release cycle that introduced
+dispatch-derived activity has reached every deployment).
 
 ## Protocol details
 
