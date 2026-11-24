@@ -59,8 +59,10 @@ directory data tenant-scoped and read-only, and keeps authentication and RBAC in
 3. Roles, custom roles and ownership transfer only ever move `member` rows between
    accounts.
 4. Deleting an account removes its credentials, sessions, tokens, memberships and SSO
-   links. Its tenant-scoped directory `user` rows, device links and user policies remain:
-   they describe a person on a device, not a dashboard identity.
+   links. Account deletion is only allowed for the sole member and sole owner of one
+   tenant: it then deletes that tenant too, including its tenant-scoped directory `user`
+   rows, device links and user policies. A shared tenant must be left through
+   **Settings → Administrators** first.
 
 ### User
 
@@ -101,6 +103,8 @@ invitations, or the tenant's SSO auto-provision setting.
 | Surface                                              | Identity                                      |
 | ---------------------------------------------------- | --------------------------------------------- |
 | `GET /v1/me`                                         | Returns `{ account, tenants }`                |
+| `GET /v1/me/deletion`                                | Preview account/tenant deletion and blockers  |
+| `DELETE /v1/me`                                      | Delete the account and its solo tenant        |
 | `GET /v1/tenants/:id/accounts`                       | Tenant administrators (`TenantAccount` rows)  |
 | `PATCH/DELETE /v1/tenants/:id/accounts/:accountId`   | Change an administrator's role or remove them |
 | `POST /v1/tenants/:id/invitations`                   | Invite an account by email                    |

@@ -71,6 +71,84 @@ export const UpdateMeRequest = Schema.Struct({
 
 export type UpdateMeRequest = typeof UpdateMeRequest.Type;
 
+/**
+ * Account deletion is also tenant deletion.
+ *
+ * The flow is deliberately narrow: it only succeeds for an account that is the
+ * sole member of a single tenant, so one person can never remove a shared
+ * tenant or silently lose access to another one. The preview endpoint reports
+ * every reason the account cannot be deleted so the dashboard can explain the
+ * next step before anything is destructive.
+ */
+export const AccountDeletionRequest = Schema.Struct({
+  /** Typed by the person; compared case-insensitively with the account email. */
+  confirmEmail: Schema.String,
+});
+
+export type AccountDeletionRequest = typeof AccountDeletionRequest.Type;
+
+export const ACCOUNT_DELETION_BLOCKERS = [
+  /** More than one membership; deleting would strand or destroy another tenant. */
+  "multiple_tenants",
+  /** The tenant has another owner, so it would not be deleted with the account. */
+  "tenant_has_other_owners",
+  /** The tenant has other members who would lose their tenant in the cascade. */
+  "tenant_has_other_members",
+  /** The single member is not a built-in owner, so it cannot cascade a tenant. */
+  "tenant_owner_required",
+  /** The tenant's four-eyes policy requires the explicit tenant delete flow. */
+  "tenant_delete_requires_approval",
+] as const;
+
+export const AccountDeletionBlockerCode = Schema.Literals(ACCOUNT_DELETION_BLOCKERS);
+
+export type AccountDeletionBlockerCode = typeof AccountDeletionBlockerCode.Type;
+
+/** One reason the account cannot be deleted, with copy the dashboard can show. */
+export const AccountDeletionBlocker = Schema.Struct({
+  code: AccountDeletionBlockerCode,
+  message: Schema.String,
+});
+
+export type AccountDeletionBlocker = typeof AccountDeletionBlocker.Type;
+
+/** The tenant that would be torn down with the account. */
+export const AccountDeletionTenant = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  slug: Schema.String,
+  memberCount: Schema.Number,
+  ownerCount: Schema.Number,
+  deviceCount: Schema.Number,
+});
+
+export type AccountDeletionTenant = typeof AccountDeletionTenant.Type;
+
+export const AccountDeletionPreview = Schema.Struct({
+  /** True only when `blockers` is empty; the API enforces the same checks. */
+  canDelete: Schema.Boolean,
+  blockers: Schema.Array(AccountDeletionBlocker),
+  /** The tenant that will be deleted, absent when deletion is blocked or the account has no tenant. */
+  tenant: Schema.optional(AccountDeletionTenant),
+  /** True when no other account exists on the deployment. */
+  lastAccount: Schema.Boolean,
+});
+
+export type AccountDeletionPreview = typeof AccountDeletionPreview.Type;
+
+export const AccountDeletionResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  /** Tenants torn down in the same operation, in the order they were removed. */
+  deletedTenants: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+    }),
+  ),
+});
+
+export type AccountDeletionResponse = typeof AccountDeletionResponse.Type;
+
 export const AuthUser = AccountInfo;
 
 export const ChangeEmailRequest = Schema.Struct({ newEmail: Schema.String });

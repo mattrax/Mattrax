@@ -1,6 +1,7 @@
 import { ArrowRight } from "@mattrax/ui";
 import { For } from "solid-js";
 import { Button } from "~/components/ui/button";
+import { authClient } from "~/lib/auth";
 import { installHeroProgress } from "~/lib/landing-motion";
 import { Eyebrow } from "./primitives";
 
@@ -68,6 +69,8 @@ const proofPoints = [
 
 export function Hero() {
   installHeroProgress();
+  const session = authClient.useSession();
+  const signedIn = () => Boolean(session().data?.user);
 
   return (
     <section class="lx-hero" aria-labelledby="hero-title">
@@ -89,8 +92,13 @@ export function Hero() {
               </p>
 
               <div class="lx-hero__actions">
-                <Button as="a" href="/register" size="lg" class="h-10 px-5">
-                  Start free
+                <Button
+                  as="a"
+                  href={signedIn() ? "/dashboard" : "/register"}
+                  size="lg"
+                  class="h-10 px-5"
+                >
+                  {signedIn() ? "Open dashboard" : "Start free"}
                   <ArrowRight class="size-3.5" />
                 </Button>
                 <Button

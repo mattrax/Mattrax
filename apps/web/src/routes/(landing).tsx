@@ -152,11 +152,11 @@ function TopNavigation() {
             <Button
               as="a"
               href="/dashboard"
-              variant="outline"
+              variant="default"
               size="sm"
               class="hidden h-7 px-2.5 text-[12px] sm:inline-flex"
             >
-              Dashboard
+              Open dashboard
             </Button>
           </Show>
           <UserDropdown

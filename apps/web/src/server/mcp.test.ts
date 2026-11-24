@@ -20,6 +20,8 @@ describe("MCP path exposure", () => {
   });
 
   it("still exposes ordinary device reads and commands", () => {
+    expect(shouldExposeMcpPath("/api/v1/me")).toBe(false);
+    expect(shouldExposeMcpPath("/api/v1/me/deletion")).toBe(false);
     expect(shouldExposeMcpPath("/api/v1/tenants/:tenantId/devices")).toBe(true);
     expect(shouldExposeMcpPath("/api/v1/tenants/:tenantId/devices/:id")).toBe(true);
     expect(shouldExposeMcpPath("/api/v1/tenants/:tenantId/devices/:id/action")).toBe(true);

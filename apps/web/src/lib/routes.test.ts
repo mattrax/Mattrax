@@ -49,6 +49,12 @@ describe("route builders", () => {
     expect(tenant.dashboard("dash-1")).toBe("/t/acme/dashboards/dash-1");
     expect(tenant.dashboard("dash-1", { edit: "1" })).toBe("/t/acme/dashboards/dash-1?edit=1");
   });
+
+  it("keeps reports on their own dashboard subpage", () => {
+    expect(routes.tenant("acme").dashboardReports("dash-1")).toBe(
+      "/t/acme/dashboards/dash-1/reports",
+    );
+  });
 });
 
 describe("route parameter schemas", () => {

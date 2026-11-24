@@ -278,7 +278,9 @@ export const shouldExposeMcpPath = (path: string) => {
 
   if (path.includes("/mcp/")) return false;
 
-  if (path === "/v1/me" || path === "/v1/deleteMe") return false;
+  // Account deletion (and its preview) is personal lifecycle, never an MCP tool.
+  if (path.endsWith("/v1/me") || path.includes("/v1/me/") || path.endsWith("/v1/deleteMe"))
+    return false;
 
   if (path.includes("email-change") || path.includes("email-verification")) return false;
 

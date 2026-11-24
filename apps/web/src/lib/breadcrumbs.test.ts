@@ -70,6 +70,19 @@ describe("buildBreadcrumbs", () => {
     ]);
   });
 
+  it("keeps the dashboard and reports crumbs without exposing the dashboard id", () => {
+    expect(
+      buildBreadcrumbs({
+        pathname: `${tenant}/dashboards/dash_123/reports`,
+        title: "Reports for Fleet",
+      }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Dashboards", href: `${tenant}/dashboards` },
+      { label: "Reports", href: `${tenant}/dashboards/dash_123/reports` },
+    ]);
+  });
+
   it("gives settings sub-pages the section trail without the tenant", () => {
     expect(
       buildBreadcrumbs({

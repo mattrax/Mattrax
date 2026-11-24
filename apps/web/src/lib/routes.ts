@@ -332,6 +332,8 @@ export const routes = {
       dashboards: () => `${base}/dashboards`,
       dashboard: (dashboardId: string, search: DashboardSearchParams = {}) =>
         `${base}/dashboards/${segment(dashboardId)}${dashboardSearch(search)}`,
+      dashboardReports: (dashboardId: string) =>
+        `${base}/dashboards/${segment(dashboardId)}/reports`,
       devices: (search: DeviceSearchParams = {}) => {
         const query = new URLSearchParams();
 

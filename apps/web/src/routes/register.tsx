@@ -310,19 +310,24 @@ export default function RegisterPage() {
               role="status"
               class={`mb-4 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] leading-relaxed text-warning-foreground ${feedbackEnter}`}
             >
-              <p class="font-medium">You're signed in as {user().email}</p>
+              <p class="font-medium">You're already signed in as {user().email}</p>
               <p class="mt-1">
-                Creating another account needs a fresh sign-in. Sign out first, or open this page in
-                a private window.
+                Creating a separate account needs a fresh sign-in. Open your dashboard to keep
+                using this account, or sign out first if you really want another one.
               </p>
-              <button
-                type="button"
-                class="mt-2 inline-flex min-h-8 items-center rounded-md border border-current/30 px-2.5 font-medium transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 disabled:opacity-50"
-                disabled={signingOut()}
-                onClick={() => void signOutForRegistration()}
-              >
-                {signingOut() ? "Signing out…" : "Sign out"}
-              </button>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <Button as="a" href="/dashboard" size="xs" variant="outline">
+                  Open dashboard
+                </Button>
+                <button
+                  type="button"
+                  class="inline-flex min-h-8 items-center rounded-md px-2.5 font-medium transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 disabled:opacity-50"
+                  disabled={signingOut()}
+                  onClick={() => void signOutForRegistration()}
+                >
+                  {signingOut() ? "Signing out…" : "Sign out"}
+                </button>
+              </div>
             </div>
           )}
         </Show>
@@ -431,15 +436,30 @@ export default function RegisterPage() {
           </Button>
         </form>
 
-        <p class="mt-6 text-center text-sm text-stone-500">
-          Already have an account?{" "}
-          <a
-            href={withReturnTo("/login")}
-            class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
-          >
-            Sign in
-          </a>
-        </p>
+        <Show
+          when={!signedInAs()}
+          fallback={
+            <p class="mt-6 text-center text-sm text-stone-500">
+              Already signed in.{" "}
+              <a
+                href="/dashboard"
+                class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+              >
+                Open dashboard
+              </a>
+            </p>
+          }
+        >
+          <p class="mt-6 text-center text-sm text-stone-500">
+            Already have an account?{" "}
+            <a
+              href={withReturnTo("/login")}
+              class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+            >
+              Sign in
+            </a>
+          </p>
+        </Show>
       </div>
     </main>
   );

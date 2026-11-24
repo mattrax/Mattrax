@@ -110,7 +110,9 @@ Daily maintenance applies `MAINTENANCE_AUDIT_RETENTION_DAYS` (default 365) to **
 audit streams. Set it to `0` to keep audit entries indefinitely.
 
 Account deletion keeps a tombstone: `account_audit_log.subject_account_id` is nulled by the
-foreign key and the email snapshot stays until retention prunes the row.
+foreign key and the email snapshot stays until retention prunes the row. The entry records
+the deleted tenant ids and names, the account email and whether it was the deployment's
+last account, so the cascade is answerable after both rows are gone.
 
 ### Data retention
 
@@ -644,6 +646,15 @@ readiness → re-enable cron.
 A dashboard is the report definition. Widgets run live queries against the tenant; a
 scheduled report takes a snapshot of the same widgets, renders it, and emails it to the
 chosen recipients.
+
+The dashboard page itself is centred on the widgets the team added; report controls are not
+part of it. **Reports** is a subpage at
+`/t/:tenantId/dashboards/:dashboardId/reports`, reached from the compact **Reports**
+button in the dashboard header. It holds the schedules, run history and CSV/PDF downloads
+for that dashboard, so report controls do not push the live view down the page. In edit
+mode the dashboard name and description sit in one compact row above the grid. Nothing is
+removed from a dashboard when reports move: the same widget snapshot is downloaded or
+emailed.
 
 ### Schedules
 

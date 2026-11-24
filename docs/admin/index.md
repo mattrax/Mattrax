@@ -62,9 +62,50 @@ PATCH  /api/v1/tenants/:tenantId/accounts/:accountId
 DELETE /api/v1/tenants/:tenantId/accounts/:accountId
 ```
 
-The last tenant account cannot be removed. Removing an account does not delete the
-account itself, and does not touch the tenant's directory users, their device links or
-their user policies.
+The last tenant account cannot be removed. Removing an administrator from a tenant does
+not delete their dashboard account, and does not touch the tenant's directory users,
+their device links or their user policies. Use **Settings → Administrators** to leave a
+shared tenant; account deletion is the separate, self-service flow below.
+
+### Deleting your account
+
+**Account → Delete account** deletes the dashboard account *and* the tenant it owns.
+The flow asks for the account email, then opens a confirmation page that lists the tenant,
+its member and device counts, and every effect of the cascade.
+
+The API enforces the same rules as the page:
+
+```text
+GET    /api/v1/me/deletion   preview: canDelete, blockers, tenant, lastAccount
+DELETE /api/v1/me            body: { "confirmEmail": "owner@example.com" }
+```
+
+Deletion is allowed only when the account is the **sole member and sole owner of at most
+one tenant**, and that tenant has no `tenant.delete` four-eyes policy. An account with
+no tenant can always be deleted. Otherwise the account is kept and the response explains
+why:
+
+- `multiple_tenants` — leave every other tenant first, so one deletion cannot affect two
+  organisations.
+- `tenant_has_other_owners` — remove your own administrator access first.
+- `tenant_has_other_members` — remove or transfer the other members; the tenant is
+  deleted with the account.
+- `tenant_owner_required` — transfer ownership before deleting the account.
+- `tenant_delete_requires_approval` — use the explicit tenant delete so another
+  administrator can approve it.
+
+A successful deletion runs the same teardown as `DELETE /api/v1/tenants/:tenantId`:
+devices are sent an unenroll request, the subscription is cancelled, tenant objects are
+removed, and the tenant row cascades. An `account.deleted` audit entry records the email
+snapshot, the tenant ids and names, and whether this was the deployment's last account.
+The audit entry outlives the account. Deleting the last account leaves the deployment with
+nobody signed in; registration remains open and creates a fresh tenant.
+
+### Signed-in visitors on public pages
+
+When a signed-in account visits a public or marketing page, the primary call to action
+becomes **Open dashboard** and the sign-in/register links are hidden. Registration still
+explains, rather than silently failing, that a second account needs a fresh sign-in.
 
 ## Onboarding email
 

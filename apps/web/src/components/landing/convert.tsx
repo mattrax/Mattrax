@@ -1,6 +1,7 @@
 import { ArrowRight, Check, ChevronDown } from "@mattrax/ui";
 import { For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
+import { authClient } from "~/lib/auth";
 import { faqStructuredData } from "~/lib/site";
 import { Eyebrow } from "./primitives";
 
@@ -47,6 +48,13 @@ const plans: readonly PricePlan[] = [
 ];
 
 export function Pricing() {
+  const session = authClient.useSession();
+  const signedIn = () => Boolean(session().data?.user);
+  const action = (plan: PricePlan) =>
+    plan.href === "/register" && signedIn()
+      ? { label: "Open dashboard", href: "/dashboard" }
+      : { label: plan.cta, href: plan.href };
+
   return (
     <section id="pricing" class="lx-section" aria-labelledby="pricing-title">
       <div class="lx-shell">
@@ -86,11 +94,11 @@ export function Pricing() {
                 <div class="lx-button-slot">
                   <Button
                     as="a"
-                    href={plan.href}
+                    href={action(plan).href}
                     variant={plan.secondary ? "outline" : "default"}
                     class="w-full"
                   >
-                    {plan.cta}
+                    {action(plan).label}
                   </Button>
                 </div>
               </div>
@@ -216,6 +224,9 @@ export function Faq() {
 }
 
 export function Closing() {
+  const session = authClient.useSession();
+  const signedIn = () => Boolean(session().data?.user);
+
   return (
     <section class="lx-closing" aria-labelledby="closing-title">
       <div class="lx-shell">
@@ -231,8 +242,13 @@ export function Closing() {
           </p>
 
           <div class="lx-closing__actions">
-            <Button as="a" href="/register" size="lg" class="h-10 px-5">
-              Start free
+            <Button
+              as="a"
+              href={signedIn() ? "/dashboard" : "/register"}
+              size="lg"
+              class="h-10 px-5"
+            >
+              {signedIn() ? "Open dashboard" : "Start free"}
               <ArrowRight class="size-3.5" />
             </Button>
             <Button

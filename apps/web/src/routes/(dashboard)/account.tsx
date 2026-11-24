@@ -12,6 +12,7 @@ import { AccountSecurity } from "~/components/account-security";
 import { Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { ThemeSwitcher } from "~/components/theme-switcher";
 import { PermissionPicker } from "~/components/permission-picker";
+import { CheckboxField } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ import { enterprise, enterpriseKeys, enterpriseQueries, meQueryOptions } from "~
 import type { McpConnectionInfo } from "~/lib/enterprise";
 import { optimisticallyPatchMe, optimisticallyUpdateCollection } from "~/lib/optimistic";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { routes } from "~/lib/routes";
 
 /** "2h ago" style label for a session's last authenticated request. */
 const relativeTime = (value: string) => {
@@ -104,41 +106,20 @@ export default function AccountPage() {
     })();
   });
 
-  const [deleteConfirm, setDeleteConfirm] = createSignal("");
-  const [deleteError, setDeleteError] = createSignal<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = createSignal(false);
+  const [deleteEmail, setDeleteEmail] = createSignal("");
+  const deletionStep = () => searchParams.deletion === "confirm";
 
-  const deleteAccount = async () => {
-    setDeleteError(null);
+  const openDeletionConfirmation = () => {
+    setDeleteDialogOpen(false);
+    setDeleteEmail("");
+    setSearchParams({ deletion: "confirm" });
+  };
 
-    try {
-      const response = await fetch("/api/v1/me", {
-        method: "DELETE",
-        credentials: "include",
-        headers: { "x-effect-auth-csrf": "1" },
-      });
+  const emailMatches = () => {
+    const expected = (email() ?? "").trim().toLowerCase();
 
-      if (!response.ok) {
-        const body = Option.getOrUndefined(
-          Schema.decodeUnknownOption(Schema.Json)(await response.json().catch(() => undefined)),
-        );
-
-        setDeleteError(
-          errorMessage(
-            body !== undefined
-              ? raisedFailure(body)
-              : { message: `Request failed (${response.status})` },
-          ),
-        );
-
-        return;
-      }
-
-      window.location.href = "/";
-    } catch (error) {
-      setDeleteError(
-        errorMessage(raisedFailure(error), "Could not delete your account. Try again."),
-      );
-    }
+    return expected.length > 0 && deleteEmail().trim().toLowerCase() === expected;
   };
 
   const [name, setName] = createSignal("");
@@ -571,6 +552,14 @@ export default function AccountPage() {
 
   const selectClass =
     "h-8 w-full rounded-lg bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30";
+
+  if (deletionStep())
+    return (
+      <AccountDeletionConfirmation
+        email={email() ?? ""}
+        onBack={() => setSearchParams({ deletion: undefined }, { replace: true })}
+      />
+    );
 
   return (
     <Page class="max-w-[860px]">
@@ -1116,38 +1105,298 @@ export default function AccountPage() {
               Delete account
             </h2>
             <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-              This removes your account and solo tenants you own. Tenants with other administrators
-              are kept. Type your email address to confirm.
+              Deleting your account also deletes the tenant you own, including its devices,
+              policies, audit history and subscription. Mattrax checks that you are the only member
+              and owner first, and explains what to do if you are not.
             </p>
           </div>
         }
       >
-        <div class="flex flex-col gap-2 sm:flex-row">
-          <Input
-            type="email"
-            aria-label="Type your email address to confirm account deletion"
-            class="h-9 sm:flex-1"
-            placeholder={email() ?? ""}
-            value={deleteConfirm()}
-            onInput={(event) => setDeleteConfirm(event.currentTarget.value)}
-          />
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={deleteConfirm() !== email()}
-            onClick={deleteAccount}
-          >
-            Delete account
-          </Button>
-        </div>
-        <Show when={deleteError()}>
-          {(msg) => (
-            <p role="alert" class="mt-2 text-[12.5px] text-destructive">
-              {msg()}
-            </p>
-          )}
-        </Show>
+        <Button type="button" variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
+          Delete account
+        </Button>
+
+        <Dialog open={deleteDialogOpen()} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent class="max-w-md text-foreground">
+            <DialogHeader>
+              <DialogTitle>Delete your account?</DialogTitle>
+              <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
+                Your account and the tenant you own are deleted together. Devices are sent an
+                unenroll request, the subscription is cancelled, and policies, audit history and
+                stored files are removed. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div class="mt-3">
+              <Field label="Type your email address to continue">
+                <Input
+                  type="email"
+                  autofocus
+                  autocomplete="email"
+                  placeholder={email() ?? ""}
+                  value={deleteEmail()}
+                  onInput={(event) => setDeleteEmail(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && emailMatches()) {
+                      event.preventDefault();
+                      openDeletionConfirmation();
+                    }
+                  }}
+                />
+              </Field>
+            </div>
+
+            <DialogFooter class="mt-4 border-t border-border pt-3">
+              <Button type="button" variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={!emailMatches()}
+                onClick={openDeletionConfirmation}
+              >
+                Continue
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </Panel>
+    </Page>
+  );
+}
+
+function AccountDeletionConfirmation(props: { email: string; onBack: () => void }) {
+  const preview = useQuery(() => enterpriseQueries.accountDeletion());
+  const [acknowledged, setAcknowledged] = createSignal(false);
+  const [pending, setPending] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+
+  const remove = async () => {
+    setError(null);
+    setPending(true);
+
+    try {
+      await enterprise.deleteAccount({ confirmEmail: props.email });
+      window.location.href = "/";
+    } catch (error_) {
+      setError(
+        errorMessage(
+          raisedFailure(error_),
+          "Could not delete your account. Nothing was changed; try again or contact support.",
+        ),
+      );
+      void preview.refetch();
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <Page class="max-w-[720px]">
+      <Button variant="ghost" size="sm" class="-ml-2 self-start" onClick={props.onBack}>
+        ← Back to account
+      </Button>
+
+      <PageHeader
+        eyebrow="Delete account"
+        title="Delete your account and tenant"
+        description="Account deletion is tenant deletion. Review exactly what will be removed before confirming."
+      />
+
+      <Show
+        when={preview.data}
+        fallback={
+          <Show
+            when={!preview.error}
+            fallback={
+              <Panel title="Could not check this account">
+                <p role="alert" class="text-[12.5px] text-destructive">
+                  {errorMessage(
+                    raisedFailure(preview.error),
+                    "The deletion check is unavailable right now.",
+                  )}
+                </p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  class="mt-3"
+                  onClick={() => void preview.refetch()}
+                >
+                  Try again
+                </Button>
+              </Panel>
+            }
+          >
+            <Panel title="Checking your account">
+              <div class="space-y-2">
+                <Skeleton class="h-4 w-2/3 rounded" />
+                <Skeleton class="h-4 w-1/2 rounded" />
+                <Skeleton class="h-4 w-3/4 rounded" />
+              </div>
+            </Panel>
+          </Show>
+        }
+      >
+        {(check) => (
+          <>
+            <Panel
+              title="What will be deleted"
+              description="This list comes from the live tenant, not a cached summary."
+            >
+              <dl class="grid gap-2 sm:grid-cols-2">
+                <div class="rounded-lg border border-border bg-surface px-3 py-2">
+                  <dt class="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                    Account
+                  </dt>
+                  <dd class="mt-0.5 break-all text-[12.5px] text-foreground">
+                    {props.email || "This account"}
+                  </dd>
+                </div>
+                <Show when={check().tenant}>
+                  {(tenant) => (
+                    <>
+                      <div class="rounded-lg border border-border bg-surface px-3 py-2">
+                        <dt class="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                          Tenant
+                        </dt>
+                        <dd class="mt-0.5 text-[12.5px] text-foreground">
+                          {tenant().name}{" "}
+                          <span class="font-mono text-[10.5px] text-muted-foreground">
+                            {tenant().slug}
+                          </span>
+                        </dd>
+                      </div>
+                      <div class="rounded-lg border border-border bg-surface px-3 py-2">
+                        <dt class="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                          Members
+                        </dt>
+                        <dd class="mt-0.5 text-[12.5px] tabular-nums text-foreground">
+                          {tenant().memberCount}
+                        </dd>
+                      </div>
+                      <div class="rounded-lg border border-border bg-surface px-3 py-2">
+                        <dt class="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                          Devices
+                        </dt>
+                        <dd class="mt-0.5 text-[12.5px] tabular-nums text-foreground">
+                          {tenant().deviceCount}
+                        </dd>
+                      </div>
+                    </>
+                  )}
+                </Show>
+              </dl>
+
+              <ul class="mt-3 space-y-1.5 text-[12px] leading-relaxed text-muted-foreground">
+                <li>
+                  The tenant is deleted with your account, including its policies, groups,
+                  applications, scripts, audit history and stored files.
+                </li>
+                <li>
+                  Devices are sent an unenroll request. A device that is offline may need its
+                  management profile removed by hand.
+                </li>
+                <li>The tenant's subscription is cancelled during the deletion.</li>
+                <li>
+                  An account audit entry is kept so the deletion can still be answered later.
+                </li>
+              </ul>
+
+              <Show when={check().lastAccount}>
+                <p class="mt-3 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12px] leading-relaxed text-warning-foreground">
+                  This is the last account on this deployment. Sign-up stays open, so a new
+                  registration can create a fresh tenant.
+                </p>
+              </Show>
+            </Panel>
+
+            <Show
+              when={check().canDelete}
+              fallback={
+                <Panel
+                  class="border-warning/25 bg-warning/[0.035]"
+                  title="This account cannot be deleted yet"
+                  description="Nothing has been changed. Clear the following first, then come back."
+                >
+                  <ul class="space-y-2">
+                    <For each={check().blockers}>
+                      {(blocker) => (
+                        <li class="flex gap-2 text-[12.5px] leading-relaxed text-warning-foreground">
+                          <span aria-hidden="true" class="mt-[3px] size-1.5 rounded-full bg-warning" />
+                          <span>{blocker.message}</span>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <Show when={check().tenant}>
+                      {(tenant) => (
+                        <Button
+                          as="a"
+                          href={routes.tenant(tenant().id).settingsAdministrators()}
+                          size="sm"
+                          variant="outline"
+                        >
+                          Open administrators
+                        </Button>
+                      )}
+                    </Show>
+                    <Button as="a" href={routes.tenants()} size="sm" variant="outline">
+                      View tenants
+                    </Button>
+                  </div>
+                </Panel>
+              }
+            >
+              <Panel
+                class="border-destructive/25 bg-destructive/[0.025]"
+                title="Confirm deletion"
+                description="This is the last step. The account and tenant are removed immediately."
+              >
+                <CheckboxField
+                  checked={acknowledged()}
+                  onCheckedChange={setAcknowledged}
+                  disabled={pending()}
+                  label={
+                    check().tenant
+                      ? `I understand that deleting my account also deletes ${check().tenant!.name} and cannot be undone.`
+                      : "I understand that deleting my account cannot be undone."
+                  }
+                  description="The tenant's devices, policies, audit history, stored files and subscription are deleted with it."
+                />
+
+                <Show when={error()}>
+                  {(message) => (
+                    <p role="alert" class="mt-2 text-[12.5px] leading-relaxed text-destructive">
+                      {message()}
+                    </p>
+                  )}
+                </Show>
+
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pending()}
+                    onClick={props.onBack}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={!acknowledged() || pending()}
+                    onClick={() => void remove()}
+                  >
+                    {pending() ? "Deleting…" : "Delete account and tenant"}
+                  </Button>
+                </div>
+              </Panel>
+            </Show>
+          </>
+        )}
+      </Show>
     </Page>
   );
 }
