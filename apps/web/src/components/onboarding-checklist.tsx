@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import type { TenantOnboardingState } from "@mattrax/enterprise-domain/client";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
 import { Badge } from "~/components/ui/badge";
 import { BookOpen, Check, ChevronRight, Sparkles, X } from "~/components/ui/icons";
@@ -59,17 +59,6 @@ export function OnboardingChecklist(props: { tenantId: string }) {
   const [dismissed, setDismissed] = createSignal(
     onboardingIsDismissed(queryClient.getQueryData<TenantOnboardingState>(queryKey())),
   );
-  const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-    if (
-      event.query.queryKey.length !== queryKey().length ||
-      !event.query.queryKey.every((part: unknown, index: number) => part === queryKey()[index])
-    )
-      return;
-
-    const data = event.query.state.data as TenantOnboardingState | undefined;
-    setDismissed(onboardingIsDismissed(data));
-  });
-  onCleanup(unsubscribe);
 
   const state = useQuery(() => {
     const options = enterpriseQueries.onboarding(props.tenantId);
@@ -88,6 +77,19 @@ export function OnboardingChecklist(props: { tenantId: string }) {
     };
   });
 
+  // Dismissal comes from the authoritative query data, not a QueryCache
+  // subscription. Cache writes can run inside an owned scope (hydration primes
+  // an entry from the component body), and writing a signal from the cache
+  // listener there threw REACTIVE_WRITE_IN_OWNED_SCOPE. The effect's imperative
+  // phase is the supported place for this synchronisation, and keeping it out
+  // of the options getter avoids making `enabled` depend on its own result.
+  createEffect(
+    () => onboardingIsDismissed(state.data),
+    (isDismissed) => {
+      setDismissed(isDismissed);
+    },
+  );
+
   const steps = createMemo(() =>
     state.data ? deriveOnboardingSteps(props.tenantId, state.data, can) : [],
   );
@@ -99,12 +101,32 @@ export function OnboardingChecklist(props: { tenantId: string }) {
 
   const progress = createMemo(() => onboardingProgress(steps()));
 
+  /**
+   * The rollback snapshot for the dismissal in flight.
+   *
+   * `@tanstack/solid-query` calls this component's `onMutate` itself and then
+   * invokes `onError` with an `undefined` context, so the value returned from
+   * `onMutate` never reaches the handler. Keep the snapshot here instead; the
+   * dismiss button is disabled while the mutation is pending, so there is only
+   * one in flight.
+   */
+  let dismissalRollback:
+    | {
+        previous: TenantOnboardingState | undefined;
+        identity: { userId: string | undefined; tenantId: string };
+      }
+    | undefined;
+  let dismissalFailed = false;
+
   const dismiss = useMutation(() => ({
     mutationFn: () => enterprise.patchTenantOnboarding(props.tenantId, true),
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: queryKey() });
       const previous = queryClient.getQueryData<TenantOnboardingState>(queryKey());
       const identity = dismissalIdentity();
+      const context = { previous, identity };
+      dismissalRollback = context;
+      dismissalFailed = false;
       writeOnboardingDismissal(browserStorage(), identity.userId, identity.tenantId, true);
 
       if (previous)
@@ -113,26 +135,37 @@ export function OnboardingChecklist(props: { tenantId: string }) {
           markOnboardingDismissed(previous, new Date().toISOString()),
         );
 
-      return { previous, identity };
+      return context;
     },
-    onError: (_error, _variables, context) => {
-      const restored =
-        context?.previous ?? queryClient.getQueryData<TenantOnboardingState>(queryKey());
+    onError: () => {
+      const context = dismissalRollback;
+      dismissalRollback = undefined;
+      dismissalFailed = true;
 
-      if (restored) {
-        queryClient.setQueryData(queryKey(), restored);
-        setDismissed(onboardingIsDismissed(restored));
-      } else setDismissed(false);
+      if (!context) return;
 
-      if (context)
-        writeOnboardingDismissal(
-          browserStorage(),
-          context.identity.userId,
-          context.identity.tenantId,
-          false,
-        );
+      if (context.previous) queryClient.setQueryData(queryKey(), context.previous);
+
+      writeOnboardingDismissal(
+        browserStorage(),
+        context.identity.userId,
+        context.identity.tenantId,
+        false,
+      );
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKey(), refetchType: "none" }),
+    onSettled: () => {
+      dismissalRollback = undefined;
+
+      // A failed dismissal restored the pre-mutation data, so there is nothing
+      // newer to invalidate. Invalidating here would immediately mark the
+      // restored query stale and refetch it once the query is enabled again.
+      if (dismissalFailed) {
+        dismissalFailed = false;
+        return;
+      }
+
+      void queryClient.invalidateQueries({ queryKey: queryKey(), refetchType: "none" });
+    },
   }));
 
   const externalSupport = () => supportUrl().startsWith("http");
