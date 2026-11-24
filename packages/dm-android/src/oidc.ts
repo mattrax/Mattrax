@@ -293,13 +293,15 @@ const sharedJwksService = (config: PubSubOidcVerifierConfig) =>
     const entry: Effect.Effect<Jwks.Jwks["Service"], JoseError.JoseError, HttpClient.HttpClient> =
       cachedEffect.pipe(
         Effect.tap((service) =>
-          Effect.sync(() => {
+          Effect.gen(function* () {
             if (sharedJwksFlights.get(options.url) !== entry) return;
+
+            const completedAt = yield* Clock.currentTimeMillis;
 
             sharedJwks.delete(options.url);
             sharedJwks.set(options.url, {
               service,
-              expiresAt: Date.now() + ttl,
+              expiresAt: completedAt + ttl,
             });
             trimSharedJwks();
           }),

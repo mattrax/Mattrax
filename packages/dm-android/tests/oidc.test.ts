@@ -285,6 +285,36 @@ describe("PubSubOidcVerifier", () => {
     }
   });
 
+  it("expires a shared key set on the ambient Effect clock", async () => {
+    const token = await sign(claims({ iat: 1_699_999_990, exp: 1_700_010_800 }));
+    const mock = mockFetch(() => jwksResponse());
+    const layer = () =>
+      PubSubOidcVerifierLive(scopedConfig({ jwksTimeToLive: "1 hour" }), {
+        sharedJwks: true,
+      }).pipe(Layer.provide(mock.layer));
+    const verifyOnce = () =>
+      Effect.gen(function* () {
+        const verifier = yield* PubSubOidcVerifier;
+
+        return yield* verifier.verify(token);
+      }).pipe(Effect.provide(layer()));
+
+    try {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          yield* TestClock.setTime(1_700_000_000_000);
+          yield* verifyOnce();
+          yield* TestClock.adjust("2 hours");
+          yield* verifyOnce();
+        }).pipe(Effect.provide(TestClock.layer())),
+      );
+
+      expect(mock.requests.filter((request) => request.pathname === "/jwks")).toHaveLength(2);
+    } finally {
+      invalidateSharedJwks(jwksUri);
+    }
+  });
+
   it("invalidates a shared key set so the next request fetches again", async () => {
     const token = await sign(claims());
     const mock = mockFetch(() => jwksResponse());
