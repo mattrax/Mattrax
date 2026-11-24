@@ -22,11 +22,7 @@ import {
   Tag,
   UsersRound,
 } from "~/components/ui/icons";
-import {
-  MIGRATION_MOVE_PERMISSIONS,
-  settingsTabPermissions,
-  useCan,
-} from "~/lib/permissions";
+import { MIGRATION_MOVE_PERMISSIONS, settingsTabPermissions, useCan } from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {
   createTenantProfileDraft,
@@ -122,92 +118,95 @@ export default function TenantSettingsLayout(props: ParentProps) {
 
   return (
     <TenantProfileDraftContext value={draft}>
-      <div class="flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-page">
-        <header class="flex shrink-0 flex-col gap-3 border-b border-border px-5 pb-5 pt-6 sm:px-7 sm:pb-6 sm:pt-7 lg:px-8">
+      <div class="grid h-full min-h-0 w-full flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)] [grid-template-areas:masthead_nav_content] overflow-hidden bg-page xl:grid-cols-[248px_minmax(0,1fr)] xl:grid-rows-[auto_minmax(0,1fr)] xl:[grid-template-areas:nav_masthead_nav_content]">
+        <header
+          data-slot="settings-masthead"
+          class="[grid-area:masthead] flex flex-col gap-1.5 border-b border-border px-8 py-3 sm:px-10 sm:py-4 xl:px-12"
+        >
           <div class="label-caps">Settings</div>
-          <div class="flex flex-col gap-1.5">
-            <h1 class="text-[26px] font-[580] leading-[1.1] tracking-[-0.03em] text-foreground">
+          <div class="flex flex-col gap-1">
+            <h1 class="text-[22px] font-[580] leading-[1.15] tracking-[-0.03em] text-foreground">
               {section().label}
             </h1>
-            <p class="max-w-[70ch] text-[13px] leading-6 text-muted-foreground">
+            <p class="max-w-[70ch] text-[12.5px] leading-5 text-muted-foreground">
               {section().description}
             </p>
           </div>
         </header>
 
-        <div class="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] xl:grid-cols-[248px_minmax(0,1fr)] xl:grid-rows-[minmax(0,1fr)]">
-          <nav
-            ref={(element) => {
-              tabNav = element;
-            }}
-            class="no-scrollbar flex min-h-0 gap-1 overflow-x-auto border-b border-border px-3 py-2.5 xl:block xl:overflow-y-auto xl:overflow-x-hidden xl:border-b-0 xl:border-r xl:px-3 xl:py-5"
-            aria-label="Tenant settings sections"
-          >
-            <For each={groups()}>
-              {(entry) => (
-                <div class="contents xl:mb-5 xl:block xl:last:mb-0">
-                  <div class="label-caps hidden px-2.5 pb-2 xl:block">{entry.group}</div>
-                  <ul class="contents xl:block xl:space-y-[2px]">
-                    <For each={entry.tabs}>
-                      {(tab) => {
-                        const href = hrefFor(tab.id);
-                        const isActive = () => active() === tab.id;
+        <nav
+          ref={(element) => {
+            tabNav = element;
+          }}
+          data-slot="settings-navigation"
+          class="no-scrollbar [grid-area:nav] flex min-h-0 gap-1 overflow-x-auto border-b border-border px-3 py-2.5 xl:block xl:overflow-y-auto xl:overflow-x-hidden xl:border-b-0 xl:border-r xl:px-3 xl:py-5"
+          aria-label="Tenant settings sections"
+        >
+          <For each={groups()}>
+            {(entry) => (
+              <div class="contents xl:mb-5 xl:block xl:last:mb-0">
+                <div class="label-caps hidden px-2.5 pb-2 xl:block">{entry.group}</div>
+                <ul class="contents xl:block xl:space-y-[2px]">
+                  <For each={entry.tabs}>
+                    {(tab) => {
+                      const href = hrefFor(tab.id);
+                      const isActive = () => active() === tab.id;
 
-                        return (
-                          <li class="contents">
-                            <a
-                              href={href}
+                      return (
+                        <li class="contents">
+                          <a
+                            href={href}
+                            class={cn(
+                              "group flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-2.5 text-[12px] font-[500] transition-colors duration-[var(--duration-hover)] ease-swift xl:h-9 xl:w-full xl:gap-2.5 xl:rounded-lg xl:px-2.5 xl:text-[13px]",
+                              isActive()
+                                ? "bg-active text-foreground"
+                                : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                            )}
+                            aria-current={isActive() ? "page" : undefined}
+                          >
+                            <Dynamic
+                              component={icons[tab.id]}
                               class={cn(
-                                "group flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-2.5 text-[12px] font-[500] transition-colors duration-[var(--duration-hover)] ease-swift xl:h-9 xl:w-full xl:gap-2.5 xl:rounded-lg xl:px-2.5 xl:text-[13px]",
-                                isActive()
-                                  ? "bg-active text-foreground"
-                                  : "text-muted-foreground hover:bg-hover hover:text-foreground",
+                                "size-3.5 shrink-0 transition-opacity xl:size-4",
+                                isActive() ? "opacity-90" : "opacity-55",
                               )}
-                              aria-current={isActive() ? "page" : undefined}
-                            >
-                              <Dynamic
-                                component={icons[tab.id]}
-                                class={cn(
-                                  "size-3.5 shrink-0 transition-opacity xl:size-4",
-                                  isActive() ? "opacity-90" : "opacity-55",
-                                )}
-                              />
-                              {tab.label}
-                            </a>
-                          </li>
-                        );
-                      }}
-                    </For>
-                  </ul>
-                </div>
-              )}
-            </For>
-          </nav>
-
-          {/* The content column owns the scroll so the title, tab row and rail
-              stay put while a long settings page moves underneath them. */}
-          <div
-            ref={(element) => {
-              contentPane = element;
-            }}
-            class={cn(
-              "settings-sections min-h-0 min-w-0 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 xl:px-8 xl:py-7",
-              (draft.dirty() || draft.saving() || draft.saved()) && "pb-28",
+                            />
+                            {tab.label}
+                          </a>
+                        </li>
+                      );
+                    }}
+                  </For>
+                </ul>
+              </div>
             )}
-          >
-            {/* Only the pane under the rail swaps while a settings chunk
+          </For>
+        </nav>
+
+        {/* The content column owns the scroll so the title, tab row and rail
+              stay put while a long settings page moves underneath them. */}
+        <div
+          ref={(element) => {
+            contentPane = element;
+          }}
+          data-slot="settings-content"
+          class={cn(
+            "settings-sections [grid-area:content] min-h-0 min-w-0 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4 xl:px-8 xl:py-4",
+            (draft.dirty() || draft.saving() || draft.saved()) && "pb-28",
+          )}
+        >
+          {/* Only the pane under the rail swaps while a settings chunk
                 loads. The masthead, rail, unsaved draft and save bar stay
                 mounted. */}
-            <Loading
-              fallback={
-                <div class="flex min-h-40 items-center justify-center py-16">
-                  <LoadingState label="Loading section…" size={18} />
-                </div>
-              }
-            >
-              {props.children}
-            </Loading>
-          </div>
+          <Loading
+            fallback={
+              <div class="flex min-h-40 items-center justify-center py-16">
+                <LoadingState label="Loading section…" size={18} />
+              </div>
+            }
+          >
+            {props.children}
+          </Loading>
         </div>
 
         {unsaved.prompt}

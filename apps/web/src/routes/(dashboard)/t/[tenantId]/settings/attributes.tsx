@@ -170,6 +170,7 @@ export default function AttributeSettingsPage() {
   };
 
   const save = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: () => {
       const current = draft();
 
@@ -258,6 +259,7 @@ export default function AttributeSettingsPage() {
   }));
 
   const importValues = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: () => enterprise.importDeviceAttributes(params.tenantId, csv()),
     onSuccess: async (result) => {
       setImportResults(result.results);
@@ -533,12 +535,21 @@ export default function AttributeSettingsPage() {
         description="CSV with a serial column and one attribute:<key> column per attribute. Empty cells clear the value; values are validated before they are written."
       >
         <div class="space-y-3">
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            class="block w-full text-[12.5px] text-muted-foreground file:mr-3 file:rounded-md file:border file:border-border file:bg-surface file:px-2.5 file:py-1.5 file:text-[12px] file:text-foreground"
-            onChange={(event) => void readCsvFile(event.currentTarget.files?.[0])}
-          />
+          <div class="space-y-1.5">
+            <label
+              for="attribute-csv-file"
+              class="block text-[12.5px] font-medium text-foreground/90"
+            >
+              Import device values CSV
+            </label>
+            <input
+              id="attribute-csv-file"
+              type="file"
+              accept=".csv,text/csv"
+              class="block w-full text-[12.5px] text-muted-foreground file:mr-3 file:rounded-md file:border file:border-border file:bg-surface file:px-2.5 file:py-1.5 file:text-[12px] file:text-foreground"
+              onChange={(event) => void readCsvFile(event.currentTarget.files?.[0])}
+            />
+          </div>
           <textarea
             class={textareaClass}
             aria-label="Attribute CSV"
