@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Layer, Schema } from "effect";
-import type { WindowsEnrollmentRequest } from "@mattrax/management-backend";
+import { MdmOrigin, WindowsEnrollmentRequest } from "@mattrax/management-backend";
 import { WindowsMdmService, WindowsMdmServiceLive } from "../src/service.js";
 import { mockManagementBackend } from "./helpers.js";
 
@@ -192,6 +192,31 @@ describe("Windows SOAP protocol boundaries", () => {
     });
     expect(requests[1].identityCertificate).toBeUndefined();
     expect(requests[1].identityCertificateSerial).toBeUndefined();
+  });
+
+  it("round-trips optional trusted identity proof in the enrollment request schema", () => {
+    const input = {
+      authToken: "token",
+      csr: "csr",
+      deviceId: "device-1",
+      context: { DeviceID: "device-1" },
+      mdmOrigin: new MdmOrigin({ url: config.origin }),
+      identityCertificate: "CN=device-1,OU=org-1",
+      identityCertificateSerial: "abcd",
+    };
+    const decoded = Schema.decodeUnknownSync(WindowsEnrollmentRequest)(input);
+
+    expect(decoded).toEqual(input);
+    expect(Schema.encodeSync(WindowsEnrollmentRequest)(decoded)).toEqual(input);
+
+    const {
+      identityCertificate: _certificate,
+      identityCertificateSerial: _serial,
+      ...firstEnrollment
+    } = input;
+    expect(Schema.decodeUnknownSync(WindowsEnrollmentRequest)(firstEnrollment)).toEqual(
+      firstEnrollment,
+    );
   });
 
   it("ignores tokens in the wrong namespace, nested tokens, and ambiguous duplicates", async () => {

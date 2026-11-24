@@ -308,6 +308,10 @@ export const WindowsEnrollmentRequest = Schema.Struct({
   clientIp: Schema.optional(Schema.String),
   /** Bounded request `User-Agent` (audit only). */
   userAgent: Schema.optional(Schema.String),
+  /** Subject from the edge-verified mTLS handshake, when presented. */
+  identityCertificate: Schema.optional(Schema.String),
+  /** Serial from the edge-verified mTLS handshake, when presented. */
+  identityCertificateSerial: Schema.optional(Schema.String),
 });
 
 export type WindowsEnrollmentRequest = typeof WindowsEnrollmentRequest.Type;

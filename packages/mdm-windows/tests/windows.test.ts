@@ -478,19 +478,21 @@ describe("Windows enterprise backend", () => {
       certificates: [issuedCertificateRow("a1b2c3", "existing")],
     });
     const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+    db.store[tableName(schema.autopilotDevice)] = [
+      {
+        __table: tableName(schema.autopilotDevice),
+        organizationId: "org-early",
+        serial: "DEVICE-1",
+        enrollmentState: "enrolled",
+        profileStatus: "assigned",
+        createdAt: now,
+        updatedAt: now,
+      },
+    ];
     db.failInsertTable = tableName(schema.scepIssuedCertificate);
 
     await expect(
-      run(
-        backend.windowsEnroll(
-          enrollmentRequest(
-            policy.authToken,
-            await makeCsr(),
-            "device-1",
-            identityProof("device-1", "a1b2c3"),
-          ),
-        ),
-      ),
+      run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr()))),
     ).rejects.toMatchObject({ _tag: "InternalServerError" });
     expect(dbRows(db, tableName(schema.device))).toMatchObject([
       { id: "existing", status: "pending", name: "ORIGINAL" },
@@ -1561,6 +1563,100 @@ describe("Windows identity lifecycle", () => {
     ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
     await expect(checkin(backend, scope)).resolves.toEqual({ commands: [] });
   });
+
+  it.each(["autopilot", "pre-registration", "foreign-autopilot", "none"] as const)(
+    "reclaims an unenrolled Windows row only with legitimate arrival proof (%s)",
+    async (proof) => {
+      const { backend, db } = await setup();
+      const policy = await run(backend.getWindowsEnrollmentPolicy(""));
+      await run(backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr())));
+      suppressInventory(db);
+
+      await run(
+        backend.windowsManagementCheckin(
+          { deviceId: "device-1", mdmOrigin },
+          {
+            sessionID: "1",
+            msgID: "1",
+            source: "device-1",
+            target: origin,
+            statuses: [],
+            alerts: [{ cmdID: "9", data: "1226" }],
+          },
+        ),
+      );
+
+      const device = dbRows(db, tableName(schema.device))[0];
+      const [oldCertificate] = dbRows(db, tableName(schema.scepIssuedCertificate));
+      expect(device.status).toBe("unenrolled");
+      expect(oldCertificate.revokedAt).toBeInstanceOf(Date);
+
+      if (proof === "autopilot") {
+        db.store[tableName(schema.autopilotDevice)] = [
+          {
+            __table: tableName(schema.autopilotDevice),
+            organizationId: "org-early",
+            serial: "DEVICE-1",
+            enrollmentState: "enrolled",
+            profileStatus: "assigned",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ];
+      } else if (proof === "pre-registration") {
+        db.store[tableName(schema.devicePreRegistration)] = [
+          {
+            __table: tableName(schema.devicePreRegistration),
+            id: "pre-registration-1",
+            organizationId: "org-early",
+            serial: "device-1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ];
+      } else if (proof === "foreign-autopilot") {
+        db.store[tableName(schema.autopilotDevice)] = [
+          {
+            __table: tableName(schema.autopilotDevice),
+            organizationId: "org-late",
+            serial: "DEVICE-1",
+            enrollmentState: "enrolled",
+            profileStatus: "assigned",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        ];
+      }
+
+      if (proof === "foreign-autopilot" || proof === "none") {
+        await expect(
+          run(backend.windowsEnroll(enrollmentRequest(policy.authToken, "not-a-csr"))),
+        ).rejects.toMatchObject({ _tag: "UnknownDevice" });
+        expect(dbRows(db, tableName(schema.device))).toMatchObject([
+          { id: device.id, status: "unenrolled" },
+        ]);
+        expect(dbRows(db, tableName(schema.scepIssuedCertificate))).toHaveLength(1);
+
+        return;
+      }
+
+      const result = await run(
+        backend.windowsEnroll(enrollmentRequest(policy.authToken, await makeCsr("RE-ENROLLED"))),
+      );
+      expect(result.deviceId).toBe("device-1");
+      expect(dbRows(db, tableName(schema.device))).toMatchObject([
+        { id: device.id, status: "enrolled", name: "DESKTOP-TEST" },
+      ]);
+      const certificates = dbRows(db, tableName(schema.scepIssuedCertificate));
+      expect(certificates).toHaveLength(2);
+      expect(
+        certificates.find((row) => row.serial === oldCertificate.serial)?.revokedAt,
+      ).toBeInstanceOf(Date);
+      const renewedCertificate = certificates.find((row) => row.serial !== oldCertificate.serial);
+      expect(renewedCertificate?.deviceId).toBe(device.id);
+      expect(renewedCertificate?.revokedAt ?? null).toBeNull();
+    },
+  );
 
   it("does not disclose commands to a device presenting another device's serial", async () => {
     const now = new Date("2024-03-01T00:00:00Z");

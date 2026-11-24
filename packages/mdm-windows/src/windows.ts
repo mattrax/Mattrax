@@ -542,6 +542,70 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     });
 
   /**
+   * Tenant-owned evidence that a newly arriving Windows device belongs here.
+   * This is sufficient to reclaim a retained, unenrolled row, but never to
+   * replace the active identity of an enrolled device.
+   */
+  const hasWindowsArrivalProof = (
+    organizationId: string,
+    deviceIdentifier: string,
+    existing: { readonly id: string } | null,
+  ): Effect.Effect<boolean, unknown> =>
+    Effect.gen(function* () {
+      const normalisedDeviceIdentifier = deviceIdentifier.toUpperCase();
+
+      const [autopilotBySerial] = yield* db
+        .select()
+        .from(s.autopilotDevice)
+        .where(
+          and(
+            eq(s.autopilotDevice.organizationId, organizationId),
+            eq(s.autopilotDevice.serial, normalisedDeviceIdentifier),
+          ),
+        )
+        .limit(1);
+
+      const [autopilotByAzureId] = yield* db
+        .select()
+        .from(s.autopilotDevice)
+        .where(
+          and(
+            eq(s.autopilotDevice.organizationId, organizationId),
+            eq(s.autopilotDevice.azureAdDeviceId, deviceIdentifier),
+          ),
+        )
+        .limit(1);
+
+      const [autopilotByDevice] = existing
+        ? yield* db
+            .select()
+            .from(s.autopilotDevice)
+            .where(
+              and(
+                eq(s.autopilotDevice.organizationId, organizationId),
+                eq(s.autopilotDevice.deviceId, existing.id),
+              ),
+            )
+            .limit(1)
+        : [];
+
+      const [preRegistration] = yield* db
+        .select()
+        .from(s.devicePreRegistration)
+        .where(
+          and(
+            eq(s.devicePreRegistration.organizationId, organizationId),
+            eq(s.devicePreRegistration.serial, deviceIdentifier),
+          ),
+        )
+        .limit(1);
+
+      return Boolean(
+        autopilotBySerial || autopilotByAzureId || autopilotByDevice || preRegistration,
+      );
+    });
+
+  /**
    * Resolve a device by the identity certificate it presented. The issued
    * certificate is bound to an internal device id at enrollment, so it is
    * stronger proof than the `DeviceID` a request asserts. Serial formats vary
@@ -1274,21 +1338,36 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         const existing = yield* findDevice(organizationId, deviceIdentifier);
         attributableDevice = existing;
 
-        if (existing) {
+        const arrivalProof = yield* hasWindowsArrivalProof(
+          organizationId,
+          deviceIdentifier,
+          existing,
+        );
+
+        if (existing && existing.status !== "enrolled") {
+          // Unenrollment revokes the old identity. Reclaiming the retained row
+          // is a new arrival, so require tenant-owned hardware proof instead of
+          // a certificate that can no longer validly prove possession.
+          if (!arrivalProof) {
+            yield* report(
+              "enrollment",
+              "arrival_proof_required",
+              "Windows enrollment was rejected: reclaiming an unenrolled device requires a matching Autopilot record or pre-registration.",
+            );
+
+            return yield* Effect.fail(new UnknownDevice());
+          }
+        } else if (existing) {
           // The HTTP layer forwards these fields only from the verified mTLS
           // handshake. They are deliberately separate from the caller-owned
           // AdditionalContext map. A tenant enrollment capability may create a
-          // new identity, but reusing this DeviceID requires the current
+          // new identity, but renewing an active identity requires the current
           // device certificate's private key.
-          const identityProof = request as WindowsEnrollmentRequest & {
-            readonly identityCertificate?: unknown;
-            readonly identityCertificateSerial?: unknown;
-          };
-          const proofSerial = Schema.is(Schema.String)(identityProof.identityCertificateSerial)
-            ? identityProof.identityCertificateSerial.trim()
+          const proofSerial = Schema.is(Schema.String)(request.identityCertificateSerial)
+            ? request.identityCertificateSerial.trim()
             : undefined;
-          const proofCertificate = Schema.is(Schema.String)(identityProof.identityCertificate)
-            ? identityProof.identityCertificate
+          const proofCertificate = Schema.is(Schema.String)(request.identityCertificate)
+            ? request.identityCertificate
             : undefined;
           const proofCn = certificateAttribute(proofCertificate, "CN");
           const proofOu = certificateAttribute(proofCertificate, "OU");
@@ -1331,60 +1410,6 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             and(eq(s.device.proto, "win"), eq(s.device.dmIdentifier, deviceIdentifier)),
           )).filter((row) => row.organizationId !== organizationId);
 
-        const normalisedDeviceIdentifier = deviceIdentifier.toUpperCase();
-
-        const [autopilotBySerial] = yield* db
-          .select()
-          .from(s.autopilotDevice)
-          .where(
-            and(
-              eq(s.autopilotDevice.organizationId, organizationId),
-              eq(s.autopilotDevice.serial, normalisedDeviceIdentifier),
-            ),
-          )
-          .limit(1);
-
-        const [autopilotByAzureId] = yield* db
-          .select()
-          .from(s.autopilotDevice)
-          .where(
-            and(
-              eq(s.autopilotDevice.organizationId, organizationId),
-              eq(s.autopilotDevice.azureAdDeviceId, deviceIdentifier),
-            ),
-          )
-          .limit(1);
-
-        const [autopilotByDevice] = existing
-          ? yield* db
-              .select()
-              .from(s.autopilotDevice)
-              .where(
-                and(
-                  eq(s.autopilotDevice.organizationId, organizationId),
-                  eq(s.autopilotDevice.deviceId, existing.id),
-                ),
-              )
-              .limit(1)
-          : [];
-
-        const autopilotProof = Boolean(
-          autopilotBySerial || autopilotByAzureId || autopilotByDevice,
-        );
-
-        const [preRegistrationProof] = yield* db
-          .select()
-          .from(s.devicePreRegistration)
-          .where(
-            and(
-              eq(s.devicePreRegistration.organizationId, organizationId),
-              eq(s.devicePreRegistration.serial, deviceIdentifier),
-            ),
-          )
-          .limit(1);
-
-        const arrivalProof = autopilotProof || Boolean(preRegistrationProof);
-
         // `maxDevices === 0` means unlimited for the tenant.
         if (!existing && enrollment.maxDevices > 0) {
           const windowsDevices = yield* db
@@ -1404,8 +1429,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           }
         }
 
-        // The deployment plan limit applies to all platforms. Re-enrolling an
-        // existing device is always allowed.
+        // The deployment plan limit applies to all platforms. An authorized
+        // re-enrollment of an existing device is exempt.
         if (!existing) {
           const planStatus = yield* deviceLimitForOrganization({
             db,
