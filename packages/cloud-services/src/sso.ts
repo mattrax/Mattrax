@@ -264,7 +264,15 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
           );
 
           if (possible?.purpose === APPLE_BYOD_STATE_PURPOSE)
-            return appleByodFailure(providerError ? "idp_rejected" : "invalid_request");
+            return appleByodFailure(
+              providerError
+                ? "idp_rejected"
+                : possible.exp <= Date.now()
+                  ? "state_expired"
+                  : "invalid_request",
+              400,
+              stateMatches,
+            );
         }
 
         return yield* reject({
