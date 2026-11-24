@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 import { runtimeConfigFromEnv } from "./config.js";
 
 const compose = readFileSync(join(import.meta.dirname, "..", "docker-compose.yml"), "utf8");
+const selfHostingDocs = readFileSync(
+  join(import.meta.dirname, "..", "..", "..", "docs", "operations", "self-hosting.md"),
+  "utf8",
+);
 
 describe("self-hosted compose configuration", () => {
   it("passes deployment branding through to the container", () => {
@@ -18,6 +22,18 @@ describe("self-hosted compose configuration", () => {
 
   it("passes the explicit trusted peer allowlist without inventing a default", () => {
     expect(compose).toContain("TRUSTED_DEVICE_IDENTITY_PEERS: ${TRUSTED_DEVICE_IDENTITY_PEERS:-}");
+  });
+
+  it("documents a supported proxy that forwards the verified SHA-256 fingerprint", () => {
+    const caddyExample = selfHostingDocs.match(/```caddy\n([\s\S]*?)\n```/)?.[1];
+
+    expect(caddyExample).toBeDefined();
+    expect(caddyExample).toContain("mode verify_if_given");
+    expect(caddyExample).toContain(
+      "header_up x-device-identity-certificate-sha256 {tls_client_fingerprint}",
+    );
+    expect(caddyExample).not.toContain('x-device-identity-certificate-sha256 ""');
+    expect(selfHostingDocs).toContain("serial-only fallback is no longer valid");
   });
 });
 

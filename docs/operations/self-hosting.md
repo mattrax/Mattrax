@@ -119,44 +119,51 @@ without exposing it to other networks. If the proxy runs on another host, set
 `MATTRAX_BIND_ADDRESS` to a private host interface and restrict that interface
 with a firewall; do not publish it on a public address.
 
-The required proxy configuration is:
+The following Caddy v2 configuration terminates TLS, verifies any presented
+device certificate, and forwards the certificate's SHA-256 fingerprint:
 
-```nginx
-server {
-  listen 443 ssl;
-  server_name mdm.example.com;
+```caddy
+mdm.example.com {
+	tls {
+		client_auth {
+			# Browsers may connect without a client certificate. Any certificate
+			# a device presents must verify against the device CA.
+			mode verify_if_given
+			trust_pool file /path/to/apple-device-ca.pem
+		}
+	}
 
-  # Apple, Windows and Android clients talk to /mdm/* on the same host.
-  client_max_body_size 64m;
+	# Apple, Windows and Android clients talk to /mdm/* on the same host.
+	request_body {
+		max_size 64MB
+	}
 
-  location / {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_set_header Host $host;
-    # Overwrite rather than append: a caller-supplied chain would let the
-    # client choose its own rate-limit key.
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header Cf-Connecting-Ip "";
-    proxy_set_header X-Forwarded-Proto https;
+	reverse_proxy 127.0.0.1:8080 {
+		header_up Host {host}
+		# Overwrite rather than append: a caller-supplied chain would let the
+		# client choose its own rate-limit key.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+		header_up -Cf-Connecting-Ip
+		header_up X-Forwarded-Proto https
 
-    # Required for Apple MDM certificate authentication. Strip anything the
-    # client sent, then forward only what nginx verified.
-    proxy_set_header x-device-identity-certificate "";
-    proxy_set_header x-device-identity-certificate-serial "";
-    proxy_set_header x-device-identity-certificate-sha256 "";
-    proxy_set_header x-device-identity-certificate $ssl_client_s_dn;
-    proxy_set_header x-device-identity-certificate-serial $ssl_client_serial;
-
-    ssl_client_certificate /path/to/apple-device-ca.pem;
-    ssl_verify_client optional;
-  }
+		# header_up replaces caller values with fields from the verified TLS
+		# handshake. The fingerprint placeholder is SHA-256, not SHA-1.
+		header_up x-device-identity-certificate {tls_client_subject}
+		header_up x-device-identity-certificate-serial {tls_client_serial}
+		header_up x-device-identity-certificate-sha256 {tls_client_fingerprint}
+	}
 }
 ```
+
+Stock nginx `$ssl_client_fingerprint` is SHA-1 and must not be sent as
+`x-device-identity-certificate-sha256`. Use Caddy as above, or configure another
+proxy to compute SHA-256 over the verified client certificate's DER encoding.
 
 Set `TRUST_DEVICE_IDENTITY_HEADERS=1` **only** when the proxy verifies device
 certificates and overwrites the headers as above. Also set
 `TRUSTED_DEVICE_IDENTITY_PEERS` to the comma-separated numeric IPv4/IPv6
-addresses of the proxy as seen by the container. For a host-side nginx example,
+addresses of the proxy as seen by the container. For a host-side Caddy example,
 loopback is typical; some Docker bridge setups present the private gateway
 instead, so configure the address the container actually observes. For a proxy
 on another host, use its stable private address. Startup fails when
@@ -166,16 +173,17 @@ The API compares the allowlist with the actual Node socket peer, not with
 `X-Forwarded-For` or any caller-supplied header. It strips all incoming identity
 headers and restores them only for an allowlisted peer. The verified certificate
 must include a CN and a serial; an incomplete bundle is discarded rather than
-allowing tenant routing by OU alone. The optional SHA-256 fingerprint remains
-supported. Exposing the container without a verifying, overwriting proxy would
-otherwise let a caller claim any tenant by setting the certificate OU.
+allowing tenant routing by OU alone. For Apple MDM, forwarding the verified
+SHA-256 fingerprint is mandatory: serial-only fallback is no longer valid.
+Exposing the container without a verifying, overwriting proxy would otherwise
+let a caller claim any tenant by setting the certificate OU.
 
 Apple signs MDM check-ins with the SCEP identity certificate and sends its subject
-distinguished name in the TLS handshake. The tenant is the `OU` in that subject, so
-forwarding `$ssl_client_s_dn` is what routes a device to its tenant. If your proxy
-can also compute the certificate's SHA-256 fingerprint, send it as
-`x-device-identity-certificate-sha256`; otherwise identity binding falls back to
-the serial number.
+distinguished name in the TLS handshake. The tenant is the `OU` in that subject.
+Caddy's `{tls_client_subject}` placeholder supplies that DN, and
+`{tls_client_fingerprint}` supplies the mandatory SHA-256 fingerprint. A proxy
+that cannot forward the verified SHA-256 fingerprint cannot serve Apple MDM
+traffic.
 
 The container serves plain HTTP because TLS is the proxy's job. Set
 `TRUSTED_ORIGINS` when the dashboard and API are served from different origins.

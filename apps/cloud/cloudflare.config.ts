@@ -255,8 +255,13 @@ export const apiWorker = {
     /** Legacy Windows tenant pin and federated WSTEP app registration. */
     WINDOWS_ORGANIZATION_ID: bindings.text(""),
     WINDOWS_FEDERATED_AUDIENCE: bindings.text(""),
-    /** Set to `1` only behind a proxy that terminates device mTLS. */
-    TRUST_DEVICE_IDENTITY_HEADERS: bindings.text(process.env.TRUST_DEVICE_IDENTITY_HEADERS ?? ""),
+    /**
+     * Hosted Cloudflare reads identity from the verified `request.cf` mTLS
+     * handshake. Proxy-header trust and its peer allowlist are Node-only and
+     * stay disabled here regardless of the deploy process environment.
+     */
+    TRUST_DEVICE_IDENTITY_HEADERS: bindings.text(""),
+    TRUSTED_DEVICE_IDENTITY_PEERS: bindings.text(""),
     /** SMTP server used by self-hosted deployments. */
     MAIL_SMTP_HOST: bindings.text(""),
     MAIL_SMTP_PORT: bindings.text(""),

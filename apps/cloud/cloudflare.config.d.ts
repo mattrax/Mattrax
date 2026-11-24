@@ -115,8 +115,13 @@ export declare const apiWorker: {
         /** Legacy Windows tenant pin and federated WSTEP app registration. */
         WINDOWS_ORGANIZATION_ID: import("cf/config").TextBinding<"">;
         WINDOWS_FEDERATED_AUDIENCE: import("cf/config").TextBinding<"">;
-        /** Set to `1` only behind a proxy that terminates device mTLS. */
-        TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<string>;
+        /**
+         * Hosted Cloudflare reads identity from the verified `request.cf` mTLS
+         * handshake. Proxy-header trust and its peer allowlist are Node-only and
+         * stay disabled here regardless of the deploy process environment.
+         */
+        TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<"">;
+        TRUSTED_DEVICE_IDENTITY_PEERS: import("cf/config").TextBinding<"">;
         /** SMTP server used by self-hosted deployments. */
         MAIL_SMTP_HOST: import("cf/config").TextBinding<"">;
         MAIL_SMTP_PORT: import("cf/config").TextBinding<"">;
@@ -251,8 +256,13 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             /** Legacy Windows tenant pin and federated WSTEP app registration. */
             WINDOWS_ORGANIZATION_ID: import("cf/config").TextBinding<"">;
             WINDOWS_FEDERATED_AUDIENCE: import("cf/config").TextBinding<"">;
-            /** Set to `1` only behind a proxy that terminates device mTLS. */
-            TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<string>;
+            /**
+             * Hosted Cloudflare reads identity from the verified `request.cf` mTLS
+             * handshake. Proxy-header trust and its peer allowlist are Node-only and
+             * stay disabled here regardless of the deploy process environment.
+             */
+            TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<"">;
+            TRUSTED_DEVICE_IDENTITY_PEERS: import("cf/config").TextBinding<"">;
             /** SMTP server used by self-hosted deployments. */
             MAIL_SMTP_HOST: import("cf/config").TextBinding<"">;
             MAIL_SMTP_PORT: import("cf/config").TextBinding<"">;
@@ -385,8 +395,13 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             /** Legacy Windows tenant pin and federated WSTEP app registration. */
             WINDOWS_ORGANIZATION_ID: import("cf/config").TextBinding<"">;
             WINDOWS_FEDERATED_AUDIENCE: import("cf/config").TextBinding<"">;
-            /** Set to `1` only behind a proxy that terminates device mTLS. */
-            TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<string>;
+            /**
+             * Hosted Cloudflare reads identity from the verified `request.cf` mTLS
+             * handshake. Proxy-header trust and its peer allowlist are Node-only and
+             * stay disabled here regardless of the deploy process environment.
+             */
+            TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<"">;
+            TRUSTED_DEVICE_IDENTITY_PEERS: import("cf/config").TextBinding<"">;
             /** SMTP server used by self-hosted deployments. */
             MAIL_SMTP_HOST: import("cf/config").TextBinding<"">;
             MAIL_SMTP_PORT: import("cf/config").TextBinding<"">;
