@@ -70,8 +70,10 @@ test.describe("command palette", () => {
 
     const input = await openPalette(page);
     await input.fill("apns");
-    await expect(page.getByRole("option", { name: /Apple push delivery/ })).toBeVisible();
-    await expect(page.getByRole("option", { name: /Device management/ })).toBeVisible();
+    // Settings commands are derived from the settings tab metadata, so the
+    // destinations use the tab labels while the APNs keywords still find them.
+    await expect(page.getByRole("option", { name: /Delivery/ })).toBeVisible();
+    await expect(page.getByRole("option", { name: /Management/ })).toBeVisible();
 
     await input.fill("E2E User");
     await expect(page.getByRole("option", { name: /E2E User/ })).toBeVisible();

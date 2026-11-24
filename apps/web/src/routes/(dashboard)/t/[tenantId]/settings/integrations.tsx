@@ -1,4 +1,4 @@
-import { useParams } from "@solidjs/router";
+import { useParams, useSearchParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
@@ -90,7 +90,19 @@ export default function IntegrationsSettingsPage() {
   const [testingId, setTestingId] = createSignal<string | null>(null);
   const [rotateError, setRotateError] = createSignal<unknown>();
 
-  const [tab, setTab] = createSignal<"endpoints" | "deliveries">("endpoints");
+  // The active view lives in the URL so it survives a reload and can be
+  // linked to. A local signal here raced the settings route's hydration: the
+  // keyboard handler wrote the signal but the mounted view kept reading its
+  // initial value (the e2e tabs test caught this), whereas the router's
+  // location updates both the URL and every observer.
+  const [searchParams, setSearchParams] = useSearchParams<{ view?: string }>();
+  const tab = (): "endpoints" | "deliveries" =>
+    searchParams.view === "deliveries" && canReadDeliveries() ? "deliveries" : "endpoints";
+  const setTab = (id: string) =>
+    setSearchParams(
+      { view: id === "deliveries" ? "deliveries" : undefined },
+      { replace: true },
+    );
   const [endpointId, setEndpointId] = createSignal("");
   const [eventFilter, setEventFilter] = createSignal("");
   const [statusFilter, setStatusFilter] = createSignal<"" | "succeeded" | "failed">("");

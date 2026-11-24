@@ -33,8 +33,11 @@ describe("tenant path permissions", () => {
   });
 
   it("keeps the guards for ordinary settings tabs", () => {
-    expect(permissionForTenantPath("/t/acme/settings/backups", "acme")).toBe("backups.read");
     expect(permissionForTenantPath("/t/acme/settings/audit", "acme")).toBe("audit.read");
     expect(permissionForTenantPath("/t/acme/settings", "acme")).toBe("tenant.read");
+  });
+
+  it("lets the backups page render its own no-access notice", () => {
+    expect(permissionForTenantPath("/t/acme/settings/backups", "acme")).toBeUndefined();
   });
 });

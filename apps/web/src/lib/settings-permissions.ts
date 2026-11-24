@@ -125,6 +125,11 @@ export function permissionForTenantPath(path: string, tenantId: string): Permiss
     // own denial, so the single-permission guard must not pick one of them.
     if (sub === "migration" && detail === "export") return undefined;
 
+    // Backups renders its own no-access notice and gates the preload on
+    // backups.read, so a role without it should see that notice rather than
+    // the generic section-denied card.
+    if (sub === "backups") return undefined;
+
     return settingsTabPermission(sub);
   }
 
