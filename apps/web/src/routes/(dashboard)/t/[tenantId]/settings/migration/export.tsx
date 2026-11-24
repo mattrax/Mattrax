@@ -20,9 +20,9 @@ import {
 } from "~/components/ui/dialog";
 import { useTenantProfileDraft } from "~/components/settings/tenant-profile-draft";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
-import { preloadPage } from "~/lib/page-data";
+import { preloadSettingsPage } from "~/components/settings/preload";
 import { queryClient } from "~/lib/query-client";
-import { useCan } from "~/lib/permissions";
+import { AccessDenied, useCan } from "~/lib/permissions";
 import { approvalFailure, raisedFailure } from "~/lib/errors";
 import { responseFailure } from "~/components/settings/http-failure";
 import {
@@ -37,13 +37,17 @@ import { useNavigate } from "~/lib/navigation";
 import { CutoverPanel } from "../cutover-panel";
 
 export const route = {
-  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
-    if (intent === "initial") return;
-
-    return preloadPage([
-      () => queryClient.ensureQueryData(enterpriseQueries.tenant(params.tenantId)),
-    ]);
-  },
+  preload: (args: RoutePreloadFuncArgs) =>
+    preloadSettingsPage(args, [
+      {
+        // The layout disables the tenant query without tenant.read; only warm
+        // it when the role can actually read the tenant.
+        permission: "tenant.read",
+        load: async () => {
+          await queryClient.ensureQueryData(enterpriseQueries.tenant(args.params.tenantId));
+        },
+      },
+    ]),
 };
 
 const decodeTenantImport = Schema.decodeUnknownOption(TenantImportRequestSchema);
@@ -63,6 +67,7 @@ export default function MigrationExportPage() {
   const { tenant } = useTenantProfileDraft();
   const canExport = () => can("tenant.export");
   const canImport = () => can("tenant.import");
+  const canOpen = () => canExport() || canImport();
 
   const [includeAudit, setIncludeAudit] = createSignal(false);
   const [exporting, setExporting] = createSignal(false);
@@ -215,6 +220,14 @@ export default function MigrationExportPage() {
       auditLog: bundle.auditLog?.length ?? 0,
     };
   });
+
+  if (!canOpen())
+    return (
+      <AccessDenied
+        title="No tenant transfer access"
+        message="Your role cannot export or import tenants. Ask a tenant owner for the tenant.export or tenant.import permission."
+      />
+    );
 
   return (
     <div class="grid gap-5">

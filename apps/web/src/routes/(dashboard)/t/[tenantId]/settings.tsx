@@ -20,7 +20,11 @@ import {
   SlidersHorizontal,
   UsersRound,
 } from "~/components/ui/icons";
-import { settingsTabPermission, useCan } from "~/lib/permissions";
+import {
+  MIGRATION_MOVE_PERMISSIONS,
+  settingsTabPermissions,
+  useCan,
+} from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {
   createTenantProfileDraft,
@@ -30,6 +34,7 @@ import { SettingsSaveBar, SlugChangeDialog } from "~/components/settings/setting
 import {
   activeSettingsTab,
   groupSettingsTabs,
+  migrationLandingHref,
   SETTINGS_TABS,
   settingsTabById,
   settingsTabHref,
@@ -62,7 +67,7 @@ const icons: Record<SettingsTabId, SectionIcon> = {
 export default function TenantSettingsLayout(props: ParentProps) {
   const params = useParams();
   const location = useLocation();
-  const { can } = useCan();
+  const { can, canAny } = useCan();
   const base = () => `/t/${params.tenantId}/settings`;
   const draft = createTenantProfileDraft(params.tenantId!);
   const unsaved = useUnsavedChanges(draft.dirty, {
@@ -71,7 +76,15 @@ export default function TenantSettingsLayout(props: ParentProps) {
       "The tenant profile has changes that have not been saved. Leaving settings discards them.",
     allowNavigation: (to) => to === base() || to.startsWith(`${base()}/`),
   });
-  const visibleTabs = () => SETTINGS_TABS.filter((tab) => can(settingsTabPermission(tab.id)));
+  const visibleTabs = () => SETTINGS_TABS.filter((tab) => canAny(settingsTabPermissions(tab.id)));
+
+  const hrefFor = (id: Parameters<typeof settingsTabHref>[1]) =>
+    id === "migration"
+      ? migrationLandingHref(base(), {
+          cohorts: can("devices.read"),
+          move: MIGRATION_MOVE_PERMISSIONS.some((permission) => can(permission)),
+        })
+      : settingsTabHref(base(), id);
 
   const active = () => activeSettingsTab(location.pathname, base());
 
@@ -80,13 +93,31 @@ export default function TenantSettingsLayout(props: ParentProps) {
   const groups = createMemo(() => groupSettingsTabs(visibleTabs()));
 
   let tabNav: HTMLElement | undefined;
+  let contentPane: HTMLDivElement | undefined;
+  let initialRoute = true;
   createEffect(
     () => location.pathname,
     () => {
+      if (initialRoute) {
+        initialRoute = false;
+
+        return;
+      }
+
       queueMicrotask(() => {
         tabNav
           ?.querySelector<HTMLElement>('[aria-current="page"]')
           ?.scrollIntoView({ inline: "nearest", block: "nearest" });
+
+        // The settings pane, not the window, owns the scroll. Reset it here
+        // and move focus into it so keyboard users scroll the right element.
+        contentPane?.scrollTo({ top: 0 });
+
+        // A dialog owns focus while it is open.
+        if (document.querySelector('[data-slot="dialog-content"], [data-slot="command-palette"]'))
+          return;
+
+        contentPane?.focus({ preventScroll: true });
       });
     },
   );
@@ -121,7 +152,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
                   <ul class="contents xl:block xl:space-y-[2px]">
                     <For each={entry.tabs}>
                       {(tab) => {
-                        const href = settingsTabHref(base(), tab.id);
+                        const href = hrefFor(tab.id);
                         const isActive = () => active() === tab.id;
 
                         return (
@@ -158,8 +189,12 @@ export default function TenantSettingsLayout(props: ParentProps) {
           {/* The content column owns the scroll so the title, tab row and rail
               stay put while a long settings page moves underneath them. */}
           <div
+            ref={(element) => {
+              contentPane = element;
+            }}
+            tabindex="-1"
             class={cn(
-              "settings-sections min-h-0 min-w-0 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 xl:px-8 xl:py-7",
+              "settings-sections min-h-0 min-w-0 overflow-y-auto px-4 py-5 outline-none focus:outline-none sm:px-6 sm:py-6 xl:px-8 xl:py-7",
               (draft.dirty() || draft.saving() || draft.saved()) && "pb-28",
             )}
           >

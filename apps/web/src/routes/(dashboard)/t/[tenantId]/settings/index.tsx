@@ -1,9 +1,9 @@
-import { useParams } from "@solidjs/router";
+import { useLocation, useParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { Match } from "effect";
-import { createSignal, lazy, Loading, onSettled, Show } from "solid-js";
+import { createEffect, createSignal, lazy, Loading, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { DEFAULT_BRAND_COLOR, normalizeBrandColor } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
@@ -79,7 +79,17 @@ function RegionPickerFallback(props: {
 
 export default function GeneralSettingsPage() {
   const params = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
+
+  // Import used to live here as `#restore`; keep old bookmarks working.
+  createEffect(
+    () => location.hash,
+    (hash) => {
+      if (hash === "#restore")
+        navigate(`/t/${params.tenantId}/settings/migration/export#restore`, { replace: true });
+    },
+  );
   const qc = useQueryClient();
   const { can } = useCan();
   const draft = useTenantProfileDraft();

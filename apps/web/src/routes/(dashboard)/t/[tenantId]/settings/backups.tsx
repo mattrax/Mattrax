@@ -23,7 +23,7 @@ import {
   optimisticallyRemoveCollectionItems,
   optimisticallyUpdateCollection,
 } from "~/lib/optimistic";
-import { preloadPage } from "~/lib/page-data";
+import { preloadSettingsPage } from "~/components/settings/preload";
 import { queryClient } from "~/lib/query-client";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { withStepUp } from "~/lib/step-up";
@@ -39,14 +39,15 @@ import { responseFailure } from "~/components/settings/http-failure";
 import { resolveTenantId } from "~/lib/tenant";
 
 export const route = {
-  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
-    if (intent === "initial") return;
-
-    return preloadPage([
-      () => queryClient.ensureQueryData(enterpriseQueries.backups(params.tenantId)),
-      () => queryClient.ensureQueryData(enterpriseQueries.tenant(params.tenantId)),
-    ]);
-  },
+  preload: (args: RoutePreloadFuncArgs) =>
+    preloadSettingsPage(args, [
+      {
+        permission: "backups.read",
+        load: async () => {
+          await queryClient.ensureQueryData(enterpriseQueries.backups(args.params.tenantId));
+        },
+      },
+    ]),
 };
 
 const StepUpFailure = Schema.Struct({

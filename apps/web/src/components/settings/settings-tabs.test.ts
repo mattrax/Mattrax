@@ -4,6 +4,7 @@ import {
   activeSettingsTab,
   groupSettingsTabs,
   MIGRATION_TABS,
+  migrationLandingHref,
   migrationTabHref,
   SETTINGS_TABS,
   settingsTabById,
@@ -70,5 +71,22 @@ describe("settings tab routing", () => {
     expect(activeMigrationTab(`${migration}/export`, migration)).toBe("export");
     expect(activeMigrationTab(`${migration}/mig_123`, migration)).toBe("");
     expect(activeMigrationTab("/t/acme/settings", migration)).toBe("");
+  });
+
+  it("lands tenant movers without device access on Export / import", () => {
+    const settings = "/t/acme/settings";
+
+    expect(migrationLandingHref(settings, { cohorts: true, move: true })).toBe(
+      `${settings}/migration`,
+    );
+    expect(migrationLandingHref(settings, { cohorts: true, move: false })).toBe(
+      `${settings}/migration`,
+    );
+    expect(migrationLandingHref(settings, { cohorts: false, move: true })).toBe(
+      `${settings}/migration/export`,
+    );
+    expect(migrationLandingHref(settings, { cohorts: false, move: false })).toBe(
+      `${settings}/migration`,
+    );
   });
 });

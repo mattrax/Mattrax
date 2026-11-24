@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
 import { cn } from "~/lib/utils";
+import { sectionTabTarget } from "./section-tabs-nav";
 
 export type SectionTab = {
   readonly id: string;
@@ -25,15 +26,21 @@ export function SectionTabs(props: {
   tabs: ReadonlyArray<SectionTab>;
   active: string;
   onSelect?: (id: string) => void;
+  /** Panels are mounted on demand; only link aria-controls when one exists. */
+  panelMounted?: (id: string) => boolean;
   class?: string;
 }) {
   const isTablist = () => props.onSelect !== undefined;
+  const activeId = () =>
+    props.tabs.some((tab) => tab.id === props.active)
+      ? props.active
+      : (props.tabs[0]?.id ?? "");
   const anchors = new Map<string, HTMLElement>();
   const [indicator, setIndicator] = createSignal({ left: 0, width: 0 });
   const [measured, setMeasured] = createSignal(false);
 
   const measure = () => {
-    const current = anchors.get(props.active);
+    const current = anchors.get(activeId());
 
     if (!current) return;
 
@@ -41,7 +48,7 @@ export function SectionTabs(props: {
   };
 
   createEffect(
-    () => [props.active, props.tabs.length] as const,
+    () => [activeId(), props.tabs.length] as const,
     () => queueMicrotask(measure),
   );
 
@@ -66,8 +73,24 @@ export function SectionTabs(props: {
   const itemClass = (id: string) =>
     cn(
       "inline-flex h-10 shrink-0 items-center px-0.5 text-[12.5px] font-[500] whitespace-nowrap outline-none transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:ring-ring/40",
-      props.active === id ? "text-foreground" : "text-muted-foreground hover:text-foreground",
+      activeId() === id ? "text-foreground" : "text-muted-foreground hover:text-foreground",
     );
+
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!isTablist()) return;
+
+    const next = sectionTabTarget(
+      props.tabs.map((tab) => tab.id),
+      activeId(),
+      event.key,
+    );
+
+    if (!next) return;
+
+    event.preventDefault();
+    props.onSelect?.(next);
+    queueMicrotask(() => anchors.get(next)?.focus());
+  };
 
   return (
     <nav
@@ -76,6 +99,7 @@ export function SectionTabs(props: {
         props.class,
       )}
       aria-label={props.label}
+      aria-orientation={isTablist() ? "horizontal" : undefined}
       role={isTablist() ? "tablist" : undefined}
     >
       <For each={props.tabs}>
@@ -89,9 +113,13 @@ export function SectionTabs(props: {
                   anchors.set(tab.id, element);
                 }}
                 id={tab.elementId}
+                onKeyDown={onKeyDown}
                 role="tab"
-                aria-selected={props.active === tab.id ? "true" : "false"}
-                aria-controls={tab.panelId}
+                tabindex={activeId() === tab.id ? 0 : -1}
+                aria-selected={activeId() === tab.id ? "true" : "false"}
+                aria-controls={
+                  tab.panelId && props.panelMounted?.(tab.id) ? tab.panelId : undefined
+                }
                 onClick={() => props.onSelect?.(tab.id)}
                 class={itemClass(tab.id)}
               >
@@ -106,7 +134,7 @@ export function SectionTabs(props: {
                 }}
                 href={href()}
                 class={itemClass(tab.id)}
-                aria-current={props.active === tab.id ? "page" : undefined}
+                aria-current={activeId() === tab.id ? "page" : undefined}
               >
                 {tab.label}
               </a>

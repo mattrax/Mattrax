@@ -38,11 +38,18 @@ import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { reportGlobalError } from "~/lib/global-errors";
 import {
+  MIGRATION_MOVE_PERMISSIONS,
   SETTINGS_READ_PERMISSIONS,
-  settingsTabPermission,
+  settingsTabPermissions,
   tenantSectionPermission,
   useCan,
 } from "~/lib/permissions";
+import {
+  migrationLandingHref,
+  SETTINGS_TABS,
+  settingsTabHref,
+} from "~/components/settings/settings-tabs";
+import type { SettingsTabId } from "~/components/settings/settings-tabs";
 import { cn } from "~/lib/utils";
 
 const RECENTS_KEY = "mattrax:recents";
@@ -352,101 +359,45 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
       },
     ];
 
-    const settings: Command[] = (
-      [
-        {
-          key: "general",
-          title: "General settings",
-          keywords: ["profile", "branding", "name", "slug"],
-          path: "general",
-        },
-        {
-          key: "administrators",
-          title: "Administrators",
-          keywords: ["people", "users", "invite", "roles", "members", "accounts"],
-          path: "administrators",
-        },
-        {
-          key: "backups",
-          title: "Backups",
-          keywords: ["backup", "restore", "snapshot", "retention", "pin"],
-          path: "backups",
-        },
-        {
-          key: "approvals",
-          title: "Approvals",
-          keywords: ["four-eyes", "approve", "queue", "destructive", "policies"],
-          path: "approvals",
-        },
-        {
-          key: "identity",
-          title: "Identity & SSO",
-          keywords: ["sso", "scim", "entra", "directory", "single sign-on"],
-          path: "identity",
-        },
-        {
-          key: "enrollment",
-          title: "Enrollment settings",
-          keywords: ["enroll", "onboarding", "link"],
-          path: "enrollment",
-        },
-        {
-          key: "management",
-          title: "Device management",
-          keywords: ["apns", "apple push", "scep", "android", "certificate"],
-          path: "management",
-        },
-        {
-          key: "delivery",
-          title: "Apple push delivery",
-          keywords: ["apns", "push", "failing", "invalid token", "diagnostics"],
-          path: "delivery",
-        },
-        {
-          key: "migration",
-          title: "Migration & move deployment",
-          keywords: ["migrate", "jamf", "intune", "kandji", "cutover", "export", "import"],
-          path: "migration",
-        },
-        {
-          key: "integrations",
-          title: "Integrations",
-          keywords: ["webhooks", "events", "api"],
-          path: "integrations",
-        },
-        {
-          key: "audit",
-          title: "Audit log",
-          keywords: ["events", "history", "export"],
-          path: "audit",
-        },
-        {
-          key: "billing",
-          title: "Billing",
-          keywords: ["plan", "invoice", "stripe", "usage"],
-          path: "billing",
-        },
-        {
-          key: "storage",
-          title: "Storage",
-          keywords: ["r2", "bucket", "files", "usage", "space", "cleanup"],
-          path: "storage",
-        },
-      ] satisfies ReadonlyArray<{
-        key: string;
-        title: string;
-        keywords: ReadonlyArray<string>;
-        path: string;
-      }>
-    ).map(({ key, title, keywords, path }) => ({
-      id: `settings-${key}`,
-      title,
-      group: "Settings",
-      icon: Settings,
-      href: `${base()}/settings/${path === "general" ? "" : path}`.replace(/\/$/, ""),
-      keywords,
-      run: go(`${base()}/settings/${path === "general" ? "" : path}`.replace(/\/$/, "")),
-    }));
+    const settingsKeywords: Record<SettingsTabId, ReadonlyArray<string>> = {
+      "": ["profile", "branding", "name", "slug", "tenant id", "delete"],
+      administrators: ["people", "users", "invite", "roles", "members", "accounts"],
+      backups: ["backup", "restore", "snapshot", "retention", "pin"],
+      approvals: ["four-eyes", "approve", "queue", "destructive", "policies"],
+      identity: ["sso", "scim", "entra", "directory", "single sign-on"],
+      enrollment: ["enroll", "onboarding", "link"],
+      attributes: ["custom fields", "registry", "device attributes"],
+      management: ["apns", "apple push", "scep", "android", "certificate", "abm"],
+      migration: ["migrate", "jamf", "intune", "kandji", "cutover", "export", "import"],
+      delivery: ["apns", "push", "failing", "invalid token", "diagnostics"],
+      "os-updates": ["minimum version", "enforcement", "deferral", "software updates"],
+      integrations: ["webhooks", "events", "api"],
+      audit: ["events", "history", "export"],
+      billing: ["plan", "invoice", "stripe", "usage"],
+      storage: ["r2", "bucket", "files", "usage", "space", "cleanup"],
+      legal: ["licences", "licenses", "open source", "notices"],
+    };
+
+    const settings: Command[] = SETTINGS_TABS.map((tab) => {
+      const settingsBase = `${base()}/settings`;
+      const href =
+        tab.id === "migration"
+          ? migrationLandingHref(settingsBase, {
+              cohorts: can("devices.read"),
+              move: MIGRATION_MOVE_PERMISSIONS.some((permission) => can(permission)),
+            })
+          : settingsTabHref(settingsBase, tab.id);
+
+      return {
+        id: `settings-${tab.id || "general"}`,
+        title: tab.id === "" ? "General settings" : tab.label,
+        group: "Settings",
+        icon: Settings,
+        href,
+        keywords: settingsKeywords[tab.id],
+        run: go(href),
+      };
+    });
 
     const queries: Command[] = [
       {
@@ -540,7 +491,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
       ...settings.filter((command) => {
         const key = command.id.replace("settings-", "");
 
-        return can(settingsTabPermission(key));
+        return canAny(settingsTabPermissions(key === "general" ? "" : key));
       }),
       ...(can("devices.read") ? queries : []),
     ];

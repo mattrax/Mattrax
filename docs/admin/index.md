@@ -13,9 +13,9 @@ of it lives under **Settings**.
 - Logo.
 - Metadata.
 
-Backups live on their own **Settings → Backups** page, next to General. Exporting
-and importing a tenant bundle, and moving a deployment, are under
-**Settings → Migration → Export / import**.
+Backups live on their own **Settings → Backups** page, between Administrators
+and Approvals in the rail. Exporting and importing a tenant bundle, and moving a
+deployment, are under **Settings → Migration → Export / import**.
 
 Branding is used by the public enrollment page, Apple enrollment profiles, the DDM
 organization declaration and invitation emails.

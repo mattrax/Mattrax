@@ -1,8 +1,8 @@
 /**
  * The settings rail's tab metadata and path helpers.
  *
- * Kept free of components so the layout, the command palette and tests all
- * agree on the same ids, grouping and active-tab rules.
+ * Kept free of components so the settings rail, the command palette and tests
+ * all agree on the same ids, grouping, labels and active-tab rules.
  */
 
 export type SettingsTabId =
@@ -185,6 +185,20 @@ export const MIGRATION_TABS: ReadonlyArray<{ id: MigrationTabId; label: string }
 
 export function migrationTabHref(base: string, id: MigrationTabId): string {
   return id ? `${base}/${id}` : base;
+}
+
+/**
+ * Where the rail's Migration entry should land. A role that can move a tenant
+ * but cannot browse devices has no cohort tracker, so it goes straight to the
+ * deployment tools instead of a denied Cohorts page.
+ */
+export function migrationLandingHref(
+  settingsBase: string,
+  access: { cohorts: boolean; move: boolean },
+): string {
+  const base = `${settingsBase}/migration`;
+
+  return !access.cohorts && access.move ? `${base}/export` : base;
 }
 
 /**

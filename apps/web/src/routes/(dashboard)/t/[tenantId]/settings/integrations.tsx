@@ -403,6 +403,7 @@ export default function IntegrationsSettingsPage() {
         label="Webhook views"
         active={tab()}
         onSelect={(id) => setTab(id === "deliveries" ? "deliveries" : "endpoints")}
+        panelMounted={(id) => tab() === id}
         tabs={[
           {
             id: "endpoints",
