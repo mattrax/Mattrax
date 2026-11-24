@@ -12,7 +12,9 @@ import {
   AzureGraphNotFound,
   AzureGraphPaginationExhausted,
   AzureGraphRequestFailed,
+  AzureGraphUnauthorized,
   GRAPH_PAGINATION_LIMIT,
+  makeAzureGraphTokenCache,
 } from "../src/index.js";
 import type { AzureGraphConfig, AzureGraphService } from "../src/index.js";
 
@@ -164,6 +166,102 @@ describe("AzureGraph", () => {
 
     expect(tokenCalls).toBe(1);
     expect(result).toEqual([contosoDomain]);
+  });
+
+  it("reuses a shared token cache across rebuilt request layers", async () => {
+    let tokenCalls = 0;
+    const tokenCache = makeAzureGraphTokenCache();
+    const layer = () =>
+      AzureGraphLive(config, { tokenCache }).pipe(
+        Layer.provide(
+          mockLayer((url) => {
+            if (isTokenRequest(url)) {
+              tokenCalls++;
+
+              return tokenResponse("shared-token");
+            }
+
+            return domainsResponse([contosoDomain]);
+          }),
+        ),
+      );
+    const domains = (graphLayer: ReturnType<typeof layer>) =>
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.domains(tenantId);
+      }).pipe(Effect.provide(graphLayer));
+
+    await Effect.runPromise(domains(layer()));
+    await Effect.runPromise(domains(layer()));
+
+    expect(tokenCalls).toBe(1);
+  });
+
+  it("expires and revokes a shared token instead of reusing it", async () => {
+    let tokenCalls = 0;
+    let reject = false;
+    const tokenCache = makeAzureGraphTokenCache();
+    const layer = () =>
+      AzureGraphLive(config, { tokenCache }).pipe(
+        Layer.provide(
+          mockLayer((url) => {
+            if (isTokenRequest(url)) {
+              tokenCalls++;
+
+              return tokenResponse(`token-${tokenCalls}`);
+            }
+
+            return reject ? json({ error: "revoked" }, 401) : domainsResponse([contosoDomain]);
+          }),
+        ),
+      );
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(1_000_000);
+        const first = yield* Effect.gen(function* () {
+          const graph = yield* AzureGraph;
+
+          return yield* graph.domains(tenantId);
+        }).pipe(Effect.provide(layer()));
+
+        yield* TestClock.adjust("2 hours");
+
+        const afterExpiry = yield* Effect.gen(function* () {
+          const graph = yield* AzureGraph;
+
+          return yield* graph.domains(tenantId);
+        }).pipe(Effect.provide(layer()));
+
+        reject = true;
+
+        const revoked = yield* Effect.flip(
+          Effect.gen(function* () {
+            const graph = yield* AzureGraph;
+
+            return yield* graph.domains(tenantId);
+          }).pipe(Effect.provide(layer())),
+        );
+
+        reject = false;
+
+        const afterRevocation = yield* Effect.gen(function* () {
+          const graph = yield* AzureGraph;
+
+          return yield* graph.domains(tenantId);
+        }).pipe(Effect.provide(layer()));
+
+        return { first, afterExpiry, revoked, afterRevocation };
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+
+    expect(result.first).toEqual([contosoDomain]);
+    expect(result.afterExpiry).toEqual([contosoDomain]);
+    expect(result.revoked).toBeInstanceOf(AzureGraphUnauthorized);
+    expect(result.afterRevocation).toEqual([contosoDomain]);
+    // Initial token, refresh after expiry, refresh after 401 invalidation.
+    expect(tokenCalls).toBe(3);
   });
 
   it("follows a users delta nextLink one page at a time and returns the deltaLink", async () => {
@@ -1010,7 +1108,6 @@ describe("AzureGraph delegated consent revocation", () => {
     expect(result.keys).toHaveLength(1);
     expect(result.key.key).toBe("111111-222222");
   });
-
 });
 
 describe("AzureGraph URL policy", () => {

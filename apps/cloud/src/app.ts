@@ -121,7 +121,7 @@ import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmConfig, AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
 import { ScepService } from "@mattrax/scep";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { ScepRepositoryLive } from "@mattrax/mdm-core";
+import { BackgroundDeliveryKeepAlive, ScepRepositoryLive } from "@mattrax/mdm-core";
 import { managementWebhookOpenApi } from "@mattrax/management-backend-http";
 import {
   Db,
@@ -187,10 +187,11 @@ import {
   databaseConfigFromFields,
   mysqlClientOptions,
   servicesUrls,
+  makeGoogleTokenCache,
 } from "@mattrax/cloud-services";
 import type { AnalyticsProperties, RateLimitStore, SendEmail } from "@mattrax/cloud-services";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
-import { AzureGraphLive } from "@mattrax/azure-graph";
+import { AzureGraphLive, makeAzureGraphTokenCache } from "@mattrax/azure-graph";
 import { AzureGraph } from "@mattrax/azure-graph";
 import { AppleMdmTrust, MdmError, parseSubjectDn } from "@mattrax/dm-apple";
 import { FetchHttpClient, HttpClient } from "effect/http";
@@ -793,7 +794,7 @@ const makeMembershipRefresher = (db: EnterpriseDb, env: Env) => {
         deviceIds,
       }).pipe(
         logBestEffortFailure("android_policy_sync", organizationId),
-        Effect.provide(androidManagementLayer(androidConfig)),
+        Effect.provide(androidManagementLayer(androidConfig, { tokenCache: googleTokenCache })),
       );
     });
 };
@@ -1000,6 +1001,9 @@ const makeAppLayer = (
   const managementBackendLayer = ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
     apns,
     authSecret: env.AUTH_SECRET,
+    // A hosted request must not build a fresh worker pool, or lose queued
+    // delivery work, when its service graph is rebuilt.
+    isolateWideDelivery: true,
     // Tenant-scoped enrollment URLs carry a signed tenant token, so Cloud no
     // longer needs a deployment-wide pin. An explicitly configured pin is kept
     // as a fallback for single-tenant deployments that still use the old
@@ -1056,11 +1060,14 @@ const makeAppLayer = (
 
   const azureGraphLayer =
     env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET
-      ? AzureGraphLive({
-          clientId: env.AZURE_CLIENT_ID,
-          clientSecret: env.AZURE_CLIENT_SECRET,
-          origin: env.ORIGIN,
-        })
+      ? AzureGraphLive(
+          {
+            clientId: env.AZURE_CLIENT_ID,
+            clientSecret: env.AZURE_CLIENT_SECRET,
+            origin: env.ORIGIN,
+          },
+          { tokenCache: azureGraphTokenCache },
+        )
       : Layer.empty;
 
   // Hosted Cloud forwards tenant billing to the services deployment. A
@@ -1141,7 +1148,7 @@ const makeAppLayer = (
       ),
     ),
     AzureOidcLive(),
-    androidManagementLayer(androidConfig),
+    androidManagementLayer(androidConfig, { tokenCache: googleTokenCache }),
   );
 
   const appWithDevRoutes = Layer.mergeAll(
@@ -1221,6 +1228,7 @@ const makeAppLayer = (
       authSecret: env.AUTH_SECRET,
       config: androidConfig,
       planLimits,
+      sharedJwks: true,
     }).pipe(Layer.provide(HttpServer.layerServices)),
     // Authenticated, tenant-scoped SSE invalidation. Mounted as a raw route so
     // it can return a bounded streaming body instead of an HttpApi JSON value.
@@ -1262,7 +1270,7 @@ const makeAppLayer = (
           deviceIds,
         }).pipe(
           logBestEffortFailure("android_policy_sync", organizationId),
-          Effect.provide(androidManagementLayer(androidConfig)),
+          Effect.provide(androidManagementLayer(androidConfig, { tokenCache: googleTokenCache })),
         );
       }),
   );
@@ -1395,6 +1403,15 @@ const READINESS_PROBE_TTL_MS = 30_000;
 const storageProbeCache = createProbeCache<"ok">(READINESS_PROBE_TTL_MS);
 
 const mailerProbeCache = createProbeCache<"ok" | "skipped">(READINESS_PROBE_TTL_MS);
+
+/**
+ * Provider caches outlive the per-request service graph. Their clients, sockets
+ * and transports stay request-scoped; only the serializable token values are
+ * shared, with expiry and invalidation handled by each cache.
+ */
+const azureGraphTokenCache = makeAzureGraphTokenCache();
+
+const googleTokenCache = makeGoogleTokenCache();
 
 const readinessResponse = async (env: Env, requestId: string): Promise<Response> => {
   const result = await checkReadiness({
@@ -1558,6 +1575,12 @@ export const createApiRuntime = (
           const requestServices = new Map<string, unknown>([
             [EnterpriseAnalyticsService.key, analytics],
             [SoftwareUpdateBackground.key, softwareUpdateRequestService(ctx)],
+            [
+              BackgroundDeliveryKeepAlive.key,
+              BackgroundDeliveryKeepAlive.of({
+                track: (work) => ctx.waitUntil(work),
+              }),
+            ],
           ]);
 
           if (trace) requestServices.set(Tracer.ParentSpan.key, trace.span);

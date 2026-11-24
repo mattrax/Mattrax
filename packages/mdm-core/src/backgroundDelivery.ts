@@ -1,4 +1,18 @@
-import { Cause, Context, Effect, Fiber, Layer, Metric, Queue, Schedule } from "effect";
+import {
+  Cause,
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Metric,
+  Option,
+  Queue,
+  Ref,
+  Schedule,
+  Scope,
+} from "effect";
 
 export type BackgroundDeliveryOptions = {
   /** Maximum buffered jobs. New jobs are dropped when a dropping queue is full. */
@@ -16,17 +30,39 @@ export type BackgroundDeliveryOptions = {
 type DeliveryJob = {
   readonly name: string;
   readonly effect: Effect.Effect<void, unknown>;
+  /** Resolves once the job has finished, failed, or been interrupted. */
+  readonly done: Deferred.Deferred<void>;
 };
 
 export type BackgroundDeliveryService = {
   /** Returns false immediately when the bounded queue is full or closing. */
   readonly enqueue: (name: string, effect: Effect.Effect<void, unknown>) => Effect.Effect<boolean>;
+  /**
+   * Worker fibers currently started. Zero until the first accepted job, which
+   * is what lets an ordinary API request avoid creating unused fibers.
+   */
+  readonly workerCount: Effect.Effect<number>;
 };
 
 export class BackgroundDelivery extends Context.Service<
   BackgroundDelivery,
   BackgroundDeliveryService
 >()("@mattrax/mdm-core/BackgroundDelivery") {}
+
+/**
+ * Request-scoped keep-alive supplied by a host that can extend the invocation
+ * after the response (Cloudflare's `ctx.waitUntil`). The queue uses it so a
+ * delivery job enqueued during a request is not frozen when the response
+ * returns.
+ */
+export type BackgroundDeliveryKeepAliveService = {
+  readonly track: (work: Promise<unknown>) => void;
+};
+
+export class BackgroundDeliveryKeepAlive extends Context.Service<
+  BackgroundDeliveryKeepAlive,
+  BackgroundDeliveryKeepAliveService
+>()("@mattrax/mdm-core/BackgroundDeliveryKeepAlive") {}
 
 const positive = (value: number | undefined, fallback: number): number =>
   value !== undefined && Number.isFinite(value) && value > 0
@@ -41,9 +77,16 @@ const failed = Metric.counter("mdm_background_delivery_failed_total", { incremen
 /**
  * A bounded, scoped worker queue for best-effort MDM delivery.
  *
- * Enqueue never waits for network I/O. Jobs are retried with bounded
- * exponential backoff, and shutdown first closes the queue, then gives workers
- * a grace period to drain before interrupting them.
+ * Enqueue never waits for network I/O. Workers start on the first accepted job
+ * rather than during layer construction, so a request that enqueues nothing
+ * creates no fibers. Jobs are retried with bounded exponential backoff, and
+ * shutdown first closes the queue, then gives workers a grace period to drain
+ * before interrupting them.
+ *
+ * When the caller supplies {@link BackgroundDeliveryKeepAlive}, every accepted
+ * job is registered with the host invocation until it settles. That keeps the
+ * queue alive after the response without making the response wait for the full
+ * shutdown grace period.
  *
  * This queue is process-local. Webhook callers persist attempt-0
  * `webhook_delivery` rows before enqueueing, so a crash or full queue does not
@@ -66,6 +109,7 @@ export const BackgroundDeliveryLive = (
         capacity,
         strategy: "dropping",
       });
+      const workerFibers = yield* Ref.make<ReadonlyArray<Fiber.Fiber<void, unknown>>>([]);
 
       const worker = Effect.fnUntraced(function* (): Effect.fn.Return<void, unknown> {
         while (true) {
@@ -90,18 +134,39 @@ export const BackgroundDeliveryLive = (
                 ),
             ),
             Effect.andThen(Metric.update(completed, 1)),
+            // A job that is interrupted during shutdown still resolves its
+            // keep-alive promise; otherwise the host would hold the invocation
+            // open until its own deadline.
+            Effect.ensuring(Deferred.succeed(job.done, undefined)),
           );
         }
       });
 
-      const workers = yield* Effect.forEach(
-        Array.from({ length: concurrency }, () => worker()),
-        (effect) => Effect.forkScoped(effect),
+      // `Effect.cached` makes the first accepted job start the workers exactly
+      // once. Detached fibers are not interrupted when the enqueueing request
+      // (or scope close) begins; the finalizer owns their bounded drain.
+      const startWorkers = yield* Effect.cached(
+        Effect.gen(function* () {
+          const fibers = yield* Effect.forEach(
+            Array.from({ length: concurrency }, () => worker()),
+            (effect) => Effect.forkDetach(effect, { startImmediately: true }),
+          );
+
+          yield* Ref.set(workerFibers, fibers);
+
+          return fibers;
+        }),
       );
+
+      const workerCount = Effect.map(Ref.get(workerFibers), (fibers) => fibers.length);
 
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
           yield* Queue.end(queue);
+          const workers = yield* Ref.get(workerFibers);
+
+          if (workers.length === 0) return;
+
           yield* Effect.exit(
             Fiber.joinAll(workers).pipe(
               Effect.timeoutOrElse({
@@ -116,10 +181,17 @@ export const BackgroundDeliveryLive = (
       return BackgroundDelivery.of({
         enqueue: (name, effect) =>
           Effect.gen(function* () {
-            const accepted = yield* Queue.offer(queue, { name, effect });
+            const job: DeliveryJob = { name, effect, done: yield* Deferred.make<void>() };
+            const accepted = yield* Queue.offer(queue, job);
 
             if (accepted) {
               yield* Metric.update(enqueued, 1);
+              yield* startWorkers;
+
+              const keepAlive = yield* Effect.serviceOption(BackgroundDeliveryKeepAlive);
+
+              if (Option.isSome(keepAlive))
+                keepAlive.value.track(Effect.runPromise(Deferred.await(job.done)));
             } else {
               yield* Metric.update(dropped, 1);
               yield* Effect.logWarning(`Background delivery queue is full; dropped ${name}`);
@@ -127,6 +199,58 @@ export const BackgroundDeliveryLive = (
 
             return accepted;
           }),
+        workerCount,
       });
     }),
   );
+
+const normalizedOptions = (options: BackgroundDeliveryOptions) => ({
+  capacity: positive(options.capacity, 100),
+  concurrency: positive(options.concurrency, 4),
+  maxAttempts: positive(options.maxAttempts, 3),
+  retryDelayMs: positive(options.retryDelayMs, 100),
+  shutdownTimeoutMs: positive(options.shutdownTimeoutMs, 15_000),
+});
+
+let sharedScope = Scope.makeUnsafe();
+const sharedDeliveries = new Map<string, Promise<BackgroundDeliveryService>>();
+
+/**
+ * One delivery queue per isolate/process for a given configuration.
+ *
+ * The hosted Worker rebuilds its request service graph but must not create a
+ * fresh four-worker queue for every request. This layer builds the queue once
+ * in a module scope and returns the same service for every later graph with
+ * the same options. Jobs still start workers lazily, and request keep-alives
+ * are resolved when each job settles.
+ */
+export const SharedBackgroundDeliveryLive = (
+  options: BackgroundDeliveryOptions = {},
+): Layer.Layer<BackgroundDelivery> =>
+  Layer.effect(
+    BackgroundDelivery,
+    Effect.promise(() => {
+      const key = JSON.stringify(normalizedOptions(options));
+      let pending = sharedDeliveries.get(key);
+
+      if (!pending) {
+        pending = Effect.runPromise(
+          Layer.buildWithScope(BackgroundDeliveryLive(options), sharedScope).pipe(
+            Effect.map((context) => Context.get(context, BackgroundDelivery)),
+          ),
+        );
+        sharedDeliveries.set(key, pending);
+      }
+
+      return pending;
+    }),
+  );
+
+/** Test hook: dispose the module-scoped queue and forget its cached service. */
+export const resetSharedBackgroundDelivery = async (): Promise<void> => {
+  sharedDeliveries.clear();
+  const scope = sharedScope;
+
+  sharedScope = Scope.makeUnsafe();
+  await Effect.runPromise(Scope.close(scope, Exit.void));
+};

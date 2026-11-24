@@ -8,6 +8,7 @@ import {
   PubSubOidcVerifier,
   PubSubOidcVerifierLive,
   base64UrlEncode,
+  resetSharedJwksForTests,
 } from "../src/index.js";
 import type { PubSubOidcVerifierConfig } from "../src/index.js";
 import { mockFetch } from "./helpers.js";
@@ -259,6 +260,29 @@ describe("PubSubOidcVerifier", () => {
     await Effect.runPromise(program.pipe(Effect.provide(layer), Effect.provide(TestClock.layer())));
 
     expect(mock.requests.filter((request) => request.pathname === "/jwks")).toHaveLength(2);
+  });
+
+  it("reuses one shared key set across rebuilt request layers", async () => {
+    const token = await sign(claims());
+    const mock = mockFetch(() => jwksResponse());
+    const layer = () =>
+      PubSubOidcVerifierLive(scopedConfig(), { sharedJwks: true }).pipe(Layer.provide(mock.layer));
+    const verifyOnce = () =>
+      Effect.gen(function* () {
+        const verifier = yield* PubSubOidcVerifier;
+
+        return yield* verifier.verify(token);
+      }).pipe(Effect.provide(layer()));
+
+    try {
+      const first = await Effect.runPromise(verifyOnce());
+      const second = await Effect.runPromise(verifyOnce());
+
+      expect(second.email).toBe(first.email);
+      expect(mock.requests.filter((request) => request.pathname === "/jwks")).toHaveLength(1);
+    } finally {
+      resetSharedJwksForTests();
+    }
   });
 
   it("refreshes JWKS for an unknown key after the cooldown", async () => {

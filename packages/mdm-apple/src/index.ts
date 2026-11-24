@@ -150,6 +150,7 @@ import { ScepRepositoryLive } from "@mattrax/mdm-core";
 import {
   BackgroundDelivery,
   BackgroundDeliveryLive,
+  SharedBackgroundDeliveryLive,
   deliverQueuedWebhook,
   enqueueWebhookEvent,
 } from "@mattrax/mdm-core";
@@ -7778,6 +7779,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       readonly apns?: ApnsService.Service;
       readonly webhookFetch?: typeof globalThis.fetch;
       readonly deliveryQueue?: BackgroundDeliveryOptions;
+      /**
+       * Share one delivery queue across rebuilt request layers. Enable this in
+       * a hosted runtime; tests and short-lived hosts keep the scoped queue so
+       * disposing the layer still drains its work.
+       */
+      readonly isolateWideDelivery?: boolean;
       readonly authSecret?: string;
       readonly windowsOrganizationId?: string;
       readonly requireWindowsDeviceIdentity?: boolean;
@@ -7804,7 +7811,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           backgroundDelivery,
         });
       }),
-    ).pipe(Layer.provideMerge(BackgroundDeliveryLive(options?.deliveryQueue)));
+    ).pipe(
+      Layer.provideMerge(
+        options?.isolateWideDelivery
+          ? SharedBackgroundDeliveryLive(options.deliveryQueue)
+          : BackgroundDeliveryLive(options?.deliveryQueue),
+      ),
+    );
 }
 
 export const policyHash = jsonHash;

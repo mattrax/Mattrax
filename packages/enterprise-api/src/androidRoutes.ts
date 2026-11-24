@@ -20,6 +20,8 @@ export type AndroidRoutesOptions = {
   readonly planLimits?: PlanLimitsConfig;
   /** Override the JWKS transport in tests. */
   readonly jwksFetch?: typeof globalThis.fetch;
+  /** Reuse the remote key set across rebuilt hosted request layers. */
+  readonly sharedJwks?: boolean;
 };
 
 const statusFor = (kind: AndroidDeliveryError["kind"]): number => {
@@ -53,13 +55,16 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
     Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.jwksFetch ?? globalThis.fetch)),
     Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })),
   );
-  const pubsubVerifier = PubSubOidcVerifierLive({
-    audience:
-      options.config?.pubsubAudience ??
-      `${options.origin.replace(/\/+$/, "")}/api/v1/android/pubsub`,
-    serviceAccountEmail: options.config?.serviceAccount.clientEmail ?? "",
-    jwksUri: options.config?.jwksUri,
-  }).pipe(Layer.provide(jwksClient), Layer.orDie);
+  const pubsubVerifier = PubSubOidcVerifierLive(
+    {
+      audience:
+        options.config?.pubsubAudience ??
+        `${options.origin.replace(/\/+$/, "")}/api/v1/android/pubsub`,
+      serviceAccountEmail: options.config?.serviceAccount.clientEmail ?? "",
+      jwksUri: options.config?.jwksUri,
+    },
+    { sharedJwks: options.sharedJwks },
+  ).pipe(Layer.provide(jwksClient), Layer.orDie);
 
   const callback = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {

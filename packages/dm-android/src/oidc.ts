@@ -1,4 +1,15 @@
-import { Clock, Context, Data, Duration, Effect, Layer, Schema } from "effect";
+import {
+  Clock,
+  Context,
+  Data,
+  Deferred,
+  Duration,
+  Effect,
+  Exit,
+  Layer,
+  Schema,
+  Scope,
+} from "effect";
 import { SecureRandom, Signature } from "effect/crypto";
 import { JoseError, Jwt, Jwks } from "effect/jose";
 
@@ -213,12 +224,98 @@ export class PubSubOidcVerifier extends Context.Service<
   PubSubOidcVerifierService
 >()("@mattrax/dm-android/PubSubOidcVerifier") {}
 
+export type PubSubOidcVerifierOptions = {
+  /**
+   * Reuse one remote key set across rebuilt request layers. Enable this in a
+   * hosted runtime where the Effect graph is per request; tests and short-lived
+   * hosts keep the default scoped layer.
+   */
+  readonly sharedJwks?: boolean;
+};
+
+const SHARED_JWKS_LIMIT = 16;
+const sharedJwksScope = Scope.makeUnsafe();
+const sharedJwks = new Map<
+  string,
+  { readonly service: Jwks.Jwks["Service"]; readonly expiresAt: number }
+>();
+const sharedJwksFlights = new Map<
+  string,
+  Deferred.Deferred<Jwks.Jwks["Service"], JoseError.JoseError>
+>();
+
+const jwksOptions = (config: PubSubOidcVerifierConfig) => ({
+  url: config.jwksUri ?? GOOGLE_OIDC_JWKS_URI,
+  timeToLive: config.jwksTimeToLive ?? "1 hour",
+  cooldown: config.jwksCooldown ?? "1 minute",
+  timeout: config.jwksTimeout ?? "5 seconds",
+});
+
+/** Drop a cached key set, for example after a suspected key compromise. */
+export const invalidateSharedJwks = (uri: string): void => {
+  sharedJwks.delete(uri);
+};
+
+/** Test hook: forget all shared key sets. */
+export const resetSharedJwksForTests = (): void => {
+  sharedJwks.clear();
+  sharedJwksFlights.clear();
+};
+
+const sharedJwksService = (config: PubSubOidcVerifierConfig) =>
+  Effect.gen(function* () {
+    const options = jwksOptions(config);
+    const now = yield* Clock.currentTimeMillis;
+    const ttl = Duration.toMillis(Duration.fromInputUnsafe(options.timeToLive));
+    const cached = sharedJwks.get(options.url);
+
+    if (cached && cached.expiresAt > now) return cached.service;
+
+    const inFlight = sharedJwksFlights.get(options.url);
+
+    if (inFlight) return yield* Deferred.await(inFlight);
+
+    const deferred = yield* Deferred.make<Jwks.Jwks["Service"], JoseError.JoseError>();
+    sharedJwksFlights.set(options.url, deferred);
+
+    const exit = yield* Effect.exit(
+      Jwks.makeRemote(options).pipe(Effect.provideService(Scope.Scope, sharedJwksScope)),
+    );
+
+    if (sharedJwksFlights.get(options.url) === deferred) sharedJwksFlights.delete(options.url);
+
+    if (Exit.isSuccess(exit)) {
+      sharedJwks.set(options.url, {
+        service: exit.value,
+        expiresAt: now + ttl,
+      });
+
+      while (sharedJwks.size > SHARED_JWKS_LIMIT) {
+        const oldest = sharedJwks.keys().next().value;
+
+        if (oldest === undefined) break;
+        sharedJwks.delete(oldest);
+      }
+    }
+
+    yield* Deferred.done(deferred, exit);
+
+    return yield* Exit.isSuccess(exit) ? Effect.succeed(exit.value) : Effect.failCause(exit.cause);
+  });
+
 /**
  * Scoped Google OIDC verifier. Provide an `HttpClient.HttpClient`; closing the
  * layer aborts in-flight JWKS requests and discards the cached key set.
  * The injected client must not follow redirects.
+ *
+ * With `sharedJwks`, the remote key set is built in a module scope instead, so
+ * a hosted request rebuild does not pay for another JWKS fetch. The service
+ * still refetches unknown kids after its cooldown, so key rotation is picked up.
  */
-export const PubSubOidcVerifierLive = (config: PubSubOidcVerifierConfig) =>
+export const PubSubOidcVerifierLive = (
+  config: PubSubOidcVerifierConfig,
+  options: PubSubOidcVerifierOptions = {},
+) =>
   Layer.effect(
     PubSubOidcVerifier,
     Effect.gen(function* () {
@@ -235,12 +332,9 @@ export const PubSubOidcVerifierLive = (config: PubSubOidcVerifierConfig) =>
     }),
   ).pipe(
     Layer.provide(
-      Jwks.layerRemote({
-        url: config.jwksUri ?? GOOGLE_OIDC_JWKS_URI,
-        timeToLive: config.jwksTimeToLive ?? "1 hour",
-        cooldown: config.jwksCooldown ?? "1 minute",
-        timeout: config.jwksTimeout ?? "5 seconds",
-      }),
+      options.sharedJwks
+        ? Layer.effect(Jwks.Jwks, sharedJwksService(config))
+        : Jwks.layerRemote(jwksOptions(config)),
     ),
     Layer.provide(Signature.layerWebCrypto.pipe(Layer.provide(SecureRandom.layerWebCrypto))),
   );

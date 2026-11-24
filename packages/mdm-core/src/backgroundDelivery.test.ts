@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Deferred, Effect, Ref } from "effect";
-import { BackgroundDelivery, BackgroundDeliveryLive } from "./backgroundDelivery.js";
+import {
+  BackgroundDelivery,
+  BackgroundDeliveryKeepAlive,
+  BackgroundDeliveryLive,
+  SharedBackgroundDeliveryLive,
+  resetSharedBackgroundDelivery,
+} from "./backgroundDelivery.js";
 
 describe("background delivery", () => {
   it("enqueues without waiting and drops new work when the bounded queue is full", async () => {
@@ -106,5 +112,86 @@ describe("background delivery", () => {
     );
 
     expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("starts no worker fibers until the first accepted job", async () => {
+    const counts = await Effect.runPromise(
+      Effect.gen(function* () {
+        const delivery = yield* BackgroundDelivery;
+        const before = yield* delivery.workerCount;
+
+        yield* delivery.enqueue("wake", Effect.void);
+        // Let the worker take the job before reading the fiber count.
+        yield* Effect.yieldNow;
+        const after = yield* delivery.workerCount;
+
+        return { before, after };
+      }).pipe(Effect.provide(BackgroundDeliveryLive({ concurrency: 1 }))),
+    );
+
+    expect(counts.before).toBe(0);
+    expect(counts.after).toBe(1);
+  });
+
+  it("tracks each accepted job with the request keep-alive until it settles", async () => {
+    const delivered = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const tasks: Array<Promise<unknown>> = [];
+          const delivery = yield* BackgroundDelivery;
+          const release = yield* Deferred.make<void>();
+          const count = yield* Ref.make(0);
+          const keepAlive = BackgroundDeliveryKeepAlive.of({
+            track: (work) => {
+              tasks.push(work);
+            },
+          });
+
+          yield* delivery
+            .enqueue(
+              "held",
+              Deferred.await(release).pipe(Effect.andThen(Ref.update(count, (n) => n + 1))),
+            )
+            .pipe(Effect.provideService(BackgroundDeliveryKeepAlive, keepAlive));
+
+          if (tasks.length !== 1) throw new Error("job was not tracked");
+
+          let settled = false;
+          void tasks[0]!.finally(() => {
+            settled = true;
+          });
+          yield* Effect.promise(() => Promise.resolve());
+
+          if (settled) throw new Error("job settled before it was released");
+
+          yield* Deferred.succeed(release, undefined);
+          yield* Effect.promise(() => tasks[0]!);
+
+          return yield* Ref.get(count);
+        }).pipe(Effect.provide(BackgroundDeliveryLive({ concurrency: 1 }))),
+      ),
+    );
+
+    expect(delivered).toBe(1);
+  });
+
+  it("shares one isolate-scoped queue across rebuilt request layers", async () => {
+    try {
+      const first = await Effect.runPromise(
+        Effect.gen(function* () {
+          return yield* BackgroundDelivery;
+        }).pipe(Effect.provide(SharedBackgroundDeliveryLive({ concurrency: 1 }))),
+      );
+      const second = await Effect.runPromise(
+        Effect.gen(function* () {
+          return yield* BackgroundDelivery;
+        }).pipe(Effect.provide(SharedBackgroundDeliveryLive({ concurrency: 1 }))),
+      );
+
+      expect(second).toBe(first);
+      expect(await Effect.runPromise(first.workerCount)).toBe(0);
+    } finally {
+      await resetSharedBackgroundDelivery();
+    }
   });
 });

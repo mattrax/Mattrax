@@ -1,4 +1,4 @@
-import { Clock, Context, Data, Effect, Layer, Option, Schema } from "effect";
+import { Clock, Context, Data, Effect, Exit, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest } from "effect/http";
 import {
   GraphBitlockerRecoveryKeyListResponse,
@@ -306,6 +306,91 @@ type TokenEntry = {
   readonly expiresAt: number;
 };
 
+const TOKEN_CACHE_LIMIT = 64;
+
+/**
+ * Shareable Graph access-token cache. The hosted Worker rebuilds its service
+ * graph per request, so an injectable cache is what lets a warm isolate reuse a
+ * token instead of exchanging client credentials again.
+ */
+export type AzureGraphTokenCache = {
+  readonly get: (tenantId: string, now: number) => TokenEntry | undefined;
+  readonly set: (tenantId: string, entry: TokenEntry) => void;
+  readonly delete: (tenantId: string) => void;
+  /** Single-flight loader: concurrent callers for one tenant share a refresh. */
+  readonly load: (
+    tenantId: string,
+    load: Effect.Effect<TokenEntry, AzureGraphError>,
+  ) => Effect.Effect<TokenEntry, AzureGraphError>;
+};
+
+export const makeAzureGraphTokenCache = (
+  options: { readonly maxEntries?: number } = {},
+): AzureGraphTokenCache => {
+  const maxEntries =
+    options.maxEntries !== undefined && options.maxEntries > 0
+      ? Math.floor(options.maxEntries)
+      : TOKEN_CACHE_LIMIT;
+  const entries = new Map<string, TokenEntry>();
+  const flights = new Map<string, Effect.Effect<TokenEntry, AzureGraphError>>();
+
+  const deleteEntry = (tenantId: string) => {
+    entries.delete(tenantId);
+  };
+
+  return {
+    get: (tenantId, now) => {
+      const entry = entries.get(tenantId);
+
+      if (!entry) return undefined;
+
+      if (entry.expiresAt <= now) {
+        entries.delete(tenantId);
+
+        return undefined;
+      }
+
+      return entry;
+    },
+    set: (tenantId, entry) => {
+      entries.delete(tenantId);
+      entries.set(tenantId, entry);
+
+      while (entries.size > maxEntries) {
+        const oldest = entries.keys().next().value;
+
+        if (oldest === undefined) break;
+        entries.delete(oldest);
+      }
+    },
+    delete: deleteEntry,
+    load: (tenantId, load) =>
+      Effect.gen(function* () {
+        const inFlight = flights.get(tenantId);
+
+        if (inFlight) return yield* inFlight;
+
+        const cached = yield* Effect.cached(load);
+
+        // `Effect.cached` already shares one run and only interrupts it when
+        // every waiter has left. Forget the completed run so the next expired
+        // token starts fresh, but leave interrupted runs in place to retry.
+        const entry: Effect.Effect<TokenEntry, AzureGraphError> = cached.pipe(
+          Effect.onExit((exit) =>
+            Exit.hasInterrupts(exit)
+              ? Effect.void
+              : Effect.sync(() => {
+                  if (flights.get(tenantId) === entry) flights.delete(tenantId);
+                }),
+          ),
+        );
+        flights.set(tenantId, entry);
+
+        return yield* entry;
+      }),
+  };
+};
+
 type RawResponse = {
   readonly status: number;
   readonly headers: Headers.Headers;
@@ -448,7 +533,12 @@ function consentRedirectUri(config: AzureGraphConfig): string | undefined {
   return `${trimTrailingSlashes(config.origin)}/api/v1/sso/azure/callback`;
 }
 
-export const AzureGraphLive = (config: AzureGraphConfig) =>
+export type AzureGraphLiveOptions = {
+  /** Supply one cache across rebuilt request layers to reuse tokens per isolate. */
+  readonly tokenCache?: AzureGraphTokenCache;
+};
+
+export const AzureGraphLive = (config: AzureGraphConfig, options: AzureGraphLiveOptions = {}) =>
   Layer.effect(
     AzureGraph,
     Effect.gen(function* () {
@@ -463,7 +553,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       const loginBaseUrl = trimTrailingSlashes(config.loginBaseUrl ?? DEFAULT_LOGIN_BASE_URL);
       const retryDelayMs = config.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
       const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-      const tokenCache = new Map<string, TokenEntry>();
+      const tokenCache = options.tokenCache ?? makeAzureGraphTokenCache();
 
       const execute = (
         tenantId: string,
@@ -587,6 +677,9 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           );
 
           if (result.status === 401 || result.status === 403) {
+            // A rejected credential must not keep serving the cached token.
+            tokenCache.delete(tenantId);
+
             return yield* Effect.fail(
               new AzureGraphUnauthorized({
                 message: `Microsoft Graph token request was rejected (HTTP ${result.status})`,
@@ -645,10 +738,12 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         Effect.gen(function* () {
           const tenant = normalizeTenantId(tenantId);
           const now = yield* Clock.currentTimeMillis;
-          const cached = tokenCache.get(tenant);
+          const cached = tokenCache.get(tenant, now);
 
-          if (cached && cached.expiresAt > now) return cached.token;
-          const entry = yield* fetchToken(tenant);
+          if (cached) return cached.token;
+
+          const entry = yield* tokenCache.load(tenant, fetchToken(tenant));
+
           tokenCache.set(tenant, entry);
 
           return entry.token;
@@ -672,6 +767,9 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           const label = labelFor(url);
 
           if (result.status === 401) {
+            // Revocation or a secret rotation invalidates the cached token.
+            tokenCache.delete(normalizeTenantId(tenantId));
+
             return yield* Effect.fail(
               new AzureGraphUnauthorized({
                 message: `Microsoft Graph request to ${label} was unauthorized`,
@@ -775,6 +873,9 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           const label = labelFor(url);
 
           if (result.status === 401) {
+            // Revocation or a secret rotation invalidates the cached token.
+            tokenCache.delete(normalizeTenantId(tenantId));
+
             return yield* Effect.fail(
               new AzureGraphUnauthorized({
                 message: `Microsoft Graph request to ${label} was unauthorized`,

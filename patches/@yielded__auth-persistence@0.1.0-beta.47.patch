@@ -135,3 +135,327 @@ index aa60bbb1d6e1bb74fb763b2ebf33dea1ba3da018..d73840e465dae2d88645755cefe3273c
              sqlite: () => "sqlite" as const,
              orElse: () => undefined,
            });
+diff --git a/src/internal/storage-validation.ts b/src/internal/storage-validation.ts
+--- a/src/internal/storage-validation.ts
++++ b/src/internal/storage-validation.ts
+@@ -98,6 +98,75 @@
+   { defaultValue: () => undefined },
+ );
+ 
++const SHARED_METADATA_TTL_MS = 60_000;
++const SHARED_METADATA_LIMIT = 256;
++
++/**
++ * Completed catalog observations keyed by dialect and relation.
++ *
++ * The acquisition-local cache above only shares queries inside one service
++ * graph. Hosted runtimes that rebuild the graph per request need this
++ * module-level cache: a warm request then performs no `information_schema`
++ * query. Only completed results are shared, never an in-flight one, so a
++ * cache entry can never outlive the request's SQL client. Entries expire after
++ * a bounded TTL so a migration is noticed without an isolate restart.
++ */
++let sharedMetadata = new Map<
++  string,
++  { readonly value: typeof Metadata.Type; readonly expiresAt: number }
++>();
++
++/** Drop every cached catalog observation. */
++export const resetStorageMetadataCache = (): void => {
++  sharedMetadata = new Map();
++};
++
++/** Number of retained catalog observations; useful for diagnostics and tests. */
++export const storageMetadataCacheSize = (): number => sharedMetadata.size;
++
++const sharedMetadataKey = (dialect: Dialect, relation: string) => `${dialect}:${relation}`;
++
++const readSharedMetadata = (
++  dialect: Dialect,
++  relation: string,
++  now: number,
++): typeof Metadata.Type | undefined => {
++  const key = sharedMetadataKey(dialect, relation);
++  const entry = sharedMetadata.get(key);
++
++  if (!entry) return undefined;
++
++  if (entry.expiresAt <= now) {
++    sharedMetadata.delete(key);
++
++    return undefined;
++  }
++
++  return entry.value;
++};
++
++const writeSharedMetadata = (dialect: Dialect, value: typeof Metadata.Type, now: number): void => {
++  const key = sharedMetadataKey(dialect, value.relation);
++
++  sharedMetadata.delete(key);
++  sharedMetadata.set(key, { value, expiresAt: now + SHARED_METADATA_TTL_MS });
++
++  while (sharedMetadata.size > SHARED_METADATA_LIMIT) {
++    const oldest = sharedMetadata.keys().next().value;
++
++    if (oldest === undefined) break;
++    sharedMetadata.delete(oldest);
++  }
++};
++
++const invalidateSharedMetadata = (
++  dialect: Dialect,
++  physical: ReadonlyArray<Pick<PhysicalStorageTable, "name" | "schema">>,
++): void => {
++  for (const table of physical)
++    sharedMetadata.delete(sharedMetadataKey(dialect, qualifiedTableName(table)));
++};
++
+ /** Share metadata only while constructing one service graph. Captured contexts
+  * cannot reuse it after acquisition succeeds, fails, or is interrupted. */
+ export const withStorageValidation = Effect.fnUntraced(function* <A, E, R>(
+@@ -152,9 +221,20 @@
+ 
+     const tables = new Map(physical.map((table) => [qualifiedTableName(table), table]));
+ 
+-    const missing = [...tables.entries()].filter(
+-      ([relation]) => !byRelation.has(`${dialect}:${relation}`),
+-    );
++    const now = Date.now();
++    const missing = [...tables.entries()].filter(([relation]) => {
++      const key = `${dialect}:${relation}`;
++
++      if (byRelation.has(key)) return false;
++
++      const shared = readSharedMetadata(dialect, relation, now);
++
++      if (shared === undefined) return true;
++
++      byRelation.set(key, shared);
++
++      return false;
++    });
+ 
+     const relations = missing.map(([relation]) => relation);
+ 
+@@ -279,7 +359,12 @@
+     `.pipe(Effect.flatMap(Schema.decodeUnknownEffect(PgMetadata)));
+             });
+ 
+-      for (const row of metadata) byRelation.set(`${dialect}:${row.relation}`, row);
++      const completedAt = Date.now();
++
++      for (const row of metadata) {
++        byRelation.set(`${dialect}:${row.relation}`, row);
++        writeSharedMetadata(dialect, row, completedAt);
++      }
+     }
+ 
+     return byRelation;
+@@ -288,15 +373,19 @@
+     reportPersistenceFailure(effect, Schema.is(PersistenceConfigurationError), {
+       markReported: true,
+     }),
+-  Effect.catchCause((cause) =>
+-    Effect.failCause(
++  Effect.catchCause((cause) => {
++    // A failed catalog read or a schema change must not keep serving the
++    // previous snapshot for the rest of the TTL.
++    invalidateSharedMetadata(dialect, physical);
++
++    return Effect.failCause(
+       Cause.map(cause, (error) =>
+         Schema.is(PersistenceConfigurationError)(error)
+           ? error
+           : PersistenceConfigurationError.make({ reason: "Cannot validate SQL storage metadata" }),
+       ),
+-    ),
+-  ),
++    );
++  }),
+ );
+ 
+ /** Batch physical metadata reads, reusing only the current acquisition snapshot.
+@@ -317,10 +406,13 @@
+     const actual = byRelation.get(`${dialect}:${relation}`);
+ 
+     for (const column of Object.values(table.columns)) {
+-      if (actual === undefined || !actual.columns.includes(column.name))
++      if (actual === undefined || !actual.columns.includes(column.name)) {
++        invalidateSharedMetadata(dialect, [table]);
++
+         return yield* PersistenceConfigurationError.make({
+           reason: `Missing SQL column ${relation}.${column.name}`,
+         });
++      }
+     }
+     yield* validateKeys(table, required, actual?.keys ?? []);
+   }
+diff --git a/dist/internal/storage-validation.mjs b/dist/internal/storage-validation.mjs
+--- a/dist/internal/storage-validation.mjs
++++ b/dist/internal/storage-validation.mjs
+@@ -47,6 +47,42 @@
+ 	}
+ });
+ const CurrentMetadata = Context.Reference("@yielded/auth-persistence/StorageMetadata", { defaultValue: () => void 0 });
++const SHARED_METADATA_TTL_MS = 60000;
++const SHARED_METADATA_LIMIT = 256;
++let sharedMetadata = /* @__PURE__ */ new Map();
++/** Drop every cached catalog observation. */
++const resetStorageMetadataCache = () => {
++	sharedMetadata = /* @__PURE__ */ new Map();
++};
++/** Number of retained catalog observations; useful for diagnostics and tests. */
++const storageMetadataCacheSize = () => sharedMetadata.size;
++const sharedMetadataKey = (dialect, relation) => `${dialect}:${relation}`;
++const readSharedMetadata = (dialect, relation, now) => {
++	const key = sharedMetadataKey(dialect, relation);
++	const entry = sharedMetadata.get(key);
++	if (!entry) return void 0;
++	if (entry.expiresAt <= now) {
++		sharedMetadata.delete(key);
++		return void 0;
++	}
++	return entry.value;
++};
++const writeSharedMetadata = (dialect, value, now) => {
++	const key = sharedMetadataKey(dialect, value.relation);
++	sharedMetadata.delete(key);
++	sharedMetadata.set(key, {
++		value,
++		expiresAt: now + SHARED_METADATA_TTL_MS
++	});
++	while (sharedMetadata.size > SHARED_METADATA_LIMIT) {
++		const oldest = sharedMetadata.keys().next().value;
++		if (oldest === void 0) break;
++		sharedMetadata.delete(oldest);
++	}
++};
++const invalidateSharedMetadata = (dialect, physical) => {
++	for (const table of physical) sharedMetadata.delete(sharedMetadataKey(dialect, qualifiedTableName(table)));
++};
+ /** Share metadata only while constructing one service graph. Captured contexts
+ * cannot reuse it after acquisition succeeds, fails, or is interrupted. */
+ const withStorageValidation = Effect.fnUntraced(function* (effect) {
+@@ -68,7 +104,15 @@
+ 	const cache = yield* CurrentMetadata;
+ 	const byRelation = cache?.active ? cache.clients.get(captured) ?? /* @__PURE__ */ new Map() : /* @__PURE__ */ new Map();
+ 	if (cache?.active) cache.clients.set(captured, byRelation);
+-	const missing = [...new Map(physical.map((table) => [qualifiedTableName(table), table])).entries()].filter(([relation]) => !byRelation.has(`${dialect}:${relation}`));
++	const now = Date.now();
++	const missing = [...new Map(physical.map((table) => [qualifiedTableName(table), table])).entries()].filter(([relation]) => {
++		const key = `${dialect}:${relation}`;
++		if (byRelation.has(key)) return false;
++		const shared = readSharedMetadata(dialect, relation, now);
++		if (shared === void 0) return true;
++		byRelation.set(key, shared);
++		return false;
++	});
+ 	const relations = missing.map(([relation]) => relation);
+ 	if (relations.length > 0) {
+ 		const metadata = yield* dialect === "sqlite" ? Effect.gen(function* () {
+@@ -158,10 +202,17 @@
+       from (values ${requested}) requested(relation)
+     `.pipe(Effect.flatMap(Schema.decodeUnknownEffect(PgMetadata)));
+ 		});
+-		for (const row of metadata) byRelation.set(`${dialect}:${row.relation}`, row);
++		const completedAt = Date.now();
++		for (const row of metadata) {
++			byRelation.set(`${dialect}:${row.relation}`, row);
++			writeSharedMetadata(dialect, row, completedAt);
++		}
+ 	}
+ 	return byRelation;
+-}, (effect) => reportPersistenceFailure(effect, Schema.is(PersistenceConfigurationError), { markReported: true }), Effect.catchCause((cause) => Effect.failCause(Cause.map(cause, (error) => Schema.is(PersistenceConfigurationError)(error) ? error : PersistenceConfigurationError.make({ reason: "Cannot validate SQL storage metadata" })))));
++}, (effect) => reportPersistenceFailure(effect, Schema.is(PersistenceConfigurationError), { markReported: true }), Effect.catchCause((cause) => {
++	invalidateSharedMetadata(dialect, physical);
++	return Effect.failCause(Cause.map(cause, (error) => Schema.is(PersistenceConfigurationError)(error) ? error : PersistenceConfigurationError.make({ reason: "Cannot validate SQL storage metadata" })));
++}));
+ /** Batch physical metadata reads, reusing only the current acquisition snapshot.
+ * Every requirement is still checked; later acquisitions read fresh metadata. */
+ const validateStorageBatch = Effect.fnUntraced(function* (dialect, requirements) {
+@@ -170,7 +221,10 @@
+ 	for (const { table, required } of requirements) {
+ 		const relation = qualifiedTableName(table);
+ 		const actual = byRelation.get(`${dialect}:${relation}`);
+-		for (const column of Object.values(table.columns)) if (actual === void 0 || !actual.columns.includes(column.name)) return yield* PersistenceConfigurationError.make({ reason: `Missing SQL column ${relation}.${column.name}` });
++		for (const column of Object.values(table.columns)) if (actual === void 0 || !actual.columns.includes(column.name)) {
++			invalidateSharedMetadata(dialect, [table]);
++			return yield* PersistenceConfigurationError.make({ reason: `Missing SQL column ${relation}.${column.name}` });
++		}
+ 		yield* validateKeys(table, required, actual?.keys ?? []);
+ 	}
+ });
+@@ -221,6 +275,6 @@
+             where x.key = 1 and x.name = ${column.name} and x.coll = 'BINARY'))`).length === 1;
+ });
+ //#endregion
+-export { canJoinTextColumns, hasManagedSqliteCleanupKey, qualifiedTableName, validateStorage, validateStorageBatch, withStorageValidation };
++export { canJoinTextColumns, hasManagedSqliteCleanupKey, qualifiedTableName, resetStorageMetadataCache, storageMetadataCacheSize, validateStorage, validateStorageBatch, withStorageValidation };
+ 
+ //# sourceMappingURL=storage-validation.mjs.map
+\ No newline at end of file
+diff --git a/dist/internal/storage-validation.d.mts b/dist/internal/storage-validation.d.mts
+--- a/dist/internal/storage-validation.d.mts
++++ b/dist/internal/storage-validation.d.mts
+@@ -15,6 +15,10 @@
+ /** Share metadata only while constructing one service graph. Captured contexts
+  * cannot reuse it after acquisition succeeds, fails, or is interrupted. */
+ export declare const withStorageValidation: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
++/** Drop every cached catalog observation. */
++export declare const resetStorageMetadataCache: () => void;
++/** Number of retained catalog observations; useful for diagnostics and tests. */
++export declare const storageMetadataCacheSize: () => number;
+ /** Requirements checked against one physical catalog snapshot. */
+ export interface StorageValidation {
+   readonly table: PhysicalStorageTable;
+diff --git a/src/Adapter.ts b/src/Adapter.ts
+--- a/src/Adapter.ts
++++ b/src/Adapter.ts
+@@ -150,6 +150,8 @@
+ } from "./internal/configuration";
+ 
+ export {
++  resetStorageMetadataCache,
++  storageMetadataCacheSize,
+   validateStorage,
+   validateStorageBatch,
+   withStorageValidation,
+diff --git a/dist/Adapter.mjs b/dist/Adapter.mjs
+--- a/dist/Adapter.mjs
++++ b/dist/Adapter.mjs
+@@ -7,7 +7,7 @@
+ import { makeNativeEmailAddressServices, makeNativeEmailSignInServices } from "./internal/email-native.mjs";
+ import { requiredOAuthConnectedConstraints, requiredOAuthConnectedRevocationConstraints } from "./internal/models/oauth-connected-model.mjs";
+ import { oauthCleanupTable, oauthEligibilityTable, oauthRegistrationGuardTable, requiredOAuthRegistrationConstraints, requiredOAuthSignInConstraints } from "./internal/models/oauth-model.mjs";
+-import { validateStorage, validateStorageBatch, withStorageValidation } from "./internal/storage-validation.mjs";
++import { resetStorageMetadataCache, storageMetadataCacheSize, validateStorage, validateStorageBatch, withStorageValidation } from "./internal/storage-validation.mjs";
+ import { captureOAuthMapping } from "./internal/oauth/state.mjs";
+ import { makeNativeOAuthSignInServices } from "./internal/oauth/native-sign-in.mjs";
+ import { makeNativeOAuthConnectedServices } from "./internal/oauth/native-connected.mjs";
+@@ -44,4 +44,4 @@
+ import { makeNativeSignedSessionValidityServices } from "./internal/session-native-validity.mjs";
+ import { requiredTotpConstraints } from "./internal/models/totp-model.mjs";
+ import { makeNativeTotpServices } from "./internal/totp-native.mjs";
+-export { PersistenceConfigurationError, PersistenceMappingError, PhoneRegistrationValues, SqlBatchCommit, SqlNativeCommit, captureOAuthMapping, captureSqlBatchStatements, createPersistence, isMappedConstraintConflict, makeBatchPasskeyServices, makeNativeAuthenticationAuthorityServices, makeNativeEmailAddressServices, makeNativeEmailRegistrationServices, makeNativeEmailSignInServices, makeNativeOAuthAccountsServices, makeNativeOAuthConnectedServices, makeNativeOAuthRegistrationIntentServices, makeNativeOAuthRegistrationServices, makeNativeOAuthRevocationServices, makeNativeOAuthSignInServices, makeNativePasskeyCeremonyServices, makeNativePasskeyCredentialServices, makeNativePasskeyServices, makeNativePasswordRegistrationServices, makeNativePasswordServices, makeNativePendingAuthenticationServices, makeNativePhoneServices, makeNativeProofServices, makeNativeSessionCleanupServices, makeNativeSessionStepUpServices, makeNativeSignedSessionValidityServices, makeNativeSqlTables, makeNativeStatefulSessionServices, makeNativeTotpServices, makeOAuthProxyPersistence, makePasskeyNativeManagement, makePasskeyNativeRegistration, makeSqlCommitExecutor, makeMappings as makeStorageMappings, nativeSqlAlias, oauthAccountsPersistenceLayer, oauthCleanupTable, oauthConnectedPersistenceLayer, oauthConnectedRevocationsLayer, oauthEligibilityTable, oauthRegistrationAuthorityLayer, oauthRegistrationGuardTable, oauthRegistrationIntentsLayer, oauthSignInPersistenceLayer, passkeyCredentialsLayer, passkeyInvalidationMutation, passkeyPersistenceLayer, requireStandalone, requiredEmailAddressConstraints, requiredEmailRegistrationConstraints, requiredEmailSignInConstraints, requiredOAuthConnectedConstraints, requiredOAuthConnectedRevocationConstraints, requiredOAuthRegistrationConstraints, requiredOAuthSignInConstraints, requiredPasskeyCredentialConstraints, requiredPasskeyPersistenceConstraints, requiredPasswordConstraints, requiredPasswordRegistrationConstraints, requiredPendingAuthenticationConstraints, requiredPhoneConstraints, requiredProofConstraints, requiredSessionConstraints, requiredSessionStepUpConstraints, requiredSignedValidityConstraints, requiredStatefulPendingConstraints, requiredTotpConstraints, storageKeyPlans, storageTables, validateStorage, validateStorageBatch, withStorageValidation };
++export { PersistenceConfigurationError, PersistenceMappingError, PhoneRegistrationValues, SqlBatchCommit, SqlNativeCommit, captureOAuthMapping, captureSqlBatchStatements, createPersistence, isMappedConstraintConflict, makeBatchPasskeyServices, makeNativeAuthenticationAuthorityServices, makeNativeEmailAddressServices, makeNativeEmailRegistrationServices, makeNativeEmailSignInServices, makeNativeOAuthAccountsServices, makeNativeOAuthConnectedServices, makeNativeOAuthRegistrationIntentServices, makeNativeOAuthRegistrationServices, makeNativeOAuthRevocationServices, makeNativeOAuthSignInServices, makeNativePasskeyCeremonyServices, makeNativePasskeyCredentialServices, makeNativePasskeyServices, makeNativePasswordRegistrationServices, makeNativePasswordServices, makeNativePendingAuthenticationServices, makeNativePhoneServices, makeNativeProofServices, makeNativeSessionCleanupServices, makeNativeSessionStepUpServices, makeNativeSignedSessionValidityServices, makeNativeSqlTables, makeNativeStatefulSessionServices, makeNativeTotpServices, makeOAuthProxyPersistence, makePasskeyNativeManagement, makePasskeyNativeRegistration, makeSqlCommitExecutor, makeMappings as makeStorageMappings, nativeSqlAlias, oauthAccountsPersistenceLayer, oauthCleanupTable, oauthConnectedPersistenceLayer, oauthConnectedRevocationsLayer, oauthEligibilityTable, oauthRegistrationAuthorityLayer, oauthRegistrationGuardTable, oauthRegistrationIntentsLayer, oauthSignInPersistenceLayer, passkeyCredentialsLayer, passkeyInvalidationMutation, passkeyPersistenceLayer, requireStandalone, requiredEmailAddressConstraints, requiredEmailRegistrationConstraints, requiredEmailSignInConstraints, requiredOAuthConnectedConstraints, requiredOAuthConnectedRevocationConstraints, requiredOAuthRegistrationConstraints, requiredOAuthSignInConstraints, requiredPasskeyCredentialConstraints, requiredPasskeyPersistenceConstraints, requiredPasswordConstraints, requiredPasswordRegistrationConstraints, requiredPendingAuthenticationConstraints, requiredPhoneConstraints, requiredProofConstraints, requiredSessionConstraints, requiredSessionStepUpConstraints, requiredSignedValidityConstraints, requiredStatefulPendingConstraints, requiredTotpConstraints, storageKeyPlans, resetStorageMetadataCache, storageMetadataCacheSize, storageTables, validateStorage, validateStorageBatch, withStorageValidation };
+diff --git a/dist/Adapter.d.mts b/dist/Adapter.d.mts
+--- a/dist/Adapter.d.mts
++++ b/dist/Adapter.d.mts
+@@ -18,7 +18,7 @@
+ import { Backend, createPersistence } from "./internal/persistence.mjs";
+ import { makeMappings } from "./internal/storage-mapping.mjs";
+ import { PasswordRegistrationAuthority } from "./internal/registration-contract.mjs";
+-import { PhysicalStorageTable, StorageValidation, validateStorage, validateStorageBatch, withStorageValidation } from "./internal/storage-validation.mjs";
++import { PhysicalStorageTable, StorageValidation, resetStorageMetadataCache, storageMetadataCacheSize, validateStorage, validateStorageBatch, withStorageValidation } from "./internal/storage-validation.mjs";
+ import { PasskeyNativeMapping, PasskeyNativeRead } from "./internal/passkey-native-state.mjs";
+ import { makeBatchPasskeyServices, makeNativePasskeyCredentialServices, makeNativePasskeyServices } from "./internal/passkey-native.mjs";
+ import { NativePasskeyCeremonyMapping, makeNativePasskeyCeremonyServices } from "./internal/passkey-native-ceremony.mjs";
+@@ -51,4 +51,4 @@
+ import { makeNativeSessionCleanupServices } from "./internal/session-native-cleanup.mjs";
+ import { TotpMapping, TotpMappingSource, requiredTotpConstraints } from "./internal/models/totp-model.mjs";
+ import { NativeTotpMapping, makeNativeTotpServices } from "./internal/totp-native.mjs";
+-export { type AnyEmailAddressMapping, type AnyEmailRegistrationMapping, type AnyEmailSignInMapping, type AnyPasswordPersistenceMapping, type AnyPasswordRegistrationMapping, type AnyPhoneMapping, type AnyProofPersistenceMapping, type AuthenticationAuthorityMapping, type Backend, type BoundPersistence, type ClaimsCodec, type D1PasskeyMapping, type Definition, type EmailAddressMapping, type EmailAuthorityCredentialTable, type EmailCredentialReadTable, type EmailCredentialTable, type EmailIdentifierReadTable, type EmailIdentifierTable, type EmailRegistrationAuthority, type EmailRegistrationAuthorityCredentialTable, type EmailRegistrationCredentialTable, type EmailRegistrationIdentifierTable, type EmailRegistrationIntent, type EmailRegistrationMapping, type EmailRegistrationProvisioning, type EmailSignInMapping, type EmailSubjectReadTable, type EmailSubjectTable, type MappingInput, type NativeAuthenticationAuthorityMapping, type NativePasskeyCeremonyMapping, type NativePasskeyManagementMapping, type NativePasskeyRegistrationMapping, type NativePendingAuthenticationMapping, type NativeSessionStepUpMapping, type NativeSignedSessionValidityMapping, type NativeSqlTables, type NativeStatefulSessionMapping, type NativeTotpMapping, type OAuthAccountsMapping, type OAuthAction, type OAuthAuthorityReadTable, type OAuthAuthorityTable, type OAuthCleanupDescriptor, type OAuthCleanupTable, type OAuthClock, type OAuthConnectedAction, type OAuthConnectedGrantTable, type OAuthConnectedMapping, type OAuthConnectedPolicyInput, type OAuthConnectedRevocationJobTable, type OAuthConnectedRevocationMapping, type OAuthConnectedSqlPolicy, type OAuthCredentialReadTable, type OAuthCredentialTable, type OAuthD1Mapping, type OAuthEligibilityDescriptor, type OAuthEligibilityFact, type OAuthEligibilityTable, type OAuthFlowTable, type OAuthNativeAccountsMapping, type OAuthNativeConnectedMapping, type OAuthNativeReadMapping, type OAuthNativeRegistrationIntentMapping, type OAuthNativeRegistrationMapping, type OAuthNativeRevocationMapping, type OAuthOwnershipReadTable, type OAuthOwnershipTable, type OAuthProxySqlTable, type OAuthRegistrationAuthority, type OAuthRegistrationGuardDescriptor, type OAuthRegistrationGuardTable, type OAuthRegistrationIntentMapping, type OAuthRegistrationIntentTable, type OAuthRegistrationMapping, type OAuthSignInMapping, type OAuthSubjectReadTable, type OAuthSubjectTable, type PasskeyCeremonyMapping, type PasskeyClock, type PasskeyColumn, type PasskeyCredentialInsert, type PasskeyCredentialMapping, type PasskeyCredentialReadTable, type PasskeyCredentialServices, type PasskeyFactorReadTable, type PasskeyFlowInsert, type PasskeyFlowTable, type PasskeyInvalidationInput, type PasskeyInvalidationMutation, type PasskeyManagementMapping, type PasskeyManagementServices, type PasskeyMappingSource, type PasskeyNativeMapping, type PasskeyNativeRead, type PasskeyPersistenceMapping, type PasskeyPersistenceServices, type PasskeyRegistrationCeremonyCapabilities, type PasskeyRegistrationCeremonyMapping, type PasskeyRegistrationCeremonyServices, type PasskeyRegistrationMapping, type PasskeyRegistrationServices, type PasskeyRegistrationWriter, type PasskeySubjectIdCodec, type PasskeySubjectReadTable, type PasskeyWriteTables, type PasswordAuthorityCredentialTable, type PasswordCredentialTable, type PasswordIdentifierTable, type PasswordPersistenceMapping, type PasswordRegistrationAuthority, type PasswordRegistrationConstraintClassifier, type PasswordRegistrationIntent, type PasswordRegistrationMapping, type PasswordRegistrationProvisioning, type PasswordSubjectTable, type PendingAuthenticationMapping, type PendingAuthenticationTables, type PersistenceApi, PersistenceConfigurationError, PersistenceMappingError, type PhoneMapping, PhoneRegistrationValues, type PhysicalStorageTable, type ProofClock, type ProofPersistenceMapping, type ProofTable, type RequiredEmailAddressConstraints, type RequiredEmailRegistrationConstraints, type RequiredEmailSignInConstraints, type RequiredPasswordConstraints, type RequiredPasswordRegistrationConstraints, type RequiredPendingAuthenticationConstraints, type RequiredProofConstraints, type RequiredSessionConstraints, type RequiredSessionStepUpConstraints, type RequiredSignedValidityConstraints, type RequiredStatefulPendingConstraints, type SessionAuthorityTables, type SessionCleanupMapping, type SessionExecution, type SessionIdCodec, type SessionPendingInsert, type SessionPendingTables, type SessionStepUpMapping, type SessionStepUpSourceTables, type SessionSubjectTables, type SignedSessionValidityMapping, type SignedSessionValidityTables, SqlBatchCommit, type SqlExpression, SqlNativeCommit, type SqlTable, type StatefulSessionMapping, type StatefulSessionTables, type StorageRole, type StorageTable, type StorageValidation, type SubjectIdCodec, type TableModel, type TotpMapping, type TotpMappingSource, captureOAuthMapping, captureSqlBatchStatements, createPersistence, isMappedConstraintConflict, makeBatchPasskeyServices, makeNativeAuthenticationAuthorityServices, makeNativeEmailAddressServices, makeNativeEmailRegistrationServices, makeNativeEmailSignInServices, makeNativeOAuthAccountsServices, makeNativeOAuthConnectedServices, makeNativeOAuthRegistrationIntentServices, makeNativeOAuthRegistrationServices, makeNativeOAuthRevocationServices, makeNativeOAuthSignInServices, makeNativePasskeyCeremonyServices, makeNativePasskeyCredentialServices, makeNativePasskeyServices, makeNativePasswordRegistrationServices, makeNativePasswordServices, makeNativePendingAuthenticationServices, makeNativePhoneServices, makeNativeProofServices, makeNativeSessionCleanupServices, makeNativeSessionStepUpServices, makeNativeSignedSessionValidityServices, makeNativeSqlTables, makeNativeStatefulSessionServices, makeNativeTotpServices, makeOAuthProxyPersistence, makePasskeyNativeManagement, makePasskeyNativeRegistration, makeSqlCommitExecutor, makeMappings as makeStorageMappings, nativeSqlAlias, oauthAccountsPersistenceLayer, oauthCleanupTable, oauthConnectedPersistenceLayer, oauthConnectedRevocationsLayer, oauthEligibilityTable, oauthRegistrationAuthorityLayer, oauthRegistrationGuardTable, oauthRegistrationIntentsLayer, oauthSignInPersistenceLayer, passkeyCredentialsLayer, passkeyInvalidationMutation, passkeyPersistenceLayer, requireStandalone, requiredEmailAddressConstraints, requiredEmailRegistrationConstraints, requiredEmailSignInConstraints, requiredOAuthConnectedConstraints, requiredOAuthConnectedRevocationConstraints, requiredOAuthRegistrationConstraints, requiredOAuthSignInConstraints, requiredPasskeyCredentialConstraints, requiredPasskeyPersistenceConstraints, requiredPasswordConstraints, requiredPasswordRegistrationConstraints, requiredPendingAuthenticationConstraints, requiredPhoneConstraints, requiredProofConstraints, requiredSessionConstraints, requiredSessionStepUpConstraints, requiredSignedValidityConstraints, requiredStatefulPendingConstraints, requiredTotpConstraints, storageKeyPlans, storageTables, validateStorage, validateStorageBatch, withStorageValidation };
+\ No newline at end of file
++export { type AnyEmailAddressMapping, type AnyEmailRegistrationMapping, type AnyEmailSignInMapping, type AnyPasswordPersistenceMapping, type AnyPasswordRegistrationMapping, type AnyPhoneMapping, type AnyProofPersistenceMapping, type AuthenticationAuthorityMapping, type Backend, type BoundPersistence, type ClaimsCodec, type D1PasskeyMapping, type Definition, type EmailAddressMapping, type EmailAuthorityCredentialTable, type EmailCredentialReadTable, type EmailCredentialTable, type EmailIdentifierReadTable, type EmailIdentifierTable, type EmailRegistrationAuthority, type EmailRegistrationAuthorityCredentialTable, type EmailRegistrationCredentialTable, type EmailRegistrationIdentifierTable, type EmailRegistrationIntent, type EmailRegistrationMapping, type EmailRegistrationProvisioning, type EmailSignInMapping, type EmailSubjectReadTable, type EmailSubjectTable, type MappingInput, type NativeAuthenticationAuthorityMapping, type NativePasskeyCeremonyMapping, type NativePasskeyManagementMapping, type NativePasskeyRegistrationMapping, type NativePendingAuthenticationMapping, type NativeSessionStepUpMapping, type NativeSignedSessionValidityMapping, type NativeSqlTables, type NativeStatefulSessionMapping, type NativeTotpMapping, type OAuthAccountsMapping, type OAuthAction, type OAuthAuthorityReadTable, type OAuthAuthorityTable, type OAuthCleanupDescriptor, type OAuthCleanupTable, type OAuthClock, type OAuthConnectedAction, type OAuthConnectedGrantTable, type OAuthConnectedMapping, type OAuthConnectedPolicyInput, type OAuthConnectedRevocationJobTable, type OAuthConnectedRevocationMapping, type OAuthConnectedSqlPolicy, type OAuthCredentialReadTable, type OAuthCredentialTable, type OAuthD1Mapping, type OAuthEligibilityDescriptor, type OAuthEligibilityFact, type OAuthEligibilityTable, type OAuthFlowTable, type OAuthNativeAccountsMapping, type OAuthNativeConnectedMapping, type OAuthNativeReadMapping, type OAuthNativeRegistrationIntentMapping, type OAuthNativeRegistrationMapping, type OAuthNativeRevocationMapping, type OAuthOwnershipReadTable, type OAuthOwnershipTable, type OAuthProxySqlTable, type OAuthRegistrationAuthority, type OAuthRegistrationGuardDescriptor, type OAuthRegistrationGuardTable, type OAuthRegistrationIntentMapping, type OAuthRegistrationIntentTable, type OAuthRegistrationMapping, type OAuthSignInMapping, type OAuthSubjectReadTable, type OAuthSubjectTable, type PasskeyCeremonyMapping, type PasskeyClock, type PasskeyColumn, type PasskeyCredentialInsert, type PasskeyCredentialMapping, type PasskeyCredentialReadTable, type PasskeyCredentialServices, type PasskeyFactorReadTable, type PasskeyFlowInsert, type PasskeyFlowTable, type PasskeyInvalidationInput, type PasskeyInvalidationMutation, type PasskeyManagementMapping, type PasskeyManagementServices, type PasskeyMappingSource, type PasskeyNativeMapping, type PasskeyNativeRead, type PasskeyPersistenceMapping, type PasskeyPersistenceServices, type PasskeyRegistrationCeremonyCapabilities, type PasskeyRegistrationCeremonyMapping, type PasskeyRegistrationCeremonyServices, type PasskeyRegistrationMapping, type PasskeyRegistrationServices, type PasskeyRegistrationWriter, type PasskeySubjectIdCodec, type PasskeySubjectReadTable, type PasskeyWriteTables, type PasswordAuthorityCredentialTable, type PasswordCredentialTable, type PasswordIdentifierTable, type PasswordPersistenceMapping, type PasswordRegistrationAuthority, type PasswordRegistrationConstraintClassifier, type PasswordRegistrationIntent, type PasswordRegistrationMapping, type PasswordRegistrationProvisioning, type PasswordSubjectTable, type PendingAuthenticationMapping, type PendingAuthenticationTables, type PersistenceApi, PersistenceConfigurationError, PersistenceMappingError, type PhoneMapping, PhoneRegistrationValues, type PhysicalStorageTable, type ProofClock, type ProofPersistenceMapping, type ProofTable, type RequiredEmailAddressConstraints, type RequiredEmailRegistrationConstraints, type RequiredEmailSignInConstraints, type RequiredPasswordConstraints, type RequiredPasswordRegistrationConstraints, type RequiredPendingAuthenticationConstraints, type RequiredProofConstraints, type RequiredSessionConstraints, type RequiredSessionStepUpConstraints, type RequiredSignedValidityConstraints, type RequiredStatefulPendingConstraints, type SessionAuthorityTables, type SessionCleanupMapping, type SessionExecution, type SessionIdCodec, type SessionPendingInsert, type SessionPendingTables, type SessionStepUpMapping, type SessionStepUpSourceTables, type SessionSubjectTables, type SignedSessionValidityMapping, type SignedSessionValidityTables, SqlBatchCommit, type SqlExpression, SqlNativeCommit, type SqlTable, type StatefulSessionMapping, type StatefulSessionTables, type StorageRole, type StorageTable, type StorageValidation, type SubjectIdCodec, type TableModel, type TotpMapping, type TotpMappingSource, captureOAuthMapping, captureSqlBatchStatements, createPersistence, isMappedConstraintConflict, makeBatchPasskeyServices, makeNativeAuthenticationAuthorityServices, makeNativeEmailAddressServices, makeNativeEmailRegistrationServices, makeNativeEmailSignInServices, makeNativeOAuthAccountsServices, makeNativeOAuthConnectedServices, makeNativeOAuthRegistrationIntentServices, makeNativeOAuthRegistrationServices, makeNativeOAuthRevocationServices, makeNativeOAuthSignInServices, makeNativePasskeyCeremonyServices, makeNativePasskeyCredentialServices, makeNativePasskeyServices, makeNativePasswordRegistrationServices, makeNativePasswordServices, makeNativePendingAuthenticationServices, makeNativePhoneServices, makeNativeProofServices, makeNativeSessionCleanupServices, makeNativeSessionStepUpServices, makeNativeSignedSessionValidityServices, makeNativeSqlTables, makeNativeStatefulSessionServices, makeNativeTotpServices, makeOAuthProxyPersistence, makePasskeyNativeManagement, makePasskeyNativeRegistration, makeSqlCommitExecutor, makeMappings as makeStorageMappings, nativeSqlAlias, oauthAccountsPersistenceLayer, oauthCleanupTable, oauthConnectedPersistenceLayer, oauthConnectedRevocationsLayer, oauthEligibilityTable, oauthRegistrationAuthorityLayer, oauthRegistrationGuardTable, oauthRegistrationIntentsLayer, oauthSignInPersistenceLayer, passkeyCredentialsLayer, passkeyInvalidationMutation, passkeyPersistenceLayer, requireStandalone, requiredEmailAddressConstraints, requiredEmailRegistrationConstraints, requiredEmailSignInConstraints, requiredOAuthConnectedConstraints, requiredOAuthConnectedRevocationConstraints, requiredOAuthRegistrationConstraints, requiredOAuthSignInConstraints, requiredPasskeyCredentialConstraints, requiredPasskeyPersistenceConstraints, requiredPasswordConstraints, requiredPasswordRegistrationConstraints, requiredPendingAuthenticationConstraints, requiredPhoneConstraints, requiredProofConstraints, requiredSessionConstraints, requiredSessionStepUpConstraints, requiredSignedValidityConstraints, requiredStatefulPendingConstraints, requiredTotpConstraints, storageKeyPlans, storageTables, resetStorageMetadataCache, storageMetadataCacheSize, validateStorage, validateStorageBatch, withStorageValidation };
+\ No newline at end of file
