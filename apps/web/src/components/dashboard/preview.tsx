@@ -1,5 +1,5 @@
 import { Option, Schema } from "effect";
-import { For, Show } from "solid-js";
+import { For, Show, createMemo } from "solid-js";
 import { useDashboardWidgetBatch } from "~/components/dashboard/widget";
 import { LayoutDashboard } from "~/components/ui/icons";
 import type { DashboardQueryResponse, DashboardWidget } from "~/lib/enterprise";
@@ -57,7 +57,7 @@ export function DashboardPreview(props: {
   widgetCount: number;
   class?: string;
 }) {
-  const widgets = () => (props.widgets ?? []).slice(0, 3);
+  const widgets = createMemo(() => (props.widgets ?? []).slice(0, 3));
 
   const cellClass = (index: number) => {
     if (widgets().length === 1) return "col-span-6 row-span-2";
@@ -101,7 +101,7 @@ export function DashboardPreview(props: {
 }
 
 function PreviewWidget(props: { widget: DashboardWidget }) {
-  const batchFor = useDashboardWidgetBatch();
+  const batchFor = useDashboardWidgetBatch({ preview: true });
   const batch = () => batchFor?.(props.widget);
 
   return (
@@ -249,12 +249,13 @@ function TablePreview(props: { title: string; data: DashboardQueryResponse }) {
 }
 
 function MarkdownPreview(props: { widget: DashboardWidget }) {
-  const lines = () =>
+  const lines = createMemo(() =>
     markdownOf(props.widget.config)
       .split("\n")
       .map((line) => line.replace(/^#+\s*/, "").trim())
       .filter(Boolean)
-      .slice(0, 3);
+      .slice(0, 3),
+  );
 
   return (
     <div class="flex h-full min-w-0 flex-col gap-1 overflow-hidden rounded-lg bg-card/80 p-2.5 ring-1 ring-border/60">
