@@ -1346,6 +1346,7 @@ export default function DevicesPage() {
       icon: Monitor,
       cell: (row) => (
         <OsVersionTag
+          proto={row.proto}
           version={row.osVersion}
           build={row.osBuild}
           info={decodeSoftwareUpdate(row.osUpdate)}

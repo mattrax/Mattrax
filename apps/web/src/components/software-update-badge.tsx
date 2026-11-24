@@ -29,12 +29,39 @@ const tone = (info: SoftwareUpdateInfo) => {
  * SOFA feed does not cover them.
  */
 export function OsVersionTag(props: {
+  proto?: string | null;
   version?: string | null;
   build?: string | null;
   info?: SoftwareUpdateInfo | null;
 }) {
   const version = () => props.version?.trim() || props.info?.currentVersion?.trim() || null;
   const build = () => props.build?.trim() || null;
+
+  const platform = () => {
+    switch (props.proto) {
+      case "apple":
+        return "macOS";
+      case "win":
+        return "Windows";
+      case "android":
+        return "Android";
+      default:
+        return "OS";
+    }
+  };
+
+  const statusTone = () => {
+    switch (props.info?.status) {
+      case "security_update_required":
+        return { variant: "warning" as const, dot: "warning" as const };
+      case "update_available":
+        return { variant: "info" as const, dot: "info" as const };
+      case "up_to_date":
+        return { variant: "success" as const, dot: "success" as const };
+      default:
+        return { variant: "outline" as const, dot: "neutral" as const };
+    }
+  };
 
   const tone = () => {
     switch (props.info?.status) {
@@ -71,7 +98,7 @@ export function OsVersionTag(props: {
         as="span"
         tabindex={0}
         class={cn(
-          "inline-flex cursor-default items-center gap-1.5 rounded-[5px] text-[12.5px] tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+          "inline-flex cursor-help items-center gap-1.5 rounded-[5px] text-[12.5px] tabular-nums underline decoration-border decoration-dotted underline-offset-4 outline-none transition-colors hover:decoration-current focus-visible:ring-2 focus-visible:ring-ring/40",
           tone(),
         )}
         aria-label={triggerLabel()}
@@ -84,49 +111,67 @@ export function OsVersionTag(props: {
           <span class="size-1.5 shrink-0 rounded-full bg-info" aria-hidden="true" />
         </Show>
       </TooltipTrigger>
-      <TooltipContent class="max-w-64">
-        <p class="text-[11px] font-medium">OS version</p>
-        <dl class="mt-1.5 space-y-1 text-[11.5px]">
-          <div class="flex items-baseline justify-between gap-4">
-            <dt class="text-muted-foreground">Current</dt>
-            <dd class="font-mono text-foreground">
-              {version() ?? "Not reported"}
-              {build() ? <span class="text-muted-foreground"> ({build()})</span> : null}
-            </dd>
+      <TooltipContent
+        side="bottom"
+        align="start"
+        class="w-64 overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-popover"
+      >
+        <div class="flex items-start justify-between gap-3 border-b border-border bg-surface px-3 py-2.5">
+          <div class="min-w-0">
+            <p class="truncate text-[12px] font-[560] text-foreground">
+              {platform()} {version() ?? "not reported"}
+            </p>
+            <Show when={build()}>
+              {(value) => (
+                <p class="mt-0.5 font-mono text-[10.5px] text-muted-foreground">Build {value()}</p>
+              )}
+            </Show>
           </div>
-          <Show when={props.info?.latestVersion}>
-            {(latest) => (
-              <div class="flex items-baseline justify-between gap-4">
-                <dt class="text-muted-foreground">Latest</dt>
-                <dd class="font-mono text-foreground">macOS {latest()}</dd>
-              </div>
-            )}
+          <Badge variant={statusTone().variant} dot={statusTone().dot}>
+            {status()}
+          </Badge>
+        </div>
+        <div class="px-3 py-2.5">
+          <Show
+            when={props.info?.latestVersion || props.info?.requiredMinimumVersion}
+            fallback={
+              <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                No published version comparison for this platform.
+              </p>
+            }
+          >
+            <dl class="space-y-1 text-[11.5px]">
+              <Show when={props.info?.latestVersion}>
+                {(latest) => (
+                  <div class="flex items-baseline justify-between gap-4">
+                    <dt class="text-muted-foreground">Latest</dt>
+                    <dd class="font-mono text-foreground">macOS {latest()}</dd>
+                  </div>
+                )}
+              </Show>
+              <Show when={props.info?.requiredMinimumVersion}>
+                {(required) => (
+                  <div class="flex items-baseline justify-between gap-4">
+                    <dt class="text-muted-foreground">Required</dt>
+                    <dd class="font-mono text-foreground">macOS {required()}</dd>
+                  </div>
+                )}
+              </Show>
+            </dl>
           </Show>
-          <Show when={props.info?.requiredMinimumVersion}>
-            {(required) => (
-              <div class="flex items-baseline justify-between gap-4">
-                <dt class="text-muted-foreground">Required</dt>
-                <dd class="font-mono text-foreground">macOS {required()}</dd>
-              </div>
-            )}
-          </Show>
-          <div class="flex items-baseline justify-between gap-4">
-            <dt class="text-muted-foreground">Status</dt>
-            <dd class="text-foreground">{status()}</dd>
-          </div>
-        </dl>
-        <p class="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-          {props.info
-            ? softwareUpdateReason(props.info)
-            : "The device has not reported an OS version."}
-        </p>
+          <p class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+            {props.info
+              ? softwareUpdateReason(props.info)
+              : "The device has not reported an OS version."}
+          </p>
+        </div>
         <Show when={props.info?.securityInfoUrl}>
           {(href) => (
             <a
               href={href()}
               target="_blank"
               rel="noopener noreferrer"
-              class="mt-1.5 inline-flex text-[11.5px] font-medium text-brand underline decoration-brand/30 underline-offset-2 hover:decoration-brand"
+              class="block border-t border-border px-3 py-2 text-[11.5px] font-medium text-brand underline decoration-brand/30 underline-offset-2 hover:bg-hover hover:decoration-brand"
             >
               Security details
             </a>
