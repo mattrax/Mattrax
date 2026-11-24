@@ -52,18 +52,26 @@ const makeFeedDb = (options: FeedDbOptions = {}) => {
     : [];
 
   const failure = () => Effect.fail(new Error("database unavailable"));
+  let selects = 0;
+  let writes = 0;
 
   const db = {
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: () => (options.failRead ? failure() : Effect.succeed([...rows])),
+          limit: () => {
+            selects++;
+
+            return options.failRead ? failure() : Effect.succeed([...rows]);
+          },
         }),
       }),
     }),
     insert: () => ({
       values: (value: FeedDbRow) => ({
         onDuplicateKeyUpdate: ({ set }: { set: Partial<FeedDbRow> }) => {
+          writes++;
+
           if (options.failWrite) return failure();
 
           const existing = rows.find((row) => row.id === value.id);
@@ -78,6 +86,8 @@ const makeFeedDb = (options: FeedDbOptions = {}) => {
     update: () => ({
       set: (patch: Partial<FeedDbRow>) => ({
         where: () => {
+          writes++;
+
           if (options.failWrite) return failure();
 
           const existing = rows[0];
@@ -93,7 +103,7 @@ const makeFeedDb = (options: FeedDbOptions = {}) => {
   // SAFETY: the loader only calls select/insert/update with the shapes above;
   // the cast avoids implementing the rest of Drizzle's client surface.
   // oxlint-disable-next-line quality/no-chained-type-assertions -- The loader uses only the select/insert/update shapes above.
-  return { db: db as unknown as EnterpriseDb, rows };
+  return { db: db as unknown as EnterpriseDb, rows, selects: () => selects, writes: () => writes };
 };
 
 const feedBody = (version = "26.7.3") => ({
@@ -191,6 +201,188 @@ describe("software update feed cache", () => {
     expect(state.available).toBe(true);
     expect(state.stale).toBe(false);
     expect(fetch.calls()).toBe(0);
+  });
+
+  it("serves a warm validated catalog without selecting or decoding the feed", async () => {
+    const configured = feedUrl();
+
+    const { db, rows, selects } = makeFeedDb({
+      row: {
+        sourceUrl: configured,
+        payload: catalog(),
+        fetchedAt: now,
+        checkedAt: now,
+      },
+    });
+
+    const payload = catalog();
+    let payloadReads = 0;
+
+    Object.defineProperty(rows[0]!, "payload", {
+      configurable: true,
+      get() {
+        payloadReads++;
+
+        return payload;
+      },
+    });
+
+    const fetch = countingFetch(() => jsonResponse(feedBody()));
+    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+    const first = await runEffect(loadSoftwareUpdateCatalog(options));
+    const readsAfterColdLoad = payloadReads;
+
+    Object.defineProperty(rows[0]!, "payload", {
+      configurable: true,
+      get() {
+        throw new Error("warm load read the stored payload");
+      },
+    });
+
+    const second = await runEffect(loadSoftwareUpdateCatalog(options));
+
+    expect(first.available).toBe(true);
+    expect(second.available).toBe(true);
+    expect(second.catalog).toBe(first.catalog);
+    expect(selects()).toBe(1);
+    expect(payloadReads).toBe(readsAfterColdLoad);
+    expect(fetch.calls()).toBe(0);
+  });
+
+  it("invalidates the memory catalog when the source URL changes", async () => {
+    const firstUrl = feedUrl();
+    const secondUrl = feedUrl();
+    const { db, selects, writes } = makeFeedDb();
+    const cache = Effect.runSync(SoftwareUpdateCache.make);
+    let version = "26.7.2";
+    const fetch = countingFetch(() => jsonResponse(feedBody(version)));
+
+    const first = await runEffect(
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: firstUrl, cache })),
+    );
+
+    version = "26.7.3";
+
+    const second = await runEffect(
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: secondUrl, cache })),
+    );
+
+    expect(first.catalog?.majors[0]?.latest.version).toBe("26.7.2");
+    expect(second.sourceUrl).toBe(secondUrl);
+    expect(second.catalog?.majors[0]?.latest.version).toBe("26.7.3");
+    expect(fetch.calls()).toBe(2);
+    expect(selects()).toBe(2);
+    expect(writes()).toBe(2);
+  });
+
+  it("serves an expired memory catalog stale and revalidates it", async () => {
+    const configured = feedUrl();
+    const { db, rows, selects } = makeFeedDb();
+    let version = "26.7.2";
+    const fetch = countingFetch(() => jsonResponse(feedBody(version)));
+    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+
+    await runEffect(loadSoftwareUpdateCatalog(options));
+
+    version = "26.7.3";
+
+    const expiresAt = new Date(now.getTime() + 60_000);
+    const stale = await runEffect(loadSoftwareUpdateCatalog({ ...options, now: expiresAt }));
+
+    expect(stale.available).toBe(true);
+    expect(stale.stale).toBe(true);
+    expect(stale.error).toBeNull();
+    expect(stale.catalog?.majors[0]?.latest.version).toBe("26.7.2");
+
+    await expect.poll(() => rows[0]?.fetchedAt?.getTime()).toBe(expiresAt.getTime());
+
+    const fresh = await runEffect(
+      loadSoftwareUpdateCatalog({ ...options, now: new Date(expiresAt.getTime() + 1) }),
+    );
+
+    expect(fresh.available).toBe(true);
+    expect(fresh.stale).toBe(false);
+    expect(fresh.catalog?.majors[0]?.latest.version).toBe("26.7.3");
+    expect(fetch.calls()).toBe(2);
+    expect(selects()).toBe(1);
+  });
+
+  it("single-flights revalidation for concurrent expired loads", async () => {
+    const configured = feedUrl();
+    const { db, rows, selects, writes } = makeFeedDb();
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    let calls = 0;
+    let version = "26.7.2";
+    const fetch = countingFetch(async () => {
+      calls++;
+
+      if (calls === 2) await refreshGate;
+
+      return jsonResponse(feedBody(version));
+    });
+    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+
+    await runEffect(loadSoftwareUpdateCatalog(options));
+
+    version = "26.7.3";
+
+    const expiresAt = new Date(now.getTime() + 60_000);
+    const states = await runEffect(
+      Effect.all(
+        Array.from({ length: 4 }, () => loadSoftwareUpdateCatalog({ ...options, now: expiresAt })),
+        { concurrency: "unbounded" },
+      ),
+    );
+
+    expect(states.every((state) => state.available && state.stale)).toBe(true);
+    expect(states.every((state) => state.catalog?.majors[0]?.latest.version === "26.7.2")).toBe(
+      true,
+    );
+    await expect.poll(() => fetch.calls()).toBe(2);
+    expect(selects()).toBe(1);
+    expect(writes()).toBe(1);
+
+    releaseRefresh();
+
+    await expect.poll(() => rows[0]?.fetchedAt?.getTime()).toBe(expiresAt.getTime());
+    expect(fetch.calls()).toBe(2);
+    expect(writes()).toBe(2);
+  });
+
+  it("keeps a stale catalog and failure cooldown when revalidation fails", async () => {
+    const configured = feedUrl();
+    const { db, rows, selects } = makeFeedDb();
+    let down = false;
+    const fetch = countingFetch(() =>
+      down ? jsonResponse({ error: "down" }, 503) : jsonResponse(feedBody()),
+    );
+    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+
+    await runEffect(loadSoftwareUpdateCatalog(options));
+
+    down = true;
+
+    const expiresAt = new Date(now.getTime() + 60_000);
+    const stale = await runEffect(loadSoftwareUpdateCatalog({ ...options, now: expiresAt }));
+
+    expect(stale.available).toBe(true);
+    expect(stale.stale).toBe(true);
+    expect(stale.error).toBeNull();
+
+    await expect.poll(() => rows[0]?.lastError).toBe("http_503");
+
+    const suppressed = await runEffect(
+      loadSoftwareUpdateCatalog({ ...options, now: new Date(expiresAt.getTime() + 1_000) }),
+    );
+
+    expect(suppressed.available).toBe(true);
+    expect(suppressed.stale).toBe(true);
+    expect(suppressed.error).toBe("http_503");
+    expect(fetch.calls()).toBe(2);
+    expect(selects()).toBe(1);
   });
 
   it("times out without throwing", async () => {
