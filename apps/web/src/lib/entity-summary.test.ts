@@ -1,6 +1,6 @@
 import { QueryClient, QueryObserver } from "@tanstack/solid-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { DeviceRow, GroupRow } from "@mattrax/enterprise-domain/client";
+import type { DeviceRow, DeviceSearchRow, GroupRow } from "@mattrax/enterprise-domain/client";
 import {
   cacheEntityRows,
   enterprise,
@@ -63,7 +63,11 @@ afterEach(() => {
 describe("entity summary cache", () => {
   it("hydrates from search rows and paints detail before the authoritative response", async () => {
     const client = makeClient();
-    const row = deviceRow();
+    const row: DeviceSearchRow = {
+      ...deviceRow(),
+      groups: [],
+      health: { level: "healthy", reasons: [], lastSeenAt: at, stale: false },
+    };
     const search = vi.spyOn(enterprise, "searchDevices").mockResolvedValue({
       devices: [row],
       total: 1,
