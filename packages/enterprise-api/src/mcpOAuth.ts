@@ -1,8 +1,9 @@
-import { Effect, Layer, Option, Schema } from "effect";
+import { DateTime, Effect, Layer, Option, Schema } from "effect";
 import type { HttpServerRequest } from "effect/http";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
   EnterpriseService,
   PERMISSION_GROUPS,
@@ -12,6 +13,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import type { Permission } from "@mattrax/enterprise-domain";
 import { sessionCookie } from "@mattrax/enterprise-backend";
+import { catchCausePreservingInterrupts } from "./errorBoundary.js";
 
 const json = (body: Schema.Json, status = 200, headers?: Record<string, string>) =>
   HttpServerResponse.jsonUnsafe(body, {
@@ -152,7 +154,7 @@ const resolveUser = (request: HttpServerRequest.HttpServerRequest) =>
 
     return session;
   }).pipe(
-    Effect.catchCause((cause) =>
+    catchCausePreservingInterrupts((cause) =>
       Effect.logWarning("MCP OAuth session lookup failed", cause).pipe(Effect.as(null)),
     ),
   );
@@ -167,12 +169,12 @@ const tokenResponse = (accessToken: string, refreshToken: string, expiresIn: num
   });
 
 const issueTokens = (
+  db: Pick<EnterpriseDb, "insert">,
   connectionId: string,
   clientId: string,
-): Effect.Effect<{ accessToken: string; refreshToken: string }, unknown, Db> =>
+  now: Date,
+): Effect.Effect<{ accessToken: string; refreshToken: string }, unknown> =>
   Effect.gen(function* () {
-    const db = yield* Db;
-    const now = new Date();
     const accessToken = randomToken("mcp_at_");
     const refreshToken = randomToken("mcp_rt_");
     yield* db.insert(schema.mcpOAuthToken).values([
@@ -499,7 +501,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
           "Mattrax MCP clients are public clients and must use token_endpoint_auth_method=none",
         );
       const id = randomToken("mcp_client_");
-      const now = new Date();
+      const now = DateTime.toDate(yield* DateTime.now);
       yield* db.insert(schema.mcpOAuthClient).values({
         id,
         name,
@@ -520,7 +522,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         201,
         { "access-control-allow-origin": "*" },
       );
-    }).pipe(Effect.catchCause((cause) => internalError("registration", cause)));
+    }).pipe(catchCausePreservingInterrupts((cause) => internalError("registration", cause)));
 
   const authorizeGet = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
@@ -580,7 +582,9 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         codeChallenge,
         scope: url.searchParams.get("scope")?.trim() || "mcp",
       });
-    }).pipe(Effect.catchCause((cause) => internalError("authorisation request", cause)));
+    }).pipe(
+      catchCausePreservingInterrupts((cause) => internalError("authorisation request", cause)),
+    );
 
   const authorizePost = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
@@ -669,7 +673,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         });
 
       const code = randomToken("mcp_code_");
-      const now = new Date();
+      const now = DateTime.toDate(yield* DateTime.now);
       yield* db.insert(schema.mcpOAuthCode).values({
         id: crypto.randomUUID(),
         connectionId,
@@ -687,7 +691,9 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       if (state) target.searchParams.set("state", state);
 
       return redirect(target.toString());
-    }).pipe(Effect.catchCause((cause) => internalError("authorisation decision", cause)));
+    }).pipe(
+      catchCausePreservingInterrupts((cause) => internalError("authorisation decision", cause)),
+    );
 
   const token = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
@@ -714,7 +720,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
 
         if (!PKCE_VERIFIER.test(verifier))
           return errorResponse("invalid_grant", "PKCE verification failed");
-        const now = new Date();
+        const now = DateTime.toDate(yield* DateTime.now);
         const codeHash = yield* Effect.promise(() => sha256(code));
 
         const row = yield* db.query.mcpOAuthCode.findFirst({
@@ -740,36 +746,39 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         if (!equalChallenges(expected, row.codeChallenge))
           return errorResponse("invalid_grant", "PKCE verification failed");
 
-        const connection = yield* db.query.mcpOAuthConnection.findFirst({
-          where: {
-            id: row.connectionId,
-            revokedAt: { isNull: true },
-          },
-        });
+        return yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const connection = yield* tx.query.mcpOAuthConnection.findFirst({
+              where: {
+                id: row.connectionId,
+                revokedAt: { isNull: true },
+              },
+            });
 
-        if (!connection || connection.clientId !== client.id)
-          return errorResponse("invalid_grant", "This connection was revoked");
+            if (!connection || connection.clientId !== client.id)
+              return errorResponse("invalid_grant", "This connection was revoked");
 
-        // Consume the code with one conditional UPDATE. Two concurrent
-        // exchanges of the same code both reach this statement; exactly one
-        // sees `affectedRows === 1` and only that request mints tokens. The
-        // expiry predicate closes the gap between the read and the consume.
-        const consumed = yield* db
-          .update(schema.mcpOAuthCode)
-          .set({ consumedAt: now })
-          .where(
-            and(
-              eq(schema.mcpOAuthCode.id, row.id),
-              isNull(schema.mcpOAuthCode.consumedAt),
-              gt(schema.mcpOAuthCode.expiresAt, now),
-            ),
-          );
+            // Consume the code and insert its replacement tokens together. A
+            // failed insert must roll back the claim so the grant stays usable.
+            const consumed = yield* tx
+              .update(schema.mcpOAuthCode)
+              .set({ consumedAt: now })
+              .where(
+                and(
+                  eq(schema.mcpOAuthCode.id, row.id),
+                  isNull(schema.mcpOAuthCode.consumedAt),
+                  gt(schema.mcpOAuthCode.expiresAt, now),
+                ),
+              );
 
-        if (consumed.affectedRows !== 1)
-          return errorResponse("invalid_grant", "Invalid or expired authorization code");
-        const tokens = yield* issueTokens(connection.id, client.id);
+            if (consumed.affectedRows !== 1)
+              return errorResponse("invalid_grant", "Invalid or expired authorization code");
 
-        return tokenResponse(tokens.accessToken, tokens.refreshToken, 3600);
+            const tokens = yield* issueTokens(tx, connection.id, client.id, now);
+
+            return tokenResponse(tokens.accessToken, tokens.refreshToken, 3600);
+          }),
+        );
       }
 
       if (grantType === "refresh_token") {
@@ -777,7 +786,7 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
 
         if (!refreshToken) return errorResponse("invalid_request", "refresh_token is required");
         const tokenHash = yield* Effect.promise(() => sha256(refreshToken));
-        const now = new Date();
+        const now = DateTime.toDate(yield* DateTime.now);
 
         const row = yield* db.query.mcpOAuthToken.findFirst({
           where: {
@@ -791,35 +800,40 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
         if (!row || tokenExpired(row.expiresAt, now))
           return errorResponse("invalid_grant", "Invalid or expired refresh token");
 
-        const connection = yield* db.query.mcpOAuthConnection.findFirst({
-          where: { id: row.connectionId, revokedAt: { isNull: true } },
-        });
+        return yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const connection = yield* tx.query.mcpOAuthConnection.findFirst({
+              where: { id: row.connectionId, revokedAt: { isNull: true } },
+            });
 
-        if (!connection || connection.clientId !== client.id)
-          return errorResponse("invalid_grant", "This connection was revoked");
+            if (!connection || connection.clientId !== client.id)
+              return errorResponse("invalid_grant", "This connection was revoked");
 
-        // Rotate with a conditional UPDATE so a replay of the same refresh
-        // token cannot mint a second token family.
-        const revoked = yield* db
-          .update(schema.mcpOAuthToken)
-          .set({ revokedAt: now })
-          .where(
-            and(
-              eq(schema.mcpOAuthToken.id, row.id),
-              isNull(schema.mcpOAuthToken.revokedAt),
-              gt(schema.mcpOAuthToken.expiresAt, now),
-            ),
-          );
+            // Revoke the old refresh token and insert its replacement together.
+            // A failed insert leaves the presented token valid for a retry.
+            const revoked = yield* tx
+              .update(schema.mcpOAuthToken)
+              .set({ revokedAt: now })
+              .where(
+                and(
+                  eq(schema.mcpOAuthToken.id, row.id),
+                  isNull(schema.mcpOAuthToken.revokedAt),
+                  gt(schema.mcpOAuthToken.expiresAt, now),
+                ),
+              );
 
-        if (revoked.affectedRows !== 1)
-          return errorResponse("invalid_grant", "Invalid or expired refresh token");
-        const tokens = yield* issueTokens(connection.id, client.id);
+            if (revoked.affectedRows !== 1)
+              return errorResponse("invalid_grant", "Invalid or expired refresh token");
 
-        return tokenResponse(tokens.accessToken, tokens.refreshToken, 3600);
+            const tokens = yield* issueTokens(tx, connection.id, client.id, now);
+
+            return tokenResponse(tokens.accessToken, tokens.refreshToken, 3600);
+          }),
+        );
       }
 
       return errorResponse("unsupported_grant_type", "Use authorization_code or refresh_token");
-    }).pipe(Effect.catchCause((cause) => internalError("token exchange", cause)));
+    }).pipe(catchCausePreservingInterrupts((cause) => internalError("token exchange", cause)));
 
   const revoke = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
@@ -829,14 +843,15 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
 
       if (!token) return json({}, 200);
       const tokenHash = yield* Effect.promise(() => sha256(token));
+      const now = DateTime.toDate(yield* DateTime.now);
       yield* db
         .update(schema.mcpOAuthToken)
-        .set({ revokedAt: new Date() })
+        .set({ revokedAt: now })
         .where(eq(schema.mcpOAuthToken.tokenHash, tokenHash));
 
       return json({}, 200);
     }).pipe(
-      Effect.catchCause((cause) =>
+      catchCausePreservingInterrupts((cause) =>
         Effect.logError("MCP OAuth token revocation failed", cause).pipe(
           Effect.as(json({ error: "temporarily_unavailable" }, 503)),
         ),

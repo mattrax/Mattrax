@@ -438,7 +438,7 @@ export const makeAuthLive = ({
                     sessionId: invocation.sessionId,
                     action,
                     method: "passkey",
-                  })
+                  }).pipe(Effect.mapError(() => Passkey.PasskeyUnavailable.make({})))
                 : false;
 
             const verifiedAt = steppedUp ? DateTime.toEpochMillis(yield* DateTime.now) : undefined;
@@ -596,7 +596,7 @@ export const makeAuthLive = ({
               subjectId: invocation.subjectId,
               sessionId: invocation.sessionId,
               action: stepUpActionFor(challenge.action),
-            });
+            }).pipe(Effect.mapError(() => Totp.TotpUnavailable.make({})));
 
             if (stepUp?.method !== "passkey" || stepUp.credentialId === undefined)
               return yield* Totp.TotpActionRequired.make({});

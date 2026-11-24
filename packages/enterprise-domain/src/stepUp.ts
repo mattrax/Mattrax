@@ -66,6 +66,10 @@ export class StepUpUnavailable extends Schema.TaggedError<StepUpUnavailable>()(
   "StepUpUnavailable",
   {
     message: Schema.String,
+    reason: Schema.optional(
+      Schema.Literals(["configuration", "storage", "cryptography", "protocol", "unavailable"]),
+    ),
+    retryable: Schema.optional(Schema.Boolean),
   },
 ) {}
 

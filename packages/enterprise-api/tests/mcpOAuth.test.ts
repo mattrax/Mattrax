@@ -790,6 +790,117 @@ describe("MCP OAuth token exchange", () => {
     expect(response.status).toBe(400);
   });
 
+  it("rolls back authorization-code consumption when the claim fails", async () => {
+    const db = makeDb();
+    const issued = await issueCode(db);
+    const values = {
+      grant_type: "authorization_code",
+      client_id: issued.clientId,
+      code: issued.code,
+      redirect_uri: issued.redirectUri,
+      code_verifier: issued.verifier,
+    };
+
+    db.failNextWrite("update", "mcp_oauth_code");
+
+    const failed = await exchange(issued.handler, values);
+
+    expect(failed.status).toBe(500);
+    expect(await body(failed)).toMatchObject({ error: "server_error" });
+    expect(db.store.mcp_oauth_code[0]?.consumedAt).toBeFalsy();
+    expect(db.store.mcp_oauth_token).toEqual([]);
+
+    expect((await exchange(issued.handler, values)).status).toBe(200);
+  });
+
+  it("rolls back authorization-code consumption when token insertion fails", async () => {
+    const db = makeDb();
+    const issued = await issueCode(db);
+    const values = {
+      grant_type: "authorization_code",
+      client_id: issued.clientId,
+      code: issued.code,
+      redirect_uri: issued.redirectUri,
+      code_verifier: issued.verifier,
+    };
+
+    db.failNextWrite("insert", "mcp_oauth_token");
+
+    const failed = await exchange(issued.handler, values);
+
+    expect(failed.status).toBe(500);
+    expect(db.store.mcp_oauth_code[0]?.consumedAt).toBeFalsy();
+    expect(db.store.mcp_oauth_token).toEqual([]);
+
+    expect((await exchange(issued.handler, values)).status).toBe(200);
+    expect(db.store.mcp_oauth_token).toHaveLength(2);
+  });
+
+  it("keeps a refresh token valid when revocation fails", async () => {
+    const db = makeDb();
+    const issued = await issueCode(db);
+    const first = await tokenPair(
+      await exchange(issued.handler, {
+        grant_type: "authorization_code",
+        client_id: issued.clientId,
+        code: issued.code,
+        redirect_uri: issued.redirectUri,
+        code_verifier: issued.verifier,
+      }),
+    );
+
+    db.failNextWrite("update", "mcp_oauth_token");
+
+    const failed = await exchange(issued.handler, {
+      grant_type: "refresh_token",
+      client_id: issued.clientId,
+      refresh_token: first.refresh_token,
+    });
+
+    expect(failed.status).toBe(500);
+    expect(
+      db.store.mcp_oauth_token.find((row: any) => row.kind === "refresh")?.revokedAt,
+    ).toBeFalsy();
+    expect(db.store.mcp_oauth_token).toHaveLength(2);
+  });
+
+  it("rolls back refresh revocation when replacement insertion fails", async () => {
+    const db = makeDb();
+    const issued = await issueCode(db);
+    const first = await tokenPair(
+      await exchange(issued.handler, {
+        grant_type: "authorization_code",
+        client_id: issued.clientId,
+        code: issued.code,
+        redirect_uri: issued.redirectUri,
+        code_verifier: issued.verifier,
+      }),
+    );
+
+    db.failNextWrite("insert", "mcp_oauth_token");
+
+    const failed = await exchange(issued.handler, {
+      grant_type: "refresh_token",
+      client_id: issued.clientId,
+      refresh_token: first.refresh_token,
+    });
+
+    expect(failed.status).toBe(500);
+    expect(
+      db.store.mcp_oauth_token.find((row: any) => row.kind === "refresh")?.revokedAt,
+    ).toBeFalsy();
+    expect(db.store.mcp_oauth_token).toHaveLength(2);
+
+    const retried = await exchange(issued.handler, {
+      grant_type: "refresh_token",
+      client_id: issued.clientId,
+      refresh_token: first.refresh_token,
+    });
+
+    expect(retried.status).toBe(200);
+    expect(db.store.mcp_oauth_token).toHaveLength(4);
+  });
+
   it("rejects an unknown client and an unsupported grant", async () => {
     const db = makeDb();
     const handler = makeHandler(db);

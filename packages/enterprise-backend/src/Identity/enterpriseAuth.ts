@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
-import { Effect, Layer, Option, Redacted, Schema } from "effect";
+import { Cause, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect";
 import {
   EnterpriseAuth,
   EnterpriseBadRequest,
@@ -467,20 +467,21 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const match = authorization.match(/^Bearer\s+(.+)$/i);
 
           if (!match) return undefined;
+          const now = DateTime.toDate(yield* DateTime.now);
           const tokenHash = yield* sha256(match[1]);
 
           const item = yield* db.query.accountApiToken.findFirst({
             where: { tokenHash, revokedAt: { isNull: true } },
           });
 
-          if (!item || (item.expiresAt && item.expiresAt <= new Date())) return undefined;
+          if (!item || (item.expiresAt && item.expiresAt <= now)) return undefined;
 
           // `last_used_at` is operator metadata, not an authorization input.
           // Refreshing it on every request costs a write round trip on every
           // bearer-authenticated call (SSR and MCP traffic), so it follows the
           // same five-minute floor as the session context.
           const usedAt = item.lastUsedAt;
-          const at = new Date();
+          const at = now;
 
           if (!usedAt || at.getTime() - usedAt.getTime() >= API_TOKEN_USED_REFRESH_MILLIS)
             yield* db
@@ -506,6 +507,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const match = authorization.match(/^Bearer\s+(.+)$/i);
 
           if (!match) return undefined;
+          const now = DateTime.toDate(yield* DateTime.now);
           const tokenHash = yield* sha256Base64Url(match[1]);
 
           const [row] = yield* db
@@ -531,14 +533,13 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 eq(schema.mcpOAuthToken.tokenHash, tokenHash),
                 eq(schema.mcpOAuthToken.kind, "access"),
                 isNull(schema.mcpOAuthToken.revokedAt),
-                gt(schema.mcpOAuthToken.expiresAt, new Date()),
+                gt(schema.mcpOAuthToken.expiresAt, now),
                 isNull(schema.mcpOAuthConnection.revokedAt),
               ),
             )
             .limit(1);
 
           if (!row) return undefined;
-          const now = new Date();
           yield* db
             .update(schema.mcpOAuthToken)
             .set({ lastUsedAt: now })
@@ -707,7 +708,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 code: "mcp_connection_revoked",
               }),
             );
-          const revokedAt = new Date();
+          const revokedAt = DateTime.toDate(yield* DateTime.now);
           yield* db
             .update(schema.mcpOAuthConnection)
             .set({ revokedAt })
@@ -783,7 +784,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         credentialId?: string,
       ) =>
         Effect.gen(function* () {
-          const expiresAtMillis = Date.now() + STEP_UP_WINDOW_MILLIS;
+          const expiresAtMillis =
+            DateTime.toEpochMillis(yield* DateTime.now) + STEP_UP_WINDOW_MILLIS;
 
           const token = yield* signStepUpGrant(authSecret, {
             subjectId: user.id,
@@ -999,6 +1001,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               );
           }
 
+          const now = DateTime.toDate(yield* DateTime.now);
           let expiresAt: Date | null = null;
 
           if (body.expiresAt) {
@@ -1009,7 +1012,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 new EnterpriseBadRequest({ message: "Choose a valid expiry date" }),
               );
 
-            if (parsed <= new Date())
+            if (parsed <= now)
               return yield* Effect.fail(
                 new EnterpriseBadRequest({ message: "The expiry date must be in the future" }),
               );
@@ -1017,7 +1020,6 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           }
 
           const raw = randomToken("mtx_");
-          const now = new Date();
           const tokenHash = yield* sha256(raw);
 
           const item = {
@@ -1061,10 +1063,11 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       const revokeApiToken = (request: Request, tokenId: string) =>
         Effect.gen(function* () {
           const { user } = yield* requireStepUp(request, "api-token-revoke");
+          const now = DateTime.toDate(yield* DateTime.now);
 
           const revoked = yield* db
             .update(schema.accountApiToken)
-            .set({ revokedAt: new Date(), updatedAt: new Date() })
+            .set({ revokedAt: now, updatedAt: now })
             .where(
               and(
                 eq(schema.accountApiToken.id, tokenId),
@@ -1133,7 +1136,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               }),
             );
 
-          const now = new Date();
+          const now = DateTime.toDate(yield* DateTime.now);
           const confirmToken = randomToken();
           const cancelToken = randomToken();
           const changeId = newId();
@@ -1170,9 +1173,10 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           /** Abort the ceremony and drop every live link for this account. */
           const abort = (message: string) =>
             Effect.gen(function* () {
+              const now = DateTime.toDate(yield* DateTime.now);
               yield* db
                 .update(schema.accountEmailChange)
-                .set({ cancelledAt: new Date(), updatedAt: new Date() })
+                .set({ cancelledAt: now, updatedAt: now })
                 .where(
                   and(
                     eq(schema.accountEmailChange.accountId, user.id),
@@ -1299,11 +1303,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           }
 
           const code = generateEmailCode();
+          const now = DateTime.toEpochMillis(yield* DateTime.now);
 
           const challenge = yield* signToken(authSecret, {
             sub: user.id,
             email: user.email,
-            exp: Date.now() + EMAIL_CODE_TTL_MS,
+            exp: now + EMAIL_CODE_TTL_MS,
             purpose: "email-verify-code",
             codeHash: yield* emailCodeHash(authSecret, user.id, code),
           });
@@ -1311,7 +1316,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const token = yield* signToken(authSecret, {
             sub: user.id,
             email: user.email,
-            exp: Date.now() + 24 * 60 * 60 * 1000,
+            exp: now + 24 * 60 * 60 * 1000,
             purpose: "email-verify",
           });
 
@@ -1389,6 +1394,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             }
 
             const code = body.code.trim();
+            const now = DateTime.toEpochMillis(yield* DateTime.now);
 
             if (!/^\d{6}$/.test(code))
               return yield* Effect.fail(
@@ -1408,7 +1414,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             const codeHash = challenge.codeHash;
 
             if (
-              challenge.exp <= Date.now() ||
+              challenge.exp <= now ||
               challenge.purpose !== "email-verify-code" ||
               codeHash === undefined ||
               challenge.sub !== user.id ||
@@ -1429,11 +1435,11 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               );
             yield* db
               .update(schema.account)
-              .set({ emailVerified: true, updatedAt: new Date() })
+              .set({ emailVerified: true, updatedAt: new Date(now) })
               .where(eq(schema.account.id, user.id));
             yield* db
               .update(authIdentifiers)
-              .set({ verifiedAt: Date.now() })
+              .set({ verifiedAt: now })
               .where(
                 and(eq(authIdentifiers.subjectId, user.id), eq(authIdentifiers.namespace, "email")),
               );
@@ -1442,13 +1448,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             return { status: "ok" as const };
           }
 
+          const now = DateTime.toEpochMillis(yield* DateTime.now);
           const payload = yield* verifyToken(authSecret, body.token ?? "").pipe(
             Effect.catch(() =>
               Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" })),
             ),
           );
 
-          if (payload.exp <= Date.now() || payload.purpose !== "email-verify")
+          if (payload.exp <= now || payload.purpose !== "email-verify")
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Invalid or expired token" }),
             );
@@ -1460,11 +1467,11 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             );
           yield* db
             .update(schema.account)
-            .set({ emailVerified: true, updatedAt: new Date() })
+            .set({ emailVerified: true, updatedAt: new Date(now) })
             .where(eq(schema.account.id, user.id));
           yield* db
             .update(authIdentifiers)
-            .set({ verifiedAt: Date.now() })
+            .set({ verifiedAt: now })
             .where(
               and(eq(authIdentifiers.subjectId, user.id), eq(authIdentifiers.namespace, "email")),
             );
@@ -1489,7 +1496,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
           if (!body.token) return yield* Effect.fail(invalid);
 
-          const now = new Date();
+          const now = DateTime.toDate(yield* DateTime.now);
           const tokenHash = yield* sha256(body.token);
 
           const pending = yield* db.query.accountEmailChange.findFirst({
@@ -1558,7 +1565,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
                 yield* tx
                   .update(authIdentifiers)
-                  .set({ value: pending.newEmail, verifiedAt: Date.now() })
+                  .set({ value: pending.newEmail, verifiedAt: now.getTime() })
                   .where(
                     and(
                       eq(authIdentifiers.subjectId, user.id),
@@ -1575,22 +1582,25 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               // if it is now taken the request is a conflict, otherwise the
               // original cause (a database fault) is re-raised unchanged.
               Effect.catchCause((cause) =>
-                Effect.gen(function* () {
-                  const taken = yield* db
-                    .select({ id: schema.account.id })
-                    .from(schema.account)
-                    .where(eq(schema.account.email, pending.newEmail))
-                    .limit(1);
+                Cause.hasInterrupts(cause)
+                  ? Effect.failCause(cause)
+                  : Effect.gen(function* () {
+                      const taken = yield* db
+                        .select({ id: schema.account.id })
+                        .from(schema.account)
+                        .where(eq(schema.account.email, pending.newEmail))
+                        .limit(1);
 
-                  if (taken.some((row) => row.id !== user.id))
-                    return yield* Effect.fail(
-                      new EnterpriseConflict({
-                        message: "That email address was registered by someone else. Try another.",
-                      }),
-                    );
+                      if (taken.some((row) => row.id !== user.id))
+                        return yield* Effect.fail(
+                          new EnterpriseConflict({
+                            message:
+                              "That email address was registered by someone else. Try another.",
+                          }),
+                        );
 
-                  return yield* Effect.failCause(cause);
-                }),
+                      return yield* Effect.failCause(cause);
+                    }),
               ),
             );
 
@@ -1613,7 +1623,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
        */
       const cancelEmailChange = (body: { token: string }) =>
         Effect.gen(function* () {
-          const now = new Date();
+          const now = DateTime.toDate(yield* DateTime.now);
           const tokenHash = yield* sha256(body.token ?? "");
 
           const pending = yield* db.query.accountEmailChange.findFirst({

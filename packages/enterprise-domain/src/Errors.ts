@@ -186,6 +186,11 @@ export const EnterpriseAuthRequiredErrors = [
 
 export const EnterpriseDbErrors = [EnterpriseDbError.pipe(HttpApiSchema.status(500))] as const;
 
+/** Step-up infrastructure is temporarily unavailable, rather than a bad proof. */
+export const EnterpriseStepUpUnavailable = [
+  StepUpUnavailable.pipe(HttpApiSchema.status(503)),
+] as const;
+
 export const EnterpriseTenantReadErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
@@ -335,6 +340,7 @@ export const EnterpriseNoDomainErrors = [
 export const EnterpriseAccountErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
+  ...EnterpriseStepUpUnavailable,
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
@@ -365,10 +371,7 @@ export const EnterpriseStepUpErrors = [
   ...EnterpriseStepUpRequired,
 ] as const;
 
-export const EnterpriseStepUpFactorErrors = [
-  ...EnterpriseStepUpErrors,
-  StepUpUnavailable.pipe(HttpApiSchema.status(400)),
-] as const;
+export const EnterpriseStepUpFactorErrors = [...EnterpriseStepUpErrors] as const;
 
 export const StepUpActionSchema = Schema.Literals(STEP_UP_ACTIONS);
 

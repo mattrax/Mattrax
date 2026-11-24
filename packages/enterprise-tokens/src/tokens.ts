@@ -1,5 +1,12 @@
 import { Effect, Schema } from "effect";
 
+/** A token could not be encoded, verified or decoded. */
+export class TokenError extends Schema.TaggedError<TokenError>()("TokenError", {
+  message: Schema.String,
+  reason: Schema.Literals(["malformed", "invalid_signature", "invalid_payload", "crypto"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {}
+
 const bytesToBase64Url = (bytes: Uint8Array) =>
   btoa(String.fromCharCode(...bytes))
     .replaceAll("+", "-")
@@ -83,47 +90,76 @@ export const TokenPayloadSchema = Schema.Struct({
   tenants: Schema.optional(Schema.Unknown),
 });
 
-export const signToken = (secret: string, payload: TokenPayload) =>
-  Effect.promise(async () => {
-    const body = bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
+const cryptoError = (cause: unknown) =>
+  new TokenError({ message: "The token could not be processed", reason: "crypto", cause });
 
-    const key = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    );
-
-    const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
-
-    return `${body}.${bytesToBase64Url(new Uint8Array(signature))}`;
+export const signToken = Effect.fnUntraced(function* (secret: string, payload: TokenPayload) {
+  const body = yield* Effect.try({
+    try: () => bytesToBase64Url(new TextEncoder().encode(JSON.stringify(payload))),
+    catch: (cause) =>
+      new TokenError({ message: "The token payload is invalid", reason: "invalid_payload", cause }),
   });
 
-export const verifyToken = (secret: string, token: string) =>
-  Effect.promise(async () => {
-    const [body, signature] = token.split(".");
-
-    if (!body || !signature) throw new Error("Malformed token");
-
-    const key = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["verify"],
-    );
-
-    const valid = await crypto.subtle.verify(
-      "HMAC",
-      key,
-      base64UrlToBytes(signature),
-      new TextEncoder().encode(body),
-    );
-
-    if (!valid) throw new Error("Invalid token");
-
-    return Schema.decodeUnknownSync(TokenPayloadSchema)(
-      JSON.parse(new TextDecoder().decode(base64UrlToBytes(body))),
-    );
+  const key = yield* Effect.tryPromise({
+    try: () =>
+      crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"],
+      ),
+    catch: cryptoError,
   });
+
+  const signature = yield* Effect.tryPromise({
+    try: () => crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)),
+    catch: cryptoError,
+  });
+
+  return `${body}.${bytesToBase64Url(new Uint8Array(signature))}`;
+});
+
+export const verifyToken = Effect.fnUntraced(function* (secret: string, token: string) {
+  const [body, signature] = token.split(".");
+
+  if (!body || !signature || token.includes(".") === false || token.split(".").length !== 2)
+    return yield* new TokenError({ message: "Malformed token", reason: "malformed" });
+
+  const signatureBytes = yield* Effect.try({
+    try: () => base64UrlToBytes(signature),
+    catch: (cause) => new TokenError({ message: "Malformed token", reason: "malformed", cause }),
+  });
+
+  const key = yield* Effect.tryPromise({
+    try: () =>
+      crypto.subtle.importKey(
+        "raw",
+        new TextEncoder().encode(secret),
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["verify"],
+      ),
+    catch: cryptoError,
+  });
+
+  const valid = yield* Effect.tryPromise({
+    try: () => crypto.subtle.verify("HMAC", key, signatureBytes, new TextEncoder().encode(body)),
+    catch: cryptoError,
+  });
+
+  if (!valid)
+    return yield* new TokenError({
+      message: "Invalid token signature",
+      reason: "invalid_signature",
+    });
+
+  return yield* Effect.try({
+    try: () =>
+      Schema.decodeUnknownSync(TokenPayloadSchema)(
+        JSON.parse(new TextDecoder().decode(base64UrlToBytes(body))),
+      ),
+    catch: (cause) =>
+      new TokenError({ message: "Invalid token payload", reason: "invalid_payload", cause }),
+  });
+});

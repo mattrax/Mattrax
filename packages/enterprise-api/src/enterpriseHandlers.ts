@@ -13,6 +13,7 @@ import {
 import type { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
 import { HttpApiSchema } from "effect/http-api";
+import { catchCausePreservingInterrupts } from "./errorBoundary.js";
 import { preconditionFailure, preconditionFromRequest } from "./preconditions.js";
 import type {
   enterpriseAccountApi,
@@ -925,44 +926,42 @@ const logServiceFailure = (error: ServiceFailure, causeText?: string) => {
  * from becoming bodyless 500s that clients cannot explain.
  */
 const mapServiceErrors = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  effect.pipe(
-    Effect.catchCause((cause) => {
-      // SAFETY: Cause.squash always yields the captured Error, tagged data
-      // error, primitive, or null/undefined that caused the Effect to fail.
-      const error = Cause.squash(cause) as ServiceFailure;
+  catchCausePreservingInterrupts((cause) => {
+    // SAFETY: Cause.squash always yields the captured Error, tagged data
+    // error, primitive, or null/undefined that caused the Effect to fail.
+    const error = Cause.squash(cause) as ServiceFailure;
 
-      if (isModelledError(error)) {
-        const tag = errorTag(error) ?? "";
+    if (isModelledError(error)) {
+      const tag = errorTag(error) ?? "";
 
-        const log = expectedClientTags.has(tag)
-          ? Effect.void
-          : logServiceFailure(error, Cause.pretty(cause));
+      const log = expectedClientTags.has(tag)
+        ? Effect.void
+        : logServiceFailure(error, Cause.pretty(cause));
 
-        // SAFETY: isModelledError checks the runtime `_tag`; Cause.squash erases
-        // the typed error union, so the failure is re-asserted as the channel E.
-        return Effect.flatMap(log, () => Effect.fail(error as E));
-      }
+      // SAFETY: isModelledError checks the runtime `_tag`; Cause.squash erases
+      // the typed error union, so the failure is re-asserted as the channel E.
+      return Effect.flatMap(log, () => Effect.fail(error as E));
+    }
 
-      const internal = diagnoseError(
-        new EnterpriseInternal({
-          message: "Something went wrong on our side. Try again shortly.",
-        }),
-        {
-          code: "internal_error",
-          retryable: true,
-          details: {
-            cause: error instanceof Error ? error.message : String(error),
-          },
+    const internal = diagnoseError(
+      new EnterpriseInternal({
+        message: "Something went wrong on our side. Try again shortly.",
+      }),
+      {
+        code: "internal_error",
+        retryable: true,
+        details: {
+          cause: error instanceof Error ? error.message : String(error),
         },
-      );
+      },
+    );
 
-      // SAFETY: diagnoseError's internal error is the caller's declared failure
-      // channel; CatchCause must not widen it to the raw defect.
-      return Effect.flatMap(logServiceFailure(error, Cause.pretty(cause)), () =>
-        Effect.fail(internal as E),
-      );
-    }),
-  );
+    // SAFETY: diagnoseError's internal error is the caller's declared failure
+    // channel; CatchCause must not widen it to the raw defect.
+    return Effect.flatMap(logServiceFailure(error, Cause.pretty(cause)), () =>
+      Effect.fail(internal as E),
+    );
+  })(effect);
 
 const PRODUCT_EVENTS = {
   createTenant: "tenant_created",
@@ -2970,7 +2969,7 @@ export const createEnterpriseService = ({
     Effect.gen(function* () {
       const record = (action: string, metadata: Schema.Json) =>
         audit(ctx, action, "sso", ctx.organization.id, metadata).pipe(
-          Effect.catchCause((cause) =>
+          catchCausePreservingInterrupts((cause) =>
             Effect.logWarning(`Entra consent audit write failed: ${String(cause)}`),
           ),
         );
@@ -3013,7 +3012,7 @@ export const createEnterpriseService = ({
           grantsRemoved: revocation.grantsRemoved,
           servicePrincipalId: revocation.servicePrincipalId,
         })),
-        Effect.catchCause((cause) => {
+        catchCausePreservingInterrupts((cause) => {
           const error = Cause.squash(cause);
 
           // Graph error messages name the endpoint, never a token or secret.
@@ -3642,7 +3641,7 @@ export const createEnterpriseService = ({
           tenantCount: usage.tenantCount,
         }),
       ),
-      Effect.catchCause((cause) =>
+      catchCausePreservingInterrupts((cause) =>
         Effect.logWarning(`Billing usage report failed for ${organizationId}: ${String(cause)}`),
       ),
     );
@@ -6664,7 +6663,7 @@ export const createEnterpriseService = ({
       for (const row of removed)
         if (row.r2Key)
           yield* Effect.tryPromise(() => storage.delete(row.r2Key!)).pipe(
-            Effect.catchCause((cause) =>
+            catchCausePreservingInterrupts((cause) =>
               Effect.logWarning(
                 `Failed to delete application installer object ${row.r2Key}: ${String(cause)}`,
               ),
@@ -6789,79 +6788,76 @@ export const createEnterpriseService = ({
     readonly ip?: string | null;
     readonly userAgent?: string | null;
   }) =>
-    Effect.catchCause(
-      Effect.gen(function* () {
-        let ipHash: string | null = null;
+    Effect.gen(function* () {
+      let ipHash: string | null = null;
 
-        // Without a deployment secret a salted digest would be trivially
-        // reversible (or identical across deployments), so do not persist an
-        // address-derived value at all.
-        if (input.ip && authSecret) {
-          const bytes = new TextEncoder().encode(`${authSecret}:${input.ip}`);
-          ipHash = (yield* sha256Hex(bytesToArrayBuffer(bytes))).slice(0, 32);
-        }
+      // Without a deployment secret a salted digest would be trivially
+      // reversible (or identical across deployments), so do not persist an
+      // address-derived value at all.
+      if (input.ip && authSecret) {
+        const bytes = new TextEncoder().encode(`${authSecret}:${input.ip}`);
+        ipHash = (yield* sha256Hex(bytesToArrayBuffer(bytes))).slice(0, 32);
+      }
 
-        const timestamp = now();
-        const cutoff = new Date(timestamp.getTime() - ENROLLMENT_ATTEMPT_DEDUPE_MS);
+      const timestamp = now();
+      const cutoff = new Date(timestamp.getTime() - ENROLLMENT_ATTEMPT_DEDUPE_MS);
 
-        const recent = yield* db
-          .select()
-          .from(schema.enrollmentAttempt)
-          .where(
-            and(
-              eq(schema.enrollmentAttempt.organizationId, input.organizationId),
-              eq(schema.enrollmentAttempt.enrollmentId, input.enrollmentId),
-              gte(schema.enrollmentAttempt.createdAt, cutoff),
-            ),
-          );
+      const recent = yield* db
+        .select()
+        .from(schema.enrollmentAttempt)
+        .where(
+          and(
+            eq(schema.enrollmentAttempt.organizationId, input.organizationId),
+            eq(schema.enrollmentAttempt.enrollmentId, input.enrollmentId),
+            gte(schema.enrollmentAttempt.createdAt, cutoff),
+          ),
+        );
 
-        const duplicate = recent.some((row) => {
-          const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt);
+      const duplicate = recent.some((row) => {
+        const createdAt = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt);
 
-          return (
-            !Number.isNaN(createdAt.getTime()) &&
-            createdAt >= cutoff &&
-            (row.ipHash ?? null) === ipHash &&
-            row.outcome === input.outcome
-          );
-        });
+        return (
+          !Number.isNaN(createdAt.getTime()) &&
+          createdAt >= cutoff &&
+          (row.ipHash ?? null) === ipHash &&
+          row.outcome === input.outcome
+        );
+      });
 
-        const sameClient = recent.filter((row) => (row.ipHash ?? null) === ipHash).length;
+      const sameClient = recent.filter((row) => (row.ipHash ?? null) === ipHash).length;
 
-        if (duplicate || sameClient >= ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT) return;
-        yield* db.insert(schema.enrollmentAttempt).values({
-          id: id(),
-          organizationId: input.organizationId,
-          enrollmentId: input.enrollmentId,
-          platform: input.platform,
-          outcome: input.outcome,
-          detail: input.detail?.slice(0, 255) ?? null,
-          ipHash,
-          userAgent: input.userAgent?.slice(0, 255) ?? null,
-          createdAt: timestamp,
-        });
+      if (duplicate || sameClient >= ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT) return;
+      yield* db.insert(schema.enrollmentAttempt).values({
+        id: id(),
+        organizationId: input.organizationId,
+        enrollmentId: input.enrollmentId,
+        platform: input.platform,
+        outcome: input.outcome,
+        detail: input.detail?.slice(0, 255) ?? null,
+        ipHash,
+        userAgent: input.userAgent?.slice(0, 255) ?? null,
+        createdAt: timestamp,
+      });
 
-        // Only failed attempts are customer-actionable. Dedupe above already
-        // stops a page-refresh loop from producing a delivery per request.
-        if (input.outcome !== "ok")
-          yield* dispatchWebhookEvent(
-            db,
-            {
-              organizationId: input.organizationId,
-              type: "enrollment.attempt_failed",
-              occurredAt: timestamp,
-              data: {
-                enrollmentId: input.enrollmentId,
-                platform: input.platform,
-                outcome: input.outcome,
-                detail: input.detail?.slice(0, 255) ?? null,
-              },
+      // Only failed attempts are customer-actionable. Dedupe above already
+      // stops a page-refresh loop from producing a delivery per request.
+      if (input.outcome !== "ok")
+        yield* dispatchWebhookEvent(
+          db,
+          {
+            organizationId: input.organizationId,
+            type: "enrollment.attempt_failed",
+            occurredAt: timestamp,
+            data: {
+              enrollmentId: input.enrollmentId,
+              platform: input.platform,
+              outcome: input.outcome,
+              detail: input.detail?.slice(0, 255) ?? null,
             },
-            webhookOptions,
-          );
-      }),
-      () => Effect.void,
-    );
+          },
+          webhookOptions,
+        );
+    }).pipe(catchCausePreservingInterrupts(() => Effect.void));
 
   const requireApnsSecret = () =>
     Effect.gen(function* () {
@@ -9569,7 +9565,7 @@ export const createEnterpriseService = ({
           }),
         { concurrency: 4 },
       ).pipe(
-        Effect.catchCause((cause) =>
+        catchCausePreservingInterrupts((cause) =>
           Effect.logWarning("Approval notification failed", {
             organizationId: organization.id,
             requestId: request.id,
@@ -10790,7 +10786,7 @@ export const createEnterpriseService = ({
           action: ACCOUNT_AUDIT.sessionRevoked,
           targetType: "session",
           targetId: sessionId,
-        }).pipe(Effect.catchCause(() => Effect.void));
+        }).pipe(catchCausePreservingInterrupts(() => Effect.void));
 
         return ok;
       }),
@@ -10816,7 +10812,7 @@ export const createEnterpriseService = ({
           action: ACCOUNT_AUDIT.sessionsRevoked,
           targetType: "session",
           metadata: { revoked },
-        }).pipe(Effect.catchCause(() => Effect.void));
+        }).pipe(catchCausePreservingInterrupts(() => Effect.void));
 
         return { status: "ok" as const, revoked };
       }),
@@ -12214,7 +12210,7 @@ export const createEnterpriseService = ({
           yield* billing
             .renameTenant({ tenantId, name })
             .pipe(
-              Effect.catchCause((cause) =>
+              catchCausePreservingInterrupts((cause) =>
                 Effect.logWarning(
                   `Billing customer rename failed for ${tenantId}: ${String(cause)}`,
                 ),
@@ -13319,7 +13315,7 @@ export const createEnterpriseService = ({
         const previousLinkVerified =
           previousAzureTenantId && tenantChanged
             ? yield* entraLinkWasVerified(ctx.organization.id).pipe(
-                Effect.catchCause(() => Effect.succeed(false)),
+                catchCausePreservingInterrupts(() => Effect.succeed(false)),
               )
             : false;
 
@@ -25531,7 +25527,7 @@ export const createEnterpriseService = ({
         // sync, and must not swallow the audit for the membership write.
         if (toInsert.length)
           yield* refreshDevicesForDirectoryUsers(ctx.organization.id, toInsert).pipe(
-            Effect.catchCause((cause) =>
+            catchCausePreservingInterrupts((cause) =>
               Effect.logWarning(
                 `Directory group ${groupId} membership refresh failed: ${String(cause)}`,
               ),
@@ -25926,7 +25922,7 @@ export const createEnterpriseService = ({
           // linked devices are exactly the set whose policy scope changed.
           // Directory-linked device groups are re-derived inside.
           yield* refreshDevicesForDirectoryUsers(ctx.organization.id, [userId]).pipe(
-            Effect.catchCause((cause) =>
+            catchCausePreservingInterrupts((cause) =>
               Effect.logWarning(
                 `Directory user merge ${userId} device refresh failed: ${String(cause)}`,
               ),
@@ -26720,7 +26716,7 @@ export const createEnterpriseService = ({
                 yield* r2
                   .delete(key)
                   .pipe(
-                    Effect.catchCause((cause) =>
+                    catchCausePreservingInterrupts((cause) =>
                       Effect.logWarning(
                         `Failed to delete application object ${applicationId}: ${String(cause)}`,
                       ),
@@ -32225,7 +32221,7 @@ export const createEnterpriseService = ({
           action: ACCOUNT_AUDIT.passkeyRemoved,
           targetType: "passkey",
           targetId: credentialId,
-        }).pipe(Effect.catchCause(() => Effect.void));
+        }).pipe(catchCausePreservingInterrupts(() => Effect.void));
 
         return ok;
       }),

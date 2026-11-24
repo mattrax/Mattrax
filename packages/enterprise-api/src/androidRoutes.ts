@@ -9,6 +9,7 @@ import type { AndroidDeliveryError } from "@mattrax/enterprise-backend";
 import { completeAndroidSignup, handleAndroidPubSub } from "@mattrax/enterprise-backend";
 import type { AndroidDeliveryConfig } from "@mattrax/enterprise-backend";
 import { PubSubOidcVerifierLive } from "@mattrax/dm-android";
+import { catchCausePreservingInterrupts } from "./errorBoundary.js";
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
@@ -88,7 +89,7 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
       Effect.catchTag("AndroidDeliveryError", (error) =>
         Effect.succeed(json({ error: error.message }, statusFor(error.kind))),
       ),
-      Effect.catchCause((cause) =>
+      catchCausePreservingInterrupts((cause) =>
         Effect.gen(function* () {
           yield* Effect.logError("Android signup callback failed", cause);
 
@@ -119,7 +120,7 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
       Effect.catchTag("AndroidDeliveryError", (error) =>
         Effect.succeed(json({ error: error.message }, statusFor(error.kind))),
       ),
-      Effect.catchCause((cause) =>
+      catchCausePreservingInterrupts((cause) =>
         Effect.gen(function* () {
           yield* Effect.logError("Android Pub/Sub handling failed", cause);
 

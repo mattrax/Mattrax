@@ -828,11 +828,9 @@ export const runMaintenance = (
         authSecret: options.authSecret,
       }).pipe(
         Effect.catch((error) =>
-          Effect.sync(() => {
-            console.error("SCEP CA rotation sweep failed", error);
-
-            return { checked: 0, rotated: 0, failed: 0 };
-          }),
+          Effect.logError("SCEP CA rotation sweep failed", { error }).pipe(
+            Effect.as({ checked: 0, rotated: 0, failed: 0 }),
+          ),
         ),
       );
 
@@ -855,11 +853,9 @@ export const runMaintenance = (
         probe: options.serverCertificateProbe,
       }).pipe(
         Effect.catch((error) =>
-          Effect.sync(() => {
-            console.error("Origin TLS certificate check failed", error);
-
-            return { checked: false, state: null };
-          }),
+          Effect.logError("Origin TLS certificate check failed", { error }).pipe(
+            Effect.as({ checked: false, state: null }),
+          ),
         ),
       );
 
@@ -999,16 +995,13 @@ export const runMaintenance = (
           // mail outage cannot abort the rest of maintenance.
           yield* Effect.suspend(() => options.notifyCredentialExpiry!(notification)).pipe(
             Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
+              Cause.hasInterrupts(cause)
                 ? Effect.failCause(cause)
-                : Effect.sync(() =>
-                    console.error(
-                      "Credential expiry notification failed",
-                      organization.id,
-                      threshold,
-                      cause,
-                    ),
-                  ),
+                : Effect.logError("Credential expiry notification failed", {
+                    organizationId: organization.id,
+                    threshold,
+                    cause,
+                  }),
             ),
           );
         }

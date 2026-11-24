@@ -97,15 +97,14 @@ const recoveryBrand = (deps: RecoveryDeps) =>
 const sendEmail = (
   email: EmailTransport | undefined,
   message: { to: string; subject: string; text: string; html: string },
-  fallbackLog: string,
+  event: string,
 ) =>
   email === undefined
     ? // A deployment without a mailer cannot complete recovery: the link is
-      // the whole proof. Log only that the attempt happened (never the URL,
-      // which a log reader could redeem) and point the operator at the manual
-      // procedure in docs/admin/operations.md.
-      Effect.sync(() => {
-        console.log(`${fallbackLog} (not emailed: no mail transport configured)`);
+      // the whole proof. Log only the safe event name, never the address or URL.
+      Effect.logWarning("Recovery email skipped", {
+        event,
+        reason: "mail_transport_unconfigured",
       })
     : email.send({ from: FROM, ...message }).pipe(Effect.catch(() => Effect.void));
 
@@ -273,7 +272,7 @@ export const requestAccountRecovery = (
         text: `Someone asked to recover access to your Mattrax account. If this was you, open this link to prove you control this address:\n\n${proofLink}\n\nThe link works once and expires in 30 minutes. If it was not you, ignore this email and change your email address from a signed-in session.\n\nNo passkey or account setting has been changed.\n\nIf it wasn't you, ignore this email and change your email address from a signed-in session.`,
         html: proofHtml,
       },
-      `RECOVERY PROOF requested for ${user.email}`,
+      "recovery_proof",
     );
 
     if (approvalToken && approvalOrganizationId) {
@@ -315,7 +314,7 @@ export const requestAccountRecovery = (
             text: `${user.name} (${user.email}) asked to recover access to their Mattrax account. Because your tenant has more than one owner, a second owner must approve the request.\n\nOpen your administrators page to approve it: ${approvalLink}\n\nIf you were not expecting this, do not approve it.`,
             html: approvalHtml,
           },
-          `RECOVERY APPROVAL requested for ${recipient}`,
+          "recovery_approval",
         );
     }
 
@@ -538,7 +537,7 @@ export const approveAccountRecovery = (
           text: `Another owner approved your account recovery. Open this link to sign in and add a new passkey:\n\n${link}\n\nThe link works once and expires in 15 minutes.`,
           html: completionHtml,
         },
-        `RECOVERY COMPLETION requested for ${record.email}`,
+        "recovery_completion",
       );
     }
 
@@ -760,6 +759,7 @@ export const makeRecoveryStrategy = (): StrategyDefinition<any, string | undefin
               })),
             });
 
+            const verifiedAt = yield* DateTime.now;
             const evidence: Sessions.AuthenticationEvidence = {
               flowId,
               bindingDigest,
@@ -771,7 +771,7 @@ export const makeRecoveryStrategy = (): StrategyDefinition<any, string | undefin
                   factors: ["possession"],
                   userVerified: true,
                   phishingResistant: false,
-                  verifiedAt: DateTime.nowUnsafe(),
+                  verifiedAt,
                 },
               ],
             };
