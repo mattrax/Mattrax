@@ -25,7 +25,8 @@ describe("self-hosted compose configuration", () => {
   });
 
   it("documents a supported proxy that forwards the verified SHA-256 fingerprint", () => {
-    const caddyExample = selfHostingDocs.match(/```caddy\n([\s\S]*?)\n```/)?.[1];
+    // Docs use nginx highlighting because no Caddy grammar is bundled.
+    const caddyExample = selfHostingDocs.match(/```(?:caddy|nginx)\n([\s\S]*?)\n```/)?.[1];
 
     expect(caddyExample).toBeDefined();
     expect(caddyExample).toContain("mode verify_if_given");
