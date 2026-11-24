@@ -27,26 +27,25 @@ appledm:
   - changed-files:
       - any-glob-to-any-file:
           - packages/dm-apple/**
+          - packages/mdm-apple/**
+          - packages/mdm-core/**
           - packages/apns/**
           - packages/scep/**
           - packages/plist/**
+          - packages/apple-business-manager/**
           - apps/services/**
-          - packages/management-backend-enterprise/src/index.ts
-          - packages/management-backend-enterprise/src/inventory.ts
-          - packages/management-backend-enterprise/src/securityInfo.ts
-          - packages/management-backend-enterprise/src/scep.ts
-          - packages/enterprise-backend/src/appleBusinessManager.ts
-          - packages/enterprise-backend/src/volumePurchase.ts
+          - packages/enterprise-backend/src/Device/appleInventory.ts
+          - packages/enterprise-backend/src/Scep/**
 
 windm:
   - changed-files:
       - any-glob-to-any-file:
           - packages/dm-windows/**
+          - packages/mdm-windows/**
+          - packages/mdm-core/**
           - packages/soap/**
-          - packages/management-backend-enterprise/src/windows.ts
-          - packages/management-backend-enterprise/src/windowsInventory.ts
-          - packages/management-backend-enterprise/src/federated.ts
-          - packages/enterprise-backend/src/autopilot.ts
+          - packages/enterprise-backend/src/Autopilot/**
+          - packages/enterprise-backend/src/Device/windowsApplications.ts
           - data/catalog/windows.json
           - apps/web/public/catalog/windows/**
 
@@ -54,9 +53,7 @@ androiddm:
   - changed-files:
       - any-glob-to-any-file:
           - packages/dm-android/**
-          - apps/cloud/src/android.ts
-          - packages/enterprise-backend/src/android.ts
-          - packages/enterprise-backend/src/androidRoutes.ts
+          - packages/enterprise-backend/src/Device/android.ts
 
 tech-debt:
   - changed-files:

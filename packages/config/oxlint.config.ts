@@ -42,11 +42,10 @@ export const lintConfig: OxlintConfig = {
     ".windsurf/**",
     // Generated from Apple's schema definitions; regenerate, do not lint.
     "packages/dm-apple/src/generated/**",
-    // Build-time tooling parses lockfiles and vendor catalogues at its I/O
-    // boundary. It is not shipped, and the app rules (Effect, JSX, runtime
-    // parsing) do not describe it.
+    // Generated-schema tooling parses Apple's vendor catalogue at its I/O
+    // boundary; the app and runtime-parsing rules do not describe it.
     "apps/*/scripts/**",
-    "packages/*/scripts/**",
+    "packages/dm-apple/scripts/**",
   ],
   // `plugins` replaces oxlint's default set, so the preset list is kept and the
   // Effect rules are added to it.

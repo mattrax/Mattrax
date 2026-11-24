@@ -1,6 +1,4 @@
 import { Effect, Schema } from "effect";
-import { sendSmtpMail } from "./smtp.ts";
-import type { SmtpTransportOptions } from "./smtp.ts";
 import { describeEmailFailure, EmailFailure } from "./failure.ts";
 
 export { describeEmailFailure, EmailFailure } from "./failure.ts";
@@ -135,11 +133,3 @@ export const replyToAddress = (replyTo: EmailReplyTo): EmailAddress =>
   Schema.is(Schema.String)(replyTo)
     ? { name: DEFAULT_EMAIL_FROM.name, email: replyTo }
     : { name: replyTo.name ?? replyTo.email, email: replyTo.email };
-
-/**
- * SMTP delivery. `node:net`/`node:tls` run in Node and in Workers with
- * `nodejs_compat`, so hosted and self-hosted deployments use one client.
- */
-export const smtpEmailTransport = (options: SmtpTransportOptions): EmailTransport => ({
-  send: (message) => sendSmtpMail(options, message).pipe(Effect.asVoid),
-});

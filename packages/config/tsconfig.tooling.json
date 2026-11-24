@@ -1,0 +1,28 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node", "vite/client"],
+    "jsx": "preserve",
+    "jsxImportSource": "@solidjs/web",
+    "allowSyntheticDefaultImports": true,
+    "noEmit": true,
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "composite": false
+  },
+  "include": [
+    "*.ts",
+    "scripts/**/*.ts",
+    "../*/scripts/**/*.ts",
+    "../docs-api/*.ts",
+    "../../apps/*/scripts/**/*.ts",
+    "../../apps/*/vite.config.ts",
+    "../../apps/*/vitest.config.ts",
+    "../../apps/*/cloudflare.config.ts",
+    "../../apps/*/drizzle.config.ts",
+    "../../apps/*/playwright.config.ts"
+  ],
+  "exclude": ["**/node_modules/**", "**/dist/**", "**/.cloudflare/**", "**/*.test.ts"]
+}

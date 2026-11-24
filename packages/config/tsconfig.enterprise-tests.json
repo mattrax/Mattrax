@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.tests.json",
+  "include": ["../enterprise-api/tests/**/*.ts", "../enterprise-backend/tests/**/*.ts"],
+  "exclude": ["**/node_modules/**", "**/dist/**"]
+}

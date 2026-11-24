@@ -5,7 +5,7 @@ import { connect as connectNet, isIP } from "node:net";
 import type { Socket } from "node:net";
 import { connect as connectTls } from "node:tls";
 
-import type { OutboundEmailMessage } from "./email.ts";
+import type { EmailTransport, OutboundEmailMessage } from "./email.ts";
 import { describeEmailFailure, EmailFailure } from "./failure.ts";
 
 /**
@@ -648,3 +648,13 @@ export const sendSmtpMail = (
       return { recipients: recipientsOf(message.to).length };
     }),
   );
+
+/**
+ * SMTP delivery. `node:net`/`node:tls` run in Node and in Workers with
+ * `nodejs_compat`, so hosted and self-hosted deployments use one client.
+ * Import this adapter from `@mattrax/email/smtp`; the package root stays
+ * portable.
+ */
+export const smtpEmailTransport = (options: SmtpTransportOptions): EmailTransport => ({
+  send: (message) => sendSmtpMail(options, message).pipe(Effect.asVoid),
+});

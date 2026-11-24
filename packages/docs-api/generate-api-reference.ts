@@ -1,23 +1,8 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { Schema } from "effect";
 import { HttpApi, OpenApi } from "effect/http-api";
-import {
-  enterpriseAccountApi,
-  enterpriseAdminApi,
-  enterpriseAdeApi,
-  enterpriseApi,
-  enterpriseApplicationApi,
-  enterpriseApprovalApi,
-  enterpriseDeviceHandoverApi,
-  enterpriseAttributeApi,
-  enterpriseIdentityApi,
-  enterpriseUserApi,
-  enterpriseWindowsApi,
-  fleetMigrationApi,
-  scriptAgentApi,
-  scriptApi,
-} from "../../enterprise-domain/src/enterprise.ts";
-import { managementApi } from "../../management-backend-http/src/http.ts";
+import { Http } from "@mattrax/enterprise-domain";
+import { managementApi } from "@mattrax/management-backend-http";
 import type { JsonSchema } from "effect/JsonSchema";
 
 /**
@@ -50,20 +35,20 @@ const isRecord = Schema.is(Schema.Record(Schema.String, Schema.Unknown));
 
 const restDocument = OpenApi.fromApi(
   HttpApi.make("Mattrax")
-    .add(enterpriseAccountApi)
-    .add(enterpriseAdminApi)
-    .add(enterpriseApi)
-    .add(enterpriseApplicationApi)
-    .add(enterpriseApprovalApi)
-    .add(enterpriseDeviceHandoverApi)
-    .add(enterpriseAdeApi)
-    .add(enterpriseAttributeApi)
-    .add(enterpriseIdentityApi)
-    .add(enterpriseUserApi)
-    .add(enterpriseWindowsApi)
-    .add(fleetMigrationApi)
-    .add(scriptApi)
-    .add(scriptAgentApi),
+    .add(Http.enterpriseAccountApi)
+    .add(Http.enterpriseAdminApi)
+    .add(Http.enterpriseApi)
+    .add(Http.enterpriseApplicationApi)
+    .add(Http.enterpriseApprovalApi)
+    .add(Http.enterpriseDeviceHandoverApi)
+    .add(Http.enterpriseAdeApi)
+    .add(Http.enterpriseAttributeApi)
+    .add(Http.enterpriseIdentityApi)
+    .add(Http.enterpriseUserApi)
+    .add(Http.enterpriseWindowsApi)
+    .add(Http.fleetMigrationApi)
+    .add(Http.scriptApi)
+    .add(Http.scriptAgentApi),
 );
 
 const webhookDocument = OpenApi.fromApi(managementApi);

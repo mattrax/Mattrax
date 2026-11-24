@@ -100,10 +100,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm test
-      # One `tsc -b` over the root project references. `pnpm typecheck` first
-      # generates the two Workers' `cf` types (cloud and web, ~0.5s total) and
-      # then builds once; the per-app `typecheck` scripts it does not call would
-      # each start `tsc` again over the same projects.
+      # `pnpm typecheck` generates the two Workers' `cf` types, builds the root
+      # project references once, then checks the dedicated test, tooling and
+      # portable-entrypoint projects.
       - run: pnpm typecheck
       - run: pnpm doc:build
       # Production Workers must actually build. Typechecking alone did not

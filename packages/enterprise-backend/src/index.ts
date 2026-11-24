@@ -368,12 +368,9 @@ export {
   makeEmailTransport,
   parseEmailSender,
   replyToAddress,
-  smtpEmailTransport,
 } from "@mattrax/email";
 
 export type { EmailAddress } from "@mattrax/email";
-
-export type { SmtpTransportOptions } from "@mattrax/email";
 
 export {
   ACCOUNT_EMAIL_DELIVERY_FAILED_ACTION,

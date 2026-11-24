@@ -1,4 +1,4 @@
-import mysql from "mysql2/promise";
+import mysql, { type RowDataPacket } from "mysql2/promise";
 
 /**
  * Copy legacy billing rows from a pre-split application database into the
@@ -25,7 +25,7 @@ const source = await mysql.createConnection({ uri: sourceUrl, timezone: "Z" });
 const target = await mysql.createConnection({ uri: targetUrl, timezone: "Z" });
 
 const hasTable = async (name: string) => {
-  const [rows] = await source.query<Array<{ n: number }>>(
+  const [rows] = await source.query<Array<RowDataPacket & { n: number }>>(
     "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
     [name],
   );
@@ -35,9 +35,7 @@ const hasTable = async (name: string) => {
 
 try {
   if (await hasTable("deployment_license")) {
-    const [rows] = await source.query<Array<Record<string, unknown>>>(
-      "SELECT * FROM deployment_license",
-    );
+    const [rows] = await source.query<RowDataPacket[]>("SELECT * FROM deployment_license");
 
     for (const row of rows)
       await target.query(
@@ -79,7 +77,7 @@ try {
   }
 
   if (await hasTable("organization")) {
-    const [rows] = await source.query<Array<Record<string, unknown>>>(
+    const [rows] = await source.query<RowDataPacket[]>(
       "SELECT id, name, stripe_customer_id, created_at, updated_at FROM organization WHERE stripe_customer_id IS NOT NULL",
     );
 
@@ -97,7 +95,7 @@ try {
   }
 
   if (await hasTable("subscription")) {
-    const [rows] = await source.query<Array<Record<string, unknown>>>("SELECT * FROM subscription");
+    const [rows] = await source.query<RowDataPacket[]>("SELECT * FROM subscription");
 
     for (const row of rows)
       await target.query(

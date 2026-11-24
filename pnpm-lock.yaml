@@ -645,7 +645,13 @@ snapshots:
 				"@types/node": "catalog:",
 				"oxlint": "catalog:",
 				"typescript": "catalog:",
+				"vite": {
+					"specifier": "npm:@voidzero-dev/vite-plus-core@^8.3.8000",
+					"version": "@voidzero-dev/vite-plus-core@8.3.8000",
+				},
 				"vite-plus": "catalog:",
+				"vitest": "catalog:",
+				"yaml": "catalog:",
 			},
 		},
 
@@ -713,9 +719,15 @@ snapshots:
 		},
 
 		"packages/docs-api": {
-			"devDependencies": {
+			"dependencies": {
+				"@mattrax/enterprise-domain": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
 				"@mattrax/management-backend-http": "workspace:*",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"tsx": "catalog:",
 				"typedoc": "catalog:",
 				"typedoc-plugin-markdown": "catalog:",
 				"typescript": "5.9.3",
