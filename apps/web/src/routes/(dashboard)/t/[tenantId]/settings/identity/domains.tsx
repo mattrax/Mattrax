@@ -2,14 +2,13 @@ import { useParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
-import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
-import { cn } from "~/lib/utils";
+import { StatusChip as Chip } from "~/components/settings/status-chip";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -93,26 +92,5 @@ export default function DomainsPage() {
         <ErrorText error={refresh.error ?? domains.error} />
       </div>
     </Panel>
-  );
-}
-
-const chipTones = {
-  neutral: "border-border bg-surface text-muted-foreground",
-  success: "border-success/25 bg-success/10 text-success-foreground",
-  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
-  danger: "border-destructive/25 bg-destructive/10 text-destructive",
-} as const;
-
-function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element }) {
-  return (
-    <span
-      class={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        chipTones[props.tone],
-      )}
-    >
-      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-      {props.children}
-    </span>
   );
 }

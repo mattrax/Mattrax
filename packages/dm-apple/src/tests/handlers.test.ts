@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Layer, Predicate } from "effect";
+import { ByteSize, Effect, Layer, Predicate } from "effect";
 import { HttpRouter } from "effect/http";
 import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { AppleMdmConfig } from "../config.js";
@@ -9,7 +9,7 @@ import type {
   ManagementBackend,
 } from "@mattrax/management-backend";
 import { ManagementManifest, UnknownDevice } from "@mattrax/management-backend";
-import { appleMdmRoutes } from "../handlers.js";
+import { appleMdmRoutesWith } from "../handlers.js";
 import { buildAuthenticatePlist, mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
@@ -20,7 +20,10 @@ function expectScope(scope: CheckinScope | undefined): CheckinScope {
   return scope;
 }
 
-async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
+async function makeMdmHandler(
+  backendLayer: Layer.Layer<ManagementBackend>,
+  maxBodySize?: ByteSize.ByteSize,
+) {
   const serviceLayer = AppleMdmServiceLive.pipe(
     Layer.provideMerge(backendLayer),
     Layer.provideMerge(AppleMdmConfig.layer({ origin: TEST_CONFIG.origin })),
@@ -29,13 +32,45 @@ async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
     ),
   );
 
-  const appLayer = appleMdmRoutes.pipe(Layer.provideMerge(serviceLayer));
+  const appLayer = appleMdmRoutesWith(maxBodySize).pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
 
   return handler;
 }
 
 describe("Apple MDM handlers", () => {
+  it("rejects an oversized chunked check-in before verification", async () => {
+    let deviceEvents = 0;
+    let pulledChunks = 0;
+    const backend = mockManagementBackend({
+      appleDeviceEvent: () =>
+        Effect.sync(() => {
+          deviceEvents += 1;
+        }),
+    });
+    const handler = await makeMdmHandler(backend, ByteSize.bytes(64));
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulledChunks += 1;
+        if (pulledChunks > 16) controller.close();
+        else controller.enqueue(new Uint8Array(16));
+      },
+    });
+
+    const response = await handler(
+      new Request("http://localhost/mdm/apple/mdm", {
+        method: "PUT",
+        body,
+        duplex: "half",
+        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+      } as RequestInit),
+    );
+
+    expect(response.status).toBe(413);
+    expect(deviceEvents).toBe(0);
+    expect(pulledChunks).toBeLessThan(16);
+  });
+
   describe("enroll endpoint", () => {
     it("returns an enrollment profile plist", async () => {
       const backend = mockManagementBackend();

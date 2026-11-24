@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Context, Effect, Exit, Layer, Option, Redacted, Schema, Tracer } from "effect";
+import { Context, DateTime, Effect, Exit, Layer, Option, Predicate, Schema, Tracer } from "effect";
 import { HttpApi, HttpApiBuilder, OpenApi } from "effect/http-api";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { version } from "../package.json" with { type: "json" };
@@ -26,14 +26,17 @@ import {
   enterpriseListApi,
   enterpriseWindowsApi,
   enterpriseApprovalApi,
+  EnterpriseErrorDiagnostics,
   fleetMigrationApi,
   parseSuperadminEmails,
   scriptAgentApi,
   scriptApi,
+  EnterpriseService as EnterpriseServiceTag,
 } from "@mattrax/enterprise-domain";
 import {
   EnterpriseAnalyticsService,
   EnterpriseService,
+  applicationStoreServiceLayer,
   androidRoutes,
   enterpriseAccountHandlers,
   enterpriseAdminHandlers,
@@ -76,6 +79,7 @@ import {
   runScheduledGoogleSync,
   loadGoogleDirectoryConfig,
   runWelcomeEmailSweep,
+  OnboardingEmailWarnings,
   linkedDeviceIdsForUsers,
   syncAndroidPoliciesForTenant,
   syncDirectoryGroupsForTenant,
@@ -86,22 +90,26 @@ import {
   makeSsoStrategy,
   makeEnterpriseAuthLive,
   sessionCookie,
-  BillingServiceLive,
   billingEntitlementRoutes,
   drainEmailOutbox,
-  makeRemoteBillingService,
-  makeServicesBillingService,
   sendTransactionalEmail,
   loadTrustedScepCaCertificates,
   runServerCertificateCheck,
+  SoftwareUpdateCache,
 } from "@mattrax/enterprise-backend";
+import {
+  BillingServiceLive,
+  makeRemoteBillingService,
+  makeServicesBillingService,
+} from "@mattrax/enterprise-billing";
 import type { CredentialExpiryNotification } from "@mattrax/enterprise-backend";
 import { appleMdmHandlers, appleMdmRoutes } from "@mattrax/dm-apple";
 import { windowsMdmRoutes, WindowsMdmServiceLive } from "@mattrax/dm-windows";
 import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmConfig, AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
 import { ScepService } from "@mattrax/scep";
-import { ManagementBackendEnterpriseLive, ScepRepositoryLive } from "@mattrax/mdm-apple";
+import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
+import { ScepRepositoryLive } from "@mattrax/mdm-core";
 import { managementWebhookOpenApi } from "@mattrax/management-backend-http";
 import {
   Db,
@@ -117,7 +125,10 @@ import { MysqlClient } from "@effect/sql-mysql2";
 import { decodeDeploymentCredentials } from "@mattrax/google-workspace";
 import type { GoogleWorkspaceCredentials } from "@mattrax/google-workspace";
 import { env as apiEnv } from "./env.js";
+import { resolveDeploymentBranding } from "./onboardingBranding.js";
 import { metricsResponse, telemetry } from "./telemetry.js";
+import { logBestEffortFailure } from "./bestEffort.js";
+import { runScheduledJobs, scheduledRuntimeLayer } from "./scheduledRuntime.js";
 import {
   DAILY_CRON,
   HOURLY_CRON,
@@ -134,7 +145,9 @@ import {
   tenantIdFromPath,
   withDefaultNoStore,
   withRequestId,
-  createRateLimiter,
+  RateLimiterCloudflare,
+  RateLimiterLocal,
+  check as checkRateLimit,
   rateLimitBindingsFromEnv,
   rateLimitResponse,
   authEventForRequest,
@@ -154,20 +167,17 @@ import {
   withSessionPresence,
   loginAttemptObserver,
   credentialExpiryEmail,
+  boundedClientAddress,
+  databaseConfigFromFields,
+  mysqlClientOptions,
+  servicesUrls,
 } from "@mattrax/cloud-services";
-import type { AnalyticsProperties, SendEmail } from "@mattrax/cloud-services";
+import type { AnalyticsProperties, RateLimitStore, SendEmail } from "@mattrax/cloud-services";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
-import { AzureGraphFetchLive } from "@mattrax/azure-graph";
+import { AzureGraphLive } from "@mattrax/azure-graph";
 import { AzureGraph } from "@mattrax/azure-graph";
-import { boundedClientAddress } from "@mattrax/net";
 import { AppleMdmTrust, MdmError, parseSubjectDn } from "@mattrax/dm-apple";
-import { FetchHttpClient } from "effect/http";
-
-const rateLimiter = createRateLimiter({
-  // Node deployments behind a reverse proxy must opt in before their
-  // forwarded headers are trusted; Cloudflare is detected from `request.cf`.
-  trustForwarded: apiEnv.TRUST_PROXY_HEADERS === "1",
-});
+import { FetchHttpClient, HttpClient } from "effect/http";
 
 /** One trusted-proxy decision for the limiter, the audit log and MDM scopes. */
 const TRUST_PROXY_HEADERS = apiEnv.TRUST_PROXY_HEADERS === "1";
@@ -193,44 +203,49 @@ const superadmins = parseSuperadminEmails(apiEnv.MATTRAX_SUPERADMINS);
  * lifetime is one hour; a deployment can choose any whole number of seconds
  * between one minute and one day.
  */
-const enrollmentProfileTtlSeconds = (() => {
-  const raw = apiEnv.MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS;
-
-  if (raw === undefined) return undefined;
-  const parsed = Number(raw);
-
-  if (!Number.isInteger(parsed) || parsed < 60 || parsed > 86_400)
-    throw new Error(
-      "MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS must be a whole number of seconds between 60 and 86400",
-    );
-
-  return parsed;
-})();
+const enrollmentProfileTtlSeconds = apiEnv.MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS;
 
 /**
  * Device check-ins are the highest-volume MDM event. Repeated check-ins from
  * the same device fold into one audit row inside this window. `0` records
  * every request, which is only sensible for a small fleet or debugging.
  */
-const auditCheckinCoalesceWindowMs = (() => {
-  const raw = apiEnv.MDM_AUDIT_CHECKIN_COALESCE_SECONDS;
-
-  if (raw === undefined) return undefined;
-  const parsed = Number(raw);
-
-  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 86_400)
-    throw new Error(
-      "MDM_AUDIT_CHECKIN_COALESCE_SECONDS must be a whole number of seconds between 0 and 86400",
-    );
-
-  return parsed * 1_000;
-})();
+const auditCheckinCoalesceWindowMs =
+  apiEnv.MDM_AUDIT_CHECKIN_COALESCE_SECONDS === undefined
+    ? undefined
+    : apiEnv.MDM_AUDIT_CHECKIN_COALESCE_SECONDS * 1_000;
 
 /**
- * Edge limiter bindings are optional (see `cloudflare.config.ts`). Buckets
- * without one use the per-isolate fallback.
+ * Fallback counters for this process.
+ *
+ * Module scope, so they outlive a request: the limiter layer is rebuilt per
+ * request because Worker bindings are request-scoped, but the counts must not
+ * be. One process serves the whole self-hosted deployment, so these are exact
+ * there; in a Worker they are per isolate, which is why they are only a
+ * fallback.
  */
-const rateLimitBindings = (env: Env) => rateLimitBindingsFromEnv(env);
+const localRateLimitStore: RateLimitStore = new Map();
+
+/**
+ * Charge the request to whichever limiter this deployment has.
+ *
+ * Shared Rate Limiting namespaces mean Cloudflare's edge limiter; without them
+ * (local development, the self-hosted container) the process-local counters
+ * are the limiter. Building the layer per request costs single-digit
+ * microseconds and avoids retaining binding handles across request contexts.
+ */
+const rateLimiterLayer = (env: Env) => {
+  const bindings = rateLimitBindingsFromEnv(env);
+  const shared = Object.values(bindings).some((binding) => binding !== undefined);
+
+  return shared
+    ? RateLimiterCloudflare({
+        bindings,
+        store: localRateLimitStore,
+        trustForwarded: TRUST_PROXY_HEADERS,
+      })
+    : RateLimiterLocal({ store: localRateLimitStore, trustForwarded: TRUST_PROXY_HEADERS });
+};
 
 const appAuth = makeAppAuth(apiEnv.ORIGIN, {
   sso: makeSsoStrategy(),
@@ -369,6 +384,20 @@ const handlersLayer = Layer.mergeAll(
     Effect.sync(managementWebhookOpenApiResponse),
   ),
   HttpRouter.add("GET", "/api/docs", Effect.sync(apiDocsResponse)),
+  // The DiagnosticLog CSP uploads its ZIP to this scoped URL. It is a raw
+  // route because the body is binary and the device presents a signed token,
+  // not a tenant session.
+  ...["PUT" as const, "POST" as const].map((method) =>
+    HttpRouter.add(method, "/api/v1/windows-diagnostics/upload", (request) =>
+      Effect.flatMap(EnterpriseServiceTag, (service) =>
+        Effect.map(
+          service.uploadWindowsDiagnostics(request),
+          (result: { status: number; body: unknown }) =>
+            HttpServerResponse.jsonUnsafe(result.body, { status: result.status }),
+        ),
+      ),
+    ),
+  ),
 );
 
 const apiLayer = Layer.mergeAll(
@@ -380,44 +409,23 @@ const apiLayer = Layer.mergeAll(
 
 const appLayer = apiLayer.pipe(Layer.provide(HttpServer.layerServices));
 
-type DatabasePoolConfig = {
-  disableEval: boolean;
-  timezone: string;
-  ssl?: { rejectUnauthorized?: boolean; ca?: string };
-};
-
 const databaseLayer = (env: Env) => {
   // The Node host extends the binding with TLS options parsed from
   // `DATABASE_URL`; the Workers binding never has them.
   // SAFETY: the extra field is optional and only the Node entry sets it.
   const hyperdrive = env.HYPERDRIVE as Env["HYPERDRIVE"] & {
-    ssl?: { rejectUnauthorized?: boolean; ca?: string };
+    ssl?: false | { rejectUnauthorized: boolean };
   };
-
-  const poolConfig: DatabasePoolConfig = {
-    disableEval: true,
-    timezone: "Z",
-  };
-
-  if (hyperdrive.ssl) poolConfig.ssl = hyperdrive.ssl;
-
-  return MysqlClient.layer({
-    // Hyperdrive exposes individual connection fields for MySQL. Do not
-    // pass `url`: `@effect/sql-mysql2` ignores `poolConfig` when it is set,
-    // which would silently drop `disableEval` and break Workers builds.
+  const config = databaseConfigFromFields({
     host: hyperdrive.host,
     port: hyperdrive.port,
-    username: hyperdrive.user,
-    password: Redacted.make(hyperdrive.password),
+    user: hyperdrive.user,
+    password: hyperdrive.password,
     database: hyperdrive.database,
-    // `mysql2` uses `eval` for some protocol decoding; Workers forbids it.
-    // `timezone: "Z"` keeps `DATETIME(3)` reads/writes UTC, matching the
-    // `toISOString()` encoding Drizzle uses for `datetime` columns. The Node
-    // entry supplies TLS options through the same object; Hyperdrive never does.
-    poolConfig,
-    // Hyperdrive rejects MySQL `COM_STMT_PREPARE`; use the text protocol.
-    disablePreparedStatements: true,
+    ssl: hyperdrive.ssl,
   });
+
+  return MysqlClient.layer(mysqlClientOptions(config));
 };
 
 const storageBucketFor = (env: Env): Parameters<typeof R2.layer>[0] => ({
@@ -480,7 +488,7 @@ const resolveGoogleCredentials = (db: EnterpriseDb, env: Env) => (organizationId
         console.error(
           "Google Workspace credentials unavailable",
           organizationId,
-          error instanceof Error ? error.message : "unknown error",
+          Predicate.isError(error) ? error.message : "unknown error",
         );
 
         return null;
@@ -525,7 +533,7 @@ const entraSyncEffect = (
   return Effect.scoped(
     Effect.gen(function* () {
       const context = yield* Layer.build(
-        AzureGraphFetchLive({
+        AzureGraphLive({
           clientId: env.AZURE_CLIENT_ID,
           clientSecret: env.AZURE_CLIENT_SECRET,
           origin: env.ORIGIN,
@@ -542,21 +550,6 @@ const entraSyncEffect = (
   );
 };
 
-const parsePositive = (value: string | undefined) => {
-  if (value === undefined) return undefined;
-  const parsed = Number(value);
-
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined;
-};
-
-/** A non-negative day count; malformed input falls back to the default. */
-const parseDayCount = (value: string | undefined, fallback: number) => {
-  if (value === undefined) return fallback;
-  const parsed = Number(value);
-
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
-};
-
 /**
  * Windows enrollment/management failure diagnostics are kept for the same
  * window by the delivery panel and the daily prune, so the count an operator
@@ -564,24 +557,20 @@ const parseDayCount = (value: string | undefined, fallback: number) => {
  */
 const windowsFailureRetentionDays = 30;
 
-const optionalIsoDate = (value: string | undefined) => {
-  if (!value) return null;
-  const parsed = new Date(value);
-
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
 const onboardingReplyTo = () => apiEnv.MATTRAX_ONBOARDING_REPLY_TO ?? DEFAULT_ONBOARDING_REPLY_TO;
 
 const onboardingSupportEmail = () =>
   apiEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL ?? ONBOARDING_SUPPORT_EMAIL;
 
-const onboardingSince = optionalIsoDate(apiEnv.MATTRAX_ONBOARDING_SINCE);
+/**
+ * Resolve once: the verification hook and the delayed welcome sweep must render
+ * the same brand even when the first attempt was lost.
+ */
+const onboardingBranding = resolveDeploymentBranding(apiEnv);
 
-if (apiEnv.MATTRAX_ONBOARDING_SINCE && !onboardingSince)
-  console.warn(
-    "MATTRAX_ONBOARDING_SINCE is not a valid ISO date; the follow-up window floor still applies",
-  );
+const onboardingSince = apiEnv.MATTRAX_ONBOARDING_SINCE
+  ? DateTime.toDateUtc(apiEnv.MATTRAX_ONBOARDING_SINCE)
+  : null;
 
 /**
  * The mailer settings live in two places: the Cloudflare binding on `Env` and
@@ -626,22 +615,22 @@ const emailOutboxJob = (env: Env) =>
     return yield* drainEmailOutbox({
       db,
       email: resolveMailer(env).transport,
-      concurrency: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY),
-      maxAttempts: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS),
+      concurrency: apiEnv.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY,
+      maxAttempts: apiEnv.MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS,
     });
-  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+  });
 
 /**
  * Review the deployment origin's TLS certificate. Runs from the hourly trigger
  * so the code path is exercised often; the check itself is throttled to once an
  * hour, and the daily maintenance run reuses a fresh observation.
  */
-const serverCertificateJob = (env: Env) =>
+const serverCertificateJob = () =>
   Effect.gen(function* () {
     const db = yield* Db;
 
     return yield* runServerCertificateCheck(db, { origin: apiEnv.ORIGIN });
-  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+  });
 
 /**
  * Generate due dashboard reports. The daily run does this too, but a report
@@ -661,20 +650,21 @@ const dashboardReportsJob = (env: Env) =>
       email: mailer.transport,
       from: mailer.sender,
     });
-  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+  });
 
-const DEFAULT_APNS_RELAY_URL = "https://services.mattrax.app/v1/apns/push";
+/** Hosted endpoints derived from the single services origin. */
+const services = servicesUrls(apiEnv.MATTRAX_SERVICES_URL);
 
-const makeHostedApns = (env: Env) => {
-  const url = env.APNS_RELAY_URL ?? DEFAULT_APNS_RELAY_URL;
-  // A self-hosted deployment already holds a licence key; reusing it for the
+const makeHostedApns = () => {
+  const url = services.apnsRelay;
+  // Hosted Cloud signs relay requests with the shared services token. A
+  // self-hosted deployment already holds a licence key; reusing it for the
   // relay keeps push working without a second shared secret.
-  const licenseKey =
-    typeof process === "undefined" ? undefined : process.env.MATTRAX_LICENSE_KEY?.trim();
+  const licenseKey = apiEnv.MATTRAX_LICENSE_KEY;
 
   return makeApnsService(
-    env.APNS_RELAY_SECRET
-      ? RelayPushTransport({ url, secret: env.APNS_RELAY_SECRET })
+    apiEnv.SERVICES_TOKEN
+      ? RelayPushTransport({ url, secret: apiEnv.SERVICES_TOKEN })
       : licenseKey
         ? RelayPushTransport({ url, token: licenseKey })
         : NoopPushTransport(
@@ -692,7 +682,7 @@ const makeHostedApns = (env: Env) => {
  * changed users to report).
  */
 const makeMembershipRefresher = (db: EnterpriseDb, env: Env) => {
-  const apns = makeHostedApns(env);
+  const apns = makeHostedApns();
 
   const androidConfig = androidDeliveryConfig(apiEnv);
 
@@ -701,7 +691,6 @@ const makeMembershipRefresher = (db: EnterpriseDb, env: Env) => {
     schema,
     apns,
     authSecret: env.AUTH_SECRET,
-    webhookFetch: fetch,
   });
 
   return (organizationId: string, userIds: ReadonlyArray<string>) =>
@@ -715,14 +704,16 @@ const makeMembershipRefresher = (db: EnterpriseDb, env: Env) => {
 
       if (deviceIds.length === 0) return;
 
-      yield* applePush.pushAppleDevices(deviceIds).pipe(Effect.catch(() => Effect.void));
+      yield* applePush
+        .pushAppleDevices(deviceIds)
+        .pipe(logBestEffortFailure("apple_push", organizationId));
       yield* syncAndroidPoliciesForTenant({
         db,
         config: androidConfig,
         organizationId,
         deviceIds,
       }).pipe(
-        Effect.catch(() => Effect.void),
+        logBestEffortFailure("android_policy_sync", organizationId),
         Effect.provide(androidManagementLayer(androidConfig)),
       );
     });
@@ -740,10 +731,10 @@ const entraSyncJob = (env: Env) =>
     return yield* entraSyncEffect(
       db,
       env,
-      parsePositive(apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY),
+      apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY,
       refreshMemberships,
     );
-  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+  });
 
 /** Standalone scheduled Google Workspace sweep used by the hourly trigger. */
 const googleSyncJob = (env: Env) =>
@@ -754,10 +745,10 @@ const googleSyncJob = (env: Env) =>
     return yield* googleSyncEffect(
       db,
       env,
-      parsePositive(apiEnv.MAINTENANCE_GOOGLE_SYNC_CONCURRENCY),
+      apiEnv.MAINTENANCE_GOOGLE_SYNC_CONCURRENCY,
       refreshMemberships,
     );
-  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+  });
 
 type CryptoLayer = AuthLiveOptions["cryptoLayer"];
 
@@ -768,10 +759,9 @@ type CryptoLayer = AuthLiveOptions["cryptoLayer"];
  * binding set.
  */
 const remoteBillingConfig = () => {
-  const url = process.env.MATTRAX_BILLING_URL?.trim();
-  const licenseKey = process.env.MATTRAX_LICENSE_KEY?.trim();
+  const licenseKey = apiEnv.MATTRAX_LICENSE_KEY;
 
-  return url && licenseKey ? { url, licenseKey } : undefined;
+  return licenseKey ? { url: services.billing, licenseKey } : undefined;
 };
 
 /** Report deployment usage to the cloud licence so seats stay in sync. */
@@ -783,10 +773,25 @@ const reportLicenseUsage = (db: EnterpriseDb, env: Env) =>
 
     const usage = yield* deploymentUsage(db);
 
-    yield* makeRemoteBillingService({ ...config, origin: env.ORIGIN }).reportUsage(usage);
+    yield* makeRemoteBillingService({
+      ...config,
+      origin: env.ORIGIN,
+    }).reportUsage(usage);
   });
 
-const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
+const decodeSubjectHeader = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+const makeAppLayer = (
+  env: Env,
+  cryptoLayer: CryptoLayer,
+  httpClientLayer: Layer.Layer<HttpClient.HttpClient>,
+) => {
   const androidConfig = androidDeliveryConfig(apiEnv);
 
   const staticEnvLayer = CoreEnv.layer({
@@ -809,7 +814,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
   // Hosted Cloud cannot attach a per-tenant client certificate to `fetch`, so
   // pushes go through the HMAC-signed relay. Without a relay the service is a
   // no-op: devices still poll for DDM changes, so policy still converges.
-  const apns = makeHostedApns(env);
+  const apns = makeHostedApns();
 
   const apnsLayer = Layer.succeed(ApnsService, apns);
 
@@ -855,11 +860,18 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
     emailFrom: mailer.sender,
     onboardingReplyTo: onboardingReplyTo(),
     onboardingSupportEmail: onboardingSupportEmail(),
+    onboardingBranding,
     trustedOrigins: (apiEnv.TRUSTED_ORIGINS ?? "")
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
-  });
+  }).pipe(
+    // The auth service is built before the API service that depends on it, so
+    // give it the same state Layers explicitly rather than relying on the
+    // later merged request context.
+    Layer.provideMerge(EnterpriseErrorDiagnostics.layer),
+    Layer.provideMerge(OnboardingEmailWarnings.layer),
+  );
 
   const storageBucket: Parameters<typeof R2.layer>[0] = storageBucketFor(env);
 
@@ -879,13 +891,8 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
           Effect.gen(function* () {
             if (!identityCertificateSubject) return [];
 
-            let subject = identityCertificateSubject;
-
-            try {
-              subject = decodeURIComponent(subject);
-            } catch {
-              // The forwarder may already have decoded the header.
-            }
+            // The forwarder may already have decoded the header.
+            const subject = decodeSubjectHeader(identityCertificateSubject);
 
             const organizationId = parseSubjectDn(subject).find(
               (attribute) => attribute.type === "OU",
@@ -970,7 +977,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
 
   const azureGraphLayer =
     env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET
-      ? AzureGraphFetchLive({
+      ? AzureGraphLive({
           clientId: env.AZURE_CLIENT_ID,
           clientSecret: env.AZURE_CLIENT_SECRET,
           origin: env.ORIGIN,
@@ -980,14 +987,13 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
   // Hosted Cloud forwards tenant billing to the services deployment. A
   // self-hosted deployment uses the licence API on the same service; neither
   // path needs a Stripe secret in the application.
-  const servicesBilling =
-    env.SERVICES_URL && env.SERVICES_TOKEN
-      ? makeServicesBillingService({
-          url: env.SERVICES_URL,
-          token: env.SERVICES_TOKEN,
-          origin: env.ORIGIN,
-        })
-      : undefined;
+  const servicesBilling = apiEnv.SERVICES_TOKEN
+    ? makeServicesBillingService({
+        url: services.origin,
+        token: apiEnv.SERVICES_TOKEN,
+        origin: env.ORIGIN,
+      })
+    : undefined;
   const remoteBilling = servicesBilling ? undefined : remoteBillingConfig();
   const billing =
     servicesBilling ??
@@ -996,6 +1002,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       : undefined);
 
   const servicesLayer = Layer.mergeAll(
+    OnboardingEmailWarnings.layer,
     EnterpriseService({
       superadmins,
       email,
@@ -1003,16 +1010,16 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       // invitation-specific override still wins when an operator wants the
       // branded address only for invites.
       invitationFromEmail: apiEnv.MATTRAX_INVITATION_FROM ?? mailer.sender.email,
+      branding: onboardingBranding,
       enrollmentProfileTtlSeconds,
       // The SOFA feed is public and refreshable at most a few times a day.
       // Failure cooldowns keep an outage from adding a timeout to every
       // dashboard request; disabling it leaves macOS statuses unknown.
       softwareUpdateFeedUrl: apiEnv.SOFA_FEED_URL,
-      softwareUpdateCacheTtlMs:
-        (parsePositive(apiEnv.SOFA_FEED_CACHE_SECONDS) ?? 6 * 60 * 60) * 1_000,
-      softwareUpdateRetryMs: (parsePositive(apiEnv.SOFA_FEED_RETRY_SECONDS) ?? 15 * 60) * 1_000,
-      softwareUpdateTimeoutMs: parsePositive(apiEnv.SOFA_FEED_TIMEOUT_MS) ?? 5_000,
-      softwareUpdateSupportedMajors: parsePositive(apiEnv.SOFA_FEED_SUPPORTED_MAJORS) ?? 3,
+      softwareUpdateCacheTtlMs: (apiEnv.SOFA_FEED_CACHE_SECONDS ?? 6 * 60 * 60) * 1_000,
+      softwareUpdateRetryMs: (apiEnv.SOFA_FEED_RETRY_SECONDS ?? 15 * 60) * 1_000,
+      softwareUpdateTimeoutMs: apiEnv.SOFA_FEED_TIMEOUT_MS ?? 5_000,
+      softwareUpdateSupportedMajors: apiEnv.SOFA_FEED_SUPPORTED_MAJORS ?? 3,
       softwareUpdateDisabled: /^(1|true|yes|on)$/i.test(apiEnv.SOFA_FEED_DISABLED ?? ""),
       azureClientId: env.AZURE_CLIENT_ID,
       googleWorkspace: googleCredentials,
@@ -1025,6 +1032,9 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
       windowsFailureRetentionDays,
     }).pipe(
       Layer.provide(billing ? BillingServiceLive(billing) : Layer.empty),
+      Layer.provideMerge(applicationStoreServiceLayer()),
+      Layer.provideMerge(EnterpriseErrorDiagnostics.layer),
+      Layer.provideMerge(SoftwareUpdateCache.layer),
       // Merge auth into the service layer's output so raw routes (the SSE
       // stream) can resolve it from the request context too.
       Layer.provideMerge(enterpriseAuthLive),
@@ -1048,7 +1058,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
         ),
       ),
     ),
-    AzureOidcLive().pipe(Layer.provide(FetchHttpClient.layer)),
+    AzureOidcLive(),
     androidManagementLayer(androidConfig),
   );
 
@@ -1102,6 +1112,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
                 origin: env.ORIGIN,
                 replyTo: onboardingReplyTo(),
                 supportEmail: onboardingSupportEmail(),
+                branding: onboardingBranding,
               });
 
               const followUp = onboardingEmailsEnabled()
@@ -1111,9 +1122,9 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
                     origin: env.ORIGIN,
                     replyTo: onboardingReplyTo(),
                     supportEmail: onboardingSupportEmail(),
-                    followUpDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS, 7),
-                    windowDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS, 7),
-                    cooldownDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS, 7),
+                    followUpDays: apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS ?? 7,
+                    windowDays: apiEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS ?? 7,
+                    cooldownDays: apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS ?? 7,
                     since: onboardingSince,
                   })
                 : null;
@@ -1157,17 +1168,18 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
           schema,
           apns,
           authSecret: env.AUTH_SECRET,
-          webhookFetch: fetch,
         });
 
-        yield* applePush.pushAppleDevices(deviceIds).pipe(Effect.catch(() => Effect.void));
+        yield* applePush
+          .pushAppleDevices(deviceIds)
+          .pipe(logBestEffortFailure("apple_push", organizationId));
         yield* syncAndroidPoliciesForTenant({
           db,
           config: androidConfig,
           organizationId,
           deviceIds,
         }).pipe(
-          Effect.catch(() => Effect.void),
+          logBestEffortFailure("android_policy_sync", organizationId),
           Effect.provide(androidManagementLayer(androidConfig)),
         );
       }),
@@ -1192,6 +1204,7 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
     Layer.provideMerge(authLive),
     Layer.provideMerge(Db.layer),
     Layer.provide(databaseLayer(env)),
+    Layer.provide(httpClientLayer),
     Layer.provideMerge(telemetryLayer),
   );
 };
@@ -1202,13 +1215,21 @@ const makeAppLayer = (env: Env, cryptoLayer: CryptoLayer) => {
  * request (one isolate, short-lived), while the Node entry caches it so the
  * MySQL pool and password admission survive across requests.
  */
-const getAppHandler = (env: Env, cryptoLayer: CryptoLayer) => {
+const getAppHandler = (
+  env: Env,
+  cryptoLayer: CryptoLayer,
+  httpClientLayer: Layer.Layer<HttpClient.HttpClient>,
+) => {
   // SAFETY: makeAppLayer returns the combined router/service layer; the web
   // handler only reads the router and server services from its output. The
   // layer's inferred requirement channel includes framework request services
   // that `toWebHandler` cannot name, so the assertion stays at this boundary.
   return HttpRouter.toWebHandler(
-    makeAppLayer(env, cryptoLayer) as Layer.Layer<unknown, unknown, HttpRouter.HttpRouter>,
+    makeAppLayer(env, cryptoLayer, httpClientLayer) as Layer.Layer<
+      unknown,
+      unknown,
+      HttpRouter.HttpRouter
+    >,
   );
 };
 
@@ -1257,13 +1278,13 @@ const checkStorageReady = async (env: Env): Promise<"ok"> => {
 
     if (!head) throw new Error("storage probe object is not readable");
   } catch (error) {
-    failure = error instanceof Error ? error : new Error(String(error));
+    failure = Predicate.isError(error) ? error : new Error(String(error));
   }
 
   try {
     await env.STORAGE.delete(key);
   } catch (error) {
-    failure ??= error instanceof Error ? error : new Error(String(error));
+    failure ??= Predicate.isError(error) ? error : new Error(String(error));
   }
 
   if (failure) throw failure;
@@ -1328,7 +1349,7 @@ const RequestCfProperties = Schema.Struct({
 
 /** Redact emails and long opaque tokens before an error message reaches logs. */
 const describeError = (cause: unknown): string => {
-  const error = cause instanceof Error ? cause : undefined;
+  const error = Predicate.isError(cause) ? cause : undefined;
   const text = error ? `${error.name}: ${error.message}` : String(cause);
 
   return text
@@ -1392,8 +1413,14 @@ const deviceIdentityHeaders = (request: Request) => {
  */
 export const createApiRuntime = (
   cryptoLayer: CryptoLayer,
-  options: { readonly cacheHandler?: boolean } = {},
+  options: {
+    readonly cacheHandler?: boolean;
+    /** Replace the single outbound Effect transport in tests or custom hosts. */
+    readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
+  } = {},
 ) => {
+  const httpClientLayer = options.httpClientLayer ?? FetchHttpClient.layer;
+
   // A Node process serves many requests from one runtime, so rebuilding the
   // service graph per request would create a new MySQL pool every time. The
   // Cloudflare entry keeps the per-request build: Workers forbid reusing I/O
@@ -1401,12 +1428,12 @@ export const createApiRuntime = (
   const handlers = new WeakMap<Env, ReturnType<typeof getAppHandler>>();
 
   const appHandler = (env: Env) => {
-    if (!options.cacheHandler) return getAppHandler(env, cryptoLayer);
+    if (!options.cacheHandler) return getAppHandler(env, cryptoLayer, httpClientLayer);
 
     let handler = handlers.get(env);
 
     if (!handler) {
-      handler = getAppHandler(env, cryptoLayer);
+      handler = getAppHandler(env, cryptoLayer, httpClientLayer);
       handlers.set(env, handler);
     }
 
@@ -1439,15 +1466,17 @@ export const createApiRuntime = (
         method: request.method,
         path: pathname,
         headers: request.headers,
-        errorSampleRate: Number(apiEnv.POSTHOG_ERROR_SAMPLE_RATE ?? "1"),
-        maxErrorsPerMinute: Number(apiEnv.POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE ?? "20"),
+        errorSampleRate: apiEnv.POSTHOG_ERROR_SAMPLE_RATE ?? 1,
+        maxErrorsPerMinute: apiEnv.POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE ?? 20,
       });
 
       let response: Response;
       let uncaught: unknown;
 
       try {
-        const limited = await rateLimiter.check(request, rateLimitBindings(env));
+        const limited = await Effect.runPromise(
+          checkRateLimit(request).pipe(Effect.provide(rateLimiterLayer(env))),
+        );
 
         if (limited.limited) {
           response = rateLimitResponse(limited, requestId);
@@ -1609,31 +1638,25 @@ export const createApiRuntime = (
       env: Env,
       ctx: ExecutionContext,
     ): Promise<void> {
-      const parseDays = (value: string | undefined) => {
-        if (value === undefined) return undefined;
-        const parsed = Number(value);
-
-        return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
-      };
-
       const graphConfigured = Boolean(env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET);
 
-      const logEntraResult = (exit: Exit.Exit<unknown, unknown>) => {
-        if (Exit.isFailure(exit))
-          console.error("Scheduled Entra directory sync failed", exit.cause);
-        else console.log("Scheduled Entra directory sync complete", exit.value);
-      };
-
-      const logGoogleResult = (exit: Exit.Exit<unknown, unknown>) => {
-        if (Exit.isFailure(exit))
-          console.error("Scheduled Google directory sync failed", exit.cause);
-        else console.log("Scheduled Google directory sync complete", exit.value);
-      };
-
-      const logOutboxResult = (exit: Exit.Exit<unknown, unknown>) => {
-        if (Exit.isFailure(exit)) console.error("Scheduled email outbox drain failed", exit.cause);
-        else console.log("Scheduled email outbox drain complete", exit.value);
-      };
+      const observeJob = <A>(
+        label: string,
+        job: Effect.Effect<A, unknown, Db | HttpClient.HttpClient>,
+        onSuccess: (value: A) => void = () => {},
+      ) =>
+        job.pipe(
+          Effect.matchCause({
+            onFailure: (cause) =>
+              Effect.sync(() => {
+                console.error(label, cause);
+              }),
+            onSuccess: (value) =>
+              Effect.sync(() => {
+                onSuccess(value);
+              }),
+          }),
+        );
 
       // The hourly trigger drains queued transactional mail and sweeps due
       // directory syncs (Entra needs Graph app credentials; Google works with
@@ -1644,54 +1667,43 @@ export const createApiRuntime = (
         if (!graphConfigured)
           console.log("Scheduled Entra directory sync skipped: Microsoft Graph is not configured");
 
-        // The origin certificate probe runs on every hourly tick; it records at
-        // most one observation per hour, so this exercises the TLS path often
-        // without creating audit or database churn.
-        ctx.waitUntil(
-          Effect.runPromise(Effect.exit(serverCertificateJob(env))).then(
-            (exit) => {
-              if (Exit.isFailure(exit))
-                console.error("Scheduled origin certificate check failed", exit.cause);
-              else if (exit.value.checked)
-                console.log("Scheduled origin certificate check complete", exit.value.state.level);
+        const jobs = [
+          observeJob(
+            "Scheduled origin certificate check failed",
+            serverCertificateJob(),
+            (result) => {
+              if (result.checked)
+                console.log("Scheduled origin certificate check complete", result.state.level);
             },
-            (error: unknown) =>
-              console.error("Scheduled origin certificate check job failed", error),
           ),
+          observeJob("Scheduled email outbox drain failed", emailOutboxJob(env), (result) => {
+            console.log("Scheduled email outbox drain complete", result);
+          }),
+          observeJob("Scheduled dashboard reports failed", dashboardReportsJob(env), (result) => {
+            if (result.queued > 0 || result.failed > 0)
+              console.log("Scheduled dashboard reports complete", result);
+          }),
+          ...(graphConfigured
+            ? [
+                observeJob("Scheduled Entra directory sync failed", entraSyncJob(env), (result) => {
+                  console.log("Scheduled Entra directory sync complete", result);
+                }),
+              ]
+            : []),
+          observeJob("Scheduled Google directory sync failed", googleSyncJob(env), (result) => {
+            console.log("Scheduled Google directory sync complete", result);
+          }),
+        ];
+        const hourly = runScheduledJobs(
+          jobs,
+          scheduledRuntimeLayer(databaseLayer(env), httpClientLayer),
         );
+        const signal = (ctx as ExecutionContext & { readonly signal?: AbortSignal }).signal;
 
         ctx.waitUntil(
-          Effect.runPromise(Effect.exit(emailOutboxJob(env))).then(
-            logOutboxResult,
-            (error: unknown) => console.error("Scheduled email outbox job failed", error),
-          ),
-        );
-
-        ctx.waitUntil(
-          Effect.runPromise(Effect.exit(dashboardReportsJob(env))).then(
-            (exit) => {
-              if (Exit.isFailure(exit))
-                console.error("Scheduled dashboard reports failed", exit.cause);
-              else if (exit.value.queued > 0 || exit.value.failed > 0)
-                console.log("Scheduled dashboard reports complete", exit.value);
-            },
-            (error: unknown) => console.error("Scheduled dashboard reports job failed", error),
-          ),
-        );
-
-        if (graphConfigured)
-          ctx.waitUntil(
-            Effect.runPromise(Effect.exit(entraSyncJob(env))).then(
-              logEntraResult,
-              (error: unknown) => console.error("Scheduled Entra directory sync job failed", error),
-            ),
-          );
-
-        ctx.waitUntil(
-          Effect.runPromise(Effect.exit(googleSyncJob(env))).then(
-            logGoogleResult,
-            (error: unknown) => console.error("Scheduled Google directory sync job failed", error),
-          ),
+          Effect.runPromiseExit(hourly, { signal }).then((exit) => {
+            if (Exit.isFailure(exit)) console.error("Scheduled hourly runtime failed", exit.cause);
+          }),
         );
 
         return;
@@ -1758,16 +1770,18 @@ export const createApiRuntime = (
 
       const daily = Effect.gen(function* () {
         const db = yield* Db;
-        const cronBilling =
-          apiEnv.SERVICES_URL && apiEnv.SERVICES_TOKEN
-            ? makeServicesBillingService({
-                url: apiEnv.SERVICES_URL,
-                token: apiEnv.SERVICES_TOKEN,
+        const cronBilling = apiEnv.SERVICES_TOKEN
+          ? makeServicesBillingService({
+              url: services.origin,
+              token: apiEnv.SERVICES_TOKEN,
+              origin: env.ORIGIN,
+            })
+          : remoteBillingConfig()
+            ? makeRemoteBillingService({
+                ...remoteBillingConfig()!,
                 origin: env.ORIGIN,
               })
-            : remoteBillingConfig()
-              ? makeRemoteBillingService({ ...remoteBillingConfig()!, origin: env.ORIGIN })
-              : undefined;
+            : undefined;
 
         yield* reportLicenseUsage(db, env).pipe(
           Effect.catch((error) =>
@@ -1779,9 +1793,9 @@ export const createApiRuntime = (
         // retention query must not leave the fleet without a recent bundle.
         const maintenance = yield* Effect.exit(
           runMaintenance({
-            staleDeviceDays: parseDays(apiEnv.MAINTENANCE_STALE_DEVICE_DAYS),
+            staleDeviceDays: apiEnv.MAINTENANCE_STALE_DEVICE_DAYS,
             storage,
-            auditRetentionDays: parseDays(apiEnv.MAINTENANCE_AUDIT_RETENTION_DAYS),
+            auditRetentionDays: apiEnv.MAINTENANCE_AUDIT_RETENTION_DAYS,
             windowsFailureRetentionDays,
             // Outbound webhook retries need the same secret used to seal endpoint
             // secrets; retention/pruning runs regardless.
@@ -1797,8 +1811,8 @@ export const createApiRuntime = (
             // Queued transactional mail is drained here as well as by the
             // hourly trigger; without a transport the rows stay pending.
             email: mailer.transport,
-            emailOutboxConcurrency: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY),
-            emailOutboxMaxAttempts: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS),
+            emailOutboxConcurrency: apiEnv.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY,
+            emailOutboxMaxAttempts: apiEnv.MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS,
             // Nightly usage report. The services deployment reconciles paid
             // seats and retries a lost report in its own sweep.
             billing: cronBilling ? { reportUsage: cronBilling.reportUsage } : undefined,
@@ -1821,6 +1835,7 @@ export const createApiRuntime = (
               origin: apiEnv.ORIGIN,
               replyTo: onboardingReplyTo(),
               supportEmail: onboardingSupportEmail(),
+              branding: onboardingBranding,
               from: onboardingFrom,
             });
 
@@ -1832,9 +1847,9 @@ export const createApiRuntime = (
                   replyTo: onboardingReplyTo(),
                   supportEmail: onboardingSupportEmail(),
                   from: onboardingFrom,
-                  followUpDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS, 7),
-                  windowDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS, 7),
-                  cooldownDays: parseDayCount(apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS, 7),
+                  followUpDays: apiEnv.MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS ?? 7,
+                  windowDays: apiEnv.MAINTENANCE_ONBOARDING_WINDOW_DAYS ?? 7,
+                  cooldownDays: apiEnv.MAINTENANCE_ONBOARDING_COOLDOWN_DAYS ?? 7,
                   since: onboardingSince,
                 })
               : null;
@@ -1851,8 +1866,8 @@ export const createApiRuntime = (
         // tenant. `MAINTENANCE_BACKUP_RETENTION_DAYS=0` keeps runs indefinitely.
         const backups = yield* Effect.exit(
           runScheduledBackups(db, storage, {
-            retentionDays: parseDays(apiEnv.MAINTENANCE_BACKUP_RETENTION_DAYS),
-            concurrency: parsePositive(apiEnv.MAINTENANCE_BACKUP_CONCURRENCY),
+            retentionDays: apiEnv.MAINTENANCE_BACKUP_RETENTION_DAYS,
+            concurrency: apiEnv.MAINTENANCE_BACKUP_CONCURRENCY,
           }),
         );
 
@@ -1863,42 +1878,45 @@ export const createApiRuntime = (
         const refreshMemberships = makeMembershipRefresher(db, env);
 
         const entra = yield* Effect.exit(
-          entraSyncEffect(
-            db,
-            env,
-            parsePositive(apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY),
-            refreshMemberships,
-          ),
+          entraSyncEffect(db, env, apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY, refreshMemberships),
         );
 
         // Google runs after Entra, also bounded and failure-isolated. It skips
         // tenants with no tenant or deployment credentials.
         const google = yield* Effect.exit(
-          googleSyncEffect(
-            db,
-            env,
-            parsePositive(apiEnv.MAINTENANCE_GOOGLE_SYNC_CONCURRENCY),
-            refreshMemberships,
-          ),
+          googleSyncEffect(db, env, apiEnv.MAINTENANCE_GOOGLE_SYNC_CONCURRENCY, refreshMemberships),
         );
 
         return { maintenance, onboarding, backups, entra, google };
-      }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+      }).pipe(Effect.provide(scheduledRuntimeLayer(databaseLayer(env), httpClientLayer)));
 
       if (!graphConfigured)
         console.log("Scheduled Entra directory sync skipped: Microsoft Graph is not configured");
 
+      const signal = (ctx as ExecutionContext & { readonly signal?: AbortSignal }).signal;
+
       ctx.waitUntil(
-        Effect.runPromise(daily).then(
-          ({ backups, entra, google }) => {
-            if (Exit.isFailure(backups))
-              console.error("Scheduled tenant backups failed", backups.cause);
-            else console.log("Scheduled tenant backups complete", backups.value);
-            logEntraResult(entra);
-            logGoogleResult(google);
-          },
-          (error: unknown) => console.error("Scheduled daily job failed", error),
-        ),
+        Effect.runPromiseExit(daily, { signal }).then((exit) => {
+          if (Exit.isFailure(exit)) {
+            console.error("Scheduled daily job failed", exit.cause);
+
+            return;
+          }
+
+          const { backups, entra, google } = exit.value;
+
+          if (Exit.isFailure(backups))
+            console.error("Scheduled tenant backups failed", backups.cause);
+          else console.log("Scheduled tenant backups complete", backups.value);
+
+          if (Exit.isFailure(entra))
+            console.error("Scheduled Entra directory sync failed", entra.cause);
+          else console.log("Scheduled Entra directory sync complete", entra.value);
+
+          if (Exit.isFailure(google))
+            console.error("Scheduled Google directory sync failed", google.cause);
+          else console.log("Scheduled Google directory sync complete", google.value);
+        }),
       );
     },
   };

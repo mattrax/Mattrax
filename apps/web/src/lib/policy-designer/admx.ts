@@ -1,4 +1,5 @@
-import { Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
+import { CatalogueService, runCatalogue } from "~/lib/catalogue-service";
 import {
   ADMX_LIMITS,
   AdmxImportError,
@@ -241,26 +242,14 @@ const parseCatalogueIndex = (value: Schema.Json): AdmxCatalogueIndex => {
   return decoded.value;
 };
 
-let cataloguePromise: Promise<AdmxCatalogueIndex> | undefined;
-
-/**
- * Load the generated policy-name → OMA-URI lookup. It is separate from the
- * browse index so only the importer pays for it.
- */
-export const loadAdmxCatalogueIndex = () => {
-  cataloguePromise ??= fetch(ADMX_CATALOGUE_INDEX_URL)
-    .then(async (response) => {
-      if (!response.ok) throw new Error(`Could not load the ADMX lookup (${response.status}).`);
-
-      return parseCatalogueIndex(await response.json());
-    })
-    .catch((error: unknown) => {
-      cataloguePromise = undefined;
-      throw error;
-    });
-
-  return cataloguePromise;
-};
+/** Load the generated lookup through the Layer-owned catalogue cache. */
+export const loadAdmxCatalogueIndex = () =>
+  runCatalogue(
+    CatalogueService.pipe(
+      Effect.flatMap((service) => service.get(ADMX_CATALOGUE_INDEX_URL, AdmxCatalogueIndexFile)),
+      Effect.map(parseCatalogueIndex),
+    ),
+  );
 
 /** Read picked files into text, expanding any zip archives. */
 export const readAdmxFiles = async (files: readonly File[]): Promise<AdmxInputFile[]> => {

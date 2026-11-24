@@ -37,6 +37,69 @@ describe("buildBreadcrumbs", () => {
     ]);
   });
 
+  it("labels the policy deployment tab instead of falling back to Details", () => {
+    expect(
+      buildBreadcrumbs({
+        pathname: `${tenant}/policies/policy_123/deployment`,
+        resourceName: "Staff policy",
+      }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Policies", href: `${tenant}/policies` },
+      { label: "Staff policy", href: `${tenant}/policies/policy_123` },
+      {
+        label: "Deployment",
+        href: `${tenant}/policies/policy_123/deployment`,
+      },
+    ]);
+  });
+
+  it("names the policy when the page supplies its loaded name", () => {
+    expect(
+      buildBreadcrumbs({
+        pathname: `${tenant}/policies/policy_123/assignments`,
+        title: "Assignments — Staff policy",
+        resourceName: "Staff policy",
+      }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Policies", href: `${tenant}/policies` },
+      { label: "Staff policy", href: `${tenant}/policies/policy_123` },
+      {
+        label: "Assignments",
+        href: `${tenant}/policies/policy_123/assignments`,
+      },
+    ]);
+  });
+
+  it("names the policy and the overview view when the path ends at the id", () => {
+    expect(
+      buildBreadcrumbs({
+        pathname: `${tenant}/policies/policy_123`,
+        resourceName: "Staff policy",
+        section: "Overview",
+      }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Policies", href: `${tenant}/policies` },
+      { label: "Staff policy", href: `${tenant}/policies/policy_123` },
+      { label: "Overview", href: `${tenant}/policies/policy_123` },
+    ]);
+  });
+
+  it("keeps the dashboard and reports crumbs without exposing the dashboard id", () => {
+    expect(
+      buildBreadcrumbs({
+        pathname: `${tenant}/dashboards/dash_123/reports`,
+        title: "Reports for Fleet",
+      }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Dashboards", href: `${tenant}/dashboards` },
+      { label: "Reports", href: `${tenant}/dashboards/dash_123/reports` },
+    ]);
+  });
+
   it("gives settings sub-pages the section trail without the tenant", () => {
     expect(
       buildBreadcrumbs({

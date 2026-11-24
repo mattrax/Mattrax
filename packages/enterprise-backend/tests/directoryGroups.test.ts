@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { syncDirectoryGroupsForTenant, syncDirectoryGroup } from "@mattrax/mdm-apple";
+import { syncDirectoryGroupsForTenant, syncDirectoryGroup } from "@mattrax/mdm-core";
 import { makeDb, runEffect } from "./helpers.js";
 
 const now = new Date("2026-11-18T12:00:00.000Z");

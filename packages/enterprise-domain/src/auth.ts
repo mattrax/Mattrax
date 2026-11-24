@@ -1,5 +1,5 @@
-import type { AnyAuthContract } from "@yielded/auth/AuthContract";
 import type { StrategyDefinition, StrategyTypeLambda } from "@yielded/auth/Auth";
+import type { AuthActions } from "@yielded/auth/AuthContract";
 import {
   Auth,
   AuthContract,
@@ -166,7 +166,13 @@ export class RecoveryRejected extends Schema.TaggedError<RecoveryRejected>()("Re
   message: Schema.String,
 }) {}
 
-export const AuthApi: AnyAuthContract = AuthContract.make("mattrax/auth", {
+type AppAuthContract = {
+  readonly namespace: "mattrax/auth";
+  readonly claims: typeof AuthClaims;
+  readonly actions: AuthActions;
+};
+
+export const AuthApi: AppAuthContract = AuthContract.make("mattrax/auth", {
   basePath: "/api/v1",
   claims: AuthClaims,
   actions: (sessions) => {
@@ -448,11 +454,7 @@ type ExtraAuthStrategies = Readonly<
  * supplies its own `completionLayer` with a pending lifetime. The server layer
  * provides both the strategy and completion layers from `appSessionConfiguration`.
  */
-/* oxlint-disable-next-line typescript/no-explicit-any -- The service class that
- * `Auth.make` returns mentions dozens of the library's internal strategy type
- * lambdas, none of which are exported; TypeScript cannot name it in a
- * declaration file, so callers see the service shape through this boundary. */
-export const makeAppAuth = (_origin: string, extraStrategies: ExtraAuthStrategies = {}): any =>
+const buildAppAuth = (_origin: string, extraStrategies: ExtraAuthStrategies = {}) =>
   Auth.make(AuthApi, {
     strategies: {
       totp: Totp.make(TOTP_POLICY),
@@ -487,9 +489,25 @@ export const makeAppAuth = (_origin: string, extraStrategies: ExtraAuthStrategie
     defaultStrategy: "passkey",
   });
 
+/**
+ * Portable definition metadata used by persistence. The upstream service type
+ * mentions private strategy lambdas, so the runtime adapter in
+ * enterprise-backend owns that cast instead of leaking it through this package.
+ */
+export type AppAuthDefinition = {
+  readonly claims: typeof AuthClaims;
+  readonly namespace: string;
+  readonly sessions: object;
+  readonly strategies: Readonly<Record<string, { readonly persistence?: object }>>;
+  readonly sessionMode: "stateful";
+};
+
+export const makeAppAuth = (origin: string, extraStrategies?: ExtraAuthStrategies): object =>
+  buildAppAuth(origin, extraStrategies);
+
 export const AuthDefinition = Object.freeze({
-  ...makeAppAuth("https://mattrax.invalid"),
+  ...buildAppAuth("https://mattrax.invalid"),
   // Persistence roles are selected from the session mode even though the
   // runtime layers are supplied by the server.
   sessionMode: "stateful" as const,
-});
+}) as AppAuthDefinition;

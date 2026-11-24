@@ -1,8 +1,14 @@
 import { Cause, Effect, Option, Predicate, Schema } from "effect";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import { osPolicyRuleFromRow, windowsOsUpdatePolicyNodes } from "@mattrax/enterprise-domain";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { DN } from "./ldapjs-dn.js";
+import {
+  osPolicyRuleFromRow,
+  windowsOsUpdatePolicyNodes,
+  windowsRotationTerminalOutcome,
+} from "@mattrax/enterprise-domain";
 import { windowsPolicyNodes } from "@mattrax/mdm-core";
 import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
+import { planWindowsRotationPoll } from "./windowsRotation.js";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
 import { deleteDepartedTenantDevice } from "@mattrax/mdm-core";
 import { SYSTEM_AUDIT_ACTIONS, describeAuditFailure, writeSystemAudit } from "@mattrax/mdm-core";
@@ -60,14 +66,13 @@ import {
 import {
   federatedAuthServiceUrl,
   isFederatedToken,
+  makeFederatedTokenVerifier,
   unverifiedFederatedTenantId,
-  validateFederatedEntraToken,
 } from "./federated.ts";
 import type {
   FederatedEntraClaims,
   FederatedJsonWebKeySet,
-  FederatedTokenValidation,
-  ValidateFederatedEntraTokenOptions,
+  FederatedTokenError,
 } from "./federated.ts";
 import { InternalServerError, UnknownDevice } from "@mattrax/management-backend";
 import type {
@@ -85,7 +90,48 @@ import type {
   WindowsManagementScope,
 } from "@mattrax/management-backend";
 
-const encoder = new TextEncoder();
+import {
+  DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS,
+  DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS,
+  isWindowsEnrollmentToken,
+  organizationFromWindowsEnrollmentSubject,
+  windowsEnrollmentSubject,
+} from "./tokens.js";
+import { WindowsTokenService, WindowsTokenServiceLive } from "./tokens.js";
+import type { WindowsTenantTokenEvaluation } from "./tokens.js";
+
+export * from "./tokens.js";
+
+/**
+ * Identity values a SCEP certificate row may carry for a device.
+ *
+ * Certificates issued by {@link createWindowsBackend} used to store the Windows
+ * `DeviceID` (the device's `dmIdentifier`) instead of the internal `device.id`.
+ * Revocation and renewal must honour both so legacy rows keep working after the
+ * linkage fix.
+ */
+export const certificateDeviceIdsFor = (device: {
+  readonly id: string;
+  readonly dmIdentifier?: string | null;
+}): string[] => {
+  const ids = new Set<string>();
+
+  if (device.id) ids.add(device.id);
+  const dmIdentifier = device.dmIdentifier?.trim();
+
+  if (dmIdentifier) ids.add(dmIdentifier);
+
+  return [...ids];
+};
+
+const withTokenService = <A, E>(
+  run: (service: WindowsTokenService.Service) => Effect.Effect<A, E>,
+) =>
+  Effect.gen(function* () {
+    const service = yield* WindowsTokenService;
+
+    return yield* run(service);
+  }).pipe(Effect.provide(WindowsTokenServiceLive));
 
 const JsonArray = Schema.Array(Schema.Json);
 
@@ -172,360 +218,6 @@ type WindowsStateCommandPayload = {
   hash?: string;
 };
 
-const toBase64Url = (bytes: Uint8Array): string => {
-  let binary = "";
-
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-};
-
-const hmac = async (secret: string, message: string): Promise<string> => {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(message));
-
-  return toBase64Url(new Uint8Array(signature));
-};
-
-const timingSafeEqual = (left: string, right: string): boolean => {
-  const a = encoder.encode(left);
-  const b = encoder.encode(right);
-
-  if (a.length !== b.length) return false;
-  let difference = 0;
-
-  for (let index = 0; index < a.length; index++) difference |= a[index] ^ b[index];
-
-  return difference === 0;
-};
-
-/**
- * Whether a value has the shape of our `<subject>.<issuedAt>.<hmac>` token.
- * Used to distinguish a forged/expired Mattrax token from the opaque client
- * credential Windows sends on the first WSTEP policy request.
- */
-const isWindowsEnrollmentToken = (token: string): boolean => {
-  const parts = token.split(".");
-
-  if (parts.length !== 3) return false;
-  const [subject, issuedAt, signature] = parts;
-
-  return Boolean(
-    subject && /^\d+$/.test(issuedAt ?? "") && /^[A-Za-z0-9_-]+$/.test(signature ?? ""),
-  );
-};
-
-export type WindowsEnrollmentTokenOptions = {
-  /** Lifetime in seconds. Defaults to one hour. */
-  readonly ttlSeconds?: number;
-  /** Injectable clock in milliseconds, for tests. */
-  readonly now?: number;
-};
-
-export type WindowsEnrollmentTokenVerification = {
-  readonly subject: string;
-  readonly issuedAt: number;
-};
-
-const DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS = 60 * 60;
-
-/**
- * Stateless WSTEP enrollment token.
- *
- * Encoding: `<subject>.<issuedAtEpochSeconds>.<base64url HMAC-SHA256>`, signed
- * with the application `AUTH_SECRET`. The policy response hands this token back
- * to Windows, which echoes it in the enrollment request's
- * `BinarySecurityToken`; {@link verifyWindowsEnrollmentToken} rejects forged,
- * malformed and expired tokens.
- *
- * The subject is a fresh enrollment id until the device supplies its real
- * `DeviceID` in the enrollment AdditionalContext. Keeping the token stateless
- * means a retried policy request can safely issue a new token without a database
- * write.
- */
-export const createWindowsEnrollmentToken = (
-  subject: string,
-  authSecret: string,
-  options: WindowsEnrollmentTokenOptions = {},
-): Promise<string> =>
-  (async () => {
-    if (!subject) throw new Error("Windows enrollment token subject is required");
-
-    if (!authSecret) throw new Error("Windows enrollment token requires a secret");
-    const issuedAt = Math.floor((options.now ?? Date.now()) / 1000);
-    const signature = await hmac(authSecret, `${subject}.${issuedAt}`);
-
-    return `${subject}.${issuedAt}.${signature}`;
-  })();
-
-export const verifyWindowsEnrollmentToken = (
-  token: string | undefined,
-  authSecret: string,
-  options: WindowsEnrollmentTokenOptions = {},
-): Promise<WindowsEnrollmentTokenVerification | null> =>
-  verifyWindowsEnrollmentTokenDetailed(token, authSecret, options).then(
-    (result) => result.verification,
-  );
-
-export type WindowsEnrollmentTokenEvaluation = {
-  /** Non-null only when the signature is valid and the token has not expired. */
-  readonly verification: WindowsEnrollmentTokenVerification | null;
-  /** True when the signature is valid but the token's lifetime has elapsed. */
-  readonly expired: boolean;
-};
-
-/**
- * Verify a token while distinguishing an expired (but otherwise authentic)
- * token from a forged or malformed one. A device that was offline past the
- * policy token's lifetime must be able to start a fresh enrollment rather than
- * being treated as an attacker, while a garbage signature still fails closed.
- */
-export const verifyWindowsEnrollmentTokenDetailed = async (
-  token: string | undefined,
-  authSecret: string,
-  options: WindowsEnrollmentTokenOptions = {},
-): Promise<WindowsEnrollmentTokenEvaluation> => {
-  const invalid = { verification: null, expired: false } as const;
-
-  if (!token || !authSecret) return invalid;
-  const parts = token.split(".");
-
-  if (parts.length !== 3) return invalid;
-  const [subject, issuedAtRaw, signature] = parts;
-
-  if (!subject || !issuedAtRaw || !signature) return invalid;
-  const issuedAt = Number(issuedAtRaw);
-
-  if (!Number.isFinite(issuedAt)) return invalid;
-
-  const expected = await hmac(authSecret, `${subject}.${issuedAtRaw}`);
-
-  if (!timingSafeEqual(expected, signature)) return invalid;
-
-  const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
-  const ttlSeconds = options.ttlSeconds ?? DEFAULT_ENROLLMENT_TOKEN_TTL_SECONDS;
-
-  if (nowSeconds > issuedAt + ttlSeconds) return { verification: null, expired: true };
-
-  // Allow a little clock skew for freshly issued tokens.
-  if (issuedAt > nowSeconds + 60) return invalid;
-
-  return { verification: { subject, issuedAt }, expired: false };
-};
-
-const fromBase64Url = (value: string): string | null => {
-  try {
-    const padded = value.replaceAll("-", "+").replaceAll("_", "/");
-    const binary = atob(padded.padEnd(padded.length + ((4 - (padded.length % 4)) % 4), "="));
-
-    return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
-  } catch {
-    return null;
-  }
-};
-
-/** Prefix that marks a tenant-scoped Windows enrollment token. */
-const TENANT_TOKEN_PREFIX = "mttxw1";
-
-/** Prefix for a tenant token whose discovery chose the Federated auth policy. */
-const FEDERATED_TENANT_TOKEN_PREFIX = "mttxw2";
-
-const TENANT_TOKEN_CONTEXT = "mattrax:windows-tenant:v1";
-
-const FEDERATED_TENANT_TOKEN_CONTEXT = "mattrax:windows-tenant:v2:federated";
-
-/** Prefix that binds the organization into a WSTEP enrollment token subject. */
-const ENROLLMENT_SUBJECT_PREFIX = "mttxw1:";
-
-/**
- * Tenant enrollment links are shared by administrators (settings, QR code,
- * email), so the token lifetime is measured in days rather than minutes. The
- * enrollment page mints a fresh token on every load.
- */
-export const DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
-
-export type WindowsTenantTokenOptions = {
-  /** Lifetime in seconds. Defaults to seven days. */
-  readonly ttlSeconds?: number;
-  /** Injectable clock in milliseconds, for tests. */
-  readonly now?: number;
-  /**
-   * Mint a token for a discovery flow that chose `AuthPolicy: Federated`.
-   * Policy/enroll then require a verifiable Entra JWT for this tenant.
-   */
-  readonly federated?: boolean;
-};
-
-export type WindowsTenantTokenVerification = {
-  readonly organizationId: string;
-  readonly issuedAt: number;
-  readonly expiresAt: number;
-  /** True when discovery selected the Federated auth policy. */
-  readonly federated: boolean;
-};
-
-export type WindowsTenantTokenEvaluation = {
-  /** Non-null only when the signature is valid and the token has not expired. */
-  readonly verification: WindowsTenantTokenVerification | null;
-  /** True when the signature is valid but the token's lifetime has elapsed. */
-  readonly expired: boolean;
-};
-
-const tenantTokenMessage = (
-  organizationId: string,
-  issuedAt: number,
-  expiresAt: number,
-  federated: boolean,
-) =>
-  `${federated ? FEDERATED_TENANT_TOKEN_CONTEXT : TENANT_TOKEN_CONTEXT}.${organizationId}.${issuedAt}.${expiresAt}`;
-
-/**
- * Stateless tenant enrollment token.
- *
- * Encoding: `mttxw1.<base64url organization id>.<issuedAt>.<expiresAt>.<hmac>`
- * signed with `AUTH_SECRET`. Unlike the WSTEP token (which a device echoes back
- * in a SOAP header), this token lives in the discovery/policy/enroll URL so a
- * tenant-scoped enrollment link never needs a deployment-wide tenant pin.
- */
-export const createWindowsTenantToken = (
-  organizationId: string,
-  authSecret: string,
-  options: WindowsTenantTokenOptions = {},
-): Promise<string> =>
-  (async () => {
-    if (!organizationId) throw new Error("Windows tenant token organization is required");
-
-    if (!authSecret) throw new Error("Windows tenant token requires a secret");
-    const issuedAt = Math.floor((options.now ?? Date.now()) / 1000);
-    const expiresAt = issuedAt + (options.ttlSeconds ?? DEFAULT_WINDOWS_TENANT_TOKEN_TTL_SECONDS);
-    const federated = options.federated === true;
-
-    const signature = await hmac(
-      authSecret,
-      tenantTokenMessage(organizationId, issuedAt, expiresAt, federated),
-    );
-
-    return [
-      federated ? FEDERATED_TENANT_TOKEN_PREFIX : TENANT_TOKEN_PREFIX,
-      toBase64Url(encoder.encode(organizationId)),
-      issuedAt,
-      expiresAt,
-      signature,
-    ].join(".");
-  })();
-
-export const verifyWindowsTenantTokenDetailed = async (
-  token: string | undefined,
-  authSecret: string,
-  options: WindowsTenantTokenOptions = {},
-): Promise<WindowsTenantTokenEvaluation> => {
-  const invalid = { verification: null, expired: false } as const;
-
-  if (!token || !authSecret) return invalid;
-  const parts = token.split(".");
-
-  if (parts.length !== 5) return invalid;
-  const [prefix, encodedOrganization, issuedAtRaw, expiresAtRaw, signature] = parts;
-  const federated = prefix === FEDERATED_TENANT_TOKEN_PREFIX;
-
-  if (
-    (!federated && prefix !== TENANT_TOKEN_PREFIX) ||
-    !encodedOrganization ||
-    !issuedAtRaw ||
-    !expiresAtRaw ||
-    !signature
-  )
-    return invalid;
-  const organizationId = fromBase64Url(encodedOrganization);
-  const issuedAt = Number(issuedAtRaw);
-  const expiresAt = Number(expiresAtRaw);
-
-  if (!organizationId || !Number.isFinite(issuedAt) || !Number.isFinite(expiresAt)) return invalid;
-
-  if (expiresAt <= issuedAt) return invalid;
-
-  const expected = await hmac(
-    authSecret,
-    tenantTokenMessage(organizationId, issuedAt, expiresAt, federated),
-  );
-
-  if (!timingSafeEqual(expected, signature)) return invalid;
-
-  const nowSeconds = Math.floor((options.now ?? Date.now()) / 1000);
-
-  if (nowSeconds > expiresAt) return { verification: null, expired: true };
-
-  // Allow a little clock skew for freshly issued tokens.
-  if (issuedAt > nowSeconds + 300) return invalid;
-
-  return { verification: { organizationId, issuedAt, expiresAt, federated }, expired: false };
-};
-
-export const verifyWindowsTenantToken = (
-  token: string | undefined,
-  authSecret: string,
-  options: WindowsTenantTokenOptions = {},
-): Promise<WindowsTenantTokenVerification | null> =>
-  verifyWindowsTenantTokenDetailed(token, authSecret, options).then(
-    (result) => result.verification,
-  );
-
-/** Expiry encoded in a tenant token, for display in the enrollment UI. */
-export const windowsTenantTokenExpiresAt = (token: string): Date | null => {
-  const parts = token.split(".");
-
-  if (parts.length !== 5) return null;
-  const seconds = Number(parts[3]);
-
-  return Number.isFinite(seconds) ? new Date(seconds * 1000) : null;
-};
-
-/** Bind the organization into a WSTEP token so enrollment cannot switch tenants. */
-export const windowsEnrollmentSubject = (organizationId: string): string =>
-  `${ENROLLMENT_SUBJECT_PREFIX}${toBase64Url(encoder.encode(organizationId))}:${crypto.randomUUID()}`;
-
-/** Recover the organization previously bound into a WSTEP token subject. */
-export const organizationFromWindowsEnrollmentSubject = (
-  subject: string | undefined,
-): string | null => {
-  if (!subject?.startsWith(ENROLLMENT_SUBJECT_PREFIX)) return null;
-  const rest = subject.slice(ENROLLMENT_SUBJECT_PREFIX.length);
-  const separator = rest.indexOf(":");
-
-  if (separator <= 0) return null;
-
-  return fromBase64Url(rest.slice(0, separator));
-};
-
-/**
- * Identity values a SCEP certificate row may carry for a device.
- *
- * Certificates issued by {@link createWindowsBackend} used to store the Windows
- * `DeviceID` (the device's `dmIdentifier`) instead of the internal `device.id`.
- * Revocation and renewal must honour both so legacy rows keep working after the
- * linkage fix.
- */
-export const certificateDeviceIdsFor = (device: {
-  readonly id: string;
-  readonly dmIdentifier?: string | null;
-}): string[] => {
-  const ids = new Set<string>();
-
-  if (device.id) ids.add(device.id);
-  const dmIdentifier = device.dmIdentifier?.trim();
-
-  if (dmIdentifier) ids.add(dmIdentifier);
-
-  return [...ids];
-};
-
 export type WindowsBackendOptions = {
   readonly db: Db["Service"];
   readonly origin: string;
@@ -598,17 +290,31 @@ const decodeCertificateSubject = (value: string) => {
   }
 };
 
-const certificateAttribute = (
+export const certificateAttribute = (
   identityCertificate: string | undefined,
   attribute: "OU" | "CN",
 ): string | null => {
   if (!identityCertificate) return null;
   const text = decodeCertificateSubject(identityCertificate);
 
-  return (
-    text.match(new RegExp(`(?:^|[,/\\n])\\s*${attribute}\\s*=\\s*([^,/\\n]+)`, "i"))?.[1]?.trim() ??
-    null
-  );
+  try {
+    const distinguishedName = DN.fromString(text);
+    const values: Array<unknown> = [];
+
+    for (let index = 0; index < distinguishedName.length; index++) {
+      const rdn = distinguishedName.rdnAt(index);
+
+      for (const name of rdn.keys()) {
+        if (name.toUpperCase() === attribute) values.push(rdn.getValue(name));
+      }
+    }
+
+    if (values.length !== 1 || !Schema.is(Schema.String)(values[0])) return null;
+
+    return values[0].trim() || null;
+  } catch {
+    return null;
+  }
 };
 
 /**
@@ -679,13 +385,14 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
       if (!trimmed) return { verification: null, expired: false };
       const secret = yield* requireSecret();
 
-      return yield* Effect.promise(() =>
-        verifyWindowsTenantTokenDetailed(trimmed, secret, { ttlSeconds: tenantTokenTtlSeconds }),
-      );
+      return yield* withTokenService((service) =>
+        service.verifyTenantTokenDetailed(trimmed, secret, { ttlSeconds: tenantTokenTtlSeconds }),
+      ).pipe(Effect.mapError(() => internal()));
     });
 
   const federated = options.federated;
   const federatedAudience = federated?.audience;
+  const federatedVerifier = makeFederatedTokenVerifier({ fetch: federated?.fetch });
 
   const federatedEnabled = Boolean(
     federated &&
@@ -723,20 +430,16 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
   const validateFederatedToken = (
     token: string,
     azureTenantId: string,
-  ): Effect.Effect<FederatedTokenValidation, never> =>
-    Effect.promise(() => {
-      const input: ValidateFederatedEntraTokenOptions = {
-        token,
-        tenantId: azureTenantId,
-        audience: federatedAudience!,
-        jwks: federated?.jwks,
-        jwksUri: federated?.jwksUri?.(azureTenantId),
-        fetch: federated?.fetch,
-        now: federated?.now,
-        clockToleranceSeconds: federated?.clockToleranceSeconds,
-      };
-
-      return validateFederatedEntraToken(input);
+  ): Effect.Effect<FederatedEntraClaims, FederatedTokenError> =>
+    federatedVerifier.validate({
+      token,
+      tenantId: azureTenantId,
+      audience: federatedAudience!,
+      jwks: federated?.jwks,
+      jwksUri: federated?.jwksUri?.(azureTenantId),
+      fetch: federated?.fetch,
+      now: federated?.now,
+      clockToleranceSeconds: federated?.clockToleranceSeconds,
     });
 
   /**
@@ -769,11 +472,11 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
       // token's own tenant must still match that organization's Entra tenant.
       if (azureTenantId.toLowerCase() !== unverifiedTenant.toLowerCase())
         return yield* Effect.fail(new UnknownDevice());
-      const validation = yield* validateFederatedToken(token, azureTenantId);
+      const claims = yield* validateFederatedToken(token, azureTenantId).pipe(
+        Effect.mapError((cause) => (cause.reason === "jwks" ? internal() : new UnknownDevice())),
+      );
 
-      if (!validation.ok) return yield* Effect.fail(new UnknownDevice());
-
-      return { organizationId, claims: validation.claims };
+      return { organizationId, claims };
     }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())));
 
   /**
@@ -964,7 +667,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
   const failureDetails = (
     cause: Cause.Cause<unknown>,
   ): { readonly code: string; readonly detail: string } | null => {
-    if (Cause.hasInterruptsOnly(cause)) return null;
+    if (Cause.hasInterrupts(cause)) return null;
 
     let error: unknown;
 
@@ -1208,12 +911,12 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           // Entra token validation without guessing from the request shape.
           const secret = yield* requireSecret();
 
-          const federatedToken = yield* Effect.promise(() =>
-            createWindowsTenantToken(organizationId, secret, {
+          const federatedToken = yield* withTokenService((service) =>
+            service.createTenantToken(organizationId, secret, {
               federated: true,
               ttlSeconds: tenantTokenTtlSeconds,
             }),
-          );
+          ).pipe(Effect.mapError(() => internal()));
 
           const query = tenantQuery(federatedToken);
 
@@ -1364,9 +1067,9 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         attributableOrganizationId = organizationId;
 
         const evaluated = presentedToken
-          ? yield* Effect.promise(() =>
-              verifyWindowsEnrollmentTokenDetailed(presentedToken, secret, { ttlSeconds }),
-            )
+          ? yield* withTokenService((service) =>
+              service.verifyEnrollmentTokenDetailed(presentedToken, secret, { ttlSeconds }),
+            ).pipe(Effect.mapError(() => internal()))
           : { verification: null, expired: false };
 
         // First enrollment legitimately arrives without a token (or with an
@@ -1411,9 +1114,9 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             ? evaluated.verification.subject
             : windowsEnrollmentSubject(organizationId);
 
-        const issued = yield* Effect.promise(() =>
-          createWindowsEnrollmentToken(subject, secret, { ttlSeconds }),
-        );
+        const issued = yield* withTokenService((service) =>
+          service.createEnrollmentToken(subject, secret, { ttlSeconds }),
+        ).pipe(Effect.mapError(() => internal()));
 
         return {
           minimalKeyLength: "2048",
@@ -1524,8 +1227,11 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           deviceIdentifier =
             request.deviceId?.trim() || resolved.claims.objectId || resolved.claims.subject;
         } else {
-          const verification = yield* Effect.promise(() =>
-            verifyWindowsEnrollmentToken(presentedToken, secret, { ttlSeconds }),
+          const verification = yield* withTokenService((service) =>
+            service.verifyEnrollmentTokenDetailed(presentedToken, secret, { ttlSeconds }),
+          ).pipe(
+            Effect.map((evaluation) => evaluation.verification),
+            Effect.mapError(() => internal()),
           );
 
           if (!verification) {
@@ -1753,98 +1459,114 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         const deviceRowId = existing?.id ?? newDeviceId();
         const name = request.deviceName?.trim() || deviceIdentifier;
 
-        if (existing) {
-          yield* db
-            .update(s.device)
-            .set({
-              proto: "win",
-              status: "enrolled",
-              name: request.deviceName?.trim() || existing.name,
-              vendor: "Microsoft",
-              dmIdentifier: deviceIdentifier,
-              lastSeenAt: timestamp,
-            })
-            .where(eq(s.device.id, existing.id));
-          yield* syncDynamicGroupsForDevice(db, organizationId, existing.id, {
-            now: timestamp,
-          }).pipe(Effect.catch(() => Effect.void));
-        } else {
-          yield* insertDevice({
-            id: deviceRowId,
-            organizationId,
-            deviceId: deviceIdentifier,
-            name,
-            timestamp,
-          });
+        const serial = certificateSerialHex(signed.certificate);
+
+        // The device row and its issued identity certificate are one enrollment
+        // unit. CA creation/signing stays outside; a failed certificate write
+        // rolls the device insert/update back instead of leaving a half-enrolled
+        // device that check-in cannot authenticate.
+        const persisted = yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const [recorded] = yield* tx
+              .select({
+                serial: s.scepIssuedCertificate.serial,
+                organizationId: s.scepIssuedCertificate.organizationId,
+                deviceId: s.scepIssuedCertificate.deviceId,
+              })
+              .from(s.scepIssuedCertificate)
+              .where(eq(s.scepIssuedCertificate.serial, serial))
+              .limit(1);
+
+            if (recorded) {
+              // Serial collisions are now ~2^-127, but a stale row could still
+              // exist. Reuse it only for the same tenant *and* device; never let
+              // a colliding serial overwrite another identity.
+              const sameIdentity =
+                recorded.organizationId === organizationId &&
+                (recorded.deviceId === deviceRowId || recorded.deviceId === deviceIdentifier);
+
+              if (!sameIdentity) return { collision: true } as const;
+            }
+
+            if (existing) {
+              yield* tx
+                .update(s.device)
+                .set({
+                  proto: "win",
+                  status: "enrolled",
+                  name: request.deviceName?.trim() || existing.name,
+                  vendor: "Microsoft",
+                  dmIdentifier: deviceIdentifier,
+                  lastSeenAt: timestamp,
+                })
+                .where(eq(s.device.id, existing.id));
+            } else {
+              yield* tx.insert(s.device).values({
+                id: deviceRowId,
+                organizationId,
+                proto: "win",
+                status: "enrolled",
+                name,
+                vendor: "Microsoft",
+                dmIdentifier: deviceIdentifier,
+                enrolledAt: timestamp,
+                lastSeenAt: timestamp,
+              });
+            }
+
+            if (recorded) {
+              yield* tx
+                .update(s.scepIssuedCertificate)
+                .set({
+                  // Migrate legacy DeviceID-keyed rows to the internal id as we go.
+                  deviceId: deviceRowId,
+                  enrollmentId: null,
+                  notAfter,
+                  createdAt: timestamp,
+                  // Deliberately do not clear `revokedAt`: a duplicate serial is a
+                  // replay/collision, and must never silently un-revoke an identity.
+                })
+                .where(
+                  and(
+                    eq(s.scepIssuedCertificate.serial, serial),
+                    eq(s.scepIssuedCertificate.organizationId, organizationId),
+                  ),
+                );
+            } else {
+              yield* tx.insert(s.scepIssuedCertificate).values({
+                serial,
+                organizationId,
+                enrollmentId: null,
+                deviceId: deviceRowId,
+                notAfter,
+                createdAt: timestamp,
+              });
+            }
+
+            return { collision: false } as const;
+          }),
+        );
+
+        if (persisted.collision) {
+          yield* report(
+            "wstep",
+            "certificate_serial_collision",
+            "Windows certificate issuance failed: the issued serial already belongs to another device.",
+          );
+
+          return yield* Effect.fail(internal());
         }
 
-        // The device row is durable from here on, so a later failure (a serial
-        // collision, for example) belongs to it rather than to the pre-enrolment
-        // DeviceID the client asserted.
         attributableDevice = {
           id: deviceRowId,
           serial: existing?.serial ?? null,
           name: existing ? request.deviceName?.trim() || existing.name : name,
         };
 
-        const serial = certificateSerialHex(signed.certificate);
-
-        const [recorded] = yield* db
-          .select({
-            serial: s.scepIssuedCertificate.serial,
-            organizationId: s.scepIssuedCertificate.organizationId,
-            deviceId: s.scepIssuedCertificate.deviceId,
-          })
-          .from(s.scepIssuedCertificate)
-          .where(eq(s.scepIssuedCertificate.serial, serial))
-          .limit(1);
-
-        if (recorded) {
-          // Serial collisions are now ~2^-127, but a stale row could still
-          // exist. Reuse it only for the same tenant *and* device; never let a
-          // colliding serial overwrite another identity (which would make its
-          // renewals authenticate as the wrong tenant/device).
-          const sameIdentity =
-            recorded.organizationId === organizationId &&
-            (recorded.deviceId === deviceRowId || recorded.deviceId === deviceIdentifier);
-
-          if (!sameIdentity) {
-            yield* report(
-              "wstep",
-              "certificate_serial_collision",
-              "Windows certificate issuance failed: the issued serial already belongs to another device.",
-            );
-
-            return yield* Effect.fail(internal());
-          }
-
-          yield* db
-            .update(s.scepIssuedCertificate)
-            .set({
-              // Migrate legacy DeviceID-keyed rows to the internal id as we go.
-              deviceId: deviceRowId,
-              enrollmentId: null,
-              notAfter,
-              createdAt: timestamp,
-              // Deliberately do not clear `revokedAt`: a duplicate serial is a
-              // replay/collision, and must never silently un-revoke an identity.
-            })
-            .where(
-              and(
-                eq(s.scepIssuedCertificate.serial, serial),
-                eq(s.scepIssuedCertificate.organizationId, organizationId),
-              ),
-            );
-        } else {
-          yield* db.insert(s.scepIssuedCertificate).values({
-            serial,
-            organizationId,
-            enrollmentId: null,
-            deviceId: deviceRowId,
-            notAfter,
-            createdAt: timestamp,
-          });
-        }
+        if (existing)
+          yield* syncDynamicGroupsForDevice(db, organizationId, existing.id, {
+            now: timestamp,
+          }).pipe(Effect.catch(() => Effect.void));
 
         // This enrollment is durable, so the previous tenant's copy can go.
         // Cleanup is best effort: failing it must not reject a device the new
@@ -2191,8 +1913,12 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           if (!commandId) continue;
 
           const data = windowsSyncMLData(status.data) ?? "";
-          const outcome = windowsCommandOutcome(data);
           const row = rowsById.get(commandId) ?? inventoryRowsByCommandId.get(commandId);
+          const outcome = windowsCommandOutcome(data, {
+            acceptedForProcessing:
+              row?.requestType === "WindowsBitLockerRotate" ||
+              row?.requestType === "WindowsLapsResetPassword",
+          });
 
           if (!row) {
             // An imperative command is addressed by its row id, which is also
@@ -2252,6 +1978,35 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           // outcome is already represented by `mdm.status_report` when the
           // values changed, and recording every daily poll result would drown
           // the signal.
+          // A rejected ArchiveDefinition can never upload. Mark the archive
+          // failed now so the device page explains the CSP status instead of
+          // leaving it pending until the 24-hour deadline.
+          if (
+            row.requestType === "WindowsCollectDiagnostics" &&
+            outcome.status === "failed"
+          ) {
+            const archiveId = payloadString(commandPayload(row.payload), "archiveId");
+
+            if (archiveId)
+              yield* db
+                .update(s.deviceDiagnosticsArchive)
+                .set({
+                  status: "failed",
+                  error:
+                    "The device rejected DiagnosticArchive with SyncML status " +
+                    outcome.resultStatus +
+                    ".",
+                  updatedAt: timestamp,
+                })
+                .where(
+                  and(
+                    eq(s.deviceDiagnosticsArchive.id, archiveId),
+                    eq(s.deviceDiagnosticsArchive.organizationId, organizationId),
+                    eq(s.deviceDiagnosticsArchive.deviceId, device.id),
+                  ),
+                );
+          }
+
           if (!isInventory && row.status !== outcome.status) {
             if (outcome.status === "succeeded")
               yield* writeSystemAudit(
@@ -2422,19 +2177,100 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         }
 
         for (const cmdRef of resultCommandIds) {
-          const row = inventoryRowsByCommandId.get(cmdRef);
+          const row = inventoryRowsByCommandId.get(cmdRef) ?? rowsById.get(cmdRef);
 
           if (!row) continue;
+
+          const uri = payloadString(commandPayload(row.payload), "locURI");
+          const value = uri ? inventoryValues.get(uri) : undefined;
+
+          // LAPS and BitLocker status nodes are ordinary `Get` commands, not
+          // inventory requests. Persisting the first value the device answers
+          // lets the device page reconcile ResetPasswordStatus and
+          // RotateRecoveryPasswordsStatus without a second round trip.
+          // Only the rotation status nodes carry a meaningful result value.
+          // An inventory Get's data is the inventory itself and must not be
+          // copied into the command history as a "Status ..." string.
+          const statusRequest =
+            row.requestType === "WindowsLapsResetPasswordStatus" ||
+            row.requestType === "WindowsBitLockerRotateStatus";
+          const detail =
+            statusRequest && value !== undefined && value.trim()
+              ? "Status " + value.trim().slice(0, 200)
+              : row.resultDetail;
 
           yield* db
             .update(s.deviceCommand)
             .set({
               status: "succeeded",
               resultStatus: "200",
+              resultDetail: detail,
               dedupeKey: null,
               updatedAt: timestamp,
             })
             .where(and(eq(s.deviceCommand.id, row.id), eq(s.deviceCommand.deviceId, device.id)));
+
+          if (
+            row.requestType === "WindowsLapsResetPasswordStatus" &&
+            value !== undefined &&
+            value.trim()
+          )
+            yield* db
+              .insert(s.deviceWindowsLaps)
+              .values({
+                deviceId: device.id,
+                organizationId,
+                accountName: null,
+                accountSid: null,
+                backupAt: null,
+                refreshAt: null,
+                retrievedAt: null,
+                source: "unknown",
+                resetRequestedAt: null,
+                resetStatus: value.trim().slice(0, 255),
+                lastError: null,
+                updatedAt: timestamp,
+              })
+              .onDuplicateKeyUpdate({
+                set: { resetStatus: value.trim().slice(0, 255), updatedAt: timestamp },
+              });
+
+          // Close the parent rotation Exec when its status reaches a terminal
+          // value. Without this the accepted Exec has no result and would keep
+          // rotationInProgress true until the 24-hour budget expired.
+          if (
+            (row.requestType === "WindowsBitLockerRotateStatus" ||
+              row.requestType === "WindowsLapsResetPasswordStatus") &&
+            value !== undefined
+          ) {
+            const execCommandId = payloadString(
+              commandPayload(row.payload),
+              "execCommandId",
+            );
+            const terminal = windowsRotationTerminalOutcome(
+              row.requestType === "WindowsBitLockerRotateStatus" ? "bitlocker" : "laps",
+              value,
+            );
+
+            if (terminal && execCommandId)
+              yield* db
+                .update(s.deviceCommand)
+                .set({
+                  status: terminal,
+                  resultStatus: "Status " + value.trim().slice(0, 200),
+                  resultDetail:
+                    "Rotation finished with status " + value.trim().slice(0, 200) + ".",
+                  dedupeKey: null,
+                  updatedAt: timestamp,
+                })
+                .where(
+                  and(
+                    eq(s.deviceCommand.id, execCommandId),
+                    eq(s.deviceCommand.deviceId, device.id),
+                    eq(s.deviceCommand.organizationId, organizationId),
+                  ),
+                );
+          }
         }
 
         const applicationReport = parseWindowsApplicationsReport(inventoryValues, {
@@ -2917,6 +2753,47 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             .where(eq(s.deviceCommand.id, command.id));
         }
 
+        // A rotation's status node is polled on later check-ins until it
+        // reaches a terminal value. The planner runs after delivery, so the
+        // Exec is already marked sent here and is not eligible until the
+        // device acknowledges it with accepted or succeeded.
+        const rotationRows = yield* db
+          .select()
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              inArray(s.deviceCommand.requestType, [
+                "WindowsBitLockerRotate",
+                "WindowsBitLockerRotateStatus",
+                "WindowsLapsResetPassword",
+                "WindowsLapsResetPasswordStatus",
+              ]),
+            ),
+          )
+          .orderBy(desc(s.deviceCommand.createdAt))
+          .limit(20);
+
+        if (device.status === "enrolled") {
+          const poll = planWindowsRotationPoll({ rows: rotationRows, now: timestamp });
+
+          if (poll)
+            yield* db.insert(s.deviceCommand).values({
+              id: crypto.randomUUID(),
+              organizationId,
+              deviceId: device.id,
+              requestType: poll.requestType,
+              payload: poll.payload,
+              status: "queued",
+              dedupeKey: null,
+              expiresAt: poll.expiresAt,
+              resultStatus: null,
+              resultDetail: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            });
+        }
+
         // Policy rejections are already stored per OMA-URI on the device; this
         // is the append-only history an operator can scroll. Best effort, like
         // every other failure record.
@@ -3273,7 +3150,11 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         });
       }).pipe(
         Effect.catchCause((cause) =>
-          Effect.logWarning(`Could not record Windows protocol failure: ${String(cause)}`),
+          Cause.hasInterrupts(cause)
+            ? Effect.failCause(
+                Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)),
+              )
+            : Effect.logWarning(`Could not record Windows protocol failure: ${String(cause)}`),
         ),
       ),
   };

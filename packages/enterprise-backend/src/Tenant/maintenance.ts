@@ -13,13 +13,15 @@ import {
   retryFailedWebhookDeliveries,
   refreshAppleSecurityInfo,
   refreshAppleLocalAccounts,
-  rotateAppleLocalAdminPasswords,
   sweepDeviceCommands,
-  sweepWindowsStateCommands,
   syncDirectoryGroupsForTenant,
   syncDynamicGroupsForTenant,
+} from "@mattrax/mdm-core";
+import { rotateAppleLocalAdminPasswords } from "@mattrax/mdm-apple";
+import {
+  sweepWindowsStateCommands,
   WINDOWS_STATE_COMMAND_RETENTION_DAYS,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-windows";
 import { sweepScriptExecutions } from "../Policy/scripts.ts";
 import { sweepFleetMigrations } from "../Device/fleetMigration.ts";
 import { loadCredentialHealth } from "../Device/credentialHealth.ts";
@@ -33,7 +35,7 @@ import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
 import { refreshAppleApplicationInventory } from "../Device/appleInventory.ts";
 import { TENANT_DELETION_LOG_RETENTION_DAYS } from "./tenantTeardown.ts";
 import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
-import type { WebhookDeliveryOptions } from "@mattrax/mdm-apple";
+import type { WebhookDeliveryOptions } from "@mattrax/mdm-core";
 import type { EnterpriseDb } from "../schema.ts";
 import type { EmailAddress, EmailTransport } from "@mattrax/email";
 import { drainEmailOutbox, purgeEmailOutbox } from "../Mail/emailOutbox.ts";
@@ -333,6 +335,8 @@ export type MaintenanceResult = {
   readonly purgedTenantDeletionLogs: number;
   /** Expired handover archive rows (and objects, when storage is available). */
   readonly purgedHandoverArchives: number;
+  /** Expired Windows diagnostic archives and their R2 objects. */
+  readonly purgedDiagnosticsArchives: number;
   /** Terminal approval requests (and their decisions) deleted by retention. */
   readonly purgedApprovalRequests: number;
   /** Tenant usage snapshots accepted by the billing service. */
@@ -587,6 +591,7 @@ export const runMaintenance = (
       migrationDevicesStuck: 0,
       purgedTenantDeletionLogs: 0,
       purgedHandoverArchives: 0,
+      purgedDiagnosticsArchives: 0,
       purgedApprovalRequests: 0,
       billingUsageReported: 0,
       billingUsageFailed: 0,
@@ -825,11 +830,9 @@ export const runMaintenance = (
         authSecret: options.authSecret,
       }).pipe(
         Effect.catch((error) =>
-          Effect.sync(() => {
-            console.error("SCEP CA rotation sweep failed", error);
-
-            return { checked: 0, rotated: 0, failed: 0 };
-          }),
+          Effect.logError("SCEP CA rotation sweep failed", { error }).pipe(
+            Effect.as({ checked: 0, rotated: 0, failed: 0 }),
+          ),
         ),
       );
 
@@ -852,11 +855,9 @@ export const runMaintenance = (
         probe: options.serverCertificateProbe,
       }).pipe(
         Effect.catch((error) =>
-          Effect.sync(() => {
-            console.error("Origin TLS certificate check failed", error);
-
-            return { checked: false, state: null };
-          }),
+          Effect.logError("Origin TLS certificate check failed", { error }).pipe(
+            Effect.as({ checked: false, state: null }),
+          ),
         ),
       );
 
@@ -996,16 +997,13 @@ export const runMaintenance = (
           // mail outage cannot abort the rest of maintenance.
           yield* Effect.suspend(() => options.notifyCredentialExpiry!(notification)).pipe(
             Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
+              Cause.hasInterrupts(cause)
                 ? Effect.failCause(cause)
-                : Effect.sync(() =>
-                    console.error(
-                      "Credential expiry notification failed",
-                      organization.id,
-                      threshold,
-                      cause,
-                    ),
-                  ),
+                : Effect.logError("Credential expiry notification failed", {
+                    organizationId: organization.id,
+                    threshold,
+                    cause,
+                  }),
             ),
           );
         }
@@ -1299,6 +1297,54 @@ export const runMaintenance = (
         );
 
       result.purgedHandoverArchives = purgeable.length;
+    }
+
+    // 11c. Expired Windows diagnostic archives. The download token is already
+    //      dead past `expiresAt`; delete the object first so a failed storage
+    //      delete leaves the row for the next run instead of orphaning bytes.
+    const expiredDiagnostics = yield* db
+      .select({ id: s.deviceDiagnosticsArchive.id, r2Key: s.deviceDiagnosticsArchive.r2Key })
+      .from(s.deviceDiagnosticsArchive)
+      .where(lt(s.deviceDiagnosticsArchive.expiresAt, now))
+      .limit(5_000);
+
+    if (expiredDiagnostics.length > 0) {
+      // Without a storage binding, deleting a row that still points at an R2
+      // object orphans bytes forever. Keep those rows for a deployment that
+      // later configures storage; only keyless rows can be pruned safely.
+      let purgeable = options.storage
+        ? expiredDiagnostics
+        : expiredDiagnostics.filter((row) => row.r2Key === null);
+      const storage = options.storage;
+
+      if (storage) {
+        const keys = expiredDiagnostics.flatMap((row) => (row.r2Key ? [row.r2Key] : []));
+
+        if (keys.length > 0) {
+          const failure = yield* Effect.tryPromise({
+            try: () => storage.delete(keys),
+            catch: (cause) => cause,
+          }).pipe(Effect.match({ onFailure: (cause) => cause, onSuccess: () => undefined }));
+
+          if (failure !== undefined) {
+            yield* Effect.logWarning(
+              "Failed to delete expired diagnostic archives; rows are retried next run",
+              { cause: failure },
+            );
+            purgeable = expiredDiagnostics.filter((row) => row.r2Key === null);
+          }
+        }
+      }
+
+      if (purgeable.length > 0)
+        yield* db.delete(s.deviceDiagnosticsArchive).where(
+          inArray(
+            s.deviceDiagnosticsArchive.id,
+            purgeable.map((row) => row.id),
+          ),
+        );
+
+      result.purgedDiagnosticsArchives = purgeable.length;
     }
 
     // 12. Billing usage. Devices live in this database but billing lives in

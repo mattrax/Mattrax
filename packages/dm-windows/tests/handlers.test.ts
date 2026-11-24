@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { InternalServerError, UnknownDevice } from "@mattrax/management-backend";
+import { deserializeSoapElementNode, parseSoapEnvelope } from "@mattrax/soap";
+import { RequestSecurityTokenResponseCollection } from "../src/messages.js";
 import type {
   WindowsFailureReport,
   WindowsManagementRequest,
@@ -12,6 +14,19 @@ import { windowsMdmRoutes } from "../src/handlers.js";
 import { mockManagementBackend, soapEnvelope } from "./helpers.js";
 
 const config = { origin: "https://test.mattrax.app", providerId: "Mattrax" };
+
+async function provisioningDocument(response: string): Promise<string> {
+  const parsed = await Effect.runPromise(parseSoapEnvelope(response));
+  const decoded = await Effect.runPromise(
+    deserializeSoapElementNode(parsed.body, RequestSecurityTokenResponseCollection),
+  );
+  const encoded =
+    decoded.requestSecurityTokenResponse.requestedSecurityToken.binarySecurityToken.content;
+
+  return new TextDecoder().decode(
+    Uint8Array.from(atob(encoded.replaceAll(/\s/g, "")), (char) => char.charCodeAt(0)),
+  );
+}
 
 async function handler(overrides?: Parameters<typeof mockManagementBackend>[0]) {
   const layer = windowsMdmRoutes.pipe(
@@ -158,13 +173,7 @@ describe("Windows MDM handlers", () => {
 
     const text = await res.text();
 
-    const encoded = text.match(
-      /<[^>]*BinarySecurityToken\b[^>]*>([\s\S]*?)<\/[^>]*BinarySecurityToken>/i,
-    )?.[1];
-
-    const provisioning = new TextDecoder().decode(
-      Uint8Array.from(atob(encoded!.replaceAll(/\s/g, "")), (char) => char.charCodeAt(0)),
-    );
+    const provisioning = await provisioningDocument(text);
 
     expect(provisioning).toContain(`${config.origin}/mdm/windows/management?tenant=mttxw1.abc`);
   });
@@ -195,15 +204,7 @@ describe("Windows MDM handlers", () => {
     expect(text).toContain("RequestSecurityTokenResponseCollection");
     expect(text).toContain("DeviceEnrollmentProvisionDoc");
 
-    const encoded = text.match(
-      /<[^>]*BinarySecurityToken\b[^>]*>([\s\S]*?)<\/[^>]*BinarySecurityToken>/i,
-    )?.[1];
-
-    expect(encoded).toBeTruthy();
-
-    const provisioning = new TextDecoder().decode(
-      Uint8Array.from(atob(encoded!.replaceAll(/\s/g, "")), (char) => char.charCodeAt(0)),
-    );
+    const provisioning = await provisioningDocument(text);
 
     expect(provisioning).toContain("wap-provisioningdoc");
     expect(provisioning).toContain("PROVIDER-ID");

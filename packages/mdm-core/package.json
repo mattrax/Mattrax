@@ -11,11 +11,9 @@
   "dependencies": {
     "@mattrax/apns": "workspace:*",
     "@mattrax/crypto": "workspace:*",
-    "@mattrax/dm-apple": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
-    "@mattrax/net": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "drizzle-orm": "catalog:",

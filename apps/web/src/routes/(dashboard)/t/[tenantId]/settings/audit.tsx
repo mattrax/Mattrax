@@ -9,7 +9,7 @@ import { Badge, FilterBar, LoadingState } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import { Button } from "~/components/ui/button";
 import { Search } from "~/components/ui/icons";
-import { enterpriseQueries } from "~/lib/enterprise";
+import { enterprise, enterpriseQueries } from "~/lib/enterprise";
 import type { AuditLogEntry, AuditSearchQuery } from "~/lib/enterprise";
 import {
   auditActorKind,
@@ -369,9 +369,8 @@ export default function AuditSettingsPage() {
 
       query.set("format", format);
 
-      const response = await fetch(
+      const response = await enterprise.request(
         `/api/v1/tenants/${encodeURIComponent(resolveTenantId(params.tenantId) ?? "")}/audit/export?${query}`,
-        { credentials: "include" },
       );
 
       if (!response.ok) throw await responseFailure(response, `Export failed (${response.status})`);

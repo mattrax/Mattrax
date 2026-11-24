@@ -1,6 +1,7 @@
 import { geoCentroid, geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
 import type { Feature, Geometry } from "geojson";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { CatalogueService, runCatalogue } from "~/lib/catalogue-service";
 import { Portal } from "@solidjs/web";
 import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import { LoadingState } from "~/components/ui";
@@ -16,6 +17,8 @@ import {
 import { Input } from "~/components/ui/input";
 import { ChevronDown, Globe, Plus, RotateCcw, Search } from "~/components/ui/icons";
 import { flagOf, regionName } from "~/components/region-label";
+import { clampZoom, rotateByDrag, rotateByKey } from "~/components/region-globe";
+import { isSubmitEnter } from "~/lib/ime";
 
 const GLOBE_SIZE = 480;
 const GLOBE_CENTER = GLOBE_SIZE / 2;
@@ -38,34 +41,12 @@ const WorldSchema = Schema.Struct({
 type Country = typeof CountrySchema.Type;
 type World = typeof WorldSchema.Type;
 
-const decodeWorld = Schema.decodeUnknownSync(WorldSchema);
-
-let cachedWorld: World | undefined;
-let worldPromise: Promise<World> | undefined;
-
-const fetchWorld = (): Promise<World> => {
-  if (cachedWorld) return Promise.resolve(cachedWorld);
-  worldPromise ??= fetch("/assets/world-countries.geojson")
-    .then(async (response) => {
-      if (!response.ok) throw new Error(`Map request failed (${response.status})`);
-
-      return decodeWorld(await response.json());
-    })
-    .then((world) => {
-      cachedWorld = world;
-
-      return world;
-    })
-    .catch((error: unknown) => {
-      worldPromise = undefined;
-      throw error;
-    });
-
-  return worldPromise;
-};
-
-const clamp = (value: number, minimum: number, maximum: number) =>
-  Math.min(maximum, Math.max(minimum, value));
+const fetchWorld = (): Promise<World> =>
+  runCatalogue(
+    CatalogueService.pipe(
+      Effect.flatMap((service) => service.get("/assets/world-countries.geojson", WorldSchema)),
+    ),
+  );
 
 const asFeature = (country: Country): Feature<Geometry> => ({
   type: "Feature",
@@ -134,7 +115,7 @@ export function RegionPicker(props: {
         readonly phi: number;
       }
     | undefined;
-  let globeSurface: HTMLDivElement | undefined;
+  let globeSurface: HTMLButtonElement | undefined;
 
   const countries = createMemo(() => {
     const entries = (world()?.features ?? []).map((country) => {
@@ -243,7 +224,7 @@ export function RegionPicker(props: {
     setPhi(-16);
   };
 
-  const zoomBy = (factor: number) => setZoom((current) => clamp(current * factor, 1, 3));
+  const zoomBy = (factor: number) => setZoom((current) => clampZoom(current * factor));
 
   const choose = (country: Country) => {
     setSelected(country.properties.iso.toUpperCase());
@@ -271,8 +252,15 @@ export function RegionPicker(props: {
       const dy = moveEvent.clientY - dragging.startY;
 
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-      setLambda(dragging.lambda - dx * 0.3);
-      setPhi(clamp(dragging.phi + dy * 0.3, -80, 80));
+
+      const next = rotateByDrag(
+        { lambda: dragging.lambda, phi: dragging.phi, zoom: zoom() },
+        dx,
+        dy,
+      );
+
+      setLambda(next.lambda);
+      setPhi(next.phi);
     };
 
     const finish = () => {
@@ -290,6 +278,30 @@ export function RegionPicker(props: {
   const onWheel = (event: WheelEvent) => {
     event.preventDefault();
     zoomBy(Math.exp(-event.deltaY * 0.0015));
+  };
+
+  /** Keep the globe usable without a pointer: arrows rotate, +/- zoom, 0 resets. */
+  const onKeyDown = (event: KeyboardEvent) => {
+    const next = rotateByKey({ lambda: lambda(), phi: phi(), zoom: zoom() }, event.key);
+
+    if (next) {
+      event.preventDefault();
+      setLambda(next.lambda);
+      setPhi(next.phi);
+
+      return;
+    }
+
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      zoomBy(1.25);
+    } else if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      zoomBy(0.8);
+    } else if (event.key === "0") {
+      event.preventDefault();
+      resetView();
+    }
   };
 
   const apply = (code: string) => {
@@ -334,8 +346,8 @@ export function RegionPicker(props: {
             <DialogHeader>
               <DialogTitle>Choose App Store region</DialogTitle>
               <DialogDescription>
-                Drag the globe to rotate it, scroll to zoom, or search for a country. Clicking a
-                country resolves its two-letter storefront code.
+                Drag the globe to rotate it, scroll or use plus and minus to zoom, or search for a
+                country. With the globe focused, the arrow keys rotate it and 0 resets the view.
               </DialogDescription>
             </DialogHeader>
 
@@ -349,7 +361,7 @@ export function RegionPicker(props: {
                 }}
                 onFocus={() => setResultsOpen(true)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
+                  if (isSubmitEnter(event)) {
                     const first = matches()[0];
 
                     if (first) {
@@ -411,13 +423,16 @@ export function RegionPicker(props: {
             >
               {(loadedWorld) => (
                 <div class="relative mx-auto mt-1 aspect-square w-full max-w-[480px]">
-                  <div
+                  <button
+                    type="button"
                     ref={(element) => {
                       globeSurface = element;
                     }}
                     data-region-globe
-                    class="h-full w-full cursor-grab touch-none select-none active:cursor-grabbing"
+                    aria-label="Region globe. Drag or use the arrow keys to rotate, plus and minus to zoom, and 0 to reset."
+                    class="block h-full w-full cursor-grab touch-none select-none rounded-full border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring/60 active:cursor-grabbing"
                     onWheel={onWheel}
+                    onKeyDown={onKeyDown}
                     onPointerDown={(event) => {
                       setResultsOpen(false);
                       startRotate(event);
@@ -429,7 +444,7 @@ export function RegionPicker(props: {
                         <radialGradient id="globe-shade" cx="34%" cy="28%" r="78%">
                           <stop offset="0%" stop-color="var(--card)" stop-opacity="0" />
                           <stop offset="72%" stop-color="var(--foreground)" stop-opacity="0.02" />
-                          <stop offset="100%" stop-color="var(--foreground)" stop-opacity="0.14" />
+                          <stop offset="100%" stop-color="var(--foreground)" stop-opacity="0.08" />
                         </radialGradient>
                       </defs>
                       <path
@@ -454,12 +469,12 @@ export function RegionPicker(props: {
                             data-code={country.properties.iso.toLowerCase()}
                             fill={
                               selected() === country.properties.iso.toUpperCase()
-                                ? "var(--brand-solid)"
+                                ? "var(--globe-selected)"
                                 : hovered() === country.properties.iso
-                                  ? "var(--brand-muted)"
-                                  : "var(--card)"
+                                  ? "var(--globe-hover)"
+                                  : "var(--globe-land)"
                             }
-                            stroke="var(--border)"
+                            stroke="var(--globe-land-stroke)"
                             stroke-width="0.55"
                             vector-effect="non-scaling-stroke"
                             class="cursor-pointer transition-[fill] duration-[var(--duration-press)] ease-swift"
@@ -474,7 +489,7 @@ export function RegionPicker(props: {
                       </For>
                       <path d={spherePath()} fill="url(#globe-shade)" pointer-events="none" />
                     </svg>
-                  </div>
+                  </button>
 
                   <div
                     class="absolute right-2 top-2 flex flex-col overflow-hidden rounded-md border border-border bg-card/95 shadow-card"

@@ -344,6 +344,15 @@ const EXPLICIT = {
   // secrets: reading them is as sensitive as the recovery key.
   getDeviceLocalAdmin: "devices.recovery_key",
   getDeviceActivationLockBypassCode: "devices.recovery_key",
+  // Windows LAPS and BitLocker material use the same reveal permission and a
+  // mandatory reason; the handlers also require a fresh step-up.
+  getDeviceLapsPassword: "devices.recovery_key",
+  revealDeviceBitlockerKey: "devices.recovery_key",
+  // BitLocker and LAPS metadata contains no secret, but it is device security
+  // state rather than ordinary inventory.
+  getDeviceWindowsSecurity: "devices.read",
+  listDeviceDiagnostics: "devices.read",
+  downloadDeviceDiagnostics: "devices.command",
   // A handover archive contains every escrowed secret a device has, so it has
   // its own permission instead of riding on devices.write or recovery_key.
   createDeviceHandover: "devices.handover",

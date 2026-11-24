@@ -44,8 +44,10 @@ real-vendor validation. It is a status page, not a marketing page.
   token-authenticated results. Step-up and audit cover
   every change and run.
 - Windows WSTEP enrollment, SyncML OMA-URI `Replace`/`Delete` delivery with applied-state
-  tracking and command history, wipe/restart/unenroll, security inventory (BitLocker, TPM,
-  Secure Boot, domain/Entra join) and Entra federated token validation.
+  tracking and command history, wipe/restart/unenroll, Fresh Start, DiagnosticLog archive
+  collection into R2, security inventory (BitLocker, TPM, Secure Boot, domain/Entra join),
+  Windows LAPS policy plus Entra-backed password reveal, Entra Graph BitLocker key
+  metadata/reveal/rotation and Entra federated token validation.
 - Autopilot hardware-hash import, Graph sync, deployment profiles and group assignment.
 - Android Enterprise signup, enrollment tokens, Pub/Sub, policy delivery, device
   inventory, installed-application inventory and commands.
@@ -101,7 +103,7 @@ These are implemented but not proven end to end in this repository.
 | Windows federated Entra   | Handshake fixture-tested, not real hardware                                                                                                                                                                                                                                                          |
 | Windows Autopilot         | OOBE not validated; timezone not sent to Graph                                                                                                                                                                                                                                                       |
 | Windows inventory         | None                                                                                                                                                                                                                                                                                                 |
-| Windows security          | BitLocker/TPM/Secure Boot/join nodes are fixture-tested, not validated across every Windows edition                                                                                                                                                                                                  |
+| Windows security          | BitLocker/TPM/Secure Boot/join nodes are fixture-tested, not validated across every Windows edition. Fresh Start, DiagnosticArchive, LAPS and BitLocker CSP payloads and Graph key paths are fixture-tested; no real Windows hardware or Entra tenant is available in this repository. |
 | Windows unenroll          | Server-initiated and `1226` device-initiated paths are unit-tested, not validated on real hardware                                                                                                                                                                                                   |
 | Android                   | Signup, Pub/Sub, QR/token enrollment, work-profile/fully-managed provisioning, policy convergence, reconciliation and commands are fixture-tested; not validated against real Google Cloud/managed devices                                                                                           |
 | Android apps              | Assigned apps merge into the policy (one entry per package) and are fixture-tested; no real-device validation and no Play approval flow                                                                                                                                                              |
@@ -180,6 +182,9 @@ These are implemented but not proven end to end in this repository.
       bootstrap token, and the re-enrolment recorded on the timeline.
 - [ ] VPP token uploaded and a licence installed.
 - [ ] FileVault escrow key generated, escrow profile deployed and a key revealed on a real Mac.
+- [ ] Windows LAPS policy delivered, `DeviceLocalCredential.Read.All` consented and a password revealed on a real Entra-joined Windows 11 22H2+ device.
+- [ ] `BitlockerKey.Read.All` is consented and a real Entra-joined, encrypted Windows device lists, reveals and rotates a BitLocker key.
+- [ ] Fresh Start (retain and remove modes) and diagnostic archive upload/download are exercised on real Windows hardware.
 - [ ] Activation Lock bypass code collected before Activation Lock is enabled, and revealed.
 - [ ] Recovery Lock set, verified and cleared on Apple silicon.
 - [ ] Pre-DDM fallback confirmed: a macOS 12/iOS 14 device receives profiles, not a DDM sync.

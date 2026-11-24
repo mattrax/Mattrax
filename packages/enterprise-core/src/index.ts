@@ -22,6 +22,8 @@ export {
 
 export { Db, type EnterpriseDb } from "./db.ts";
 
+export { isUniqueViolationForConstraint } from "./sqlErrors.ts";
+
 export {
   MAX_DEVICE_APPLICATIONS,
   clearDeviceApplications,

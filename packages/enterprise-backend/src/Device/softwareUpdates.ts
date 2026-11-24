@@ -10,12 +10,13 @@
  * A timeout, a non-2xx response, malformed JSON, an invalid payload or a
  * database error returns a state with `available: false` (or a stale catalog)
  * and the caller treats every macOS device as `unknown` rather than "up to
- * date". A failed refresh is remembered both in the database and in this
- * isolate, so a database write failure cannot turn every dashboard request
- * into another five-second timeout.
+ * date". A failed refresh is remembered both in the database and in the
+ * service-layer cache, so a database write failure cannot turn every dashboard
+ * request into another five-second timeout.
  */
 
-import { Effect, Option, Schema } from "effect";
+import { Context, Data, Deferred, Effect, Layer, Option, Ref, Schema, Stream } from "effect";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { eq } from "drizzle-orm";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { MacOsUpdateCatalog, parseSofaFeed } from "@mattrax/enterprise-domain";
@@ -59,51 +60,84 @@ export type LoadSoftwareUpdateCatalogOptions = {
   readonly timeoutMs?: number;
   readonly maxBytes?: number;
   readonly disabled?: boolean;
-  readonly fetch?: typeof globalThis.fetch;
+  /** Injectable Effect client. Omit only for explicitly offline callers. */
+  readonly httpClient?: HttpClient.HttpClient;
+  /** Per-layer in-flight refresh and failure memory. */
+  readonly cache?: SoftwareUpdateCache["Service"];
   /** Injectable clock so cache/cooldown boundaries are testable. */
   readonly now?: Date;
 };
 
-type FetchResult =
+export type SoftwareUpdateFetchResult =
   | { readonly ok: true; readonly catalog: MacOsUpdateCatalog }
   | { readonly ok: false; readonly error: string };
 
-/**
- * One in-flight refresh per feed URL in this isolate. Concurrent dashboard or
- * device-list requests that all see an expired cache share this promise instead
- * of each starting a fetch.
- */
-const inFlightFetches = new Map<string, Promise<FetchResult>>();
+type FailureCooldown = { readonly at: number; readonly error: string };
 
 /**
- * In-isolate failure memory. The database row is the shared cooldown, but a
- * database write can fail at exactly the wrong moment; without this map every
- * subsequent request would retry the feed and block on its timeout again.
+ * Refresh coalescing and failure memory belong to a Layer, not the module.
+ * Deferred shares the Effect result (including interruption) without leaving a
+ * Promise behind or continuing an abandoned fetch for another waiter.
  */
-const failureCooldowns = new Map<string, { readonly at: number; readonly error: string }>();
+export class SoftwareUpdateCache extends Context.Service<
+  SoftwareUpdateCache,
+  {
+    readonly refresh: (
+      key: string,
+      load: Effect.Effect<SoftwareUpdateFetchResult>,
+    ) => Effect.Effect<SoftwareUpdateFetchResult>;
+    readonly failures: Ref.Ref<Map<string, FailureCooldown>>;
+  }
+>()("@mattrax/enterprise-backend/SoftwareUpdateCache") {
+  static readonly make = Effect.gen(function* () {
+    const inFlight = yield* Ref.make(
+      new Map<string, Deferred.Deferred<SoftwareUpdateFetchResult>>(),
+    );
+    const failures = yield* Ref.make(new Map<string, FailureCooldown>());
 
-const feedKey = (sourceUrl: string) => `${SOFA_MACOS_FEED_ID}:${sourceUrl}`;
+    const refresh = Effect.fnUntraced(function* (
+      key: string,
+      load: Effect.Effect<SoftwareUpdateFetchResult>,
+    ) {
+      const candidate = yield* Deferred.make<SoftwareUpdateFetchResult>();
+      const existing = yield* Ref.modify(inFlight, (current) => {
+        const pending = current.get(key);
 
-const fetchOnce = (key: string, run: () => Promise<FetchResult>): Promise<FetchResult> => {
-  const existing = inFlightFetches.get(key);
+        return [pending, pending ? current : new Map(current).set(key, candidate)] as const;
+      });
 
-  if (existing) return existing;
+      if (existing) return yield* Deferred.await(existing);
 
-  const promise = run().finally(() => {
-    if (inFlightFetches.get(key) === promise) inFlightFetches.delete(key);
+      return yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const exit = yield* restore(load).pipe(Effect.exit);
+
+          yield* Deferred.done(candidate, exit);
+          yield* Ref.update(inFlight, (current) => {
+            if (current.get(key) !== candidate) return current;
+
+            const next = new Map(current);
+            next.delete(key);
+
+            return next;
+          });
+
+          return yield* exit;
+        }),
+      );
+    });
+
+    return SoftwareUpdateCache.of({ refresh, failures });
   });
 
-  inFlightFetches.set(key, promise);
+  static readonly layer = Layer.effect(SoftwareUpdateCache, SoftwareUpdateCache.make);
+}
 
-  return promise;
-};
+class PayloadTooLarge extends Data.TaggedError("PayloadTooLarge")<{
+  readonly reason: "payload_too_large";
+}> {}
 
-const classifyFetchFailure = (cause: unknown): string => {
-  if (cause instanceof Error && (cause.name === "AbortError" || cause.name === "TimeoutError"))
-    return "timeout";
-
-  return "fetch_failed";
-};
+const feedKey = (sourceUrl: string) => `${SOFA_MACOS_FEED_ID}:${sourceUrl}`;
 
 type BodyReadResult =
   | { readonly ok: true; readonly body: string }
@@ -121,105 +155,100 @@ const joinChunks = (chunks: ReadonlyArray<Uint8Array>, total: number) => {
   return bytes;
 };
 
-/**
- * Read a response body with a hard byte cap.
- *
- * `response.text()` materialises the whole body before the caller can check
- * its size, so a chunked or hostile mirror could exhaust the Worker's memory
- * before the length check runs. Reading the stream lets us cancel as soon as
- * the cap is crossed. The caller still uses the `content-length` header as a
- * cheap fast path when the server provides it.
- */
-const readBodyWithLimit = async (response: Response, maxBytes: number): Promise<BodyReadResult> => {
-  if (!response.body) return { ok: false, error: "read_failed" };
+/** Read a response stream with a hard byte cap and cancel as soon as it is crossed. */
+const readBodyWithLimit = (
+  response: HttpClientResponse.HttpClientResponse,
+  maxBytes: number,
+): Effect.Effect<BodyReadResult> =>
+  Effect.gen(function* () {
+    const chunks: Array<Uint8Array> = [];
+    let total = 0;
 
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
+    yield* response.stream.pipe(
+      Stream.runForEach((chunk) =>
+        Effect.gen(function* () {
+          const next = total + chunk.byteLength;
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
+          if (next > maxBytes) return yield* new PayloadTooLarge({ reason: "payload_too_large" });
 
-      if (done) break;
+          chunks.push(chunk);
+          total = next;
+        }),
+      ),
+    );
 
-      if (!value) continue;
+    return { ok: true, body: new TextDecoder().decode(joinChunks(chunks, total)) } as const;
+  }).pipe(
+    Effect.catchTag("PayloadTooLarge", () =>
+      Effect.succeed({ ok: false, error: "payload_too_large" } as const),
+    ),
+    Effect.catch(() => Effect.succeed({ ok: false, error: "read_failed" } as const)),
+  );
 
-      total += value.byteLength;
+const cancelResponseBody = (response: HttpClientResponse.HttpClientResponse): Effect.Effect<void> =>
+  Option.match(HttpClientResponse.toWeb(response), {
+    onNone: () => Effect.void,
+    onSome: (web) =>
+      Effect.promise(async () => {
+        await web.body?.cancel();
+      }).pipe(Effect.catchCause(() => Effect.void)),
+  });
 
-      if (total > maxBytes) {
-        await reader.cancel().catch(() => undefined);
-
-        return { ok: false, error: "payload_too_large" };
-      }
-
-      chunks.push(value);
-    }
-  } catch {
-    return { ok: false, error: "read_failed" };
-  } finally {
-    try {
-      reader.releaseLock();
-    } catch {
-      // A cancelled reader may already have released its lock.
-    }
-  }
-
-  return { ok: true, body: new TextDecoder().decode(joinChunks(chunks, total)) };
-};
-
-const fetchFeed = async (
+const fetchFeed = (
+  client: HttpClient.HttpClient,
   url: string,
-  fetcher: typeof globalThis.fetch,
   timeoutMs: number,
   maxBytes: number,
-): Promise<FetchResult> => {
-  let response: Response;
+): Effect.Effect<SoftwareUpdateFetchResult> =>
+  Effect.gen(function* () {
+    const response = yield* client.execute(
+      HttpClientRequest.get(url).pipe(HttpClientRequest.acceptJson),
+    );
 
-  try {
-    response = await fetcher(url, {
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch (error) {
-    return { ok: false, error: classifyFetchFailure(error) };
-  }
+    if (response.status < 200 || response.status > 299) {
+      const status = Math.trunc(response.status);
 
-  if (!response.ok) {
-    const status = Math.trunc(response.status);
+      yield* cancelResponseBody(response);
 
-    return {
-      ok: false,
-      error: Number.isFinite(status) && status > 0 ? `http_${status}` : "http_error",
-    };
-  }
+      return {
+        ok: false,
+        error: Number.isFinite(status) && status > 0 ? `http_${status}` : "http_error",
+      } as const;
+    }
 
-  const declared = Number(response.headers.get("content-length") ?? "");
+    const declared = Number(response.headers["content-length"] ?? "");
 
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    await response.body?.cancel().catch(() => undefined);
+    if (Number.isFinite(declared) && declared > maxBytes)
+      return yield* cancelResponseBody(response).pipe(
+        Effect.as({ ok: false, error: "payload_too_large" } as const),
+      );
 
-    return { ok: false, error: "payload_too_large" };
-  }
+    const read = yield* readBodyWithLimit(response, maxBytes);
 
-  const read = await readBodyWithLimit(response, maxBytes);
+    if (!read.ok) return read;
 
-  if (!read.ok) return read;
+    let json: Schema.Json | null;
 
-  let json: Schema.Json | null;
+    try {
+      json = Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(JSON.parse(read.body)));
+    } catch {
+      return { ok: false, error: "invalid_json" } as const;
+    }
 
-  try {
-    json = Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(JSON.parse(read.body)));
-  } catch {
-    return { ok: false, error: "invalid_json" };
-  }
+    if (json === null) return { ok: false, error: "invalid_json" } as const;
 
-  if (json === null) return { ok: false, error: "invalid_json" };
+    const catalog = parseSofaFeed(json);
 
-  const catalog = parseSofaFeed(json);
-
-  return catalog ? { ok: true, catalog } : { ok: false, error: "invalid_feed" };
-};
+    return catalog
+      ? ({ ok: true, catalog } as const)
+      : ({ ok: false, error: "invalid_feed" } as const);
+  }).pipe(
+    Effect.timeoutOrElse({
+      duration: timeoutMs,
+      orElse: () => Effect.succeed({ ok: false, error: "timeout" } as const),
+    }),
+    Effect.catch(() => Effect.succeed({ ok: false, error: "fetch_failed" } as const)),
+  );
 
 const decodeStoredCatalog = (payload: Schema.Json | null): MacOsUpdateCatalog | null =>
   Option.getOrNull(Schema.decodeUnknownOption(MacOsUpdateCatalog)(payload));
@@ -268,20 +297,13 @@ export const loadSoftwareUpdateCatalog = (
 
   const load = Effect.gen(function* () {
     const sourceUrl = configuredUrl;
-
     const key = feedKey(sourceUrl);
-
     const now = options.now ?? new Date();
-
     const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_SOFTWARE_UPDATE_CACHE_TTL_MS;
-
     const retryAfterFailureMs = options.retryAfterFailureMs ?? DEFAULT_SOFTWARE_UPDATE_RETRY_MS;
-
     const timeoutMs = options.timeoutMs ?? DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS;
-
     const maxBytes = options.maxBytes ?? MAX_SOFTWARE_UPDATE_FEED_BYTES;
-
-    const fetcher = options.fetch;
+    const cache = options.cache ?? (yield* SoftwareUpdateCache.make);
 
     if (options.disabled) return unavailableState(sourceUrl, "feed_disabled");
 
@@ -290,11 +312,13 @@ export const loadSoftwareUpdateCatalog = (
     // iterator. Wrapping it in a generator supports both and keeps the DB
     // failure handling in the Effect channel.
     const rows = yield* Effect.gen(function* () {
-      return yield* options.db
+      const result = yield* options.db
         .select()
         .from(options.schema.softwareUpdateFeed)
         .where(eq(options.schema.softwareUpdateFeed.id, SOFA_MACOS_FEED_ID))
         .limit(1);
+
+      return result as Array<FeedRow>;
     }).pipe(Effect.catch(() => Effect.succeed<FeedRow[] | null>(null)));
 
     if (rows === null) return unavailableState(sourceUrl, "database_error");
@@ -339,7 +363,7 @@ export const loadSoftwareUpdateCatalog = (
     if (lastError && sinceAttempt >= 0 && sinceAttempt < retryAfterFailureMs)
       return unavailableState(sourceUrl, lastError, catalog, catalog !== null, iso(fetchedAt));
 
-    const memoryFailure = failureCooldowns.get(key);
+    const memoryFailure = (yield* Ref.get(cache.failures)).get(key);
 
     if (
       memoryFailure &&
@@ -354,10 +378,10 @@ export const loadSoftwareUpdateCatalog = (
         iso(fetchedAt),
       );
 
-    // A caller that supplies no fetch is explicitly offline (for example the
+    // A caller that supplies no client is explicitly offline (for example the
     // in-process service used by unit tests). Never reach the network by
     // accident: serve the last catalog as stale or report unknown.
-    if (!fetcher)
+    if (!options.httpClient)
       return unavailableState(
         sourceUrl,
         "feed_unavailable",
@@ -391,23 +415,28 @@ export const loadSoftwareUpdateCatalog = (
             },
           });
       }).pipe(
-        Effect.catchCause(() =>
+        Effect.catch(() =>
           Effect.gen(function* () {
             yield* options.db
               .update(options.schema.softwareUpdateFeed)
               .set({ checkedAt: now, lastError: failure.slice(0, 64) })
               .where(eq(options.schema.softwareUpdateFeed.id, SOFA_MACOS_FEED_ID));
-          }).pipe(Effect.catchCause(() => Effect.void)),
+          }).pipe(Effect.catch(() => Effect.void)),
         ),
       );
 
-    const result = yield* Effect.tryPromise({
-      try: () => fetchOnce(key, () => fetchFeed(sourceUrl, fetcher, timeoutMs, maxBytes)),
-      catch: (cause) => classifyFetchFailure(cause),
-    }).pipe(Effect.catch((error) => Effect.succeed<FetchResult>({ ok: false, error })));
+    const result = yield* cache.refresh(
+      key,
+      fetchFeed(options.httpClient, sourceUrl, timeoutMs, maxBytes),
+    );
 
     if (!result.ok) {
-      failureCooldowns.set(key, { at: now.getTime(), error: result.error });
+      yield* Ref.update(cache.failures, (current) =>
+        new Map(current).set(key, {
+          at: now.getTime(),
+          error: result.error,
+        }),
+      );
 
       // Preserve the source URL of an existing row on failure. An operator who
       // switched mirrors should not lose the provenance of the cached payload
@@ -446,9 +475,14 @@ export const loadSoftwareUpdateCatalog = (
 
     if (!written) {
       // The fetch succeeded but the cache write did not. Remember it so the
-      // next request in this isolate does not immediately fetch again while
+      // next request in this layer does not immediately fetch again while
       // the database is unhealthy.
-      failureCooldowns.set(key, { at: now.getTime(), error: "cache_write_failed" });
+      yield* Ref.update(cache.failures, (current) =>
+        new Map(current).set(key, {
+          at: now.getTime(),
+          error: "cache_write_failed",
+        }),
+      );
 
       yield* persistFailure(row?.sourceUrl ?? sourceUrl, "cache_write_failed");
 
@@ -462,7 +496,12 @@ export const loadSoftwareUpdateCatalog = (
       };
     }
 
-    failureCooldowns.delete(key);
+    yield* Ref.update(cache.failures, (current) => {
+      const next = new Map(current);
+      next.delete(key);
+
+      return next;
+    });
 
     return {
       catalog: result.catalog,
@@ -472,13 +511,11 @@ export const loadSoftwareUpdateCatalog = (
       fetchedAt: iso(now),
       error: null,
     };
-  }).pipe(
-    Effect.catchCause(() => Effect.succeed(unavailableState(configuredUrl, "unexpected_error"))),
-  );
+  }).pipe(Effect.catch(() => Effect.succeed(unavailableState(configuredUrl, "unexpected_error"))));
 
   // SAFETY: every database and network failure is caught above, and the Db
   // service is already resolved by the caller's layer. The requirement channel
-  // inferred from the Drizzle Effect client is therefore `never` at runtime;
+  // inferred from the Drizzle Effect client is therefore never at runtime;
   // this annotation keeps it out of every API handler's error type.
-  return load;
+  return load as Effect.Effect<SoftwareUpdateCatalogState>;
 };

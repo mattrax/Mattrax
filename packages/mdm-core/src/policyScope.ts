@@ -1,12 +1,6 @@
-import {
-  applePayloadMinimumOs,
-  applePayloadOsVersions,
-  applePayloadRemovedIn,
-  compareOsVersion,
-} from "@mattrax/dm-apple";
-import type { AppleOsFamily } from "@mattrax/dm-apple";
-import { configurationPayloadTypes, parseConfigurationKind } from "./policy.ts";
-import type { ConfigurationKind } from "./policy.ts";
+import { WINDOWS_LAPS_MIN_BUILD } from "@mattrax/enterprise-domain";
+import { parseConfigurationKind } from "./configuration.ts";
+import type { ConfigurationKind } from "./configuration.ts";
 import { resolveEffectivePolicy } from "./policyResolution.ts";
 import type {
   ConfigurationScope,
@@ -22,6 +16,8 @@ import type {
   PolicyResolutionUserGroupAssignment,
 } from "./policyResolution.ts";
 import { scopeConfigurationsToDevice, windowsConfigurationMinimumBuild } from "./policySupport.ts";
+import type { AppleOsFamily, PolicySupportOptions } from "./policySupport.ts";
+import { compareOsVersion } from "./version.ts";
 
 /**
  * Hard cap on the device entries a scope response returns.
@@ -214,6 +210,7 @@ const platformOf = (kind: ConfigurationKind): PolicyPlatform | null => {
     case "android":
       return "android";
     case "windows":
+    case "windows-laps":
       return "windows";
     case "application":
     case "certificate":
@@ -296,6 +293,7 @@ const OS_FAMILY_ORDER: ReadonlyArray<AppleOsFamily> = [
  */
 export const derivePolicyPlatformSupport = async (
   configurations: ReadonlyArray<Pick<PolicyResolutionConfiguration, "kind" | "data" | "scope">>,
+  options: PolicySupportOptions = {},
 ): Promise<PolicyPlatformSupport> => {
   const platforms = new Set<PolicyPlatform>();
   const channels = new Set<PolicyChannel>();
@@ -314,7 +312,10 @@ export const derivePolicyPlatformSupport = async (
     platforms.add(platform);
 
     if (platform === "windows") {
-      const minimum = windowsConfigurationMinimumBuild(configuration.data);
+      const minimum =
+        parsed.type === "windows-laps"
+          ? "10.0." + WINDOWS_LAPS_MIN_BUILD
+          : windowsConfigurationMinimumBuild(configuration.data);
 
       if (minimum && (windowsMinimum === null || compareOsVersion(minimum, windowsMinimum) > 0))
         windowsMinimum = minimum;
@@ -323,10 +324,9 @@ export const derivePolicyPlatformSupport = async (
 
     if (platform !== "apple") continue;
 
-    const payloadTypes = await configurationPayloadTypes(
-      configuration.kind,
-      configuration.data ?? null,
-    );
+    const payloadTypes = options.apple
+      ? await options.apple.payloadTypes(configuration.kind, configuration.data ?? null)
+      : [];
 
     if (payloadTypes.length === 0) continue;
 
@@ -334,7 +334,7 @@ export const derivePolicyPlatformSupport = async (
     const configurationMinimums = new Map<AppleOsFamily, string>();
 
     for (const payloadType of payloadTypes) {
-      const versions = applePayloadOsVersions(payloadType);
+      const versions = options.apple!.payloadVersions(payloadType);
 
       if (versions.length === 0) continue;
       const families = new Set<AppleOsFamily>();
@@ -345,7 +345,7 @@ export const derivePolicyPlatformSupport = async (
         if (!family) continue;
 
         // A removed payload cannot be advertised as a `minimum+` range.
-        if (applePayloadRemovedIn(payloadType, family)) continue;
+        if (options.apple!.payloadRemoved(payloadType, family)) continue;
         families.add(family);
       }
 
@@ -360,7 +360,7 @@ export const derivePolicyPlatformSupport = async (
       }
 
       for (const family of families) {
-        const minimum = applePayloadMinimumOs(payloadType, family);
+        const minimum = options.apple!.payloadMinimum(payloadType, family);
 
         if (!minimum) continue;
         const existing = configurationMinimums.get(family);
@@ -668,6 +668,7 @@ const classifyPolicyOnChannel = async (args: {
   readonly result: EffectivePolicy;
   readonly device: PolicyScopeDevice;
   readonly channel: PolicyChannel;
+  readonly apple?: PolicySupportOptions["apple"];
 }): Promise<ChannelClassification> => {
   const { policy, configurations, result, device, channel } = args;
 
@@ -755,6 +756,7 @@ const classifyPolicyOnChannel = async (args: {
           ? "legacy"
           : "ddm"
         : "none",
+      { apple: args.apple },
     );
 
     deliveredKinds = scoped.delivered.map((configuration) => configuration.kind);
@@ -837,6 +839,7 @@ const entriesForPolicyOnDevice = async (args: {
   readonly facts: DeviceFacts;
   readonly policy: PolicyResolutionPolicy;
   readonly channels: ReadonlyArray<PolicyChannel>;
+  readonly apple?: PolicySupportOptions["apple"];
 }): Promise<Array<PolicyScopeDeviceEntry>> => {
   const { input, facts, policy, channels } = args;
 
@@ -888,6 +891,7 @@ const entriesForPolicyOnDevice = async (args: {
       result,
       device: facts.device,
       channel: "device",
+      apple: args.apple,
     });
 
     entries.push({
@@ -942,6 +946,7 @@ const entriesForPolicyOnDevice = async (args: {
           result,
           device: facts.device,
           channel: "user",
+          apple: args.apple,
         });
 
         entries.push({
@@ -989,6 +994,7 @@ const policyChannels = (
 export const resolvePolicyScope = async (
   input: PolicyScopeResolutionInput,
   policyId: string,
+  options: PolicySupportOptions = {},
 ): Promise<PolicyScopeSummary> => {
   const policy = input.policies.find((candidate) => candidate.id === policyId);
 
@@ -1008,7 +1014,7 @@ export const resolvePolicyScope = async (
     (configuration) => configuration.policyId === policyId,
   );
 
-  const support = await derivePolicyPlatformSupport(configurations);
+  const support = await derivePolicyPlatformSupport(configurations, options);
 
   const channels = policyChannels(configurations, policyId);
   const index = scopeIndex(input);
@@ -1022,6 +1028,7 @@ export const resolvePolicyScope = async (
         facts,
         policy,
         channels,
+        apple: options.apple,
       })),
     );
   }
@@ -1062,6 +1069,7 @@ export const resolvePolicyScope = async (
 export const resolveGroupScope = async (
   input: PolicyScopeResolutionInput,
   groupId: string,
+  options: PolicySupportOptions = {},
 ): Promise<GroupScopeSummary> => {
   const assigned = input.groupAssignments.filter((assignment) => assignment.groupId === groupId);
   const members = input.groupMembers.filter((member) => member.groupId === groupId);
@@ -1101,6 +1109,7 @@ export const resolveGroupScope = async (
           facts,
           policy,
           channels,
+          apple: options.apple,
         })),
       );
     }

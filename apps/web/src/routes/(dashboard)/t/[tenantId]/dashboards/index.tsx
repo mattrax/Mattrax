@@ -56,6 +56,7 @@ import {
   togglePinnedDashboard,
 } from "~/lib/pinned-dashboards";
 import { resolveTenantId } from "~/lib/tenant";
+import { isSubmitEnter } from "~/lib/ime";
 import { cn } from "~/lib/utils";
 
 export const route = {
@@ -495,7 +496,7 @@ export default function DashboardsPage() {
               value={name()}
               onInput={(event) => setName(event.currentTarget.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && name().trim() && !create.isPending) {
+                if (isSubmitEnter(event) && name().trim() && !create.isPending) {
                   event.preventDefault();
                   create.mutate();
                 }

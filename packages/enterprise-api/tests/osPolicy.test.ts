@@ -90,7 +90,6 @@ const makeContext = async () => {
     auth: auth as any,
     authSecret,
     // Tests run offline; the seeded cache row is enough for macOS evaluation.
-    softwareUpdateFetch: undefined,
     softwareUpdateCacheTtlMs: 6 * 60 * 60 * 1_000,
   });
 

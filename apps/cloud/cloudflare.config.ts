@@ -35,6 +35,21 @@ const configuredRateLimitBindings = () => {
     RATE_LIMITER_SCEP: rateLimitBinding("SCEP", 300),
   };
 
+  // A production Worker without these has no shared limiter at all: it falls
+  // back to per-isolate counters, so the effective ceiling is the configured
+  // limit multiplied by however many isolates are warm. That is easy to ship
+  // by accident, so say it loudly in the deploy log.
+  if (process.env.MATTRAX_PRODUCTION === "true") {
+    const missing = Object.entries(candidates)
+      .filter(([, binding]) => binding === undefined)
+      .map(([name]) => name);
+
+    if (missing.length > 0)
+      console.warn(
+        `[rate-limit] ${missing.join(", ")} not configured; those buckets fall back to per-isolate limits. Set MATTRAX_RATE_LIMIT_*_NAMESPACE to enable the shared limiter.`,
+      );
+  }
+
   return Object.fromEntries(Object.entries(candidates).filter((entry) => entry[1] !== undefined));
 };
 
@@ -130,8 +145,13 @@ export const apiWorker = {
     ),
     TRUSTED_ORIGINS: bindings.secret(),
     AUTH_SECRET: bindings.secret(),
-    /** Hosted services deployment for APNs billing and entitlements. */
-    SERVICES_URL: bindings.text(process.env.SERVICES_URL ?? "https://services.mattrax.app"),
+    /**
+     * Hosted services deployment for APNs, billing and entitlements. Empty
+     * selects the built-in `https://services.mattrax.app`; only tests and
+     * previews set it.
+     */
+    MATTRAX_SERVICES_URL: bindings.text(process.env.MATTRAX_SERVICES_URL ?? ""),
+    /** Shared services token: hosted billing bearer and APNs relay HMAC key. */
     SERVICES_TOKEN: bindings.secret(),
     /** Optional JSON plan catalogue; absent means unlimited plans. */
     MATTRAX_PLAN_LIMITS: bindings.secret(),
@@ -149,8 +169,6 @@ export const apiWorker = {
     CLOUD_APPLE_VENDOR_CERT: bindings.secret(),
     CLOUD_APPLE_VENDOR_KEY: bindings.secret(),
     // Apple profile signing is optional (see `useAppleProfileSigning` below).
-    APNS_RELAY_URL: bindings.secret(),
-    APNS_RELAY_SECRET: bindings.secret(),
     AZURE_CLIENT_ID: bindings.secret(),
     AZURE_CLIENT_SECRET: bindings.secret(),
     /** Deployment-wide Google Workspace directory sync (optional). */
@@ -214,6 +232,10 @@ export const apiWorker = {
     MATTRAX_ONBOARDING_REPLY_TO: bindings.secret(),
     /** Support address in the onboarding footer; defaults to the sender. */
     MATTRAX_ONBOARDING_SUPPORT_EMAIL: bindings.secret(),
+    /** Deployment brand used before an account has a tenant. */
+    MATTRAX_BRAND_NAME: bindings.text(process.env.MATTRAX_BRAND_NAME ?? ""),
+    MATTRAX_BRAND_LOGO_URL: bindings.text(process.env.MATTRAX_BRAND_LOGO_URL ?? ""),
+    MATTRAX_BRAND_COLOR: bindings.text(process.env.MATTRAX_BRAND_COLOR ?? ""),
     /**
      * Set to `true` only on a deployment that intentionally has no outbound
      * email. Readiness then reports `mailer: skipped` (degraded) instead of

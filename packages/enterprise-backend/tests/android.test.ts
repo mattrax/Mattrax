@@ -1,11 +1,13 @@
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { Schema } from "effect";
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
+import { FetchHttpClient } from "effect/http";
 import {
   AndroidManagement,
   base64UrlEncode,
-  clearJwksCache,
   GoogleApiError,
+  PubSubOidcVerifier,
+  PubSubOidcVerifierLive,
 } from "@mattrax/dm-android";
 import type { AndroidManagementService } from "@mattrax/dm-android";
 import {
@@ -103,6 +105,20 @@ const jwksFetch = (async () =>
     status: 200,
     headers: { "content-type": "application/json" },
   })) satisfies typeof globalThis.fetch;
+
+const makeVerifierLayer = (fetch: typeof globalThis.fetch = jwksFetch) =>
+  PubSubOidcVerifierLive({
+    audience,
+    serviceAccountEmail,
+    jwksUri,
+  }).pipe(
+    Layer.provide(
+      FetchHttpClient.layer.pipe(
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+        Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })),
+      ),
+    ),
+  );
 
 function base64Json(value: Schema.Json): string {
   const bytes = encoder.encode(JSON.stringify(value));
@@ -238,9 +254,15 @@ function makeAndroid(overrides: Partial<AndroidManagementService> = {}) {
 }
 
 const provideAndroid = <A, E>(
-  effect: Effect.Effect<A, E, AndroidManagement>,
+  effect: Effect.Effect<A, E, AndroidManagement | PubSubOidcVerifier>,
   service: AndroidManagementService,
-) => Effect.runPromise(effect.pipe(Effect.provideService(AndroidManagement, service)));
+) =>
+  Effect.runPromise(
+    effect.pipe(
+      Effect.provideService(AndroidManagement, service),
+      Effect.provide(makeVerifierLayer()),
+    ),
+  );
 
 function organizationRow(id: string, name: string) {
   return {
@@ -357,8 +379,6 @@ describe("Android Enterprise delivery", () => {
     publicJwk.alg = "RS256";
     publicJwk.use = "sig";
   });
-
-  beforeEach(() => clearJwksCache());
 
   it("reports unconfigured tenants and fails closed", async () => {
     const db = makeDb({
@@ -521,7 +541,6 @@ describe("Android Enterprise delivery", () => {
         origin: "https://mattrax.test",
         authorization: `Bearer ${token}`,
         body: pushBody(device, "ENROLLMENT"),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -549,7 +568,6 @@ describe("Android Enterprise delivery", () => {
         origin: "https://mattrax.test",
         authorization: `Bearer ${token}`,
         body: pushBody(device, "ENROLLMENT"),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -557,6 +575,48 @@ describe("Android Enterprise delivery", () => {
     expect(duplicate.status).toBe("duplicate");
     expect(db.store.device).toHaveLength(1);
     expect(calls.policies).toHaveLength(1);
+  });
+
+  it("shares one scoped JWKS cache across Pub/Sub deliveries", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+    });
+
+    const { service } = makeAndroid();
+    const token = await sign();
+    const body = pushBody({ name: deviceName, state: "ACTIVE" }, "ENROLLMENT");
+    let jwksRequests = 0;
+    const fetch: typeof globalThis.fetch = async () => {
+      jwksRequests++;
+
+      return jwksFetch();
+    };
+
+    const program = Effect.gen(function* () {
+      yield* handleAndroidPubSub({
+        db,
+        config,
+        authSecret: "test-secret",
+        origin: "https://mattrax.test",
+        authorization: `Bearer ${token}`,
+        body,
+      });
+      yield* handleAndroidPubSub({
+        db,
+        config,
+        authSecret: "test-secret",
+        origin: "https://mattrax.test",
+        authorization: `Bearer ${token}`,
+        body,
+      });
+    }).pipe(
+      Effect.provideService(AndroidManagement, service),
+      Effect.provide(makeVerifierLayer(fetch)),
+    );
+
+    await Effect.runPromise(program);
+    expect(jwksRequests).toBe(1);
   });
 
   it("records Android notifications and policy delivery in the organisation event log", async () => {
@@ -586,7 +646,6 @@ describe("Android Enterprise delivery", () => {
           origin: "https://mattrax.test",
           authorization: `Bearer ${token}`,
           body: pushBody(device, type, messageId),
-          fetch: jwksFetch,
         }),
         service,
       );
@@ -638,7 +697,10 @@ describe("Android Enterprise delivery", () => {
           config,
           origin: "https://mattrax.test",
           body,
-        }).pipe(Effect.provideService(AndroidManagement, service)),
+        }).pipe(
+          Effect.provideService(AndroidManagement, service),
+          Effect.provide(makeVerifierLayer()),
+        ),
       ),
     );
 
@@ -654,8 +716,10 @@ describe("Android Enterprise delivery", () => {
           origin: "https://mattrax.test",
           authorization: `Bearer ${wrongAudienceToken}`,
           body,
-          fetch: jwksFetch,
-        }).pipe(Effect.provideService(AndroidManagement, service)),
+        }).pipe(
+          Effect.provideService(AndroidManagement, service),
+          Effect.provide(makeVerifierLayer()),
+        ),
       ),
     );
 
@@ -671,8 +735,10 @@ describe("Android Enterprise delivery", () => {
           origin: "https://mattrax.test",
           authorization: `Bearer ${wrongIssuerToken}`,
           body,
-          fetch: jwksFetch,
-        }).pipe(Effect.provideService(AndroidManagement, service)),
+        }).pipe(
+          Effect.provideService(AndroidManagement, service),
+          Effect.provide(makeVerifierLayer()),
+        ),
       ),
     );
 
@@ -690,8 +756,10 @@ describe("Android Enterprise delivery", () => {
           origin: "https://mattrax.test",
           authorization: `Bearer ${tampered}`,
           body,
-          fetch: jwksFetch,
-        }).pipe(Effect.provideService(AndroidManagement, service)),
+        }).pipe(
+          Effect.provideService(AndroidManagement, service),
+          Effect.provide(makeVerifierLayer()),
+        ),
       ),
     );
 
@@ -721,7 +789,6 @@ describe("Android Enterprise delivery", () => {
         origin: "https://mattrax.test",
         authorization: `Bearer ${token}`,
         body: pushBody(foreign, "ENROLLMENT"),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -1501,7 +1568,6 @@ describe("Android remote actions", () => {
           "COMMAND",
           "command-message-1",
         ),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -1531,7 +1597,6 @@ describe("Android remote actions", () => {
           "COMMAND",
           "command-message-2",
         ),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -1591,7 +1656,6 @@ describe("Android remote actions", () => {
           "COMMAND",
           "command-message-eid",
         ),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -1804,7 +1868,6 @@ describe("Android device inventory", () => {
           origin: "https://mattrax.test",
           authorization: `Bearer ${token}`,
           body: pushBody(body, "STATUS_REPORT", messageId),
-          fetch: jwksFetch,
         }),
         service,
       );

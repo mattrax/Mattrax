@@ -187,6 +187,14 @@ Migrations are forward-only, so take a database dump and a `mattrax-data`
 backup before a version jump: rolling back to an older image may need that
 backup rather than only re-pinning `MATTRAX_VERSION`.
 
+### Breaking change: hosted services endpoints
+
+`APNS_RELAY_URL` and `MATTRAX_BILLING_URL` are no longer read. Remove them,
+and the old separate relay secret, from the container environment. Push and
+billing always use `https://services.mattrax.app`, and a custom relay is no
+longer supported. `MATTRAX_LICENSE_KEY` authenticates both the hosted relay
+and billing; without a licence the relay is disabled and devices poll.
+
 ## Building from source
 
 The compose file is pull-based by default. A checkout can build the same
@@ -281,27 +289,27 @@ set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
 
 A self-hosted install owns its database, storage, email and TLS. Two optional
 features use the hosted services origin at `https://services.mattrax.app`, and
-they are the only calls it makes there:
+they are the only calls it makes there. The origin is built into the release:
+there is no endpoint to configure.
 
-| Feature         | Configuration                                                                                    | Data sent                                                                                                                                                                     |
-| --------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| APNs push relay | `APNS_RELAY_URL` (default `https://services.mattrax.app/v1/apns/push`) and `MATTRAX_LICENSE_KEY` | Each device push: push token, push magic, topic and the tenant's APNs certificate and private key, which the relay uses to authenticate the request to Apple. It stores none. |
-| Licence billing | `MATTRAX_BILLING_URL` (default `https://services.mattrax.app`) and `MATTRAX_LICENSE_KEY`         | A daily count of enrolled devices and tenants, plus the licence summary, portal, checkout and invoice requests an owner starts.                                               |
+| Feature         | Configuration         | Data sent                                                                                                                                                                     |
+| --------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| APNs push relay | `MATTRAX_LICENSE_KEY` | Each device push: push token, push magic, topic and the tenant's APNs certificate and private key, which the relay uses to authenticate the request to Apple. It stores none. |
+| Licence billing | `MATTRAX_LICENSE_KEY` | A daily count of enrolled devices and tenants, plus the licence summary, portal, checkout and invoice requests an owner starts.                                               |
 
 The licence key is issued against the cloud billing account (see
-[Operations](/admin/operations#deployment-licences)). It authenticates both
-calls, so the deployment needs no second shared secret; `APNS_RELAY_SECRET`
-exists only for a caller that authenticates to the relay with an HMAC secret.
-The hosted relay holds the Apple connectivity and the Stripe secret, so the
-install does not need vendor APNs credentials to wake devices. Point
-`APNS_RELAY_URL` at your own relay to keep push inside your network; it must
-accept the same request format.
+[Operations](/admin/operations#deployment-licences)). It authenticates both the
+hosted relay and billing calls, so the deployment needs no separate shared
+secret. The hosted relay holds the Apple connectivity and the Stripe secret, so
+the install does not need vendor APNs credentials to wake devices. The release
+has no separate relay URL: a self-hosted install always wakes devices through
+the hosted relay. Without a licence the relay is disabled and devices poll for
+changes.
 
 Self-hosted deployments are billed to the operator for the whole deployment,
 based on enrolled devices. The install does not need its own Stripe account:
 
 ```bash
-MATTRAX_BILLING_URL=https://services.mattrax.app
 MATTRAX_LICENSE_KEY=mtx_lic_...
 ```
 
@@ -342,7 +350,7 @@ deployment exposes.
   is unusable. With no mail transport (or `MATTRAX_EMAIL_DISABLED=1`) `checks.mailer` is
   `skipped` and the overall status is `degraded` (HTTP 200) rather than unhealthy.
 - **Backups and restore.** The daily job writes tenant bundles into the `mattrax-data`
-  volume. Owners can pin, unpin, delete and restore them from Settings → General; a
+  volume. Owners can pin, unpin, delete and restore them from Settings → Backups; a
   restore runs in place and creates a pinned pre-restore snapshot first. See
   [Operations](/admin/operations#restoring-in-place). To move a tenant in or out of
   this deployment without re-enrolling devices, see

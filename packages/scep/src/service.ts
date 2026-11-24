@@ -2,7 +2,11 @@ import { Context, Effect, Layer, Schema } from "effect";
 import type * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
 import { ScepRepository } from "./repository.js";
-import type { ScepCaScope, ScepIssuedCertificate } from "./repository.js";
+import type {
+  ScepAuthenticationRequest,
+  ScepCaScope,
+  ScepIssuedCertificate,
+} from "./repository.js";
 import { randomCertificateSerial } from "./crypto.js";
 import { certificateFingerprintSha256, ensureScepCa } from "./ca.js";
 import {
@@ -100,7 +104,11 @@ export const ScepService = Layer.effect(
                 failInfo,
               ),
             catch: (cause) =>
-              new ScepError({ message: "Failed to build SCEP failure response", cause }),
+              new ScepError({
+                message: "Failed to build SCEP failure response",
+                reason: "internal",
+                cause,
+              }),
           });
 
         const csrValid = yield* Effect.tryPromise({
@@ -133,18 +141,32 @@ export const ScepService = Layer.effect(
           const anchors = yield* repo.trustedCaCertificates(scope, new Date());
           const anchorPems = anchors.length > 0 ? anchors : [ca.certPem];
 
-          const valid = yield* Effect.tryPromise({
-            try: async () => {
-              for (const anchorPem of anchorPems) {
-                const anchor = await pemToCert(anchorPem);
+          let valid = false;
 
-                if (await signer.verify(anchor)) return true;
-              }
+          for (const anchorPem of anchorPems) {
+            const anchor = yield* Effect.tryPromise({
+              try: () => pemToCert(anchorPem),
+              catch: (cause) =>
+                new ScepError({
+                  message: "Failed to parse a trusted SCEP CA certificate",
+                  reason: "internal",
+                  cause,
+                }),
+            });
+            const matches = yield* Effect.tryPromise({
+              try: () => signer.verify(anchor),
+              catch: () =>
+                new ScepError({
+                  message: "Failed to verify renewal signer",
+                  reason: "invalid_request",
+                }),
+            }).pipe(Effect.match({ onFailure: () => false, onSuccess: (value) => value }));
 
-              return false;
-            },
-            catch: (cause) => new ScepError({ message: "Failed to verify renewal signer", cause }),
-          }).pipe(Effect.match({ onFailure: () => false, onSuccess: (value) => value }));
+            if (matches) {
+              valid = true;
+              break;
+            }
+          }
 
           if (!valid) return yield* failureCertRep("1");
 
@@ -167,9 +189,38 @@ export const ScepService = Layer.effect(
             : undefined;
         } else {
           // Allow repository to authenticate/validate the incoming request before issuance.
-          const authenticated = yield* repo
-            .authenticatePkcsReq(scope, req)
-            .pipe(Effect.match({ onFailure: () => null, onSuccess: (value) => value ?? {} }));
+          const authenticationRequest: ScepAuthenticationRequest = {
+            transactionId: req.transactionId,
+            challengePassword: req.challengePassword,
+            renewal: req.renewal,
+            subject: req.csr.subject.typesAndValues.flatMap((attribute) => {
+              const value = attributeValue(attribute);
+
+              return value === undefined ? [] : [{ type: attribute.type, value }];
+            }),
+            signerCertificates: req.signerCerts.map((certificate) => {
+              const ou = certificate.subject.typesAndValues.find(
+                (attribute) => attribute.type === "2.5.4.11",
+              );
+              const organizationalUnit = ou ? attributeValue(ou) : undefined;
+
+              return {
+                serial: certificateSerialHex(certificate),
+                notAfter: certificate.notAfter.value,
+                organizationalUnit,
+              };
+            }),
+          };
+          // Only an expected challenge rejection becomes a SCEP failure
+          // CertRep. Database, key and configuration outages remain internal
+          // failures so the HTTP layer can report and metric them as 500s.
+          const authenticated = yield* repo.authenticatePkcsReq(scope, authenticationRequest).pipe(
+            Effect.catchIf(
+              (error) => error.reason !== "internal",
+              () => Effect.succeed(null),
+            ),
+            Effect.map((value) => value ?? {}),
+          );
 
           if (authenticated === null) return yield* failureCertRep("2");
           authentication = authenticated;
@@ -195,7 +246,11 @@ export const ScepService = Layer.effect(
         const publicKey = yield* Effect.tryPromise({
           try: () => req.csr.getPublicKey(),
           catch: (cause) =>
-            new ScepError({ message: "Failed to extract public key from CSR", cause }),
+            new ScepError({
+              message: "Failed to extract public key from CSR",
+              reason: "internal",
+              cause,
+            }),
         });
 
         const subject: Array<{ type: string; value: string }> = [];
@@ -224,7 +279,11 @@ export const ScepService = Layer.effect(
               notAfter,
             }),
           catch: (cause) =>
-            new ScepError({ message: "Failed to create device certificate", cause }),
+            new ScepError({
+              message: "Failed to create device certificate",
+              reason: "internal",
+              cause,
+            }),
         });
 
         if (repo.recordIssuedCertificate) {
@@ -252,7 +311,12 @@ export const ScepService = Layer.effect(
               req.senderNonce,
               req.signerCerts,
             ),
-          catch: (cause) => new ScepError({ message: "Failed to build SCEP CertRep", cause }),
+          catch: (cause) =>
+            new ScepError({
+              message: "Failed to build SCEP CertRep",
+              reason: "internal",
+              cause,
+            }),
         });
 
         return response;

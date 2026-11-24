@@ -66,6 +66,16 @@ const collectPredicates = (condition: any): Array<(row: Row) => boolean> => {
 
       if (op.toLowerCase().includes(" is null"))
         predicates.push((row) => (key in row ? row[key] : row[fallback]) == null);
+
+      if (op.includes(" > ") && "value" in param)
+        predicates.push(
+          (row) => comparable(key in row ? row[key] : row[fallback]) > comparable(param.value),
+        );
+
+      if (op.includes(" < ") && "value" in param)
+        predicates.push(
+          (row) => comparable(key in row ? row[key] : row[fallback]) < comparable(param.value),
+        );
     }
   }
 
@@ -522,6 +532,20 @@ const project = (fields: any, row: Row) => {
   );
 };
 
+type WriteOperation = "insert" | "update" | "delete";
+
+type WriteFailureRule = {
+  readonly operation: WriteOperation;
+  readonly table: string;
+  remaining: number;
+  readonly error: unknown;
+};
+
+type BeforeWrite = (
+  operation: WriteOperation,
+  table: string,
+) => { readonly error: unknown } | undefined;
+
 const prefix = (table: string, row: Row) =>
   Object.fromEntries(Object.entries(row).map(([key, value]) => [`${table}.${key}`, value]));
 
@@ -741,16 +765,17 @@ class SelectBuilder {
 class InsertBuilder {
   private readonly store: Store;
   private readonly table: string;
+  private readonly beforeWrite: BeforeWrite;
   private rows: Row[] = [];
 
-  constructor(store: Store, table: string) {
+  constructor(store: Store, table: string, beforeWrite: BeforeWrite) {
     this.store = store;
     this.table = table;
+    this.beforeWrite = beforeWrite;
   }
 
   values(value: Row | Row[]) {
     this.rows = Array.isArray(value) ? value : [value];
-    this.store[this.table].push(...this.rows.map((row) => ({ ...row })));
 
     return this;
   }
@@ -772,18 +797,28 @@ class InsertBuilder {
   }
 
   [Symbol.iterator]() {
-    return Effect.succeed(this.rows)[Symbol.iterator]();
+    return Effect.suspend(() => {
+      const failure = this.beforeWrite("insert", this.table);
+
+      if (failure) return Effect.fail(failure.error);
+
+      this.store[this.table].push(...this.rows.map((row) => ({ ...row })));
+
+      return Effect.succeed(this.rows);
+    })[Symbol.iterator]();
   }
 }
 
 class UpdateBuilder {
   private readonly store: Store;
   private readonly table: string;
+  private readonly beforeWrite: BeforeWrite;
   private patch: Row = {};
 
-  constructor(store: Store, table: string) {
+  constructor(store: Store, table: string, beforeWrite: BeforeWrite) {
     this.store = store;
     this.table = table;
+    this.beforeWrite = beforeWrite;
   }
 
   set(value: Row) {
@@ -793,42 +828,45 @@ class UpdateBuilder {
   }
 
   where(condition: any) {
-    let affectedRows = 0;
+    return Effect.suspend(() => {
+      const failure = this.beforeWrite("update", this.table);
 
-    for (const row of this.store[this.table]) {
-      if (matches(condition, row)) {
-        affectedRows++;
+      if (failure) return Effect.fail(failure.error);
 
-        for (const [key, value] of Object.entries(this.patch))
-          if (value !== undefined) row[key] = value;
+      let affectedRows = 0;
+
+      for (const row of this.store[this.table]) {
+        if (matches(condition, row)) {
+          affectedRows++;
+
+          for (const [key, value] of Object.entries(this.patch))
+            if (value !== undefined) row[key] = value;
+        }
       }
-    }
 
-    // Drizzle's MySQL update resolves to a result with `affectedRows`, which
-    // conditional claims rely on for compare-and-set semantics.
-    return Effect.succeed({ affectedRows });
+      // Drizzle's MySQL update resolves to a result with `affectedRows`, which
+      // conditional claims rely on for compare-and-set semantics.
+      return Effect.succeed({ affectedRows });
+    });
   }
 }
 
 class DeleteBuilder {
   private readonly store: Store;
   private readonly table: string;
+  private readonly beforeWrite: BeforeWrite;
+  private condition: any;
   private removed: Row[] = [];
 
-  constructor(store: Store, table: string) {
+  constructor(store: Store, table: string, beforeWrite: BeforeWrite) {
     this.store = store;
     this.table = table;
+    this.beforeWrite = beforeWrite;
   }
 
   where(condition: any) {
-    const kept: Row[] = [];
-
-    for (const row of this.store[this.table]) {
-      if (matches(condition, row)) this.removed.push(row);
-      else kept.push(row);
-    }
-
-    this.store[this.table] = kept;
+    this.condition = condition;
+    this.removed = [];
 
     return this;
   }
@@ -838,7 +876,22 @@ class DeleteBuilder {
   }
 
   [Symbol.iterator]() {
-    return Effect.succeed(this.removed)[Symbol.iterator]();
+    return Effect.suspend(() => {
+      const failure = this.beforeWrite("delete", this.table);
+
+      if (failure) return Effect.fail(failure.error);
+
+      const kept: Row[] = [];
+
+      for (const row of this.store[this.table]) {
+        if (matches(this.condition, row)) this.removed.push(row);
+        else kept.push(row);
+      }
+
+      this.store[this.table] = kept;
+
+      return Effect.succeed(this.removed);
+    })[Symbol.iterator]();
   }
 }
 
@@ -862,16 +915,48 @@ export const makeDb = (initial: Partial<Store> = {}) => {
     ]),
   );
 
+  const failures: Array<WriteFailureRule> = [];
+  const beforeWrite: BeforeWrite = (operation, table) => {
+    const index = failures.findIndex(
+      (rule) => rule.operation === operation && rule.table === table,
+    );
+
+    if (index === -1) return undefined;
+
+    const rule = failures[index];
+    rule.remaining -= 1;
+
+    if (rule.remaining > 0) return undefined;
+
+    failures.splice(index, 1);
+
+    return { error: rule.error };
+  };
+
   const db: any = {
     store,
     query,
-    insert: (table: any) => new InsertBuilder(store, tableName(table)),
-    update: (table: any) => new UpdateBuilder(store, tableName(table)),
-    delete: (table: any) => new DeleteBuilder(store, tableName(table)),
+    insert: (table: any) => new InsertBuilder(store, tableName(table), beforeWrite),
+    update: (table: any) => new UpdateBuilder(store, tableName(table), beforeWrite),
+    delete: (table: any) => new DeleteBuilder(store, tableName(table), beforeWrite),
+    failNextWrite: (
+      operation: WriteOperation,
+      table: string,
+      options: { readonly occurrence?: number; readonly error?: unknown } = {},
+    ) => {
+      failures.push({
+        operation,
+        table,
+        remaining: options.occurrence ?? 1,
+        error: options.error ?? new Error(`Injected ${operation} failure for ${table}`),
+      });
+
+      return db;
+    },
     select: (fields?: any) => new SelectBuilder(store, fields),
-    // The production Db wraps this work in one transaction. The fake runs it
-    // eagerly but restores the previous rows if it fails, so rollback paths are
-    // observable without a database.
+    // The production Db wraps this work in one transaction. The fake applies
+    // writes lazily and restores the previous rows on failure, so rollback and
+    // failure-injection paths are observable without a database.
     transaction: <A, E, R>(work: (tx: any) => Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
       const snapshot = Object.fromEntries(
         Object.entries(store).map(([name, rows]) => [name, rows.map((row) => ({ ...row }))]),

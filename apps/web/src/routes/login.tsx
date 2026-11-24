@@ -2,7 +2,6 @@ import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { BrandLogo } from "~/components/brand-logo";
 import { Button } from "~/components/ui/button";
-import { Option, Schema } from "effect";
 import { createSignal, onSettled, Show, untrack } from "solid-js";
 import { MfaPending } from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
@@ -11,11 +10,6 @@ import { errorMessage, raisedFailure } from "~/lib/errors";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
 const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
-
-const SsoStartResponse = Schema.Struct({
-  url: Schema.optional(Schema.String),
-  error: Schema.optional(Schema.String),
-});
 
 const looksLikeEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
@@ -29,6 +23,8 @@ const looksLikeEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valu
 export default function LoginPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const session = authClient.useSession();
+  const signedIn = () => Boolean(session().data?.user);
 
   // A one-off seed for the field, not a reactive dependency: read it outside
   // tracking so the component does not warn about an untracked reactive read.
@@ -107,21 +103,11 @@ export default function LoginPage() {
     setCheckingEmail(true);
 
     try {
-      const query = new URLSearchParams({ email: value });
-      const target = returnTo();
+      const result = await authClient.startSso(value, returnTo());
+      const url = result.error ? undefined : result.data?.url;
 
-      if (target) query.set("returnTo", target);
-
-      const response = await fetch(`/api/v1/sso/azure/start?${query.toString()}`, {
-        headers: { accept: "application/json" },
-      });
-
-      const body = Option.getOrUndefined(
-        Schema.decodeUnknownOption(SsoStartResponse)(await response.json().catch(() => ({}))),
-      );
-
-      setSsoUrl(body?.url ?? null);
-      setSsoAvailable(Boolean(body?.url));
+      setSsoUrl(url ?? null);
+      setSsoAvailable(Boolean(url));
     } catch {
       // An unreachable SSO service must not block passkey sign-in.
       setSsoUrl(null);
@@ -345,15 +331,39 @@ export default function LoginPage() {
           </Show>
         </Show>
 
-        <p class="mt-6 text-center text-sm text-stone-500">
-          Don't have an account?{" "}
-          <a
-            href="/register"
-            class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+        <Show
+          when={!session().isPending}
+          fallback={
+            <p class="mt-6 text-center text-sm" aria-hidden="true">
+              <span class="inline-block h-4 w-48 animate-pulse rounded bg-hover" />
+            </p>
+          }
+        >
+          <Show
+            when={!signedIn()}
+            fallback={
+              <p class="mt-6 text-center text-sm text-stone-500">
+                Already signed in.{" "}
+                <a
+                  href="/dashboard"
+                  class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+                >
+                  Open dashboard
+                </a>
+              </p>
+            }
           >
-            Sign up
-          </a>
-        </p>
+            <p class="mt-6 text-center text-sm text-stone-500">
+              Don't have an account?{" "}
+              <a
+                href="/register"
+                class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+              >
+                Sign up
+              </a>
+            </p>
+          </Show>
+        </Show>
 
         <p class="mt-2 text-center text-[12.5px] text-stone-500">
           Lost every passkey?{" "}

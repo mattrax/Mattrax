@@ -134,9 +134,7 @@ export function AccountActivity(props: { userId: string | undefined }) {
       if (filters().action) query.set("action", filters().action!);
       query.set("format", format);
 
-      const response = await fetch(`/api/v1/account/audit/export?${query}`, {
-        credentials: "include",
-      });
+      const response = await enterprise.request(`/api/v1/account/audit/export?${query}`);
 
       if (!response.ok) {
         const body = Option.getOrUndefined(decodeJson(await response.json().catch(() => "")));

@@ -13,7 +13,11 @@ import {
   TOTP_POLICY,
   authenticationRequirement,
 } from "@mattrax/enterprise-domain";
-import type { DeviceViewQuery, DynamicGroupRules } from "@mattrax/enterprise-domain";
+import type {
+  AppAuthDefinition,
+  DeviceViewQuery,
+  DynamicGroupRules,
+} from "@mattrax/enterprise-domain";
 import { defineRelations, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
@@ -218,7 +222,9 @@ export const authPasskeyFlows = mysqlTable(
  * generated table and layout types to `MySqlTable<TableConfig>`, so the concrete
  * drizzle column type is only available from the value itself. Annotating these
  * exports with the erased type breaks every `.update(table).set(...)` call. */
-export const AuthPersistenceConfig: any = AuthPersistence.make(AuthDefinition);
+export const AuthPersistenceConfig: any = AuthPersistence.make(
+  AuthDefinition as AppAuthDefinition & Parameters<typeof AuthPersistence.make>[0],
+);
 
 export const authStorage: any = AuthPersistenceConfig.managed({
   subjects: {
@@ -1700,7 +1706,7 @@ export const scimToken = mysqlTable(
  *   an operator action.
  *
  * `ip` stores the verified client address for security audit. It is the value
- * the rate limiter uses (`@mattrax/net` trust policy), never a caller-supplied
+ * the rate limiter uses (`@mattrax/cloud-services` trust policy), never a caller-supplied
  * `x-forwarded-for` hop; deployments that cannot prove an address store null.
  * `userAgent` is bounded to 512 characters. Certificate PEMs, tokens, payload
  * bodies and device secrets are never written here.
@@ -2342,6 +2348,10 @@ export const device = mysqlTable(
     domainName: shortText("domain_name"),
     /** Windows `DMClient/Provider/{ProviderID}/AADDeviceID`, when Entra joined. */
     entraDeviceId: shortText("entra_device_id"),
+    /** When BitLocker key metadata was last read from Microsoft Entra ID. */
+    bitLockerKeysSyncedAt: timestamp("bitlocker_keys_synced_at"),
+    /** Bounded Graph failure from the last BitLocker key sync. */
+    bitLockerKeysSyncError: text("bitlocker_keys_sync_error"),
     /**
      * Windows activation state reported by mattraxd's WMI sample.
      * Null for non-Windows devices and Windows devices without the agent.
@@ -2724,8 +2734,10 @@ export const androidDevice = mysqlTable(
  * remote actions (lock, wipe, app install) still use the classic command
  * protocol and are delivered on the next device check-in.
  *
- * Lifecycle: `queued` -> `sent` -> `deferred` (the device returned NotNow) ->
- * terminal (`succeeded`, `failed`, `expired`, `superseded`, `cancelled`).
+ * Lifecycle: `queued` -> `sent` -> `accepted` (device acknowledged an async
+ * command) / `deferred` (the device returned NotNow) -> terminal
+ * (`succeeded`, `failed`, `expired`, `superseded`, `cancelled`). An accepted
+ * command is never re-delivered; its result/status channel closes it.
  * `expiresAt` is the hard deadline derived from the per-request-type budget; a
  * command is never delivered or retried after it, even if the device only
  * comes back online weeks later.
@@ -2992,6 +3004,8 @@ export const deviceSecret = mysqlTable(
          * reveal never shows a password the device never applied.
          */
         "local_admin_password_pending",
+        /** Cached Windows LAPS password retrieved from Microsoft Entra ID. */
+        "windows_laps_password",
       ],
     }).notNull(),
     /** AES-256-GCM sealed value produced by `sealSecret`. */
@@ -3018,6 +3032,145 @@ export const deviceSecret = mysqlTable(
   (table) => [
     primaryKey({ columns: [table.deviceId, table.kind] }),
     index("device_secret_organization_idx").on(table.organizationId),
+  ],
+);
+
+/**
+ * One BitLocker recovery key known from Microsoft Entra ID for a Windows
+ * device. The list endpoint supplies metadata; an authorised reveal fetches
+ * the key with `$select=key` and caches it sealed here. Multiple volumes and
+ * keys coexist, hence the separate row rather than `device_secret`'s
+ * one-row-per-kind shape.
+ */
+export const deviceBitlockerKey = mysqlTable(
+  "device_bitlocker_key",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    /** `operating-system`, `fixed-data` or `removable-data`. */
+    volumeType: varchar("volume_type", { length: 32 }).notNull(),
+    /** Internal grouping label; Graph exposes volume type, not a volume UUID. */
+    volumeId: shortText("volume_id").notNull(),
+    /** BitLocker recovery key id returned by Microsoft Graph. */
+    keyId: shortText("key_id").notNull(),
+    /** `numeric-password` (48 digits) or `recovery-password` (legacy key). */
+    keyType: varchar("key_type", { length: 32 }).notNull(),
+    /**
+     * Microsoft Graph does not return the protector type. `entra-id` is the
+     * source; the key came from the BitLocker recovery key store.
+     */
+    protectorType: shortText("protector_type").notNull(),
+    /**
+     * AES-256-GCM sealed value produced by `sealSecret`. Null until an
+     * authorised reveal fetches `$select=key` from Graph and caches it.
+     */
+    sealedValue: text("sealed_value"),
+    /** Where the key metadata came from. */
+    source: varchar("source", { length: 16, enum: ["entra-id"] })
+      .notNull()
+      .default("entra-id"),
+    /** Entra `createdDateTime`: when the key was first backed up. */
+    capturedAt: timestamp("captured_at").notNull(),
+    /** When the replacement key was captured after a rotation. */
+    rotatedAt: timestamp("rotated_at"),
+    /** Last time Graph still listed this key. */
+    reportedAt: timestamp("reported_at").notNull(),
+    /** Set when a complete sync no longer contains this key. */
+    retiredAt: timestamp("retired_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("device_bitlocker_key_device_key_unique").on(table.deviceId, table.keyId),
+    index("device_bitlocker_key_organization_idx").on(table.organizationId, table.deviceId),
+    index("device_bitlocker_key_device_volume_idx").on(table.deviceId, table.volumeId),
+  ],
+);
+
+/**
+ * Windows LAPS metadata. The password itself is sealed in `device_secret`; this
+ * row records where it came from, when Entra last backed it up and the last
+ * reset status so the device page can warn about an expired password without
+ * reading the secret.
+ */
+export const deviceWindowsLaps = mysqlTable(
+  "device_windows_laps",
+  {
+    deviceId: id("device_id")
+      .primaryKey()
+      .references(() => device.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    accountName: shortText("account_name"),
+    accountSid: shortText("account_sid"),
+    /** Entra `backupDateTime` for the cached password. */
+    backupAt: timestamp("backup_at"),
+    /** Entra `refreshDateTime`; when Windows expects to rotate it. */
+    refreshAt: timestamp("refresh_at"),
+    retrievedAt: timestamp("retrieved_at"),
+    source: varchar("source", { length: 32, enum: ["entra-id", "active-directory", "unknown"] })
+      .notNull()
+      .default("unknown"),
+    /** When an operator last queued `LAPS/Actions/ResetPassword`. */
+    resetRequestedAt: timestamp("reset_requested_at"),
+    /** Bounded `ResetPasswordStatus` or the last retrieval failure. */
+    resetStatus: shortText("reset_status"),
+    lastError: text("last_error"),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [index("device_windows_laps_organization_idx").on(table.organizationId)],
+);
+
+/**
+ * One on-demand Windows diagnostic archive. The CSP uploads the ZIP to a
+ * short-lived signed URL; this row tracks the request, the uploaded object and
+ * its expiry. Only metadata is stored in MySQL; bytes live in R2.
+ */
+export const deviceDiagnosticsArchive = mysqlTable(
+  "device_diagnostics_archive",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    requestedByAccountId: shortText("requested_by_account_id").notNull(),
+    requestedByEmail: varchar("requested_by_email", { length: 320 }).notNull(),
+    /** The CSP `Collection/ID`; reused requests are ignored by Windows. */
+    collectionId: shortText("collection_id").notNull(),
+    /** The `device_command` that invoked ArchiveDefinition. */
+    commandId: shortText("command_id"),
+    status: varchar("status", { length: 16, enum: ["pending", "uploaded", "failed", "expired"] })
+      .notNull()
+      .default("pending"),
+    r2Key: text("r2_key"),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    sha256: shortText("sha256"),
+    contentType: varchar("content_type", { length: 64 }),
+    /** Bounded failure detail; never an upload token. */
+    error: text("error"),
+    requestedAt: timestamp("requested_at").notNull(),
+    uploadedAt: timestamp("uploaded_at"),
+    expiresAt: timestamp("expires_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("device_diagnostics_archive_device_requested_idx").on(table.deviceId, table.requestedAt),
+    index("device_diagnostics_archive_organization_requested_idx").on(
+      table.organizationId,
+      table.requestedAt,
+    ),
+    // Maintenance expires pending and uploaded rows by deadline, regardless
+    // of status, so the index must lead with `expires_at`.
+    index("device_diagnostics_archive_expires_idx").on(table.expiresAt),
   ],
 );
 
@@ -4864,6 +5017,9 @@ export const relations = defineRelations(
     deviceLocalAccount,
     deviceUserDeclaration,
     deviceSecret,
+    deviceBitlockerKey,
+    deviceWindowsLaps,
+    deviceDiagnosticsArchive,
     appleFdeEscrowKey,
     deviceApplication,
     applePushCertificate,

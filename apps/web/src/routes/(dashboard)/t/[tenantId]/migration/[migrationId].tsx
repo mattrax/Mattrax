@@ -171,14 +171,13 @@ export default function MigrationDetailPage(props: { embedded?: boolean } = {}) 
     try {
       const tenant = resolveTenantId(params.tenantId) ?? params.tenantId ?? "";
 
-      const response = await fetch(
+      const response = await enterprise.request(
         "/api/v1/tenants/" +
           encodeURIComponent(tenant) +
           "/migrations/" +
           encodeURIComponent(migrationId()) +
           "/export?format=" +
           format,
-        { credentials: "include" },
       );
 
       if (!response.ok) throw new Error("Export failed (" + response.status + ")");

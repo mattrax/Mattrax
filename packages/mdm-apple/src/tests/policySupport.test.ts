@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { describeSkippedConfigurations, scopeConfigurationsToDevice } from "@mattrax/mdm-core";
+import {
+  describeSkippedConfigurations,
+  scopeConfigurationsToDevice as scopeConfigurationsToDeviceBase,
+} from "@mattrax/mdm-core";
 import type { ConfigurationDelivery } from "@mattrax/mdm-core";
+import { applePolicySupport } from "../applePolicySupport.js";
+
+const scopeConfigurationsToDevice: typeof scopeConfigurationsToDeviceBase = (
+  configurations,
+  device,
+  mode,
+) => scopeConfigurationsToDeviceBase(configurations, device, mode, { apple: applePolicySupport });
 
 const configuration = (
   kind: string,

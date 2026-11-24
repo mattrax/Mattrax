@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Layer, Schema } from "effect";
+import { Clock, Context, Data, Duration, Effect, Exit, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { pemDecode } from "@mattrax/crypto";
 
@@ -11,6 +11,24 @@ export const DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token";
 const JWT_LIFETIME_SECONDS = 60 * 60;
 
 const TOKEN_EXPIRY_SKEW_MS = 60 * 1000;
+
+/** Header and body deadlines applied to every Google HTTP request. */
+export type GoogleHttpTimeouts = {
+  /** Time to receive response headers. Defaults to 10 seconds. */
+  readonly headers?: Duration.Input;
+  /** Time to consume the response body. Defaults to 30 seconds. */
+  readonly body?: Duration.Input;
+};
+
+const DEFAULT_HTTP_TIMEOUTS = {
+  headers: "10 seconds",
+  body: "30 seconds",
+} as const;
+
+type ResolvedHttpTimeouts = {
+  readonly headers: number;
+  readonly body: number;
+};
 
 const textEncoder = new TextEncoder();
 
@@ -41,6 +59,7 @@ export type ServiceAccountConfig = {
   readonly privateKeyPem: string;
   readonly projectId: string;
   readonly tokenUri?: string;
+  readonly httpTimeouts?: GoogleHttpTimeouts;
 };
 
 export type BuildJwtOptions = {
@@ -48,7 +67,7 @@ export type BuildJwtOptions = {
   readonly privateKeyPem: string;
   readonly audience?: string;
   readonly scope?: string;
-  /** Current time in seconds; defaults to `Date.now() / 1000`. */
+  /** Current time in seconds; defaults to the Effect clock. */
   readonly issuedAt?: number;
   readonly lifetimeSeconds?: number;
 };
@@ -108,7 +127,7 @@ export function buildServiceAccountJwt(
   return Effect.gen(function* () {
     const audience = options.audience ?? DEFAULT_TOKEN_URI;
     const scope = options.scope ?? ANDROID_MANAGEMENT_SCOPE;
-    const issuedAt = options.issuedAt ?? Math.floor(Date.now() / 1000);
+    const issuedAt = options.issuedAt ?? Math.floor((yield* Clock.currentTimeMillis) / 1000);
     const lifetime = options.lifetimeSeconds ?? JWT_LIFETIME_SECONDS;
     const key = yield* importServiceAccountKey(options.privateKeyPem);
 
@@ -138,7 +157,7 @@ export function buildServiceAccountJwt(
 
 const TokenResponse = Schema.Struct({
   access_token: Schema.String,
-  expires_in: Schema.optional(Schema.Number),
+  expires_in: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   token_type: Schema.optional(Schema.String),
   scope: Schema.optional(Schema.String),
 });
@@ -169,6 +188,48 @@ function errorDetail(text: string): string {
   return text.length > 500 ? `${text.slice(0, 500)}…` : text;
 }
 
+const resolveHttpTimeouts = Effect.fnUntraced(function* (
+  timeouts: GoogleHttpTimeouts | undefined,
+): Effect.fn.Return<ResolvedHttpTimeouts, GoogleApiError> {
+  const resolve = (name: keyof GoogleHttpTimeouts, fallback: Duration.Input) =>
+    Effect.gen(function* () {
+      const duration = Duration.fromInput(timeouts?.[name] ?? fallback);
+
+      if (Option.isNone(duration)) {
+        return yield* Effect.fail(
+          new GoogleApiError({ message: `Google HTTP ${name} timeout is invalid` }),
+        );
+      }
+
+      const millis = Duration.toMillis(duration.value);
+
+      if (!Number.isFinite(millis) || millis <= 0) {
+        return yield* Effect.fail(
+          new GoogleApiError({
+            message: `Google HTTP ${name} timeout must be positive and finite`,
+          }),
+        );
+      }
+
+      return millis;
+    });
+
+  return {
+    headers: yield* resolve("headers", DEFAULT_HTTP_TIMEOUTS.headers),
+    body: yield* resolve("body", DEFAULT_HTTP_TIMEOUTS.body),
+  };
+});
+
+const withDeadline =
+  (duration: number, message: string) =>
+  <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E | GoogleApiError> =>
+    effect.pipe(
+      Effect.timeoutOrElse({
+        duration,
+        orElse: () => Effect.fail(new GoogleApiError({ message })),
+      }),
+    );
+
 /**
  * Exchange a signed service account JWT at Google's token endpoint using the
  * `urn:ietf:params:oauth:grant-type:jwt-bearer` grant.
@@ -177,8 +238,10 @@ export function exchangeServiceAccountJwt(options: {
   readonly tokenUri: string;
   readonly assertion: string;
   readonly client: HttpClient.HttpClient;
+  readonly timeouts?: GoogleHttpTimeouts;
 }): Effect.Effect<AccessToken, GoogleApiError> {
   return Effect.gen(function* () {
+    const timeouts = yield* resolveHttpTimeouts(options.timeouts);
     const body = new URLSearchParams({
       grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
       assertion: options.assertion,
@@ -189,18 +252,18 @@ export function exchangeServiceAccountJwt(options: {
       HttpClientRequest.bodyText(body),
     );
 
-    const response = yield* options.client
-      .execute(request)
-      .pipe(
-        Effect.mapError(
-          (cause) => new GoogleApiError({ message: "Google token request failed", cause }),
-        ),
-      );
+    const response = yield* options.client.execute(request).pipe(
+      Effect.mapError(
+        (cause) => new GoogleApiError({ message: "Google token request failed", cause }),
+      ),
+      withDeadline(timeouts.headers, "Google token request timed out waiting for headers"),
+    );
 
     const text = yield* response.text.pipe(
       Effect.mapError(
         (cause) => new GoogleApiError({ message: "Failed to read Google token response", cause }),
       ),
+      withDeadline(timeouts.body, "Google token response body timed out"),
     );
 
     if (response.status < 200 || response.status > 299) {
@@ -224,11 +287,12 @@ export function exchangeServiceAccountJwt(options: {
     );
 
     const lifetimeSeconds = decoded.expires_in ?? JWT_LIFETIME_SECONDS;
+    const now = yield* Clock.currentTimeMillis;
 
     return {
       accessToken: decoded.access_token,
       tokenType: decoded.token_type ?? "Bearer",
-      expiresAt: Date.now() + lifetimeSeconds * 1000 - TOKEN_EXPIRY_SKEW_MS,
+      expiresAt: now + lifetimeSeconds * 1000 - TOKEN_EXPIRY_SKEW_MS,
     } satisfies AccessToken;
   });
 }
@@ -268,24 +332,39 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
     Effect.gen(function* () {
       const client = yield* HttpClient.HttpClient;
       const tokenUri = config.tokenUri ?? DEFAULT_TOKEN_URI;
-      let cached: AccessToken | undefined;
+      // Layer configuration is static; an invalid deadline is a programmer
+      // error rather than a per-request failure.
+      const timeouts = yield* resolveHttpTimeouts(config.httpTimeouts).pipe(Effect.orDie);
 
-      const accessToken = () =>
-        Effect.gen(function* () {
-          if (cached && cached.expiresAt > Date.now()) return cached;
-
-          const assertion = yield* buildServiceAccountJwt({
-            clientEmail: config.clientEmail,
-            privateKeyPem: config.privateKeyPem,
-            audience: tokenUri,
-            scope: ANDROID_MANAGEMENT_SCOPE,
-          });
-
-          const token = yield* exchangeServiceAccountJwt({ tokenUri, assertion, client });
-          cached = token;
-
-          return token;
+      const refresh = Effect.fnUntraced(function* (): Effect.fn.Return<
+        { readonly token: AccessToken; readonly timeToLive: number },
+        GoogleError
+      > {
+        const assertion = yield* buildServiceAccountJwt({
+          clientEmail: config.clientEmail,
+          privateKeyPem: config.privateKeyPem,
+          audience: tokenUri,
+          scope: ANDROID_MANAGEMENT_SCOPE,
         });
+
+        const token = yield* exchangeServiceAccountJwt({
+          tokenUri,
+          assertion,
+          client,
+          timeouts,
+        });
+        const now = yield* Clock.currentTimeMillis;
+
+        return {
+          token,
+          timeToLive: Math.max(0, token.expiresAt - now),
+        };
+      });
+
+      const [cached, invalidate] = yield* Effect.cachedInvalidateWithTTL(refresh(), (exit) =>
+        Exit.isSuccess(exit) ? exit.value.timeToLive : 0,
+      );
+      const accessToken = () => cached.pipe(Effect.map((entry) => entry.token));
 
       const send = (request: AuthorizedVoidRequest) =>
         Effect.gen(function* () {
@@ -308,16 +387,18 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
             );
           }
 
-          const response = yield* client
-            .execute(httpRequest)
-            .pipe(
-              Effect.mapError((cause) => new GoogleApiError({ message: `${label} failed`, cause })),
-            );
+          const response = yield* client.execute(httpRequest).pipe(
+            Effect.mapError((cause) => new GoogleApiError({ message: `${label} failed`, cause })),
+            withDeadline(timeouts.headers, `${label} timed out waiting for headers`),
+          );
+
+          if (response.status === 401) yield* invalidate;
 
           const text = yield* response.text.pipe(
             Effect.mapError(
               (cause) => new GoogleApiError({ message: `Failed to read ${label} response`, cause }),
             ),
+            withDeadline(timeouts.body, `${label} response body timed out`),
           );
 
           if (response.status < 200 || response.status > 299) {

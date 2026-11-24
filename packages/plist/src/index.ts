@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Predicate, Schema } from "effect";
 import { parse as fastPlistParse } from "fast-plist";
 import { PlistParseError, PlistSerializeError, PlistValue } from "./schema.js";
 import type { PlistValue as PlistValueType } from "./schema.js";
@@ -12,6 +12,28 @@ const PlistDictionary = Schema.Record(Schema.String, PlistValue);
 const PlistBytes = Schema.instanceOf(Uint8Array);
 
 const PlistDate = Schema.instanceOf(Date);
+
+type PlistSerializationInput = PlistValueType | null | undefined;
+
+const normalizeForSerialization = (value: PlistSerializationInput): PlistValueType => {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.map(normalizeForSerialization);
+
+  if (
+    Predicate.isObject(value) &&
+    !(value instanceof Date) &&
+    !(value instanceof Uint8Array) &&
+    !(value instanceof ArrayBuffer)
+  )
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        normalizeForSerialization(item as PlistSerializationInput),
+      ]),
+    );
+
+  return value as PlistValueType;
+};
 
 export const parsePlist = (content: string): Effect.Effect<PlistValue, PlistParseError> =>
   Effect.try({
@@ -37,7 +59,7 @@ function serializeValue(value: PlistValueType): string {
     return value ? "<true/>" : "<false/>";
   }
 
-  if (Schema.is(Schema.Number)(value)) {
+  if (Schema.is(Schema.Finite)(value)) {
     if (Number.isInteger(value)) {
       return `<integer>${value}</integer>`;
     }
@@ -81,7 +103,11 @@ function serializeValue(value: PlistValueType): string {
 export const serializePlist = (value: PlistValueType): Effect.Effect<string, PlistSerializeError> =>
   Effect.try({
     try: () => {
-      const body = serializeValue(value);
+      // Validate before emitting XML. In particular, NaN and infinities are
+      // valid JavaScript numbers but not valid plist <real> values.
+      const body = serializeValue(
+        Schema.decodeUnknownSync(PlistValue)(normalizeForSerialization(value)),
+      );
 
       return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

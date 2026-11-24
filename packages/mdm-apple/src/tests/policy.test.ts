@@ -6,16 +6,19 @@ import {
   buildConfigurationDeclaration,
   buildLegacyProfile,
   certificateAllowsOrganization,
-  configurationAssetIdentifier,
   configurationProfileUrl,
   configurationServerToken,
   parseAppleApplicationConfiguration,
+  validateConfiguration,
+} from "../policy.js";
+import {
+  configurationAssetIdentifier,
   splitConfigurationAssetIdentifier,
   splitConfigurationDeclarationIdentifier,
-  validateConfiguration,
   windowsPolicyNodes,
 } from "@mattrax/mdm-core";
-import type { DeclarationContext, PolicyConfigurationRow } from "@mattrax/mdm-core";
+import type { DeclarationContext } from "../policy.js";
+import type { PolicyConfigurationRow } from "@mattrax/mdm-core";
 
 const context: DeclarationContext = {
   origin: "https://mdm.example.com",

@@ -11,6 +11,7 @@ import {
   DeviceRow,
   EffectivePolicyResponse,
   normalizeDeviceCommandStatus,
+  WINDOWS_COMMAND_REQUEST_LABELS,
 } from "@mattrax/enterprise-domain/client";
 import type {
   DeviceActionName,
@@ -248,6 +249,447 @@ function MetaRow(props: { label: string; children: JSX.Element }) {
       <dt class="shrink-0 text-[12px] text-muted-foreground">{props.label}</dt>
       <dd class="min-w-0 break-words text-right text-[12.5px] text-foreground">{props.children}</dd>
     </div>
+  );
+}
+
+const formatArchiveBytes = (value?: number | null) =>
+  value === null || value === undefined
+    ? "—"
+    : new Intl.NumberFormat(undefined, { style: "unit", unit: "megabyte", maximumFractionDigits: 1 })
+        .format(value / 1024 / 1024);
+
+function WindowsSecretPrompt(): string | undefined {
+  const reason = window.prompt(
+    "Why are you reading this secret? The reason is recorded in the device audit log.",
+  );
+
+  if (reason === null) return undefined;
+
+  if (reason.trim().length < 5) {
+    window.alert("Give a reason of at least 5 characters.");
+    return undefined;
+  }
+
+  return reason.trim();
+}
+
+/**
+ * Windows security state that is not part of the generic device row: LAPS
+ * policy and password age, BitLocker escrow coverage, rotation state and the
+ * short-lived diagnostic archive list. Secret values are fetched only by an
+ * explicit, audited reveal and are never kept in the query cache.
+ */
+function WindowsSecurityCard(props: {
+  tenantId: string | undefined;
+  deviceId: string | undefined;
+  canCommand: boolean;
+  canReveal: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [revealed, setRevealed] = createSignal<string | null>(null);
+
+  const security = useQuery(() => ({
+    queryKey: ["enterprise", "windows-security", props.tenantId, props.deviceId],
+    queryFn: () => enterprise.getDeviceWindowsSecurity(props.tenantId, props.deviceId),
+    enabled: Boolean(props.tenantId && props.deviceId),
+  }));
+
+  const diagnostics = useQuery(() => ({
+    queryKey: ["enterprise", "windows-diagnostics", props.tenantId, props.deviceId],
+    queryFn: () => enterprise.listDeviceDiagnostics(props.tenantId, props.deviceId),
+    enabled: Boolean(props.tenantId && props.deviceId),
+  }));
+
+  const refresh = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ["enterprise", "windows-security", props.tenantId, props.deviceId],
+    });
+    await queryClient.invalidateQueries({
+      queryKey: ["enterprise", "windows-diagnostics", props.tenantId, props.deviceId],
+    });
+  };
+
+  const revealLaps = useMutation(() => ({
+    mutationFn: (reason: string) =>
+      enterprise.getDeviceLapsPassword(props.tenantId, props.deviceId, reason),
+    onSuccess: async (response) => {
+      const result = response.body;
+      setRevealed(
+        "Local administrator: " +
+          result.username +
+          "\nPassword: " +
+          result.password +
+          (result.expired ? "\n\nWarning: this password is past the policy age and may no longer work." : ""),
+      );
+      await refresh();
+    },
+  }));
+
+  const revealBitlocker = useMutation(() => ({
+    mutationFn: (input: { keyId: string; reason: string }) =>
+      enterprise.revealDeviceBitlockerKey(
+        props.tenantId,
+        props.deviceId,
+        input.keyId,
+        input.reason,
+      ),
+    onSuccess: async (response) => {
+      const result = response.body;
+      setRevealed(
+        "BitLocker recovery key (" +
+          result.volumeType +
+          ")\nKey ID: " +
+          result.keyId +
+          "\nKey: " +
+          result.recoveryKey,
+      );
+      await refresh();
+    },
+  }));
+
+  const rotateBitlocker = useMutation(() => ({
+    mutationFn: () => enterprise.deviceAction(props.tenantId, props.deviceId, {
+      action: "rotate-bitlocker-key",
+    }),
+    onSuccess: refresh,
+  }));
+
+  const rotateLaps = useMutation(() => ({
+    mutationFn: () => enterprise.deviceAction(props.tenantId, props.deviceId, {
+      action: "rotate-local-admin-password",
+    }),
+    onSuccess: refresh,
+  }));
+
+  const collectDiagnostics = useMutation(() => ({
+    mutationFn: () => enterprise.deviceAction(props.tenantId, props.deviceId, {
+      action: "collect-diagnostics",
+    }),
+    onSuccess: refresh,
+  }));
+
+  return (
+    <DetailCard
+      title="Windows security"
+      description="Windows LAPS, BitLocker escrow and diagnostic archives. Secrets are revealed only through an audited, step-up request."
+      action={
+        <Show
+          when={
+            props.canCommand &&
+            security.data?.laps.configured &&
+            security.data.laps.backupDirectory !== "disabled"
+          }
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={rotateLaps.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  "Rotate the Windows LAPS password now? Windows generates a new password on the next check-in; whether it is backed up depends on the LAPS policy's backup directory.",
+                )
+              )
+                rotateLaps.mutate();
+            }}
+          >
+            {rotateLaps.isPending ? "Rotating…" : "Rotate LAPS password"}
+          </Button>
+        </Show>
+      }
+    >
+      <Show
+        when={security.data}
+        fallback={
+          <Show when={security.isError} fallback={<SkeletonRows rows={5} />}>
+            <QueryError error={security.error} onRetry={() => void security.refetch()} />
+          </Show>
+        }
+      >
+        {(state) => (
+          <div class="space-y-4">
+            <div>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-[12.5px] font-medium text-foreground">Windows LAPS</h3>
+                <Chip
+                  tone={
+                    state().laps.passwordExpired
+                      ? "warning"
+                      : state().laps.configured
+                        ? "success"
+                        : "muted"
+                  }
+                >
+                  {state().laps.passwordExpired
+                    ? "Password expired"
+                    : state().laps.configured
+                      ? "Policy configured"
+                      : "Not configured"}
+                </Chip>
+              </div>
+              <dl class="mt-1">
+                <MetaRow label="Policy">{state().laps.policyId ?? "None applies"}</MetaRow>
+                <MetaRow label="Managed account">
+                  {state().laps.accountName ?? "Built-in administrator"}
+                </MetaRow>
+                <MetaRow label="Backup directory">
+                  {state().laps.backupDirectory ?? "Not configured"}
+                </MetaRow>
+                <MetaRow label="Password backed up">
+                  {state().laps.passwordBackedUpAt
+                    ? formatDate(state().laps.passwordBackedUpAt)
+                    : "Not yet"}
+                </MetaRow>
+                <MetaRow label="Next Entra refresh">
+                  {state().laps.passwordRefreshAt
+                    ? formatDate(state().laps.passwordRefreshAt)
+                    : "Not reported"}
+                </MetaRow>
+                <MetaRow label="Password age">
+                  {state().laps.passwordAgeDays === null || state().laps.passwordAgeDays === undefined
+                    ? "Unknown"
+                    : state().laps.passwordAgeDays + " day(s)"}
+                </MetaRow>
+              </dl>
+              <Show when={state().laps.reason}>
+                {(reason) => (
+                  <p class="mt-2 rounded-lg bg-surface p-2.5 text-[11.5px] text-muted-foreground">
+                    {reason()}
+                  </p>
+                )}
+              </Show>
+              <Show when={state().laps.lastError}>
+                {(error) => <p class="mt-2 text-[11.5px] text-warning">{error()}</p>}
+              </Show>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <Show when={props.canReveal && state().laps.retrievable}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={revealLaps.isPending}
+                    onClick={() => {
+                      const reason = WindowsSecretPrompt();
+                      if (reason) revealLaps.mutate(reason);
+                    }}
+                  >
+                    {revealLaps.isPending ? "Reading…" : "Show local administrator password"}
+                  </Button>
+                </Show>
+                <Show when={state().laps.rotationInProgress}>
+                  <Chip tone="warning">Rotation in progress</Chip>
+                </Show>
+                <Show when={state().laps.resetStatus}>
+                  {(status) => (
+                    <span class="text-[11px] text-muted-foreground">
+                      Reset status: {status()}
+                    </span>
+                  )}
+                </Show>
+              </div>
+              <ErrorText error={revealLaps.error} />
+            </div>
+
+            <div class="border-t border-border pt-4">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-[12.5px] font-medium text-foreground">BitLocker recovery</h3>
+                <Chip
+                  tone={
+                    !state().bitlocker.encrypted
+                      ? "muted"
+                      : state().bitlocker.keys.length > 0
+                        ? "success"
+                        : "warning"
+                  }
+                >
+                  {!state().bitlocker.encrypted
+                    ? "Not encrypted"
+                    : state().bitlocker.keys.length > 0
+                      ? state().bitlocker.keys.length + " key(s) escrowed"
+                      : "No key escrowed"}
+                </Chip>
+              </div>
+              <Show when={state().bitlocker.reason}>
+                {(reason) => (
+                  <p class="mt-2 rounded-lg bg-surface p-2.5 text-[11.5px] text-muted-foreground">
+                    {reason()}
+                  </p>
+                )}
+              </Show>
+              <Show
+                when={state().bitlocker.keys.length > 0}
+                fallback={
+                  <p class="mt-2 text-[11.5px] text-muted-foreground">
+                    No recovery key is stored in Microsoft Entra ID. The device must be
+                    encrypted, Entra joined or hybrid joined, and configured to back up
+                    BitLocker recovery information to Entra.
+                  </p>
+                }
+              >
+                <ul class="mt-2 divide-y divide-border rounded-lg border border-border">
+                  <For each={state().bitlocker.keys}>
+                    {(key) => (
+                      <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[11.5px]">
+                        <span class="min-w-0">
+                          <span class="block font-medium text-foreground">
+                            {key.volumeType}
+                          </span>
+                          <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
+                            key {key.keyId} · {key.keyType} · captured {formatDate(key.capturedAt)}
+                          </span>
+                        </span>
+                        <span class="flex items-center gap-2">
+                          <Chip tone={key.health === "stale" ? "warning" : "muted"}>
+                            {key.health === "stale" ? "Stale · " + key.ageDays + "d" : key.ageDays + "d"}
+                          </Chip>
+                          <span class="text-[10.5px] text-muted-foreground" title={key.source}>
+                            {key.keyAvailable ? "cached" : "fetch on reveal"}
+                          </span>
+                          <Show when={props.canReveal}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={revealBitlocker.isPending}
+                              onClick={() => {
+                                const reason = WindowsSecretPrompt();
+                                if (reason)
+                                  revealBitlocker.mutate({ keyId: key.id, reason });
+                              }}
+                            >
+                              Reveal
+                            </Button>
+                          </Show>
+                        </span>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <Show when={props.canCommand && state().bitlocker.encrypted && state().bitlocker.joined}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={rotateBitlocker.isPending || state().bitlocker.rotationInProgress}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Rotate every BitLocker recovery password? The device queues RotateRecoveryPasswords; the new key is read from Microsoft Entra ID on the next sync.",
+                        )
+                      )
+                        rotateBitlocker.mutate();
+                    }}
+                  >
+                    {rotateBitlocker.isPending ? "Requesting…" : "Rotate BitLocker keys"}
+                  </Button>
+                </Show>
+                <Show when={state().bitlocker.rotationStatus}>
+                  {(status) => (
+                    <span class="text-[11px] text-muted-foreground">Status: {status()}</span>
+                  )}
+                </Show>
+                <Show when={state().bitlocker.lastRotationAt}>
+                  {(at) => <span class="text-[11px] text-muted-foreground">Key replaced {formatDate(at())}</span>}
+                </Show>
+                <Show when={state().bitlocker.lastSyncedAt}>
+                  {(at) => (
+                    <span class="text-[11px] text-muted-foreground">
+                      Entra key list {formatDate(at())}
+                    </span>
+                  )}
+                </Show>
+              </div>
+              <ErrorText error={revealBitlocker.error ?? rotateBitlocker.error} />
+            </div>
+
+            <div class="border-t border-border pt-4">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3 class="text-[12.5px] font-medium text-foreground">Diagnostic archives</h3>
+                <Show when={props.canCommand && diagnostics.data?.supported}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={collectDiagnostics.isPending}
+                    onClick={() => collectDiagnostics.mutate()}
+                  >
+                    {collectDiagnostics.isPending ? "Requesting…" : "Collect diagnostics"}
+                  </Button>
+                </Show>
+              </div>
+              <Show
+                when={diagnostics.data}
+                fallback={
+                  <Show when={diagnostics.isError} fallback={<SkeletonRows rows={2} />}>
+                    <QueryError
+                      error={diagnostics.error}
+                      onRetry={() => void diagnostics.refetch()}
+                    />
+                  </Show>
+                }
+              >
+                {(list) => (
+                  <Show
+                    when={list().archives.length > 0}
+                    fallback={
+                      <p class="mt-2 text-[11.5px] text-muted-foreground">
+                        {list().supported
+                          ? "No diagnostic archives have been requested. Collection runs quietly and expires after 24 hours."
+                          : (list().reason ?? "Diagnostic collection is unavailable on this device.")}
+                      </p>
+                    }
+                  >
+                    <ul class="mt-2 divide-y divide-border rounded-lg border border-border">
+                      <For each={list().archives}>
+                        {(archive) => (
+                          <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[11.5px]">
+                            <span>
+                              <span class="block font-medium text-foreground">
+                                {formatDate(archive.requestedAt)}
+                              </span>
+                              <span class="block text-muted-foreground">
+                                {archive.status} · {archive.sizeBytes ? formatArchiveBytes(archive.sizeBytes) : "size pending"} · expires {formatDate(archive.expiresAt)}
+                              </span>
+                            </span>
+                            <span class="flex items-center gap-2">
+                              <Chip tone={archive.status === "uploaded" ? "success" : archive.status === "failed" ? "danger" : "muted"}>
+                                {archive.status}
+                              </Chip>
+                              <Show when={props.canCommand && archive.downloadPath}>
+                                {(path) => (
+                                  <a
+                                    class="font-medium text-foreground underline underline-offset-2"
+                                    href={path()}
+                                  >
+                                    Download
+                                  </a>
+                                )}
+                              </Show>
+                            </span>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
+                )}
+              </Show>
+              <ErrorText error={collectDiagnostics.error} />
+            </div>
+
+            <Show when={revealed()}>
+              {(value) => (
+                <div class="rounded-lg border border-warning/30 bg-warning/[0.07] p-3">
+                  <p class="whitespace-pre-wrap break-all font-mono text-[11.5px] text-foreground">
+                    {value()}
+                  </p>
+                  <Button variant="outline" size="sm" class="mt-2" onClick={() => setRevealed(null)}>
+                    Hide
+                  </Button>
+                </div>
+              )}
+            </Show>
+          </div>
+        )}
+      </Show>
+    </DetailCard>
   );
 }
 
@@ -1215,6 +1657,9 @@ export default function DeviceDetailPage() {
         | "clear-app-data"
         | "request-device-info"
         | "relinquish-ownership"
+        | "fresh-start"
+        | "collect-diagnostics"
+        | "rotate-bitlocker-key"
         | "schedule-os-update"
         | "set-device-name";
       deviceName?: string;
@@ -1230,6 +1675,7 @@ export default function DeviceDetailPage() {
         | "InstallForceRestart";
       osUpdateProductKey?: string;
       osUpdateDeadline?: string;
+      freshStartRetainUserData?: boolean;
     }) => enterprise.deviceAction(params.tenantId, params.deviceId, payload),
     onSuccess: async (result) => {
       setLockPin(result.pin ?? null);
@@ -1244,7 +1690,29 @@ export default function DeviceDetailPage() {
         });
       }
 
+      if (result.freshStart) {
+        toast[result.freshStart.retainUserData ? "success" : "warning"](
+          "Fresh Start requested",
+          {
+            description:
+              result.freshStart.warning ??
+              "The device removes OEM and user-installed applications on its next check-in.",
+          },
+        );
+      }
+
+      if (result.diagnostics)
+        toast.success("Diagnostics requested", {
+          description: "The archive uploads quietly, appears here when ready and expires after 24 hours.",
+        });
+
       await invalidate();
+      await queryClient.invalidateQueries({
+        queryKey: ["enterprise", "windows-security", params.tenantId, params.deviceId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["enterprise", "windows-diagnostics", params.tenantId, params.deviceId],
+      });
     },
   }));
 
@@ -2376,6 +2844,14 @@ export default function DeviceDetailPage() {
                       </Show>
                     </DetailCard>
                   </Show>
+                  <Show when={row()!.proto === "win"}>
+                    <WindowsSecurityCard
+                      tenantId={params.tenantId}
+                      deviceId={params.deviceId}
+                      canCommand={canCommand()}
+                      canReveal={canRevealKey()}
+                    />
+                  </Show>
                   <DetailCard
                     flush
                     title="Applications"
@@ -2687,7 +3163,8 @@ export default function DeviceDetailPage() {
                               <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
                                 <div class="flex items-center justify-between gap-2">
                                   <strong class="min-w-0 truncate font-medium text-foreground">
-                                    {historyItem.requestType}
+                                    {WINDOWS_COMMAND_REQUEST_LABELS.get(historyItem.requestType) ??
+                                      historyItem.requestType}
                                   </strong>
                                   <Chip tone={commandStatusTone(historyItem.status)}>
                                     {historyItem.statusLabel}
@@ -3834,6 +4311,59 @@ export default function DeviceDetailPage() {
                               }}
                             >
                               Return to service
+                            </Button>
+                          </Show>
+                          <Show when={supports("fresh-start")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="col-span-2"
+                              disabled={command.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Fresh Start (keep user files) removes OEM and user-installed applications but keeps files. Continue?",
+                                  )
+                                )
+                                  command.mutate({
+                                    action: "fresh-start",
+                                    freshStartRetainUserData: true,
+                                  });
+                              }}
+                            >
+                              Fresh Start · keep files
+                            </Button>
+                          </Show>
+                          <Show when={supports("fresh-start")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="col-span-2 border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/[0.07] hover:text-destructive"
+                              disabled={command.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "Fresh Start (remove everything) returns this device to the out-of-box experience and erases user files and applications. It must be enrolled again afterwards. Continue?",
+                                  )
+                                )
+                                  command.mutate({
+                                    action: "fresh-start",
+                                    freshStartRetainUserData: false,
+                                  });
+                              }}
+                            >
+                              Fresh Start · remove everything
+                            </Button>
+                          </Show>
+                          <Show when={supports("collect-diagnostics")}>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="col-span-2"
+                              disabled={command.isPending}
+                              onClick={() => command.mutate({ action: "collect-diagnostics" })}
+                            >
+                              Collect diagnostics
                             </Button>
                           </Show>
                           <Show when={supports("wipe")}>

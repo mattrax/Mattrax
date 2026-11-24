@@ -251,7 +251,7 @@ export default function IdentitySettingsPage() {
     setSsoError(null);
 
     try {
-      const response = await fetch(
+      const response = await enterprise.request(
         `/api/v1/sso/azure/start?tenantId=${encodeURIComponent(params.tenantId ?? "")}`,
       );
 
@@ -603,7 +603,7 @@ export default function IdentitySettingsPage() {
                 {saveSso.isPending ? "Saving…" : "Save SSO settings"}
               </Button>
               <Show when={ssoSaved()}>
-                <span role="status" class="self-center text-[12.5px] text-success-foreground">
+                <span role="status" class="self-center text-[12.5px] text-success">
                   Saved.
                 </span>
               </Show>
@@ -623,9 +623,7 @@ export default function IdentitySettingsPage() {
               <p
                 role="status"
                 class={`pt-3 text-[13px] ${
-                  notice().tone === "success"
-                    ? "text-success-foreground"
-                    : "text-warning-foreground"
+                  notice().tone === "success" ? "text-success" : "text-warning-foreground"
                 }`}
               >
                 {notice().text}

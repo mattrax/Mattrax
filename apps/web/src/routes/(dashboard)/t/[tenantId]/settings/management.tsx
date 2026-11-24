@@ -3,7 +3,6 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
-import type { JSX } from "@solidjs/web";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { LoadingState } from "~/components/ui";
 import { SetupNotice } from "~/components/settings/setup-notice";
@@ -34,8 +33,8 @@ import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
 import { cn } from "~/lib/utils";
+import { StatusChip as Chip } from "~/components/settings/status-chip";
 import { downloadBlob } from "~/lib/download";
-import { resolveTenantId } from "~/lib/tenant";
 
 const selectClass =
   "h-8 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors focus-visible:border-ring sm:text-[13px] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60";
@@ -441,25 +440,7 @@ export default function ManagementSettingsPage() {
     setCsrError(undefined);
 
     try {
-      const response = await fetch(`/api/v1/tenants/${resolveTenantId(params.tenantId)}/apns/csr`, {
-        credentials: "include",
-        headers: { "x-effect-auth-csrf": "1" },
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => undefined);
-        throw new Error(
-          errorMessage(raisedFailure(body), `CSR request failed (${response.status})`),
-        );
-      }
-
-      const data = Option.getOrUndefined(
-        Schema.decodeUnknownOption(Schema.Struct({ plist: Schema.optional(Schema.String) }))(
-          await response.json(),
-        ),
-      );
-
-      if (data?.plist === undefined) throw new Error("The server did not return a CSR");
+      const data = await enterprise.getApnsCsr(params.tenantId);
       const bytes = Uint8Array.from(atob(data.plist), (char) => char.charCodeAt(0));
       downloadBlob(new Blob([bytes], { type: "application/x-plist" }), "mattrax-push-csr.plist");
       setStep(2);
@@ -535,7 +516,7 @@ export default function ManagementSettingsPage() {
           fallback={
             <Show when={apns.data}>
               <div class="mt-4 flex items-start gap-3 rounded-lg border border-success/25 bg-success/[0.06] p-4 text-[13px]">
-                <CheckCircle2 class="mt-0.5 size-4 shrink-0 text-success-foreground" />
+                <CheckCircle2 class="mt-0.5 size-4 shrink-0 text-success" />
                 <div>
                   <p class="font-medium text-foreground">
                     Apple devices can receive push notifications
@@ -651,7 +632,7 @@ export default function ManagementSettingsPage() {
               Discovery, WSTEP enrollment and certificate issuance are implemented. Policy
               management is next.
             </p>
-            <Chip tone="success" class="mt-3">
+            <Chip capitalize tone="success" class="mt-3">
               Enrollment available
             </Chip>
           </div>
@@ -669,6 +650,7 @@ export default function ManagementSettingsPage() {
               <Show when={android.data}>
                 {(data) => (
                   <Chip
+                    capitalize
                     tone={
                       data().status === "active"
                         ? "success"
@@ -798,7 +780,7 @@ export default function ManagementSettingsPage() {
                     </div>
                   </Show>
                   <Show when={androidSyncMessage()}>
-                    <p class="rounded-lg border border-success/25 bg-success/[0.06] p-3 text-xs leading-relaxed text-success-foreground">
+                    <p class="rounded-lg border border-success/25 bg-success/[0.06] p-3 text-xs leading-relaxed text-success">
                       {androidSyncMessage()}
                     </p>
                   </Show>
@@ -845,6 +827,7 @@ export default function ManagementSettingsPage() {
               <Show when={abm.data}>
                 {(data) => (
                   <Chip
+                    capitalize
                     tone={
                       data().status === "active"
                         ? "success"
@@ -1006,6 +989,7 @@ export default function ManagementSettingsPage() {
               <Show when={vpp.data}>
                 {(data) => (
                   <Chip
+                    capitalize
                     tone={
                       data().status === "active"
                         ? "success"
@@ -1128,7 +1112,7 @@ export default function ManagementSettingsPage() {
           <MonitorSmartphone class="size-4 text-muted-foreground" />
           <Show when={autopilot.data}>
             {(data) => (
-              <Chip tone={data().configured ? "success" : "warning"}>
+              <Chip capitalize tone={data().configured ? "success" : "warning"}>
                 {data().configured ? "Connected to Microsoft Graph" : "Not configured"}
               </Chip>
             )}
@@ -1139,7 +1123,9 @@ export default function ManagementSettingsPage() {
             </span>
           </Show>
           <Show when={autopilot.data?.federatedEnrollment.enabled}>
-            <Chip tone="neutral">Federated Entra enrollment</Chip>
+            <Chip capitalize tone="neutral">
+              Federated Entra enrollment
+            </Chip>
           </Show>
         </div>
 
@@ -1556,7 +1542,7 @@ function AutopilotProfileRow(props: {
     <div class="rounded-lg border border-border bg-surface p-3">
       <div class="flex flex-wrap items-center gap-2">
         <p class="text-[13px] font-medium text-foreground">{props.profile.name}</p>
-        <Chip tone={props.profile.status === "active" ? "success" : "neutral"}>
+        <Chip capitalize tone={props.profile.status === "active" ? "success" : "neutral"}>
           {props.profile.status}
         </Chip>
         <span class="text-xs text-muted-foreground">
@@ -1614,27 +1600,5 @@ function Step(props: { index: number; active: boolean; title: string; body: stri
       <p class="mt-3 text-[13px] font-medium text-foreground">{props.title}</p>
       <p class="mt-1 text-xs leading-relaxed text-muted-foreground">{props.body}</p>
     </li>
-  );
-}
-
-const chipTones = {
-  neutral: "border-border bg-surface text-muted-foreground",
-  success: "border-success/25 bg-success/10 text-success-foreground",
-  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
-  danger: "border-destructive/25 bg-destructive/10 text-destructive",
-} as const;
-
-function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element; class?: string }) {
-  return (
-    <span
-      class={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize",
-        chipTones[props.tone],
-        props.class,
-      )}
-    >
-      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-      {props.children}
-    </span>
   );
 }

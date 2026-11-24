@@ -683,19 +683,70 @@ describe("handler enforcement", () => {
     return { db, service, headers: { cookie: "mattrax_session=test" } };
   };
 
-  it("rejects a script mutation without a step-up and writes nothing", async () => {
+  it("creates a script without a step-up", async () => {
     const { db, service, headers } = await context({ stepUp: false });
+
+    const created = await runEffect(service.createScript(request(headers), orgId, scriptValues));
+
+    expect(created).toHaveProperty("id");
+    expect(db.store.script).toHaveLength(1);
+  });
+
+  it("rejects a script edit without a step-up and leaves the script unchanged", async () => {
+    const { db, service, headers } = await context({ stepUp: false });
+    const { id, row } = await create(db);
 
     const failure = await runEffect(
       service
-        .createScript(request(headers), orgId, scriptValues)
+        .patchScript(request(headers), orgId, id, { name: "Changed" })
         .pipe(Effect.catchTag("StepUpRequired", (error) => Effect.succeed(error))),
     );
 
     expect(failure).toBeInstanceOf(StepUpRequired);
-    expect(db.store.script).toHaveLength(0);
+    expect(db.store.script.find((entry: any) => entry.id === id)?.name).toBe(row.name);
     expect(db.store.audit_log).toHaveLength(0);
   });
+
+  const stepUpMutations = [
+    {
+      name: "delete a script",
+      run: (service: any, headers: any, id: string) =>
+        service.deleteScript(request(headers), orgId, id),
+    },
+    {
+      name: "change script assignments",
+      run: (service: any, headers: any, id: string) =>
+        service.patchScriptAssignments(request(headers), orgId, id, {
+          assign: [],
+          unassign: [],
+        }),
+    },
+    {
+      name: "change script settings",
+      run: (service: any, headers: any) =>
+        service.patchScriptSettings(request(headers), orgId, { enabled: false }),
+    },
+    {
+      name: "run a script",
+      run: (service: any, headers: any, id: string) =>
+        service.runScript(request(headers), orgId, id, {}),
+    },
+  ];
+
+  for (const mutation of stepUpMutations) {
+    it(`requires a step-up to ${mutation.name}`, async () => {
+      const { db, service, headers } = await context({ stepUp: false });
+      const { id } = await create(db);
+
+      const failure = await runEffect(
+        mutation
+          .run(service, headers, id)
+          .pipe(Effect.catchTag("StepUpRequired", (error: unknown) => Effect.succeed(error))),
+      );
+
+      expect(failure).toBeInstanceOf(StepUpRequired);
+    });
+  }
 
   it("creates, audits and lists a script for an owner", async () => {
     const { db, service, headers } = await context({ stepUp: true });

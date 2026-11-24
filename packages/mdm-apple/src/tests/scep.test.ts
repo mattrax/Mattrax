@@ -132,7 +132,11 @@ describe("ScepRepositoryLive challenge authentication", () => {
 
     await expect(
       Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
-    ).rejects.toMatchObject({ _tag: "ScepError" as const, message: "Invalid SCEP challenge" });
+    ).rejects.toMatchObject({
+      _tag: "ScepError" as const,
+      message: "Invalid SCEP challenge",
+      reason: "invalid_request",
+    });
   });
 
   it("rejects a challenge consumed for another tenant", async () => {
@@ -141,7 +145,11 @@ describe("ScepRepositoryLive challenge authentication", () => {
 
     await expect(
       Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
-    ).rejects.toMatchObject({ _tag: "ScepError" as const, message: "Invalid SCEP challenge" });
+    ).rejects.toMatchObject({
+      _tag: "ScepError" as const,
+      message: "Invalid SCEP challenge",
+      reason: "invalid_request",
+    });
     expect(challengeRows(db)[0].consumedAt).toBeNull();
   });
 
@@ -172,7 +180,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
 
     await expect(
       Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
-    ).rejects.toMatchObject({ _tag: "ScepError" as const });
+    ).rejects.toMatchObject({ _tag: "ScepError" as const, reason: "invalid_request" });
   });
 
   it("fails closed when no secret is configured", async () => {
@@ -186,7 +194,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     try {
       await expect(
         Effect.runPromise(makeRepository(db, {}).authenticatePkcsReq(scope, request(challenge))),
-      ).rejects.toMatchObject({ _tag: "ScepError" as const });
+      ).rejects.toMatchObject({ _tag: "ScepError" as const, reason: "internal" });
     } finally {
       if (previous !== undefined) process.env.AUTH_SECRET = previous;
 

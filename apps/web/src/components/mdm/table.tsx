@@ -25,6 +25,9 @@ import { applyRangeSelection, shouldOfferAllMatching } from "~/lib/table-selecti
 import { cn } from "~/lib/utils";
 import { QueryError } from "./common";
 import { toggleVisibleColumnIds } from "./table-columns";
+import { readTableColumnVisibility } from "~/lib/table-column-visibility";
+
+export { readTableColumnVisibility } from "~/lib/table-column-visibility";
 
 export type MdmColumn<T> = {
   id: string;
@@ -51,16 +54,6 @@ export type MdmBulkSelection = {
   total: number;
   setAllMatching: (value: boolean) => void;
 };
-
-function readVisibility(key: string | undefined): Record<string, boolean> {
-  if (!key || typeof localStorage === "undefined") return {};
-
-  try {
-    return JSON.parse(localStorage.getItem(`mattrax:table:${key}:columns`) ?? "{}");
-  } catch {
-    return {};
-  }
-}
 
 export function MdmTable<T extends { id: string; name?: string }>(props: {
   rows: readonly T[] | undefined;
@@ -167,7 +160,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const [modKey, setModKey] = createSignal("Ctrl");
 
   const [hidden, setHidden] = createSignal<Record<string, boolean>>(
-    readVisibility(props.storageKey),
+    readTableColumnVisibility(props.storageKey),
   );
 
   const navigate = useNavigate();

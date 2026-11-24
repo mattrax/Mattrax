@@ -13,8 +13,10 @@ import { authClient } from "~/lib/auth";
 import { queryClient } from "~/lib/query-client";
 import { broadcastCacheReset, setCrossTabTenant } from "~/lib/cross-tab-sync";
 import { meQueryOptions } from "~/lib/enterprise";
+import { emailVerificationGate } from "~/lib/me-query";
 import { errorTag, raisedFailure } from "~/lib/errors";
 import { clearMeCache } from "~/lib/me-cache";
+import { resetMePreload } from "~/lib/me-preload";
 import { reportGlobalError } from "~/lib/global-errors";
 import { syncPostHogTenant, syncPostHogUser } from "~/lib/posthog";
 import { clearSessionPresence, readSessionPresence } from "~/lib/session-presence";
@@ -125,15 +127,20 @@ function DashboardLayout(props: ParentProps) {
     () => ({
       pending: session().isPending,
       user: session().data?.user,
-      verified: me.data?.account.emailVerified,
+      verification: emailVerificationGate({
+        meVerified: me.data?.account.emailVerified,
+        sessionVerified: session().data?.user?.emailVerified,
+        meFetching: me.isFetching,
+      }),
       unauthorized: unauthorized(),
       presence: presenceState(),
       path: `${location.pathname}${location.search}`,
     }),
-    ({ pending, user, verified, unauthorized, presence, path }) => {
+    ({ pending, user, verification, unauthorized, presence, path }) => {
       const login = () => {
         clearSessionPresence();
         clearMeCache();
+        resetMePreload();
         queryClient.clear();
         // Every tab shares the session cookie, so a sign-out must drop the
         // other tabs' caches too rather than leaving stale device data on screen.
@@ -170,11 +177,12 @@ function DashboardLayout(props: ParentProps) {
         return;
       }
 
-      if (verified === undefined) return;
+      // A fresh session claim wins over a stale `/me` row, and an in-flight
+      // refresh may still turn the row verified. This prevents a just-verified
+      // account from being bounced back until the 60s cache window expires.
+      if (verification !== "verify") return;
 
-      if (!verified) {
-        navigate(`/verify-email?returnTo=${encodeURIComponent(path)}`, { replace: true });
-      }
+      navigate(`/verify-email?returnTo=${encodeURIComponent(path)}`, { replace: true });
     },
   );
 
@@ -239,11 +247,25 @@ function DashboardLayout(props: ParentProps) {
             </div>
           }
         >
-          <AppShell user={user()} onSignOut={handleSignOut}>
-            {props.children}
-            <CommandPaletteLauncher />
-            <StepUpDialog />
-          </AppShell>
+          <>
+            <AppShell user={user()} onSignOut={handleSignOut}>
+              {props.children}
+            </AppShell>
+            {/* Global interaction surfaces stay outside the shell's content
+                loading boundary, but own their errors: a palette or dialog
+                failure must not replace the whole dashboard. */}
+            <Errored
+              fallback={() => (
+                <p role="alert" class="sr-only">
+                  The command palette or step-up dialog is unavailable. Reload the page to try
+                  again.
+                </p>
+              )}
+            >
+              <CommandPaletteLauncher />
+              <StepUpDialog />
+            </Errored>
+          </>
         </Show>
       )}
     </Show>

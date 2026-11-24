@@ -54,6 +54,7 @@ import { authClient } from "~/lib/auth";
 import { chord, useCommands } from "~/lib/commands";
 import type { Command } from "~/lib/commands";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { disposeCatalogueRuntime } from "~/lib/catalogue-service";
 import {
   collectionProperties,
   loadAppleOsSupport,
@@ -61,7 +62,6 @@ import {
   loadManifest,
   loadPlatformIndex,
   loadSearchIndex,
-  resetPlatformCache,
   searchIndexProperties,
   appleCollectionManaged,
   appleOsRangeLabel,
@@ -104,6 +104,13 @@ import type {
   SelectionTemplate,
   ValidationIssue,
 } from "~/lib/policy-designer/build";
+import {
+  applyCollectionIdRewrites,
+  isPolicyDraftDirty,
+  normaliseSelectionCollectionIds,
+  policyDraftSnapshot,
+  seedPolicyDraftBaseline,
+} from "~/lib/policy-designer/draft-state";
 import { admxCollectionFromSelection, isAdmxCollectionId } from "~/lib/policy-designer/admx";
 import type { AdmxSelection } from "~/lib/policy-designer/admx";
 import {
@@ -120,15 +127,6 @@ import type { ThirdPartyApp, ThirdPartyCatalog } from "~/lib/policy-designer/thi
 import { cn } from "~/lib/utils";
 
 const keyOf = (collection: { id: string; name: string }) => `${collection.id}#${collection.name}`;
-
-/**
- * Serialized drafts this tab has saved, by designer storage key. The persisted
- * configurations are a lossy projection of the draft, so comparing against
- * them alone reports a just-saved policy as dirty (and blocks the navigation
- * that follows a save). Keeping the saved serialization also survives the
- * remount an invalidation causes.
- */
-const savedDrafts = new Map<string, string>();
 
 /** Selections store `${collection.id}#${collection.name}`; loaders need just the id. */
 const collectionIdOf = (selectionId: string) => selectionId.split("#")[0] ?? selectionId;
@@ -239,18 +237,6 @@ const templateSets: Record<
   ],
 };
 
-const serializePolicy = (policy: PolicyDraft) => {
-  const platforms: Array<[PlatformId, Selection[]]> = PLATFORM_ORDER.map((platform) => [
-    platform,
-    policy.platforms[platform] ?? [],
-  ]);
-
-  return JSON.stringify({
-    name: policy.name,
-    platforms: platforms.filter(([, selections]) => selections.length > 0),
-  });
-};
-
 const SECTION_PAGE = 60;
 
 const SECTION_PAGE_INCREMENT = 40;
@@ -343,7 +329,6 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const [startOverOpen, setStartOverOpen] = createSignal(false);
   const [removeTarget, setRemoveTarget] = createSignal<Selection | null>(null);
-  const [justSaved, setJustSaved] = createSignal(false);
   let requestId = 0;
   const requestIds = new Map<PlatformId, number>();
   let errorRef: HTMLDivElement | undefined;
@@ -355,12 +340,30 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     },
   );
 
-  const initialSnapshot = untrack(() => {
+  const initialPolicy = untrack(() => {
     const policy = emptyPolicyDraft(name());
     policy.platforms = { ...selectionMap() };
 
-    return serializePolicy(policy);
+    return policy;
   });
+
+  const initialSnapshot = untrack(() => policyDraftSnapshot(initialPolicy));
+
+  /**
+   * The draft as of the last save, seeded from the server's persisted draft.
+   * A newer browser autosave therefore counts as dirty and prompts before it
+   * is discarded. The designer's persisted configurations can be a lossy
+   * projection, so saving resets this baseline explicitly.
+   */
+  const [savedDraft, setSavedDraft] = createSignal<PolicyDraft>(
+    untrack(() =>
+      seedPolicyDraftBaseline({
+        persistedDraft: props.persistedDraft,
+        initialDraft,
+        currentDraft: initialPolicy,
+      }),
+    ),
+  );
 
   const data = () => indexes()[platform()] ?? null;
   const catalogError = () => indexErrors()[platform()] ?? null;
@@ -474,7 +477,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     });
 
   const beginLoad = (target: PlatformId, force = false) => {
-    if (force) resetPlatformCache(target);
+    if (force) void disposeCatalogueRuntime();
     setIndexErrors((current) => {
       const next = { ...current };
       delete next[target];
@@ -606,7 +609,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
       // Do not rewrite the browser draft merely because the editor mounted.
       if (
-        serializePolicy({ ...emptyPolicyDraft(value.name), platforms: value.selections }) ===
+        policyDraftSnapshot({ ...emptyPolicyDraft(value.name), platforms: value.selections }) ===
         initialSnapshot
       )
         return;
@@ -630,33 +633,24 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   // Restore the last active collection (or the first one) when the catalogue
   // arrives, instead of greeting a configured policy with an empty state.
   createEffect(
-    () => ({ data: data(), active: activeKey(), selections: selections() }),
+    () => ({ data: data(), platform: platform(), active: activeKey(), selections: selections() }),
     (value) => {
       if (!value.data) return;
 
       // Drafts written by older builds used `apple:<identifier>` instead of the
       // catalogue key (`apple/profiles/<identifier>#Name`). Resolve them against
-      // the loaded index rather than showing an empty editor.
-      const normalised = value.selections.map((selection) => {
-        if (
-          value.data!.collections.some((collection) => keyOf(collection) === selection.collectionId)
-        )
-          return selection;
+      // the loaded index rather than showing an empty editor, and apply the
+      // same rewrite to the saved baseline so a merely-opened legacy policy is
+      // not reported as dirty.
+      const { selections: normalised, rewrites } = normaliseSelectionCollectionIds(
+        value.selections,
+        value.data.collections,
+      );
 
-        const match =
-          value.data!.collections.find(
-            (collection) =>
-              collection.identifier === selection.identifier && collection.name === selection.name,
-          ) ??
-          value.data!.collections.find(
-            (collection) => collection.identifier === selection.identifier,
-          );
-
-        return match ? { ...selection, collectionId: keyOf(match) } : selection;
-      });
-
-      if (normalised.some((selection, index) => selection !== value.selections[index]))
+      if (rewrites.size > 0) {
         setSelections(() => normalised);
+        setSavedDraft((current) => applyCollectionIdRewrites(current, value.platform, rewrites));
+      }
 
       if (
         value.active &&
@@ -1012,44 +1006,29 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       (issue) => issue.collectionId === collectionId && issue.propertyKey === propertyKey,
     );
 
-  const dirtySinceLoad = () => serializePolicy(policyDraft()) !== initialSnapshot;
+  const dirtySinceLoad = () => isPolicyDraftDirty(policyDraft(), initialSnapshot);
 
-  const dirtySincePolicy = () =>
-    props.persistedDraft === undefined ||
-    serializePolicy(policyDraft()) !== serializePolicy(props.persistedDraft);
+  const dirtySinceSaved = () =>
+    isPolicyDraftDirty(policyDraft(), policyDraftSnapshot(savedDraft()));
 
-  createEffect(
-    () => [props.error, name(), selectionMap()] as const,
-    ([error, , selections], previous) => {
-      if (error) setJustSaved(false);
-      else if (previous && JSON.stringify(selections) !== JSON.stringify(previous[2]))
-        setJustSaved(false);
-    },
-  );
+  const dirty = () => (props.mode === "dashboard" ? dirtySinceSaved() : dirtySinceLoad());
 
   const saveStatus = () => {
     if (props.saving) return "Saving…";
 
     if (props.mode === "dashboard")
-      return dirtySincePolicy() ? "Unsaved changes" : "Saved to policy";
+      return dirtySinceSaved() ? "Unsaved changes" : "Saved to policy";
 
     return dirtySinceLoad() ? "Unsaved draft" : "Draft saved";
   };
 
-  // In-app navigation and tab close both go through one discard prompt.
-  const unsaved = useUnsavedChanges(
-    () =>
-      props.mode === "dashboard" &&
-      props.persistedDraft !== undefined &&
-      !props.saving &&
-      !justSaved() &&
-      savedDrafts.get(storageKey) !== serializePolicy(policyDraft()) &&
-      dirtySincePolicy(),
-    {
-      title: "Discard policy changes?",
-      description: "This policy has edits that have not been saved.",
-    },
-  );
+  // In-app navigation and tab close both go through one discard prompt. The
+  // comparison is against the last saved snapshot, so opening or saving a
+  // policy without edits never asks.
+  const unsaved = useUnsavedChanges(() => props.mode === "dashboard" && !props.saving && dirty(), {
+    title: "Discard policy changes?",
+    description: "This policy has edits that have not been saved.",
+  });
 
   // The label must describe the range delivery enforces, so it comes from the
   // same Apple `supportedOS` metadata the backend filters with.
@@ -1416,6 +1395,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     Boolean(props.onSave) &&
     policySelectionCount(policyDraft()) > 0 &&
     !props.saveDisabled &&
+    !props.saving &&
     blockingIssues().length === 0;
 
   const disabledHint = () => {
@@ -1432,23 +1412,28 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     return null;
   };
 
-  // A failed save must not leave the draft looking persisted: clear the
-  // marker so navigating away still asks before discarding unsent edits.
+  // A failed save must not leave the draft looking persisted: restore the
+  // previous baseline so navigating away still asks before discarding.
+  let baselineBeforeSave: PolicyDraft | undefined;
   createEffect(
     () => Boolean(props.error),
     (failed) => {
-      if (!failed) return;
-      setJustSaved(false);
-      savedDrafts.delete(storageKey);
+      if (!failed || baselineBeforeSave === undefined) return;
+      setSavedDraft(baselineBeforeSave);
+      baselineBeforeSave = undefined;
+    },
+  );
+  createEffect(
+    () => props.saving,
+    (saving, previous) => {
+      if (previous && !saving && !props.error) baselineBeforeSave = undefined;
     },
   );
 
-  onCleanup(() => savedDrafts.delete(storageKey));
-
   const save = () => {
     if (!canSave()) return;
-    savedDrafts.set(storageKey, serializePolicy(policyDraft()));
-    setJustSaved(true);
+    baselineBeforeSave = savedDraft();
+    setSavedDraft(policyDraft());
     void props.onSave?.(policyDraft());
   };
 
@@ -1946,15 +1931,13 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                 <span
                   class={cn(
                     "inline-flex min-w-0 items-center gap-1.5",
-                    props.mode === "dashboard" && dirtySincePolicy() && "text-warning-foreground",
+                    props.mode === "dashboard" && dirty() && "text-warning-foreground",
                   )}
                 >
                   <span
                     class={cn(
                       "size-1.5 shrink-0 rounded-full",
-                      props.mode === "dashboard" && dirtySincePolicy()
-                        ? "bg-warning"
-                        : "bg-success",
+                      props.mode === "dashboard" && dirty() ? "bg-warning" : "bg-success",
                     )}
                     aria-hidden="true"
                   />

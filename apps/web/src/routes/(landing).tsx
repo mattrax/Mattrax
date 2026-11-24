@@ -8,6 +8,7 @@ import { PageErrorFallback } from "~/components/error-boundary";
 import { UserDropdown } from "~/components/user-dropdown";
 import { authClient } from "~/lib/auth";
 import { reportGlobalError } from "~/lib/global-errors";
+import { publicPrimaryCta } from "~/lib/public-auth-cta";
 
 export default function Layout(props: ParentProps) {
   const location = useLocation();
@@ -100,6 +101,7 @@ const navigation = [
 
 function TopNavigation() {
   const session = authClient.useSession();
+  const cta = () => publicPrimaryCta(session().isPending, Boolean(session().data?.user));
   const location = useLocation();
 
   const isActive = (href: string) =>
@@ -152,11 +154,11 @@ function TopNavigation() {
             <Button
               as="a"
               href="/dashboard"
-              variant="outline"
+              variant="default"
               size="sm"
               class="hidden h-7 px-2.5 text-[12px] sm:inline-flex"
             >
-              Dashboard
+              Open dashboard
             </Button>
           </Show>
           <UserDropdown
@@ -206,12 +208,25 @@ function TopNavigation() {
               ))}
             </nav>
             <div class="mt-1 border-t border-border p-1">
-              <a
-                href={session().data?.user ? "/dashboard" : "/register"}
-                class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+              <Show
+                when={cta()}
+                fallback={
+                  <span
+                    data-js-pending
+                    class="block h-9 w-full animate-pulse rounded-md bg-hover"
+                    aria-hidden="true"
+                  />
+                }
               >
-                {session().data?.user ? "Open dashboard" : "Create an account"}
-              </a>
+                {(action) => (
+                  <a
+                    href={action().href}
+                    class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+                  >
+                    {action().label}
+                  </a>
+                )}
+              </Show>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
-import { serializeSoapElement } from "../src/index.js";
+import { deserializeSoapElement, serializeSoapElement } from "../src/index.js";
 
 const runPromise = <E, A>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect);
 
@@ -79,7 +79,11 @@ describe("SOAP Serializer", () => {
     }).pipe(Schema.annotate({ identifier: "Config" }));
 
     const xml = await runPromise(serializeSoapElement(Config, { required: "yes" }));
-    expect(xml).toContain('<Optional xsi:nil="true"/>');
+    expect(xml).toContain('xsi:nil="true"');
+    expect(xml).toContain('xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"');
+
+    const reparsed = await runPromise(deserializeSoapElement(xml, Config));
+    expect(reparsed).toEqual({ required: "yes", optional: undefined });
   });
 
   it("should escape XML special characters", async () => {

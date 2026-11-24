@@ -190,9 +190,9 @@ function DropdownMenuCheckboxItem(props: DropdownMenuCheckboxItemProps) {
       class={cn(itemBase, "pl-7", local.class)}
       {...others}
     >
-      <span class="absolute left-2 flex size-3.5 items-center justify-center">
+      <span class="absolute inset-y-0 left-2 flex items-center justify-center">
         <Show when={local.checked}>
-          <Check class="size-3.5" />
+          <Check class="size-3 text-foreground" stroke-width={3} />
         </Show>
       </span>
       {local.children}
@@ -243,14 +243,14 @@ function DropdownMenuRadioItem(
       {...others}
     >
       <Show when={indicator() === "dot"}>
-        <span class="absolute left-2 flex size-3.5 items-center justify-center">
+        <span class="absolute inset-y-0 left-2 flex items-center justify-center">
           <span class="size-1.5 rounded-full bg-current" />
         </span>
       </Show>
       {local.children}
       <Show when={indicator() === "check"}>
-        <span class="absolute right-2 flex size-3.5 items-center justify-center">
-          <Check class="size-3.5" />
+        <span class="absolute inset-y-0 right-2 flex items-center justify-center">
+          <Check class="size-3 text-foreground" stroke-width={3} />
         </span>
       </Show>
     </MenuRadioItem>

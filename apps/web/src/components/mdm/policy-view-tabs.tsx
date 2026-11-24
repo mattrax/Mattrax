@@ -8,7 +8,7 @@ export function PolicyViewTabs(props: { base: string; active: PolicyView }) {
     { id: "overview" as const, label: "Overview", href: props.base },
     { id: "assignments" as const, label: "Assignments", href: `${props.base}/assignments` },
     { id: "deployment" as const, label: "Deployment", href: `${props.base}/deployment` },
-    { id: "designer" as const, label: "Designer", href: `${props.base}/design` },
+    { id: "designer" as const, label: "Design", href: `${props.base}/design` },
   ];
 
   return (

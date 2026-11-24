@@ -3,7 +3,7 @@ import {
   ADDITIONAL_STATUS_ITEMS,
   DEVICE_INFORMATION_BASE_STATUS_ITEMS,
   appleStatusItemsForDevice,
-} from "@mattrax/mdm-core";
+} from "../statusItems.js";
 
 const has = (items: ReadonlyArray<string>, item: string) => items.includes(item);
 

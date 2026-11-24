@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { PERMISSION_GROUPS, BULK_MEMBER_LIMIT } from "@mattrax/enterprise-domain/client";
 import type { Permission } from "@mattrax/enterprise-domain/client";
-import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError, formatDate, relativeTime } from "~/components/mdm/common";
 import { toast } from "~/components/toast";
 import { errorMessage } from "~/lib/errors";
@@ -41,6 +40,7 @@ import {
 } from "~/lib/optimistic";
 import { initials } from "~/lib/names";
 import { cn } from "~/lib/utils";
+import { StatusChip as Chip } from "~/components/settings/status-chip";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 
@@ -1049,7 +1049,7 @@ export default function AdministratorsSettingsPage() {
                   >
                     Copy link
                   </Button>
-                  <span role="status" aria-live="polite" class="text-xs text-success-foreground">
+                  <span role="status" aria-live="polite" class="text-xs text-success">
                     {copied() === "invite" ? "Link copied to clipboard." : ""}
                   </span>
                 </div>
@@ -1500,7 +1500,7 @@ export default function AdministratorsSettingsPage() {
                   >
                     Copy link
                   </Button>
-                  <span role="status" aria-live="polite" class="text-xs text-success-foreground">
+                  <span role="status" aria-live="polite" class="text-xs text-success">
                     {copied() === "transfer" ? "Link copied to clipboard." : ""}
                   </span>
                 </div>
@@ -1655,7 +1655,7 @@ export default function AdministratorsSettingsPage() {
                 >
                   Copy link
                 </Button>
-                <span role="status" aria-live="polite" class="text-success-foreground">
+                <span role="status" aria-live="polite" class="text-success">
                   {copied() === "resend" ? "Link copied to clipboard." : ""}
                 </span>
               </div>
@@ -1792,7 +1792,7 @@ export default function AdministratorsSettingsPage() {
                       <p
                         role="status"
                         aria-live="polite"
-                        class="text-[11px] text-success-foreground"
+                        class="text-[11px] text-success"
                       >
                         Link copied to clipboard.
                       </p>
@@ -1930,26 +1930,5 @@ export default function AdministratorsSettingsPage() {
         }}
       />
     </div>
-  );
-}
-
-const chipTones = {
-  neutral: "border-border bg-surface text-muted-foreground",
-  success: "border-success/25 bg-success/10 text-success-foreground",
-  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
-  danger: "border-destructive/25 bg-destructive/10 text-destructive",
-} as const;
-
-function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element }) {
-  return (
-    <span
-      class={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        chipTones[props.tone],
-      )}
-    >
-      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-      {props.children}
-    </span>
   );
 }

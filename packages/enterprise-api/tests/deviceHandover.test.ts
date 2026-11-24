@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import { openWithPassphrase, sealSecret, verifyScopedToken } from "@mattrax/crypto";
 import type { PassphraseEnvelope } from "@mattrax/crypto";
 import { encryptCmsEnvelopedData } from "@mattrax/scep";
-import { EnterprisePermissionDenied, StepUpRequired } from "@mattrax/enterprise-domain";
+import {
+  DeviceHandoverArchiveInfo,
+  DeviceHandoverImpactResponse,
+  EnterprisePermissionDenied,
+  StepUpRequired,
+} from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
@@ -500,6 +505,89 @@ describe("device handover archives", () => {
       canExport: true,
     });
     expect(JSON.stringify(impact)).not.toContain("bypass-1234");
+  });
+
+  it("reports and exports BitLocker keys through the handover schemas", async () => {
+    const { db, service, storage, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+    const at = now();
+
+    db.store.device.push(deviceRow("device-1", tenant.id));
+    db.store.device_bitlocker_key.push({
+      id: "key-row-1",
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      volumeType: "operating-system",
+      volumeId: "operating-system",
+      keyId: "graph-key-1",
+      keyType: "numeric-password",
+      protectorType: "RecoveryPassword",
+      sealedValue: await sealSecret(authSecret, "111111-222222"),
+      source: "entra-id",
+      capturedAt: at,
+      rotatedAt: null,
+      reportedAt: at,
+      retiredAt: null,
+      createdAt: at,
+      updatedAt: at,
+    });
+
+    const impact = await runEffect(
+      service.deviceHandoverImpact(request(headers), tenant.id, { ids: ["device-1"] }),
+    );
+    const decodedImpact = Schema.decodeUnknownSync(DeviceHandoverImpactResponse)(impact);
+
+    expect(decodedImpact.devices[0].secretKinds).toEqual(["bitlocker_recovery_key"]);
+
+    const created = await runEffect(
+      service.createDeviceHandover(request(headers), tenant.id, {
+        ids: ["device-1"],
+        passphrase,
+        reason: "Laptop returned",
+      }),
+    );
+
+    expect(created.secretKinds).toEqual(["bitlocker_recovery_key"]);
+    expect(Schema.decodeUnknownSync(DeviceHandoverArchiveInfo)(created)).toMatchObject({
+      secretKinds: ["bitlocker_recovery_key"],
+    });
+
+    const stored = storage.objects.get(`handovers/${tenant.id}/${created.id}.json`)!;
+    const document = JSON.parse(
+      await openWithPassphrase(passphrase, JSON.parse(stored) as PassphraseEnvelope),
+    );
+
+    expect(document.secretKinds).toEqual(["bitlocker_recovery_key"]);
+    expect(JSON.parse(document.devices[0].secrets.bitlocker_recovery_key)).toEqual([
+      expect.objectContaining({
+        keyId: "graph-key-1",
+        recoveryKey: "111111-222222",
+      }),
+    ]);
+  });
+
+  it("does not block deletion on a re-readable Windows LAPS password", async () => {
+    const { db, service, headers } = await makeContext();
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    db.store.device.push(deviceRow("device-1", tenant.id));
+    await seedSecrets(db, "device-1", tenant.id, {
+      windows_laps_password: "laps-password-1234",
+    });
+
+    const impact = await runEffect(
+      service.deviceHandoverImpact(request(headers), tenant.id, { ids: ["device-1"] }),
+    );
+
+    expect(impact.devices).toEqual([]);
+
+    await expect(
+      runEffect(service.deleteDevices(request(headers), tenant.id, ["device-1"])),
+    ).resolves.toMatchObject({ status: "ok" });
   });
 
   it("refuses to delete secret-bearing devices without the handover permission", async () => {

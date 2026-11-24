@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { parseCron } from "./cron.ts";
+import { describe, expect, it, vi } from "vitest";
+import { parseCron, startCronScheduler } from "./cron.ts";
 
 describe("cron", () => {
   it("evaluates expressions in UTC, like the platform", () => {
@@ -18,5 +18,47 @@ describe("cron", () => {
   it("accepts the Cloudflare daily and hourly triggers", () => {
     expect(parseCron("17 3 * * *")(new Date("2026-11-16T03:17:00Z"))).toBe(true);
     expect(parseCron("47 * * * *")(new Date("2026-11-16T14:47:00Z"))).toBe(true);
+  });
+
+  it("keeps the running guard until triggered background work finishes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-24T12:00:00Z"));
+
+    try {
+      let calls = 0;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const stop = startCronScheduler({
+        expressions: ["* * * * *"],
+        trigger: () => {
+          calls += 1;
+          return gate;
+        },
+        log: () => {},
+      });
+
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(calls).toBe(1);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(calls).toBe(1);
+
+      let idle = false;
+      const waiting = stop.idle().then(() => {
+        idle = true;
+      });
+      await Promise.resolve();
+      expect(idle).toBe(false);
+
+      release();
+      await waiting;
+      vi.setSystemTime(new Date("2026-11-24T12:01:45Z"));
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(calls).toBe(2);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

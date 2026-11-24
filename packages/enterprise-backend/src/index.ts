@@ -1,41 +1,3 @@
-export {
-  BillingWebhookError,
-  billingWebhookRoutes,
-  processStripeWebhook,
-} from "@mattrax/enterprise-billing";
-
-export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "@mattrax/enterprise-billing";
-
-export {
-  BillingService,
-  BillingServiceLive,
-  makeEntitlementSync,
-  makeServicesBillingService,
-  makeStripeBillingService,
-  pruneStripeEvents,
-  reconcileSubscriptionSweep,
-} from "@mattrax/enterprise-billing";
-
-export { hostedBillingRoutes, licenseBillingRoutes } from "@mattrax/enterprise-billing";
-
-export type { HostedBillingConfig, LicenseBillingConfig } from "@mattrax/enterprise-billing";
-
-export { makeRemoteBillingService } from "@mattrax/enterprise-billing";
-
-export type { RemoteBillingOptions, ServicesBillingOptions } from "@mattrax/enterprise-billing";
-
-export type {
-  BillingCheckoutInput,
-  BillingError,
-  BillingInvoicesInput,
-  BillingOperations,
-  BillingPortalInput,
-  BillingSummaryInput,
-  BillingTenant,
-  BillingUsage,
-  StripeBillingOptions,
-} from "@mattrax/enterprise-billing";
-
 export { billingEntitlementRoutes } from "./billingEntitlement.ts";
 export type { BillingEntitlementConfig } from "./billingEntitlement.ts";
 
@@ -305,6 +267,19 @@ export {
   type SignSsrTokenInput,
 } from "./Account/ssrToken.ts";
 
+export {
+  DEFAULT_EMAIL_BRAND_COLOR,
+  emailButton,
+  emailCode,
+  emailDocument,
+  emailFootnote,
+  emailHeading,
+  emailIsolate,
+  emailParagraph,
+  emailTextLink,
+  resolveEmailBrand,
+} from "./Mail/emailLayout.ts";
+
 export { invitationEmail } from "./Mail/invitationEmail.ts";
 
 export type { InvitationEmail, InvitationEmailInput } from "./Mail/invitationEmail.ts";
@@ -320,6 +295,7 @@ export { onboardingFollowUpEmail, welcomeEmail } from "./Tenant/onboardingEmail.
 
 export type {
   OnboardingEmail,
+  OnboardingEmailBranding,
   OnboardingFollowUpEmailInput,
   WelcomeEmailInput,
 } from "./Tenant/onboardingEmail.ts";
@@ -332,6 +308,7 @@ export {
   runOnboardingEmails,
   runWelcomeEmailSweep,
   sendWelcomeEmailOnce,
+  OnboardingEmailWarnings,
 } from "./Tenant/onboardingEmails.ts";
 
 export type {
@@ -354,12 +331,9 @@ export {
   makeEmailTransport,
   parseEmailSender,
   replyToAddress,
-  smtpEmailTransport,
 } from "@mattrax/email";
 
 export type { EmailAddress } from "@mattrax/email";
-
-export type { SmtpTransportOptions } from "@mattrax/email";
 
 export {
   ACCOUNT_EMAIL_DELIVERY_FAILED_ACTION,
@@ -392,9 +366,10 @@ export { settlePendingInvitations } from "@mattrax/enterprise-identity";
 
 export { makeAuthLive, sessionCookie } from "./Account/auth.ts";
 
-export { makeAppAuth } from "@mattrax/enterprise-domain";
+export { makeAppAuth } from "./Account/auth.ts";
+export type { AppAuthService } from "./Account/auth.ts";
 
-export type { AppAuthService, AuthLiveOptions } from "./Account/auth.ts";
+export type { AuthLiveOptions } from "./Account/auth.ts";
 
 export { makeEnterpriseAuthLive } from "./Identity/enterpriseAuth.ts";
 
@@ -515,9 +490,9 @@ export type {
   ScheduledGoogleSyncResult,
 } from "@mattrax/google-workspace";
 
-export { syncDirectoryGroup, syncDirectoryGroupsForTenant } from "@mattrax/mdm-apple";
+export { syncDirectoryGroup, syncDirectoryGroupsForTenant } from "@mattrax/mdm-core";
 
-export type { DirectoryGroupSyncOptions, DirectoryGroupSyncResult } from "@mattrax/mdm-apple";
+export type { DirectoryGroupSyncOptions, DirectoryGroupSyncResult } from "@mattrax/mdm-core";
 
 export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,
@@ -529,13 +504,13 @@ export {
   sendTestWebhook,
   signWebhookDelivery,
   verifyWebhookSignature,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 
 export type {
   WebhookDeliveryOutcome,
   WebhookRetryOptions,
   WebhookRetryResult,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 
 export {
   APNS_RENEWAL_URL,
@@ -714,9 +689,11 @@ export {
   MAX_SOFTWARE_UPDATE_FEED_BYTES,
   SOFA_MACOS_FEED_ID,
   SOFA_MACOS_FEED_URL,
+  SoftwareUpdateCache,
   loadSoftwareUpdateCatalog,
   type LoadSoftwareUpdateCatalogOptions,
   type SoftwareUpdateCatalogState,
+  type SoftwareUpdateFetchResult,
 } from "./Device/softwareUpdates.ts";
 
 export {

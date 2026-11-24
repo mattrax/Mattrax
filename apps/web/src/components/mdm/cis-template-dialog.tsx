@@ -26,6 +26,24 @@ import type {
   CisTemplateSummary,
   CompiledCisTemplate,
 } from "~/lib/policy-designer/cis";
+import {
+  beginCisApply,
+  beginCisIndexLoad,
+  beginCisLoad,
+  cisApplyLabel,
+  cisDialogLoading,
+  cisDialogPending,
+  cisLoadingLabel,
+  createCisRequestGate,
+  finishCisApply,
+  finishCisLoad,
+  initialCisDialogActivity,
+  initialCisIndexState,
+  rejectCisIndexLoad,
+  resolveCisIndexLoad,
+  toggleCisControlSelection,
+} from "~/lib/policy-designer/cis-dialog";
+import type { CisIndexState } from "~/lib/policy-designer/cis-dialog";
 import type { Selection } from "~/lib/policy-designer/build";
 import { cn } from "~/lib/utils";
 
@@ -61,15 +79,24 @@ const controlsLabel = (stats: { controls: number; mapped: number }) =>
  * disabled rather than hidden: the gap is part of the information.
  */
 export function CisTemplateDialog(props: CisTemplateDialogProps) {
-  const [summaries, setSummaries] = createSignal<CisTemplateSummary[]>();
-  const [indexError, setIndexError] = createSignal<string>();
+  const [index, setIndex] = createSignal<CisIndexState>(initialCisIndexState);
   const [summary, setSummary] = createSignal<CisTemplateSummary>();
   const [template, setTemplate] = createSignal<CompiledCisTemplate>();
   const [templateError, setTemplateError] = createSignal<string>();
   const [selected, setSelected] = createSignal<ReadonlySet<string>>(new Set<string>());
   const [query, setQuery] = createSignal("");
-  const [busy, setBusy] = createSignal(false);
+  // Loading a benchmark and applying a selection are different work. The
+  // counter keeps overlapping loads active, and only applying is a submission;
+  // ticking a control cannot change either.
+  const [activity, setActivity] = createSignal(initialCisDialogActivity);
   const [applyError, setApplyError] = createSignal<string>();
+
+  const loading = () => cisDialogLoading(activity());
+  const pending = () => cisDialogPending(activity());
+  const summaries = () => index().templates;
+  const indexError = () => index().error;
+  // Only the newest benchmark selection may write its template.
+  const requests = createCisRequestGate();
 
   const available = createMemo(() =>
     (summaries() ?? []).filter(
@@ -109,6 +136,10 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
   });
 
   const choose = (next: CisTemplateSummary | undefined) => {
+    // Invalidate the previous request even when the selection is cleared: a
+    // late response must not resurrect a benchmark the dialog no longer shows.
+    const token = requests.begin();
+
     setSummary(next);
     setTemplate(undefined);
     setTemplateError(undefined);
@@ -117,16 +148,48 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
     if (!next) return;
 
-    setBusy(true);
+    setActivity(beginCisLoad);
     void loadCisTemplate(next)
       .then((loaded) => {
+        if (!requests.isCurrent(token)) return;
+
         setTemplate(loaded);
         setSelected(new Set(cisControlIds(loaded)));
       })
-      .catch((error: unknown) =>
-        setTemplateError(error instanceof Error ? error.message : "Could not load the template."),
-      )
-      .finally(() => setBusy(false));
+      .catch((error: unknown) => {
+        if (!requests.isCurrent(token)) return;
+
+        setTemplateError(error instanceof Error ? error.message : "Could not load the template.");
+      })
+      .finally(() => setActivity(finishCisLoad));
+  };
+
+  const loadIndex = () => {
+    // A retry is ignored while another load is still running; the button is
+    // also disabled, so this is only a guard against duplicate events.
+    if (loading()) return;
+
+    setIndex(beginCisIndexLoad);
+    setActivity(beginCisLoad);
+    void loadCisTemplateIndex()
+      .then((result) => {
+        setIndex((state) => resolveCisIndexLoad(state, result.templates));
+
+        const first = result.templates.find(
+          (candidate) => props.platform === undefined || candidate.platform === props.platform,
+        );
+
+        if (first) choose(first);
+      })
+      .catch((error: unknown) => {
+        setIndex((state) =>
+          rejectCisIndexLoad(
+            state,
+            error instanceof Error ? error.message : "Could not load the CIS templates.",
+          ),
+        );
+      })
+      .finally(() => setActivity(finishCisLoad));
   };
 
   createEffect(
@@ -143,35 +206,12 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
         return;
       }
 
-      setBusy(true);
-      void loadCisTemplateIndex()
-        .then((index) => {
-          setSummaries([...index.templates]);
-
-          const first = index.templates.find(
-            (candidate) => props.platform === undefined || candidate.platform === props.platform,
-          );
-
-          if (first) choose(first);
-        })
-        .catch((error: unknown) =>
-          setIndexError(
-            error instanceof Error ? error.message : "Could not load the CIS templates.",
-          ),
-        )
-        .finally(() => setBusy(false));
+      loadIndex();
     },
   );
 
   const toggleControl = (id: string) => {
-    setSelected((current) => {
-      const next = new Set(current);
-
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-
-      return next;
-    });
+    setSelected((current) => toggleCisControlSelection(current, id));
   };
 
   const setAllMapped = (enabled: boolean) => {
@@ -187,7 +227,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
     if (!current || selected().size === 0) return;
 
-    setBusy(true);
+    setActivity(beginCisApply);
     setApplyError(undefined);
 
     try {
@@ -215,7 +255,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
     } catch (error) {
       setApplyError(error instanceof Error ? error.message : "Could not apply the template.");
     } finally {
-      setBusy(false);
+      setActivity(finishCisApply);
     }
   };
 
@@ -232,12 +272,20 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
         <Show when={indexError()}>
           {(error) => (
-            <p
+            <div
               role="alert"
-              class="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive"
+              class="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive"
             >
-              Could not load the CIS templates: {error()}
-            </p>
+              <p class="min-w-0 flex-1">Could not load the CIS templates: {error()}</p>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={loading()}
+                onClick={() => loadIndex()}
+              >
+                Retry
+              </Button>
+            </div>
           )}
         </Show>
 
@@ -247,8 +295,9 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
               <label class="block">
                 <span class="mb-1 block text-[11px] font-medium text-foreground">Benchmark</span>
                 <select
-                  class="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[12px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                  class="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[12px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
                   value={summary()?.id ?? ""}
+                  disabled={loading() || pending()}
                   onChange={(event) => {
                     choose(available().find((item) => item.id === event.currentTarget.value));
                   }}
@@ -268,7 +317,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                 when={template()}
                 fallback={
                   <div class="rounded-xl border border-dashed border-input px-3 py-6 text-center text-[12px] text-muted-foreground">
-                    {busy() ? "Loading benchmark…" : "No benchmark is available for this platform."}
+                    {cisLoadingLabel(activity(), "No benchmark is available for this platform.")}
                   </div>
                 }
               >
@@ -323,7 +372,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                       <Button
                         size="xs"
                         variant="outline"
-                        disabled={busy() || allMappedSelected()}
+                        disabled={loading() || pending() || allMappedSelected()}
                         onClick={() => setAllMapped(true)}
                       >
                         Select all mapped
@@ -331,7 +380,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                       <Button
                         size="xs"
                         variant="ghost"
-                        disabled={busy() || selected().size === 0}
+                        disabled={loading() || pending() || selected().size === 0}
                         onClick={() => setAllMapped(false)}
                       >
                         Clear
@@ -376,7 +425,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                 when={template()}
                 fallback={
                   <div class="flex flex-1 items-center justify-center px-4 py-10 text-[12px] text-muted-foreground">
-                    {busy() ? "Loading benchmark…" : "Choose a benchmark to see its controls."}
+                    {cisLoadingLabel(activity(), "Choose a benchmark to see its controls.")}
                   </div>
                 }
               >
@@ -508,10 +557,11 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
             </Button>
             <Button
               size="sm"
-              disabled={busy() || !template() || selected().size === 0}
+              pending={pending()}
+              disabled={loading() || pending() || !template() || selected().size === 0}
               onClick={() => void apply()}
             >
-              {busy() ? "Applying…" : "Apply selected controls"}
+              {cisApplyLabel(activity())}
             </Button>
           </div>
         </DialogFooter>

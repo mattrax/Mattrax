@@ -9,6 +9,7 @@ import {
   Field,
   formatDate,
   Page,
+  PageBreadcrumbs,
   PageHeader,
   Panel,
   QueryError,
@@ -187,6 +188,20 @@ const describe = (kind: string, data: Schema.Json | undefined) => {
       platforms: ["apple"],
     };
 
+  if (kind === "mttx.windows.laps")
+    return {
+      title: "Windows LAPS",
+      subtitle:
+        (isString(record.backupDirectory) ? String(record.backupDirectory) : "no backup") +
+        (record.passwordAgeDays !== undefined
+          ? ` · ${String(record.passwordAgeDays)} day password`
+          : ""),
+      collections: [
+        { label: isString(record.accountName) ? String(record.accountName) : "Built-in administrator", platform: "windows" },
+      ],
+      platforms: ["windows"],
+    };
+
   if (kind === "mttx.apple.lockScreenMessage")
     return {
       title: "Lock screen message",
@@ -229,6 +244,8 @@ const kindLabel = (kind: string) => {
   if (kind.startsWith("mttx.apple.application")) return "Application";
 
   if (kind.startsWith("mttx.apple.declaration")) return "Declaration";
+
+  if (kind === "mttx.windows.laps") return "Windows LAPS";
 
   if (kind === "mttx.windows.custom.designer") return "Windows configuration";
 
@@ -656,6 +673,7 @@ export default function PolicyDetailPage() {
         />
       </Show>
 
+      <PageBreadcrumbs resourceName={row()?.name} section="Overview" />
       <PageHeader
         title={row()?.name ?? "Policy"}
         description="Configure what this policy deploys to its device scope."
@@ -1447,7 +1465,13 @@ function AddConfigurationDialog(props: {
   existing: Array<[string, PolicyConfiguration | undefined]>;
   onAdd: (configurations: PolicyConfigurations) => void;
 }) {
-  const [preset, setPreset] = createSignal<"wifi" | "passcode">("wifi");
+  const [preset, setPreset] = createSignal<"wifi" | "passcode" | "laps">("wifi");
+  const [lapsBackupDirectory, setLapsBackupDirectory] = createSignal<
+    "entra-id" | "active-directory" | "disabled"
+  >("entra-id");
+  const [lapsAgeDays, setLapsAgeDays] = createSignal(30);
+  const [lapsLength, setLapsLength] = createSignal(20);
+  const [lapsComplexity, setLapsComplexity] = createSignal(4);
   const [ssid, setSsid] = createSignal("");
   const [security, setSecurity] = createSignal<WifiSecurity>("wpa2");
   const [password, setPassword] = createSignal("");
@@ -1471,6 +1495,10 @@ function AddConfigurationDialog(props: {
     setMinimumLength(8);
     setRequireAlphanumeric(false);
     setAllowSimple(true);
+    setLapsBackupDirectory("entra-id");
+    setLapsAgeDays(30);
+    setLapsLength(20);
+    setLapsComplexity(4);
     setError(null);
   };
 
@@ -1502,6 +1530,24 @@ function AddConfigurationDialog(props: {
         const config = windowsWifiConfiguration(value);
         next[config.kind] = config.data;
       }
+    } else if (preset() === "laps") {
+      if (lapsAgeDays() < 1 || lapsAgeDays() > 365)
+        return setError("The password age must be between 1 and 365 days.");
+
+      if (lapsBackupDirectory() === "entra-id" && lapsAgeDays() < 7)
+        return setError("Entra-backed Windows LAPS requires a password age of at least 7 days.");
+
+      if (lapsLength() < 8 || lapsLength() > 64)
+        return setError("The password length must be between 8 and 64 characters.");
+
+      next["mttx.windows.laps"] = {
+        backupDirectory: lapsBackupDirectory(),
+        passwordAgeDays: lapsAgeDays(),
+        passwordLength: lapsLength(),
+        passwordComplexity: lapsComplexity(),
+        postAuthenticationActions: 3,
+        postAuthenticationResetDelayHours: 24,
+      };
     } else {
       const config = applePasscodeConfiguration({
         minimumLength: minimumLength(),
@@ -1562,6 +1608,21 @@ function AddConfigurationDialog(props: {
             <span class="mt-2 block text-[13px] font-medium text-foreground">Passcode</span>
             <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
               Minimum length and complexity for Apple devices.
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setPreset("laps")}
+            class={`pressable rounded-lg border p-3 text-left ${
+              preset() === "laps"
+                ? "border-foreground/25 bg-hover"
+                : "border-border hover:bg-muted/40"
+            }`}
+          >
+            <ShieldCheck class="size-4 text-muted-foreground" />
+            <span class="mt-2 block text-[13px] font-medium text-foreground">Windows LAPS</span>
+            <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+              Managed local administrator password and backup directory.
             </span>
           </button>
         </div>
@@ -1678,6 +1739,70 @@ function AddConfigurationDialog(props: {
             </div>
             <p class="text-[11.5px] leading-relaxed text-muted-foreground">
               Apple devices only. Windows Hello and Android use their own policy models.
+            </p>
+          </div>
+        </Show>
+
+        <Show when={preset() === "laps"}>
+          <div class="mt-4 space-y-3">
+            <Field label="Backup directory">
+              <select
+                class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground"
+                value={lapsBackupDirectory()}
+                onChange={(event) => {
+                  const value = event.currentTarget.value;
+
+                  if (
+                    value === "entra-id" ||
+                    value === "active-directory" ||
+                    value === "disabled"
+                  )
+                    setLapsBackupDirectory(value);
+                }}
+              >
+                <option value="entra-id">Microsoft Entra ID (retrievable in Mattrax)</option>
+                <option value="active-directory">Active Directory (not retrievable here)</option>
+                <option value="disabled">Do not back up</option>
+              </select>
+            </Field>
+            <div class="grid gap-3 sm:grid-cols-2">
+              <Field label="Password age (days)">
+                <Input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={lapsAgeDays()}
+                  onInput={(event) => setLapsAgeDays(Number(event.currentTarget.value) || 0)}
+                />
+              </Field>
+              <Field label="Password length">
+                <Input
+                  type="number"
+                  min="8"
+                  max="64"
+                  value={lapsLength()}
+                  onInput={(event) => setLapsLength(Number(event.currentTarget.value) || 0)}
+                />
+              </Field>
+            </div>
+            <Field label="Complexity">
+              <select
+                class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground"
+                value={String(lapsComplexity())}
+                onChange={(event) => setLapsComplexity(Number(event.currentTarget.value) || 4)}
+              >
+                <option value="1">Upper case</option>
+                <option value="2">Upper and lower case</option>
+                <option value="3">Upper, lower and numbers</option>
+                <option value="4">Upper, lower, numbers and symbols</option>
+                <option value="5">Improved readability</option>
+              </select>
+            </Field>
+            <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+              Requires Windows 11 22H2+/Server 2025. Only an Entra ID backup can be read by
+              Mattrax; rotation works with Active Directory, but a disabled backup cannot
+              rotate because the password would be stored nowhere. Passphrase complexity is
+              Windows 11 24H2+ only and is not offered on this baseline.
             </p>
           </div>
         </Show>

@@ -1,4 +1,5 @@
-import { Data, Schema } from "effect";
+import { Data, Effect, Result, Schema } from "effect";
+import { Digest } from "effect/crypto";
 
 /**
  * Raised when a policy cannot be merged safely.
@@ -14,6 +15,11 @@ export class PolicyMergeError extends Data.TaggedError("PolicyMergeError")<{
   key?: string;
 }> {}
 
+export class AndroidPolicyHashError extends Data.TaggedError("AndroidPolicyHashError")<{
+  message: string;
+  cause?: unknown;
+}> {}
+
 const FORBIDDEN_KEYS = new Set(["name", "policyName"]);
 
 function isPlainObject(value: Schema.Json | PolicyDocumentInput): value is Schema.JsonObject {
@@ -23,18 +29,25 @@ function isPlainObject(value: Schema.Json | PolicyDocumentInput): value is Schem
   return prototype === Object.prototype || prototype === null;
 }
 
-function assertNoForbiddenKeys(value: PolicyDocumentInput, path: string): void {
-  if (!isPlainObject(value)) return;
+function assertNoForbiddenKeys(
+  value: PolicyDocumentInput,
+  path: string,
+): Result.Result<void, PolicyMergeError> {
+  if (!isPlainObject(value)) return Result.succeed(undefined);
 
   for (const key of Object.keys(value)) {
     if (path === "" && FORBIDDEN_KEYS.has(key)) {
-      throw new PolicyMergeError({
-        message: `Policy key "${key}" is not allowed (resource names are managed by Mattrax)`,
-        path: key,
-        key,
-      });
+      return Result.fail(
+        new PolicyMergeError({
+          message: `Policy key "${key}" is not allowed (resource names are managed by Mattrax)`,
+          path: key,
+          key,
+        }),
+      );
     }
   }
+
+  return Result.succeed(undefined);
 }
 
 /** Stable JSON representation: object keys sorted recursively, arrays kept in order. */
@@ -79,34 +92,38 @@ function mergeInto(
   target: Record<string, Schema.Json>,
   source: PolicyDocumentInput,
   path: string,
-): Record<string, Schema.Json> {
-  for (const [key, value] of Object.entries(source)) {
-    if (path === "" && FORBIDDEN_KEYS.has(key)) {
-      throw new PolicyMergeError({
-        message: `Policy key "${key}" is not allowed (resource names are managed by Mattrax)`,
-        path: key,
-        key,
-      });
+): Result.Result<Record<string, Schema.Json>, PolicyMergeError> {
+  return Result.gen(function* () {
+    for (const [key, value] of Object.entries(source)) {
+      if (path === "" && FORBIDDEN_KEYS.has(key)) {
+        return yield* Result.fail(
+          new PolicyMergeError({
+            message: `Policy key "${key}" is not allowed (resource names are managed by Mattrax)`,
+            path: key,
+            key,
+          }),
+        );
+      }
+
+      if (value === null || value === undefined) continue;
+      const childPath = path === "" ? key : `${path}.${key}`;
+      const existing = target[key];
+
+      if (Array.isArray(value)) {
+        target[key] = uniqueConcat(Array.isArray(existing) ? existing : [], value);
+      } else if (isPlainObject(value)) {
+        target[key] = yield* mergeInto(
+          isPlainObject(existing) ? Object.assign({}, existing) : {},
+          value,
+          childPath,
+        );
+      } else {
+        target[key] = value;
+      }
     }
 
-    if (value === null || value === undefined) continue;
-    const childPath = path === "" ? key : `${path}.${key}`;
-    const existing = target[key];
-
-    if (Array.isArray(value)) {
-      target[key] = uniqueConcat(Array.isArray(existing) ? existing : [], value);
-    } else if (isPlainObject(value)) {
-      target[key] = mergeInto(
-        isPlainObject(existing) ? Object.assign({}, existing) : {},
-        value,
-        childPath,
-      );
-    } else {
-      target[key] = value;
-    }
-  }
-
-  return target;
+    return target;
+  });
 }
 
 /**
@@ -140,13 +157,13 @@ function canonicalizeApplications<T extends Record<string, Schema.Json>>(policy:
 }
 
 /**
- * Merge Android policies deterministically.
+ * Merge Android policies deterministically as a typed `Result`.
  *
  * - later policies win for scalar values
  * - arrays are concatenated, dropping duplicates while preserving first-seen order
  * - objects are merged deeply
  * - `null` / `undefined` values are skipped (they cannot erase an earlier value)
- * - `name` and `policyName` are rejected anywhere in the tree
+ * - `name` and `policyName` are rejected at the top level
  *
  * The result has recursively sorted keys so identical inputs always produce
  * byte-identical JSON.
@@ -155,40 +172,54 @@ export type PolicyDocumentInput = { readonly [key: string]: Schema.Json | undefi
 
 export function mergeAndroidPolicies(
   policies: ReadonlyArray<PolicyDocumentInput>,
-): Schema.JsonObject {
-  let merged: Record<string, Schema.Json> = {};
+): Result.Result<Schema.JsonObject, PolicyMergeError> {
+  return Result.gen(function* () {
+    let merged: Record<string, Schema.Json> = {};
 
-  for (const policy of policies) {
-    if (!isPlainObject(policy)) {
-      throw new PolicyMergeError({
-        message: "Each Android policy must be a plain object",
-        path: "",
-      });
+    for (const policy of policies) {
+      if (!isPlainObject(policy)) {
+        return yield* Result.fail(
+          new PolicyMergeError({
+            message: "Each Android policy must be a plain object",
+            path: "",
+          }),
+        );
+      }
+
+      yield* assertNoForbiddenKeys(policy, "");
+      merged = yield* mergeInto(merged, policy, "");
     }
 
-    assertNoForbiddenKeys(policy, "");
-    merged = mergeInto(merged, policy, "");
-  }
+    const sorted = sortKeysDeep(canonicalizeApplications(merged));
 
-  const sorted = sortKeysDeep(canonicalizeApplications(merged));
+    if (!isPlainObject(sorted))
+      return yield* Result.fail(
+        new PolicyMergeError({ message: "Compiled policy must be an object", path: "" }),
+      );
 
-  if (!isPlainObject(sorted))
-    throw new PolicyMergeError({ message: "Compiled policy must be an object", path: "" });
-
-  return sorted;
+    return sorted;
+  });
 }
 
-/** SHA-256 (hex) of the canonical JSON representation of a policy. */
-export async function androidPolicyHash(policy: Schema.JsonObject): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(canonicalPolicyJson(policy)),
-  );
+/** Typed SHA-256 hash of the canonical JSON representation of a policy. */
+export const androidPolicyHash = Effect.fnUntraced(function* (
+  policy: Schema.JsonObject,
+): Effect.fn.Return<string, AndroidPolicyHashError, Digest.Digest> {
+  const digest = yield* Digest.Digest;
 
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
+  return yield* digest
+    .digestHex(Digest.sha256, new TextEncoder().encode(canonicalPolicyJson(policy)))
+    .pipe(
+      Effect.catchDefect((cause) =>
+        Effect.fail(
+          new AndroidPolicyHashError({
+            message: "Failed to hash the Android policy",
+            cause,
+          }),
+        ),
+      ),
+    );
+});
 
 /** True for tenant configuration kinds that contribute to an AMAPI policy. */
 export const isAndroidPolicyKind = (kind: string): boolean =>
@@ -206,34 +237,42 @@ export type AndroidPolicyConfiguration = {
  * the policy object itself. `draft` is editor state and must never reach
  * Google.
  */
-function policyFromConfiguration(configuration: AndroidPolicyConfiguration): Schema.JsonObject {
-  const data = configuration.data;
+function policyFromConfiguration(
+  configuration: AndroidPolicyConfiguration,
+): Result.Result<Schema.JsonObject, PolicyMergeError> {
+  return Result.gen(function* () {
+    const data = configuration.data;
 
-  if (!Schema.is(Schema.Json)(data) || !isPlainObject(data))
-    throw new PolicyMergeError({
-      message: `"${configuration.kind}" must be an object`,
-      path: configuration.kind,
-    });
+    if (!Schema.is(Schema.Json)(data) || !isPlainObject(data))
+      return yield* Result.fail(
+        new PolicyMergeError({
+          message: `"${configuration.kind}" must be an object`,
+          path: configuration.kind,
+        }),
+      );
 
-  if (data["policy"] !== undefined) {
-    const policy = data["policy"];
+    if (data["policy"] !== undefined) {
+      const policy = data["policy"];
 
-    if (!Schema.is(Schema.Json)(policy) || !isPlainObject(policy))
-      throw new PolicyMergeError({
-        message: `"${configuration.kind}.policy" must be an object`,
-        path: `${configuration.kind}.policy`,
-      });
+      if (!Schema.is(Schema.Json)(policy) || !isPlainObject(policy))
+        return yield* Result.fail(
+          new PolicyMergeError({
+            message: `"${configuration.kind}.policy" must be an object`,
+            path: `${configuration.kind}.policy`,
+          }),
+        );
+
+      return policy;
+    }
+
+    const policy: Record<string, Schema.Json> = {};
+
+    for (const [key, value] of Object.entries(data)) {
+      if (key !== "draft") policy[key] = value;
+    }
 
     return policy;
-  }
-
-  const policy: Record<string, Schema.Json> = {};
-
-  for (const [key, value] of Object.entries(data)) {
-    if (key !== "draft") policy[key] = value;
-  }
-
-  return policy;
+  });
 }
 
 /**
@@ -243,12 +282,18 @@ function policyFromConfiguration(configuration: AndroidPolicyConfiguration): Sch
  */
 export function compileAndroidPolicy(
   configurations: ReadonlyArray<AndroidPolicyConfiguration>,
-): Schema.JsonObject {
-  const policies = configurations.flatMap((configuration) =>
-    isAndroidPolicyKind(configuration.kind) ? [policyFromConfiguration(configuration)] : [],
-  );
+): Result.Result<Schema.JsonObject, PolicyMergeError> {
+  return Result.gen(function* () {
+    const policies: Array<Schema.JsonObject> = [];
 
-  return mergeAndroidPolicies(policies);
+    for (const configuration of configurations) {
+      if (isAndroidPolicyKind(configuration.kind)) {
+        policies.push(yield* policyFromConfiguration(configuration));
+      }
+    }
+
+    return yield* mergeAndroidPolicies(policies);
+  });
 }
 
 /**
@@ -266,14 +311,22 @@ export function androidPolicyIdForHash(hash: string): string {
   return `mattrax-${suffix || "default"}`;
 }
 
-/** Compile and hash in one step; the hash identifies the policy id. */
-export async function compileAndroidPolicyWithHash(
+/** Compile and hash with typed validation and crypto failures. */
+export const compileAndroidPolicyWithHash = Effect.fnUntraced(function* (
   configurations: ReadonlyArray<AndroidPolicyConfiguration>,
-): Promise<{ policy: Schema.JsonObject; hash: string }> {
-  const policy = compileAndroidPolicy(configurations);
+): Effect.fn.Return<
+  { policy: Schema.JsonObject; hash: string },
+  PolicyMergeError | AndroidPolicyHashError,
+  Digest.Digest
+> {
+  const compiled = compileAndroidPolicy(configurations);
 
-  return { policy, hash: await androidPolicyHash(policy) };
-}
+  if (Result.isFailure(compiled)) return yield* Effect.fail(compiled.failure);
+
+  const policy = compiled.success;
+
+  return { policy, hash: yield* androidPolicyHash(policy) };
+});
 
 /** One application assignment the Android management API should apply. */
 export type AndroidAssignedApplication = {

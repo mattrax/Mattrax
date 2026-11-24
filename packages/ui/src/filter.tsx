@@ -154,7 +154,7 @@ function FieldOptionRow(props: { option: FilterOption; selected?: boolean; onCli
       </Show>
       <span class="min-w-0 flex-1 truncate">{props.option.label}</span>
       <Show when={props.selected}>
-        <Check class="size-3.5 text-foreground" />
+        <Check class="size-3 text-foreground" stroke-width={3} />
       </Show>
     </button>
   );

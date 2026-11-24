@@ -21,6 +21,7 @@ export * from "./branding.ts";
 export * from "./webhooks.ts";
 
 export * from "./deviceActions.ts";
+export * from "./windowsSecurity.ts";
 
 export * from "./deviceHealth.ts";
 

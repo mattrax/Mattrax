@@ -317,6 +317,7 @@ export const routes = {
   login: (returnTo?: string) =>
     returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : "/login",
   account: () => "/account",
+  accountDelete: () => "/account/delete",
   adminAccounts: () => "/admin/accounts",
   settings: () => "/settings",
   tenants: () => "/tenants",
@@ -332,6 +333,8 @@ export const routes = {
       dashboards: () => `${base}/dashboards`,
       dashboard: (dashboardId: string, search: DashboardSearchParams = {}) =>
         `${base}/dashboards/${segment(dashboardId)}${dashboardSearch(search)}`,
+      dashboardReports: (dashboardId: string) =>
+        `${base}/dashboards/${segment(dashboardId)}/reports`,
       devices: (search: DeviceSearchParams = {}) => {
         const query = new URLSearchParams();
 
@@ -377,6 +380,7 @@ export const routes = {
           | ""
           | "administrators"
           | "approvals"
+          | "backups"
           | "identity"
           | "attributes"
           | "enrollment"

@@ -180,12 +180,12 @@ snapshots:
 				"@cloudflare/oxlint-config": "0.1.0",
 				"@cloudflare/vite-plugin": "2.0.0-rc.1",
 				"@effect/platform-node": {
-					"specifier": "^4.1.4",
-					"version": "4.1.4",
+					"specifier": "^4.1.5",
+					"version": "4.1.5",
 				},
 				"@effect/sql-mysql2": {
-					"specifier": "^4.1.4",
-					"version": "4.1.4",
+					"specifier": "^4.1.5",
+					"version": "4.1.5",
 				},
 				"@effect/tsgo": "0.73.2",
 				"@fontsource-variable/geist": {
@@ -196,6 +196,10 @@ snapshots:
 				"@lhci/cli": {
 					"specifier": "^0.16.1",
 					"version": "0.16.1",
+				},
+				"@mbakereth/ldapjs-dn": {
+					"specifier": "^1.1.2",
+					"version": "1.1.2",
 				},
 				"@paralleldrive/cuid2": {
 					"specifier": "^3.3.0",
@@ -277,8 +281,8 @@ snapshots:
 				"drizzle-kit": "1.0.0-rc.5",
 				"drizzle-orm": "1.0.0-rc.5",
 				"effect": {
-					"specifier": "^4.1.4",
-					"version": "4.1.4",
+					"specifier": "^4.1.5",
+					"version": "4.1.5",
 				},
 				"fast-plist": {
 					"specifier": "^0.1.3",
@@ -399,18 +403,6 @@ snapshots:
 			},
 		},
 
-		"apps/apns-relay": {
-			"dependencies": {
-				"@mattrax/apns": "workspace:*",
-				"effect": "catalog:",
-			},
-			"devDependencies": {
-				"@types/node": "catalog:",
-				"tsx": "catalog:",
-				"typescript": "catalog:",
-			},
-		},
-
 		"apps/cli": {
 			"dependencies": {
 				"@effect/platform-node": "catalog:",
@@ -439,12 +431,13 @@ snapshots:
 				"@mattrax/effect-stripe": "workspace:*",
 				"@mattrax/enterprise-api": "workspace:*",
 				"@mattrax/enterprise-backend": "workspace:*",
+				"@mattrax/enterprise-billing": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
 				"@mattrax/google-workspace": "workspace:*",
 				"@mattrax/management-backend-http": "workspace:*",
 				"@mattrax/mdm-apple": "workspace:*",
-				"@mattrax/net": "workspace:*",
+				"@mattrax/mdm-core": "workspace:*",
 				"@mattrax/scep": "workspace:*",
 				"@yielded/auth": "catalog:",
 				"@yielded/auth-platform-workerd": "catalog:",
@@ -469,6 +462,9 @@ snapshots:
 
 		"apps/docker": {
 			"dependencies": {
+				"@effect/platform-node": "catalog:",
+				"@mattrax/cloud-services": "workspace:*",
+				"effect": "catalog:",
 				"mysql2": "catalog:",
 			},
 			"devDependencies": {
@@ -477,7 +473,6 @@ snapshots:
 				"@mattrax/enterprise-core": "workspace:*",
 				"@types/node": "catalog:",
 				"@yielded/auth": "catalog:",
-				"effect": "catalog:",
 				"reflect-metadata": "catalog:",
 				"typescript": "catalog:",
 				"vite": {
@@ -514,6 +509,7 @@ snapshots:
 
 		"apps/services": {
 			"dependencies": {
+				"@effect/platform-node": "catalog:",
 				"@effect/sql-mysql2": "catalog:",
 				"@mattrax/apns": "workspace:*",
 				"@mattrax/cloud-services": "workspace:*",
@@ -579,7 +575,7 @@ snapshots:
 			"name": "@mattrax/apns",
 			"dependencies": {
 				"@mattrax/crypto": "workspace:*",
-				"@mattrax/net": "workspace:*",
+				"@mattrax/mdm-pki": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"asn1js": "catalog:",
 				"effect": "catalog:",
@@ -596,7 +592,6 @@ snapshots:
 				"@mattrax/crypto": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-tokens": "workspace:*",
-				"@mattrax/net": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"asn1js": "catalog:",
 				"drizzle-orm": "catalog:",
@@ -613,7 +608,6 @@ snapshots:
 		"packages/azure-graph": {
 			"name": "@mattrax/azure-graph",
 			"dependencies": {
-				"@mattrax/net": "workspace:*",
 				"effect": "catalog:",
 			},
 			"devDependencies": {
@@ -642,7 +636,6 @@ snapshots:
 				"@mattrax/enterprise-domain": "workspace:*",
 				"@mattrax/enterprise-identity": "workspace:*",
 				"@mattrax/enterprise-tokens": "workspace:*",
-				"@mattrax/net": "workspace:*",
 				"drizzle-orm": "catalog:",
 				"effect": "catalog:",
 			},
@@ -661,7 +654,13 @@ snapshots:
 				"@types/node": "catalog:",
 				"oxlint": "catalog:",
 				"typescript": "catalog:",
+				"vite": {
+					"specifier": "npm:@voidzero-dev/vite-plus-core@^8.3.8000",
+					"version": "@voidzero-dev/vite-plus-core@8.3.8000",
+				},
 				"vite-plus": "catalog:",
+				"vitest": "catalog:",
+				"yaml": "catalog:",
 			},
 		},
 
@@ -703,8 +702,10 @@ snapshots:
 		"packages/dm-apple": {
 			"name": "@mattrax/dm-apple",
 			"dependencies": {
+				"@mattrax/apns": "workspace:*",
 				"@mattrax/crypto": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
+				"@mattrax/mdm-pki": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"asn1js": "catalog:",
 				"effect": "catalog:",
@@ -729,9 +730,15 @@ snapshots:
 		},
 
 		"packages/docs-api": {
-			"devDependencies": {
+			"dependencies": {
+				"@mattrax/enterprise-domain": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
 				"@mattrax/management-backend-http": "workspace:*",
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"@types/node": "catalog:",
+				"tsx": "catalog:",
 				"typedoc": "catalog:",
 				"typedoc-plugin-markdown": "catalog:",
 				"typescript": "5.9.3",
@@ -741,7 +748,6 @@ snapshots:
 		"packages/effect-stripe": {
 			"name": "@mattrax/effect-stripe",
 			"dependencies": {
-				"@mattrax/net": "workspace:*",
 				"effect": "catalog:",
 				"stripe": "catalog:",
 			},
@@ -779,7 +785,8 @@ snapshots:
 				"@mattrax/entra-id": "workspace:*",
 				"@mattrax/google-workspace": "workspace:*",
 				"@mattrax/mdm-apple": "workspace:*",
-				"@mattrax/net": "workspace:*",
+				"@mattrax/mdm-core": "workspace:*",
+				"@mattrax/mdm-windows": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
 				"drizzle-orm": "catalog:",
@@ -815,7 +822,8 @@ snapshots:
 				"@mattrax/entra-id": "workspace:*",
 				"@mattrax/google-workspace": "workspace:*",
 				"@mattrax/mdm-apple": "workspace:*",
-				"@mattrax/net": "workspace:*",
+				"@mattrax/mdm-core": "workspace:*",
+				"@mattrax/mdm-windows": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
 				"@simplewebauthn/server": "catalog:",
@@ -840,7 +848,6 @@ snapshots:
 				"@mattrax/effect-stripe": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
-				"@mattrax/net": "workspace:*",
 				"drizzle-orm": "catalog:",
 				"effect": "catalog:",
 			},
@@ -856,6 +863,7 @@ snapshots:
 			"dependencies": {
 				"@effect/sql-mysql2": "catalog:",
 				"@mattrax/enterprise-domain": "workspace:*",
+				"@mattrax/management-backend": "workspace:*",
 				"@yielded/auth": "catalog:",
 				"@yielded/auth-persistence-drizzle": "catalog:",
 				"drizzle-orm": "catalog:",
@@ -870,6 +878,7 @@ snapshots:
 			"name": "@mattrax/enterprise-domain",
 			"dependencies": {
 				"@mattrax/crypto": "workspace:*",
+				"@mattrax/management-backend": "workspace:*",
 				"@xmldom/xmldom": "catalog:",
 				"@yielded/auth": "catalog:",
 				"effect": "catalog:",
@@ -971,7 +980,6 @@ snapshots:
 				"@mattrax/management-backend": "workspace:*",
 				"@mattrax/mdm-core": "workspace:*",
 				"@mattrax/mdm-windows": "workspace:*",
-				"@mattrax/net": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
 				"drizzle-orm": "catalog:",
@@ -989,11 +997,9 @@ snapshots:
 			"dependencies": {
 				"@mattrax/apns": "workspace:*",
 				"@mattrax/crypto": "workspace:*",
-				"@mattrax/dm-apple": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
-				"@mattrax/net": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
 				"drizzle-orm": "catalog:",
@@ -1006,6 +1012,14 @@ snapshots:
 			},
 		},
 
+		"packages/mdm-pki": {
+			"name": "@mattrax/mdm-pki",
+			"dependencies": {
+				"asn1js": "catalog:",
+				"pkijs": "catalog:",
+			},
+		},
+
 		"packages/mdm-windows": {
 			"name": "@mattrax/mdm-windows",
 			"dependencies": {
@@ -1014,20 +1028,17 @@ snapshots:
 				"@mattrax/management-backend": "workspace:*",
 				"@mattrax/mdm-core": "workspace:*",
 				"@mattrax/scep": "workspace:*",
+				"@mbakereth/ldapjs-dn": "catalog:",
 				"drizzle-orm": "catalog:",
 				"effect": "catalog:",
 			},
 			"devDependencies": {
+				"@mattrax/crypto": "workspace:*",
 				"@types/node": "catalog:",
+				"asn1js": "catalog:",
+				"pkijs": "catalog:",
 				"typescript": "catalog:",
 				"vitest": "catalog:",
-			},
-		},
-
-		"packages/net": {
-			"name": "@mattrax/net",
-			"devDependencies": {
-				"@types/node": "catalog:",
 			},
 		},
 
@@ -1046,6 +1057,7 @@ snapshots:
 			"name": "@mattrax/scep",
 			"dependencies": {
 				"@mattrax/crypto": "workspace:*",
+				"@mattrax/mdm-pki": "workspace:*",
 				"asn1js": "catalog:",
 				"effect": "catalog:",
 				"pkijs": "catalog:",
@@ -1683,13 +1695,13 @@ snapshots:
 			"integrity": "sha512-VYJy0uhFm9zTJ1TxBaW/pA8bjbOM/OttaNMwZ1RHG4JKyRG7DhSdiqD1ipQoAyoD22olUtxbP78W9xY3Wd11bg==",
 		},
 
-		"@effect/platform-node-shared@4.1.4": {
-			"integrity": "sha512-DWdfphHGOFJNj/mYadgpT3jIm8aRXDcPrQiGXFBH4p2H4XmA7iYMrPsI8NxVgZ7kNX0q1+FGJZJama0tINHRAg==",
+		"@effect/platform-node-shared@4.1.5": {
+			"integrity": "sha512-JzlrYe4uKaBFTWihBRXo2pDjkUVB39kQpKdGfXdbp7Co5sKT8hbcjOmdB5pg/WOYESdGTddd3fxD4lwlZELbZQ==",
 			"engines": {"node": ">=22.19.0"},
 			"peerDependencies": {
 				"effect": {
-					"specifier": "^4.1.4",
-					"version": "4.1.4",
+					"specifier": "^4.1.5",
+					"version": "4.1.5",
 				},
 			},
 			"dependencies": {
@@ -1698,13 +1710,13 @@ snapshots:
 			},
 		},
 
-		"@effect/platform-node@4.1.4": {
-			"integrity": "sha512-h7QExTPq/RfYtHP/8tMlgfBvqYsuJKhxfkU6w0+NaF/ihqQ8Y3GH9t28ltupQjoqMM7P6W5gy8rOji7F0qVrmg==",
+		"@effect/platform-node@4.1.5": {
+			"integrity": "sha512-tFnRvxF9EKc3oU17sDHj1JeLP+TL/IkaOEl3IUk2EjgMS0x7AWs0ioUXjdNKLb3Z1LdjVfMf/DxsNh9PW5FFAg==",
 			"engines": {"node": ">=22.19.0"},
 			"peerDependencies": {
 				"effect": {
-					"specifier": "^4.1.4",
-					"version": "4.1.4",
+					"specifier": "^4.1.5",
+					"version": "4.1.5",
 				},
 				"redis": {
 					"specifier": ">=5.1.0 <7.0.0",
@@ -1712,21 +1724,21 @@ snapshots:
 				},
 			},
 			"dependencies": {
-				"@effect/platform-node-shared": "4.1.4",
+				"@effect/platform-node-shared": "4.1.5",
 				"undici": "8.12.4",
 			},
 		},
 
-		"@effect/sql-mysql2@4.1.4": {
-			"integrity": "sha512-RZ/j8m3d8742q80rZn5YfWwoPUos7fkRPGnJv8XapKgGhAk7O1wxH6yHoB2aR+pVaMdrzG/MN856OIF5BPxzNQ==",
+		"@effect/sql-mysql2@4.1.5": {
+			"integrity": "sha512-fLjPQ5HiPT/6ZoNhEmJ5bDbOL9PAHq2ak+X7sDjHi6MqanOoNrGubHNSFbQJP+tZTu2IZZrK8KEEzqAUK/MX2g==",
 			"peerDependencies": {
 				"@types/node": {
 					"version": "26.6.6",
 					"below": true,
 				},
 				"effect": {
-					"specifier": "^4.1.4",
-					"version": "4.1.4",
+					"specifier": "^4.1.5",
+					"version": "4.1.5",
 				},
 			},
 			"dependencies": {
@@ -2719,6 +2731,18 @@ snapshots:
 				"js-yaml": "5.5.0",
 				"lighthouse": "13.6.0",
 				"tree-kill": "1.2.2",
+			},
+		},
+
+		"@mbakereth/ldapjs-asn1@2.0.2": {
+			"integrity": "sha512-i+r5LgX+ixyEapquIW77Mk4Tyn36YM3kdOH4x/ECFKiJNOHvSH8hVJo4NDhzc7+iYNJQWWENHp4ze/fKCSqXOw==",
+		},
+
+		"@mbakereth/ldapjs-dn@1.1.2": {
+			"integrity": "sha512-k5Vq4zHWG8uYYGDLl0LUvzPaDv33dK/GqB3I1WU+Ib+0lVKCknbZAKbQ9LPGhn0Q8xpoC04ZvFaHGd9pKLhtPg==",
+			"dependencies": {
+				"@mbakereth/ldapjs-asn1": "2.0.2",
+				"process-warning": "2.3.2",
 			},
 		},
 
@@ -6144,7 +6168,7 @@ snapshots:
 				},
 				"@effect/sql-mysql2": {
 					"specifier": ">=4.1.0",
-					"version": "4.1.4",
+					"version": "4.1.5",
 					"optional": true,
 				},
 				"@effect/sql-pg": {
@@ -6177,7 +6201,7 @@ snapshots:
 				},
 				"effect": {
 					"specifier": "^4.1.0",
-					"version": "4.1.4",
+					"version": "4.1.5",
 				},
 			},
 			"dependencies": {
@@ -6191,7 +6215,7 @@ snapshots:
 			"peerDependencies": {
 				"effect": {
 					"specifier": "^4.1.0",
-					"version": "4.1.4",
+					"version": "4.1.5",
 				},
 			},
 			"dependencies": {
@@ -6204,7 +6228,7 @@ snapshots:
 			"peerDependencies": {
 				"effect": {
 					"specifier": "^4.1.0",
-					"version": "4.1.4",
+					"version": "4.1.5",
 				},
 			},
 			"dependencies": {
@@ -6227,7 +6251,7 @@ snapshots:
 				},
 				"effect": {
 					"specifier": "^4.1.0",
-					"version": "4.1.4",
+					"version": "4.1.5",
 				},
 			},
 			"dependencies": {
@@ -6241,7 +6265,7 @@ snapshots:
 			"peerDependencies": {
 				"effect": {
 					"specifier": "^4.1.0",
-					"version": "4.1.4",
+					"version": "4.1.5",
 				},
 			},
 			"dependencies": {
@@ -6255,7 +6279,7 @@ snapshots:
 			"peerDependencies": {
 				"effect": {
 					"specifier": "^4.1.0",
-					"version": "4.1.4",
+					"version": "4.1.5",
 				},
 			},
 		},
@@ -6265,7 +6289,7 @@ snapshots:
 			"peerDependencies": {
 				"effect": {
 					"specifier": "^4.1.0",
-					"version": "4.1.4",
+					"version": "4.1.5",
 				},
 			},
 			"dependencies": {
@@ -7353,7 +7377,7 @@ snapshots:
 				},
 				"@effect/sql-mysql2": {
 					"specifier": ">=4.0.0",
-					"version": "4.1.4",
+					"version": "4.1.5",
 					"optional": true,
 				},
 				"@effect/sql-pg": {
@@ -7483,7 +7507,7 @@ snapshots:
 				},
 				"effect": {
 					"specifier": ">=4.0.0",
-					"version": "4.1.4",
+					"version": "4.1.5",
 					"optional": true,
 				},
 				"expo-sqlite": {
@@ -7545,8 +7569,8 @@ snapshots:
 			"integrity": "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==",
 		},
 
-		"effect@4.1.4": {
-			"integrity": "sha512-Tgrv/9FN+TZYyOn8XSli+fVqAfwDrDAkiX5Uu9vztINb675VTQdhD0gWI5Kzvhlh9QqzjZvw72iugqw5pwoghQ==",
+		"effect@4.1.5": {
+			"integrity": "sha512-xyR20KhQI0vg2gD8ILUSQRTTESEYJ0JKdP+QD8J37xbwPTqXRxFM/l0+vUVD9fuSvoYruoTqyt33C4FZv1s4TQ==",
 		},
 
 		"electron-to-chromium@1.5.486": {
@@ -10929,6 +10953,10 @@ snapshots:
 			"dependencies": {
 				"parse-ms": "4.0.0",
 			},
+		},
+
+		"process-warning@2.3.2": {
+			"integrity": "sha512-n9wh8tvBe5sFmsqlg+XQhaQLumwpqoAUruLwjCopgTmUBjJ/fjtBsJzKleCaIGBOMXYEhp1YfKl4d7rJ5ZKJGA==",
 		},
 
 		"prompts@2.4.2": {

@@ -26,7 +26,7 @@ const sha256 = async (value: string) =>
 
 const makeContext = (
   initial: Record<string, any[]> = {},
-  options: { readonly email?: any } = {},
+  options: { readonly email?: any; readonly onboardingBranding?: any } = {},
 ) => {
   const db = makeDb(initial);
 
@@ -48,6 +48,7 @@ const makeContext = (
     origin,
     authSecret,
     email: options.email,
+    onboardingBranding: options.onboardingBranding,
   }).pipe(Layer.provide(Layer.succeed(Db, db)));
 
   const run = <A>(work: (auth: EnterpriseAuth["Service"]) => Effect.Effect<A, any, any>) =>
@@ -419,8 +420,27 @@ describe("email verification", () => {
     return seed;
   };
 
+  it("uses deployment branding for verification email", async () => {
+    const sent: Array<{ text: string; html?: string }> = [];
+    const { run } = makeContext(unverified(), {
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
+      onboardingBranding: {
+        brandName: "Acme Device Management",
+        brandColor: "#16a34a",
+        logoUrl: "/assets/acme.png",
+      },
+    });
+
+    await run((auth) => auth.requestEmailVerification(session()));
+
+    expect(sent[0].html).toContain("Acme Device Management</td>");
+    expect(sent[0].html).toContain('src="https://enterprise.test/assets/acme.png"');
+    expect(sent[0].html).toContain("background:#16a34a;");
+    expect(sent[0].html).toContain("color:#1c1917;");
+  });
+
   it("verifies a six-digit code and consumes it", async () => {
-    const sent: Array<{ text: string }> = [];
+    const sent: Array<{ text: string; html?: string }> = [];
 
     const { db, run } = makeContext(unverified(), {
       email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
@@ -430,6 +450,10 @@ describe("email verification", () => {
     const code = sent[0].text.match(/code is (\d{6})/)?.[1];
     expect(code).toMatch(/^\d{6}$/);
     expect(requested.challenge).toEqual(expect.any(String));
+    expect(sent[0].html).toContain('role="presentation"');
+    expect(sent[0].html).toContain("email-code");
+    expect(sent[0].html).toContain(code!);
+    expect(sent[0].html).toContain('name="color-scheme"');
 
     const result = await run((auth) =>
       auth.verifyEmail(session(), { code, challenge: requested.challenge }),
@@ -583,7 +607,7 @@ describe("email verification", () => {
 });
 
 describe("email change ceremony", () => {
-  const sent: Array<{ to: string; subject: string; text: string }> = [];
+  const sent: Array<{ to: string; subject: string; text: string; html?: string }> = [];
 
   const makeEmailContext = (initial = seedAccountAndTenant()) => {
     sent.length = 0;
@@ -643,6 +667,24 @@ describe("email change ceremony", () => {
     expect(db.store.account_audit_log.map((row: any) => row.action)).toContain(
       "account.email_change_requested",
     );
+
+    expect(sent.every((message) => message.html?.includes('role="presentation"'))).toBe(true);
+    expect(sent.every((message) => message.html?.includes('name="color-scheme"'))).toBe(true);
+  });
+
+  it("escapes the requested address in the branded notices", async () => {
+    const { run } = makeEmailContext();
+    const grant = await grantFor("email-change");
+    const newEmail = "a&b@example.com";
+
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail }));
+
+    const confirmation = sent.find((message) => message.to === newEmail);
+    const notice = sent.find((message) => message.to === "owner@example.com");
+
+    expect(confirmation?.html).toContain('role="presentation"');
+    expect(notice?.html).toContain("a&amp;b@example.com");
+    expect(notice?.html).not.toContain("a&b@example.com");
   });
 
   it("bumps the security revision and consumes the token once", async () => {

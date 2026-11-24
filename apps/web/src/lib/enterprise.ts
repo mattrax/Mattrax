@@ -3,12 +3,17 @@ import type { InfiniteData } from "@tanstack/solid-query";
 import type {
   AdminAccountsQuery,
   AppleUserActionName,
-  MeResponse,
   UpdateMeRequest,
   UpdateTenantOsPolicyRequest,
 } from "@mattrax/enterprise-domain/client";
 import { Effect, Option, Schema } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import {
+  HttpBody,
+  HttpClient,
+  HttpClientRequest,
+  HttpClientResponse,
+  HttpMethod,
+} from "effect/http";
 import { HttpApiClient } from "effect/http-api";
 import type { Accessor } from "solid-js";
 import { approvalFailure, errorTag, raisedFailure, stepUpFailure } from "~/lib/errors";
@@ -18,9 +23,10 @@ import {
   registerApprovalRetry,
 } from "~/lib/approval-retry";
 import type { ApprovalRetryInput } from "~/lib/approval-retry";
-import { readMeCache, writeMeCache } from "~/lib/me-cache";
-import { getPreloadedSession, readClientPreloadedMe } from "~/lib/session-store";
-import { rememberTenants, resolveTenant, resolveTenantId } from "~/lib/tenant";
+import { webHttpClientLayer } from "~/lib/web-http";
+import { ME_QUERY_KEY } from "~/lib/me-keys";
+import { buildMeQueryOptions } from "~/lib/me-options";
+import { currentTenantDirectory, resolveTenant, resolveTenantId } from "~/lib/tenant";
 import {
   requestStepUp,
   stepUpGrant,
@@ -30,7 +36,9 @@ import {
 import type { StepUpAction } from "~/lib/step-up-bus";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import {
+  ApprovalRequired,
   EnterpriseBadRequest,
+  StepUpRequired,
   fleetMigrationHttpApi,
   makeEnterpriseClient,
   scriptHttpApi,
@@ -323,6 +331,7 @@ type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["Ente
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceView"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceHandover"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseOnboarding"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApproval"];
 
@@ -399,7 +408,8 @@ const keyTenant = (tenantId: RouteParam) =>
   tenantId ? (resolveTenantId(tenantId) ?? tenantId) : "";
 
 export const enterpriseKeys = {
-  me: () => ["enterprise", "me"] as const,
+  me: () => ME_QUERY_KEY,
+  accountDeletion: () => ["enterprise", "account-deletion"] as const,
   tenants: () => ["enterprise", "tenants"] as const,
   tenant: (tenantId: RouteParam) => ["enterprise", "tenant", keyTenant(tenantId)] as const,
   backups: (tenantId: RouteParam) => ["enterprise", "backups", keyTenant(tenantId)] as const,
@@ -638,45 +648,32 @@ const scriptClientEffect = (headers: Readonly<Record<string, string>>) => {
   });
 };
 
-type EndpointStepUp =
-  | {
-      /** The action this endpoint requires a recent step-up for. */
-      readonly stepUp: StepUpAction;
-    }
-  | {
-      /** Step-up endpoints must not recurse into the prompt. */
-      readonly stepUp: false;
-    };
+type EndpointStepUp = {
+  /** The action this endpoint requires a recent step-up for. */
+  readonly stepUp: StepUpAction | false;
+  /** Approval-page action name when it differs from the step-up action. */
+  readonly approvalAction?: string;
+};
 
-function endpointWith<Client, A, E>(
-  makeClient: (
-    headers: Readonly<Record<string, string>>,
-  ) => Effect.Effect<Client, never, HttpClient.HttpClient>,
-  call: (api: Client) => Effect.Effect<A, E, never>,
+const enterpriseRequestHeaders = (grant?: string, approval?: ApprovalRetryInput) => {
+  const event = isServer ? getRequestEvent() : undefined;
+  const cookie = event?.request.headers.get("cookie");
+  return {
+    ...approvalHeaders(approval),
+    ...(grant ? { "x-mattrax-step-up": grant } : {}),
+    ...(cookie ? { cookie } : {}),
+  };
+};
+
+const decodeAction = Schema.decodeUnknownOption(StepUpActionSchema);
+const decodeMethods = Schema.decodeUnknownOption(Schema.Array(StepUpMethodSchema));
+
+/** One step-up/approval state machine for JSON and header-preserving downloads. */
+const runEndpoint = <A>(
+  attempt: (grant?: string, approval?: ApprovalRetryInput) => Promise<A>,
   options: EndpointStepUp = { stepUp: false },
-): EndpointPromise<A, E | EnterpriseBadRequest> {
-  const action = options.stepUp === false ? undefined : options.stepUp;
-
-  const requestHeaders = (grant?: string, approval?: ApprovalRetryInput) => {
-    const event = isServer ? getRequestEvent() : undefined;
-    const cookie = event?.request.headers.get("cookie");
-    return {
-      ...approvalHeaders(approval),
-      ...(grant ? { "x-mattrax-step-up": grant } : {}),
-      ...(cookie ? { cookie } : {}),
-    };
-  };
-
-  const attempt = (grant?: string, approval?: ApprovalRetryInput) => {
-    const effect = makeClient(requestHeaders(grant, approval)).pipe(Effect.flatMap(call));
-
-    // SAFETY: Effect.runPromise resolves with the effect success value A; the
-    // assertion restores the generic success type the client erases.
-    return Effect.runPromise(effect.pipe(Effect.provide(FetchHttpClient.layer))) as Promise<A>;
-  };
-
-  const decodeAction = Schema.decodeUnknownOption(StepUpActionSchema);
-  const decodeMethods = Schema.decodeUnknownOption(Schema.Array(StepUpMethodSchema));
+): Promise<A> => {
+  const action = options.stepUp || undefined;
 
   const run = async (approval?: ApprovalRetryInput): Promise<A> => {
     try {
@@ -691,11 +688,9 @@ function endpointWith<Client, A, E>(
         if (requestId) {
           const status = fields.status === "approved" ? "approved" : "pending";
 
-          // Keep the exact call that was blocked so the approvals page can
-          // replay it with the decision, without reconstructing the payload.
           registerApprovalRetry({
             requestId,
-            action: action ?? "approval",
+            action: options.approvalAction ?? action ?? "approval",
             retry: async (input) => {
               await run(input);
             },
@@ -728,10 +723,90 @@ function endpointWith<Client, A, E>(
     }
   };
 
-  // SAFETY: `EndpointPromise` only adds the phantom `__error` field that carries
-  // the endpoint error type; the runtime value is the plain promise from `run`.
   return run();
+};
+
+function endpointWith<Client, A, E>(
+  makeClient: (
+    headers: Readonly<Record<string, string>>,
+  ) => Effect.Effect<Client, never, HttpClient.HttpClient>,
+  call: (api: Client) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  const attempt = (grant?: string, approval?: ApprovalRetryInput) => {
+    const effect = makeClient(enterpriseRequestHeaders(grant, approval)).pipe(
+      Effect.flatMap((api) =>
+        Effect.try({
+          try: () => call(api),
+          catch: (cause) =>
+            cause instanceof EnterpriseBadRequest
+              ? cause
+              : new EnterpriseBadRequest({ message: "Invalid endpoint parameters" }),
+        }).pipe(Effect.flatten),
+      ),
+    );
+
+    // SAFETY: the assertion restores the generic success type the client erases.
+    return Effect.runPromise(effect.pipe(Effect.provide(webHttpClientLayer))) as Promise<A>;
+  };
+
+  return runEndpoint(attempt, options) as EndpointPromise<A, E | EnterpriseBadRequest>;
 }
+
+const GuardedDownloadFailure = Schema.Union([StepUpRequired, ApprovalRequired]);
+const decodeGuardedDownloadFailure = Schema.decodeUnknownOption(GuardedDownloadFailure);
+
+export type EnterpriseDownloadOptions = EndpointStepUp & {
+  readonly method?: HttpMethod.HttpMethod;
+  readonly body?: Schema.Json;
+  readonly headers?: Readonly<Record<string, string>>;
+};
+
+const download = (
+  path: string | (() => string),
+  options: EnterpriseDownloadOptions = { stepUp: false },
+): Promise<Response> =>
+  runEndpoint((grant, approval) => {
+    const effect = Effect.gen(function* () {
+      const client = yield* HttpClient.HttpClient;
+      const requestPath = yield* Effect.try({
+        try: () => (typeof path === "function" ? path() : path),
+        catch: (cause) =>
+          cause instanceof EnterpriseBadRequest
+            ? cause
+            : new EnterpriseBadRequest({ message: "Invalid download parameters" }),
+      });
+      const response = yield* client.execute(
+        HttpClientRequest.make(options.method ?? "GET")(requestPath, {
+          headers: { ...enterpriseRequestHeaders(grant, approval), ...options.headers },
+          ...(options.body === undefined ? {} : { body: HttpBody.jsonUnsafe(options.body) }),
+        }),
+      );
+
+      if (response.status === 403) {
+        const body = yield* response.json;
+        const failure = Option.getOrUndefined(decodeGuardedDownloadFailure(body));
+
+        if (failure) return yield* Effect.fail(failure);
+
+        return Response.json(body, {
+          status: response.status,
+          headers: { ...response.headers },
+        });
+      }
+
+      const web = Option.getOrUndefined(HttpClientResponse.toWeb(response));
+
+      if (!web)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({ message: "The download transport returned no Web response" }),
+        );
+
+      return web;
+    });
+
+    return Effect.runPromise(effect.pipe(Effect.provide(webHttpClientLayer)));
+  }, options);
 
 function endpoint<A, E>(
   call: (api: EnterpriseApiClient) => Effect.Effect<A, E, never>,
@@ -745,6 +820,7 @@ function endpoint<A, E>(
         ...client.EnterpriseGroup,
         ...client.EnterpriseDeviceView,
         ...client.EnterpriseDeviceHandover,
+        ...client.EnterpriseWindows,
         ...client.EnterpriseOnboarding,
         ...client.EnterpriseApproval,
       })),
@@ -938,7 +1014,21 @@ export type ApplicationInstallerPayload = {
 };
 
 export const enterprise = {
+  /** Header/body-preserving application request for thin browser adapters. */
+  request: (
+    path: string,
+    options: Omit<EnterpriseDownloadOptions, "stepUp" | "approvalAction"> = {},
+  ) => download(path, { ...options, stepUp: false }),
   me: () => accountEndpoint((api) => api.me({})),
+  /** Whether this account can be deleted, and the tenant the cascade would remove. */
+  getAccountDeletion: () => accountEndpoint((api) => api.getAccountDeletion({})),
+  /**
+   * Delete the account and the solo tenant it owns. The server re-checks the
+   * typed address and the ownership/membership rules, so the result is not
+   * trusted from the preview alone.
+   */
+  deleteAccount: (payload: { confirmEmail: string }) =>
+    accountEndpoint((api) => api.deleteMe({ payload })),
   /** Account-level profile fields, including the default landing tenant. */
   updateMe: (payload: UpdateMeRequest) => accountEndpoint((api) => api.updateMe({ payload })),
   /** Platform operator catalogue; the API rejects non-superadmins. */
@@ -970,6 +1060,13 @@ export const enterprise = {
         params: { tenantId: required(tenantId, "tenantId") },
         query: query.includeAudit ? { includeAudit: "true" } : {},
       }),
+    ),
+  /** Header-preserving export; only the browser adapter turns it into a file. */
+  exportTenantDownload: (tenantId: RouteParam, includeAudit = false) =>
+    download(
+      () =>
+        `/api/v1/tenants/${encodeURIComponent(required(tenantId, "tenantId"))}/export${includeAudit ? "?includeAudit=true" : ""}`,
+      { stepUp: false, approvalAction: "tenant.export" },
     ),
   /** Creates a new tenant owned by the caller from an exported bundle. */
   importTenant: (payload: TenantImportRequest) => endpoint((api) => api.importTenant({ payload })),
@@ -1009,6 +1106,13 @@ export const enterprise = {
   listTenantBackups: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listTenantBackups({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  /** Header-preserving backup download with shared step-up/approval retries. */
+  downloadTenantBackup: (tenantId: RouteParam, id: RouteParam) =>
+    download(
+      () =>
+        `/api/v1/tenants/${encodeURIComponent(required(tenantId, "tenantId"))}/backups/${encodeURIComponent(required(id, "id"))}/download`,
+      { stepUp: "backup-download", approvalAction: "backup.download" },
     ),
   /** Exempt a run from age-based pruning. Requires step-up. */
   pinTenantBackup: (tenantId: RouteParam, id: RouteParam) =>
@@ -1631,7 +1735,10 @@ export const enterprise = {
         | "relinquish-ownership"
         | "schedule-os-update"
         | "set-device-name"
-        | "set-lock-screen-message";
+        | "set-lock-screen-message"
+        | "fresh-start"
+        | "collect-diagnostics"
+        | "rotate-bitlocker-key";
       deviceName?: string;
       lockScreenMessage?: string;
       lockScreenIncludeAssetTag?: boolean;
@@ -1649,6 +1756,7 @@ export const enterprise = {
       osUpdateProductKey?: string;
       osUpdateDeadline?: string;
       osUpdateMechanism?: "ddm-software-update";
+      freshStartRetainUserData?: boolean;
     } = { action: "sync" },
   ) =>
     endpoint((api) =>
@@ -1684,6 +1792,36 @@ export const enterprise = {
           params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         }),
       { stepUp: "recovery-key-reveal" },
+    ),
+  getDeviceWindowsSecurity: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.getDeviceWindowsSecurity({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  getDeviceLapsPassword: (tenantId: RouteParam, id: RouteParam, reason: string) =>
+    endpoint(
+      (api) =>
+        api.getDeviceLapsPassword({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          query: { reason },
+        }),
+      { stepUp: "recovery-key-reveal" },
+    ),
+  revealDeviceBitlockerKey: (tenantId: RouteParam, id: RouteParam, keyId: string, reason: string) =>
+    endpoint(
+      (api) =>
+        api.revealDeviceBitlockerKey({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id"), keyId },
+          query: { reason },
+        }),
+      { stepUp: "recovery-key-reveal" },
+    ),
+  listDeviceDiagnostics: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.listDeviceDiagnostics({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
     ),
   getDeviceActivationLockBypassCode: (tenantId: RouteParam, id: RouteParam) =>
     endpoint(
@@ -1951,14 +2089,16 @@ export const enterprise = {
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
       }),
     ),
+  /**
+   * Creating a script is additive, so it does not need a step-up. Editing,
+   * assigning, renaming or deleting an existing script still does.
+   */
   createScript: (tenantId: RouteParam, payload: CreateScriptRequest) =>
-    scriptEndpoint(
-      (api) =>
-        api.createScript({
-          params: { tenantId: required(tenantId, "tenantId") },
-          payload,
-        }),
-      { stepUp: "script-change" },
+    scriptEndpoint((api) =>
+      api.createScript({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
     ),
   patchScript: (tenantId: RouteParam, id: RouteParam, payload: PatchScriptRequest) =>
     scriptEndpoint(
@@ -2769,6 +2909,17 @@ export const enterprise = {
     endpoint((api) =>
       api.uploadApns({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
+  getApnsCsr: (tenantId: RouteParam) =>
+    endpoint((api) => api.getApnsCsr({ params: { tenantId: required(tenantId, "tenantId") } })),
+  exportAuditLogDownload: (tenantId: RouteParam, query: Record<string, string> = {}) => {
+    const suffix = new URLSearchParams(query).toString();
+
+    return download(
+      () =>
+        `/api/v1/tenants/${encodeURIComponent(required(tenantId, "tenantId"))}/audit/export${suffix ? "?" + suffix : ""}`,
+      { stepUp: false },
+    );
+  },
   getTenantSecurity: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.getTenantSecurity({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -2797,6 +2948,11 @@ export const enterprise = {
     accountEndpoint((api) => api.requestAccountRecovery({ payload: { email } })),
   verifyAccountRecovery: (token: string) =>
     accountEndpoint((api) => api.verifyAccountRecovery({ payload: { token } })),
+  listAccountSessions: () => accountEndpoint((api) => api.listAccountSessions()),
+  revokeAccountSession: (sessionId: RouteParam) =>
+    accountEndpoint((api) =>
+      api.revokeAccountSession({ params: { sessionId: required(sessionId, "sessionId") } }),
+    ),
   revokeAllAccountSessions: () =>
     accountEndpoint((api) => api.revokeAllAccountSessions(), { stepUp: "sessions-revoke-all" }),
   listLoginAttempts: () => accountEndpoint((api) => api.listLoginAttempts()),
@@ -3183,57 +3339,20 @@ export const enterprise = {
     accountEndpoint((api) => api.completeStepUpPasskey({ payload })),
 };
 
-export const meQueryOptions = (userId?: string, enabled = true) => {
-  const cached = readMeCache(userId);
-
-  // The SSR preload carries the same `/me` payload, so the first paint can
-  // render the tenant shell, guard and permission-aware navigation without a
-  // second request. Only data for the signed-in account is accepted.
-  const event = isServer ? getRequestEvent() : undefined;
-  const preloaded = event ? getPreloadedSession(event.request)?.me : readClientPreloadedMe();
-
-  const initialData: MeResponse | undefined =
-    preloaded && (!userId || preloaded.account.id === userId) ? preloaded : undefined;
-
-  // The router addresses tenants by slug while every API call needs the id;
-  // keep the membership list available to that translation after SSR.
-  rememberTenants(initialData?.tenants ?? cached?.data.tenants);
-
-  // The SSR preload skips the queryFn, which is normally what refreshes the
-  // local cache. Persist it here so the next cold load still paints instantly.
-  if (!isServer && initialData) writeMeCache(initialData);
-
-  const options = {
-    queryKey: enterpriseKeys.me(),
-    queryFn: async () => {
-      const data = await enterprise.me();
-      rememberTenants(data.tenants);
-      writeMeCache(data);
-
-      return data;
-    },
-    enabled: !isServer && enabled,
-    // A cold load paints the last known shell immediately; the query still
-    // refreshes in the background.
-    placeholderData: initialData ?? cached?.data,
-    // Paint from the SSR/cached shell immediately, but always revalidate on
-    // mount: tenant creation, invitations and role changes must show up without
-    // waiting for the five-minute SSR token to expire.
-    staleTime: 0,
-  };
-
-  // TanStack renders this observer snapshot immediately without writing it into
-  // the shared cache. On the server that is essential: the module-level query
-  // client outlives a request, so `initialData` there could show one account's
-  // shell to the next visitor. In the browser the client is per-tab and we also
-  // seed the cache so the query is considered fresh.
-  if (!isServer && initialData !== undefined) Object.assign(options, { initialData });
-
-  return queryOptions(options);
-};
+export const meQueryOptions = (userId?: string, enabled = true) =>
+  buildMeQueryOptions({
+    userId,
+    enabled,
+    fetchMe: () => enterprise.me(),
+  });
 
 export const enterpriseQueries = {
   me: (userId?: string) => meQueryOptions(userId),
+  accountDeletion: () =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.accountDeletion(),
+      queryFn: () => enterprise.getAccountDeletion(),
+    }),
   adminAccounts: (query: AdminAccountsQuery = {}) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.adminAccounts(query),
@@ -3832,7 +3951,5 @@ export function resolveActiveTenant(
 ) {
   if (!me) return undefined;
 
-  rememberTenants(me.tenants);
-
-  return resolveTenant(me.tenants, tenantKey);
+  return resolveTenant(me.tenants, tenantKey, currentTenantDirectory());
 }

@@ -1,5 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, createTenant, gotoHydrated } from "./helpers";
+import {
+  api,
+  bootstrapTenant,
+  createTenant,
+  gotoHydrated,
+  register,
+  uniqueEmail,
+} from "./helpers";
 
 const openPalette = async (page: import("@playwright/test").Page) => {
   // Global shortcuts register from `onSettled`, which can be later than first
@@ -24,6 +31,76 @@ const openPalette = async (page: import("@playwright/test").Page) => {
 
   return input;
 };
+
+
+type InvitePayload = { email: string; roleId?: string; role?: string };
+
+const invite = async (page: import("@playwright/test").Page, tenantId: string, body: InvitePayload) =>
+  api<{ inviteUrl: string }>(page, `/api/v1/tenants/${tenantId}/invitations`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+
+const acceptInvitation = async (page: import("@playwright/test").Page, inviteUrl: string) => {
+  await gotoHydrated(page, inviteUrl);
+  await page.getByRole("button", { name: /^Join / }).click();
+};
+
+
+test.describe("settings destination by role", () => {
+  for (const [label, permissions, startPath, expected] of [
+    ["devices only", ["devices.read"], "migration", "migration"],
+    ["backups only", ["backups.read"], "backups", "backups"],
+    ["export only", ["tenant.export"], "migration/export", "migration/export"],
+  ] as const) {
+    test(`opens the first readable settings tab for a ${label} role`, async ({
+      page,
+      context,
+    }) => {
+      const tenant = await bootstrapTenant(page, `Palette ${label}`);
+      const email = uniqueEmail(`palette-${label.replaceAll(" ", "-")}`);
+
+      const role = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/roles`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: `Palette ${label}`,
+          description: `Settings palette coverage: ${label}`,
+          permissions,
+        }),
+      });
+
+      const invitation = await invite(page, tenant.id, { email, roleId: role.id });
+      await context.clearCookies();
+
+      const member = await context.newPage();
+      await register(member, { email, name: `Palette ${label}` });
+      await acceptInvitation(member, invitation.inviteUrl);
+
+      await gotoHydrated(member, `/t/${tenant.id}/settings/${startPath}`);
+      await member.waitForTimeout(900);
+
+      const input = await openPalette(member);
+      await input.fill("settings");
+      const command = member.getByRole("option", { name: /^Settings/ });
+      await expect(command).toBeVisible();
+      await command.click();
+      await expect(member).toHaveURL(
+        new RegExp(`/t/(${tenant.id}|${tenant.slug})/settings/${expected}$`),
+      );
+
+      // The `g t` sequence uses the same command and destination.
+      await gotoHydrated(member, `/t/${tenant.id}/settings/${startPath}`);
+      await member.waitForTimeout(900);
+      await member.keyboard.press("g");
+      await member.keyboard.press("t");
+      await expect(member).toHaveURL(
+        new RegExp(`/t/(${tenant.id}|${tenant.slug})/settings/${expected}$`),
+      );
+
+      await member.close();
+    });
+  }
+});
 
 test.describe("command palette", () => {
   test("opens with Cmd+K, navigates, and remembers entities", async ({ page }) => {
@@ -70,8 +147,10 @@ test.describe("command palette", () => {
 
     const input = await openPalette(page);
     await input.fill("apns");
-    await expect(page.getByRole("option", { name: /Apple push delivery/ })).toBeVisible();
-    await expect(page.getByRole("option", { name: /Device management/ })).toBeVisible();
+    // Settings commands are derived from the settings tab metadata, so the
+    // destinations use the tab labels while the APNs keywords still find them.
+    await expect(page.getByRole("option", { name: /Delivery/ })).toBeVisible();
+    await expect(page.getByRole("option", { name: /Management/ })).toBeVisible();
 
     await input.fill("E2E User");
     await expect(page.getByRole("option", { name: /E2E User/ })).toBeVisible();

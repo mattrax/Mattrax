@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
-import {
-  ManagementBackendEnterpriseLive,
-  configurationDeclarationIdentifier,
-} from "@mattrax/mdm-apple";
+import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
+import { configurationDeclarationIdentifier } from "@mattrax/mdm-core";
 import { makeDb, tableName } from "./fake-db.js";
 import type { Row } from "./fake-db.js";
 
