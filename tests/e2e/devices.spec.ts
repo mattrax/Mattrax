@@ -1,5 +1,111 @@
 import { expect, test } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { addFilter, api, bootstrapTenant, gotoHydrated } from "./helpers";
+
+async function mockFleetSearch(page: Page, tenantId: string, rowCount: number, attributeCount = 0) {
+  const attributes = Array.from({ length: attributeCount }, (_, index) => ({
+    id: `attribute-${index}`,
+    key: `custom_${index}`,
+    label: `Custom attribute ${index + 1}`,
+    type: "text",
+    required: false,
+    visibility: "visible",
+    source: "manual",
+    sortOrder: index,
+    createdAt: "2026-11-01T00:00:00.000Z",
+    updatedAt: "2026-11-01T00:00:00.000Z",
+  }));
+  const devices = Array.from({ length: rowCount }, (_, index) => ({
+    id: `device-${index}`,
+    proto: "apple",
+    name: `Virtual Device ${String(index + 1).padStart(3, "0")}`,
+    model: "MacBook Pro",
+    serial: `SERIAL-${index}`,
+    status: "enrolled",
+    enrolledAt: "2026-11-01T00:00:00.000Z",
+    lastSeenAt: "2026-11-18T00:00:00.000Z",
+    groups: [],
+    health: { level: "healthy", reasons: [], stale: false, online: true },
+    attributes: Object.fromEntries(
+      attributes.map((attribute, attributeIndex) => [
+        attribute.key,
+        `value-${index}-${attributeIndex}-${"x".repeat(80)}`,
+      ]),
+    ),
+  }));
+
+  await page.route(`**/api/v1/tenants/${tenantId}/attributes`, (route) =>
+    route.fulfill({ json: { rows: attributes } }),
+  );
+  await page.route(`**/api/v1/tenants/${tenantId}/devices/search*`, async (route) => {
+    const url = new URL(route.request().url());
+    const query = url.searchParams.get("q")?.toLowerCase() ?? "";
+    const direction = url.searchParams.get("direction") ?? "asc";
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const limit = Number(url.searchParams.get("limit") ?? 50);
+    const matching = devices.filter((device) => device.name.toLowerCase().includes(query));
+    const ordered = direction === "desc" ? [...matching].reverse() : matching;
+
+    await route.fulfill({
+      json: { devices: ordered.slice(offset, offset + limit), total: ordered.length },
+    });
+  });
+}
+
+async function scrollColumnHeaderIntoView(viewport: Locator, name: string) {
+  const header = viewport.getByRole("columnheader", { name, exact: true });
+
+  await expect
+    .poll(
+      async () => {
+        if (await header.count()) {
+          await header.scrollIntoViewIfNeeded();
+
+          return true;
+        }
+
+        await viewport.evaluate((element) => {
+          element.scrollLeft = Math.min(
+            element.scrollWidth,
+            element.scrollLeft + element.clientWidth,
+          );
+        });
+
+        return false;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  await expect(header).toBeInViewport();
+
+  return header;
+}
+
+async function scrollRowCheckboxIntoView(viewport: Locator, name: RegExp) {
+  const checkbox = viewport.getByRole("checkbox", { name });
+
+  await expect
+    .poll(
+      async () => {
+        if (await checkbox.count()) return true;
+
+        await viewport.evaluate((element) => {
+          element.scrollTop = Math.min(
+            element.scrollHeight,
+            element.scrollTop + element.clientHeight,
+          );
+        });
+
+        return false;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+  await checkbox.scrollIntoViewIfNeeded();
+  await expect(checkbox).toBeInViewport();
+
+  return checkbox;
+}
 
 test.describe("device fleet management", () => {
   test("searches, filters and exports the device list", async ({ page }) => {
@@ -111,6 +217,229 @@ test.describe("device fleet management", () => {
 
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(new RegExp(`/groups/(${alpha.id}|${beta.id})$`));
+  });
+
+  test("keeps arrow-focused rows visible in the default 50-row fleet table", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Fifty Row Fleet");
+
+    await mockFleetSearch(page, tenant.id, 50);
+    await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+
+    const viewport = page.getByRole("region", { name: "Data table" });
+    const rows = viewport.locator("tbody tr[data-row-id]");
+
+    await expect(viewport).not.toHaveAttribute("data-virtualized", "true");
+    await expect(rows).toHaveCount(50);
+    await rows.first().focus();
+
+    for (let index = 0; index < 35; index++) await page.keyboard.press("ArrowDown");
+
+    const active = page.locator('tr[data-row-id="device-35"]');
+    await expect(active).toBeFocused();
+    await expect(active).toBeInViewport();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  });
+
+  test("virtualizes wide fleet tables while preserving keyboard and range selection", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const tenant = await bootstrapTenant(page, "Virtual Fleet");
+    await mockFleetSearch(page, tenant.id, 200, 24);
+
+    await gotoHydrated(page, `/t/${tenant.slug}/devices?pageSize=200`);
+
+    const viewport = page.getByRole("region", { name: "Data table" });
+    const table = page.getByRole("table", { name: "Data table" });
+    const rows = viewport.locator("tbody tr[data-row-id]");
+
+    await expect(viewport).toHaveAttribute("data-virtualized", "true");
+    await expect(viewport).toHaveAttribute("data-columns-virtualized", "true");
+    await expect(table).toHaveAttribute("aria-rowcount", "201");
+    await expect(table).toHaveAttribute("aria-colcount", "34");
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
+    expect(await rows.count()).toBeGreaterThan(0);
+    expect(await rows.count()).toBeLessThanOrEqual(40);
+    expect(await viewport.locator("tbody td").count()).toBeLessThanOrEqual(650);
+    expect(await viewport.locator("thead th").count()).toBeLessThanOrEqual(16);
+
+    const firstHeader = viewport.getByRole("columnheader", { name: "Custom attribute 1" });
+    const secondRowCell = rows.nth(1).locator("td").first();
+    await expect(firstHeader).toHaveCSS("border-bottom-width", "1px");
+    await expect(secondRowCell).toHaveCSS("border-top-width", "1px");
+    await expect(viewport.locator("tr[data-table-spacer] td").first()).toHaveCSS(
+      "border-top-width",
+      "0px",
+    );
+
+    for (const theme of ["light", "dark"] as const) {
+      await page.evaluate((value) => {
+        document.documentElement.classList.toggle("dark", value === "dark");
+        document.documentElement.style.colorScheme = value;
+      }, theme);
+      await expect(firstHeader).not.toHaveCSS("border-bottom-color", "rgba(0, 0, 0, 0)");
+      await expect(secondRowCell).not.toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
+    }
+
+    await scrollColumnHeaderIntoView(viewport, "Last seen");
+    expect(await viewport.locator("thead th").count()).toBeLessThanOrEqual(16);
+
+    await viewport.evaluate((element) => {
+      element.scrollTop = 1_200;
+    });
+    await expect(rows.first()).not.toHaveAttribute("data-row-id", "device-0");
+    expect(await rows.count()).toBeLessThanOrEqual(40);
+
+    const viewportBox = await viewport.boundingBox();
+    const headerBox = await viewport.locator("thead").boundingBox();
+    expect(viewportBox).not.toBeNull();
+    expect(headerBox).not.toBeNull();
+    expect(Math.abs((headerBox?.y ?? 0) - (viewportBox?.y ?? 0))).toBeLessThanOrEqual(2);
+
+    await viewport.evaluate((element) => {
+      element.scrollTop = 0;
+      element.scrollLeft = 0;
+    });
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
+    await rows.first().focus();
+
+    for (let index = 0; index < 35; index++) await page.keyboard.press("ArrowDown");
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.getAttribute("data-row-id")))
+      .toBe("device-35");
+    expect(await rows.count()).toBeLessThanOrEqual(40);
+
+    const wheelBox = await viewport.boundingBox();
+    expect(wheelBox).not.toBeNull();
+    await page.mouse.move(
+      (wheelBox?.x ?? 0) + (wheelBox?.width ?? 0) / 2,
+      (wheelBox?.y ?? 0) + (wheelBox?.height ?? 0) / 2,
+    );
+    await page.mouse.wheel(0, 5_000);
+    await expect(page.locator('tr[data-row-id="device-35"]')).toHaveCount(0);
+    await expect(viewport).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          tag: document.activeElement?.tagName,
+          id: document.activeElement?.getAttribute("data-row-id"),
+        })),
+      )
+      .toMatchObject({ tag: "TR" });
+    const resumedRowId = await page.evaluate(() =>
+      document.activeElement?.getAttribute("data-row-id"),
+    );
+    expect(resumedRowId).not.toBeNull();
+    await expect(page.locator(`tr[data-row-id="${resumedRowId}"]`)).toBeInViewport();
+
+    await viewport.evaluate((element) => {
+      element.scrollTop = 0;
+      element.scrollLeft = 0;
+    });
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
+    const descendantFocus = page.getByRole("checkbox", { name: /Select Virtual Device 001/ });
+    await descendantFocus.focus();
+    await expect(rows.first()).toHaveAttribute("tabindex", "0");
+    await page.mouse.move(
+      (wheelBox?.x ?? 0) + (wheelBox?.width ?? 0) / 2,
+      (wheelBox?.y ?? 0) + (wheelBox?.height ?? 0) / 2,
+    );
+    await page.mouse.wheel(0, 5_000);
+    await expect(page.locator('tr[data-row-id="device-0"]')).toHaveCount(0);
+    await expect(viewport).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe("TR");
+
+    await viewport.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await viewport.evaluate((element) => {
+      element.scrollTop = 0;
+      element.scrollLeft = 0;
+    });
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
+    await expect(table).toHaveAttribute("aria-colcount", "33");
+    await expect(page.getByRole("columnheader", { name: "Row", exact: true })).toHaveCount(0);
+    expect(await rows.first().locator("td").count()).toBe(
+      await viewport.locator("thead th").count(),
+    );
+    await expect
+      .poll(async () => {
+        const colspan = Number(
+          await viewport
+            .locator('tr[data-table-spacer="bottom"] td')
+            .first()
+            .getAttribute("colspan"),
+        );
+
+        return colspan === (await viewport.locator("thead th").count());
+      })
+      .toBe(true);
+
+    const swipeHint = page.getByText("Swipe the table sideways to see more columns.");
+    await expect(swipeHint).toBeInViewport();
+    await rows.first().focus();
+    for (let index = 0; index < 35; index++) await page.keyboard.press("ArrowDown");
+    await expect(page.locator('tr[data-row-id="device-35"]')).toBeFocused();
+    await expect(page.locator('tr[data-row-id="device-35"]')).toBeInViewport();
+    await expect(swipeHint).toBeInViewport();
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(table).toHaveAttribute("aria-colcount", "34");
+    await viewport.evaluate((element) => {
+      element.scrollTop = 0;
+      element.scrollLeft = 0;
+    });
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
+
+    await page.getByRole("checkbox", { name: /Select Virtual Device 001/ }).check();
+    const rangeTarget = await scrollRowCheckboxIntoView(viewport, /Select Virtual Device 035/);
+    await expect(page.locator('tr[data-row-id="device-0"]')).toHaveCount(0);
+    await rangeTarget.focus();
+    await page.keyboard.press("Shift+Space");
+    await expect(page.getByRole("group", { name: "Bulk actions" })).toContainText("35 selected");
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("group", { name: "Bulk actions" })).toHaveCount(0);
+
+    await viewport.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await page.getByRole("checkbox", { name: /Select Virtual Device 001/ }).check();
+    const farRangeTarget = await scrollRowCheckboxIntoView(viewport, /Select Virtual Device 081/);
+    await expect(page.locator('tr[data-row-id="device-0"]')).toHaveCount(0);
+    await farRangeTarget.focus();
+    await page.keyboard.press("Shift+Space");
+    await expect(page.getByRole("group", { name: "Bulk actions" })).toContainText("81 selected");
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("group", { name: "Bulk actions" })).toHaveCount(0);
+
+    await viewport.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    const nameHeader = await scrollColumnHeaderIntoView(viewport, "Name");
+    const nameSort = nameHeader.getByRole("button", { name: "Name", exact: true });
+    await nameSort.click();
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-199");
+    expect(await rows.count()).toBeLessThanOrEqual(40);
+    await nameSort.click();
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-0");
+
+    const search = page.getByLabel("Search table");
+    await search.fill("Virtual Device 199");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-199");
+    await expect(viewport).not.toHaveAttribute("data-virtualized", "true");
+
+    await search.fill("no-such-device");
+    await expect(page.getByText(/No matches for/)).toBeVisible();
+    await search.fill("");
+    await expect(viewport).toHaveAttribute("data-virtualized", "true");
+    expect(await rows.count()).toBeLessThanOrEqual(40);
   });
 
   test("keeps typed device search and sends it to the search endpoint", async ({ page }) => {
