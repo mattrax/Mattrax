@@ -7,6 +7,8 @@ import { Match } from "effect";
 import { createSignal, onSettled, Show } from "solid-js";
 import { EmailCodeForm } from "~/components/email-code-form";
 import { authClient } from "~/lib/auth";
+import { refreshMeAfterEmailVerification } from "~/lib/me-refresh";
+import { queryClient } from "~/lib/query-client";
 import { Spinner } from "~/components/ui";
 
 const primaryLink =
@@ -66,6 +68,11 @@ export default function VerifyEmailPage() {
       }
 
       await session().refetch();
+
+      // The link may be opened without a session; there is no /me to refresh
+      // until the account signs in.
+      if (session().data?.user) await refreshMeAfterEmailVerification(queryClient);
+
       setTokenStatus("ok");
       setMessage("Your email address is verified.");
     })();
@@ -169,6 +176,8 @@ export default function VerifyEmailPage() {
                     email={user().email}
                     onVerified={async () => {
                       await session().refetch();
+                      await refreshMeAfterEmailVerification(queryClient);
+
                       // Defer past the query-cache write: navigation issued in
                       // the same tick is dropped by the router transition.
                       setTimeout(() => navigate(returnTo() ?? "/dashboard", { replace: true }), 0);

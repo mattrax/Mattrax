@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { MeResponse } from "@mattrax/enterprise-domain/client";
-import { clearMeCache, readMeCache, writeMeCache } from "./me-cache";
+import { clearMeCache, onMeCacheClear, readMeCache, writeMeCache } from "./me-cache";
 
 const data: MeResponse = {
   account: {
@@ -62,6 +62,20 @@ describe("me cache", () => {
     expect(readMeCache("user-1")?.data).toEqual(replacement);
 
     storage.setItem("mattrax:me-cache:v1", JSON.stringify({ userId: "user-2", updatedAt: 0 }));
+    expect(readMeCache("user-1")).toBeUndefined();
+  });
+
+  it("notifies module-level state when the cache is cleared", () => {
+    vi.stubGlobal("localStorage", fakeStorage());
+    writeMeCache(data);
+
+    let resets = 0;
+    onMeCacheClear(() => {
+      resets += 1;
+    });
+
+    clearMeCache();
+    expect(resets).toBe(1);
     expect(readMeCache("user-1")).toBeUndefined();
   });
 

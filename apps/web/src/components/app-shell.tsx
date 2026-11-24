@@ -66,7 +66,8 @@ import { routes } from "~/lib/routes";
 import { supportUrl } from "~/lib/support-config-store";
 import { resolveLandingTenant } from "~/lib/tenant";
 import { announce, announcementText, Toaster } from "~/components/toast";
-import { SETTINGS_READ_PERMISSIONS, tenantRoleName, useCan } from "~/lib/permissions";
+import { firstReadableSettingsTab, tenantRoleName, useCan } from "~/lib/permissions";
+import { settingsTabById } from "~/components/settings/settings-tabs";
 import { cn } from "~/lib/utils";
 import { isHydrated } from "~/lib/query-client";
 import { pendingDeployment, reloadForDeployment } from "~/lib/skew-protection";
@@ -491,15 +492,17 @@ function navFor(tenantId: string | undefined): NavItem[] {
  * row. It keeps the same permission gate as the old navigation entry; the shell
  * only renders it when at least one settings tab is readable.
  */
-function settingsNavItem(tenantId: string): NavItem {
+function settingsNavItem(tenantId: string, href: string): NavItem {
   const settings = routes.tenant(tenantId).settings();
 
   return {
     id: "settings",
     label: "Settings",
-    href: settings,
+    href,
     group: "tenant",
     icon: Settings,
+    // Any settings pane highlights the one footer entry, even when the link
+    // lands on a later readable tab.
     match: (value) => value === settings || value.startsWith(`${settings}/`),
   };
 }
@@ -871,7 +874,7 @@ export function AppShell(props: {
     return me.data?.tenants.find((tenant) => tenant.id === id)?.slug ?? id;
   });
 
-  const { can, canAny } = useCan();
+  const { can } = useCan();
 
   // Mutations broadcast to other tabs under the tenant currently on screen.
   createEffect(
@@ -919,31 +922,22 @@ export function AppShell(props: {
     ...pinnedItems(),
   ]);
 
-  /** Settings is pinned to the sidebar footer, above the account row. */
+  /**
+   * Settings is pinned to the sidebar footer, above the account row. Visibility
+   * and the destination both come from the readable tab list, so a role whose
+   * only settings access is `devices.read` (OS updates and Migration) sees the
+   * entry and lands on that tab instead of General's denial.
+   */
   const settings = createMemo<NavItem | undefined>(() => {
     const tenant = navTenant();
 
-    if (!tenant || !canAny(SETTINGS_READ_PERMISSIONS)) return undefined;
+    if (!tenant) return undefined;
+    const href = firstReadableSettingsTab(can, tenant);
 
-    return settingsNavItem(tenant);
+    return href ? settingsNavItem(tenant, href) : undefined;
   });
 
   const settingsActive = createMemo(() => settings()?.match(location.pathname) ?? false);
-
-  const settingsLabels = new Map([
-    ["", "General"],
-    ["administrators", "Administrators"],
-    ["approvals", "Approvals"],
-    ["identity", "Identity"],
-    ["enrollment", "Enrollment"],
-    ["management", "Management"],
-    ["migration", "Migration"],
-    ["delivery", "Delivery"],
-    ["integrations", "Integrations"],
-    ["audit", "Audit log"],
-    ["billing", "Billing"],
-    ["storage", "Storage"],
-  ]);
 
   const pageLabel = createMemo(() => {
     const path = location.pathname;
@@ -963,9 +957,9 @@ export function AppShell(props: {
     const settingsSection = /\/settings(?:\/([^/]+))?/.exec(path)?.[1] ?? "";
 
     if (path.includes("/settings")) {
-      const section = settingsLabels.get(settingsSection);
+      const section = settingsTabById(settingsSection);
 
-      if (section) return `Settings · ${section}`;
+      if (section) return `Settings · ${section.label}`;
     }
 
     return navItems().find((item) => item.match(path))?.label ?? "Tenant";

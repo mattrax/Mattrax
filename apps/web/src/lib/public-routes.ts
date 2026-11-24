@@ -52,6 +52,7 @@ const DOCS_ENTRY = { changefreq: "monthly", priority: "0.5" } as const;
 export const SITEMAP_EXCLUDED_PREFIXES = [
   "/dashboard",
   "/account",
+  "/t",
   "/t/",
   "/tenants",
   "/api/",
@@ -78,6 +79,7 @@ export const SITEMAP_EXCLUDED_PREFIXES = [
 export const JAVASCRIPT_REQUIRED_PREFIXES = [
   "/dashboard",
   "/account",
+  "/t",
   "/t/",
   "/tenants",
   "/login",

@@ -145,23 +145,32 @@ deferred command palette.
 The signed-in shell (`/me`) is shared by the layout, tenant guard and every
 permission check, but each page mounts its own observer. It previously used a zero
 stale window, so the first observer mounted by a route change refetched the payload
-that had just painted. That also made the shell cache do synchronous localStorage
-work on every observer.
+that had just painted. Every observer also parsed the persisted shell JSON.
 
 `me` now stays fresh for 60 seconds (`ME_QUERY_STALE_TIME`), with a 30-minute
 retention window. Explicit invalidations cover every membership or role mutation
-(tenant create, invitations, administrators, profile), and cross-tab invalidation
-uses the same key, so the stale window is a read optimisation rather than a
-correctness compromise. A stale entry still refreshes on the next mount or window
-focus.
+(tenant create, invitations, administrators, profile, email verification). A stale
+entry still refreshes on the next mount or window focus.
 
-Measured with the query observer sequence in `me-query.test.ts` (ten simulated
-page mounts inside the stale window):
+The localStorage read still runs for each observer (`getItem` is cheap); the JSON
+parse above it is memoised until the stored string changes. Cross-tab cache
+messages invalidate tenant-scoped keys, not the account-wide `/me` payload. A
+membership change accepted in another tab becomes visible on the next mount after
+the 60-second window, or on the next focus once stale. The SSR-preloaded shell
+paints immediately but is marked stale once, because its permission claims can be
+up to the five-minute SSR token lifetime old; the first observer revalidates in
+the background and the 60-second policy applies afterwards.
 
-| Policy                | `/me` requests |
-| --------------------- | --------------- |
-| Before (`staleTime: 0`) | 10              |
-| After (60 s)          | 1               |
+The policy claim is a unit test, not a network measurement. `me-query.test.ts`
+mounts ten query observers and asserts how many fetches the policy allows:
+
+| Policy                  | Fetches across ten observer mounts |
+| ----------------------- | ---------------------------------- |
+| Before (`staleTime: 0`)  | 10                                 |
+| After (60 s)            | 1                                  |
+
+The shell-layout browser suite separately counts `/api/v1/me` requests across
+sidebar navigations after the shell has loaded.
 
 ### Measured and rejected
 

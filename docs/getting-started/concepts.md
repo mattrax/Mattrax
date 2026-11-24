@@ -30,7 +30,9 @@ Devices, Users, Groups, Policies, Applications and Scripts), plus any pinned das
 **Settings** lives at the bottom of the sidebar, directly above the account row, because it
 is a configuration surface rather than daily work. Both areas are permission-aware: a
 section only appears when the tenant membership grants its read permission, and Settings
-only appears when at least one settings tab is readable.
+only appears when at least one settings tab is readable. The Settings entry links to the
+first readable tab, so a role that can read devices but not tenant settings lands on
+Migration or OS updates instead of a denied General page.
 
 The tenant switcher at the top of the sidebar changes the tenant without signing out. The
 account menu at the bottom opens **Account** (profile, security, API tokens and sessions)

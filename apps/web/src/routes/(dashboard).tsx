@@ -13,6 +13,7 @@ import { authClient } from "~/lib/auth";
 import { queryClient } from "~/lib/query-client";
 import { broadcastCacheReset, setCrossTabTenant } from "~/lib/cross-tab-sync";
 import { meQueryOptions } from "~/lib/enterprise";
+import { emailVerificationGate } from "~/lib/me-query";
 import { errorTag, raisedFailure } from "~/lib/errors";
 import { clearMeCache } from "~/lib/me-cache";
 import { reportGlobalError } from "~/lib/global-errors";
@@ -125,12 +126,16 @@ function DashboardLayout(props: ParentProps) {
     () => ({
       pending: session().isPending,
       user: session().data?.user,
-      verified: me.data?.account.emailVerified,
+      verification: emailVerificationGate({
+        meVerified: me.data?.account.emailVerified,
+        sessionVerified: session().data?.user?.emailVerified,
+        meFetching: me.isFetching,
+      }),
       unauthorized: unauthorized(),
       presence: presenceState(),
       path: `${location.pathname}${location.search}`,
     }),
-    ({ pending, user, verified, unauthorized, presence, path }) => {
+    ({ pending, user, verification, unauthorized, presence, path }) => {
       const login = () => {
         clearSessionPresence();
         clearMeCache();
@@ -170,11 +175,12 @@ function DashboardLayout(props: ParentProps) {
         return;
       }
 
-      if (verified === undefined) return;
+      // A fresh session claim wins over a stale `/me` row, and an in-flight
+      // refresh may still turn the row verified. This prevents a just-verified
+      // account from being bounced back until the 60s cache window expires.
+      if (verification !== "verify") return;
 
-      if (!verified) {
-        navigate(`/verify-email?returnTo=${encodeURIComponent(path)}`, { replace: true });
-      }
+      navigate(`/verify-email?returnTo=${encodeURIComponent(path)}`, { replace: true });
     },
   );
 
@@ -239,11 +245,16 @@ function DashboardLayout(props: ParentProps) {
             </div>
           }
         >
-          <AppShell user={user()} onSignOut={handleSignOut}>
-            {props.children}
+          <>
+            <AppShell user={user()} onSignOut={handleSignOut}>
+              {props.children}
+            </AppShell>
+            {/* Global interaction surfaces stay outside the shell's content
+                loading boundary: a route chunk must not unmount an open palette
+                or step-up dialog. */}
             <CommandPaletteLauncher />
             <StepUpDialog />
-          </AppShell>
+          </>
         </Show>
       )}
     </Show>

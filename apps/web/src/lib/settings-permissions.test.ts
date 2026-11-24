@@ -13,6 +13,11 @@ describe("settings tab permissions", () => {
     expect(settingsTabPermissions("backups")).toEqual(["backups.read"]);
   });
 
+  it("lets the backups page render its own read-only denial", () => {
+    expect(permissionForTenantPath("/t/acme/settings/backups", "acme")).toBeUndefined();
+    expect(permissionForTenantPath("/t/acme/settings/billing", "acme")).toBe("billing.read");
+  });
+
   it("lets device readers or tenant movers see Migration", () => {
     expect(settingsTabPermissions("migration")).toEqual(MIGRATION_ACCESS_PERMISSIONS);
     expect(MIGRATION_MOVE_PERMISSIONS).toEqual(["tenant.export", "tenant.import"]);
@@ -34,6 +39,7 @@ describe("tenant path permissions", () => {
 
   it("keeps the guards for ordinary settings tabs", () => {
     expect(permissionForTenantPath("/t/acme/settings/audit", "acme")).toBe("audit.read");
+    expect(permissionForTenantPath("/t/acme/settings/billing", "acme")).toBe("billing.read");
     expect(permissionForTenantPath("/t/acme/settings", "acme")).toBe("tenant.read");
   });
 

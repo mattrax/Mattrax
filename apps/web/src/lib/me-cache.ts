@@ -17,12 +17,25 @@ const decodeCachedMe = Schema.decodeUnknownOption(CachedMe);
 
 /**
  * The last stored value and its decoded form. `meQueryOptions` runs for every
- * shell, guard and `useCan` observer on a page; re-parsing the same JSON each
- * time is a synchronous cost paid during navigation. Keying the memo on the raw
- * string keeps it correct when another tab (or a caller) rewrites storage.
+ * shell, guard and `useCan` observer on a page; `getItem` still runs each time,
+ * but re-parsing the same JSON is a synchronous cost paid during navigation.
+ * Keying the memo on the raw string keeps it correct when another tab (or a
+ * caller) rewrites storage.
  */
 let lastRaw: string | null | undefined;
 let lastDecoded: CachedMe | undefined;
+
+/**
+ * Module-level query state (the SSR preload and its persist marker) can outlive
+ * a sign-out in the same tab. Listeners registered here reset that state when
+ * the persisted cache is cleared, so a re-sign-in never seeds stale initial
+ * data for the same account.
+ */
+const clearListeners = new Set<() => void>();
+
+export function onMeCacheClear(listener: () => void): void {
+  clearListeners.add(listener);
+}
 
 const decodeStored = (raw: string | null): CachedMe | undefined => {
   if (raw === lastRaw) return lastDecoded;
@@ -106,5 +119,13 @@ export function clearMeCache(): void {
   } finally {
     lastRaw = null;
     lastDecoded = undefined;
+
+    for (const listener of clearListeners) {
+      try {
+        listener();
+      } catch {
+        // A reset listener must not break sign-out.
+      }
+    }
   }
 }

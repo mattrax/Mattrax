@@ -18,7 +18,7 @@ import {
   registerApprovalRetry,
 } from "~/lib/approval-retry";
 import type { ApprovalRetryInput } from "~/lib/approval-retry";
-import { readMeCache, writeMeCache } from "~/lib/me-cache";
+import { onMeCacheClear, readMeCache, writeMeCache } from "~/lib/me-cache";
 import { meQueryCachePolicy } from "~/lib/me-query";
 import { getPreloadedSession, readClientPreloadedMe } from "~/lib/session-store";
 import { rememberTenants, resolveTenant, resolveTenantId } from "~/lib/tenant";
@@ -3222,6 +3222,11 @@ const readPreloadedMe = (): MeResponse | undefined => {
 /** The SSR preload skips the queryFn, so persist it once for the next cold load. */
 let persistedPreloadFor: string | undefined;
 
+onMeCacheClear(() => {
+  browserPreload = undefined;
+  persistedPreloadFor = undefined;
+});
+
 export const meQueryOptions = (userId?: string, enabled = true) => {
   const cached = readMeCache(userId);
 
@@ -3265,15 +3270,18 @@ export const meQueryOptions = (userId?: string, enabled = true) => {
     // account's shell to the next visitor.
     Object.assign(options, { placeholderData: initialData ?? cached?.data });
   } else {
-    // In the browser the client is per-tab, so seed the cache instead. The
-    // stored timestamp makes an old localStorage entry stale immediately while
-    // a payload from this request stays fresh for the policy window.
+    // In the browser the client is per-tab, so seed the cache instead. The SSR
+    // preload paints immediately but is treated as stale once: its permission
+    // claims can be up to the five-minute SSR token lifetime old (a tenant
+    // created or an invitation accepted after the token was minted is missing).
+    // The first observer therefore revalidates in the background, then the
+    // 60-second policy takes over. The localStorage entry keeps its own age.
     const seeded = initialData ?? cached?.data;
 
     if (seeded !== undefined)
       Object.assign(options, {
         initialData: seeded,
-        ...(initialData === undefined && cached ? { initialDataUpdatedAt: cached.updatedAt } : {}),
+        initialDataUpdatedAt: initialData !== undefined ? 0 : cached?.updatedAt,
       });
   }
 

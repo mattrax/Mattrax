@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryObserver } from "@tanstack/solid-query";
-import { ME_QUERY_STALE_TIME, meQueryCachePolicy } from "./me-query";
+import {
+  emailVerificationGate,
+  ME_QUERY_GC_TIME,
+  ME_QUERY_STALE_TIME,
+  meQueryCachePolicy,
+} from "./me-query";
+import { meQueryOptions } from "./enterprise";
 
 /**
  * Regression guard for #631. An observer is what every page creates through
@@ -99,5 +105,58 @@ describe("me query cache policy", () => {
 
     expect(policy.staleTime).toBeGreaterThan(0);
     expect(policy.gcTime).toBeGreaterThan(policy.staleTime);
+  });
+
+  it("is actually wired into meQueryOptions", () => {
+    const options = meQueryOptions("user-1");
+
+    expect(options.staleTime).toBe(ME_QUERY_STALE_TIME);
+    expect(options.gcTime).toBe(ME_QUERY_GC_TIME);
+  });
+});
+
+describe("email verification gate", () => {
+  it("allows a stale unverified /me row when the session was just refreshed", () => {
+    expect(
+      emailVerificationGate({
+        meVerified: false,
+        sessionVerified: true,
+        meFetching: false,
+      }),
+    ).toBe("allow");
+  });
+
+  it("waits instead of redirecting while /me is refreshing", () => {
+    expect(
+      emailVerificationGate({
+        meVerified: false,
+        sessionVerified: false,
+        meFetching: true,
+      }),
+    ).toBe("wait");
+  });
+
+  it("redirects only after both sources agree the address is unverified", () => {
+    expect(
+      emailVerificationGate({
+        meVerified: false,
+        sessionVerified: false,
+        meFetching: false,
+      }),
+    ).toBe("verify");
+    expect(
+      emailVerificationGate({
+        meVerified: true,
+        sessionVerified: false,
+        meFetching: false,
+      }),
+    ).toBe("allow");
+    expect(
+      emailVerificationGate({
+        meVerified: undefined,
+        sessionVerified: undefined,
+        meFetching: false,
+      }),
+    ).toBe("wait");
   });
 });

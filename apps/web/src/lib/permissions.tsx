@@ -194,6 +194,8 @@ export {
 export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
   "tenant.read",
   "members.read",
+  // OS updates and Migration are settings tabs gated by devices.read.
+  "devices.read",
   "identity.read",
   "enrollment.read",
   "management.read",

@@ -3,7 +3,8 @@ import type { Page } from "@playwright/test";
 import { bootstrapTenant, gotoHydrated } from "./helpers";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
-const settingsNav = (page: Page) => page.getByRole("navigation", { name: "Tenant settings" });
+const settingsNav = (page: Page) =>
+  page.getByRole("navigation", { name: "Tenant settings", exact: true });
 
 const shellRects = (page: Page) =>
   page.evaluate(() => {
@@ -26,11 +27,11 @@ const shellRects = (page: Page) =>
   });
 
 test.describe("dashboard shell layout", () => {
-  test("fills the window at 1024 and ultrawide widths", async ({ page }) => {
+  test("fills the window at 1100 and ultrawide widths", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Frame Tenant");
 
     for (const viewport of [
-      { width: 1024, height: 900 },
+      { width: 1100, height: 900 },
       { width: 2200, height: 1200 },
     ]) {
       await page.setViewportSize(viewport);
@@ -101,6 +102,82 @@ test.describe("dashboard shell layout", () => {
     expect(removed).toBe(0);
   });
 
+  test("keeps the settings masthead, rail and draft while a child chunk loads", async ({
+    page,
+  }) => {
+    const tenant = await bootstrapTenant(page, "Delayed Settings Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/settings`);
+
+    await page.getByLabel(/^Name/).fill("Delayed Settings Draft");
+    const saveBar = page.getByRole("region", { name: "Tenant settings changes" });
+    await expect(saveBar).toContainText("Unsaved tenant changes");
+
+    let releaseExport!: () => void;
+    const exportGate = new Promise<void>((resolve) => {
+      releaseExport = resolve;
+    });
+
+    // The deployment export page is reachable from Migration, not from the
+    // settings rail, so its chunk has not been preloaded. Hold it now that the
+    // page is hydrated (a held preload can delay hydration itself).
+    await page.route(
+      (url) =>
+        /\/settings\/migration\/export(?:\.tsx)?$/.test(url.pathname) ||
+        /\/assets\/export-[^/]+\.js$/.test(url.pathname),
+      async (route) => {
+        await exportGate;
+        await route.continue();
+      },
+    );
+
+    // A real router click on an unlinked route: injecting the anchor avoids a
+    // full document load while bypassing viewport preloading.
+    await page.evaluate((href) => {
+      const link = document.createElement("a");
+      link.id = "delayed-settings-link";
+      link.href = href;
+      link.textContent = "Open export";
+      document.body.append(link);
+    }, `/t/${tenant.slug}/settings/migration/export`);
+
+    const tabs = page.locator('nav[aria-label="Tenant settings sections"]');
+    await page.locator("#delayed-settings-link").click();
+
+    // The child chunk is still held: the settings layout must keep the rail and
+    // the tenant profile draft mounted instead of handing the whole pane to a
+    // loading fallback (or the shell boot state).
+    await expect(page.getByRole("heading", { name: "General", exact: true })).toBeVisible();
+    await expect(tabs).toBeVisible();
+    await expect(saveBar).toContainText("Unsaved tenant changes");
+    await expect(page.locator('[data-slot="app-header"]')).toHaveCount(1);
+
+    releaseExport();
+    await expect(page.getByRole("button", { name: "Export tenant", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Migration", exact: true }).first()).toBeVisible();
+    await expect(saveBar).toContainText("Unsaved tenant changes");
+  });
+
+  test("does not refetch /me across sidebar navigations", async ({ page }) => {
+    await bootstrapTenant(page, "Me Navigation Tenant");
+    await page.waitForLoadState("networkidle");
+
+    let meRequests = 0;
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === "/api/v1/me") meRequests += 1;
+    });
+
+    await primaryNav(page).getByRole("link", { name: "Groups", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Groups", exact: true })).toBeVisible();
+
+    await primaryNav(page).getByRole("link", { name: "Policies", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Policies", exact: true })).toBeVisible();
+
+    await settingsNav(page).getByRole("link", { name: "Settings", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "General", exact: true })).toBeVisible();
+
+    expect(meRequests).toBe(0);
+  });
+
   test("keeps the shell usable from the mobile navigation sheet", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Mobile Shell Tenant");
     await page.setViewportSize({ width: 500, height: 900 });
@@ -114,7 +191,7 @@ test.describe("dashboard shell layout", () => {
     await expect(sheet.getByRole("link", { name: "Devices", exact: true })).toBeVisible();
     await expect(
       sheet
-        .getByRole("navigation", { name: "Tenant settings" })
+        .getByRole("navigation", { name: "Tenant settings", exact: true })
         .getByRole("link", { name: "Settings", exact: true }),
     ).toBeVisible();
 

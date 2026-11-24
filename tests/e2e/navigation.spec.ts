@@ -38,7 +38,7 @@ test.describe("top navigation", () => {
       primaryNav(page).getByRole("link", { name: "Settings", exact: true }),
     ).toHaveCount(0);
     await page
-      .getByRole("navigation", { name: "Tenant settings" })
+      .getByRole("navigation", { name: "Tenant settings", exact: true })
       .getByRole("link", { name: "Settings", exact: true })
       .click();
     await expect(page).toHaveURL(new RegExp(`${base}/settings$`));
