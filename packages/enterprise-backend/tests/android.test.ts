@@ -36,6 +36,12 @@ import { makeDb, runEffect } from "./helpers.js";
 
 const organizationId = "org-1";
 
+const deliveryError = (error: unknown) => {
+  if (!(error instanceof AndroidDeliveryError)) throw new Error("Expected Android delivery error");
+
+  return error;
+};
+
 const otherOrganizationId = "org-2";
 
 const enterpriseName = "enterprises/LC123";
@@ -704,7 +710,7 @@ describe("Android Enterprise delivery", () => {
       ),
     );
 
-    expect(missing.kind).toBe("unauthorized");
+    expect(deliveryError(missing).kind).toBe("unauthorized");
 
     const wrongAudienceToken = await sign({ aud: "https://other.test/pubsub" });
 
@@ -723,7 +729,7 @@ describe("Android Enterprise delivery", () => {
       ),
     );
 
-    expect(wrongAudience.kind).toBe("unauthorized");
+    expect(deliveryError(wrongAudience).kind).toBe("unauthorized");
 
     const wrongIssuerToken = await sign({ iss: "https://evil.test" });
 
@@ -742,7 +748,7 @@ describe("Android Enterprise delivery", () => {
       ),
     );
 
-    expect(wrongIssuer.kind).toBe("unauthorized");
+    expect(deliveryError(wrongIssuer).kind).toBe("unauthorized");
 
     const validToken = await sign();
     const [header, payload, signature] = validToken.split(".");
@@ -763,7 +769,7 @@ describe("Android Enterprise delivery", () => {
       ),
     );
 
-    expect(badSignature.kind).toBe("unauthorized");
+    expect(deliveryError(badSignature).kind).toBe("unauthorized");
     expect(db.store.device).toHaveLength(0);
   });
 
@@ -1783,7 +1789,7 @@ describe("Android device inventory", () => {
     // The fixture is the complete `device` row shape this merge is written for;
     // `Object.assign` keeps its required columns while the patch overrides the
     // ones the merge produced.
-    const existing: AndroidDeviceRow = Object.assign(androidDeviceRow(), first);
+    const existing = Object.assign(androidDeviceRow(), first) as AndroidDeviceRow;
 
     const partial = parseAndroidDeviceResource(
       { name: deviceName, state: "ACTIVE", lastStatusReportTime: statusReportTime },

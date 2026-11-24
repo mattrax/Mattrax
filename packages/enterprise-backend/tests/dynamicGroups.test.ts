@@ -53,7 +53,7 @@ describe("dynamic group evaluator", () => {
     ).toBe(false);
     expect(
       evaluateDynamicGroupRules(
-        rules({ all: [{ field: "proto", op: "eq", value: "APPLE" }] }),
+        rules({ all: [{ field: "proto", op: "eq", value: "APPLE" as never }] }),
         device(),
         { now },
       ),

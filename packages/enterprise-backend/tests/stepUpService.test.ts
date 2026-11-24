@@ -65,6 +65,7 @@ const makeLayer = (
         }),
       ),
     ),
+    Layer.orDie,
   );
 };
 

@@ -6,7 +6,7 @@ import { openSecret, sealSecret } from "@mattrax/crypto";
 import type { EnterpriseOrganization } from "../src/schema.ts";
 import { buildTenantCutover, preflightTenantOriginSwitch } from "../src/Tenant/cutover.ts";
 import { importTenantCutover, previewTenantCutover } from "../src/Tenant/cutoverImport.ts";
-import { makeDb, runEffect } from "./helpers.js";
+import { makeDb, makeOrganization, runEffect } from "./helpers.js";
 
 const passphrase = "correct horse battery staple";
 
@@ -27,21 +27,7 @@ const now = new Date("2026-11-20T00:00:00.000Z");
 type Db = ReturnType<typeof makeDb>;
 
 const organization = (input: { id: string; slug: string; name?: string }): EnterpriseOrganization =>
-  // SAFETY: the fake store only compares the fields below; every other column
-  // is optional at the type level and unused by the cutover code under test.
-  ({
-    id: input.id,
-    name: input.name ?? "Acme",
-    slug: input.slug,
-    logo: null,
-    displayName: null,
-    supportEmail: null,
-    brandColor: null,
-    metadata: null,
-    stripeCustomerId: null,
-    createdAt: at,
-    updatedAt: at,
-  }) as EnterpriseOrganization;
+  makeOrganization({ ...input, name: input.name ?? "Acme", createdAt: at, updatedAt: at });
 
 const addAccount = (db: Db, id: string, email: string) => {
   db.store.account.push({

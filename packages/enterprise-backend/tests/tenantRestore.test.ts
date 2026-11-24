@@ -5,7 +5,7 @@ import type { BackupActionError } from "../src/Tenant/backup.ts";
 import { parseTenantRestoreBundle, restoreTenantFromBackup } from "../src/Tenant/tenantRestore.ts";
 import type { TenantRestoreError } from "../src/Tenant/tenantRestore.ts";
 import { buildTenantExport } from "../src/Tenant/tenantExport.ts";
-import { makeDb, runEffect } from "./helpers.js";
+import { makeDb, makeOrganization, runEffect } from "./helpers.js";
 
 const failureReason = (failure: BackupActionError | TenantRestoreError | null) => failure?.reason;
 
@@ -79,20 +79,13 @@ const makeContext = () => {
   const db = makeDb();
   const timestamp = new Date();
 
-  const organization = {
+  const organization = makeOrganization({
     id: "org-1",
     name: "Acme",
     slug: "acme",
-    logo: null,
-    displayName: null,
-    supportEmail: null,
-    brandColor: null,
-    metadata: null,
-    stripeCustomerId: null,
-    onboardingFollowUpSentAt: null,
     createdAt: timestamp,
     updatedAt: timestamp,
-  };
+  });
 
   db.store.organization.push(organization);
   db.store.device.push({

@@ -78,7 +78,7 @@ const graphMock = (
           nextLink: index + 1 < pages.length ? `https://graph.test/next?page=${index + 1}` : null,
         };
       }),
-    createAutopilotProfile: (tenantId: string, input: AutopilotDeploymentProfileInput) =>
+    createAutopilotProfile: (_tenantId: string, input: AutopilotDeploymentProfileInput) =>
       Effect.sync(() => {
         calls.profiles.push(input);
 

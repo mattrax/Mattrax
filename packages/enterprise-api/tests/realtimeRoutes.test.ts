@@ -83,9 +83,10 @@ const authFor = (
 ): EnterpriseAuth["Service"] => {
   // SAFETY: these boundary tests drive only requireUser; the authorisation
   // helper never calls the remaining auth methods.
+  // oxlint-disable-next-line quality/no-chained-type-assertions -- Only requireUser is exercised by these boundary tests.
   return {
     requireUser: () => (failure === undefined ? Effect.succeed(resolved) : Effect.fail(failure)),
-  } as EnterpriseAuth["Service"];
+  } as unknown as EnterpriseAuth["Service"];
 };
 
 const authorize = (

@@ -36,7 +36,7 @@ import { certToPem, createCaCertificate } from "@mattrax/scep";
 import { appleEnrollmentProfileResponse, createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { EmailTransport, OutboundEmailMessage } from "@mattrax/email";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, requireField, runEffect, schema } from "./helpers.js";
 
 if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
@@ -141,7 +141,6 @@ const makeContext = async (
     pushes?: Array<any>;
     authSecret?: string | null;
     email?: EmailTransport;
-    stripeClient?: any;
     apiToken?: any;
     db?: any;
     analytics?: any;
@@ -186,8 +185,6 @@ const makeContext = async (
     db,
     schema,
     origin,
-    stripeClient:
-      overrides.stripeClient === null ? undefined : (overrides.stripeClient ?? makeStripeClient()),
     // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake only implements the auth methods these tests exercise.
@@ -412,7 +409,9 @@ describe("enterprise service tenant flow", () => {
       { dataset: "devices" as const, query: { all: [] }, countOnly: true },
       {
         dataset: "devices" as const,
-        query: { all: [{ field: "health" as const, op: "eq" as const, value: "attention" }] },
+        query: {
+          all: [{ field: "health" as const, op: "eq" as const, value: "attention" as const }],
+        },
         countOnly: true,
       },
       { dataset: "devices" as const, query: { all: [] }, groupBy: "platform" },
@@ -1715,8 +1714,8 @@ describe("enterprise service policy flow", () => {
     respond: (
       row: any,
       attempt: number,
-      commit: () => Effect.Effect<unknown, unknown>,
-    ) => Effect.Effect<any, any>,
+      commit: () => Effect.Effect<unknown, unknown, any>,
+    ) => Effect.Effect<any, any, any>,
   ) => {
     const insert = db.insert.bind(db);
     const attempts: any[] = [];
@@ -1777,7 +1776,7 @@ describe("enterprise service policy flow", () => {
 
     const detail = await runEffect(service.getPolicy(request(headers), tenant.id, policy.id));
 
-    expect(detail.configurationScopes).toEqual({
+    expect(requireField(detail, "configurationScopes").configurationScopes).toEqual({
       "mttx.apple.declaration.usersettings": "user",
     });
 
@@ -5600,7 +5599,7 @@ describe("device command lifecycle", () => {
     );
 
     expect(second).toMatchObject({
-      commandId: first.commandId,
+      commandId: requireField(first, "commandId").commandId,
       deduplicated: true,
     });
     expect(commands(db)).toHaveLength(1);

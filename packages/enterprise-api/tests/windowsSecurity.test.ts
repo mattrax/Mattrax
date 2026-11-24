@@ -7,7 +7,7 @@ import {
   windowsLapsPolicyNodes,
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, requireField, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "windows-security-test-secret";
@@ -28,9 +28,9 @@ const makeStorage = () => {
     body: new ReadableStream(),
     bodyUsed: false,
     text: async () => new TextDecoder().decode(bytes),
-    arrayBuffer: async () => bytes.buffer,
+    arrayBuffer: async () => new Uint8Array(bytes).buffer,
     json: async () => JSON.parse(new TextDecoder().decode(bytes)),
-    blob: async () => new Blob([bytes]),
+    blob: async () => new Blob([new Uint8Array(bytes)]),
   });
 
   return {
@@ -146,19 +146,19 @@ const makeContext = async (options?: {
       options?.lapsError
         ? Effect.fail({ _tag: "RequestFailed", message: "graph unavailable" })
         : Effect.succeed({
-        id: "entra-device",
-        deviceName: "WIN-1",
-        lastBackupDateTime: credential.backupDateTime,
-        refreshDateTime: "2026-12-20T00:00:00.000Z",
-        credentials: [
-          {
-            accountName: credential.accountName,
-            accountSid: credential.accountSid,
-            backupDateTime: credential.backupDateTime,
-            passwordBase64: base64Utf16(credential.password),
-          },
-        ],
-      }),
+            id: "entra-device",
+            deviceName: "WIN-1",
+            lastBackupDateTime: credential.backupDateTime,
+            refreshDateTime: "2026-12-20T00:00:00.000Z",
+            credentials: [
+              {
+                accountName: credential.accountName,
+                accountSid: credential.accountSid,
+                backupDateTime: credential.backupDateTime,
+                passwordBase64: base64Utf16(credential.password),
+              },
+            ],
+          }),
     listBitlockerRecoveryKeys: () => {
       bitlockerListCalls++;
 
@@ -182,8 +182,7 @@ const makeContext = async (options?: {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
-    storage,
+    storage: storage as any,
     auth: auth as never,
     authSecret,
     azureGraph: azureGraph as never,
@@ -242,7 +241,7 @@ const seedDevice = (
 
 const seedLapsPolicy = async (
   db: ReturnType<typeof makeDb>,
-  service: any,
+  service: ReturnType<typeof createEnterpriseService>,
   headers: Record<string, string>,
   tenantId: string,
   deviceId: string,
@@ -295,9 +294,7 @@ describe("Windows LAPS", () => {
     expect(revealed.body.expired).toBe(false);
     expect(revealed.headers["cache-control"]).toBe("no-store");
 
-    const secret = db.store.device_secret.find(
-      (row: any) => row.kind === "windows_laps_password",
-    );
+    const secret = db.store.device_secret.find((row: any) => row.kind === "windows_laps_password");
 
     expect(secret).toBeDefined();
     expect(await openSecret(authSecret, secret.sealedValue)).toBe("correct-horse-battery-42!");
@@ -329,9 +326,7 @@ describe("Windows LAPS", () => {
     seedDevice(db, tenant.id, "win-old", { osBuild: "19045.1" });
 
     await expect(
-      runEffect(
-        service.getDeviceWindowsSecurity(request(headers), tenant.id, "win-old"),
-      ),
+      runEffect(service.getDeviceWindowsSecurity(request(headers), tenant.id, "win-old")),
     ).resolves.toMatchObject({ laps: { supported: false } });
 
     await expect(
@@ -377,9 +372,7 @@ describe("Windows LAPS", () => {
     ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
 
     expect(
-      db.store.device_command.some(
-        (row: any) => row.requestType === "WindowsLapsResetPassword",
-      ),
+      db.store.device_command.some((row: any) => row.requestType === "WindowsLapsResetPassword"),
     ).toBe(false);
   });
 
@@ -413,9 +406,7 @@ describe("Windows LAPS", () => {
     );
 
     await expect(
-      runEffect(
-        service.getDeviceWindowsSecurity(request(headers), other.id, "win-1"),
-      ),
+      runEffect(service.getDeviceWindowsSecurity(request(headers), other.id, "win-1")),
     ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
   });
 
@@ -511,9 +502,7 @@ describe("BitLocker escrow", () => {
 
     // A repeated list is not a rotation. The capture time and rotatedAt stay
     // stable; only reportedAt advances.
-    await runEffect(
-      service.getDeviceWindowsSecurity(request(headers), tenant.id, "win-1"),
-    );
+    await runEffect(service.getDeviceWindowsSecurity(request(headers), tenant.id, "win-1"));
     expect(db.store.device_bitlocker_key[0].capturedAt).toBe(firstRow.capturedAt);
     expect(db.store.device_bitlocker_key[0].rotatedAt).toBeNull();
 
@@ -568,9 +557,7 @@ describe("BitLocker escrow", () => {
     // The in-memory fake does not enforce the composite unique index, so
     // compare unique Graph key ids rather than raw inserted rows.
     const rows = [
-      ...new Map(
-        db.store.device_bitlocker_key.map((row: any) => [row.keyId, row]),
-      ).values(),
+      ...new Map(db.store.device_bitlocker_key.map((row: any) => [row.keyId, row])).values(),
     ];
     const oldRow = rows.find((row: any) => row.keyId === "recovery-key-old");
     const newRow = rows.find((row: any) => row.keyId === "recovery-key-new");
@@ -630,19 +617,15 @@ describe("BitLocker escrow", () => {
     });
 
     const revealed = await runEffect(
-      service.revealDeviceBitlockerKey(
-        request(headers),
-        tenant.id,
-        "win-1",
-        "recovery-key-new",
-        { reason: "post-rotation recovery" },
-      ),
+      service.revealDeviceBitlockerKey(request(headers), tenant.id, "win-1", "recovery-key-new", {
+        reason: "post-rotation recovery",
+      }),
     );
 
     expect(revealed.body.recoveryKey).toContain("999999-888888");
-    expect(
-      db.store.device_bitlocker_key.some((row: any) => row.keyId === "recovery-key-new"),
-    ).toBe(true);
+    expect(db.store.device_bitlocker_key.some((row: any) => row.keyId === "recovery-key-new")).toBe(
+      true,
+    );
   });
 
   it("coalesces force refreshes from repeated reveal misses", async () => {
@@ -739,11 +722,9 @@ describe("BitLocker escrow", () => {
       }),
     );
 
-    expect(queued.commandId).toBeTruthy();
+    expect(requireField(queued, "commandId").commandId).toBeTruthy();
     expect(
-      db.store.device_command.some(
-        (row: any) => row.requestType === "WindowsBitLockerRotate",
-      ),
+      db.store.device_command.some((row: any) => row.requestType === "WindowsBitLockerRotate"),
     ).toBe(true);
     // The status poll is not queued in the same batch.
     expect(
@@ -785,11 +766,8 @@ describe("BitLocker escrow", () => {
     ).rejects.toMatchObject({ _tag: "EnterpriseConflict" });
 
     expect(
-      (
-        await runEffect(
-          service.getDeviceWindowsSecurity(request(headers), tenant.id, "hybrid"),
-        )
-      ).bitlocker.rotationInProgress,
+      (await runEffect(service.getDeviceWindowsSecurity(request(headers), tenant.id, "hybrid")))
+        .bitlocker.rotationInProgress,
     ).toBe(true);
 
     // A terminal status closes the parent Exec and clears in-progress.
@@ -799,27 +777,23 @@ describe("BitLocker escrow", () => {
     statusRow.resultStatus = "200";
 
     expect(
-      (
-        await runEffect(
-          service.getDeviceWindowsSecurity(request(headers), tenant.id, "hybrid"),
-        )
-      ).bitlocker.rotationInProgress,
+      (await runEffect(service.getDeviceWindowsSecurity(request(headers), tenant.id, "hybrid")))
+        .bitlocker.rotationInProgress,
     ).toBe(false);
-    expect(
-      db.store.device_command.find((row: any) => row.id === exec.id).status,
-    ).toBe("succeeded");
+    expect(db.store.device_command.find((row: any) => row.id === exec.id).status).toBe("succeeded");
 
     const second = await runEffect(
       service.deviceAction(request(headers), tenant.id, "hybrid", {
         action: "rotate-bitlocker-key",
       }),
     );
-    expect(second.commandId).toBeTruthy();
+    const secondCommand = requireField(second, "commandId");
+    expect(secondCommand.commandId).toBeTruthy();
 
     // A rotation that never terminates expires through the 24-hour budget.
     const secondExec = db.store.device_command.find(
       (row: any) =>
-        row.requestType === "WindowsBitLockerRotate" && row.id === second.commandId,
+        row.requestType === "WindowsBitLockerRotate" && row.id === secondCommand.commandId,
     );
     secondExec.status = "accepted";
     secondExec.expiresAt = new Date(Date.now() - 1_000);
@@ -829,7 +803,7 @@ describe("BitLocker escrow", () => {
       organizationId: tenant.id,
       deviceId: "hybrid",
       requestType: "WindowsBitLockerRotateStatus",
-      payload: { kind: "Get", execCommandId: second.commandId },
+      payload: { kind: "Get", execCommandId: secondCommand.commandId },
       status: "sent",
       dedupeKey: null,
       expiresAt: new Date(Date.now() - 1_000),
@@ -916,7 +890,7 @@ describe("Windows diagnostics and Fresh Start", () => {
       }),
     );
 
-    expect(action.diagnostics?.archiveId).toBeTruthy();
+    expect(requireField(action, "diagnostics").diagnostics?.archiveId).toBeTruthy();
     const command = db.store.device_command.find(
       (row: any) => row.requestType === "WindowsCollectDiagnostics",
     );
@@ -934,16 +908,12 @@ describe("Windows diagnostics and Fresh Start", () => {
 
     expect(pending.archives[0]).toMatchObject({ status: "pending", downloadPath: null });
 
-    const match = /https:\/\/[^"\]]+\?token=[^&"]+&archiveId=[^"\]]+/.exec(
-      command.payload.data,
-    );
+    const match = /https:\/\/[^"\]]+\?token=[^&"]+&archiveId=[^"\]]+/.exec(command.payload.data);
 
     expect(match).toBeTruthy();
 
     const upload = await runEffect(
-      service.uploadWindowsDiagnostics(
-        new Request(match![0], { method: "POST", body: zip }),
-      ),
+      service.uploadWindowsDiagnostics(new Request(match![0], { method: "POST", body: zip })),
     );
 
     expect(upload.status).toBe(200);
@@ -969,13 +939,9 @@ describe("Windows diagnostics and Fresh Start", () => {
     ).toBe(true);
 
     const bytes = await runEffect(
-      service.downloadDeviceDiagnostics(
-        request(headers),
-        tenant.id,
-        "win-1",
-        archive.id,
-        { token },
-      ),
+      service.downloadDeviceDiagnostics(request(headers), tenant.id, "win-1", archive.id, {
+        token,
+      }),
     );
 
     expect(Array.from(bytes.body)).toEqual(Array.from(zip));
@@ -987,13 +953,9 @@ describe("Windows diagnostics and Fresh Start", () => {
 
     await expect(
       runEffect(
-        service.downloadDeviceDiagnostics(
-          request(headers),
-          other.id,
-          "win-1",
-          archive.id,
-          { token },
-        ),
+        service.downloadDeviceDiagnostics(request(headers), other.id, "win-1", archive.id, {
+          token,
+        }),
       ),
     ).rejects.toMatchObject({ _tag: "EnterpriseNotFound" });
   });
@@ -1011,15 +973,16 @@ describe("Windows diagnostics and Fresh Start", () => {
     const command = db.store.device_command.find(
       (row: any) => row.requestType === "WindowsCollectDiagnostics",
     );
-    const match = /https:\/\/[^"\]]+\?token=[^&"]+&archiveId=[^"\]]+/.exec(
-      command.payload.data,
-    );
+    const match = /https:\/\/[^"\]]+\?token=[^&"]+&archiveId=[^"\]]+/.exec(command.payload.data);
     const url = new URL(match![0]);
     url.searchParams.set("token", "forged");
 
     expect(
-      (await runEffect(service.uploadWindowsDiagnostics(new Request(url, { method: "POST", body: zip }))))
-        .status,
+      (
+        await runEffect(
+          service.uploadWindowsDiagnostics(new Request(url, { method: "POST", body: zip })),
+        )
+      ).status,
     ).toBe(401);
 
     url.searchParams.set("token", new URL(match![0]).searchParams.get("token")!);
@@ -1050,9 +1013,7 @@ describe("Windows diagnostics and Fresh Start", () => {
     const command = db.store.device_command.find(
       (row: any) => row.requestType === "WindowsCollectDiagnostics",
     );
-    const match = /https:\/\/[^"\]]+\?token=[^&"]+&archiveId=[^"\]]+/.exec(
-      command.payload.data,
-    );
+    const match = /https:\/\/[^"\]]+\?token=[^&"]+&archiveId=[^"\]]+/.exec(command.payload.data);
 
     // No content-length: the handler must stop at the byte cap while reading.
     const fakeRequest = {
@@ -1106,13 +1067,9 @@ describe("Windows diagnostics and Fresh Start", () => {
 
     await expect(
       runEffect(
-        service.downloadDeviceDiagnostics(
-          request(headers),
-          tenant.id,
-          "win-1",
-          archive.id,
-          { token: "anything" },
-        ),
+        service.downloadDeviceDiagnostics(request(headers), tenant.id, "win-1", archive.id, {
+          token: "anything",
+        }),
       ),
     ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
   });
@@ -1134,7 +1091,10 @@ describe("Windows diagnostics and Fresh Start", () => {
       }),
     );
 
-    expect(keep.freshStart).toMatchObject({ mode: "retain-user-data", retainUserData: true });
+    expect(requireField(keep, "freshStart").freshStart).toMatchObject({
+      mode: "retain-user-data",
+      retainUserData: true,
+    });
 
     const remove = await runEffect(
       service.deviceAction(request(headers), tenant.id, "win-1", {
@@ -1143,7 +1103,7 @@ describe("Windows diagnostics and Fresh Start", () => {
       }),
     );
 
-    expect(remove.freshStart?.warning).toMatch(/out-of-box/);
+    expect(requireField(remove, "freshStart").freshStart?.warning).toMatch(/out-of-box/);
 
     const commands = db.store.device_command.filter(
       (row: any) => row.requestType === "WindowsFreshStart",
@@ -1180,4 +1140,3 @@ describe("Windows diagnostics and Fresh Start", () => {
     ).rejects.toMatchObject({ _tag: "EnterpriseBadRequest" });
   });
 });
-

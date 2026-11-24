@@ -18,7 +18,7 @@ import {
 } from "@mattrax/enterprise-backend";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const orgId = "org-1";
 
@@ -198,10 +198,10 @@ describe("unenrol handoff", () => {
     );
 
     expect(first).toMatchObject({ issued: 2, skipped: 0, remaining: 1, soleCopies: [] });
-    expect(first!.results).toHaveLength(2);
+    expect(first!.results!).toHaveLength(2);
     // The serials are not enrolled, so there is no execution to watch; the
     // handoff is the script the operator deploys through the incumbent.
-    expect(first!.results[0]).toMatchObject({
+    expect(first!.results![0]!).toMatchObject({
       delivery: "script",
       executionId: null,
       status: "unenrol-issued",
@@ -314,7 +314,7 @@ describe("unenrol handoff", () => {
       issueFleetMigrationUnenrol(db, orgId, created.id, "user-1", { confirmSoleCopy: true }, now),
     );
 
-    expect(result!.results[0]).toMatchObject({ delivery: "script", executionId: null });
+    expect(result!.results![0]!).toMatchObject({ delivery: "script", executionId: null });
     expect(db.store.script_execution).toHaveLength(0);
     expect(entryFor(db, created.id, "C02NOSCRIPT").lastEvidence).toContain(
       "deploy the cohort script",
@@ -332,8 +332,8 @@ describe("unenrol handoff", () => {
       issueFleetMigrationUnenrol(db, orgId, created.id, "user-1", {}, now),
     );
 
-    expect(result!.results[0]).toMatchObject({ delivery: "manual", executionId: null });
-    expect(result!.results[0].instructions).toContain("Access work or school");
+    expect(result!.results![0]!).toMatchObject({ delivery: "manual", executionId: null });
+    expect(result!.results![0]!.instructions).toContain("Access work or school");
     expect(entryFor(db, created.id, "WIN123").lastEvidence).toContain("Manual unenrol required");
   });
 });
@@ -643,7 +643,6 @@ describe("permissions", () => {
       db,
       schema,
       origin,
-      stripeClient: makeStripeClient(),
       // SAFETY: these tests never reach R2; the service only stores the binding.
       storage: {} as any,
       // SAFETY: the fake only implements the auth methods this test exercises.
