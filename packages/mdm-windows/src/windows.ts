@@ -1,6 +1,6 @@
 import { Cause, Effect, Option, Predicate, Schema } from "effect";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
-import { DN } from "@mbakereth/ldapjs-dn";
+import { DN } from "./ldapjs-dn.js";
 import {
   osPolicyRuleFromRow,
   windowsOsUpdatePolicyNodes,
