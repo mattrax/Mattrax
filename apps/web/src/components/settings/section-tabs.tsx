@@ -1,6 +1,6 @@
 import { createEffect, createSignal, flush, For, onSettled, Show } from "solid-js";
 import { cn } from "~/lib/utils";
-import { sectionTabTarget } from "./section-tabs-nav";
+import { activateSectionTabAnchor, sectionTabTarget } from "./section-tabs-nav";
 
 export type SectionTab = {
   readonly id: string;
@@ -41,9 +41,7 @@ export function SectionTabs(props: {
 }) {
   const isTablist = () => props.onSelect !== undefined || props.hrefFor !== undefined;
   const activeId = () =>
-    props.tabs.some((tab) => tab.id === props.active)
-      ? props.active
-      : (props.tabs[0]?.id ?? "");
+    props.tabs.some((tab) => tab.id === props.active) ? props.active : (props.tabs[0]?.id ?? "");
   const anchors = new Map<string, HTMLElement>();
   const [indicator, setIndicator] = createSignal({ left: 0, width: 0 });
   const [measured, setMeasured] = createSignal(false);
@@ -107,13 +105,12 @@ export function SectionTabs(props: {
     // aria-selected="false".
     const anchor = anchors.get(next);
 
-    // Navigation tabs follow the WAI-ARIA manual-activation pattern: arrows
-    // move focus, Enter or Space follows the tab's own link. Programmatic
-    // clicks on a router-managed anchor did not commit during hydration
-    // (the browser suite caught the URL staying put), whereas a real key
-    // press activates the anchor natively and the router handles the click.
+    // Selection follows focus for navigation tabs too. Click the real anchor
+    // on the next macrotask so the router's document-level handler performs
+    // the navigation without racing the transition that hydrated this tree.
     if (props.hrefFor) {
       queueMicrotask(() => anchor?.focus());
+      activateSectionTabAnchor(anchor);
 
       return;
     }
