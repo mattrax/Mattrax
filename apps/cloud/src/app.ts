@@ -134,7 +134,9 @@ import {
   tenantIdFromPath,
   withDefaultNoStore,
   withRequestId,
-  createRateLimiter,
+  RateLimiterCloudflare,
+  RateLimiterLocal,
+  check as checkRateLimit,
   rateLimitBindingsFromEnv,
   rateLimitResponse,
   authEventForRequest,
@@ -157,18 +159,12 @@ import {
   boundedClientAddress,
   servicesUrls,
 } from "@mattrax/cloud-services";
-import type { AnalyticsProperties, SendEmail } from "@mattrax/cloud-services";
+import type { AnalyticsProperties, RateLimitStore, SendEmail } from "@mattrax/cloud-services";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
 import { AzureGraphFetchLive } from "@mattrax/azure-graph";
 import { AzureGraph } from "@mattrax/azure-graph";
 import { AppleMdmTrust, MdmError, parseSubjectDn } from "@mattrax/dm-apple";
 import { FetchHttpClient } from "effect/http";
-
-const rateLimiter = createRateLimiter({
-  // Node deployments behind a reverse proxy must opt in before their
-  // forwarded headers are trusted; Cloudflare is detected from `request.cf`.
-  trustForwarded: apiEnv.TRUST_PROXY_HEADERS === "1",
-});
 
 /** One trusted-proxy decision for the limiter, the audit log and MDM scopes. */
 const TRUST_PROXY_HEADERS = apiEnv.TRUST_PROXY_HEADERS === "1";
@@ -228,10 +224,36 @@ const auditCheckinCoalesceWindowMs = (() => {
 })();
 
 /**
- * Edge limiter bindings are optional (see `cloudflare.config.ts`). Buckets
- * without one use the per-isolate fallback.
+ * Fallback counters for this process.
+ *
+ * Module scope, so they outlive a request: the limiter layer is rebuilt per
+ * request because Worker bindings are request-scoped, but the counts must not
+ * be. One process serves the whole self-hosted deployment, so these are exact
+ * there; in a Worker they are per isolate, which is why they are only a
+ * fallback.
  */
-const rateLimitBindings = (env: Env) => rateLimitBindingsFromEnv(env);
+const localRateLimitStore: RateLimitStore = new Map();
+
+/**
+ * Charge the request to whichever limiter this deployment has.
+ *
+ * Shared Rate Limiting namespaces mean Cloudflare's edge limiter; without them
+ * (local development, the self-hosted container) the process-local counters
+ * are the limiter. Building the layer per request costs single-digit
+ * microseconds and avoids retaining binding handles across request contexts.
+ */
+const rateLimiterLayer = (env: Env) => {
+  const bindings = rateLimitBindingsFromEnv(env);
+  const shared = Object.values(bindings).some((binding) => binding !== undefined);
+
+  return shared
+    ? RateLimiterCloudflare({
+        bindings,
+        store: localRateLimitStore,
+        trustForwarded: TRUST_PROXY_HEADERS,
+      })
+    : RateLimiterLocal({ store: localRateLimitStore, trustForwarded: TRUST_PROXY_HEADERS });
+};
 
 const appAuth = makeAppAuth(apiEnv.ORIGIN, {
   sso: makeSsoStrategy(),
@@ -1448,7 +1470,9 @@ export const createApiRuntime = (
       let uncaught: unknown;
 
       try {
-        const limited = await rateLimiter.check(request, rateLimitBindings(env));
+        const limited = await Effect.runPromise(
+          checkRateLimit(request).pipe(Effect.provide(rateLimiterLayer(env))),
+        );
 
         if (limited.limited) {
           response = rateLimitResponse(limited, requestId);

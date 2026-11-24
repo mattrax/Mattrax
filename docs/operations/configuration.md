@@ -351,14 +351,29 @@ Build-time namespace variables create Cloudflare Rate Limiting bindings:
 
 | Variable                                  | Binding                   | Bucket              |
 | ----------------------------------------- | ------------------------- | ------------------- |
-| `MATTRAX_RATE_LIMIT_AUTH_NAMESPACE`       | `RATE_LIMITER_AUTH`       | Auth POSTs, 120/min |
+| `MATTRAX_RATE_LIMIT_AUTH_NAMESPACE`       | `RATE_LIMITER_AUTH`       | Auth POSTs, 600/min |
 | `MATTRAX_RATE_LIMIT_ENROLLMENT_NAMESPACE` | `RATE_LIMITER_ENROLLMENT` | Enrollment, 600/min |
 | `MATTRAX_RATE_LIMIT_MDM_NAMESPACE`        | `RATE_LIMITER_MDM`        | `/mdm/*`, 600/min   |
 | `MATTRAX_RATE_LIMIT_SCIM_NAMESPACE`       | `RATE_LIMITER_SCIM`       | SCIM, 600/min       |
 | `MATTRAX_RATE_LIMIT_BILLING_NAMESPACE`    | `RATE_LIMITER_BILLING`    | Billing, 600/min    |
 | `MATTRAX_RATE_LIMIT_SCEP_NAMESPACE`       | `RATE_LIMITER_SCEP`       | SCEP, 300/min       |
 
-Without a binding, that bucket falls back to per-isolate counters.
+Without a binding, that bucket falls back to the process-local counter. Those
+counters live as long as the process does: exact for the single-container
+self-hosted deployment, but per isolate in a Worker, where isolates are created
+and retired continuously and the effective ceiling becomes `limit × live
+isolates` rather than `limit`.
+
+Cloudflare's counters are **per Cloudflare location** and approximate: a burst
+can exceed the configured limit before counts propagate, and each location
+enforces the limit independently. Treat these bindings as an abuse backstop for
+credential stuffing and hot loops, not as a global quota. A limit that has to
+hold globally — a per-tenant or per-token quota — needs a Durable Object keyed
+on that tenant or token.
+
+The API Worker logs a warning at build time when `MATTRAX_PRODUCTION=true` and
+any of these variables is unset, because that deployment then runs on
+per-isolate limits.
 
 ## Analytics and error tracking
 
