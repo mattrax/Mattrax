@@ -707,6 +707,47 @@ describe("handler enforcement", () => {
     expect(db.store.audit_log).toHaveLength(0);
   });
 
+  const stepUpMutations = [
+    {
+      name: "delete a script",
+      run: (service: any, headers: any, id: string) =>
+        service.deleteScript(request(headers), orgId, id),
+    },
+    {
+      name: "change script assignments",
+      run: (service: any, headers: any, id: string) =>
+        service.patchScriptAssignments(request(headers), orgId, id, {
+          assign: [],
+          unassign: [],
+        }),
+    },
+    {
+      name: "change script settings",
+      run: (service: any, headers: any) =>
+        service.patchScriptSettings(request(headers), orgId, { enabled: false }),
+    },
+    {
+      name: "run a script",
+      run: (service: any, headers: any, id: string) =>
+        service.runScript(request(headers), orgId, id, {}),
+    },
+  ];
+
+  for (const mutation of stepUpMutations) {
+    it(`requires a step-up to ${mutation.name}`, async () => {
+      const { db, service, headers } = await context({ stepUp: false });
+      const { id } = await create(db);
+
+      const failure = await runEffect(
+        mutation
+          .run(service, headers, id)
+          .pipe(Effect.catchTag("StepUpRequired", (error: unknown) => Effect.succeed(error))),
+      );
+
+      expect(failure).toBeInstanceOf(StepUpRequired);
+    });
+  }
+
   it("creates, audits and lists a script for an owner", async () => {
     const { db, service, headers } = await context({ stepUp: true });
 

@@ -55,6 +55,21 @@ describe("buildBreadcrumbs", () => {
     ]);
   });
 
+  it("names the policy and the overview view when the path ends at the id", () => {
+    expect(
+      buildBreadcrumbs({
+        pathname: `${tenant}/policies/policy_123`,
+        resourceName: "Staff policy",
+        section: "Overview",
+      }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Policies", href: `${tenant}/policies` },
+      { label: "Staff policy", href: `${tenant}/policies/policy_123` },
+      { label: "Overview", href: `${tenant}/policies/policy_123` },
+    ]);
+  });
+
   it("gives settings sub-pages the section trail without the tenant", () => {
     expect(
       buildBreadcrumbs({

@@ -135,7 +135,8 @@ unsupported rather than queueing a run that never happens.
 
 ## Tenant opt-out
 
-Scripts are enabled per tenant. **Disable scripts for this tenant** on the Scripts page:
+Scripts are enabled per tenant. Toggling the setting requires a fresh step-up
+(`script-change`). **Disable scripts for this tenant** on the Scripts page:
 
 - removes assigned script profiles from Apple devices (direct device assignments are
   pushed immediately; group members pick it up on their next check-in);
@@ -147,18 +148,18 @@ Re-enabling delivers the currently assigned scripts again.
 
 ## API
 
-| Method   | Path                                                | Purpose                                   |
-| -------- | --------------------------------------------------- | ----------------------------------------- |
-| `GET`    | `/api/v1/tenants/:tenantId/scripts`                 | List scripts and the tenant setting       |
-| `POST`   | `/api/v1/tenants/:tenantId/scripts`                 | Create (`scripts.write`, no step-up)      |
-| `GET`    | `/api/v1/tenants/:tenantId/scripts/:id`             | Script body and summary                   |
-| `PATCH`  | `/api/v1/tenants/:tenantId/scripts/:id`             | Edit (step-up `script-change`)            |
-| `DELETE` | `/api/v1/tenants/:tenantId/scripts/:id`             | Delete (step-up `script-change`)          |
-| `GET`    | `/api/v1/tenants/:tenantId/scripts/:id/assignments` | Direct devices and groups                 |
-| `PATCH`  | `/api/v1/tenants/:tenantId/scripts/:id/assignments` | Assign/unassign (step-up `script-change`) |
-| `POST`   | `/api/v1/tenants/:tenantId/scripts/:id/run`         | Queue a run (step-up `script-run`)        |
-| `GET`    | `/api/v1/tenants/:tenantId/scripts/:id/executions`  | Run history (`deviceId`, `limit`)         |
-| `PATCH`  | `/api/v1/tenants/:tenantId/scripts/settings`        | Enable/disable scripts                    |
+| Method   | Path                                                | Purpose                                          |
+| -------- | --------------------------------------------------- | ------------------------------------------------ |
+| `GET`    | `/api/v1/tenants/:tenantId/scripts`                 | List scripts and the tenant setting              |
+| `POST`   | `/api/v1/tenants/:tenantId/scripts`                 | Create (`scripts.write`, no step-up)             |
+| `GET`    | `/api/v1/tenants/:tenantId/scripts/:id`             | Script body and summary                          |
+| `PATCH`  | `/api/v1/tenants/:tenantId/scripts/:id`             | Edit (step-up `script-change`)                   |
+| `DELETE` | `/api/v1/tenants/:tenantId/scripts/:id`             | Delete (step-up `script-change`)                 |
+| `GET`    | `/api/v1/tenants/:tenantId/scripts/:id/assignments` | Direct devices and groups                        |
+| `PATCH`  | `/api/v1/tenants/:tenantId/scripts/:id/assignments` | Assign/unassign (step-up `script-change`)        |
+| `POST`   | `/api/v1/tenants/:tenantId/scripts/:id/run`         | Queue a run (step-up `script-run`)               |
+| `GET`    | `/api/v1/tenants/:tenantId/scripts/:id/executions`  | Run history (`deviceId`, `limit`)                |
+| `PATCH`  | `/api/v1/tenants/:tenantId/scripts/settings`        | Enable/disable scripts (step-up `script-change`) |
 
 The device-facing channel is separate and authenticates with a device token, not a session:
 

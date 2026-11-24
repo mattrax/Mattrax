@@ -104,7 +104,13 @@ import type {
   SelectionTemplate,
   ValidationIssue,
 } from "~/lib/policy-designer/build";
-import { isPolicyDraftDirty, policyDraftSnapshot } from "~/lib/policy-designer/draft-state";
+import {
+  applyCollectionIdRewrites,
+  isPolicyDraftDirty,
+  normaliseSelectionCollectionIds,
+  policyDraftSnapshot,
+  seedPolicyDraftBaseline,
+} from "~/lib/policy-designer/draft-state";
 import { admxCollectionFromSelection, isAdmxCollectionId } from "~/lib/policy-designer/admx";
 import type { AdmxSelection } from "~/lib/policy-designer/admx";
 import {
@@ -334,21 +340,30 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     },
   );
 
-  const initialSnapshot = untrack(() => {
+  const initialPolicy = untrack(() => {
     const policy = emptyPolicyDraft(name());
     policy.platforms = { ...selectionMap() };
 
-    return policyDraftSnapshot(policy);
+    return policy;
   });
 
+  const initialSnapshot = untrack(() => policyDraftSnapshot(initialPolicy));
+
   /**
-   * The draft as of the last save (or the state the page loaded with). The
-   * discard guard compares against this, not against the persisted
-   * configurations: those are a lossy projection of the designer draft and
-   * would report a policy that was only opened — or has just been saved — as
-   * dirty.
+   * The draft as of the last save, seeded from the server's persisted draft.
+   * A newer browser autosave therefore counts as dirty and prompts before it
+   * is discarded. The designer's persisted configurations can be a lossy
+   * projection, so saving resets this baseline explicitly.
    */
-  const [savedSnapshot, setSavedSnapshot] = createSignal(initialSnapshot);
+  const [savedDraft, setSavedDraft] = createSignal<PolicyDraft>(
+    untrack(() =>
+      seedPolicyDraftBaseline({
+        persistedDraft: props.persistedDraft,
+        initialDraft,
+        currentDraft: initialPolicy,
+      }),
+    ),
+  );
 
   const data = () => indexes()[platform()] ?? null;
   const catalogError = () => indexErrors()[platform()] ?? null;
@@ -618,33 +633,24 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   // Restore the last active collection (or the first one) when the catalogue
   // arrives, instead of greeting a configured policy with an empty state.
   createEffect(
-    () => ({ data: data(), active: activeKey(), selections: selections() }),
+    () => ({ data: data(), platform: platform(), active: activeKey(), selections: selections() }),
     (value) => {
       if (!value.data) return;
 
       // Drafts written by older builds used `apple:<identifier>` instead of the
       // catalogue key (`apple/profiles/<identifier>#Name`). Resolve them against
-      // the loaded index rather than showing an empty editor.
-      const normalised = value.selections.map((selection) => {
-        if (
-          value.data!.collections.some((collection) => keyOf(collection) === selection.collectionId)
-        )
-          return selection;
+      // the loaded index rather than showing an empty editor, and apply the
+      // same rewrite to the saved baseline so a merely-opened legacy policy is
+      // not reported as dirty.
+      const { selections: normalised, rewrites } = normaliseSelectionCollectionIds(
+        value.selections,
+        value.data.collections,
+      );
 
-        const match =
-          value.data!.collections.find(
-            (collection) =>
-              collection.identifier === selection.identifier && collection.name === selection.name,
-          ) ??
-          value.data!.collections.find(
-            (collection) => collection.identifier === selection.identifier,
-          );
-
-        return match ? { ...selection, collectionId: keyOf(match) } : selection;
-      });
-
-      if (normalised.some((selection, index) => selection !== value.selections[index]))
+      if (rewrites.size > 0) {
         setSelections(() => normalised);
+        setSavedDraft((current) => applyCollectionIdRewrites(current, value.platform, rewrites));
+      }
 
       if (
         value.active &&
@@ -1002,7 +1008,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const dirtySinceLoad = () => isPolicyDraftDirty(policyDraft(), initialSnapshot);
 
-  const dirtySinceSaved = () => isPolicyDraftDirty(policyDraft(), savedSnapshot());
+  const dirtySinceSaved = () =>
+    isPolicyDraftDirty(policyDraft(), policyDraftSnapshot(savedDraft()));
 
   const dirty = () => (props.mode === "dashboard" ? dirtySinceSaved() : dirtySinceLoad());
 
@@ -1388,6 +1395,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     Boolean(props.onSave) &&
     policySelectionCount(policyDraft()) > 0 &&
     !props.saveDisabled &&
+    !props.saving &&
     blockingIssues().length === 0;
 
   const disabledHint = () => {
@@ -1406,20 +1414,26 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   // A failed save must not leave the draft looking persisted: restore the
   // previous baseline so navigating away still asks before discarding.
-  let snapshotBeforeSave: string | undefined;
+  let baselineBeforeSave: PolicyDraft | undefined;
   createEffect(
     () => Boolean(props.error),
     (failed) => {
-      if (!failed || snapshotBeforeSave === undefined) return;
-      setSavedSnapshot(snapshotBeforeSave);
-      snapshotBeforeSave = undefined;
+      if (!failed || baselineBeforeSave === undefined) return;
+      setSavedDraft(baselineBeforeSave);
+      baselineBeforeSave = undefined;
+    },
+  );
+  createEffect(
+    () => props.saving,
+    (saving, previous) => {
+      if (previous && !saving && !props.error) baselineBeforeSave = undefined;
     },
   );
 
   const save = () => {
     if (!canSave()) return;
-    snapshotBeforeSave = savedSnapshot();
-    setSavedSnapshot(policyDraftSnapshot(policyDraft()));
+    baselineBeforeSave = savedDraft();
+    setSavedDraft(policyDraft());
     void props.onSave?.(policyDraft());
   };
 

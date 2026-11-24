@@ -26,7 +26,18 @@ import type {
   CisTemplateSummary,
   CompiledCisTemplate,
 } from "~/lib/policy-designer/cis";
-import { cisDialogPending, toggleCisControlSelection } from "~/lib/policy-designer/cis-dialog";
+import {
+  beginCisApply,
+  beginCisLoad,
+  cisApplyLabel,
+  cisDialogLoading,
+  cisDialogPending,
+  cisLoadingLabel,
+  finishCisApply,
+  finishCisLoad,
+  initialCisDialogActivity,
+  toggleCisControlSelection,
+} from "~/lib/policy-designer/cis-dialog";
 import type { Selection } from "~/lib/policy-designer/build";
 import { cn } from "~/lib/utils";
 
@@ -69,13 +80,14 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
   const [templateError, setTemplateError] = createSignal<string>();
   const [selected, setSelected] = createSignal<ReadonlySet<string>>(new Set<string>());
   const [query, setQuery] = createSignal("");
-  // Loading a benchmark and applying a selection are different work. Only the
-  // latter is a submission; ticking a control must not look like one.
-  const [loading, setLoading] = createSignal(false);
-  const [applying, setApplying] = createSignal(false);
+  // Loading a benchmark and applying a selection are different work. The
+  // counter keeps overlapping loads active, and only applying is a submission;
+  // ticking a control cannot change either.
+  const [activity, setActivity] = createSignal(initialCisDialogActivity);
   const [applyError, setApplyError] = createSignal<string>();
 
-  const pending = () => cisDialogPending({ applying: applying() });
+  const loading = () => cisDialogLoading(activity());
+  const pending = () => cisDialogPending(activity());
 
   const available = createMemo(() =>
     (summaries() ?? []).filter(
@@ -123,7 +135,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
     if (!next) return;
 
-    setLoading(true);
+    setActivity(beginCisLoad);
     void loadCisTemplate(next)
       .then((loaded) => {
         setTemplate(loaded);
@@ -132,7 +144,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
       .catch((error: unknown) =>
         setTemplateError(error instanceof Error ? error.message : "Could not load the template."),
       )
-      .finally(() => setLoading(false));
+      .finally(() => setActivity(finishCisLoad));
   };
 
   createEffect(
@@ -149,7 +161,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
         return;
       }
 
-      setLoading(true);
+      setActivity(beginCisLoad);
       void loadCisTemplateIndex()
         .then((index) => {
           setSummaries([...index.templates]);
@@ -165,7 +177,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
             error instanceof Error ? error.message : "Could not load the CIS templates.",
           ),
         )
-        .finally(() => setLoading(false));
+        .finally(() => setActivity(finishCisLoad));
     },
   );
 
@@ -186,7 +198,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
     if (!current || selected().size === 0) return;
 
-    setApplying(true);
+    setActivity(beginCisApply);
     setApplyError(undefined);
 
     try {
@@ -214,7 +226,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
     } catch (error) {
       setApplyError(error instanceof Error ? error.message : "Could not apply the template.");
     } finally {
-      setApplying(false);
+      setActivity(finishCisApply);
     }
   };
 
@@ -267,9 +279,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                 when={template()}
                 fallback={
                   <div class="rounded-xl border border-dashed border-input px-3 py-6 text-center text-[12px] text-muted-foreground">
-                    {loading()
-                      ? "Loading benchmark…"
-                      : "No benchmark is available for this platform."}
+                    {cisLoadingLabel(activity(), "No benchmark is available for this platform.")}
                   </div>
                 }
               >
@@ -324,7 +334,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                       <Button
                         size="xs"
                         variant="outline"
-                        disabled={loading() || applying() || allMappedSelected()}
+                        disabled={loading() || pending() || allMappedSelected()}
                         onClick={() => setAllMapped(true)}
                       >
                         Select all mapped
@@ -332,7 +342,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                       <Button
                         size="xs"
                         variant="ghost"
-                        disabled={loading() || applying() || selected().size === 0}
+                        disabled={loading() || pending() || selected().size === 0}
                         onClick={() => setAllMapped(false)}
                       >
                         Clear
@@ -377,7 +387,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                 when={template()}
                 fallback={
                   <div class="flex flex-1 items-center justify-center px-4 py-10 text-[12px] text-muted-foreground">
-                    {loading() ? "Loading benchmark…" : "Choose a benchmark to see its controls."}
+                    {cisLoadingLabel(activity(), "Choose a benchmark to see its controls.")}
                   </div>
                 }
               >
@@ -510,10 +520,10 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
             <Button
               size="sm"
               pending={pending()}
-              disabled={loading() || applying() || !template() || selected().size === 0}
+              disabled={loading() || pending() || !template() || selected().size === 0}
               onClick={() => void apply()}
             >
-              {pending() ? "Applying…" : "Apply selected controls"}
+              {cisApplyLabel(activity())}
             </Button>
           </div>
         </DialogFooter>

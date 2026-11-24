@@ -1,11 +1,22 @@
+import {
+  Select,
+  SelectChevron,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@mattrax/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { ErrorText, Field, Panel } from "~/components/mdm/common";
 import type { ScriptEnvironmentEntry, ScriptTrigger } from "@mattrax/enterprise-domain/client";
-
-const selectClass =
-  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+import {
+  SCRIPT_LANGUAGE_OPTIONS,
+  SCRIPT_RUN_AS_OPTIONS,
+  SCRIPT_TRIGGER_OPTIONS,
+} from "~/lib/script-editor-options";
+import type { ScriptLanguage, ScriptRunAs } from "~/lib/script-editor-options";
 
 const textareaClass =
   "w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-[12.5px] leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
@@ -13,9 +24,9 @@ const textareaClass =
 export type ScriptDraftValues = {
   name: string;
   description: string;
-  language: "bash" | "zsh" | "sh" | "pwsh";
+  language: ScriptLanguage;
   body: string;
-  runAs: "root" | "user";
+  runAs: ScriptRunAs;
   timeoutSeconds: number;
   environment: ScriptEnvironmentEntry[];
   trigger: ScriptTrigger;
@@ -33,12 +44,12 @@ export const emptyScriptDraft = (): ScriptDraftValues => ({
 });
 
 /** Operator-facing description of how mattraxd runs a script. */
-const runAsHint = (runAs: "root" | "user") =>
+const runAsHint = (runAs: ScriptRunAs) =>
   runAs === "root"
     ? "Runs as root. The device must have mattraxd installed as a LaunchDaemon."
     : "Runs as the logged-in console user. Timer and install triggers run without a console user and are skipped.";
 
-const languageHint = (language: ScriptDraftValues["language"]) =>
+const languageHint = (language: ScriptLanguage) =>
   language === "pwsh" ? "PowerShell requires mattraxd on Windows." : `Uses /bin/${language}.`;
 
 /**
@@ -115,23 +126,25 @@ export function ScriptEditor(props: {
           />
         </Field>
         <Field label="Schedule">
-          <select
-            class={selectClass}
+          <Select
+            items={SCRIPT_TRIGGER_OPTIONS}
             value={draft().trigger.type}
             disabled={props.disabled}
-            onChange={(event) =>
-              // SAFETY: the option values are exactly the trigger literals.
-              changeTrigger(event.currentTarget.value as ScriptTrigger["type"])
-            }
+            onValueChange={(value: string | null) => {
+              // SAFETY: the list only contains trigger literals.
+              if (value) changeTrigger(value as ScriptTrigger["type"]);
+            }}
           >
-            <option value="manual">Manual only</option>
-            <option value="install">When the profile is installed</option>
-            <option value="login">User login</option>
-            <option value="logout">User logout</option>
-            <option value="network-change">Network change</option>
-            <option value="interval">Every interval</option>
-            <option value="cron">Cron schedule</option>
-          </select>
+            <SelectTrigger aria-label="Schedule" class="h-9">
+              <SelectValue />
+              <SelectChevron />
+            </SelectTrigger>
+            <SelectContent>
+              <For each={SCRIPT_TRIGGER_OPTIONS}>
+                {(option) => <SelectItem value={option.value}>{option.label}</SelectItem>}
+              </For>
+            </SelectContent>
+          </Select>
         </Field>
       </div>
 
@@ -177,34 +190,46 @@ export function ScriptEditor(props: {
 
       <div class="grid gap-4 sm:grid-cols-3">
         <Field label="Shell" hint={languageHint(draft().language)}>
-          <select
-            class={selectClass}
+          <Select
+            items={SCRIPT_LANGUAGE_OPTIONS}
             value={draft().language}
             disabled={props.disabled}
-            onChange={(event) =>
-              // SAFETY: the option values are exactly the supported shells.
-              patch({ language: event.currentTarget.value as ScriptDraftValues["language"] })
-            }
+            onValueChange={(value: string | null) => {
+              // SAFETY: the list only contains supported shells.
+              if (value) patch({ language: value as ScriptLanguage });
+            }}
           >
-            <option value="bash">bash</option>
-            <option value="zsh">zsh</option>
-            <option value="sh">sh</option>
-            <option value="pwsh">PowerShell</option>
-          </select>
+            <SelectTrigger aria-label="Shell" class="h-9">
+              <SelectValue />
+              <SelectChevron />
+            </SelectTrigger>
+            <SelectContent>
+              <For each={SCRIPT_LANGUAGE_OPTIONS}>
+                {(option) => <SelectItem value={option.value}>{option.label}</SelectItem>}
+              </For>
+            </SelectContent>
+          </Select>
         </Field>
         <Field label="Run as" hint={runAsHint(draft().runAs)}>
-          <select
-            class={selectClass}
+          <Select
+            items={SCRIPT_RUN_AS_OPTIONS}
             value={draft().runAs}
             disabled={props.disabled}
-            onChange={(event) =>
-              // SAFETY: the option values are exactly the supported run-as modes.
-              patch({ runAs: event.currentTarget.value as ScriptDraftValues["runAs"] })
-            }
+            onValueChange={(value: string | null) => {
+              // SAFETY: the list only contains supported run-as modes.
+              if (value) patch({ runAs: value as ScriptRunAs });
+            }}
           >
-            <option value="user">Logged-in user</option>
-            <option value="root">root</option>
-          </select>
+            <SelectTrigger aria-label="Run as" class="h-9">
+              <SelectValue />
+              <SelectChevron />
+            </SelectTrigger>
+            <SelectContent>
+              <For each={SCRIPT_RUN_AS_OPTIONS}>
+                {(option) => <SelectItem value={option.value}>{option.label}</SelectItem>}
+              </For>
+            </SelectContent>
+          </Select>
         </Field>
         <Field label="Timeout (seconds)" hint="mattraxd stops the script at this deadline.">
           <Input

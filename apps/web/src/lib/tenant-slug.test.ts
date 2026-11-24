@@ -44,12 +44,14 @@ describe("tenant slug derivation", () => {
     });
   });
 
-  it("resumes following when the slug is cleared", () => {
+  it("resumes following when the slug is cleared or normalises to nothing", () => {
     const edited = updateTenantSlug("custom");
     const cleared = updateTenantSlug("");
+    const punctuationOnly = updateTenantSlug("***");
 
     expect(edited.edited).toBe(true);
     expect(cleared).toEqual({ slug: "", edited: false });
+    expect(punctuationOnly).toEqual({ slug: "", edited: false });
     expect(updateTenantName(cleared, "Acme Corp")).toEqual({ slug: "acme-corp", edited: false });
   });
 

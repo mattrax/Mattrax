@@ -1,15 +1,52 @@
 /**
  * State helpers for the CIS benchmark dialog.
  *
- * Selecting a control is local UI state. It must never make the dialog look
- * like it is submitting, so the pending predicate only reads the `applying`
- * flag owned by the "Apply selected controls" action.
+ * Loading the benchmark index, loading a selected benchmark and applying a
+ * selection are separate operations. The old dialog shared one boolean, so the
+ * outer index load's finally block could clear the pending state while a
+ * template request was still running. The counter keeps overlapping loads
+ * distinct, and only `applying` counts as a submission.
  */
 export type CisDialogActivity = {
+  /** Number of benchmark/template requests in flight. */
+  readonly loadingCount: number;
+  /** True only while "Apply selected controls" is submitting. */
   readonly applying: boolean;
 };
 
-export const cisDialogPending = (activity: CisDialogActivity): boolean => activity.applying;
+export const initialCisDialogActivity: CisDialogActivity = { loadingCount: 0, applying: false };
+
+export const beginCisLoad = (state: CisDialogActivity): CisDialogActivity => ({
+  ...state,
+  loadingCount: state.loadingCount + 1,
+});
+
+export const finishCisLoad = (state: CisDialogActivity): CisDialogActivity => ({
+  ...state,
+  loadingCount: Math.max(0, state.loadingCount - 1),
+});
+
+export const beginCisApply = (state: CisDialogActivity): CisDialogActivity => ({
+  ...state,
+  applying: true,
+});
+
+export const finishCisApply = (state: CisDialogActivity): CisDialogActivity => ({
+  ...state,
+  applying: false,
+});
+
+export const cisDialogLoading = (state: CisDialogActivity): boolean => state.loadingCount > 0;
+
+export const cisDialogPending = (state: CisDialogActivity): boolean => state.applying;
+
+/** The Apply button label; selection alone can never produce "Applying…". */
+export const cisApplyLabel = (state: CisDialogActivity): string =>
+  state.applying ? "Applying…" : "Apply selected controls";
+
+/** The list/empty-state label, distinct from the Apply label. */
+export const cisLoadingLabel = (state: CisDialogActivity, idle: string): string =>
+  cisDialogLoading(state) ? "Loading benchmark…" : idle;
 
 export const toggleCisControlSelection = (
   selected: ReadonlySet<string>,

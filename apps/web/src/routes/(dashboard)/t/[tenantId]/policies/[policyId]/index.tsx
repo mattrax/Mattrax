@@ -657,7 +657,7 @@ export default function PolicyDetailPage() {
         />
       </Show>
 
-      <PageBreadcrumbs title={row()?.name ?? "Policy"} resourceName={row()?.name} />
+      <PageBreadcrumbs resourceName={row()?.name} section="Overview" />
       <PageHeader
         title={row()?.name ?? "Policy"}
         description="Configure what this policy deploys to its device scope."

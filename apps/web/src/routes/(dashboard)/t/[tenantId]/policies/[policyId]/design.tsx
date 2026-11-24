@@ -5,7 +5,7 @@ import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, Errored, lazy, Loading, onSettled, Show } from "solid-js";
 import { ErrorPanel } from "~/components/error-boundary";
-import { QueryError } from "~/components/mdm/common";
+import { PageBreadcrumbs, QueryError } from "~/components/mdm/common";
 import { PolicyViewTabs } from "~/components/mdm/policy-view-tabs";
 import { StaleWriteBanner } from "~/components/stale-write-banner";
 import { LoadingState } from "~/components/ui";
@@ -282,6 +282,7 @@ export default function PolicyDesignerPage() {
         class="flex h-[calc(100svh-92px)] max-h-[calc(100svh-92px)] min-h-0 shrink-0 flex-col overflow-hidden bg-page"
       >
         <div class="shrink-0 px-3 pt-2 sm:px-4">
+          <PageBreadcrumbs resourceName={row()?.name} class="mb-1" />
           <PolicyViewTabs
             base={`/t/${params.tenantId}/policies/${params.policyId}`}
             active="designer"

@@ -30,8 +30,8 @@ export const updateTenantName = (draft: TenantSlugDraft, name: string): TenantSl
 export const updateTenantSlug = (value: string): TenantSlugDraft => {
   const slug = slugifyTenantName(value);
 
-  // Clearing the field hands derivation back to the tenant name. Typing
-  // anything else, even punctuation that normalises away, keeps manual control.
+  // Clearing the field — including input that normalises to nothing — hands
+  // derivation back to the tenant name. Any non-empty slug keeps manual control.
   return { slug, edited: slug.length > 0 };
 };
 

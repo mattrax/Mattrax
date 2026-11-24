@@ -53,6 +53,8 @@ export function buildBreadcrumbs(input: {
    * When set, the id becomes a named link instead of being skipped.
    */
   resourceName?: string;
+  /** The view name for a route whose path ends in the resource id (Overview). */
+  section?: string;
 }): BreadcrumbTrailItem[] {
   const pathname = input.pathname.split(/[?#]/, 1)[0] ?? "";
   const segments = pathname.split("/").filter(Boolean);
@@ -91,7 +93,17 @@ export function buildBreadcrumbs(input: {
       continue;
     }
 
-    crumbs.push({ label: input.title?.trim() || "Details", href });
+    const section = input.section?.trim();
+
+    // A route whose path ends at the resource id still has a named object and
+    // a view (for example the policy overview). Keep both segments so the
+    // policy is named in the trail.
+    if (section && input.resourceName?.trim()) {
+      crumbs.push({ label: input.resourceName.trim(), href }, { label: section, href });
+      continue;
+    }
+
+    crumbs.push({ label: section || input.title?.trim() || "Details", href });
   }
 
   if (crumbs.length < 2) return [];
