@@ -79,8 +79,13 @@ test.describe("device enrollment", () => {
     ).toBeVisible();
 
     await page.getByRole("tab", { name: /^Android$/ }).click();
-    await expect(page.getByText("Android enrollment is unavailable")).toBeVisible();
-    await expect(page.getByText(/reached its device limit/i)).toBeVisible();
+    // Scope to the shown panel: every platform panel renders, and only the
+    // active one is exposed, so the notice must be the tab's own copy.
+    const androidPanel = page.getByRole("tabpanel", { name: "Android" });
+    await expect(androidPanel.getByText("Android enrollment is unavailable")).toBeVisible();
+    await expect(
+      androidPanel.getByText(/Android enrollment is turned off, or this organization/i),
+    ).toBeVisible();
   });
 
   test("explains when Windows enrollment is turned off", async ({ page }) => {
@@ -93,8 +98,13 @@ test.describe("device enrollment", () => {
 
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
     await page.getByRole("tab", { name: /^Windows$/ }).click();
-    await expect(page.getByText("Windows enrollment is unavailable")).toBeVisible();
-    await expect(page.getByText(/reached its device limit/i)).toBeVisible();
+    const windowsPanel = page.getByRole("tabpanel", { name: "Windows" });
+    await expect(windowsPanel.getByText("Windows enrollment is unavailable")).toBeVisible();
+    await expect(
+      windowsPanel.getByText(
+        "Windows enrollment is turned off, or this organization has reached its device limit. Ask your administrator to check, then reload this page.",
+      ),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "Copy Windows discovery URL" })).toHaveCount(0);
   });
 
