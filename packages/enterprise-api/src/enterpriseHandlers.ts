@@ -166,6 +166,7 @@ import {
   windowsFreshStartCommand,
   windowsLapsResetCommand,
   windowsLapsSupported,
+  windowsRotationTerminalOutcome,
   resolveWindowsLapsConfiguration,
   bitlockerKeyHealth,
   bitlockerVolumeTypeFromGraph,
@@ -1411,6 +1412,9 @@ const WINDOWS_DIAGNOSTICS_DOWNLOAD_TTL_MS = 15 * 60 * 1000;
 
 /** Minimum gap between force-refreshes triggered by reveal misses. */
 const WINDOWS_BITLOCKER_FORCE_SYNC_COOLDOWN_MS = 30_000;
+
+/** Keep the per-isolate force-refresh map bounded on long-lived Workers. */
+const WINDOWS_BITLOCKER_FORCE_SYNC_MAX_DEVICES = 1_000;
 
 type BoundedBody = {
   readonly ok: boolean;
@@ -5779,6 +5783,72 @@ export const createEnterpriseService = ({
     return decoded || new TextDecoder().decode(bytes);
   };
 
+  /**
+   * Read-repair for rotation Execs. The check-in closes them when the status
+   * arrives; this also reconciles a page read after a missed/lost update so
+   * `rotationInProgress` does not stay true until the budget expires.
+   */
+  const reconcileWindowsRotationExecs = (device: {
+    readonly id: string;
+    readonly organizationId: string;
+  }) =>
+    Effect.gen(function* () {
+      const rows = yield* db
+        .select()
+        .from(schema.deviceCommand)
+        .where(
+          and(
+            eq(schema.deviceCommand.organizationId, device.organizationId),
+            eq(schema.deviceCommand.deviceId, device.id),
+            inArray(schema.deviceCommand.requestType, [
+              "WindowsBitLockerRotate",
+              "WindowsBitLockerRotateStatus",
+              "WindowsLapsResetPassword",
+              "WindowsLapsResetPasswordStatus",
+            ]),
+          ),
+        )
+        .orderBy(desc(schema.deviceCommand.createdAt))
+        .limit(20);
+      const at = now();
+
+      for (const [execType, statusType, kind] of [
+        ["WindowsBitLockerRotate", "WindowsBitLockerRotateStatus", "bitlocker"],
+        ["WindowsLapsResetPassword", "WindowsLapsResetPasswordStatus", "laps"],
+      ] as const) {
+        const exec = rows.find((row) => row.requestType === execType);
+
+        if (!exec || !["queued", "sent", "accepted", "deferred"].includes(exec.status)) continue;
+
+        const status = rows.find(
+          (row) =>
+            row.requestType === statusType &&
+            row.createdAt.getTime() >= exec.createdAt.getTime(),
+        );
+        const value = status?.resultDetail?.replace(/^Status /, "").trim() ?? "";
+        const terminal = windowsRotationTerminalOutcome(kind, value);
+
+        if (!terminal) continue;
+
+        yield* db
+          .update(schema.deviceCommand)
+          .set({
+            status: terminal,
+            resultStatus: status?.resultStatus ?? null,
+            resultDetail: "Rotation finished with status " + value + ".",
+            dedupeKey: null,
+            updatedAt: at,
+          })
+          .where(
+            and(
+              eq(schema.deviceCommand.id, exec.id),
+              eq(schema.deviceCommand.organizationId, device.organizationId),
+              eq(schema.deviceCommand.deviceId, device.id),
+            ),
+          );
+      }
+    });
+
   const graphErrorMessage = (cause: unknown, fallback: string): string => {
     const detail =
       Option.getOrUndefined(Schema.decodeUnknownOption(ErrorMessage)(cause))?.message ??
@@ -5814,7 +5884,18 @@ export const createEnterpriseService = ({
         options?.force === true &&
         at.getTime() - lastForced >= WINDOWS_BITLOCKER_FORCE_SYNC_COOLDOWN_MS;
 
-      if (forceAllowed) bitlockerForcedSyncAt.set(device.id, at.getTime());
+      if (forceAllowed) {
+        if (
+          !bitlockerForcedSyncAt.has(device.id) &&
+          bitlockerForcedSyncAt.size >= WINDOWS_BITLOCKER_FORCE_SYNC_MAX_DEVICES
+        ) {
+          const oldest = bitlockerForcedSyncAt.keys().next().value;
+
+          if (oldest) bitlockerForcedSyncAt.delete(oldest);
+        }
+
+        bitlockerForcedSyncAt.set(device.id, at.getTime());
+      }
 
       if (
         !forceAllowed &&
@@ -29927,6 +30008,8 @@ export const createEnterpriseService = ({
             ),
           )
           .limit(1);
+
+        yield* reconcileWindowsRotationExecs(device);
 
         const active = yield* db
           .select({

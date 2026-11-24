@@ -59,6 +59,10 @@ const BUDGETS = new Map<string, number>([
   // OS update scheduling is only meaningful while the operator still expects
   // the Mac to act on it; a month-old request would install at a random time.
   ["ScheduleOSUpdate", 7 * DAY],
+  // Asynchronous Windows rotation Execs: the device acknowledges and then
+  // processes the work, so the parent needs a real active budget.
+  ["WindowsBitLockerRotate", 24 * HOUR],
+  ["WindowsLapsResetPassword", 24 * HOUR],
   // Destructive actions: a week is long enough for a travelling laptop.
   ["EraseDevice", 7 * DAY],
   ["WindowsWipe", 7 * DAY],

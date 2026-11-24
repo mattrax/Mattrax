@@ -2734,8 +2734,10 @@ export const androidDevice = mysqlTable(
  * remote actions (lock, wipe, app install) still use the classic command
  * protocol and are delivered on the next device check-in.
  *
- * Lifecycle: `queued` -> `sent` -> `deferred` (the device returned NotNow) ->
- * terminal (`succeeded`, `failed`, `expired`, `superseded`, `cancelled`).
+ * Lifecycle: `queued` -> `sent` -> `accepted` (device acknowledged an async
+ * command) / `deferred` (the device returned NotNow) -> terminal
+ * (`succeeded`, `failed`, `expired`, `superseded`, `cancelled`). An accepted
+ * command is never re-delivered; its result/status channel closes it.
  * `expiresAt` is the hard deadline derived from the per-request-type budget; a
  * command is never delivered or retried after it, even if the device only
  * comes back online weeks later.

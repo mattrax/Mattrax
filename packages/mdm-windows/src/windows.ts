@@ -1,7 +1,11 @@
 import { Cause, Effect, Option, Predicate, Schema } from "effect";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { DN } from "@mbakereth/ldapjs-dn";
-import { osPolicyRuleFromRow, windowsOsUpdatePolicyNodes } from "@mattrax/enterprise-domain";
+import {
+  osPolicyRuleFromRow,
+  windowsOsUpdatePolicyNodes,
+  windowsRotationTerminalOutcome,
+} from "@mattrax/enterprise-domain";
 import { windowsPolicyNodes } from "@mattrax/mdm-core";
 import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
 import { planWindowsRotationPoll } from "./windowsRotation.js";
@@ -1911,7 +1915,9 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           const data = windowsSyncMLData(status.data) ?? "";
           const row = rowsById.get(commandId) ?? inventoryRowsByCommandId.get(commandId);
           const outcome = windowsCommandOutcome(data, {
-            acceptedForProcessing: row?.requestType === "WindowsBitLockerRotate",
+            acceptedForProcessing:
+              row?.requestType === "WindowsBitLockerRotate" ||
+              row?.requestType === "WindowsLapsResetPassword",
           });
 
           if (!row) {
@@ -2228,6 +2234,43 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
               .onDuplicateKeyUpdate({
                 set: { resetStatus: value.trim().slice(0, 255), updatedAt: timestamp },
               });
+
+          // Close the parent rotation Exec when its status reaches a terminal
+          // value. Without this the accepted Exec has no result and would keep
+          // rotationInProgress true until the 24-hour budget expired.
+          if (
+            (row.requestType === "WindowsBitLockerRotateStatus" ||
+              row.requestType === "WindowsLapsResetPasswordStatus") &&
+            value !== undefined
+          ) {
+            const execCommandId = payloadString(
+              commandPayload(row.payload),
+              "execCommandId",
+            );
+            const terminal = windowsRotationTerminalOutcome(
+              row.requestType === "WindowsBitLockerRotateStatus" ? "bitlocker" : "laps",
+              value,
+            );
+
+            if (terminal && execCommandId)
+              yield* db
+                .update(s.deviceCommand)
+                .set({
+                  status: terminal,
+                  resultStatus: "Status " + value.trim().slice(0, 200),
+                  resultDetail:
+                    "Rotation finished with status " + value.trim().slice(0, 200) + ".",
+                  dedupeKey: null,
+                  updatedAt: timestamp,
+                })
+                .where(
+                  and(
+                    eq(s.deviceCommand.id, execCommandId),
+                    eq(s.deviceCommand.deviceId, device.id),
+                    eq(s.deviceCommand.organizationId, organizationId),
+                  ),
+                );
+          }
         }
 
         const applicationReport = parseWindowsApplicationsReport(inventoryValues, {

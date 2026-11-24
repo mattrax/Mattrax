@@ -752,19 +752,27 @@ describe("BitLocker escrow", () => {
       ),
     ).toBe(false);
 
-    // An unresolved status row also blocks a second rotation.
+    const exec = db.store.device_command.find(
+      (row: any) => row.requestType === "WindowsBitLockerRotate",
+    );
+    expect(exec.expiresAt).toBeInstanceOf(Date);
+
+    // Simulate the device accepting the async Exec and an unresolved status.
+    exec.status = "accepted";
+    exec.resultStatus = "0x4000000";
+
     db.store.device_command.push({
       id: "status-1",
       organizationId: tenant.id,
       deviceId: "hybrid",
       requestType: "WindowsBitLockerRotateStatus",
-      payload: { kind: "Get" },
+      payload: { kind: "Get", execCommandId: exec.id },
       status: "sent",
       dedupeKey: null,
       expiresAt: null,
       resultStatus: null,
       resultDetail: null,
-      createdAt: new Date(),
+      createdAt: new Date(Date.now() + 1),
       updatedAt: new Date(),
     });
 
@@ -784,15 +792,52 @@ describe("BitLocker escrow", () => {
       ).bitlocker.rotationInProgress,
     ).toBe(true);
 
-    // An expired Exec/status pair must not block recovery forever on an
-    // offline device.
-    for (const row of db.store.device_command.filter(
-      (entry: any) =>
-        entry.deviceId === "hybrid" &&
-        (entry.requestType === "WindowsBitLockerRotate" ||
-          entry.requestType === "WindowsBitLockerRotateStatus"),
-    ))
-      row.expiresAt = new Date(Date.now() - 1_000);
+    // A terminal status closes the parent Exec and clears in-progress.
+    const statusRow = db.store.device_command.find((row: any) => row.id === "status-1");
+    statusRow.status = "succeeded";
+    statusRow.resultDetail = "Status 0";
+    statusRow.resultStatus = "200";
+
+    expect(
+      (
+        await runEffect(
+          service.getDeviceWindowsSecurity(request(headers), tenant.id, "hybrid"),
+        )
+      ).bitlocker.rotationInProgress,
+    ).toBe(false);
+    expect(
+      db.store.device_command.find((row: any) => row.id === exec.id).status,
+    ).toBe("succeeded");
+
+    const second = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "hybrid", {
+        action: "rotate-bitlocker-key",
+      }),
+    );
+    expect(second.commandId).toBeTruthy();
+
+    // A rotation that never terminates expires through the 24-hour budget.
+    const secondExec = db.store.device_command.find(
+      (row: any) =>
+        row.requestType === "WindowsBitLockerRotate" && row.id === second.commandId,
+    );
+    secondExec.status = "accepted";
+    secondExec.expiresAt = new Date(Date.now() - 1_000);
+
+    db.store.device_command.push({
+      id: "status-2",
+      organizationId: tenant.id,
+      deviceId: "hybrid",
+      requestType: "WindowsBitLockerRotateStatus",
+      payload: { kind: "Get", execCommandId: second.commandId },
+      status: "sent",
+      dedupeKey: null,
+      expiresAt: new Date(Date.now() - 1_000),
+      resultStatus: null,
+      resultDetail: "Status 1",
+      createdAt: new Date(Date.now() + 2),
+      updatedAt: new Date(),
+    });
 
     await expect(
       runEffect(
