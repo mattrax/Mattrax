@@ -129,7 +129,7 @@ export const GraphDomainSchema = Schema.Struct({
 export type GraphDomain = typeof GraphDomainSchema.Type;
 
 export const GraphUserDeltaResponse = Schema.Struct({
-  value: Schema.optional(Schema.Array(GraphUserWire)),
+  value: Schema.Array(GraphUserWire),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
   "@odata.deltaLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
@@ -137,7 +137,7 @@ export const GraphUserDeltaResponse = Schema.Struct({
 export type GraphUserDeltaResponse = typeof GraphUserDeltaResponse.Type;
 
 export const GraphGroupDeltaResponse = Schema.Struct({
-  value: Schema.optional(Schema.Array(GraphGroupWire)),
+  value: Schema.Array(GraphGroupWire),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
   "@odata.deltaLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
@@ -204,7 +204,7 @@ export type GraphAutopilotEnrollmentState =
   | "blocked";
 
 const AutopilotDeviceWire = Schema.Struct({
-  id: Schema.optional(Schema.NullOr(Schema.String)),
+  id: Schema.NonEmptyString,
   serialNumber: optionalString,
   hardwareIdentifier: optionalString,
   groupTag: optionalString,
@@ -293,7 +293,7 @@ export function graphAutopilotDeviceFromWire(
   device: typeof AutopilotDeviceWire.Type,
 ): GraphAutopilotDevice {
   return {
-    id: device.id ?? "",
+    id: device.id,
     serialNumber: device.serialNumber ?? undefined,
     hardwareHash: device.hardwareIdentifier ?? undefined,
     groupTag: device.groupTag ?? undefined,
@@ -315,7 +315,7 @@ export function graphAutopilotDeviceFromWire(
 }
 
 const AutopilotProfileWire = Schema.Struct({
-  id: Schema.optional(Schema.NullOr(Schema.String)),
+  id: Schema.NonEmptyString,
   displayName: optionalString,
   description: optionalString,
   deploymentMode: optionalString,
@@ -348,7 +348,7 @@ export function graphAutopilotProfileFromWire(
   profile: typeof AutopilotProfileWire.Type,
 ): GraphAutopilotProfile {
   return {
-    id: profile.id ?? "",
+    id: profile.id,
     displayName: profile.displayName ?? "",
     description: profile.description ?? undefined,
     deploymentMode: profile.deploymentMode ?? undefined,
@@ -362,7 +362,7 @@ export function graphAutopilotProfileFromWire(
 }
 
 export const GraphAutopilotDevicesResponse = Schema.Struct({
-  value: Schema.optional(Schema.Array(AutopilotDeviceWire)),
+  value: Schema.Array(AutopilotDeviceWire),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
 
@@ -371,7 +371,7 @@ export type GraphAutopilotDevicesResponse = typeof GraphAutopilotDevicesResponse
 export const GraphAutopilotDeviceResponse = AutopilotDeviceWire;
 
 export const GraphAutopilotProfilesResponse = Schema.Struct({
-  value: Schema.optional(Schema.Array(AutopilotProfileWire)),
+  value: Schema.Array(AutopilotProfileWire),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
 

@@ -1,4 +1,4 @@
-import { Context, Data, Effect, Layer, Option, Schema } from "effect";
+import { Clock, Context, Data, Effect, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest } from "effect/http";
 import {
   GraphAutopilotDeviceResponse,
@@ -70,6 +70,21 @@ export class AzureGraphInvalidResponse extends Data.TaggedError("InvalidResponse
   cause?: unknown;
 }> {}
 
+/** A Graph URL was not a same-origin HTTPS URL, or Graph attempted a redirect. */
+export class AzureGraphInvalidUrl extends Data.TaggedError("InvalidUrl")<{
+  message: string;
+}> {}
+
+/** A Graph collection did not finish within the pagination safety limit. */
+export class AzureGraphPaginationExhausted extends Data.TaggedError("PaginationExhausted")<{
+  message: string;
+  resource: string;
+  pages: number;
+  limit: number;
+}> {}
+
+export type AzureGraphConsentRevocationPhase = "service-principals" | "grants" | "delete";
+
 /**
  * A delegated grant delete failed after earlier grants were already removed.
  * `grantsRemoved` lets the caller report the partial result instead of a bare
@@ -79,6 +94,8 @@ export class AzureGraphConsentRevocationFailed extends Data.TaggedError("Consent
   message: string;
   servicePrincipalId: string;
   grantsRemoved: number;
+  phase: AzureGraphConsentRevocationPhase;
+  resourceId?: string;
   status?: number;
   cause?: unknown;
 }> {}
@@ -89,7 +106,9 @@ export type AzureGraphError =
   | AzureGraphThrottled
   | AzureGraphNotFound
   | AzureGraphRequestFailed
-  | AzureGraphInvalidResponse;
+  | AzureGraphInvalidResponse
+  | AzureGraphInvalidUrl
+  | AzureGraphPaginationExhausted;
 
 export type AzureGraphConsentRevocationError = AzureGraphError | AzureGraphConsentRevocationFailed;
 
@@ -245,6 +264,9 @@ const TOKEN_EXPIRY_SKEW_MS = 60_000;
 
 const DEFAULT_TOKEN_LIFETIME_SECONDS = 3_600;
 
+/** Stop broken or adversarial cursors instead of returning partial collections. */
+export const GRAPH_PAGINATION_LIMIT = 100;
+
 const TokenResponse = Schema.Struct({
   access_token: Schema.String,
   token_type: Schema.optional(Schema.NullOr(Schema.String)),
@@ -278,7 +300,10 @@ function labelFor(url: string): string {
   }
 }
 
-function retryAfter(headers: Headers.Headers): { delayMs: number; seconds: number } | undefined {
+function retryAfter(
+  headers: Headers.Headers,
+  now: number,
+): { delayMs: number; seconds: number } | undefined {
   const raw = Option.getOrUndefined(Headers.get(headers, "retry-after"))?.trim();
 
   if (!raw) return undefined;
@@ -291,7 +316,7 @@ function retryAfter(headers: Headers.Headers): { delayMs: number; seconds: numbe
   const date = Date.parse(raw);
 
   if (!Number.isNaN(date)) {
-    const delayMs = Math.max(0, date - Date.now());
+    const delayMs = Math.max(0, date - now);
 
     return { delayMs, seconds: Math.ceil(delayMs / 1_000) };
   }
@@ -305,6 +330,76 @@ function isRetryable(status: number): boolean {
 
 function isSuccess(status: number): boolean {
   return status >= 200 && status <= 299;
+}
+
+function isRedirect(status: number): boolean {
+  return status >= 300 && status < 400;
+}
+
+function parseGraphBaseUrl(input: string): URL {
+  let url: URL;
+
+  try {
+    url = new URL(input);
+  } catch {
+    throw new Error("Graph base URL is not a valid URL");
+  }
+
+  if (
+    url.protocol !== "https:" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.hash !== "" ||
+    url.search !== ""
+  ) {
+    throw new Error("Graph base URL must be HTTPS without credentials, a query, or a fragment");
+  }
+
+  return url;
+}
+
+function validateGraphUrl(
+  input: string,
+  expectedOrigin: string,
+): Effect.Effect<URL, AzureGraphInvalidUrl> {
+  return Effect.try({
+    try: () => {
+      const url = new URL(input);
+
+      if (
+        url.protocol !== "https:" ||
+        url.username !== "" ||
+        url.password !== "" ||
+        url.hash !== "" ||
+        url.origin !== expectedOrigin
+      ) {
+        throw new Error("URL is outside the configured Graph origin");
+      }
+
+      return url;
+    },
+    catch: () =>
+      new AzureGraphInvalidUrl({
+        message:
+          "Microsoft Graph URL must use HTTPS and the configured Graph origin without credentials or a fragment",
+      }),
+  });
+}
+
+function logGraphFailure(
+  tenantId: string,
+  operation: string,
+  error: AzureGraphError,
+): Effect.Effect<void> {
+  const status = "status" in error && typeof error.status === "number" ? error.status : undefined;
+
+  // Deliberately omit URLs, cursors, bodies, causes, tokens, and client secrets.
+  return Effect.logWarning("azure_graph.request_failed", {
+    tenantId,
+    operation,
+    error: error._tag,
+    status,
+  });
 }
 
 function jsonObject(fields: Readonly<Record<string, Schema.Json | undefined>>): Schema.JsonObject {
@@ -330,20 +425,33 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
     AzureGraph,
     Effect.gen(function* () {
       const client = yield* HttpClient.HttpClient;
-      const graphBaseUrl = trimTrailingSlashes(config.graphBaseUrl ?? DEFAULT_GRAPH_BASE_URL);
+      const graphBase = yield* Effect.try({
+        try: () =>
+          parseGraphBaseUrl(trimTrailingSlashes(config.graphBaseUrl ?? DEFAULT_GRAPH_BASE_URL)),
+        catch: () => new AzureGraphInvalidUrl({ message: "Invalid Microsoft Graph base URL" }),
+      });
+      const graphBaseUrl = trimTrailingSlashes(graphBase.href);
+      const graphOrigin = graphBase.origin;
       const loginBaseUrl = trimTrailingSlashes(config.loginBaseUrl ?? DEFAULT_LOGIN_BASE_URL);
       const retryDelayMs = config.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
       const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       const tokenCache = new Map<string, TokenEntry>();
 
       const execute = (
+        tenantId: string,
         makeRequest: () => HttpClientRequest.HttpClientRequest,
       ): Effect.Effect<RawResponse, AzureGraphError> =>
         Effect.gen(function* () {
           const send = (): Effect.Effect<RawResponse, AzureGraphError> =>
             Effect.gen(function* () {
+              const request = makeRequest();
+              const defaults = yield* Effect.serviceOption(FetchHttpClient.RequestInit);
               const response = yield* Effect.timeoutOrElse(
-                client.execute(makeRequest()).pipe(
+                client.execute(request).pipe(
+                  Effect.provideService(FetchHttpClient.RequestInit, {
+                    ...Option.getOrUndefined(defaults),
+                    redirect: "manual",
+                  }),
                   Effect.mapError(
                     (cause) =>
                       new AzureGraphRequestFailed({
@@ -387,13 +495,28 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
 
           const first = yield* send();
 
+          if (isRedirect(first.status)) {
+            return yield* Effect.fail(
+              new AzureGraphInvalidUrl({ message: "Microsoft Graph redirects are not allowed" }),
+            );
+          }
+
           if (!isRetryable(first.status)) return first;
 
-          const retry = first.status === 429 ? retryAfter(first.headers) : undefined;
+          const now = yield* Clock.currentTimeMillis;
+          const retry = first.status === 429 ? retryAfter(first.headers, now) : undefined;
           yield* Effect.sleep(retry?.delayMs ?? retryDelayMs);
 
-          return yield* send();
-        });
+          const second = yield* send();
+
+          if (isRedirect(second.status)) {
+            return yield* Effect.fail(
+              new AzureGraphInvalidUrl({ message: "Microsoft Graph redirects are not allowed" }),
+            );
+          }
+
+          return second;
+        }).pipe(Effect.tapError((error) => logGraphFailure(tenantId, "request", error)));
 
       const parseJson = (
         text: string,
@@ -424,7 +547,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         Effect.gen(function* () {
           const url = `${loginBaseUrl}/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`;
 
-          const result = yield* execute(() =>
+          const result = yield* execute(tenantId, () =>
             HttpClientRequest.post(url).pipe(
               HttpClientRequest.bodyUrlParams({
                 grant_type: "client_credentials",
@@ -446,7 +569,8 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           }
 
           if (result.status === 429) {
-            const retry = retryAfter(result.headers);
+            const now = yield* Clock.currentTimeMillis;
+            const retry = retryAfter(result.headers, now);
 
             return yield* Effect.fail(
               new AzureGraphThrottled({
@@ -481,18 +605,21 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
               ? expiresIn
               : DEFAULT_TOKEN_LIFETIME_SECONDS;
 
+          const now = yield* Clock.currentTimeMillis;
+
           return {
             token: token.access_token,
-            expiresAt: Date.now() + Math.max(0, lifetime * 1_000 - TOKEN_EXPIRY_SKEW_MS),
+            expiresAt: now + Math.max(0, lifetime * 1_000 - TOKEN_EXPIRY_SKEW_MS),
           };
         });
 
       const accessToken = (tenantId: string): Effect.Effect<string, AzureGraphError> =>
         Effect.gen(function* () {
           const tenant = normalizeTenantId(tenantId);
+          const now = yield* Clock.currentTimeMillis;
           const cached = tokenCache.get(tenant);
 
-          if (cached && cached.expiresAt > Date.now()) return cached.token;
+          if (cached && cached.expiresAt > now) return cached.token;
           const entry = yield* fetchToken(tenant);
           tokenCache.set(tenant, entry);
 
@@ -505,10 +632,13 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         schema: Schema.Decoder<T>,
       ): Effect.Effect<T, AzureGraphError> =>
         Effect.gen(function* () {
+          const graphUrl = yield* validateGraphUrl(url, graphOrigin).pipe(
+            Effect.tapError((error) => logGraphFailure(tenantId, "url", error)),
+          );
           const token = yield* accessToken(tenantId);
 
-          const result = yield* execute(() =>
-            HttpClientRequest.get(url).pipe(HttpClientRequest.bearerToken(token)),
+          const result = yield* execute(tenantId, () =>
+            HttpClientRequest.get(graphUrl.href).pipe(HttpClientRequest.bearerToken(token)),
           );
 
           const label = labelFor(url);
@@ -544,7 +674,8 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           }
 
           if (result.status === 429) {
-            const retry = retryAfter(result.headers);
+            const now = yield* Clock.currentTimeMillis;
+            const retry = retryAfter(result.headers, now);
 
             return yield* Effect.fail(
               new AzureGraphThrottled({
@@ -598,10 +729,13 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         body?: Schema.Json,
       ): Effect.Effect<T | void, AzureGraphError> {
         return Effect.gen(function* () {
+          const graphUrl = yield* validateGraphUrl(url, graphOrigin).pipe(
+            Effect.tapError((error) => logGraphFailure(tenantId, "url", error)),
+          );
           const token = yield* accessToken(tenantId);
 
-          const result = yield* execute(() => {
-            const base = HttpClientRequest.make(method)(url).pipe(
+          const result = yield* execute(tenantId, () => {
+            const base = HttpClientRequest.make(method)(graphUrl.href).pipe(
               HttpClientRequest.bearerToken(token),
             );
 
@@ -643,7 +777,8 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           }
 
           if (result.status === 429) {
-            const retry = retryAfter(result.headers);
+            const now = yield* Clock.currentTimeMillis;
+            const retry = retryAfter(result.headers, now);
 
             return yield* Effect.fail(
               new AzureGraphThrottled({
@@ -673,6 +808,58 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         });
       }
 
+      const collectPages = <A>(
+        tenantId: string,
+        resource: string,
+        initialLink: string,
+        fetchPage: (
+          link: string,
+        ) => Effect.Effect<
+          { readonly value: ReadonlyArray<A>; readonly "@odata.nextLink"?: string | null },
+          AzureGraphError
+        >,
+      ): Effect.Effect<ReadonlyArray<A>, AzureGraphError> =>
+        Effect.gen(function* () {
+          const items: A[] = [];
+          let link: string | undefined = initialLink;
+          let pages = 0;
+
+          while (link !== undefined) {
+            if (pages >= GRAPH_PAGINATION_LIMIT) {
+              yield* Effect.logWarning("azure_graph.pagination_exhausted", {
+                tenantId,
+                resource,
+                pages,
+                limit: GRAPH_PAGINATION_LIMIT,
+              });
+
+              return yield* Effect.fail(
+                new AzureGraphPaginationExhausted({
+                  message:
+                    "Microsoft Graph " +
+                    resource +
+                    " pagination exceeded " +
+                    GRAPH_PAGINATION_LIMIT +
+                    " pages",
+                  resource,
+                  pages,
+                  limit: GRAPH_PAGINATION_LIMIT,
+                }),
+              );
+            }
+
+            const page: {
+              readonly value: ReadonlyArray<A>;
+              readonly "@odata.nextLink"?: string | null;
+            } = yield* fetchPage(link);
+            items.push(...page.value);
+            link = page["@odata.nextLink"] ?? undefined;
+            pages++;
+          }
+
+          return items;
+        });
+
       const usersDelta = (
         tenantId: string,
         link?: string,
@@ -686,7 +873,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           );
 
           return {
-            items: (page.value ?? []).map(graphUserFromWire),
+            items: page.value.map(graphUserFromWire),
             nextLink: page["@odata.nextLink"] ?? null,
             deltaLink: page["@odata.deltaLink"] ?? null,
           };
@@ -704,7 +891,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           );
 
           return {
-            items: (page.value ?? []).map(graphGroupFromWire),
+            items: page.value.map(graphGroupFromWire),
             nextLink: page["@odata.nextLink"] ?? null,
             deltaLink: page["@odata.deltaLink"] ?? null,
           };
@@ -713,20 +900,12 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       const domains = (
         tenantId: string,
       ): Effect.Effect<ReadonlyArray<GraphDomain>, AzureGraphError> =>
-        Effect.gen(function* () {
-          const result: GraphDomain[] = [];
-
-          let link: string | undefined =
-            `${graphBaseUrl}/domains?$select=id,isVerified,isDefault,isInitial`;
-
-          for (let pageNumber = 0; link && pageNumber < 100; pageNumber++) {
-            const page: GraphDomainsResponse = yield* get(tenantId, link, GraphDomainsResponse);
-            result.push(...page.value);
-            link = page["@odata.nextLink"] ?? undefined;
-          }
-
-          return result;
-        });
+        collectPages(
+          tenantId,
+          "domains",
+          `${graphBaseUrl}/domains?$select=id,isVerified,isDefault,isInitial`,
+          (link) => get(tenantId, link, GraphDomainsResponse),
+        );
 
       const servicePrincipalBase = `${graphBaseUrl}/servicePrincipals`;
       const permissionGrantBase = `${graphBaseUrl}/oauth2PermissionGrants`;
@@ -736,53 +915,27 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       const servicePrincipalsForApp = (
         tenantId: string,
       ): Effect.Effect<ReadonlyArray<{ id: string }>, AzureGraphError> =>
-        Effect.gen(function* () {
-          const result: Array<{ id: string }> = [];
-
-          let link: string | undefined =
-            `${servicePrincipalBase}?$select=id&$filter=${encodeURIComponent(
-              `appId eq '${odataString(config.clientId)}'`,
-            )}`;
-
-          for (let pageNumber = 0; link && pageNumber < 100; pageNumber++) {
-            const page: GraphServicePrincipalsResponse = yield* get(
-              tenantId,
-              link,
-              GraphServicePrincipalsResponse,
-            );
-
-            result.push(...page.value);
-            link = page["@odata.nextLink"] ?? undefined;
-          }
-
-          return result;
-        });
+        collectPages(
+          tenantId,
+          "servicePrincipals",
+          `${servicePrincipalBase}?$select=id&$filter=${encodeURIComponent(
+            `appId eq '${odataString(config.clientId)}'`,
+          )}`,
+          (link) => get(tenantId, link, GraphServicePrincipalsResponse),
+        );
 
       const delegatedGrantsFor = (
         tenantId: string,
         servicePrincipalId: string,
       ): Effect.Effect<ReadonlyArray<{ id: string; clientId?: string | null }>, AzureGraphError> =>
-        Effect.gen(function* () {
-          const result: Array<{ id: string; clientId?: string | null }> = [];
-
-          let link: string | undefined =
-            `${permissionGrantBase}?$select=id,clientId&$filter=${encodeURIComponent(
-              `clientId eq '${odataString(servicePrincipalId)}'`,
-            )}`;
-
-          for (let pageNumber = 0; link && pageNumber < 100; pageNumber++) {
-            const page: GraphOAuth2PermissionGrantsResponse = yield* get(
-              tenantId,
-              link,
-              GraphOAuth2PermissionGrantsResponse,
-            );
-
-            result.push(...page.value);
-            link = page["@odata.nextLink"] ?? undefined;
-          }
-
-          return result;
-        });
+        collectPages(
+          tenantId,
+          "oauth2PermissionGrants",
+          `${permissionGrantBase}?$select=id,clientId&$filter=${encodeURIComponent(
+            `clientId eq '${odataString(servicePrincipalId)}'`,
+          )}`,
+          (link) => get(tenantId, link, GraphOAuth2PermissionGrantsResponse),
+        );
 
       /**
        * The token endpoint answers 400 with one of these codes when the
@@ -797,6 +950,15 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
         tenantId: string,
       ): Effect.Effect<DelegatedConsentRevocation, AzureGraphConsentRevocationError> =>
         Effect.gen(function* () {
+          const token = yield* accessToken(tenantId).pipe(
+            Effect.catchIf(
+              (error) => "body" in error && tenantGone(error.body),
+              () => Effect.succeed(null),
+            ),
+          );
+
+          if (token === null) return { servicePrincipalId: null, grantsRemoved: 0 };
+
           const principal = (yield* servicePrincipalsForApp(tenantId))[0];
 
           // No service principal means the app was never consented to (or the
@@ -834,6 +996,8 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
                   }: ${removed.message}`,
                   servicePrincipalId: principal.id,
                   grantsRemoved,
+                  phase: "delete",
+                  resourceId: grant.id,
                   status,
                   cause: removed,
                 }),
@@ -844,15 +1008,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           }
 
           return { servicePrincipalId: principal.id, grantsRemoved };
-        }).pipe(
-          Effect.catchIf(
-            // The token endpoint reports a deleted app/tenant through several
-            // status codes, so match the AADSTS code in whichever error carries
-            // the response body rather than only a 400 RequestFailed.
-            (error) => "body" in error && tenantGone(error.body),
-            () => Effect.succeed({ servicePrincipalId: null, grantsRemoved: 0 }),
-          ),
-        );
+        });
 
       const consentUrl = (tenantId: string): string => {
         const url = new URL(
@@ -883,7 +1039,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           );
 
           return {
-            items: (page.value ?? []).map(graphAutopilotDeviceFromWire),
+            items: page.value.map(graphAutopilotDeviceFromWire),
             nextLink: page["@odata.nextLink"] ?? null,
           };
         });
@@ -939,7 +1095,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
           );
 
           return {
-            items: (page.value ?? []).map(graphAutopilotProfileFromWire),
+            items: page.value.map(graphAutopilotProfileFromWire),
             nextLink: page["@odata.nextLink"] ?? null,
           };
         });
