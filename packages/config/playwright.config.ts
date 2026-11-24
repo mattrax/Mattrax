@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "@playwright/test";
+import { DEFAULT_E2E_BASE_URL, normalizeE2EBaseUrl } from "./e2e-target.ts";
 
 /**
  * Browser tests drive the real dashboard over CDP using the locally installed
@@ -9,6 +10,7 @@ import { defineConfig } from "@playwright/test";
  */
 /** The repository root, which is where `pnpm test:e2e` is invoked. */
 const repository = fileURLToPath(new URL("../..", import.meta.url));
+const e2eBaseUrl = normalizeE2EBaseUrl(process.env.E2E_BASE_URL);
 
 export default defineConfig({
   // Resolve from this package so `pnpm test:e2e` works from the repo root.
@@ -26,7 +28,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: process.env.E2E_BASE_URL ?? "http://localhost:9050",
+    baseURL: e2eBaseUrl ?? DEFAULT_E2E_BASE_URL,
     // Locally we drive the installed Chrome over CDP; CI uses the bundled
     // Chromium build (also CDP) so no system browser is required.
     channel:
@@ -37,12 +39,12 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  webServer: process.env.E2E_BASE_URL
+  webServer: e2eBaseUrl
     ? undefined
     : {
         command: "tsx apps/web/scripts/e2e-server.ts",
         cwd: repository,
-        url: "http://localhost:9050",
+        url: DEFAULT_E2E_BASE_URL,
         reuseExistingServer: true,
         timeout: 180_000,
       },

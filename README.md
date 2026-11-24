@@ -63,8 +63,10 @@ The browser suite drives a real Chrome via CDP by default. Set
 to use Playwright's bundled Chromium (as CI does). For the default local URL,
 Playwright applies pending database migrations before tests, including when it
 reuses an already-running dev server; an `E2E_BASE_URL` target must already be
-migrated. The suite creates its own users and tenants, so it is safe to point at
-a disposable database.
+migrated. Migrations use only `MATTRAX_DEV_DATABASE_URL` or the local default;
+inherited `DATABASE_URL`/`DATABASE_*` values are ignored. A non-local dev database
+requires `E2E_ALLOW_REMOTE_DATABASE=1`. The suite creates its own users and
+tenants, so it is safe to point at a disposable database.
 
 The suite runs with a single Playwright worker because its tests share the dev
 mailbox and rate-limit buckets through one server. CI shards it across four
