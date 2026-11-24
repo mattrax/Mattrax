@@ -1,6 +1,5 @@
 import { Effect, Layer, Schema } from "effect";
-import type { HttpServerRequest } from "effect/http";
-import { HttpRouter } from "effect/http";
+import { HttpRouter, HttpServerRequest } from "effect/http";
 import { createEnterpriseSchema } from "@mattrax/enterprise-backend";
 import type { EnterpriseDb } from "@mattrax/enterprise-backend";
 
@@ -1010,9 +1009,7 @@ export const requireField = <T extends object, K extends string>(
 export const request = (
   headers: Record<string, string> = {},
 ): HttpServerRequest.HttpServerRequest =>
-  // SAFETY: handler tests only read `headers`; the service surfaces under test
-  // never touch the method, URL or body stream of the request.
-  ({ headers }) as HttpServerRequest.HttpServerRequest;
+  HttpServerRequest.fromWeb(new Request("https://enterprise.test/", { headers }));
 
 export const header = (response: any, name: string) =>
   response.headers?.get?.(name) ??

@@ -18,6 +18,7 @@ import {
   credentialPermissions,
   hasAnyWritePermission,
   hasUnrestrictedCredential,
+  normalisePath,
   normalizeCredentialPermissions,
 } from "@mattrax/enterprise-domain";
 import type {
@@ -624,11 +625,15 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               );
           }
 
-          const path = new URL(request.url).pathname;
+          // Authorize the same canonical path the router matched, not the raw
+          // URL spelling. Static-segment escapes, case, duplicate slashes,
+          // trailing slashes and matrix parameters are router-equivalent.
+          const path = normalisePath(new URL(request.url).pathname);
           const method = request.method.toUpperCase();
 
           const accountPath =
-            path.startsWith("/api/v1/account") ||
+            path === "/api/v1/account" ||
+            path.startsWith("/api/v1/account/") ||
             (path === "/api/v1/me" && method !== "GET") ||
             path.includes("email-change") ||
             path.includes("email-verification") ||
@@ -975,7 +980,20 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         },
       ) =>
         Effect.gen(function* () {
-          const { user, apiToken } = yield* requireStepUp(request, "api-token-create");
+          const { user, apiToken, oauth } = yield* requireStepUp(request, "api-token-create");
+
+          // This invariant does not depend on request spelling or on a caller
+          // remembering the account-path guard: MCP OAuth can never mint an
+          // independently revocable account API token.
+          if (oauth)
+            return yield* Effect.fail(
+              diagnoseError(
+                new EnterpriseForbidden({
+                  message: "MCP tokens cannot manage account settings.",
+                }),
+                { code: "mcp_account_scope", reason: "api_token_create" },
+              ),
+            );
 
           if (!user.emailVerified)
             return yield* Effect.fail(
