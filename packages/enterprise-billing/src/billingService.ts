@@ -230,7 +230,11 @@ const upsertUsage = (db: ServicesDb, usage: BillingUsage) =>
 export const tenantEntitlement = (db: ServicesDb, tenantId: string) =>
   Effect.gen(function* () {
     const [subscription] = yield* db
-      .select({ plan: schema.subscription.plan, status: schema.subscription.status })
+      .select({
+        plan: schema.subscription.plan,
+        status: schema.subscription.status,
+        revision: schema.subscription.entitlementRevision,
+      })
       .from(schema.subscription)
       .where(eq(schema.subscription.tenantId, tenantId))
       .limit(1);

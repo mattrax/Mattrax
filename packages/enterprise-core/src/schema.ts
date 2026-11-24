@@ -746,6 +746,10 @@ export const organization = mysqlTable(
      */
     billingPlan: shortText("billing_plan"),
     billingStatus: varchar("billing_status", { length: 32 }),
+    /** Newest billing entitlement revision applied to this cached projection. */
+    billingEntitlementRevision: bigint("billing_entitlement_revision", { mode: "number" })
+      .notNull()
+      .default(0),
     /**
      * When the once-per-tenant onboarding follow-up was claimed and sent.
      * Claiming is a conditional update, so repeated sweeps are idempotent.

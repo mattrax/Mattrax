@@ -25,6 +25,7 @@ export const makeOrganization = (
     autoUnlinkUnavailableApplications: false,
     billingPlan: null,
     billingStatus: null,
+    billingEntitlementRevision: 0,
     onboardingFollowUpSentAt: null,
     createdAt: now,
     updatedAt: now,
@@ -298,7 +299,6 @@ const matchesSql = (sql: string, params: any[], row: Row): boolean => {
 
   if (orParts.length > 1) return orParts.some((part) => matchesSql(part, params, row));
   const andParts = splitTopLevel(text, " and ");
-
   if (andParts.length > 1) return andParts.every((part) => matchesSql(part, params, row));
 
   return matchesLeaf(text, params, row);
