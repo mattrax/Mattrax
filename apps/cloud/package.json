@@ -40,7 +40,6 @@
     "@mattrax/google-workspace": "workspace:*",
     "@mattrax/management-backend-http": "workspace:*",
     "@mattrax/mdm-apple": "workspace:*",
-    "@mattrax/net": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "@yielded/auth": "catalog:",
     "@yielded/auth-platform-workerd": "catalog:",

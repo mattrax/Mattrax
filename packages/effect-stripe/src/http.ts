@@ -1,6 +1,11 @@
 import type Stripe from "stripe";
 import { Option, Schema } from "effect";
-import { OUTBOUND_TIMEOUTS, STRIPE_MAX_NETWORK_RETRIES } from "@mattrax/net";
+
+/** Stripe calls are usually sub-second; a hung one must not pin the request. */
+export const STRIPE_REQUEST_TIMEOUT_MS = 15_000;
+
+/** The Stripe SDK retries transient network failures itself; keep that bounded. */
+export const STRIPE_MAX_NETWORK_RETRIES = 2;
 
 /** Minimal Stripe object shapes used by billing. */
 export type StripeCustomer = {
@@ -170,7 +175,7 @@ export interface StripeClientLike {
 
 const DEFAULT_HOST = "https://api.stripe.com";
 
-const DEFAULT_TIMEOUT = OUTBOUND_TIMEOUTS.stripe;
+const DEFAULT_TIMEOUT = STRIPE_REQUEST_TIMEOUT_MS;
 
 const DEFAULT_RETRIES = STRIPE_MAX_NETWORK_RETRIES;
 

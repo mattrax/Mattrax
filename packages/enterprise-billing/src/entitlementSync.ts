@@ -1,5 +1,5 @@
-import { Effect } from "effect";
-import { OUTBOUND_TIMEOUTS, fetchWithTimeout } from "@mattrax/net";
+import { Effect, Layer } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 /**
  * Push a tenant's billing entitlement to the application deployment.
@@ -13,6 +13,7 @@ export type EntitlementSyncOptions = {
   readonly url: string;
   /** Shared machine-to-machine token. */
   readonly token: string;
+  /** Override for tests or an egress proxy; defaults to the runtime `fetch`. */
   readonly fetch?: typeof globalThis.fetch;
 };
 
@@ -22,8 +23,16 @@ export type Entitlement = {
   readonly status: string | null;
 };
 
+/** An entitlement push is best-effort and must not pin the caller open. */
+export const ENTITLEMENT_SYNC_TIMEOUT_MS = 15_000;
+
+const httpClientLayer = (fetchImpl?: typeof globalThis.fetch) =>
+  fetchImpl === undefined
+    ? FetchHttpClient.layer
+    : FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
+
 export const makeEntitlementSync =
-  ({ url, token, fetch = globalThis.fetch }: EntitlementSyncOptions) =>
+  ({ url, token, fetch }: EntitlementSyncOptions) =>
   (entitlement: Entitlement): Effect.Effect<void, Error> =>
     Effect.gen(function* () {
       const target = new URL(
@@ -34,31 +43,34 @@ export const makeEntitlementSync =
       if (target.protocol !== "https:" && target.protocol !== "http:")
         return yield* Effect.fail(new Error("CLOUD_URL must be an http(s) URL"));
 
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetchWithTimeout(
-            target.toString(),
-            {
-              method: "POST",
-              headers: {
-                authorization: `Bearer ${token}`,
-                "content-type": "application/json",
-              },
-              body: JSON.stringify(entitlement),
-            },
-            { timeoutMs: OUTBOUND_TIMEOUTS.billing, fetch },
+      const client = yield* HttpClient.HttpClient;
+
+      const exchange = Effect.gen(function* () {
+        const response = yield* client.execute(
+          HttpClientRequest.post(target.toString()).pipe(
+            HttpClientRequest.bearerToken(token),
+            HttpClientRequest.bodyText(JSON.stringify(entitlement), "application/json"),
           ),
-        catch: () => new Error("The application deployment is unavailable."),
-      });
+        );
 
-      if (!response.ok) {
-        const text = yield* Effect.tryPromise({
-          try: () => response.text(),
-          catch: () => new Error("The application deployment returned an unreadable response."),
-        });
+        return { status: response.status, text: yield* response.text };
+      }).pipe(
+        Effect.mapError(() => new Error("The application deployment is unavailable.")),
+        Effect.timeoutOrElse({
+          duration: ENTITLEMENT_SYNC_TIMEOUT_MS,
+          orElse: () =>
+            Effect.fail(
+              new Error(
+                `The application deployment did not answer within ${ENTITLEMENT_SYNC_TIMEOUT_MS}ms.`,
+              ),
+            ),
+        }),
+      );
 
+      const { status, text } = yield* exchange;
+
+      if (status < 200 || status > 299)
         return yield* Effect.fail(
           new Error(text || "The application deployment rejected the entitlement."),
         );
-      }
-    });
+    }).pipe(Effect.provide(httpClientLayer(fetch)));

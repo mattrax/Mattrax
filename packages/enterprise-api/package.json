@@ -26,7 +26,6 @@
     "@mattrax/enterprise-identity": "workspace:*",
     "@mattrax/enterprise-tokens": "workspace:*",
     "@mattrax/mdm-apple": "workspace:*",
-    "@mattrax/net": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "drizzle-orm": "catalog:",

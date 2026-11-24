@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@mattrax/crypto": "workspace:*",
-    "@mattrax/net": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "asn1js": "catalog:",
     "effect": "catalog:",

@@ -13,7 +13,6 @@
     "@mattrax/crypto": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-tokens": "workspace:*",
-    "@mattrax/net": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "asn1js": "catalog:",
     "drizzle-orm": "catalog:",

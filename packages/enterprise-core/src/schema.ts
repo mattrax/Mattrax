@@ -1700,7 +1700,7 @@ export const scimToken = mysqlTable(
  *   an operator action.
  *
  * `ip` stores the verified client address for security audit. It is the value
- * the rate limiter uses (`@mattrax/net` trust policy), never a caller-supplied
+ * the rate limiter uses (`@mattrax/cloud-services` trust policy), never a caller-supplied
  * `x-forwarded-for` hop; deployments that cannot prove an address store null.
  * `userAgent` is bounded to 512 characters. Certificate PEMs, tokens, payload
  * bodies and device secrets are never written here.

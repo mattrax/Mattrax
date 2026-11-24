@@ -340,7 +340,7 @@ import { extractMobileconfigPlist, parseMobileconfigPreview } from "@mattrax/ent
 import { parseStoredCredentialScopes } from "@mattrax/enterprise-backend";
 import { sessionCookie } from "@mattrax/enterprise-backend";
 import { cookieValue, signSsrRevision, signSsrToken } from "@mattrax/enterprise-backend";
-import { headerValue } from "@mattrax/net";
+
 import type { ApnsService } from "@mattrax/apns";
 import {
   NoopPushTransport,
@@ -668,6 +668,19 @@ const {
 } = appleBusinessManager;
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+
+/** Read one header from either a `Headers` instance or a plain record. */
+const headerValue = (
+  headers: Headers | Readonly<Record<string, string | string[] | undefined>>,
+  name: string,
+): string | undefined => {
+  if (headers instanceof Headers) return headers.get(name)?.trim() || undefined;
+
+  const value = headers[name] ?? headers[name.toLowerCase()];
+  const text = Array.isArray(value) ? value[0] : value;
+
+  return text?.trim() || undefined;
+};
 
 export type EnterpriseAnalyticsIdentity = {
   readonly userId: string;
@@ -17596,8 +17609,8 @@ export const createEnterpriseService = ({
           const client = yield* withAppleBusinessManager((module) =>
             Effect.sync(() => module.createAbmClient(appleApi, credential.scope)),
           );
-          const token = yield* Effect.tryPromise(() => client.exchangeAccessToken(credential));
-          const apps = yield* Effect.tryPromise(() => client.listApps(token.accessToken));
+          const token = yield* client.exchangeAccessToken(credential);
+          const apps = yield* client.listApps(token.accessToken);
 
           return new Map(
             apps.map((app) => [
@@ -25373,31 +25386,19 @@ export const createEnterpriseService = ({
         for (const region of targets) {
           const current = existing.find((row) => row.region === region);
 
-          const outcome = yield* Effect.tryPromise({
-            try: () =>
-              lookupAppStoreApplication({
-                region,
-                storeId: current?.storeId ?? legacyStoreId,
-                bundleId,
-                config: appleApi,
-              }),
-            catch: (cause) =>
-              new EnterpriseDbError({
-                message: `Could not check the ${region} App Store: ${String(cause)}`,
-              }),
-          }).pipe(Effect.result);
+          const outcome = yield* lookupAppStoreApplication({
+            region,
+            storeId: current?.storeId ?? legacyStoreId,
+            bundleId,
+            config: appleApi,
+          });
 
-          if (Predicate.isTagged(outcome, "Failure")) {
-            errors.push({ region, message: outcome.failure.message });
+          if (!outcome.ok) {
+            errors.push({ region, message: outcome.error });
             continue;
           }
 
-          if (!outcome.success.ok) {
-            errors.push({ region, message: outcome.success.error });
-            continue;
-          }
-
-          const lookup = outcome.success.lookup;
+          const lookup = outcome.lookup;
           const at = now();
 
           if (lookup.found && lookup.storeId) {

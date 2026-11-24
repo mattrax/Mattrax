@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import Stripe from "stripe";
-import { OUTBOUND_TIMEOUTS, STRIPE_MAX_NETWORK_RETRIES } from "@mattrax/net";
+import { STRIPE_MAX_NETWORK_RETRIES, STRIPE_REQUEST_TIMEOUT_MS } from "../src/index.js";
 import { StripeService, makeEffectStripeClient } from "../src/index.js";
 
 describe("Stripe client outbound bounds", () => {
   it("configures a deadline and bounded network retries by default", () => {
     const client = StripeService.make("sk_test_123");
-    expect(client.client.getApiField("timeout")).toBe(OUTBOUND_TIMEOUTS.stripe);
+    expect(client.client.getApiField("timeout")).toBe(STRIPE_REQUEST_TIMEOUT_MS);
     expect(client.client.getApiField("maxNetworkRetries")).toBe(STRIPE_MAX_NETWORK_RETRIES);
   });
 
@@ -17,7 +17,7 @@ describe("Stripe client outbound bounds", () => {
 
     const noRetries = StripeService.make("sk_test_123", { maxNetworkRetries: 0 });
     expect(noRetries.client.getApiField("maxNetworkRetries")).toBe(0);
-    expect(noRetries.client.getApiField("timeout")).toBe(OUTBOUND_TIMEOUTS.stripe);
+    expect(noRetries.client.getApiField("timeout")).toBe(STRIPE_REQUEST_TIMEOUT_MS);
   });
 
   it("leaves injected test clients untouched", () => {

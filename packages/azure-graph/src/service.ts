@@ -1,6 +1,5 @@
 import { Context, Data, Effect, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, Headers, HttpClient, HttpClientRequest } from "effect/http";
-import { OUTBOUND_TIMEOUTS } from "@mattrax/net";
 import {
   GraphAutopilotDeviceResponse,
   GraphAutopilotDevicesResponse,
@@ -112,7 +111,7 @@ export type AzureGraphConfig = {
   readonly retryDelayMs?: number;
   /**
    * Deadline for each Graph/token request attempt, in ms. Defaults to
-   * {@link OUTBOUND_TIMEOUTS.azureGraph}. A hung request fails with
+   * {@link DEFAULT_TIMEOUT_MS}. A hung request fails with
    * `AzureGraphRequestFailed` instead of holding the caller open forever.
    */
   readonly timeoutMs?: number;
@@ -239,6 +238,9 @@ const DEFAULT_LOGIN_BASE_URL = "https://login.microsoftonline.com";
 
 const DEFAULT_RETRY_DELAY_MS = 1_000;
 
+/** Graph can be slow on large delta pages, but never this slow. */
+const DEFAULT_TIMEOUT_MS = 15_000;
+
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
 
 const DEFAULT_TOKEN_LIFETIME_SECONDS = 3_600;
@@ -331,7 +333,7 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
       const graphBaseUrl = trimTrailingSlashes(config.graphBaseUrl ?? DEFAULT_GRAPH_BASE_URL);
       const loginBaseUrl = trimTrailingSlashes(config.loginBaseUrl ?? DEFAULT_LOGIN_BASE_URL);
       const retryDelayMs = config.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
-      const timeoutMs = config.timeoutMs ?? OUTBOUND_TIMEOUTS.azureGraph;
+      const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       const tokenCache = new Map<string, TokenEntry>();
 
       const execute = (
