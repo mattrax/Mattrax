@@ -53,8 +53,10 @@ test.describe("policy designer", () => {
     ).toBeDisabled();
 
     const tenant = await bootstrapTenant(page, "Empty Designer Tenant");
-    await page.goto(`/t/${tenant.id}/policies/new`);
-    await page.locator("form input").first().fill("Empty designed policy");
+    await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
+    const policyName = page.getByRole("textbox", { name: /^Name/ });
+    await policyName.fill("Empty designed policy");
+    await expect(policyName).toHaveValue("Empty designed policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();
     await expect(page).toHaveURL(/\/editor$/);
     const policyUrl = page.url().replace(/\/editor$/, "");
