@@ -29,7 +29,7 @@ const origin = () => (typeof window === "undefined" ? "" : window.location.origi
 const bytes = (value: number) => (value < 1024 ? `${value} B` : `${(value / 1024).toFixed(1)} KB`);
 
 const severityClass = {
-  ok: "border-success/25 bg-success/[0.06] text-success-foreground",
+  ok: "border-success/25 bg-success/[0.06] text-success",
   info: "border-border bg-surface text-muted-foreground",
   warning: "border-warning/25 bg-warning/[0.07] text-warning-foreground",
   blocker: "border-destructive/25 bg-destructive/[0.07] text-destructive",
@@ -434,7 +434,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
               </Show>
               <Show when={exported()}>
                 {(value) => (
-                  <p role="status" class="flex items-start gap-2 text-xs text-success-foreground">
+                  <p role="status" class="flex items-start gap-2 text-xs text-success">
                     <CheckCircle2 class="mt-0.5 size-3.5 shrink-0" />
                     Archive downloaded ({bytes(value().bytes)}). Delete it once every device has
                     checked in.
@@ -702,7 +702,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
             {(value) => (
               <div class="space-y-3">
                 <div class="rounded-lg border border-success/25 bg-success/[0.07] p-3 text-sm">
-                  <p class="font-medium text-success-foreground">
+                  <p class="font-medium text-success">
                     Imported {value().mode === "new" ? "as a new tenant" : "into this tenant"}
                   </p>
                   <p class="mt-1 text-xs text-muted-foreground">

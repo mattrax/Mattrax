@@ -12,6 +12,7 @@ import type { JSX } from "@solidjs/web";
 import { authClient } from "~/lib/auth";
 import { meQueryOptions, resolveActiveTenant } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
+import { settingsTabPermission } from "~/lib/settings-permissions";
 
 /**
  * A membership with the optional RBAC fields. Fields are optional in the type
@@ -203,36 +204,7 @@ export function tenantSectionPermission(section: string): Permission | undefined
   }
 }
 
-/** Read permission for a settings tab. */
-export function settingsTabPermission(tab: string): Permission {
-  switch (tab) {
-    case "administrators":
-      return "members.read";
-    case "approvals":
-      // Requesters without the queue permission still need to see and cancel
-      // their own requests, so the tab is open to every member. The page and
-      // API hide the full queue behind approvals.read.
-      return "tenant.read";
-    case "identity":
-      return "identity.read";
-    case "enrollment":
-      return "enrollment.read";
-    case "management":
-    case "delivery":
-      return "management.read";
-    case "integrations":
-      return "webhooks.read";
-    case "audit":
-      return "audit.read";
-    case "os-updates":
-    case "migration":
-      return "devices.read";
-    case "billing":
-      return "billing.read";
-    default:
-      return "tenant.read";
-  }
-}
+export { settingsTabPermission } from "~/lib/settings-permissions";
 
 /** Any of these makes the Settings section worth showing in navigation. */
 export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
@@ -245,12 +217,14 @@ export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
   "audit.read",
   "billing.read",
   "approvals.read",
+  "backups.read",
 ];
 
 const SETTINGS_TABS = [
   "",
   "administrators",
   "approvals",
+  "backups",
   "identity",
   "enrollment",
   "attributes",

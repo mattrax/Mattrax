@@ -367,6 +367,12 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
           path: "administrators",
         },
         {
+          key: "backups",
+          title: "Backups",
+          keywords: ["backup", "restore", "snapshot", "retention", "pin"],
+          path: "backups",
+        },
+        {
           key: "approvals",
           title: "Approvals",
           keywords: ["four-eyes", "approve", "queue", "destructive", "policies"],
@@ -395,6 +401,12 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
           title: "Apple push delivery",
           keywords: ["apns", "push", "failing", "invalid token", "diagnostics"],
           path: "delivery",
+        },
+        {
+          key: "migration",
+          title: "Migration & move deployment",
+          keywords: ["migrate", "jamf", "intune", "kandji", "cutover", "export", "import"],
+          path: "migration",
         },
         {
           key: "integrations",

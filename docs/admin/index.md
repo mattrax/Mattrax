@@ -7,10 +7,15 @@ of it lives under **Settings**.
 
 **Settings → General** controls:
 
+- The tenant ID (read-only): the stable identifier the API and enrollment use.
 - Tenant name and slug.
 - Display name, support email and brand colour.
 - Logo.
 - Metadata.
+
+Backups live on their own **Settings → Backups** page, next to General. Exporting
+and importing a tenant bundle, and moving a deployment, are under
+**Settings → Migration → Export / import**.
 
 Branding is used by the public enrollment page, Apple enrollment profiles, the DDM
 organization declaration and invitation emails.
@@ -148,7 +153,8 @@ literal.
 
 ## Tenant export and import
 
-Export a versioned JSON bundle:
+Export a versioned JSON bundle from **Settings → Migration → Export / import**, or
+directly from the API:
 
 ```bash
 curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/export?includeAudit=true" \
