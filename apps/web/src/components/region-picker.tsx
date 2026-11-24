@@ -116,6 +116,7 @@ export function RegionPicker(props: {
       }
     | undefined;
   let globeSurface: HTMLButtonElement | undefined;
+  let searchInput: HTMLInputElement | undefined;
 
   const countries = createMemo(() => {
     const entries = (world()?.features ?? []).map((country) => {
@@ -231,6 +232,10 @@ export function RegionPicker(props: {
     setQuery("");
     setResultsOpen(false);
     focusCountry(country);
+
+    // Selecting a result removes the focused button. Return focus to the
+    // search field so keyboard users stay inside the dialog.
+    requestAnimationFrame(() => searchInput?.focus({ preventScroll: true }));
   };
 
   const startRotate = (event: PointerEvent) => {
@@ -354,6 +359,9 @@ export function RegionPicker(props: {
             <div class="relative z-20">
               <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
+                ref={(element) => {
+                  searchInput = element;
+                }}
                 value={query()}
                 onInput={(event) => {
                   setQuery(event.currentTarget.value);

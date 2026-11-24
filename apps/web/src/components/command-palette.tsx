@@ -810,7 +810,12 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
     (next, previous) => {
       if (!previous || !open()) return;
 
-      if (next.path !== previous.path || next.search !== previous.search) close();
+      if (next.path !== previous.path || next.search !== previous.search) {
+        // A new page owns focus after navigation. A query-only change keeps the
+        // user's place in the current view and restores the palette opener.
+        focusMainOnClose = next.path !== previous.path;
+        close();
+      }
     },
   );
 

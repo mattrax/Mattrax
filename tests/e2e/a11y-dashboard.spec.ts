@@ -321,6 +321,13 @@ test.describe("dashboard accessibility", () => {
     });
     await gotoHydrated(page, `/t/${tenant.id}/groups`);
 
+    // The skip link changes only the hash, so it focuses its target directly.
+    const skip = page.getByRole("link", { name: "Skip to content" });
+    await skip.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/#main$/);
+    await expect(page.locator("#main")).toBeFocused();
+
     // Client-side navigation lands on the main landmark.
     await page
       .getByRole("navigation", { name: "Primary" })
@@ -336,6 +343,41 @@ test.describe("dashboard accessibility", () => {
 
     // The document title names the page and the tenant.
     await expect(page).toHaveTitle(/Groups · .+ · Mattrax/);
+  });
+
+  test("palette navigation focuses main without stealing focus for query-only changes", async ({
+    page,
+  }) => {
+    const tenant = await bootstrapTenant(page, "Axe Palette Navigation");
+    await gotoHydrated(page, `/t/${tenant.id}/devices`);
+    await page.waitForTimeout(900);
+
+    const input = await openPalette(page);
+    await input.fill("Applications");
+    await expect(page.getByRole("option", { name: /^Applications/ }).first()).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await input.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/applications$`));
+    await expect(page.locator("#main")).toBeFocused();
+
+    await gotoHydrated(page, `/t/${tenant.id}/devices`);
+    await page.waitForTimeout(900);
+
+    const search = page.getByRole("button", { name: "Search", exact: true });
+    await search.click();
+    const queryInput = page.locator('[data-slot="command-palette"] input[role="combobox"]');
+    await expect(queryInput).toBeFocused();
+    await queryInput.fill("devices critical");
+    await expect(page.getByRole("option", { name: /^Show devices: critical/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await queryInput.press("Enter");
+    await expect(page).toHaveURL(/\/devices\?health=critical$/);
+    await expect(search).toBeFocused();
+    await expect(page.locator("#main")).not.toBeFocused();
   });
 
   test("palette announcements describe result changes", async ({ page }) => {
