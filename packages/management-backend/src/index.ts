@@ -265,6 +265,8 @@ export const WindowsManagementScope = Schema.Struct({
   identityCertificate: Schema.optional(Schema.String),
   /** Serial from the verified mTLS handshake, when the edge forwards it. */
   identityCertificateSerial: Schema.optional(Schema.String),
+  /** Verified client certificate DER, standard base64, from the trusted edge. */
+  identityCertificateDerBase64: Schema.optional(Schema.String),
   /** Tenant token preserved on the management URL, if the device kept it. */
   tenantToken: Schema.optional(Schema.String),
   /** Verified client address for the audit log (never sent to the device). */
@@ -312,6 +314,8 @@ export const WindowsEnrollmentRequest = Schema.Struct({
   identityCertificate: Schema.optional(Schema.String),
   /** Serial from the edge-verified mTLS handshake, when presented. */
   identityCertificateSerial: Schema.optional(Schema.String),
+  /** Verified client certificate DER, standard base64, from the trusted edge. */
+  identityCertificateDerBase64: Schema.optional(Schema.String),
 });
 
 export type WindowsEnrollmentRequest = typeof WindowsEnrollmentRequest.Type;

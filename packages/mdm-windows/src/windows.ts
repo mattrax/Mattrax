@@ -7,7 +7,7 @@ import {
   windowsOsUpdatePolicyNodes,
   windowsRotationTerminalOutcome,
 } from "@mattrax/enterprise-domain";
-import { openSecret, sealSecret } from "@mattrax/crypto";
+import { base64ToArrayBuffer, openSecret, sealSecret } from "@mattrax/crypto";
 import {
   certificateMaterialKey,
   loadCertificateMaterials,
@@ -54,7 +54,13 @@ import {
   schema as s,
 } from "@mattrax/enterprise-core";
 import type { Db, PlanLimitsConfig } from "@mattrax/enterprise-core";
-import { certificateSerialHex, ensureScepCa, signScepCsr } from "@mattrax/scep";
+import {
+  certificateFingerprintSha256,
+  certificateSerialHex,
+  ensureScepCa,
+  pemToCert,
+  signScepCsr,
+} from "@mattrax/scep";
 import { normalizeIssuedCertificateSerial, ScepRepositoryLive } from "@mattrax/mdm-core";
 import {
   WINDOWS_APPLICATION_INVENTORY_REQUESTS,
@@ -353,9 +359,89 @@ const certificateSerialCandidates = (value: string): string[] => {
   return [...candidates];
 };
 
+const WINDOWS_IDENTITY_CERTIFICATE_MAX_DER_BYTES = 16 * 1024;
+
+const AttributeValueBlock = Schema.Struct({ value: Schema.optional(Schema.Unknown) });
+
+type ParsedCertificate = Awaited<ReturnType<typeof pemToCert>>;
+
+type ParsedWindowsIdentityCertificate = {
+  readonly certificatePem: string;
+  readonly commonName: string;
+  readonly organizationalUnit: string;
+  readonly serial: string;
+};
+
+const certificateSubjectValue = (certificate: ParsedCertificate, oid: string): string | null => {
+  const attributes = certificate.subject.typesAndValues.filter(
+    (attribute) => attribute.type === oid,
+  );
+
+  if (attributes.length !== 1) return null;
+
+  const decoded = Schema.decodeUnknownOption(AttributeValueBlock)(attributes[0].value.valueBlock);
+
+  return Option.isSome(decoded) && Schema.is(Schema.String)(decoded.value.value)
+    ? decoded.value.value.trim() || null
+    : null;
+};
+
+/** Parse only the verified edge's DER bundle; never fall back to a subject header. */
+const parseWindowsIdentityCertificateDerBase64 = (
+  value: string | undefined,
+): Effect.Effect<ParsedWindowsIdentityCertificate, UnknownDevice> =>
+  Effect.gen(function* () {
+    const compact = value?.replaceAll(/\s/g, "") ?? "";
+
+    if (
+      !compact ||
+      compact.length > Math.ceil((WINDOWS_IDENTITY_CERTIFICATE_MAX_DER_BYTES * 4) / 3) + 4 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(compact)
+    )
+      return yield* Effect.fail(new UnknownDevice());
+
+    const der = yield* Effect.try({
+      try: () => new Uint8Array(base64ToArrayBuffer(compact)),
+      catch: () => new UnknownDevice(),
+    });
+
+    if (der.byteLength === 0 || der.byteLength > WINDOWS_IDENTITY_CERTIFICATE_MAX_DER_BYTES)
+      return yield* Effect.fail(new UnknownDevice());
+
+    const pem =
+      "-----BEGIN CERTIFICATE-----\n" +
+      compact.match(/.{1,64}/g)!.join("\n") +
+      "\n-----END CERTIFICATE-----";
+    const certificate = yield* Effect.tryPromise({
+      try: () => pemToCert(pem),
+      catch: () => new UnknownDevice(),
+    });
+    const canonicalDer = new Uint8Array(certificate.toSchema().toBER(false));
+
+    if (
+      canonicalDer.byteLength !== der.byteLength ||
+      canonicalDer.some((byte, index) => byte !== der[index])
+    )
+      return yield* Effect.fail(new UnknownDevice());
+
+    const commonName = certificateSubjectValue(certificate, "2.5.4.3");
+    const organizationalUnit = certificateSubjectValue(certificate, "2.5.4.11");
+
+    if (!commonName || !organizationalUnit) return yield* Effect.fail(new UnknownDevice());
+
+    return {
+      certificatePem: pem,
+      commonName,
+      organizationalUnit,
+      serial: certificateSerialHex(certificate),
+    };
+  });
+
 type ResolveOrganizationInput = {
   readonly tenantToken?: string;
   readonly identityCertificate?: string;
+  /** OU parsed from the verified DER identity, when one is required. */
+  readonly verifiedCertificateOrganizationId?: string;
   /** Require an identity certificate and use its OU as the organization. */
   readonly requireCertificate?: boolean;
   /** Set false to ignore the legacy deployment-wide pin. */
@@ -506,7 +592,9 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
       if (input.tenantToken?.trim() && !tokenOrganizationId && (input.rejectInvalidToken ?? true))
         return yield* Effect.fail(new UnknownDevice());
 
-      const certificateOrganizationId = certificateAttribute(input.identityCertificate, "OU");
+      const certificateOrganizationId =
+        input.verifiedCertificateOrganizationId ??
+        certificateAttribute(input.identityCertificate, "OU");
 
       if (input.requireCertificate && !certificateOrganizationId)
         return yield* Effect.fail(new UnknownDevice());
@@ -606,6 +694,78 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
     });
 
   /**
+   * Verify the edge-provided leaf against the asserted tenant's current and
+   * retained SCEP anchors. The matched anchor's DER fingerprint is the CA
+   * identity used for subsequent serial/device binding.
+   */
+  const verifyWindowsIdentityCertificate = (
+    organizationId: string,
+    parsed: ParsedWindowsIdentityCertificate,
+    serial: string | undefined,
+    forwardedSubject: string | undefined,
+    now: Date,
+  ): Effect.Effect<
+    ParsedWindowsIdentityCertificate & { readonly caFingerprintSha256: string },
+    unknown
+  > =>
+    Effect.gen(function* () {
+      if (parsed.organizationalUnit !== organizationId || !serial?.trim())
+        return yield* Effect.fail(new UnknownDevice());
+
+      const serialCandidates = certificateSerialCandidates(serial);
+
+      if (!serialCandidates.includes(parsed.serial)) return yield* Effect.fail(new UnknownDevice());
+
+      const forwardedCn = certificateAttribute(forwardedSubject, "CN");
+      const forwardedOu = certificateAttribute(forwardedSubject, "OU");
+
+      if (
+        (forwardedCn && forwardedCn !== parsed.commonName) ||
+        (forwardedOu && forwardedOu !== parsed.organizationalUnit)
+      )
+        return yield* Effect.fail(new UnknownDevice());
+
+      const leaf = yield* Effect.tryPromise({
+        try: () => pemToCert(parsed.certificatePem),
+        catch: (cause) => cause,
+      });
+
+      if (leaf.notBefore.value > now || leaf.notAfter.value <= now)
+        return yield* Effect.fail(new UnknownDevice());
+
+      const repository = ScepRepositoryLive.make(db, { authSecret });
+      const anchors = yield* repository.trustedCaCertificates({ organizationId }, now);
+
+      for (const anchorPem of anchors) {
+        const anchor = yield* Effect.tryPromise({
+          try: () => pemToCert(anchorPem),
+          catch: (cause) => cause,
+        });
+
+        if (
+          !leaf.issuer.isEqual(anchor.subject) ||
+          anchor.notBefore.value > now ||
+          anchor.notAfter.value <= now
+        )
+          continue;
+
+        const verified = yield* Effect.tryPromise({
+          try: () => leaf.verify(anchor),
+          catch: () => false,
+        }).pipe(Effect.orElseSucceed(() => false));
+
+        if (!verified) continue;
+
+        return {
+          ...parsed,
+          caFingerprintSha256: yield* certificateFingerprintSha256(anchor),
+        };
+      }
+
+      return yield* Effect.fail(new UnknownDevice());
+    });
+
+  /**
    * Resolve a device by the identity certificate it presented. The issued
    * certificate is bound to an internal device id at enrollment, so it is
    * stronger proof than the `DeviceID` a request asserts. Serial formats vary
@@ -614,7 +774,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
   const findDeviceByIssuedCertificate = (
     organizationId: string,
     serial: string | undefined,
-    options: { readonly activeAt?: Date } = {},
+    options: { readonly activeAt?: Date; readonly caFingerprintSha256?: string } = {},
   ): Effect.Effect<typeof s.device.$inferSelect | null, unknown> =>
     Effect.gen(function* () {
       const candidates = serial ? certificateSerialCandidates(serial) : [];
@@ -633,6 +793,12 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
       for (const certificate of certificates) {
         if (!certificate.deviceId) continue;
+        if (
+          options.caFingerprintSha256 &&
+          certificate.caFingerprintSha256 &&
+          certificate.caFingerprintSha256 !== options.caFingerprintSha256
+        )
+          continue;
         if (
           options.activeAt &&
           (certificate.revokedAt != null || certificate.notAfter <= options.activeAt)
@@ -1363,25 +1529,27 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           // AdditionalContext map. A tenant enrollment capability may create a
           // new identity, but renewing an active identity requires the current
           // device certificate's private key.
-          const proofSerial = Schema.is(Schema.String)(request.identityCertificateSerial)
-            ? request.identityCertificateSerial.trim()
-            : undefined;
-          const proofCertificate = Schema.is(Schema.String)(request.identityCertificate)
-            ? request.identityCertificate
-            : undefined;
-          const proofCn = certificateAttribute(proofCertificate, "CN");
-          const proofOu = certificateAttribute(proofCertificate, "OU");
-          const proofDevice = proofSerial
-            ? yield* findDeviceByIssuedCertificate(organizationId, proofSerial, {
-                activeAt: new Date(),
-              })
-            : null;
+          const parsedProof = yield* parseWindowsIdentityCertificateDerBase64(
+            request.identityCertificateDerBase64,
+          );
+          const proofNow = new Date();
+          const verifiedProof = yield* verifyWindowsIdentityCertificate(
+            organizationId,
+            parsedProof,
+            request.identityCertificateSerial,
+            request.identityCertificate,
+            proofNow,
+          );
+          const proofDevice = yield* findDeviceByIssuedCertificate(
+            organizationId,
+            verifiedProof.serial,
+            { activeAt: proofNow, caFingerprintSha256: verifiedProof.caFingerprintSha256 },
+          );
 
           if (
             !proofDevice ||
             proofDevice.id !== existing.id ||
-            (proofCn && proofCn !== deviceIdentifier) ||
-            (proofOu && proofOu !== organizationId)
+            verifiedProof.commonName !== deviceIdentifier
           ) {
             yield* report(
               "enrollment",
@@ -1732,9 +1900,13 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         });
 
       return Effect.gen(function* () {
+        const parsedIdentity = requireDeviceIdentity
+          ? yield* parseWindowsIdentityCertificateDerBase64(scope.identityCertificateDerBase64)
+          : null;
         const organizationId = yield* resolveOrganization({
           tenantToken: scope.tenantToken,
           identityCertificate: scope.identityCertificate,
+          verifiedCertificateOrganizationId: parsedIdentity?.organizationalUnit,
           requireCertificate: requireDeviceIdentity,
           // The management URL's enrollment token may have expired; the
           // client certificate remains the durable device identity.
@@ -1743,10 +1915,21 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
         attributableOrganizationId = organizationId;
 
-        const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
-        const certificateDevice = requireDeviceIdentity
-          ? yield* findDeviceByIssuedCertificate(organizationId, scope.identityCertificateSerial, {
-              activeAt: new Date(),
+        const identityNow = new Date();
+        const verifiedIdentity =
+          requireDeviceIdentity && parsedIdentity
+            ? yield* verifyWindowsIdentityCertificate(
+                organizationId,
+                parsedIdentity,
+                scope.identityCertificateSerial,
+                scope.identityCertificate,
+                identityNow,
+              )
+            : null;
+        const certificateDevice = verifiedIdentity
+          ? yield* findDeviceByIssuedCertificate(organizationId, verifiedIdentity.serial, {
+              activeAt: identityNow,
+              caFingerprintSha256: verifiedIdentity.caFingerprintSha256,
             })
           : null;
         const device = yield* findDevice(organizationId, scope.deviceId);
@@ -1762,8 +1945,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
         if (
           requireDeviceIdentity &&
-          (!scope.identityCertificateSerial?.trim() ||
-            (subjectCn && subjectCn !== scope.deviceId) ||
+          (!verifiedIdentity ||
+            verifiedIdentity.commonName !== scope.deviceId ||
             !certificateDevice ||
             certificateDevice.id !== device.id)
         ) {
@@ -2967,10 +3150,14 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         // tenant token (or the legacy pin). Management events must prove device
         // identity when configured.
         const isEnrollmentEvent = Predicate.isTagged("Enrolled")(event);
-
+        const parsedIdentity =
+          requireDeviceIdentity && !isEnrollmentEvent
+            ? yield* parseWindowsIdentityCertificateDerBase64(scope.identityCertificateDerBase64)
+            : null;
         const organizationId = yield* resolveOrganization({
           tenantToken: scope.tenantToken,
           identityCertificate: scope.identityCertificate,
+          verifiedCertificateOrganizationId: parsedIdentity?.organizationalUnit,
           requireCertificate: requireDeviceIdentity && !isEnrollmentEvent,
           // A management event authenticated by certificate must not be
           // wedged by an expired enrollment URL token.
@@ -2979,17 +3166,23 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
         attributableOrganizationId = organizationId;
 
-        const subjectCn = certificateAttribute(scope.identityCertificate, "CN");
-        const certificateDevice =
-          requireDeviceIdentity && !isEnrollmentEvent
-            ? yield* findDeviceByIssuedCertificate(
+        const identityNow = new Date();
+        const verifiedIdentity =
+          requireDeviceIdentity && !isEnrollmentEvent && parsedIdentity
+            ? yield* verifyWindowsIdentityCertificate(
                 organizationId,
+                parsedIdentity,
                 scope.identityCertificateSerial,
-                {
-                  activeAt: new Date(),
-                },
+                scope.identityCertificate,
+                identityNow,
               )
             : null;
+        const certificateDevice = verifiedIdentity
+          ? yield* findDeviceByIssuedCertificate(organizationId, verifiedIdentity.serial, {
+              activeAt: identityNow,
+              caFingerprintSha256: verifiedIdentity.caFingerprintSha256,
+            })
+          : null;
         const device = yield* findDevice(organizationId, deviceId);
         attributableDevice = device ?? null;
         const timestamp = new Date();
@@ -2998,8 +3191,8 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           requireDeviceIdentity &&
           !isEnrollmentEvent &&
           (!device ||
-            !scope.identityCertificateSerial?.trim() ||
-            (subjectCn && subjectCn !== deviceId) ||
+            !verifiedIdentity ||
+            verifiedIdentity.commonName !== deviceId ||
             !certificateDevice ||
             certificateDevice.id !== device.id)
         )

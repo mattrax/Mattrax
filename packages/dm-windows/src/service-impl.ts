@@ -430,6 +430,7 @@ export const makeWindowsMdmService = (
           // this proof before it will renew an existing DeviceID.
           identityCertificate: context.identityCertificate,
           identityCertificateSerial: context.identityCertificateSerial,
+          identityCertificateDerBase64: context.identityCertificateDerBase64,
         };
 
         const result = yield* backend
@@ -517,6 +518,7 @@ export const makeWindowsMdmService = (
           deviceId: sync.syncHdr.source.locURI,
           identityCertificate: context.identityCertificate,
           identityCertificateSerial: context.identityCertificateSerial,
+          identityCertificateDerBase64: context.identityCertificateDerBase64,
           tenantToken: context.tenantToken,
           clientIp: context.clientIp,
           userAgent: context.userAgent,

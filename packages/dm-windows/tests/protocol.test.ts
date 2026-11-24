@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Layer, Schema } from "effect";
-import { MdmOrigin, WindowsEnrollmentRequest } from "@mattrax/management-backend";
+import {
+  MdmOrigin,
+  WindowsEnrollmentRequest,
+  WindowsManagementScope,
+} from "@mattrax/management-backend";
 import { WindowsMdmService, WindowsMdmServiceLive } from "../src/service.js";
 import { mockManagementBackend } from "./helpers.js";
 
@@ -141,6 +145,7 @@ describe("Windows SOAP protocol boundaries", () => {
     const EnrollmentProof = Schema.Struct({
       identityCertificate: Schema.optional(Schema.String),
       identityCertificateSerial: Schema.optional(Schema.String),
+      identityCertificateDerBase64: Schema.optional(Schema.String),
     });
     type CapturedEnrollment = Pick<WindowsEnrollmentRequest, "tenantToken" | "context"> &
       typeof EnrollmentProof.Type;
@@ -166,7 +171,7 @@ describe("Windows SOAP protocol boundaries", () => {
       }),
     );
     const body =
-      '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512"><TokenType>token</TokenType><RequestType>issue</RequestType><BinarySecurityToken ValueType="pkcs10" EncodingType="base64">csr</BinarySecurityToken><ac:AdditionalContext xmlns:ac="http://schemas.xmlsoap.org/ws/2006/12/authorization"><ContextItem Name="DeviceID"><Value>device-1</Value></ContextItem><ContextItem Name="identityCertificateSerial"><Value>spoofed-serial</Value></ContextItem></ac:AdditionalContext></wst:RequestSecurityToken>';
+      '<wst:RequestSecurityToken xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512"><TokenType>token</TokenType><RequestType>issue</RequestType><BinarySecurityToken ValueType="pkcs10" EncodingType="base64">csr</BinarySecurityToken><ac:AdditionalContext xmlns:ac="http://schemas.xmlsoap.org/ws/2006/12/authorization"><ContextItem Name="DeviceID"><Value>device-1</Value></ContextItem><ContextItem Name="identityCertificateSerial"><Value>spoofed-serial</Value></ContextItem><ContextItem Name="identityCertificateDerBase64"><Value>spoofed-der</Value></ContextItem></ac:AdditionalContext></wst:RequestSecurityToken>';
 
     await Effect.runPromise(
       implementation.enroll(
@@ -174,6 +179,7 @@ describe("Windows SOAP protocol boundaries", () => {
         {
           identityCertificate: "CN=device-1,OU=org-1",
           identityCertificateSerial: "trusted-serial",
+          identityCertificateDerBase64: "trusted-der",
           tenantToken: "tenant-token",
         },
       ),
@@ -187,11 +193,16 @@ describe("Windows SOAP protocol boundaries", () => {
     expect(requests[0]).toMatchObject({
       identityCertificate: "CN=device-1,OU=org-1",
       identityCertificateSerial: "trusted-serial",
+      identityCertificateDerBase64: "trusted-der",
       tenantToken: "tenant-token",
-      context: { identityCertificateSerial: "spoofed-serial" },
+      context: {
+        identityCertificateSerial: "spoofed-serial",
+        identityCertificateDerBase64: "spoofed-der",
+      },
     });
     expect(requests[1].identityCertificate).toBeUndefined();
     expect(requests[1].identityCertificateSerial).toBeUndefined();
+    expect(requests[1].identityCertificateDerBase64).toBeUndefined();
   });
 
   it("round-trips optional trusted identity proof in the enrollment request schema", () => {
@@ -203,6 +214,7 @@ describe("Windows SOAP protocol boundaries", () => {
       mdmOrigin: new MdmOrigin({ url: config.origin }),
       identityCertificate: "CN=device-1,OU=org-1",
       identityCertificateSerial: "abcd",
+      identityCertificateDerBase64: "ZGVy",
     };
     const decoded = Schema.decodeUnknownSync(WindowsEnrollmentRequest)(input);
 
@@ -212,11 +224,26 @@ describe("Windows SOAP protocol boundaries", () => {
     const {
       identityCertificate: _certificate,
       identityCertificateSerial: _serial,
+      identityCertificateDerBase64: _der,
       ...firstEnrollment
     } = input;
     expect(Schema.decodeUnknownSync(WindowsEnrollmentRequest)(firstEnrollment)).toEqual(
       firstEnrollment,
     );
+  });
+
+  it("round-trips verified DER identity in the management scope schema", () => {
+    const input = {
+      deviceId: "device-1",
+      identityCertificate: "CN=device-1,OU=org-1",
+      identityCertificateSerial: "abcd",
+      identityCertificateDerBase64: "ZGVy",
+      mdmOrigin: new MdmOrigin({ url: config.origin }),
+    };
+    const decoded = Schema.decodeUnknownSync(WindowsManagementScope)(input);
+
+    expect(decoded).toEqual(input);
+    expect(Schema.encodeSync(WindowsManagementScope)(decoded)).toEqual(input);
   });
 
   it("ignores tokens in the wrong namespace, nested tokens, and ambiguous duplicates", async () => {
