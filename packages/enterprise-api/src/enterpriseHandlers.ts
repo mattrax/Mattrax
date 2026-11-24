@@ -10058,72 +10058,95 @@ export const createEnterpriseService = ({
               cancelSubscription: teardownSubscription,
             },
           }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new EnterpriseDbError({
-                  message: `${cause.message} The account was kept so the deletion can be retried.`,
+            Effect.catchTag("TenantTeardownInProgress", (error) =>
+              Effect.fail(
+                diagnoseError(new EnterpriseConflict({ message: error.message }), {
+                  code: "conflict",
+                  reason: "teardown_in_progress",
+                  details: { retryAfterSeconds: error.retryAfterSeconds },
                 }),
+              ),
+            ),
+            Effect.mapError((cause: TenantTeardownStepFailed | EnterpriseConflict) =>
+              cause instanceof EnterpriseConflict
+                ? cause
+                : new EnterpriseDbError({
+                    message: `${cause.message} The account was kept so the deletion can be retried.`,
+                  }),
             ),
           );
 
           deletedTenants.push({ id: organization.id, name: preview.tenant.name });
         }
 
-        yield* db
-          .delete(schema.accountApiToken)
-          .where(eq(schema.accountApiToken.accountId, user.id));
-        yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
-        yield* db.delete(schema.member).where(eq(schema.member.accountId, user.id));
-        // Private views and defaults belong to the account; tenant views are
-        // the tenant's and survive with their owner reference set null.
-        yield* db
-          .delete(schema.deviceViewDefault)
-          .where(eq(schema.deviceViewDefault.accountId, user.id));
-        yield* db
-          .delete(schema.deviceView)
-          .where(
-            and(
-              eq(schema.deviceView.createdByAccountId, user.id),
-              eq(schema.deviceView.visibility, "private"),
-            ),
-          );
+        // Everything after a successful teardown must say that the tenant is
+        // already gone: an account-cleanup failure is retryable, not the same
+        // as "nothing happened".
+        yield* Effect.gen(function* () {
+          yield* db
+            .delete(schema.accountApiToken)
+            .where(eq(schema.accountApiToken.accountId, user.id));
+          yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
+          yield* db.delete(schema.member).where(eq(schema.member.accountId, user.id));
+          // Private views and defaults belong to the account; tenant views are
+          // the tenant's and survive with their owner reference set null.
+          yield* db
+            .delete(schema.deviceViewDefault)
+            .where(eq(schema.deviceViewDefault.accountId, user.id));
+          yield* db
+            .delete(schema.deviceView)
+            .where(
+              and(
+                eq(schema.deviceView.createdByAccountId, user.id),
+                eq(schema.deviceView.visibility, "private"),
+              ),
+            );
 
-        // Yielded Auth owns these tables; remove the subject's auth state.
-        // In-flight passkey ceremonies carry no subject column and expire on
-        // their own.
-        const authTables = [authPending, authSessions, authCredentials, authIdentifiers];
+          // Yielded Auth owns these tables; remove the subject's auth state.
+          // In-flight passkey ceremonies carry no subject column and expire on
+          // their own.
+          const authTables = [authPending, authSessions, authCredentials, authIdentifiers];
 
-        for (const table of authTables) {
-          if (table) yield* db.delete(table).where(eq(table.subjectId, user.id));
-        }
+          for (const table of authTables) {
+            if (table) yield* db.delete(table).where(eq(table.subjectId, user.id));
+          }
 
-        yield* db
-          .delete(schema.authPasskeyCredentials)
-          .where(eq(schema.authPasskeyCredentials.subjectId, user.id));
-        yield* db
-          .delete(schema.authTotpFactors)
-          .where(
-            sql`JSON_UNQUOTE(JSON_EXTRACT(${schema.authTotpFactors.state}, '$.subjectId')) = ${user.id}`,
-          );
+          yield* db
+            .delete(schema.authPasskeyCredentials)
+            .where(eq(schema.authPasskeyCredentials.subjectId, user.id));
+          yield* db
+            .delete(schema.authTotpFactors)
+            .where(
+              sql`JSON_UNQUOTE(JSON_EXTRACT(${schema.authTotpFactors.state}, '$.subjectId')) = ${user.id}`,
+            );
 
-        // The audit row outlives the account: `subject_user_id` is set null by
-        // the foreign key and the email snapshot remains until retention
-        // prunes it, so the deletion itself is still answerable later. Record
-        // the cascade so support can tell which tenant went with the account.
-        yield* recordAccountAudit(db, {
-          subjectAccountId: user.id,
-          subjectEmail: user.email,
-          action: ACCOUNT_AUDIT.deleted,
-          targetType: "account",
-          targetId: deletedTenants[0]?.id ?? user.id,
-          metadata: {
-            tenants: deletedTenants,
-            lastAccount: preview.lastAccount,
-            account: { id: user.id, email: user.email },
-          },
-        }).pipe(Effect.catchCause(() => Effect.void));
+          // The audit row outlives the account: `subject_user_id` is set null
+          // by the foreign key and the email snapshot remains until retention
+          // prunes it, so the deletion itself is still answerable later. Record
+          // the cascade so support can tell which tenant went with the account.
+          yield* recordAccountAudit(db, {
+            subjectAccountId: user.id,
+            subjectEmail: user.email,
+            action: ACCOUNT_AUDIT.deleted,
+            targetType: "account",
+            targetId: user.id,
+            metadata: {
+              tenants: deletedTenants,
+              lastAccount: preview.lastAccount,
+              account: { id: user.id, email: user.email },
+            },
+          }).pipe(Effect.catchCause(() => Effect.void));
 
-        yield* db.delete(schema.account).where(eq(schema.account.id, user.id));
+          yield* db.delete(schema.account).where(eq(schema.account.id, user.id));
+        }).pipe(
+          Effect.mapError(() =>
+            new EnterpriseDbError({
+              message: preview.tenant
+                ? "The tenant was deleted, but the rest of your account could not be removed. Retry to finish; the tenant teardown will not run again."
+                : "Your account could not be completely deleted. Retry to finish removing it.",
+            }),
+          ),
+        );
 
         return {
           status: "ok" as const,

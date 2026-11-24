@@ -284,7 +284,10 @@ export const enterpriseAccountApi = HttpApiGroup.make("EnterpriseAccount")
   )
   .add(
     HttpApiEndpoint.delete("deleteMe", "/v1/me", {
-      error: EnterpriseAccountErrors,
+      error: [
+        ...EnterpriseAccountErrors,
+        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+      ],
       payload: AccountDeletionRequest,
       success: AccountDeletionResponse,
     }),

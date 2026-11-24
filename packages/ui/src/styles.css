@@ -118,10 +118,14 @@
   --shell: #f7f7f4;
   /** The content canvas inside the frame, one tone for every dashboard page. */
   --page: #fbfbf9;
-  /** The region globe: a cool ocean separates warm land at every zoom. */
-  --globe-ocean: #dce9f5;
-  --globe-land: #f7f3e8;
-  --globe-land-stroke: #b9b4a6;
+  /**
+   * The region globe. Land and ocean are at least 3:1 against each other and
+   * the coastline is at least 3:1 against both, so the map stays legible
+   * without relying on colour alone (country shapes and borders remain).
+   */
+  --globe-ocean: #6587a6;
+  --globe-land: #f8f4e9;
+  --globe-land-stroke: #1f3549;
   --scrim: rgb(24 24 22 / 0.28);
 
   --brand: #6550b9;
@@ -181,8 +185,8 @@
   --shell: #151514;
   --page: #131312;
   --globe-ocean: #0b1a2b;
-  --globe-land: #34414b;
-  --globe-land-stroke: #566573;
+  --globe-land: #5d6d7d;
+  --globe-land-stroke: #c3d3e0;
   --scrim: rgb(0 0 0 / 0.55);
 
   --brand: #b3a4f5;

@@ -1,7 +1,12 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { EnterpriseBadRequest, EnterpriseForbidden } from "@mattrax/enterprise-domain";
+import {
+  EnterpriseBadRequest,
+  EnterpriseConflict,
+  EnterpriseDbError,
+  EnterpriseForbidden,
+} from "@mattrax/enterprise-domain";
 import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
@@ -57,6 +62,8 @@ const makeContext = (
     readonly memberships?: ReadonlyArray<{ id: string; organizationId: string; role: string }>;
     readonly others?: ReadonlyArray<{ id: string; email: string }>;
     readonly devices?: number;
+    readonly billing?: Record<string, (...args: any[]) => Effect.Effect<any, any>>;
+    readonly storage?: Record<string, (...args: any[]) => Promise<any>>;
   } = {},
 ) => {
   const db = makeDb();
@@ -121,6 +128,7 @@ const makeContext = (
     renameTenant: () => Effect.void,
     preflightTenantDeletion: () => Effect.void,
     cancelTenant: () => Effect.succeed("cancelled" as const),
+    ...options.billing,
   };
 
   const service = createEnterpriseService({
@@ -135,6 +143,7 @@ const makeContext = (
     storage: {
       list: async () => ({ objects: [], truncated: false }),
       delete: async () => undefined,
+      ...options.storage,
     } as any,
     // SAFETY: the tenant is solo and has no subscription; only the teardown
     // preflight and cancellation are reached.
@@ -276,6 +285,109 @@ describe("deleting an account", () => {
     expect(db.store.organization).toHaveLength(1);
   });
 
+  it("keeps both rows when billing preflight fails", async () => {
+    const { db, service } = makeContext({
+      billing: {
+        preflightTenantDeletion: () => Effect.fail(new Error("billing unavailable")),
+      },
+    });
+
+    const outcome = await submit(
+      service.deleteMe(request(headers), { confirmEmail: "owner@example.com" }),
+    );
+
+    expect(failureTag(outcome)).toBe("EnterpriseDbError");
+    expect((outcome as any).failure).toBeInstanceOf(EnterpriseDbError);
+    expect((outcome as any).failure.message).toContain("account was kept");
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.organization).toHaveLength(1);
+  });
+
+  it("keeps both rows when storage fails during teardown", async () => {
+    const { db, service } = makeContext({
+      storage: {
+        list: async () => {
+          throw new Error("R2 unavailable");
+        },
+      },
+    });
+
+    const outcome = await submit(
+      service.deleteMe(request(headers), { confirmEmail: "owner@example.com" }),
+    );
+
+    expect(failureTag(outcome)).toBe("EnterpriseDbError");
+    expect((outcome as any).failure.message).toContain("account was kept");
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.organization).toHaveLength(1);
+    expect(db.store.tenant_deletion[0]).toMatchObject({ status: "failed" });
+  });
+
+  it("returns a conflict when another teardown owns the tenant job", async () => {
+    const { db, service } = makeContext();
+
+    db.store.tenant_deletion.push({
+      id: "job-1",
+      organizationId: "org-1",
+      status: "pending",
+      steps: [],
+      attempts: 1,
+      lastError: null,
+      requestedByAccountId: "user-1",
+      requestedByEmail: "owner@example.com",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      completedAt: null,
+    });
+
+    const outcome = await submit(
+      service.deleteMe(request(headers), { confirmEmail: "owner@example.com" }),
+    );
+
+    expect(failureTag(outcome)).toBe("EnterpriseConflict");
+    expect((outcome as any).failure).toBeInstanceOf(EnterpriseConflict);
+    expect((outcome as any).failure.message).toContain("already in progress");
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.organization).toHaveLength(1);
+  });
+
+  it("reports that the tenant is gone when only the account cleanup fails, and retries", async () => {
+    const { db, service } = makeContext();
+
+    const originalDelete = db.delete;
+    const tableName = (table: any) => {
+      const symbol = Object.getOwnPropertySymbols(table).find(
+        (candidate) => candidate.description === "drizzle:Name",
+      );
+
+      return symbol ? table[symbol] : undefined;
+    };
+
+    db.delete = (table: any) =>
+      tableName(table) === "account"
+        ? { where: () => Effect.fail(new Error("account delete failed")) }
+        : originalDelete(table);
+
+    const failed = await submit(
+      service.deleteMe(request(headers), { confirmEmail: "owner@example.com" }),
+    );
+
+    expect(failureTag(failed)).toBe("EnterpriseDbError");
+    expect((failed as any).failure.message).toContain("tenant was deleted");
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.organization).toHaveLength(0);
+
+    db.delete = originalDelete;
+
+    const retried = await submit(
+      service.deleteMe(request(headers), { confirmEmail: "owner@example.com" }),
+    );
+
+    expect((retried as any)._tag).toBe("Success");
+    expect((retried as any).success.deletedTenants).toEqual([]);
+    expect(db.store.account).toHaveLength(0);
+  });
+
   it("deletes the account, cascades the solo tenant and records the cascade", async () => {
     const { db, service } = makeContext({ devices: 1 });
 
@@ -298,7 +410,7 @@ describe("deleting an account", () => {
 
     expect(audit).toMatchObject({
       targetType: "account",
-      targetId: "org-1",
+      targetId: "user-1",
       metadata: {
         tenants: [{ id: "org-1", name: "Acme" }],
         lastAccount: true,

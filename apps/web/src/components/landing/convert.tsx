@@ -2,6 +2,7 @@ import { ArrowRight, Check, ChevronDown } from "@mattrax/ui";
 import { For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { authClient } from "~/lib/auth";
+import { publicPrimaryCta } from "~/lib/public-auth-cta";
 import { faqStructuredData } from "~/lib/site";
 import { Eyebrow } from "./primitives";
 
@@ -51,8 +52,8 @@ export function Pricing() {
   const session = authClient.useSession();
   const signedIn = () => Boolean(session().data?.user);
   const action = (plan: PricePlan) =>
-    plan.href === "/register" && signedIn()
-      ? { label: "Open dashboard", href: "/dashboard" }
+    plan.href === "/register"
+      ? publicPrimaryCta(session().isPending, signedIn())
       : { label: plan.cta, href: plan.href };
 
   return (
@@ -92,14 +93,26 @@ export function Pricing() {
                 </ul>
 
                 <div class="lx-button-slot">
-                  <Button
-                    as="a"
-                    href={action(plan).href}
-                    variant={plan.secondary ? "outline" : "default"}
-                    class="w-full"
+                  <Show
+                    when={action(plan)}
+                    fallback={
+                      <div
+                        class="h-9 w-full animate-pulse rounded-lg bg-hover"
+                        aria-hidden="true"
+                      />
+                    }
                   >
-                    {action(plan).label}
-                  </Button>
+                    {(value) => (
+                      <Button
+                        as="a"
+                        href={value().href}
+                        variant={plan.secondary ? "outline" : "default"}
+                        class="w-full"
+                      >
+                        {value().label}
+                      </Button>
+                    )}
+                  </Show>
                 </div>
               </div>
             )}
@@ -226,6 +239,7 @@ export function Faq() {
 export function Closing() {
   const session = authClient.useSession();
   const signedIn = () => Boolean(session().data?.user);
+  const cta = () => publicPrimaryCta(session().isPending, signedIn());
 
   return (
     <section class="lx-closing" aria-labelledby="closing-title">
@@ -242,15 +256,19 @@ export function Closing() {
           </p>
 
           <div class="lx-closing__actions">
-            <Button
-              as="a"
-              href={signedIn() ? "/dashboard" : "/register"}
-              size="lg"
-              class="h-10 px-5"
+            <Show
+              when={cta()}
+              fallback={
+                <div class="h-10 w-32 animate-pulse rounded-lg bg-secondary" aria-hidden="true" />
+              }
             >
-              {signedIn() ? "Open dashboard" : "Start free"}
-              <ArrowRight class="size-3.5" />
-            </Button>
+              {(action) => (
+                <Button as="a" href={action().href} size="lg" class="h-10 px-5">
+                  {action().label}
+                  <ArrowRight class="size-3.5" />
+                </Button>
+              )}
+            </Show>
             <Button
               as="a"
               href="mailto:hello@mattrax.app?subject=Mattrax%20for%20our%20fleet"

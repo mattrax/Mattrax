@@ -348,28 +348,37 @@ export default function LoginPage() {
         </Show>
 
         <Show
-          when={!signedIn()}
+          when={!session().isPending}
           fallback={
-            <p class="mt-6 text-center text-sm text-stone-500">
-              Already signed in.{" "}
-              <a
-                href="/dashboard"
-                class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
-              >
-                Open dashboard
-              </a>
+            <p class="mt-6 text-center text-sm" aria-hidden="true">
+              <span class="inline-block h-4 w-48 animate-pulse rounded bg-hover" />
             </p>
           }
         >
-          <p class="mt-6 text-center text-sm text-stone-500">
-            Don't have an account?{" "}
-            <a
-              href="/register"
-              class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
-            >
-              Sign up
-            </a>
-          </p>
+          <Show
+            when={!signedIn()}
+            fallback={
+              <p class="mt-6 text-center text-sm text-stone-500">
+                Already signed in.{" "}
+                <a
+                  href="/dashboard"
+                  class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+                >
+                  Open dashboard
+                </a>
+              </p>
+            }
+          >
+            <p class="mt-6 text-center text-sm text-stone-500">
+              Don't have an account?{" "}
+              <a
+                href="/register"
+                class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+              >
+                Sign up
+              </a>
+            </p>
+          </Show>
         </Show>
 
         <p class="mt-2 text-center text-[12.5px] text-stone-500">

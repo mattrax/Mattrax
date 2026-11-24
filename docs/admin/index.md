@@ -70,8 +70,9 @@ shared tenant; account deletion is the separate, self-service flow below.
 ### Deleting your account
 
 **Account → Delete account** deletes the dashboard account *and* the tenant it owns.
-The flow asks for the account email, then opens a confirmation page that lists the tenant,
-its member and device counts, and every effect of the cascade.
+The button opens an email dialog, then navigates to `/account/delete` as a separate page.
+That page lists the tenant, its member and device counts, and every effect of the cascade
+before the acknowledgement and destructive button are shown.
 
 The API enforces the same rules as the page:
 
@@ -99,13 +100,14 @@ devices are sent an unenroll request, the subscription is cancelled, tenant obje
 removed, and the tenant row cascades. An `account.deleted` audit entry records the email
 snapshot, the tenant ids and names, and whether this was the deployment's last account.
 The audit entry outlives the account. Deleting the last account leaves the deployment with
-nobody signed in; registration remains open and creates a fresh tenant.
+nobody signed in; registration remains open, and a new account can create a fresh tenant.
 
 ### Signed-in visitors on public pages
 
-When a signed-in account visits a public or marketing page, the primary call to action
-becomes **Open dashboard** and the sign-in/register links are hidden. Registration still
-explains, rather than silently failing, that a second account needs a fresh sign-in.
+When a signed-in account visits a public or marketing page, its main call to action
+becomes **Open dashboard** and the sign-in/register links are hidden. The login and
+registration pages keep their forms, but replace their cross-link with **Open dashboard**
+and explain that a second account needs a fresh sign-in.
 
 ## Onboarding email
 

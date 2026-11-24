@@ -437,28 +437,37 @@ export default function RegisterPage() {
         </form>
 
         <Show
-          when={!signedInAs()}
+          when={!session().isPending}
           fallback={
-            <p class="mt-6 text-center text-sm text-stone-500">
-              Already signed in.{" "}
-              <a
-                href="/dashboard"
-                class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
-              >
-                Open dashboard
-              </a>
+            <p class="mt-6 text-center text-sm" aria-hidden="true">
+              <span class="inline-block h-4 w-48 animate-pulse rounded bg-hover" />
             </p>
           }
         >
-          <p class="mt-6 text-center text-sm text-stone-500">
-            Already have an account?{" "}
-            <a
-              href={withReturnTo("/login")}
-              class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
-            >
-              Sign in
-            </a>
-          </p>
+          <Show
+            when={!signedInAs()}
+            fallback={
+              <p class="mt-6 text-center text-sm text-stone-500">
+                Already signed in.{" "}
+                <a
+                  href="/dashboard"
+                  class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+                >
+                  Open dashboard
+                </a>
+              </p>
+            }
+          >
+            <p class="mt-6 text-center text-sm text-stone-500">
+              Already have an account?{" "}
+              <a
+                href={withReturnTo("/login")}
+                class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+              >
+                Sign in
+              </a>
+            </p>
+          </Show>
         </Show>
       </div>
     </main>

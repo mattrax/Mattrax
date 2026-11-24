@@ -128,7 +128,12 @@ export const AccountDeletionPreview = Schema.Struct({
   /** True only when `blockers` is empty; the API enforces the same checks. */
   canDelete: Schema.Boolean,
   blockers: Schema.Array(AccountDeletionBlocker),
-  /** The tenant that will be deleted, absent when deletion is blocked or the account has no tenant. */
+  /**
+   * The single tenant inspected by the check. Present whenever the account has
+   * exactly one membership, even when a blocker prevents deletion, so the
+   * dashboard can show what is at stake and link to the right settings. Absent
+   * for multiple tenants or an account with no tenant.
+   */
   tenant: Schema.optional(AccountDeletionTenant),
   /** True when no other account exists on the deployment. */
   lastAccount: Schema.Boolean,

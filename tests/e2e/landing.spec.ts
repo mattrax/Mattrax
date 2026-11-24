@@ -1,10 +1,44 @@
 import { expect, test } from "@playwright/test";
+import { gotoHydrated, register } from "./helpers";
 
 /**
  * The marketing shell is the first page most people meet, and it is the only
  * place where the header is not inside the dashboard app shell. These checks
  * cover the chrome that keyboard and screen-reader users rely on.
  */
+test.describe("landing auth state", () => {
+  test("shows the registration CTA to a signed-out visitor", async ({ page }) => {
+    await page.context().clearCookies();
+    await gotoHydrated(page, "/");
+
+    await expect(page.getByRole("link", { name: "Start free", exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open dashboard", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Sign up", exact: true })).toHaveCount(0);
+  });
+
+  test("swaps marketing and auth CTAs for a signed-in visitor", async ({ page }) => {
+    await register(page);
+    await gotoHydrated(page, "/");
+
+    await expect(
+      page.getByRole("link", { name: "Open dashboard", exact: true }).first(),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Start free", exact: true })).toHaveCount(0);
+
+    await gotoHydrated(page, "/login");
+    await expect(page.getByText("Already signed in.", { exact: false })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Sign up", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Open dashboard", exact: true }).first()).toBeVisible();
+
+    await gotoHydrated(page, "/register");
+    await expect(
+      page.getByText(/You're already signed in as/, { exact: false }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "Sign in", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Open dashboard", exact: true }).first()).toBeVisible();
+  });
+});
+
 test.describe("landing chrome", () => {
   test("offers a skip link that moves focus past the header", async ({ page }) => {
     await page.goto("/", { waitUntil: "networkidle" });

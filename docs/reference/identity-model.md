@@ -60,9 +60,9 @@ directory data tenant-scoped and read-only, and keeps authentication and RBAC in
    accounts.
 4. Deleting an account removes its credentials, sessions, tokens, memberships and SSO
    links. Account deletion is only allowed for the sole member and sole owner of one
-   tenant: it then deletes that tenant too, including its tenant-scoped directory `user`
-   rows, device links and user policies. A shared tenant must be left through
-   **Settings → Administrators** first.
+   tenant, or for an account with no tenant: in the former case it deletes that tenant
+   too, including its tenant-scoped directory `user` rows, device links and user
+   policies. A shared tenant must be left through **Settings → Administrators** first.
 
 ### User
 

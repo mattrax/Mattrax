@@ -52,9 +52,10 @@ zero-touch flows.
 
 ## Signed in on the public site
 
-The marketing pages and sign-up screen notice an existing session. The primary call to
-action becomes **Open dashboard**, and the sign-in/register links are hidden so an
-already-signed-in visitor is not sent back through authentication. The sign-up warning
+The marketing pages and sign-up screen notice an existing session. Marketing calls to
+action become **Open dashboard**, and the sign-in/register cross-links are hidden so an
+already-signed-in visitor is not sent back through authentication. The login and
+registration forms remain for deliberately switching accounts; the sign-up warning
 explains that a second account needs a fresh sign-in and offers both **Open dashboard**
 and **Sign out**.
 

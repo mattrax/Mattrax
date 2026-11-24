@@ -22,6 +22,7 @@ describe("route builders", () => {
   it("keeps platform routes outside every tenant", () => {
     expect(routes.adminAccounts()).toBe("/admin/accounts");
     expect(routes.account()).toBe("/account");
+    expect(routes.accountDelete()).toBe("/account/delete");
   });
 
   it("builds settings tabs and the general tab", () => {
