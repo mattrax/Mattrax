@@ -746,17 +746,17 @@ export type FilterBarProps = {
   /** Hide the clear-all button. */
   hideClear?: boolean;
   /**
-   * Lay filters out for a table header: the empty trigger and children share
-   * the parent's first row, while applied chips move to a full-width second
-   * row. The parent must be a wrapping flex container (MdmTable's header is).
+   * Render the trigger, applied chips and children as one horizontally
+   * scrollable strip for a table header. This keeps the header on one row
+   * however many filters are active.
    */
-  split?: boolean;
+  inline?: boolean;
   /**
    * A filter-adjacent control rendered with the chips, such as the device
    * table's advanced-query trigger.
    */
   filterExtra?: JSX.Element;
-  /** Extra controls rendered after the filters (or on the first row when split). */
+  /** Extra controls rendered after the filters (in the inline strip). */
   children?: JSX.Element;
 };
 
@@ -828,28 +828,22 @@ export function FilterBar(props: FilterBarProps) {
     </Show>
   );
 
-  if (props.split) {
+  if (props.inline) {
     return (
-      <>
-        <Show when={props.conditions.length === 0}>
-          {addFilter(false)}
-          {props.filterExtra}
-          {props.children}
-        </Show>
-        <Show when={props.conditions.length > 0}>
-          {props.children}
-          <div
-            role="group"
-            aria-label="Active filters"
-            class="order-last flex basis-full min-w-0 flex-wrap items-center gap-1.5"
-          >
-            {chips()}
-            {addFilter(true)}
-            {props.filterExtra}
-            {clear()}
-          </div>
-        </Show>
-      </>
+      <div
+        role={props.conditions.length > 0 ? "group" : undefined}
+        aria-label={props.conditions.length > 0 ? "Active filters" : undefined}
+        class={cn(
+          "flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-auto",
+          props.class,
+        )}
+      >
+        {chips()}
+        {addFilter(props.conditions.length > 0)}
+        {props.filterExtra}
+        {clear()}
+        {props.children}
+      </div>
     );
   }
 

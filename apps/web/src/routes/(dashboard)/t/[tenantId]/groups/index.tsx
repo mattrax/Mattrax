@@ -196,7 +196,7 @@ export default function GroupsPage() {
         onSortChange={setSort}
         inlineToolbar={
           <EntityQueryBar
-            split
+            inline
             fields={fields}
             conditions={conditions()}
             onChange={updateConditions}

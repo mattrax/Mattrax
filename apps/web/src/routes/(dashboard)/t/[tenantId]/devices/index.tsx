@@ -1497,7 +1497,7 @@ export default function DevicesPage() {
         searchPlaceholder="Search name, serial, model, platform, group, notes…"
         inlineToolbar={
           <FilterBar
-            split
+            inline
             fields={filterFields()}
             conditions={filterConditions()}
             onChange={applyFilters}

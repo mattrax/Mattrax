@@ -217,7 +217,7 @@ export default function ApplicationsPage() {
         onSortChange={setSort}
         inlineToolbar={
           <EntityQueryBar
-            split
+            inline
             fields={fields}
             conditions={conditions()}
             onChange={updateConditions}
