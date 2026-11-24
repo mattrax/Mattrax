@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { STALE_WRITE_TITLE, handleStaleWrite, isStaleWriteError } from "./stale-write";
+import { createRoot, createSignal } from "solid-js";
+import {
+  createStaleWriteGuard,
+  STALE_WRITE_TITLE,
+  handleStaleWrite,
+  isStaleWriteError,
+} from "./stale-write";
 
 const preconditionFailure = {
   _tag: "EnterprisePreconditionFailed",
@@ -43,5 +49,59 @@ describe("stale writes", () => {
 
     expect(notify).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
+  });
+});
+
+describe("stale-write guard", () => {
+  const setup = (initialUpdatedAt: string) =>
+    createRoot((dispose) => {
+      const [updatedAt, setUpdatedAt] = createSignal(initialUpdatedAt);
+
+      return {
+        guard: createStaleWriteGuard(updatedAt),
+        setUpdatedAt,
+        dispose,
+      };
+    });
+
+  it("advances only when a server-side refresh is acknowledged", () => {
+    const { guard, setUpdatedAt, dispose } = setup("2026-11-20T10:00:00.000Z");
+
+    try {
+      expect(guard.expectedUpdatedAt()).toBe("2026-11-20T10:00:00.000Z");
+
+      setUpdatedAt("2026-11-20T10:05:00.000Z");
+      expect(guard.expectedUpdatedAt()).toBe("2026-11-20T10:00:00.000Z");
+
+      guard.markRefreshed();
+      expect(guard.expectedUpdatedAt()).toBe("2026-11-20T10:05:00.000Z");
+
+      setUpdatedAt("2026-11-20T10:10:00.000Z");
+      expect(guard.expectedUpdatedAt()).toBe("2026-11-20T10:05:00.000Z");
+    } finally {
+      dispose();
+    }
+  });
+
+  it("keeps a forced 412 draft pinned until the latest version is accepted", () => {
+    const { guard, setUpdatedAt, dispose } = setup("2026-11-20T10:00:00.000Z");
+
+    try {
+      setUpdatedAt("2026-11-20T10:05:00.000Z");
+      guard.markConflict();
+      guard.markRefreshed();
+
+      expect(guard.conflict()).toBe(true);
+      expect(guard.expectedUpdatedAt()).toBe("2026-11-20T10:00:00.000Z");
+
+      setUpdatedAt("2026-11-20T10:10:00.000Z");
+      expect(guard.expectedUpdatedAt()).toBe("2026-11-20T10:00:00.000Z");
+
+      guard.acceptLatest();
+      expect(guard.conflict()).toBe(false);
+      expect(guard.expectedUpdatedAt()).toBe("2026-11-20T10:10:00.000Z");
+    } finally {
+      dispose();
+    }
   });
 });
