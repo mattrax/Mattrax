@@ -62,6 +62,13 @@ export type RecoveryDeps = {
 
 const nowOf = (deps: RecoveryDeps) => (deps.now ? deps.now() : new Date());
 
+const normalizedRecoveryEmail = (value: string) => value.trim().toLowerCase();
+
+const recoveryEmailMatches = (
+  record: { readonly email: string },
+  user: { readonly email: string },
+): boolean => normalizedRecoveryEmail(record.email) === normalizedRecoveryEmail(user.email);
+
 export const randomRecoveryToken = () =>
   btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
     .replaceAll("+", "-")
@@ -367,6 +374,11 @@ export const verifyAccountRecoveryProof = (
     )
       return yield* Effect.fail(invalid);
 
+    const user = yield* deps.db.query.account.findFirst({ where: { id: record.accountId } });
+
+    if (!user || user.disabled || !recoveryEmailMatches(record, user))
+      return yield* Effect.fail(invalid);
+
     if (record.approvalRequired && record.approvedAt == null) {
       const consumed = yield* deps.db
         .update(schema.accountRecovery)
@@ -615,7 +627,7 @@ export const redeemRecoveryToken = (
 
     const user = yield* db.query.account.findFirst({ where: { id: record.accountId } });
 
-    if (!user || user.disabled) return undefined;
+    if (!user || user.disabled || !recoveryEmailMatches(record, user)) return undefined;
 
     const revision = randomId();
 

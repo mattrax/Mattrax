@@ -8,11 +8,13 @@ import {
   EnterpriseService,
   PERMISSION_GROUPS,
   PERMISSIONS,
+  credentialPermissions,
   normalizeCredentialPermissions,
   isPermission,
+  permissionLabel,
 } from "@mattrax/enterprise-domain";
 import type { Permission } from "@mattrax/enterprise-domain";
-import { sessionCookie } from "@mattrax/enterprise-backend";
+import { ACCOUNT_AUDIT, recordAccountAudit, sessionCookie } from "@mattrax/enterprise-backend";
 import { catchCausePreservingInterrupts } from "./errorBoundary.js";
 
 const json = (body: Schema.Json, status = 200, headers?: Record<string, string>) =>
@@ -115,6 +117,26 @@ const tokenExpired = (value: Date | string | null | undefined, now: Date): boole
   value === null || value === undefined || new Date(value).getTime() <= now.getTime();
 
 const parseForm = (value: string) => new URLSearchParams(value);
+
+const storedScopes = (value: unknown): ReadonlyArray<string> =>
+  Array.isArray(value)
+    ? value.filter((scope): scope is string => typeof scope === "string").slice(0, 64)
+    : ["mcp"];
+
+const permissionNames = (scopes: ReadonlyArray<string>) =>
+  [...credentialPermissions(scopes)].map(permissionLabel);
+
+const oauthAuditMetadata = (
+  client: ClientRow,
+  connectionId: string,
+  scopes: ReadonlyArray<string>,
+) => ({
+  clientId: client.id,
+  clientName: client.name.slice(0, 160),
+  connectionId,
+  scopes: [...scopes],
+  permissions: permissionNames(scopes),
+});
 
 type ClientRow = typeof schema.mcpOAuthClient.$inferSelect;
 
@@ -656,35 +678,80 @@ export const mcpOAuthRoutes = (options: { origin: string }) => {
       });
 
       const connectionId = existing?.id ?? crypto.randomUUID();
-
-      if (existing)
-        yield* db
-          .update(schema.mcpOAuthConnection)
-          .set({ scopes })
-          .where(eq(schema.mcpOAuthConnection.id, connectionId));
-      else
-        yield* db.insert(schema.mcpOAuthConnection).values({
-          id: connectionId,
-          accountId: me.account.id,
-          clientId: client.id,
-          scopes,
-          requestCount: 0,
-          createdAt: new Date(),
-        });
-
       const code = randomToken("mcp_code_");
       const now = DateTime.toDate(yield* DateTime.now);
-      yield* db.insert(schema.mcpOAuthCode).values({
-        id: crypto.randomUUID(),
-        connectionId,
-        clientId: client.id,
-        codeHash: yield* Effect.promise(() => sha256(code)),
-        redirectUri,
-        codeChallenge,
-        codeChallengeMethod: "S256",
-        expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
-        createdAt: now,
-      });
+      const codeHash = yield* Effect.promise(() => sha256(code));
+
+      yield* db.transaction((tx) =>
+        Effect.gen(function* () {
+          if (existing) {
+            const previousScopes = storedScopes(existing.scopes);
+            const updated = yield* tx
+              .update(schema.mcpOAuthConnection)
+              .set({ scopes })
+              .where(
+                and(
+                  eq(schema.mcpOAuthConnection.id, connectionId),
+                  eq(schema.mcpOAuthConnection.accountId, me.account.id),
+                  isNull(schema.mcpOAuthConnection.revokedAt),
+                ),
+              );
+
+            if (!updated || updated.affectedRows === 0)
+              return yield* Effect.fail(new Error("MCP OAuth connection is no longer active"));
+
+            const changed = previousScopes.join("\n") !== scopes.join("\n");
+
+            yield* recordAccountAudit(tx, {
+              subjectAccountId: me.account.id,
+              subjectEmail: me.account.email,
+              action: changed ? ACCOUNT_AUDIT.mcpOAuthScopesChanged : ACCOUNT_AUDIT.mcpOAuthGranted,
+              targetType: "mcp_oauth_connection",
+              targetId: connectionId,
+              metadata: {
+                ...oauthAuditMetadata(client, connectionId, scopes),
+                ...(changed
+                  ? {
+                      previousScopes: [...previousScopes],
+                      previousPermissions: permissionNames(previousScopes),
+                    }
+                  : {}),
+              },
+              at: now,
+            });
+          } else {
+            yield* tx.insert(schema.mcpOAuthConnection).values({
+              id: connectionId,
+              accountId: me.account.id,
+              clientId: client.id,
+              scopes,
+              requestCount: 0,
+              createdAt: now,
+            });
+            yield* recordAccountAudit(tx, {
+              subjectAccountId: me.account.id,
+              subjectEmail: me.account.email,
+              action: ACCOUNT_AUDIT.mcpOAuthGranted,
+              targetType: "mcp_oauth_connection",
+              targetId: connectionId,
+              metadata: oauthAuditMetadata(client, connectionId, scopes),
+              at: now,
+            });
+          }
+
+          yield* tx.insert(schema.mcpOAuthCode).values({
+            id: crypto.randomUUID(),
+            connectionId,
+            clientId: client.id,
+            codeHash,
+            redirectUri,
+            codeChallenge,
+            codeChallengeMethod: "S256",
+            expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
+            createdAt: now,
+          });
+        }),
+      );
       const target = new URL(redirectUri);
       target.searchParams.set("code", code);
 

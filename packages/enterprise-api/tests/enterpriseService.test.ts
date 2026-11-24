@@ -144,6 +144,7 @@ const makeContext = async (
     authSecret?: string | null;
     email?: EmailTransport;
     apiToken?: any;
+    oauth?: any;
     db?: any;
     analytics?: any;
     auth?: { requireStepUp?: (request: any, action: any) => Effect.Effect<any, any> };
@@ -171,7 +172,7 @@ const makeContext = async (
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
 
       return headers.cookie
-        ? Effect.succeed({ user, apiToken: overrides.apiToken })
+        ? Effect.succeed({ user, apiToken: overrides.apiToken, oauth: overrides.oauth })
         : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
@@ -199,8 +200,11 @@ const makeContext = async (
     enrollmentProfileTtlSeconds: overrides.enrollmentProfileTtlSeconds,
   });
 
-  return { db, service, auth, headers: { cookie: "mattrax_session=test" } };
+  return { db, service, auth, user, headers: { cookie: "mattrax_session=test" } };
 };
+
+const gatewayRequest = (headers: Record<string, string>, path: string, method = "GET") =>
+  ({ headers, url: `${origin}${path}`, method }) as any;
 
 describe("enterprise service tenant flow", () => {
   it("requires authentication to create tenants", async () => {
@@ -946,7 +950,7 @@ describe("enterprise service tenant flow", () => {
 
     const reader = await makeContext({
       db: base.db,
-      apiToken: { tenantId: null, scopes: ["devices.read"] },
+      apiToken: { id: "token-1", name: "CLI", tenantId: null, scopes: ["devices.read"] },
     });
 
     const context = await runEffect(reader.service.mcpContext(request(reader.headers)));
@@ -982,6 +986,134 @@ describe("enterprise service tenant flow", () => {
     expect(ownerContext.methods).not.toContain("deviceHandoverImpact");
   });
 
+  it("derives MCP audit entries only from authenticated dispatched calls", async () => {
+    const base = await makeContext();
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+    const gatewayHeaders = {
+      cookie: "mattrax_session=test",
+      "x-mattrax-mcp-authorization": "Bearer mcp-token",
+      "x-mattrax-client-address": "203.0.113.9",
+    };
+    const reader = await makeContext({
+      db: base.db,
+      apiToken: { id: "token-1", name: "CLI", tenantId: null, scopes: ["devices.read"] },
+    });
+
+    await runEffect(
+      reader.service.listDevices(
+        gatewayRequest(gatewayHeaders, `/api/v1/tenants/${tenant.id}/devices`),
+        tenant.id,
+      ),
+    );
+
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toMatchObject([
+      {
+        organizationId: tenant.id,
+        actorAccountId: "user-1",
+        targetType: "mcp",
+        metadata: {
+          tool: "listDevices",
+          method: "GET",
+          path: `/api/v1/tenants/${tenant.id}/devices`,
+          status: 200,
+          credential: { type: "api_token", id: expect.any(String) },
+        },
+      },
+    ]);
+
+    // A browser session cannot produce that entry even with the marker.
+    await runEffect(
+      base.service.listDevices(
+        gatewayRequest(gatewayHeaders, `/api/v1/tenants/${tenant.id}/devices`),
+        tenant.id,
+      ),
+    );
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(1);
+
+    // A read-only credential cannot attribute a write it cannot perform.
+    await expect(
+      runEffect(
+        reader.service.patchTenant(
+          gatewayRequest(gatewayHeaders, `/api/v1/tenants/${tenant.id}`, "PATCH"),
+          tenant.id,
+          { name: "Forged" },
+        ),
+      ),
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(1);
+  });
+
+  it("rejects a direct client-authored activity payload without writing an audit row", async () => {
+    const base = await makeContext();
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+    const reader = await makeContext({
+      db: base.db,
+      apiToken: { id: "token-1", name: "CLI", tenantId: null, scopes: ["devices.read"] },
+    });
+
+    await expect(
+      runEffect(
+        reader.service.recordMcpActivity(
+          gatewayRequest(
+            {
+              cookie: "mattrax_session=test",
+              "x-mattrax-mcp-authorization": "Bearer mcp-token",
+            },
+            `/api/v1/tenants/${tenant.id}/mcp/activity`,
+            "POST",
+          ),
+          tenant.id,
+          {
+            tool: "fabricated-tool",
+            method: "DELETE",
+            path: `/api/v1/tenants/${tenant.id}/devices`,
+            status: 200,
+          },
+        ),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(0);
+  });
+  it("does not attribute a call whose URL names a different tenant", async () => {
+    const base = await makeContext();
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+    const reader = await makeContext({
+      db: base.db,
+      apiToken: { id: "token-1", name: "CLI", tenantId: tenant.id, scopes: ["devices.read"] },
+    });
+
+    await expect(
+      runEffect(
+        reader.service.listDevices(
+          gatewayRequest(
+            {
+              cookie: "mattrax_session=test",
+              "x-mattrax-mcp-authorization": "Bearer mcp-token",
+            },
+            "/api/v1/tenants/other-tenant/devices",
+          ),
+          tenant.id,
+        ),
+      ),
+    ).resolves.toMatchObject({ rows: [] });
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(0);
+  });
   it("enforces fine-grained API token permissions per method", async () => {
     const base = await makeContext();
 

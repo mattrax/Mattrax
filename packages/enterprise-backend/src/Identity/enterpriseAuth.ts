@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { Cause, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect";
 import {
   EnterpriseAuth,
@@ -20,6 +20,7 @@ import {
   hasUnrestrictedCredential,
   normalisePath,
   normalizeCredentialPermissions,
+  permissionLabel,
 } from "@mattrax/enterprise-domain";
 import type {
   EnterpriseAuthFailure,
@@ -750,18 +751,56 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               }),
             );
           const revokedAt = DateTime.toDate(yield* DateTime.now);
-          yield* db
-            .update(schema.mcpOAuthConnection)
-            .set({ revokedAt })
-            .where(eq(schema.mcpOAuthConnection.id, connection.id));
-          yield* db
-            .update(schema.mcpOAuthToken)
-            .set({ revokedAt })
-            .where(eq(schema.mcpOAuthToken.connectionId, connection.id));
-          yield* db
-            .update(schema.mcpOAuthCode)
-            .set({ consumedAt: revokedAt })
-            .where(eq(schema.mcpOAuthCode.connectionId, connection.id));
+
+          yield* db.transaction((tx) =>
+            Effect.gen(function* () {
+              const revoked = yield* tx
+                .update(schema.mcpOAuthConnection)
+                .set({ revokedAt })
+                .where(
+                  and(
+                    eq(schema.mcpOAuthConnection.id, connection.id),
+                    eq(schema.mcpOAuthConnection.accountId, user.id),
+                    isNull(schema.mcpOAuthConnection.revokedAt),
+                  ),
+                );
+
+              if (!revoked || revoked.affectedRows === 0) return;
+
+              yield* tx
+                .update(schema.mcpOAuthToken)
+                .set({ revokedAt })
+                .where(eq(schema.mcpOAuthToken.connectionId, connection.id));
+              yield* tx
+                .update(schema.mcpOAuthCode)
+                .set({ consumedAt: revokedAt })
+                .where(eq(schema.mcpOAuthCode.connectionId, connection.id));
+
+              const client = yield* tx.query.mcpOAuthClient.findFirst({
+                where: { id: connection.clientId },
+              });
+              const scopes = (parseStoredCredentialScopes(connection.scopes) ?? ["mcp"]).slice(
+                0,
+                64,
+              );
+
+              yield* recordAccountAudit(tx, {
+                subjectAccountId: user.id,
+                subjectEmail: user.email,
+                action: ACCOUNT_AUDIT.mcpOAuthRevoked,
+                targetType: "mcp_oauth_connection",
+                targetId: connection.id,
+                metadata: {
+                  clientId: connection.clientId,
+                  clientName: client?.name.slice(0, 160) ?? connection.clientId,
+                  connectionId: connection.id,
+                  scopes: [...scopes],
+                  permissions: [...credentialPermissions(scopes)].map(permissionLabel),
+                },
+                at: revokedAt,
+              });
+            }),
+          );
 
           return { status: "ok" as const };
         });
@@ -1603,6 +1642,23 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                     new EnterpriseConflict({
                       message: "That email address was registered by someone else. Try another.",
                     }),
+                  );
+
+                // Recovery proves control of the address stored at issuance.
+                // Rotating the recovery channel invalidates every live
+                // ceremony atomically with the account update.
+                yield* tx
+                  .update(schema.accountRecovery)
+                  .set({ status: "cancelled", cancelledAt: now, updatedAt: now })
+                  .where(
+                    and(
+                      eq(schema.accountRecovery.accountId, user.id),
+                      inArray(schema.accountRecovery.status, [
+                        "pending_proof",
+                        "pending_approval",
+                        "ready",
+                      ]),
+                    ),
                   );
 
                 yield* tx

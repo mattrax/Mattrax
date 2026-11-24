@@ -140,12 +140,12 @@ export const approximateNetwork = (address: string | null | undefined): string |
 /** The bounded client fields for one request, or nulls when the host supplies none. */
 export const loginAttemptClient = (
   headers: Readonly<Record<string, string | string[] | undefined>>,
-  remoteAddress?: string | null,
+  _remoteAddress?: string | null,
 ) => {
   const rawUserAgent = headers["user-agent"];
 
   return {
-    ip: approximateNetwork(clientAddress(headers) ?? remoteAddress ?? null),
+    ip: approximateNetwork(clientAddress(headers)),
     userAgent: bounded(
       Array.isArray(rawUserAgent) ? rawUserAgent[0] : rawUserAgent,
       LOGIN_ATTEMPT_USER_AGENT_LIMIT,
