@@ -188,6 +188,19 @@ export async function signIn(page: Page, email: string) {
   // that just ended; a real browser restart clears them too.
   await page.context().clearCookies();
   await installVirtualAuthenticator(page);
+  // The virtual authenticator completes conditional passkey requests without
+  // a person picking from the autofill sheet. Keep this helper on the explicit
+  // email → passkey path so the rest of the flow stays observable.
+  await page.addInitScript(() => {
+    try {
+      Object.defineProperty(window.PublicKeyCredential, "isConditionalMediationAvailable", {
+        configurable: true,
+        value: () => Promise.resolve(false),
+      });
+    } catch {
+      // Older browser builds without the capability already skip conditional UI.
+    }
+  });
   await page.goto("/login", { waitUntil: "networkidle" });
   await page.waitForFunction(
     () => document.documentElement.dataset.hydrated === "true",

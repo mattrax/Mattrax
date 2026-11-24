@@ -37,7 +37,7 @@ test.describe("authentication and onboarding", () => {
 
     const email = page.locator("#email");
     await expect(email).toBeVisible();
-    await expect(email).toHaveAttribute("autocomplete", "username");
+    await expect(email).toHaveAttribute("autocomplete", "username webauthn");
     await expect(page.locator("#password")).toHaveCount(0);
 
     await email.fill("person@example.com");

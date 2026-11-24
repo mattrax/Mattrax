@@ -1,168 +1,108 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  passkeyAuthenticationFailure,
-  passkeyEnvironmentAvailable,
-  passkeyEnvironmentFailure,
-  passkeySignInFailureMessage,
+  conditionalPasskeyAvailable,
+  PasskeySignInError,
+  startConditionalPasskey,
 } from "./passkey-sign-in";
 
-const originalSecureContext = Object.getOwnPropertyDescriptor(window, "isSecureContext");
-const originalPublicKeyCredential = Object.getOwnPropertyDescriptor(window, "PublicKeyCredential");
-const originalCredentials = Object.getOwnPropertyDescriptor(navigator, "credentials");
+const buffer = (...values: number[]) => new Uint8Array(values).buffer;
 
-const setEnvironment = (available: boolean) => {
-  Object.defineProperty(window, "isSecureContext", { configurable: true, value: available });
+const install = (available = true) => {
+  Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
   Object.defineProperty(window, "PublicKeyCredential", {
     configurable: true,
-    value: available ? class PublicKeyCredential {} : undefined,
+    value: class {
+      static isConditionalMediationAvailable = () => Promise.resolve(available);
+    },
   });
   Object.defineProperty(navigator, "credentials", {
     configurable: true,
-    value: available ? { get: vi.fn() } : undefined,
+    value: { get: vi.fn() },
   });
 };
 
-beforeEach(() => {
-  setEnvironment(true);
+const assertion = () => ({
+  id: "credential-1",
+  type: "public-key",
+  rawId: buffer(1, 2, 3),
+  authenticatorAttachment: "platform",
+  response: {
+    clientDataJSON: buffer(0x7b, 0x7d),
+    authenticatorData: buffer(1),
+    signature: buffer(0xff, 0xfe),
+    userHandle: null,
+  },
+  getClientExtensionResults: () => ({ credProps: { rk: true } }),
 });
+
+beforeEach(() => install());
 
 afterEach(() => {
-  for (const [target, key, descriptor] of [
-    [window, "isSecureContext", originalSecureContext],
-    [window, "PublicKeyCredential", originalPublicKeyCredential],
-    [navigator, "credentials", originalCredentials],
-  ] as const) {
-    if (descriptor) Object.defineProperty(target, key, descriptor);
-    else Reflect.deleteProperty(target, key);
-  }
+  Object.defineProperty(window, "isSecureContext", { configurable: true, value: false });
+  Object.defineProperty(window, "PublicKeyCredential", { configurable: true, value: undefined });
+  Object.defineProperty(navigator, "credentials", { configurable: true, value: undefined });
 });
 
-describe("passkey environment", () => {
-  it("requires WebAuthn, credentials.get, and a secure context", () => {
-    expect(passkeyEnvironmentAvailable()).toBe(true);
-    expect(passkeyEnvironmentFailure()).toBeNull();
+describe("conditional passkey sign-in", () => {
+  it("reports availability from the browser capability probe", async () => {
+    await expect(conditionalPasskeyAvailable()).resolves.toBe(true);
+  });
 
-    setEnvironment(false);
-
-    expect(passkeyEnvironmentAvailable()).toBe(false);
-    expect(passkeyEnvironmentFailure()).toMatchObject({
-      tag: "PasskeyUnsupported",
-      message: expect.stringContaining("HTTPS"),
+  it("reports unavailable when the capability probe throws", async () => {
+    Object.defineProperty(window, "PublicKeyCredential", {
+      configurable: true,
+      value: class {
+        static isConditionalMediationAvailable = () => Promise.reject(new Error("denied"));
+      },
     });
-  });
-});
 
-describe("passkey authentication failures", () => {
-  it("recognises a dismissed or timed-out NotAllowedError", () => {
-    const failure = passkeyAuthenticationFailure(
-      new DOMException("The operation was canceled.", "NotAllowedError"),
-    );
-
-    expect(failure.tag).toBe("PasskeyCancelled");
-    expect(failure.message).not.toContain("wasn't accepted");
+    await expect(conditionalPasskeyAvailable()).resolves.toBe(false);
   });
 
-  it("recognises an unavailable authenticator instead of blaming a passkey", () => {
-    const failure = passkeyAuthenticationFailure(
-      new DOMException("No available authenticator was found.", "NotAllowedError"),
-    );
+  it("serialises an assertion in the shape the completion endpoint accepts", async () => {
+    const signal = new AbortController().signal;
+    vi.mocked(navigator.credentials.get).mockResolvedValue(assertion() as Credential);
 
-    expect(failure.tag).toBe("PasskeyNoAuthenticator");
-    expect(failure.message).toContain("No passkey option was available");
-    expect(failure.message).not.toContain("wasn't accepted");
-  });
-
-  it("covers both cancellation and a missing prompt for overloaded Safari errors", () => {
-    const failure = passkeyAuthenticationFailure(new DOMException("", "NotAllowedError"));
-
-    expect(failure.tag).toBe("PasskeyNotAllowed");
-    expect(failure.message).toContain("If no prompt appeared");
-    expect(failure.message).not.toContain("wasn't accepted");
-  });
-
-  it("treats Safari's blanket NotAllowedError as no-prompt, not cancellation", () => {
-    // The exact message Safari/WebKit and Chromium use when a ceremony cannot
-    // start. It contains "not allowed" and "denied permission", but no prompt
-    // was shown, so it must stay actionable instead of reading as a cancel.
-    const failure = passkeyAuthenticationFailure(
-      new DOMException(
-        "The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.",
-        "NotAllowedError",
+    await expect(
+      startConditionalPasskey(
+        { challenge: "AQID", timeout: 60_000, userVerification: "preferred" },
+        signal,
       ),
-    );
+    ).resolves.toEqual({
+      id: "credential-1",
+      rawId: "AQID",
+      type: "public-key",
+      response: {
+        clientDataJSON: "e30",
+        authenticatorData: "AQ",
+        signature: "__4",
+        userHandle: undefined,
+      },
+      clientExtensionResults: { credProps: { rk: true } },
+      authenticatorAttachment: "platform",
+    });
 
-    expect(failure.tag).toBe("PasskeyNotAllowed");
-    expect(failure.message).toContain("If no prompt appeared");
-    expect(failure.message).not.toContain("cancelled");
-  });
-
-  it("still maps an explicit denied request or timeout to cancellation", () => {
-    expect(
-      passkeyAuthenticationFailure(
-        new DOMException("The user denied the request.", "NotAllowedError"),
-      ).tag,
-    ).toBe("PasskeyCancelled");
-    expect(
-      passkeyAuthenticationFailure(new DOMException("The operation timed out.", "NotAllowedError"))
-        .tag,
-    ).toBe("PasskeyCancelled");
-  });
-
-  it("unwraps SimpleWebAuthn errors without leaking the browser message", () => {
-    const failure = passkeyAuthenticationFailure(
-      new Error("private-provider-detail", {
-        cause: new DOMException(
-          "No available authenticator: private-provider-detail",
-          "NotAllowedError",
-        ),
+    expect(navigator.credentials.get).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediation: "conditional",
+        signal,
+        publicKey: expect.objectContaining({
+          challenge: new Uint8Array([1, 2, 3]),
+          allowCredentials: [],
+          timeout: 60_000,
+          userVerification: "preferred",
+        }),
       }),
     );
-
-    expect(failure.tag).toBe("PasskeyNoAuthenticator");
-    expect(failure.message).not.toContain("private-provider-detail");
   });
 
-  it("distinguishes unsupported and blocked WebAuthn", () => {
-    expect(
-      passkeyAuthenticationFailure(new DOMException("Unsupported", "NotSupportedError")).tag,
-    ).toBe("PasskeyUnsupported");
-    expect(passkeyAuthenticationFailure(new DOMException("Blocked", "SecurityError")).tag).toBe(
-      "PasskeyBlocked",
-    );
-    expect(
-      passkeyAuthenticationFailure(new Error("WebAuthn is not supported in this browser")).tag,
-    ).toBe("PasskeyUnsupported");
-  });
+  it("refuses to start when the browser cannot offer conditional passkeys", async () => {
+    install(false);
 
-  it("keeps unknown authenticator failures actionable", () => {
-    const failure = passkeyAuthenticationFailure(new DOMException("secret", "UnknownError"));
-
-    expect(failure.tag).toBe("PasskeyNoAuthenticator");
-    expect(failure.message).toContain("Try another authenticator");
-    expect(failure.message).not.toContain("secret");
-  });
-});
-
-describe("passkey failure copy", () => {
-  it("only calls a server-rejected credential unaccepted", () => {
-    expect(passkeySignInFailureMessage("PasskeyRejected")).toContain("wasn't accepted");
-
-    for (const tag of [
-      "PasskeyCancelled",
-      "PasskeyNotAllowed",
-      "PasskeyNoAuthenticator",
-      "PasskeyUnsupported",
-      "PasskeyBlocked",
-      undefined,
-    ])
-      expect(passkeySignInFailureMessage(tag)).not.toContain("wasn't accepted");
-  });
-
-  it("offers the existing email recovery path without account claims", () => {
-    const message = passkeySignInFailureMessage("PasskeyUnsupported");
-
-    expect(message).toContain("email recovery link");
-    expect(message).not.toContain("account");
+    await expect(
+      startConditionalPasskey({ challenge: "AQID" }, new AbortController().signal),
+    ).rejects.toBeInstanceOf(PasskeySignInError);
+    expect(navigator.credentials.get).not.toHaveBeenCalled();
   });
 });
