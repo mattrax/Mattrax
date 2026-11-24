@@ -655,4 +655,35 @@ describe("Apple BYOD route host and token security", () => {
       await dispose();
     }
   });
+
+  it("counts concurrent requests by verified address despite spoofed forwarding headers", async () => {
+    const db = makeDb({ apple_byod_config: [byodConfigRow()] });
+    const { handler, dispose } = makeRouteHandler(db, profileService());
+
+    try {
+      const responses = await Promise.all(
+        Array.from({ length: 40 }, (_, index) =>
+          handler(
+            new Request("https://school.example/mdm/apple/byod/org-1/enroll", {
+              method: "POST",
+              body: "request-body",
+              headers: {
+                host: "school.example",
+                "x-mattrax-client-address": "203.0.113.42",
+                "cf-connecting-ip": `198.51.100.${index + 1}`,
+                "x-forwarded-for": `10.0.0.${index + 1}`,
+              },
+            }),
+          ),
+        ),
+      );
+      const statuses = responses.map((response) => response.status);
+
+      expect(statuses.filter((status) => status === 401)).toHaveLength(30);
+      expect(statuses.filter((status) => status === 429)).toHaveLength(10);
+      expect(db.store.apple_byod_enrollment).toHaveLength(30);
+    } finally {
+      await dispose();
+    }
+  });
 });
