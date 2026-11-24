@@ -134,4 +134,15 @@ describe("auth envelope decoding", () => {
       }),
     );
   });
+
+  it("does not reinterpret a direct tagged failure as direct success", () => {
+    expect(() =>
+      decodeAuthEnvelope(
+        200,
+        { _tag: "EnterpriseBadRequest", message: "SSO is not configured" },
+        Schema.Json,
+        directSuccess,
+      ),
+    ).toThrow(expect.objectContaining({ _tag: "AuthResponseError" }));
+  });
 });

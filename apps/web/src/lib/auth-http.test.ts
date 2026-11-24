@@ -5,6 +5,11 @@ vi.mock("~/lib/posthog", () => ({ capturePostHog: vi.fn() }));
 import { authClient } from "./auth";
 
 const NativeRequest = globalThis.Request;
+const session = {
+  sessionId: "session-1",
+  subjectId: "account-1",
+  claims: { name: "Ada", email: "ada@example.com", emailVerified: true },
+};
 const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
   Response.json({ status: "ok", emailSent: true }),
 );
@@ -82,6 +87,41 @@ describe("browser auth transport", () => {
     await expect(
       authClient.requestRegistrationCode({ name: "Ada", email: "ada@example.com" }),
     ).resolves.toEqual({
+      error: {
+        message: "The authentication service returned an invalid success response",
+        tag: "AuthResponseError",
+      },
+    });
+  });
+
+  it.each([
+    {},
+    { error: "Could not start SSO sign-in" },
+    { _tag: "EnterpriseBadRequest", message: "SSO is not configured" },
+  ])("rejects malformed or error SSO success %#", async (responseBody) => {
+    fetch.mockResolvedValueOnce(Response.json(responseBody));
+
+    await expect(authClient.startSso("ada@example.com")).resolves.toEqual({
+      error: {
+        message: "The authentication service returned an invalid success response",
+        tag: "AuthResponseError",
+      },
+    });
+  });
+
+  it("accepts a valid direct SSO start response", async () => {
+    const url = "https://login.microsoftonline.com/authorize";
+    fetch.mockResolvedValueOnce(Response.json({ url }));
+
+    await expect(authClient.startSso("ada@example.com")).resolves.toEqual({
+      data: { url },
+    });
+  });
+
+  it("rejects a direct session body from an auth-envelope endpoint", async () => {
+    fetch.mockResolvedValueOnce(Response.json(session));
+
+    await expect(authClient.session()).resolves.toEqual({
       error: {
         message: "The authentication service returned an invalid success response",
         tag: "AuthResponseError",

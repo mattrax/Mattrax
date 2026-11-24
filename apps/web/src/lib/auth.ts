@@ -222,16 +222,17 @@ export const decodeAuthEnvelope = <S extends Schema.ConstraintDecoder<unknown, n
     responseBody === undefined
       ? undefined
       : Option.getOrUndefined(decodeFailureEnvelope(responseBody));
-  const direct =
-    responseBody === undefined || successful
+  const directFailure =
+    responseBody === undefined
       ? undefined
       : Option.getOrUndefined(decodeDirectFailure(responseBody));
-  const failure = failureEnvelope ?? direct;
+  const failure = failureEnvelope ?? (successful ? undefined : directFailure);
 
   if (
     successful &&
     options.directSuccess &&
     failureEnvelope === undefined &&
+    directFailure === undefined &&
     responseBody !== undefined
   ) {
     const directValue = Option.getOrUndefined(Schema.decodeUnknownOption(schema)(responseBody));
@@ -248,7 +249,7 @@ export const decodeAuthEnvelope = <S extends Schema.ConstraintDecoder<unknown, n
         action: failureEnvelope.error?.action ?? failureEnvelope.action,
         methods: failureEnvelope.error?.methods ?? failureEnvelope.methods,
       }
-    : direct;
+    : failure;
   const tag = fields?._tag;
   const message = fields?.message;
   const reason = fields?.reason;
@@ -448,10 +449,7 @@ const PasskeyRename = Schema.Struct({
 const TotpBegin = Schema.Struct({ enrollmentId: Schema.String, expiresAtMillis: Schema.Number });
 const TotpConfirm = Schema.Struct({ enabled: Schema.Boolean, invalidation: Schema.Json });
 const TotpRegenerated = Schema.Struct({ enabled: Schema.Literal(true) });
-const SsoStart = Schema.Struct({
-  url: Schema.optional(Schema.String),
-  error: Schema.optional(Schema.String),
-});
+const SsoStart = Schema.Struct({ url: Schema.String });
 const EmailVerification = Schema.Struct({
   status: Schema.Literal("ok"),
   challenge: Schema.optional(Schema.String),
