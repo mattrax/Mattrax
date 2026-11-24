@@ -26,6 +26,28 @@ const shellRects = (page: Page) =>
     };
   });
 
+const settingsRects = (page: Page) =>
+  page.evaluate(() => {
+    const box = (selector: string) => {
+      const element = document.querySelector(selector);
+
+      if (!element) throw new Error(`Missing ${selector}`);
+
+      const rect = element.getBoundingClientRect();
+
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, bottom: rect.bottom };
+    };
+
+    return {
+      masthead: box('[data-slot="settings-masthead"]'),
+      content: box('[data-slot="settings-content"]'),
+      title: box('[data-slot="settings-masthead"] h1'),
+      firstPanelTitle: box('[data-slot="settings-content"] [role="region"][aria-labelledby] h2'),
+      viewportWidth: window.innerWidth,
+      documentWidth: document.documentElement.scrollWidth,
+    };
+  });
+
 test.describe("dashboard shell layout", () => {
   test("fills the window at 1100 and ultrawide widths", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Frame Tenant");
@@ -102,6 +124,37 @@ test.describe("dashboard shell layout", () => {
     expect(removed).toBe(0);
   });
 
+  test("aligns and compacts the settings masthead with its content", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Settings Density Tenant");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoHydrated(page, `/t/${tenant.slug}/settings/attributes`);
+
+    const masthead = page.locator('[data-slot="settings-masthead"]');
+    const firstPanelTitle = page.getByRole("heading", { name: "Device attributes", exact: true });
+
+    await expect(masthead).toBeVisible();
+    await expect(firstPanelTitle).toBeVisible();
+
+    const desktop = await settingsRects(page);
+
+    expect(desktop.masthead.x).toBeCloseTo(desktop.content.x, 0);
+    expect(desktop.masthead.width).toBeCloseTo(desktop.content.width, 0);
+    expect(desktop.title.x).toBeCloseTo(desktop.firstPanelTitle.x, 0);
+    expect(desktop.masthead.height).toBeLessThanOrEqual(112);
+    expect(desktop.firstPanelTitle.y - desktop.masthead.bottom).toBeLessThanOrEqual(40);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(masthead).toBeVisible();
+    await expect(firstPanelTitle).toBeVisible();
+
+    const mobile = await settingsRects(page);
+
+    expect(mobile.title.x).toBeCloseTo(mobile.firstPanelTitle.x, 0);
+    expect(mobile.masthead.height).toBeLessThanOrEqual(128);
+    expect(mobile.firstPanelTitle.y - mobile.masthead.bottom).toBeLessThanOrEqual(88);
+    expect(mobile.documentWidth).toBeLessThanOrEqual(mobile.viewportWidth);
+  });
+
   test("keeps the settings masthead, rail and draft while a child chunk loads", async ({
     page,
   }) => {
@@ -155,7 +208,9 @@ test.describe("dashboard shell layout", () => {
 
     releaseExport();
     await expect(page.getByRole("button", { name: "Export tenant", exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Migration", exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Migration", exact: true }).first(),
+    ).toBeVisible();
     await expect(saveBar).toContainText("Unsaved tenant changes");
   });
 
@@ -252,12 +307,12 @@ test.describe("help and account menu", () => {
     await page.getByRole("button", { name: "Account menu" }).click();
 
     await expect(page.getByRole("menuitem", { name: "Account", exact: true })).toBeVisible();
-    await expect(
-      page.getByRole("menuitem", { name: "Account settings", exact: true }),
-    ).toHaveCount(0);
-    await expect(
-      page.getByRole("menuitem", { name: "What alpha means", exact: true }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("menuitem", { name: "Account settings", exact: true })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole("menuitem", { name: "What alpha means", exact: true })).toHaveCount(
+      0,
+    );
   });
 });
 

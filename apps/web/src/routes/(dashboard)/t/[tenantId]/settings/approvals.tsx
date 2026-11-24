@@ -28,14 +28,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { toast } from "~/components/toast";
-import {
-  ErrorText,
-  Page,
-  PageHeader,
-  Panel,
-  QueryError,
-  relativeTime,
-} from "~/components/mdm/common";
+import { ErrorText, Panel, QueryError, relativeTime } from "~/components/mdm/common";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { useTenantPermissions } from "~/lib/permissions";
 import { approvalRetryFor, clearApprovalRetry } from "~/lib/approval-retry";
@@ -424,24 +417,18 @@ export default function ApprovalsSettingsPage() {
       : permissionOptions.map((item) => ({ value: item.value, label: item.label }));
 
   return (
-    <Page>
-      <PageHeader
-        eyebrow="Security"
-        title="Approvals"
-        description="Require a second administrator before destructive actions run. Policies are optional; when none matches an action it behaves exactly as before."
-        actions={
-          <Show when={canManage()}>
-            <Button size="sm" onClick={openCreate}>
-              New policy
-            </Button>
-          </Show>
-        }
-      />
-
+    <>
       <div class="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
         <Panel
           title="Approval queue"
           description="Pending requests need another administrator. Approving does not run the action; the requester retries with the request id."
+          actions={
+            <Show when={canManage()}>
+              <Button size="sm" onClick={openCreate}>
+                New policy
+              </Button>
+            </Show>
+          }
         >
           <div class="mb-3 flex gap-1 rounded-lg bg-hover p-1">
             <For each={queueTabs()}>
@@ -879,6 +866,6 @@ export default function ApprovalsSettingsPage() {
           if (request) cancel.mutate(request);
         }}
       />
-    </Page>
+    </>
   );
 }

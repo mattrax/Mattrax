@@ -21,8 +21,67 @@ test.describe("tenant settings", () => {
   test("shows tenant audit events", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Audit Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/audit`);
-    await expect(page.getByText("Audit log", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Audit log", exact: true })).toHaveCount(1);
+    await expect(page.getByRole("heading", { name: "Audit log", exact: true })).toBeVisible();
+    await expect(page.getByText(/Account changes and device \(MDM\) activity/)).toBeVisible();
     await expect(page.getByText(/Tenant · created/i)).toBeVisible();
+  });
+
+  test("shows one Approvals title and keeps policy creation available", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Approvals Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings/approvals`);
+
+    await expect(page.getByRole("heading", { name: "Approvals", exact: true })).toHaveCount(1);
+    await expect(page.getByRole("heading", { name: "Approvals", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "New policy" }).click();
+    await expect(page.getByRole("dialog", { name: "New approval policy" })).toBeVisible();
+  });
+
+  test("labels the attribute CSV picker and keeps validation inline", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Attribute Validation Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings/attributes`);
+
+    const csvFile = page.getByLabel("Import device values CSV");
+    await expect(csvFile).toBeVisible();
+    await expect(csvFile).toHaveAttribute("accept", ".csv,text/csv");
+    await csvFile.setInputFiles({
+      name: "attributes.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("serial\n"),
+    });
+    await expect(page.getByText("Import device values CSV", { exact: true })).toBeVisible();
+
+    await page.getByLabel("Key", { exact: true }).fill("Bad Key");
+    await page.getByLabel("Label", { exact: true }).fill("Cost centre");
+    await page.getByRole("button", { name: "Add attribute", exact: true }).click();
+
+    const error = page.getByRole("alert");
+    await expect(error).toContainText(/lowercase/i);
+    await expect(error).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Dismiss error" })).toHaveCount(0);
+
+    await page.getByLabel("Key", { exact: true }).fill("cost_centre");
+    const created = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        /\/api\/v1\/tenants\/[^/]+\/attributes$/.test(response.url()),
+    );
+    await page.getByRole("button", { name: "Add attribute", exact: true }).click();
+    expect((await created).ok()).toBe(true);
+
+    const row = page.getByRole("row").filter({ hasText: "cost_centre" });
+    await expect(row).toBeVisible();
+    await row.getByRole("button", { name: "Edit" }).click();
+    await page.getByLabel("Label", { exact: true }).fill("Cost centre updated");
+
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        /\/api\/v1\/tenants\/[^/]+\/attributes\/[^/]+$/.test(response.url()),
+    );
+    await page.getByRole("button", { name: "Save attribute", exact: true }).click();
+    expect((await saved).ok()).toBe(true);
+    await expect(page.getByRole("alert")).toHaveCount(0);
   });
 
   test("filters audit events and exports CSV", async ({ page }) => {

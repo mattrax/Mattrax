@@ -149,6 +149,8 @@ test.describe("dashboard accessibility", () => {
       [`${base}/policies`, "policies"],
       [`${base}/dashboards`, "dashboards"],
       [`${base}/settings`, "settings"],
+      [`${base}/settings/attributes`, "attribute settings"],
+      [`${base}/settings/approvals`, "approval settings"],
       [`${base}/settings/audit`, "audit log"],
       [`${base}/settings/storage`, "storage"],
     ] as const) {

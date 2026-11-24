@@ -554,10 +554,12 @@ export default function AuditSettingsPage() {
     <div class="grid gap-5">
       <QueryError error={log.error} onRetry={() => void log.refetch()} />
 
-      <Panel
-        title="Audit log"
-        description="Account changes and device (MDM) activity in one append-only log. Repeated device check-ins fold into a short window; enrollment, policy delivery, command results and failures are always recorded separately."
-      >
+      <Panel>
+        <p class="mb-3 text-[12.5px] leading-5 text-muted-foreground">
+          Account changes and device (MDM) activity in one append-only log. Repeated device
+          check-ins fold into a short window; enrollment, policy delivery, command results and
+          failures are always recorded separately.
+        </p>
         <div class="space-y-2.5">
           <div class="flex flex-col gap-2 xl:flex-row xl:items-center">
             <label class="relative min-w-[18rem] flex-1">
