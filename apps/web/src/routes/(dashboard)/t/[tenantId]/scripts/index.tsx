@@ -213,8 +213,8 @@ export default function ScriptsPage() {
 
         <Show when={!writable() && rows().length > 0}>
           <ReadOnlyNotice>
-            You can view scripts and run history. Creating, editing and running scripts requires the
-            Scripts write permission and a fresh sign-in confirmation.
+            You can view scripts and run history. Editing, assigning and running scripts requires
+            the Scripts write permission and a fresh sign-in confirmation.
           </ReadOnlyNotice>
         </Show>
 

@@ -96,7 +96,12 @@ Actions:
 `mfa-enroll`, `mfa-disable`, `mfa-regenerate`, `email-change`,
 `sessions-revoke-all`, `recovery-approve`, `recovery-key-reveal`,
 `backup-download`, `device-command`, `billing-portal`, `sso-policy`,
-`passkey-enroll`, `passkey-remove`.
+`script-change`, `script-run`, `passkey-enroll`, `passkey-remove`.
+
+Additive writes are exempt: creating a script or a policy needs the resource's write
+permission but no step-up, because there is no existing object to protect. Changing,
+assigning, running or deleting something that already exists still asks for a fresh
+confirmation.
 
 If a grant is missing or expired, the API returns a 403 `StepUpRequired` with the action
 and available factors. The browser retries with `x-mattrax-step-up: <grant>`.

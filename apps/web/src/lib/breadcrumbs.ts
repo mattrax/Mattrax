@@ -48,6 +48,11 @@ const normalise = (value: string) => value.trim().toLocaleLowerCase();
 export function buildBreadcrumbs(input: {
   pathname: string;
   title?: string;
+  /**
+   * The loaded resource's name for an opaque id in the middle of the path.
+   * When set, the id becomes a named link instead of being skipped.
+   */
+  resourceName?: string;
 }): BreadcrumbTrailItem[] {
   const pathname = input.pathname.split(/[?#]/, 1)[0] ?? "";
   const segments = pathname.split("/").filter(Boolean);
@@ -77,9 +82,14 @@ export function buildBreadcrumbs(input: {
     }
 
     // An opaque id in the middle of the path is the object the next segment
-    // belongs to (for example `/policies/:id/assignments`); the loaded page
-    // title names the leaf, so the id itself adds no information.
-    if (index < content.length - 1) continue;
+    // belongs to (for example `/policies/:id/assignments`). Show its loaded
+    // name when the page knows it; otherwise the id adds no information and
+    // the leaf title names the page.
+    if (index < content.length - 1) {
+      if (input.resourceName?.trim()) crumbs.push({ label: input.resourceName.trim(), href });
+
+      continue;
+    }
 
     crumbs.push({ label: input.title?.trim() || "Details", href });
   }

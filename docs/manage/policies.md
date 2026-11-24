@@ -4,6 +4,15 @@ A policy is a named container with a priority and one or more configurations. As
 decide which devices receive it; resolution decides which configuration wins when several
 policies apply.
 
+## Policy pages
+
+A policy has four sibling views: **Overview**, **Design**, **Assignments** and
+**Deployment**. The tab strip and breadcrumb on each page link to the others, and the
+breadcrumb names the policy next to **Policies** so you can step back to the list or to a
+sibling view without going through the policy index. Deep links such as
+`/t/:tenantId/policies/:policyId/assignments` open the same view directly and respect
+the reader's permissions.
+
 ## Create a policy
 
 ```bash

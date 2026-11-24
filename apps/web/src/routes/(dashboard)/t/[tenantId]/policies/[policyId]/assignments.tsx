@@ -8,10 +8,12 @@ import {
   ErrorText,
   LinkButton,
   Page,
+  PageBreadcrumbs,
   PageHeader,
   Panel,
   QueryError,
 } from "~/components/mdm/common";
+import { PolicyViewTabs } from "~/components/mdm/policy-view-tabs";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -222,6 +224,7 @@ export default function PolicyAssignmentsPage() {
 
   return (
     <Page>
+      <PageBreadcrumbs resourceName={row()?.name} />
       <PageHeader
         eyebrow="Policy"
         title={`Assignments — ${row()?.name ?? "Policy"}`}
@@ -250,9 +253,14 @@ export default function PolicyAssignmentsPage() {
         }
         actions={
           <LinkButton href={`/t/${params.tenantId}/policies/${params.policyId}`} variant="outline">
-            Back to policy
+            Back to {row()?.name ?? "policy"}
           </LinkButton>
         }
+      />
+
+      <PolicyViewTabs
+        base={`/t/${params.tenantId}/policies/${params.policyId}`}
+        active="assignments"
       />
 
       <QueryError error={policy.error} onRetry={() => void policy.refetch()} />

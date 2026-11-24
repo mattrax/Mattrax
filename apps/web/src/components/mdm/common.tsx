@@ -64,11 +64,15 @@ export function Page(props: { children: JSX.Element; class?: string; wide?: bool
  * landing pages. On narrow screens the middle crumbs collapse to an ellipsis
  * so the trail never wraps to a second row.
  */
-export function PageBreadcrumbs(props: { title?: string; class?: string }) {
+export function PageBreadcrumbs(props: { title?: string; resourceName?: string; class?: string }) {
   const location = useLocation();
 
   const trail = createMemo(() =>
-    buildBreadcrumbs({ pathname: location.pathname, title: props.title }),
+    buildBreadcrumbs({
+      pathname: location.pathname,
+      title: props.title,
+      resourceName: props.resourceName,
+    }),
   );
 
   return (

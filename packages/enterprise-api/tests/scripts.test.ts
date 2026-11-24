@@ -683,17 +683,27 @@ describe("handler enforcement", () => {
     return { db, service, headers: { cookie: "mattrax_session=test" } };
   };
 
-  it("rejects a script mutation without a step-up and writes nothing", async () => {
+  it("creates a script without a step-up", async () => {
     const { db, service, headers } = await context({ stepUp: false });
+
+    const created = await runEffect(service.createScript(request(headers), orgId, scriptValues));
+
+    expect(created).toHaveProperty("id");
+    expect(db.store.script).toHaveLength(1);
+  });
+
+  it("rejects a script edit without a step-up and leaves the script unchanged", async () => {
+    const { db, service, headers } = await context({ stepUp: false });
+    const { id, row } = await create(db);
 
     const failure = await runEffect(
       service
-        .createScript(request(headers), orgId, scriptValues)
+        .patchScript(request(headers), orgId, id, { name: "Changed" })
         .pipe(Effect.catchTag("StepUpRequired", (error) => Effect.succeed(error))),
     );
 
     expect(failure).toBeInstanceOf(StepUpRequired);
-    expect(db.store.script).toHaveLength(0);
+    expect(db.store.script.find((entry: any) => entry.id === id)?.name).toBe(row.name);
     expect(db.store.audit_log).toHaveLength(0);
   });
 

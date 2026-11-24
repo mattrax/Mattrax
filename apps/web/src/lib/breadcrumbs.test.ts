@@ -37,6 +37,24 @@ describe("buildBreadcrumbs", () => {
     ]);
   });
 
+  it("names the policy when the page supplies its loaded name", () => {
+    expect(
+      buildBreadcrumbs({
+        pathname: `${tenant}/policies/policy_123/assignments`,
+        title: "Assignments — Staff policy",
+        resourceName: "Staff policy",
+      }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Policies", href: `${tenant}/policies` },
+      { label: "Staff policy", href: `${tenant}/policies/policy_123` },
+      {
+        label: "Assignments",
+        href: `${tenant}/policies/policy_123/assignments`,
+      },
+    ]);
+  });
+
   it("gives settings sub-pages the section trail without the tenant", () => {
     expect(
       buildBreadcrumbs({

@@ -76,9 +76,12 @@ function SelectItemBox(props: ComponentProps<typeof SelectItem> & { class?: stri
       )}
       {...others}
     >
-      <span class="absolute left-2 flex size-3.5 items-center justify-center">
+      <span class="absolute inset-y-0 left-2 flex items-center justify-center">
         <SelectItemIndicator>
-          <Check class="size-3.5" />
+          {/* Match the checkbox tick: 12px at the same 3px stroke, centred in
+              the row. The icon inherits the row colour so it stays legible in
+              both themes. */}
+          <Check class="size-3 text-foreground" stroke-width={3} />
         </SelectItemIndicator>
       </span>
       {props.children}
