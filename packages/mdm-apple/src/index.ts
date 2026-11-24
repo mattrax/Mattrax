@@ -566,7 +566,9 @@ const scopedConfigurations = (
 
       if (!isAppleMailKind(configuration.kind)) return true;
       const mail = Schema.is(Schema.JsonObject)(configuration.data)
-        ? Option.getOrUndefined(Schema.decodeUnknownOption(AppleMailConfiguration)(configuration.data))
+        ? Option.getOrUndefined(
+            Schema.decodeUnknownOption(AppleMailConfiguration)(configuration.data),
+          )
         : undefined;
 
       if (!mail?.smime) return true;
@@ -823,9 +825,29 @@ const bindByodUserChannel = (
 
     const db = yield* Db;
 
-    const [certificate] = yield* db
-      .select({ byodEnrollmentId: s.scepIssuedCertificate.byodEnrollmentId })
+    const [binding] = yield* db
+      .select({
+        byodId: s.appleByodEnrollment.id,
+        directoryUserId: s.appleByodEnrollment.directoryUserId,
+        managedAppleAccount: s.appleByodEnrollment.managedAppleAccount,
+        appleEnrollmentId: s.appleByodEnrollment.appleEnrollmentId,
+        deviceId: s.appleByodEnrollment.deviceId,
+        channelDirectoryUserId: s.deviceAppleUser.directoryUserId,
+        channelIdentitySource: s.deviceAppleUser.identitySource,
+        channelIdentityUpn: s.deviceAppleUser.identityUpn,
+      })
       .from(s.scepIssuedCertificate)
+      .innerJoin(
+        s.appleByodEnrollment,
+        and(
+          eq(s.scepIssuedCertificate.byodEnrollmentId, s.appleByodEnrollment.id),
+          eq(s.appleByodEnrollment.organizationId, device.organizationId),
+        ),
+      )
+      .leftJoin(
+        s.deviceAppleUser,
+        and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
+      )
       .where(
         and(
           eq(
@@ -837,28 +859,15 @@ const bindByodUserChannel = (
       )
       .limit(1);
 
-    if (!certificate?.byodEnrollmentId) return;
-
-    const [byod] = yield* db
-      .select()
-      .from(s.appleByodEnrollment)
-      .where(
-        and(
-          eq(s.appleByodEnrollment.id, certificate.byodEnrollmentId),
-          eq(s.appleByodEnrollment.organizationId, device.organizationId),
-        ),
-      )
-      .limit(1);
-
-    if (!byod?.directoryUserId) return;
+    if (!binding?.directoryUserId) return;
 
     const reported = (scope.userShortName ?? "").trim().toLowerCase();
 
     if (
       reported &&
       reported.includes("@") &&
-      byod.managedAppleAccount &&
-      reported !== byod.managedAppleAccount
+      binding.managedAppleAccount &&
+      reported !== binding.managedAppleAccount
     ) {
       yield* Effect.logWarning(
         "Refusing to bind a BYOD user channel whose Managed Apple Account does not match its profile",
@@ -867,47 +876,46 @@ const bindByodUserChannel = (
       return;
     }
 
-    const at = now();
-    const [channel] = yield* db
-      .select({
-        directoryUserId: s.deviceAppleUser.directoryUserId,
-        identitySource: s.deviceAppleUser.identitySource,
-        identityUpn: s.deviceAppleUser.identityUpn,
-      })
-      .from(s.deviceAppleUser)
-      .where(
-        and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
-      )
-      .limit(1);
     const bindingChanged =
-      channel?.directoryUserId !== byod.directoryUserId ||
-      channel?.identitySource !== "byod-sign-in" ||
-      channel?.identityUpn !== (byod.managedAppleAccount ?? null);
+      binding.channelDirectoryUserId !== binding.directoryUserId ||
+      binding.channelIdentitySource !== "byod-sign-in" ||
+      binding.channelIdentityUpn !== (binding.managedAppleAccount ?? null);
+    const appleEnrollmentId = scope.enrollmentId ?? binding.appleEnrollmentId;
+    const identifiersChanged =
+      binding.deviceId !== device.id || binding.appleEnrollmentId !== appleEnrollmentId;
 
-    yield* db
-      .update(s.deviceAppleUser)
-      .set({
-        directoryUserId: byod.directoryUserId,
-        identitySource: "byod-sign-in",
-        identityUpn: byod.managedAppleAccount ?? null,
-        identityVerifiedAt: at,
-        // A changed identity changes the declaration set; an unchanged
-        // check-in must not throw away the token and force a full resync.
-        ...(bindingChanged ? { ddmDeclarationsToken: null } : {}),
-        updatedAt: at,
-      })
-      .where(
-        and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
-      );
+    // TokenUpdate runs on every BYOD poll. Once the certificate has bound the
+    // channel and Apple's identifiers are known, there is nothing to persist.
+    if (!bindingChanged && !identifiersChanged) return;
 
-    yield* db
-      .update(s.appleByodEnrollment)
-      .set({
-        deviceId: device.id,
-        appleEnrollmentId: scope.enrollmentId ?? byod.appleEnrollmentId,
-        updatedAt: at,
-      })
-      .where(eq(s.appleByodEnrollment.id, byod.id));
+    const at = now();
+
+    if (bindingChanged)
+      yield* db
+        .update(s.deviceAppleUser)
+        .set({
+          directoryUserId: binding.directoryUserId,
+          identitySource: "byod-sign-in",
+          identityUpn: binding.managedAppleAccount ?? null,
+          identityVerifiedAt: at,
+          // A changed identity changes the declaration set; an unchanged
+          // check-in must not throw away the token and force a full resync.
+          ddmDeclarationsToken: null,
+          updatedAt: at,
+        })
+        .where(
+          and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
+        );
+
+    if (identifiersChanged)
+      yield* db
+        .update(s.appleByodEnrollment)
+        .set({
+          ...(binding.deviceId !== device.id ? { deviceId: device.id } : {}),
+          ...(binding.appleEnrollmentId !== appleEnrollmentId ? { appleEnrollmentId } : {}),
+          updatedAt: at,
+        })
+        .where(eq(s.appleByodEnrollment.id, binding.byodId));
   }).pipe(
     Effect.catch((error) =>
       Effect.logWarning(
@@ -2713,8 +2721,6 @@ const installedLegacyProfiles = (
     return yield* Effect.promise(() =>
       installedProfiles(results.flatMap((result) => (result.ok ? [result.command] : []))),
     );
-
-
   });
 
 export class ManagementBackendEnterpriseLive extends ManagementBackend {
@@ -3037,7 +3043,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             `Legacy policy ${skipped.policyId}/${skipped.kind} not delivered to ${device.id}: ${skipped.reason}`,
           );
 
-        const installed = policyInstalledProfiles(yield* installedLegacyProfiles(device.id, authSecret ?? ""));
+        const installed = policyInstalledProfiles(
+          yield* installedLegacyProfiles(device.id, authSecret ?? ""),
+        );
 
         const changes = yield* Effect.promise(() =>
           planLegacyProfileChanges(built.profiles, installed),
@@ -3068,7 +3076,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       at: Date,
     ): Effect.Effect<void, unknown, Db> =>
       Effect.gen(function* () {
-        const installed = policyInstalledProfiles(yield* installedLegacyProfiles(device.id, authSecret ?? ""));
+        const installed = policyInstalledProfiles(
+          yield* installedLegacyProfiles(device.id, authSecret ?? ""),
+        );
 
         for (const identifier of installed.keys())
           yield* queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at);
@@ -7578,10 +7588,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   )
                     return false;
 
-                  const effective = yield* resolveEffectivePolicyForDevice(db, {
-                    id: assetToken.deviceId,
-                    organizationId: device.organizationId,
-                  }, { includeUserScoped: true });
+                  const effective = yield* resolveEffectivePolicyForDevice(
+                    db,
+                    {
+                      id: assetToken.deviceId,
+                      organizationId: device.organizationId,
+                    },
+                    { includeUserScoped: true },
+                  );
 
                   return effective.configurations.some(
                     (configuration) =>
@@ -7602,9 +7616,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               ).pipe(Effect.mapError(internal));
 
               return buildAssetContent(configRow, {
-                material: materials.get(
-                  certificateMaterialKey(configRow.policyId, configRow.kind),
-                ),
+                material: materials.get(certificateMaterialKey(configRow.policyId, configRow.kind)),
               });
             }
 

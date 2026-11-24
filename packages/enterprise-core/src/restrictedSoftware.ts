@@ -36,6 +36,12 @@ export type ResolvedRestrictedSoftwareRule = {
   readonly capability: ReturnType<typeof restrictedSoftwareCapability>;
 };
 
+/** Tenant rules and assignments shared by all devices in one policy sync. */
+export type RestrictedSoftwareRuleSet = {
+  readonly rules: ReadonlyArray<RuleRow>;
+  readonly assignments: ReadonlyArray<AssignmentRow>;
+};
+
 /**
  * Only macOS runs mattraxd. iOS/iPadOS share the `apple` platform value but
  * have no agent, so treating them as agent-enforceable would be a false claim.
@@ -84,7 +90,13 @@ const writeDeviceAudit = (
  */
 export const resolveRestrictedSoftwareForDevice = (
   db: EnterpriseDb,
-  input: { readonly organizationId: string; readonly deviceId: string },
+  input: {
+    readonly organizationId: string;
+    readonly deviceId: string;
+    readonly device?: typeof device.$inferSelect;
+    readonly groupIds?: ReadonlySet<string>;
+  },
+  preloaded?: RestrictedSoftwareRuleSet,
 ): Effect.Effect<
   {
     readonly device: typeof device.$inferSelect | null;
@@ -93,45 +105,60 @@ export const resolveRestrictedSoftwareForDevice = (
   unknown
 > =>
   Effect.gen(function* () {
-    const [row] = yield* db
-      .select()
-      .from(device)
-      .where(and(eq(device.id, input.deviceId), eq(device.organizationId, input.organizationId)))
-      .limit(1);
+    let row =
+      input.device?.id === input.deviceId && input.device.organizationId === input.organizationId
+        ? input.device
+        : undefined;
+
+    if (!row) {
+      const [found] = yield* db
+        .select()
+        .from(device)
+        .where(and(eq(device.id, input.deviceId), eq(device.organizationId, input.organizationId)))
+        .limit(1);
+      row = found;
+    }
 
     if (!row) return { device: null, rules: [] };
 
-    const rules = yield* db
-      .select()
-      .from(restrictedSoftware)
-      .where(
-        and(
-          eq(restrictedSoftware.organizationId, input.organizationId),
-          eq(restrictedSoftware.platform, row.proto),
-          eq(restrictedSoftware.enabled, true),
-        ),
-      );
+    const rules =
+      preloaded?.rules ??
+      (yield* db
+        .select()
+        .from(restrictedSoftware)
+        .where(
+          and(
+            eq(restrictedSoftware.organizationId, input.organizationId),
+            eq(restrictedSoftware.platform, row.proto),
+            eq(restrictedSoftware.enabled, true),
+          ),
+        ));
 
     if (rules.length === 0) return { device: row, rules: [] };
 
-    const assignments = yield* db
-      .select()
-      .from(restrictedSoftwareAssignment)
-      .where(
-        and(
-          eq(restrictedSoftwareAssignment.organizationId, input.organizationId),
-          inArray(
-            restrictedSoftwareAssignment.restrictedSoftwareId,
-            rules.map((rule) => rule.id),
+    const assignments =
+      preloaded?.assignments ??
+      (yield* db
+        .select()
+        .from(restrictedSoftwareAssignment)
+        .where(
+          and(
+            eq(restrictedSoftwareAssignment.organizationId, input.organizationId),
+            inArray(
+              restrictedSoftwareAssignment.restrictedSoftwareId,
+              rules.map((rule) => rule.id),
+            ),
           ),
-        ),
-      );
+        ));
 
-    const memberships = yield* db
-      .select({ groupId: groupDevice.groupId })
-      .from(groupDevice)
-      .where(eq(groupDevice.deviceId, input.deviceId));
-    const groupIds = new Set(memberships.map((membership) => membership.groupId));
+    const groupIds =
+      input.groupIds ??
+      new Set(
+        (yield* db
+          .select({ groupId: groupDevice.groupId })
+          .from(groupDevice)
+          .where(eq(groupDevice.deviceId, input.deviceId))).map((membership) => membership.groupId),
+      );
 
     const byRule = new Map<string, AssignmentRow[]>();
 
@@ -530,18 +557,22 @@ export const markAndroidRestrictedSoftwarePolicyDelivered = (
   db: EnterpriseDb,
   input: {
     readonly organizationId: string;
-    readonly deviceId: string;
+    readonly deviceIds: ReadonlyArray<string>;
     readonly at: Date;
   },
 ): Effect.Effect<number, unknown> =>
   Effect.gen(function* () {
+    const deviceIds = [...new Set(input.deviceIds)];
+
+    if (deviceIds.length === 0) return 0;
+
     const violations = yield* db
       .select()
       .from(restrictedSoftwareViolation)
       .where(
         and(
           eq(restrictedSoftwareViolation.organizationId, input.organizationId),
-          eq(restrictedSoftwareViolation.deviceId, input.deviceId),
+          inArray(restrictedSoftwareViolation.deviceId, deviceIds),
           eq(restrictedSoftwareViolation.platform, "android"),
           eq(restrictedSoftwareViolation.status, "open"),
         ),
@@ -581,7 +612,7 @@ export const markAndroidRestrictedSoftwarePolicyDelivered = (
 
       yield* writeDeviceAudit(db, {
         organizationId: input.organizationId,
-        deviceId: input.deviceId,
+        deviceId: violation.deviceId,
         platform: "android",
         action: "restricted_software.enforced",
         violationId: violation.id,

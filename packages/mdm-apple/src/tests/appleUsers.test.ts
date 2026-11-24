@@ -61,6 +61,29 @@ const appleUser = (overrides: Row = {}) => ({
   ...overrides,
 });
 
+const byodEnrollment = (overrides: Row = {}) => ({
+  id: "byod-1",
+  organizationId: "org-1",
+  managedAppleAccount: "student@example.test",
+  requestHash: "request-hash",
+  directoryUserId: "dir-1",
+  deviceId: "device-1",
+  appleEnrollmentId: "enrollment-1",
+  challengeExpiresAt: now,
+  createdAt: now,
+  updatedAt: now,
+  ...overrides,
+});
+
+const byodCertificate = (overrides: Row = {}) => ({
+  serial: "aa11",
+  organizationId: "org-1",
+  byodEnrollmentId: "byod-1",
+  notAfter: new Date("2099-01-01T00:00:00.000Z"),
+  createdAt: now,
+  ...overrides,
+});
+
 const command = (overrides: Row = {}) => ({
   id: "command-1",
   organizationId: "org-1",
@@ -376,6 +399,7 @@ describe("Apple user channel", () => {
           serial: "aa11",
           organizationId: "org-1",
           byodEnrollmentId: "byod-1",
+          deviceId: "device-1",
           notAfter: new Date("2099-01-01T00:00:00.000Z"),
           createdAt: now,
         },
@@ -448,6 +472,7 @@ describe("Apple user channel", () => {
           serial: "aa11",
           organizationId: "org-1",
           byodEnrollmentId: "byod-1",
+          deviceId: "device-1",
           notAfter: new Date("2099-01-01T00:00:00.000Z"),
           createdAt: now,
         },
@@ -482,7 +507,7 @@ describe("Apple user channel", () => {
     expect(channel?.directoryUserId ?? null).toBeNull();
   });
 
-  it("does not reset the declaration token when the BYOD binding is unchanged", async () => {
+  it("performs no binding writes when the BYOD binding and identifiers are unchanged", async () => {
     const account = "student@example.test";
 
     const { db, backend } = setup({
@@ -494,6 +519,7 @@ describe("Apple user channel", () => {
           directoryUserId: "dir-1",
           identitySource: "byod-sign-in",
           identityUpn: account,
+          identityVerifiedAt: now,
           ddmDeclarationsToken: "existing-token",
         }),
       ],
@@ -516,6 +542,8 @@ describe("Apple user channel", () => {
           managedAppleAccount: account,
           requestHash: "request-hash",
           directoryUserId: "dir-1",
+          deviceId: "device-1",
+          appleEnrollmentId: "enrollment-1",
           challengeExpiresAt: now,
           createdAt: now,
           updatedAt: now,
@@ -526,6 +554,7 @@ describe("Apple user channel", () => {
           serial: "aa11",
           organizationId: "org-1",
           byodEnrollmentId: "byod-1",
+          deviceId: "device-1",
           notAfter: new Date("2099-01-01T00:00:00.000Z"),
           createdAt: now,
         },
@@ -539,6 +568,7 @@ describe("Apple user channel", () => {
             userId: "enrollment-user-1",
             userShortName: account,
             identityCertificateSerial: "aa11",
+            enrollmentId: "enrollment-1",
           },
           "user-enrollment",
         ),
@@ -550,6 +580,7 @@ describe("Apple user channel", () => {
           channel: "user" as const,
           userId: "enrollment-user-1",
           userShortName: account,
+          enrollmentId: "enrollment-1",
         },
       ),
     );
@@ -557,8 +588,148 @@ describe("Apple user channel", () => {
     expect(dbRows(db, tableName(schema.deviceAppleUser))[0]).toMatchObject({
       userId: "enrollment-user-1",
       directoryUserId: "dir-1",
+      identityVerifiedAt: now,
       ddmDeclarationsToken: "existing-token",
     });
+    expect(dbRows(db, tableName(schema.appleByodEnrollment))[0]?.updatedAt).toEqual(now);
+    expect(
+      db.queries.filter(
+        (query) =>
+          query.operation === "update" &&
+          (query.table === tableName(schema.deviceAppleUser) ||
+            query.table === tableName(schema.appleByodEnrollment)),
+      ),
+    ).toEqual([]);
+    expect(
+      db.queries.filter(
+        (query) =>
+          query.operation === "select" && query.table === tableName(schema.scepIssuedCertificate),
+      ),
+    ).toContainEqual({
+      operation: "select",
+      table: tableName(schema.scepIssuedCertificate),
+      joins: [tableName(schema.appleByodEnrollment), tableName(schema.deviceAppleUser)],
+    });
+  });
+
+  it("clears declarations when an established BYOD channel changes identity", async () => {
+    const account = "student@example.test";
+    const { db, backend } = setup({
+      [tableName(schema.device)]: [deviceRow("device-1", "udid-1")],
+      [tableName(schema.deviceApple)]: [appleState("device-1", "user")],
+      [tableName(schema.deviceAppleUser)]: [
+        appleUser({
+          userId: "enrollment-user-1",
+          directoryUserId: "dir-old",
+          identitySource: "manual",
+          identityUpn: "old@example.test",
+          ddmDeclarationsToken: "existing-token",
+        }),
+      ],
+      [tableName(schema.appleByodEnrollment)]: [byodEnrollment()],
+      [tableName(schema.scepIssuedCertificate)]: [byodCertificate({ deviceId: "device-1" })],
+    });
+
+    await run(
+      backend.appleDeviceEvent(
+        userScope(
+          {
+            userId: "enrollment-user-1",
+            userShortName: account,
+            identityCertificateSerial: "aa11",
+            enrollmentId: "enrollment-1",
+          },
+          "user-enrollment",
+        ),
+        {
+          _tag: "TokenUpdate" as const,
+          pushToken: "62796f64",
+          pushMagic: "byod-magic",
+          topic: "com.apple.mgmt.External.org-1",
+          channel: "user" as const,
+          userId: "enrollment-user-1",
+          enrollmentId: "enrollment-1",
+        },
+      ),
+    );
+
+    expect(dbRows(db, tableName(schema.deviceAppleUser))[0]).toMatchObject({
+      directoryUserId: "dir-1",
+      identitySource: "byod-sign-in",
+      identityUpn: account,
+      identityVerifiedAt: expect.any(Date),
+      ddmDeclarationsToken: null,
+    });
+    expect(
+      db.queries.filter(
+        (query) =>
+          query.operation === "update" &&
+          (query.table === tableName(schema.deviceAppleUser) ||
+            query.table === tableName(schema.appleByodEnrollment)),
+      ),
+    ).toMatchObject([{ operation: "update", table: tableName(schema.deviceAppleUser) }]);
+  });
+
+  it("binds missing BYOD identifiers without rewriting an unchanged identity", async () => {
+    const account = "student@example.test";
+    const { db, backend } = setup({
+      [tableName(schema.device)]: [deviceRow("device-1", "udid-1")],
+      [tableName(schema.deviceApple)]: [appleState("device-1", "user")],
+      [tableName(schema.deviceAppleUser)]: [
+        appleUser({
+          userId: "enrollment-user-1",
+          directoryUserId: "dir-1",
+          identitySource: "byod-sign-in",
+          identityUpn: account,
+          identityVerifiedAt: now,
+          ddmDeclarationsToken: "existing-token",
+        }),
+      ],
+      [tableName(schema.appleByodEnrollment)]: [
+        byodEnrollment({ deviceId: null, appleEnrollmentId: null }),
+      ],
+      [tableName(schema.scepIssuedCertificate)]: [byodCertificate({ deviceId: "device-1" })],
+    });
+
+    await run(
+      backend.appleDeviceEvent(
+        userScope(
+          {
+            userId: "enrollment-user-1",
+            userShortName: account,
+            identityCertificateSerial: "aa11",
+            enrollmentId: "enrollment-1",
+          },
+          "user-enrollment",
+        ),
+        {
+          _tag: "TokenUpdate" as const,
+          pushToken: "62796f64",
+          pushMagic: "byod-magic",
+          topic: "com.apple.mgmt.External.org-1",
+          channel: "user" as const,
+          userId: "enrollment-user-1",
+          enrollmentId: "enrollment-1",
+        },
+      ),
+    );
+
+    expect(dbRows(db, tableName(schema.appleByodEnrollment))[0]).toMatchObject({
+      deviceId: "device-1",
+      appleEnrollmentId: "enrollment-1",
+    });
+    expect(dbRows(db, tableName(schema.deviceAppleUser))[0]).toMatchObject({
+      identityVerifiedAt: now,
+      ddmDeclarationsToken: "existing-token",
+    });
+    expect(
+      db.queries.filter(
+        (query) =>
+          query.operation === "update" &&
+          (query.table === tableName(schema.deviceAppleUser) ||
+            query.table === tableName(schema.appleByodEnrollment)),
+      ),
+    ).toMatchObject([{ operation: "update", table: tableName(schema.appleByodEnrollment) }]);
   });
 
   it("removes only the checked-out user", async () => {
