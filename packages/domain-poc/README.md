@@ -207,3 +207,5 @@ MySQL self-host. A full refactor of "the API and management layer" would be a
 multi-quarter rewrite with a permanent event-versioning tax; a strangler port of
 one bounded context is realistic and would tell us quickly whether the trade is
 worth it.
+
+See `SCALING.md` for the write/read paths, measured framework overhead, storage layout, the MySQL question, Durable Object scope, dashboard-wide streaming, and client idempotency/retry recipes.
