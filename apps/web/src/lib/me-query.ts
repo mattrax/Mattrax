@@ -58,7 +58,10 @@ export function emailVerificationGate(input: EmailVerificationGateInput): EmailV
   // that request can still turn a false row into the verified one.
   if (input.meFetching) return "wait";
 
-  if (input.meVerified === false || input.sessionVerified === false) return "verify";
+  // Only an explicit unverified /me row may send the account to /verify-email.
+  // A missing row (SSR/backoff/error) is a wait: the session claim alone can be
+  // a stale sign-in snapshot, and a redirect there would bounce a verified user.
+  if (input.meVerified === false) return "verify";
 
   return "wait";
 }

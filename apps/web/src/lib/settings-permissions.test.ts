@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  firstReadableSettingsTab,
   MIGRATION_ACCESS_PERMISSIONS,
   MIGRATION_MOVE_PERMISSIONS,
   permissionForTenantPath,
@@ -25,6 +26,37 @@ describe("settings tab permissions", () => {
 
   it("does not gate General on backups", () => {
     expect(settingsTabPermission("")).toBe("tenant.read");
+  });
+});
+
+
+describe("first readable settings tab", () => {
+  const allowed = (permissions: ReadonlyArray<string>) => (permission: string) =>
+    permissions.includes(permission);
+
+  it("sends a devices-only role to the cohort tracker", () => {
+    expect(firstReadableSettingsTab(allowed(["devices.read"]), "acme")).toBe(
+      "/t/acme/settings/migration",
+    );
+  });
+
+  it("sends a backups-only role to backups", () => {
+    expect(firstReadableSettingsTab(allowed(["backups.read"]), "acme")).toBe(
+      "/t/acme/settings/backups",
+    );
+  });
+
+  it("sends export/import-only roles to the deployment tools", () => {
+    expect(firstReadableSettingsTab(allowed(["tenant.export"]), "acme")).toBe(
+      "/t/acme/settings/migration/export",
+    );
+    expect(firstReadableSettingsTab(allowed(["tenant.import"]), "acme")).toBe(
+      "/t/acme/settings/migration/export",
+    );
+  });
+
+  it("returns nothing for a role without any settings permission", () => {
+    expect(firstReadableSettingsTab(allowed([]), "acme")).toBeUndefined();
   });
 });
 

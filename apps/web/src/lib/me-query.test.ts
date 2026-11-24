@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryObserver } from "@tanstack/solid-query";
+import type { MeResponse } from "@mattrax/enterprise-domain/client";
+import { ME_QUERY_KEY } from "./me-keys";
+import { buildMeQueryOptions, meQuerySeed } from "./me-options";
 import {
   emailVerificationGate,
   ME_QUERY_GC_TIME,
   ME_QUERY_STALE_TIME,
   meQueryCachePolicy,
 } from "./me-query";
-import { meQueryOptions } from "./enterprise";
 
 /**
  * Regression guard for #631. An observer is what every page creates through
@@ -14,7 +16,7 @@ import { meQueryOptions } from "./enterprise";
  * With the old zero stale window each mount fetched again. This mirrors that
  * sequence against the real query core and the policy meQueryOptions uses.
  */
-const ME_KEY = ["enterprise", "me"] as const;
+const ME_KEY = ME_QUERY_KEY;
 
 const makeClient = () =>
   new QueryClient({
@@ -107,11 +109,26 @@ describe("me query cache policy", () => {
     expect(policy.gcTime).toBeGreaterThan(policy.staleTime);
   });
 
-  it("is actually wired into meQueryOptions", () => {
-    const options = meQueryOptions("user-1");
+  it("is actually wired into the shared /me options", () => {
+    const options = buildMeQueryOptions({
+      userId: "user-1",
+      enabled: true,
+      fetchMe: async () => ({}) as MeResponse,
+    });
 
     expect(options.staleTime).toBe(ME_QUERY_STALE_TIME);
     expect(options.gcTime).toBe(ME_QUERY_GC_TIME);
+  });
+
+  it("marks the SSR preload stale once but keeps a stored entry's age", () => {
+    const data = {} as MeResponse;
+
+    expect(meQuerySeed(data, undefined)).toEqual({ data, initialDataUpdatedAt: 0 });
+    expect(meQuerySeed(undefined, { userId: "user-1", data, updatedAt: 123 })).toEqual({
+      data,
+      initialDataUpdatedAt: 123,
+    });
+    expect(meQuerySeed(undefined, undefined)).toBeUndefined();
   });
 });
 
@@ -155,6 +172,15 @@ describe("email verification gate", () => {
       emailVerificationGate({
         meVerified: undefined,
         sessionVerified: undefined,
+        meFetching: false,
+      }),
+    ).toBe("wait");
+
+    // A stale session claim alone must not redirect when /me has no row yet.
+    expect(
+      emailVerificationGate({
+        meVerified: undefined,
+        sessionVerified: false,
         meFetching: false,
       }),
     ).toBe("wait");

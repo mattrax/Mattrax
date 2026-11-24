@@ -146,7 +146,9 @@ test.describe("dashboard shell layout", () => {
     // The child chunk is still held: the settings layout must keep the rail and
     // the tenant profile draft mounted instead of handing the whole pane to a
     // loading fallback (or the shell boot state).
-    await expect(page.getByRole("heading", { name: "General", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^(General|Migration)$/ }).first(),
+    ).toBeVisible();
     await expect(tabs).toBeVisible();
     await expect(saveBar).toContainText("Unsaved tenant changes");
     await expect(page.locator('[data-slot="app-header"]')).toHaveCount(1);
@@ -157,7 +159,9 @@ test.describe("dashboard shell layout", () => {
     await expect(saveBar).toContainText("Unsaved tenant changes");
   });
 
-  test("does not refetch /me across sidebar navigations", async ({ page }) => {
+  test("revalidates the cold preload once and does not refetch /me on navigation", async ({
+    page,
+  }) => {
     await bootstrapTenant(page, "Me Navigation Tenant");
     await page.waitForLoadState("networkidle");
 
@@ -166,6 +170,13 @@ test.describe("dashboard shell layout", () => {
       if (new URL(request.url()).pathname === "/api/v1/me") meRequests += 1;
     });
 
+    // A cold document paints from the SSR preload, then revalidates it exactly
+    // once because its permission claims can be minutes old.
+    await page.reload({ waitUntil: "networkidle" });
+    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+    expect(meRequests).toBe(1);
+
+    meRequests = 0;
     await primaryNav(page).getByRole("link", { name: "Groups", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Groups", exact: true })).toBeVisible();
 

@@ -169,8 +169,19 @@ mounts ten query observers and asserts how many fetches the policy allows:
 | Before (`staleTime: 0`)  | 10                                 |
 | After (60 s)            | 1                                  |
 
-The shell-layout browser suite separately counts `/api/v1/me` requests across
-sidebar navigations after the shell has loaded.
+The shell-layout browser suite separately checks that a cold document makes
+exactly one `/api/v1/me` request to revalidate the preload, then zero across
+sidebar navigations.
+
+Email verification has one deliberate exception: the dashboard gate waits while
+`/me` is missing or fetching and only redirects when the row explicitly says
+`emailVerified: false`. A refreshed session claim wins over a stale row, so a
+just-verified account is not bounced back to `/verify-email`.
+
+Auth and landing pages do not import the query client. The verification page
+loads the refresh helper and query client dynamically only when a signed-in
+account completes verification, keeping the full enterprise API module out of
+the public auth chunk.
 
 ### Measured and rejected
 

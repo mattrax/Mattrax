@@ -1,5 +1,7 @@
 import { useLocation, useParams } from "@solidjs/router";
+import { Loading } from "solid-js";
 import type { ParentProps } from "solid-js";
+import { LoadingState } from "@mattrax/ui";
 import { SectionTabs } from "~/components/settings/section-tabs";
 import { useCan } from "~/lib/permissions";
 
@@ -33,7 +35,17 @@ export default function IdentitySettingsLayout(props: ParentProps) {
           href: tab.id ? `${base()}/${tab.id}` : base(),
         }))}
       />
-      <div class="flex min-w-0 flex-col pt-5">{props.children}</div>
+      <div class="flex min-w-0 flex-col pt-5">
+        <Loading
+          fallback={
+            <div class="flex min-h-40 items-center justify-center py-12">
+              <LoadingState label="Loading identity section…" size={18} />
+            </div>
+          }
+        >
+          {props.children}
+        </Loading>
+      </div>
     </div>
   );
 }

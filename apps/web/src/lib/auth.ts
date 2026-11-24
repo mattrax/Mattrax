@@ -14,6 +14,7 @@ import { getPreloadedSession } from "~/lib/session-store";
 import type { PreloadedSession as Session } from "~/lib/session-store";
 import { capturePostHog } from "~/lib/posthog";
 import { clearMeCache } from "~/lib/me-cache";
+import { resetMePreload } from "~/lib/me-preload";
 import { clearSessionPresence } from "~/lib/session-presence";
 
 type AuthUser = {
@@ -320,7 +321,12 @@ function commitSession(session: Session | null): void {
   // session cookie and expires server-side when that cookie goes away.
   clearMeCache();
 
-  if (session === null) clearSessionPresence();
+  if (session === null) {
+    // A sign-out must not leave this tab's preloaded document payload around to
+    // seed a re-sign-in. A refresh/MFA commit for the same account keeps it.
+    resetMePreload();
+    clearSessionPresence();
+  }
 }
 
 const revealOf = <S extends Schema.ConstraintDecoder<unknown>>(

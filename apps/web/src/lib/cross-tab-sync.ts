@@ -1,6 +1,7 @@
 import { Option, Schema } from "effect";
 import type { QueryClient } from "@tanstack/solid-query";
 import { clearMeCache } from "~/lib/me-cache";
+import { resetMePreload } from "~/lib/me-preload";
 
 /**
  * Cross-tab query synchronisation.
@@ -282,8 +283,10 @@ export const applyCrossTabMessage = (target: CrossTabCache, message: CrossTabMes
     case "reset": {
       if (message.tenantId === null) {
         // A full reset is a sign-out (or cache drop) in another tab. Drop the
-        // persisted shell too so re-signing in does not seed stale initial data.
+        // persisted shell and this tab's document preload too so re-signing in
+        // does not seed stale initial data.
         clearMeCache();
+        resetMePreload();
         target.clear();
       } else {
         target.removeQueries({

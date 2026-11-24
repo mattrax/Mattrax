@@ -13,6 +13,8 @@ const CachedMe = Schema.Struct({
 
 type CachedMe = typeof CachedMe.Type;
 
+export type MeCacheEntry = CachedMe;
+
 const decodeCachedMe = Schema.decodeUnknownOption(CachedMe);
 
 /**
@@ -24,18 +26,6 @@ const decodeCachedMe = Schema.decodeUnknownOption(CachedMe);
  */
 let lastRaw: string | null | undefined;
 let lastDecoded: CachedMe | undefined;
-
-/**
- * Module-level query state (the SSR preload and its persist marker) can outlive
- * a sign-out in the same tab. Listeners registered here reset that state when
- * the persisted cache is cleared, so a re-sign-in never seeds stale initial
- * data for the same account.
- */
-const clearListeners = new Set<() => void>();
-
-export function onMeCacheClear(listener: () => void): void {
-  clearListeners.add(listener);
-}
 
 const decodeStored = (raw: string | null): CachedMe | undefined => {
   if (raw === lastRaw) return lastDecoded;
@@ -119,13 +109,5 @@ export function clearMeCache(): void {
   } finally {
     lastRaw = null;
     lastDecoded = undefined;
-
-    for (const listener of clearListeners) {
-      try {
-        listener();
-      } catch {
-        // A reset listener must not break sign-out.
-      }
-    }
   }
 }

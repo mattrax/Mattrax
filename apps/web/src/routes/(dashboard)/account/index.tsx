@@ -104,7 +104,7 @@ export default function AccountPage() {
 
       setSearchParams({ emailToken: undefined }, { replace: true });
       await session().refetch();
-      await refreshMeAfterEmailVerification(queryClient);
+      await refreshMeAfterEmailVerification(queryClient, { optimistic: true });
     })();
   });
 

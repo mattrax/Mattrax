@@ -7,8 +7,6 @@ import { Match } from "effect";
 import { createSignal, onSettled, Show } from "solid-js";
 import { EmailCodeForm } from "~/components/email-code-form";
 import { authClient } from "~/lib/auth";
-import { refreshMeAfterEmailVerification } from "~/lib/me-refresh";
-import { queryClient } from "~/lib/query-client";
 import { Spinner } from "~/components/ui";
 
 const primaryLink =
@@ -69,9 +67,18 @@ export default function VerifyEmailPage() {
 
       await session().refetch();
 
-      // The link may be opened without a session; there is no /me to refresh
-      // until the account signs in.
-      if (session().data?.user) await refreshMeAfterEmailVerification(queryClient);
+      // The link may be opened without a session, and a token can belong to a
+      // different account than the one signed in here. Refresh only the signed-
+      // in account, and never optimistically patch its row: the session claim
+      // plus the refetched /me decide whether this account is verified.
+      if (session().data?.user) {
+        const [{ refreshMeAfterEmailVerification }, { queryClient }] = await Promise.all([
+          import("~/lib/me-refresh"),
+          import("~/lib/query-client"),
+        ]);
+
+        await refreshMeAfterEmailVerification(queryClient);
+      }
 
       setTokenStatus("ok");
       setMessage("Your email address is verified.");
@@ -176,7 +183,15 @@ export default function VerifyEmailPage() {
                     email={user().email}
                     onVerified={async () => {
                       await session().refetch();
-                      await refreshMeAfterEmailVerification(queryClient);
+                      const [{ refreshMeAfterEmailVerification }, { queryClient }] =
+                        await Promise.all([
+                          import("~/lib/me-refresh"),
+                          import("~/lib/query-client"),
+                        ]);
+
+                      // The code proves this session's address, so it is safe to
+                      // optimistically mark the row before the refetch lands.
+                      await refreshMeAfterEmailVerification(queryClient, { optimistic: true });
 
                       // Defer past the query-cache write: navigation issued in
                       // the same tick is dropped by the router transition.

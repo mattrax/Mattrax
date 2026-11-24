@@ -16,6 +16,7 @@ import { meQueryOptions } from "~/lib/enterprise";
 import { emailVerificationGate } from "~/lib/me-query";
 import { errorTag, raisedFailure } from "~/lib/errors";
 import { clearMeCache } from "~/lib/me-cache";
+import { resetMePreload } from "~/lib/me-preload";
 import { reportGlobalError } from "~/lib/global-errors";
 import { syncPostHogTenant, syncPostHogUser } from "~/lib/posthog";
 import { clearSessionPresence, readSessionPresence } from "~/lib/session-presence";
@@ -139,6 +140,7 @@ function DashboardLayout(props: ParentProps) {
       const login = () => {
         clearSessionPresence();
         clearMeCache();
+        resetMePreload();
         queryClient.clear();
         // Every tab shares the session cookie, so a sign-out must drop the
         // other tabs' caches too rather than leaving stale device data on screen.
@@ -250,10 +252,19 @@ function DashboardLayout(props: ParentProps) {
               {props.children}
             </AppShell>
             {/* Global interaction surfaces stay outside the shell's content
-                loading boundary: a route chunk must not unmount an open palette
-                or step-up dialog. */}
-            <CommandPaletteLauncher />
-            <StepUpDialog />
+                loading boundary, but own their errors: a palette or dialog
+                failure must not replace the whole dashboard. */}
+            <Errored
+              fallback={() => (
+                <p role="alert" class="sr-only">
+                  The command palette or step-up dialog is unavailable. Reload the page to try
+                  again.
+                </p>
+              )}
+            >
+              <CommandPaletteLauncher />
+              <StepUpDialog />
+            </Errored>
           </>
         </Show>
       )}
