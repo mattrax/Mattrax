@@ -51,9 +51,9 @@ const serve = async (api: ApiRuntime): Promise<string> => {
   return `http://127.0.0.1:${address.port}`;
 };
 
-const collect = (url: string) =>
+const collect = (url: string, headers?: Record<string, string>) =>
   new Promise<{ status: number | undefined; body: string; failed: boolean }>((resolve) => {
-    const outgoing = request(url, (response) => {
+    const outgoing = request(url, { headers }, (response) => {
       let body = "";
       let failed = false;
       response.on("data", (chunk) => {
@@ -84,6 +84,27 @@ const runtime = (fetch: ApiRuntime["fetch"]): ApiRuntime => ({
 });
 
 describe("Node Effect HTTP bridge", () => {
+  it("overwrites a caller-forged internal peer address with the real socket peer", async () => {
+    let observedPeer: string | null = null;
+    let observedCertificate: string | null = null;
+    const url = await serve(
+      runtime(async (incoming) => {
+        observedPeer = incoming.headers.get("x-mattrax-peer-address");
+        observedCertificate = incoming.headers.get("x-device-identity-certificate");
+
+        return new Response("ok");
+      }),
+    );
+
+    await collect(url, {
+      "x-mattrax-peer-address": "10.0.0.2",
+      "x-device-identity-certificate": "CN=device-dummy,OU=org-dummy",
+    });
+
+    expect(observedPeer).toBe("127.0.0.1");
+    expect(observedCertificate).toBe("CN=device-dummy,OU=org-dummy");
+  });
+
   it("returns one bounded error response when fetching fails before headers", async () => {
     const url = await serve(
       runtime(async () => {

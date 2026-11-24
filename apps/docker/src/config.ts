@@ -35,6 +35,14 @@ export type RuntimeConfig = Schema.Schema.Type<typeof RuntimeConfig>;
 
 /** Validate every host setting before importing the API or running migrations. */
 export const runtimeConfigFromEnv = (source: NodeJS.ProcessEnv): RuntimeConfig => {
+  if (
+    source.TRUST_DEVICE_IDENTITY_HEADERS?.trim() === "1" &&
+    !source.TRUSTED_DEVICE_IDENTITY_PEERS?.trim()
+  )
+    throw new Error(
+      "TRUSTED_DEVICE_IDENTITY_PEERS is required when TRUST_DEVICE_IDENTITY_HEADERS=1",
+    );
+
   const skipMigrations = /^(1|true|yes|on)$/i.test(source.SKIP_MIGRATIONS?.trim() ?? "");
   const config = Schema.decodeUnknownSync(RuntimeConfig)({
     host: source.HOST?.trim() || "0.0.0.0",

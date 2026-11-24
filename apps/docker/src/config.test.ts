@@ -10,6 +10,15 @@ describe("self-hosted compose configuration", () => {
     for (const name of ["MATTRAX_BRAND_NAME", "MATTRAX_BRAND_LOGO_URL", "MATTRAX_BRAND_COLOR"])
       expect(compose).toContain(`${name}: \${${name}:-}`);
   });
+
+  it("publishes the backend on loopback by default", () => {
+    expect(compose).toContain('- "${MATTRAX_BIND_ADDRESS:-127.0.0.1}:8080:8080"');
+    expect(compose).not.toContain('- "8080:8080"');
+  });
+
+  it("passes the explicit trusted peer allowlist without inventing a default", () => {
+    expect(compose).toContain("TRUSTED_DEVICE_IDENTITY_PEERS: ${TRUSTED_DEVICE_IDENTITY_PEERS:-}");
+  });
 });
 
 const base = {
@@ -36,6 +45,22 @@ describe("self-host runtime configuration", () => {
 
   it("parses the migration opt-out", () => {
     expect(runtimeConfigFromEnv({ ...base, SKIP_MIGRATIONS: "true" }).skipMigrations).toBe(true);
+  });
+
+  it("fails before startup when trusted identity headers have no trusted peer", () => {
+    expect(() => runtimeConfigFromEnv({ ...base, TRUST_DEVICE_IDENTITY_HEADERS: "1" })).toThrow(
+      /TRUSTED_DEVICE_IDENTITY_PEERS is required/,
+    );
+  });
+
+  it("starts with trusted identity headers when the proxy peer is explicit", () => {
+    expect(
+      runtimeConfigFromEnv({
+        ...base,
+        TRUST_DEVICE_IDENTITY_HEADERS: "1",
+        TRUSTED_DEVICE_IDENTITY_PEERS: "127.0.0.1,::1",
+      }).port,
+    ).toBe(8080);
   });
 
   it.each([

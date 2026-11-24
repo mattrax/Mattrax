@@ -113,8 +113,13 @@ volume. Check it with `curl http://127.0.0.1:8080/api/ready` or
 
 ## Reverse proxy
 
-TLS is terminated by a reverse proxy in front of port `8080`. The required
-configuration is:
+TLS is terminated by a reverse proxy in front of port `8080`. Compose publishes
+the backend on `127.0.0.1` by default, so a proxy on the same host can reach it
+without exposing it to other networks. If the proxy runs on another host, set
+`MATTRAX_BIND_ADDRESS` to a private host interface and restrict that interface
+with a firewall; do not publish it on a public address.
+
+The required proxy configuration is:
 
 ```nginx
 server {
@@ -149,8 +154,21 @@ server {
 ```
 
 Set `TRUST_DEVICE_IDENTITY_HEADERS=1` **only** when the proxy verifies device
-certificates and overwrites the headers as above. Exposing the container without
-that proxy would let a caller claim any tenant by setting the certificate OU.
+certificates and overwrites the headers as above. Also set
+`TRUSTED_DEVICE_IDENTITY_PEERS` to the comma-separated numeric IPv4/IPv6
+addresses of the proxy as seen by the container. For a host-side nginx example,
+loopback is typical; some Docker bridge setups present the private gateway
+instead, so configure the address the container actually observes. For a proxy
+on another host, use its stable private address. Startup fails when
+trusted-header mode is enabled without this allowlist.
+
+The API compares the allowlist with the actual Node socket peer, not with
+`X-Forwarded-For` or any caller-supplied header. It strips all incoming identity
+headers and restores them only for an allowlisted peer. The verified certificate
+must include a CN and a serial; an incomplete bundle is discarded rather than
+allowing tenant routing by OU alone. The optional SHA-256 fingerprint remains
+supported. Exposing the container without a verifying, overwriting proxy would
+otherwise let a caller claim any tenant by setting the certificate OU.
 
 Apple signs MDM check-ins with the SCEP identity certificate and sends its subject
 distinguished name in the TLS handshake. The tenant is the `OU` in that subject, so
@@ -226,19 +244,21 @@ would ship the files twice. Licences are kept.
 
 ## Configuration
 
-| Variable                        | Required  | Purpose                                                                                     |
-| ------------------------------- | --------- | ------------------------------------------------------------------------------------------- |
-| `ORIGIN`                        | yes       | Canonical public HTTPS URL. WebAuthn relying party and link generator.                      |
-| `AUTH_SECRET`                   | yes       | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets.                 |
-| `DATABASE_URL`                  | yes       | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.                       |
-| `TRUST_DEVICE_IDENTITY_HEADERS` | no        | Set to `1` when a TLS proxy forwards verified device certificates.                          |
-| `TRUST_PROXY_HEADERS`           | no        | Set to `1` when the proxy overwrites `X-Forwarded-For`; used for rate limits and audit IPs. |
-| `PORT`                          | no        | HTTP port inside the container. Defaults to `8080`.                                         |
-| `DATA_DIR`                      | no        | Object storage and runtime state. Defaults to `/data`.                                      |
-| `SKIP_MIGRATIONS`               | no        | Set to `1` to manage the schema from a separate job.                                        |
-| `MAIL_TRANSPORT`                | no        | `smtp`; unset disables outbound email.                                                      |
-| `MAIL_FROM`                     | with mail | Verified sender, e.g. `Mattrax <notifications@example.com>`.                                |
-| `MATTRAX_VERSION`               | no        | Compose image tag. Defaults to `latest`; set a release version to pin.                      |
+| Variable                        | Required   | Purpose                                                                                         |
+| ------------------------------- | ---------- | ----------------------------------------------------------------------------------------------- |
+| `ORIGIN`                        | yes        | Canonical public HTTPS URL. WebAuthn relying party and link generator.                          |
+| `AUTH_SECRET`                   | yes        | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets.                     |
+| `DATABASE_URL`                  | yes        | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.                           |
+| `TRUST_DEVICE_IDENTITY_HEADERS` | no         | Set to `1` when a TLS proxy forwards verified device certificates.                              |
+| `TRUSTED_DEVICE_IDENTITY_PEERS` | with trust | Comma-separated numeric proxy addresses allowed to supply device identity.                      |
+| `TRUST_PROXY_HEADERS`           | no         | Set to `1` when the proxy overwrites `X-Forwarded-For`; used for rate limits and audit IPs.     |
+| `MATTRAX_BIND_ADDRESS`          | no         | Compose host bind address; defaults to `127.0.0.1`. Use a private interface for a remote proxy. |
+| `PORT`                          | no         | HTTP port inside the container. Defaults to `8080`.                                             |
+| `DATA_DIR`                      | no         | Object storage and runtime state. Defaults to `/data`.                                          |
+| `SKIP_MIGRATIONS`               | no         | Set to `1` to manage the schema from a separate job.                                            |
+| `MAIL_TRANSPORT`                | no         | `smtp`; unset disables outbound email.                                                          |
+| `MAIL_FROM`                     | with mail  | Verified sender, e.g. `Mattrax <notifications@example.com>`.                                    |
+| `MATTRAX_VERSION`               | no         | Compose image tag. Defaults to `latest`; set a release version to pin.                          |
 
 Optional integrations use the same names as the hosted deployment. See
 [Configuration](/operations/configuration) for the full list. Anything unset is
