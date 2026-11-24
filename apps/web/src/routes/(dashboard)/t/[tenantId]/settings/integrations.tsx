@@ -1,4 +1,4 @@
-import { useParams, useSearchParams } from "@solidjs/router";
+import { useLocation, useParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
@@ -94,9 +94,11 @@ export default function IntegrationsSettingsPage() {
   // linked to. The tabs render as real anchors, so activation goes through
   // the router's document-level handler rather than a closure that can be
   // lost when the tablist is adopted across hydration.
-  const [searchParams] = useSearchParams<{ view?: string }>();
+  const location = useLocation();
   const tab = (): "endpoints" | "deliveries" =>
-    searchParams.view === "deliveries" && canReadDeliveries() ? "deliveries" : "endpoints";
+    new URLSearchParams(location.search).get("view") === "deliveries" && canReadDeliveries()
+      ? "deliveries"
+      : "endpoints";
   const [endpointId, setEndpointId] = createSignal("");
   const [eventFilter, setEventFilter] = createSignal("");
   const [statusFilter, setStatusFilter] = createSignal<"" | "succeeded" | "failed">("");

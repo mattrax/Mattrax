@@ -51,16 +51,21 @@ test.describe("settings section tabs", () => {
     await endpoints.focus();
     await page.keyboard.press("ArrowRight");
     await expect(deliveries).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(deliveries).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("#webhook-panel-deliveries")).toBeVisible();
 
     await page.keyboard.press("ArrowLeft");
     await expect(endpoints).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(endpoints).toHaveAttribute("aria-selected", "true");
 
     await page.keyboard.press("End");
     await expect(deliveries).toBeFocused();
 
     await page.keyboard.press("Home");
     await expect(endpoints).toBeFocused();
+    await page.keyboard.press("Enter");
     await expect(endpoints).toHaveAttribute("aria-selected", "true");
     await expect(endpoints).toHaveAttribute("tabindex", "0");
     await expect(deliveries).toHaveAttribute("tabindex", "-1");

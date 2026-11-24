@@ -107,12 +107,13 @@ export function SectionTabs(props: {
     // aria-selected="false".
     const anchor = anchors.get(next);
 
-    // A navigation tab activates through its anchor: the router listens at
-    // the document, not on this component instance, so the click cannot be
-    // lost to a stale hydration closure.
+    // Navigation tabs follow the WAI-ARIA manual-activation pattern: arrows
+    // move focus, Enter or Space follows the tab's own link. Programmatic
+    // clicks on a router-managed anchor did not commit during hydration
+    // (the browser suite caught the URL staying put), whereas a real key
+    // press activates the anchor natively and the router handles the click.
     if (props.hrefFor) {
       queueMicrotask(() => anchor?.focus());
-      anchor?.click();
 
       return;
     }
