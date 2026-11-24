@@ -1,4 +1,4 @@
-import { Cause, Data, Effect, Layer, Option, Result, Schema } from "effect";
+import { Cause, Data, Effect, identity, Layer, Option, Result, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 import type { Db } from "@mattrax/enterprise-core";
@@ -49,8 +49,10 @@ export type WebhookPayload = typeof WebhookPayload.Type;
 export type WebhookDeliveryOptions = {
   /** Application secret used to unseal endpoint signing secrets. */
   readonly authSecret?: string;
-  /** Injected for tests; defaults to the runtime `fetch`. */
+  /** Injected fetch seam for tests; production uses the shared client. */
   readonly fetch?: typeof globalThis.fetch;
+  /** Shared Effect transport supplied by the composition root. */
+  readonly httpClient?: HttpClient.HttpClient;
   /** Per-attempt deadline. Defaults to 5s. */
   readonly timeoutMs?: number;
   readonly now?: Date;
@@ -217,16 +219,15 @@ class WebhookDeliveryError extends Data.TaggedError("WebhookDeliveryError")<{
   readonly message: string;
 }> {}
 
-const httpClientLayer = (fetchImpl?: typeof globalThis.fetch) =>
-  fetchImpl === undefined
-    ? FetchHttpClient.layer
-    : FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
+const fetchClientLayer = (fetchImpl: typeof globalThis.fetch) =>
+  FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
 
-const postWebhook = (input: {
+export const postWebhook = (input: {
   readonly url: string;
   readonly secret: string;
   readonly payload: WebhookPayload;
   readonly fetch?: typeof globalThis.fetch;
+  readonly httpClient?: HttpClient.HttpClient;
   readonly timeoutMs?: number;
 }): Effect.Effect<{ responseStatus: number; body: string }, WebhookDeliveryError> =>
   Effect.gen(function* () {
@@ -239,7 +240,13 @@ const postWebhook = (input: {
       webhookSignatureMessage(timestamp, body),
     ).pipe(Effect.mapError((cause) => new WebhookDeliveryError({ message: errorText(cause) })));
 
-    const client = yield* HttpClient.HttpClient;
+    const client =
+      input.httpClient ?? Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient));
+
+    if (!client)
+      return yield* Effect.fail(
+        new WebhookDeliveryError({ message: "The webhook HTTP client is not configured" }),
+      );
 
     // The deadline covers the response body as well as the headers, so a
     // customer endpoint that stalls mid-response still fails as a delivery
@@ -279,7 +286,7 @@ const postWebhook = (input: {
 
     return yield* exchange;
   }).pipe(
-    Effect.provide(httpClientLayer(input.fetch)),
+    input.fetch ? Effect.provide(fetchClientLayer(input.fetch)) : identity,
     // Never follow a redirect: a public URL could redirect to an internal
     // address that the static guard cannot see. A 3xx is then recorded as a
     // failed delivery.
@@ -291,6 +298,7 @@ const attemptDelivery = (input: {
   readonly payload: WebhookPayload;
   readonly authSecret: string;
   readonly fetch?: typeof globalThis.fetch;
+  readonly httpClient?: HttpClient.HttpClient;
   readonly timeoutMs?: number;
   readonly allowUnsafeUrl?: boolean;
 }): Effect.Effect<WebhookDeliveryOutcome> =>
@@ -323,6 +331,7 @@ const attemptDelivery = (input: {
       secret: opened.success,
       payload: input.payload,
       fetch: input.fetch,
+      httpClient: input.httpClient,
       timeoutMs: input.timeoutMs,
     }).pipe(Effect.result);
 
@@ -495,6 +504,7 @@ export const deliverQueuedWebhook = (
           payload: payload.value,
           authSecret: options.authSecret,
           fetch: options.fetch,
+          httpClient: options.httpClient,
           timeoutMs: options.timeoutMs,
           allowUnsafeUrl: options.allowUnsafeUrl,
         })
@@ -547,6 +557,7 @@ const deliverToEndpoint = (
         payload,
         authSecret: options.authSecret!,
         fetch: options.fetch,
+        httpClient: options.httpClient,
         timeoutMs: options.timeoutMs,
         allowUnsafeUrl: options.allowUnsafeUrl,
       });
@@ -641,6 +652,7 @@ export const sendTestWebhook = (
       payload,
       authSecret: options.authSecret!,
       fetch: options.fetch,
+      httpClient: options.httpClient,
       timeoutMs: options.timeoutMs,
       allowUnsafeUrl: options.allowUnsafeUrl,
     });
@@ -678,6 +690,7 @@ export const replayWebhookDelivery = (
           payload: input.payload,
           authSecret: options.authSecret!,
           fetch: options.fetch,
+          httpClient: options.httpClient,
           timeoutMs: options.timeoutMs,
           allowUnsafeUrl: options.allowUnsafeUrl,
         })
@@ -770,6 +783,7 @@ export const retryFailedWebhookDeliveries = (
             payload: payload.value,
             authSecret: options.authSecret!,
             fetch: options.fetch,
+            httpClient: options.httpClient,
             timeoutMs: options.timeoutMs,
             allowUnsafeUrl: options.allowUnsafeUrl,
           });

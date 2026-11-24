@@ -1,4 +1,5 @@
 import { Cause, Effect, Exit, Fiber, Schema } from "effect";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { describe, expect, it, vi } from "vitest";
 import { schema } from "@mattrax/enterprise-core";
 import { sealSecret } from "@mattrax/crypto";
@@ -358,6 +359,59 @@ describe("webhook delivery", () => {
       ),
     );
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a shared Effect HttpClient Layer without an injected fetch", async () => {
+    const { db } = await setup();
+    const requests: string[] = [];
+    const client = HttpClient.make((request) => {
+      requests.push(request.url);
+
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })),
+      );
+    });
+
+    await run(
+      dispatchWebhookEvent(
+        webhookDb(db),
+        { organizationId: "org-1", type: "device.enrolled", id: "evt_shared_client" },
+        { authSecret, now },
+      ).pipe(Effect.provideService(HttpClient.HttpClient, client)),
+    );
+
+    expect(requests).toEqual(["https://hooks.example.com/mattrax"]);
+    expect(deliveries(db)[0]).toMatchObject({ status: "succeeded", responseStatus: 204 });
+  });
+
+  it("delivers durable queued rows through the shared HttpClient Layer", async () => {
+    const { db } = await setup();
+    const requests: string[] = [];
+    const client = HttpClient.make((request) => {
+      requests.push(request.url);
+
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })),
+      );
+    });
+    const provideClient = <A>(effect: Effect.Effect<A, unknown, never>) =>
+      effect.pipe(Effect.provideService(HttpClient.HttpClient, client));
+    const [id] = await Effect.runPromise(
+      provideClient(
+        enqueueWebhookEvent(
+          webhookDb(db),
+          { organizationId: "org-1", type: "device.enrolled", id: "evt_queued_client" },
+          { authSecret, now },
+        ),
+      ),
+    );
+
+    expect(requests).toEqual([]);
+    await Effect.runPromise(
+      provideClient(deliverQueuedWebhook(webhookDb(db), id!, { authSecret, now })),
+    );
+    expect(requests).toEqual(["https://hooks.example.com/mattrax"]);
+    expect(deliveries(db)[0]).toMatchObject({ attempt: 1, status: "succeeded" });
   });
 
   it("never delivers to a different tenant's endpoint", async () => {

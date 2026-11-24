@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { Effect, Layer } from "effect";
 import type { Schema } from "effect";
-import { HttpRouter, HttpServerResponse } from "effect/http";
+import { FetchHttpClient, HttpRouter, HttpServerResponse } from "effect/http";
 import { MysqlClient } from "@effect/sql-mysql2";
 import { NodeRuntime } from "@effect/platform-node";
 import { NodePushTransport } from "@mattrax/apns";
@@ -128,7 +128,11 @@ const routes = Layer.mergeAll(
   }),
 );
 
-const appLayer = routes.pipe(Layer.provideMerge(servicesDb), Layer.provideMerge(stripeLayer));
+const appLayer = routes.pipe(
+  Layer.provideMerge(servicesDb),
+  Layer.provideMerge(stripeLayer),
+  Layer.provide(FetchHttpClient.layer),
+);
 
 const serverLayer = makeHttpServerLayer(appLayer, { port, host: "0.0.0.0" });
 

@@ -655,7 +655,7 @@ const dashboardReportsJob = (env: Env) =>
 /** Hosted endpoints derived from the single services origin. */
 const services = servicesUrls(apiEnv.MATTRAX_SERVICES_URL);
 
-const makeHostedApns = (outboundFetch: typeof globalThis.fetch) => {
+const makeHostedApns = () => {
   const url = services.apnsRelay;
   // Hosted Cloud signs relay requests with the shared services token. A
   // self-hosted deployment already holds a licence key; reusing it for the
@@ -664,9 +664,9 @@ const makeHostedApns = (outboundFetch: typeof globalThis.fetch) => {
 
   return makeApnsService(
     apiEnv.SERVICES_TOKEN
-      ? RelayPushTransport({ url, secret: apiEnv.SERVICES_TOKEN, fetch: outboundFetch })
+      ? RelayPushTransport({ url, secret: apiEnv.SERVICES_TOKEN })
       : licenseKey
-        ? RelayPushTransport({ url, token: licenseKey, fetch: outboundFetch })
+        ? RelayPushTransport({ url, token: licenseKey })
         : NoopPushTransport(
             "APNs push relay is not configured; devices will poll for changes instead",
           ),
@@ -681,12 +681,8 @@ const makeHostedApns = (outboundFetch: typeof globalThis.fetch) => {
  * change written during that tick is never seen by a later run (there are no
  * changed users to report).
  */
-const makeMembershipRefresher = (
-  db: EnterpriseDb,
-  env: Env,
-  outboundFetch: typeof globalThis.fetch,
-) => {
-  const apns = makeHostedApns(outboundFetch);
+const makeMembershipRefresher = (db: EnterpriseDb, env: Env) => {
+  const apns = makeHostedApns();
 
   const androidConfig = androidDeliveryConfig(apiEnv);
 
@@ -695,7 +691,6 @@ const makeMembershipRefresher = (
     schema,
     apns,
     authSecret: env.AUTH_SECRET,
-    webhookFetch: outboundFetch,
   });
 
   return (organizationId: string, userIds: ReadonlyArray<string>) =>
@@ -725,13 +720,13 @@ const makeMembershipRefresher = (
 };
 
 /** Standalone scheduled Entra sweep used by the hourly trigger. */
-const entraSyncJob = (env: Env, outboundFetch: typeof globalThis.fetch) =>
+const entraSyncJob = (env: Env) =>
   Effect.gen(function* () {
     const db = yield* Db;
 
     // Directory membership changes can add or remove user-assigned policies.
     // Wake the linked devices so they converge without waiting for a poll.
-    const refreshMemberships = makeMembershipRefresher(db, env, outboundFetch);
+    const refreshMemberships = makeMembershipRefresher(db, env);
 
     return yield* entraSyncEffect(
       db,
@@ -742,10 +737,10 @@ const entraSyncJob = (env: Env, outboundFetch: typeof globalThis.fetch) =>
   });
 
 /** Standalone scheduled Google Workspace sweep used by the hourly trigger. */
-const googleSyncJob = (env: Env, outboundFetch: typeof globalThis.fetch) =>
+const googleSyncJob = (env: Env) =>
   Effect.gen(function* () {
     const db = yield* Db;
-    const refreshMemberships = makeMembershipRefresher(db, env, outboundFetch);
+    const refreshMemberships = makeMembershipRefresher(db, env);
 
     return yield* googleSyncEffect(
       db,
@@ -770,7 +765,7 @@ const remoteBillingConfig = () => {
 };
 
 /** Report deployment usage to the cloud licence so seats stay in sync. */
-const reportLicenseUsage = (db: EnterpriseDb, env: Env, outboundFetch: typeof globalThis.fetch) =>
+const reportLicenseUsage = (db: EnterpriseDb, env: Env) =>
   Effect.gen(function* () {
     const config = remoteBillingConfig();
 
@@ -781,7 +776,6 @@ const reportLicenseUsage = (db: EnterpriseDb, env: Env, outboundFetch: typeof gl
     yield* makeRemoteBillingService({
       ...config,
       origin: env.ORIGIN,
-      fetch: outboundFetch,
     }).reportUsage(usage);
   });
 
@@ -796,7 +790,6 @@ const decodeSubjectHeader = (value: string): string => {
 const makeAppLayer = (
   env: Env,
   cryptoLayer: CryptoLayer,
-  outboundFetch: typeof globalThis.fetch,
   httpClientLayer: Layer.Layer<HttpClient.HttpClient>,
 ) => {
   const androidConfig = androidDeliveryConfig(apiEnv);
@@ -821,7 +814,7 @@ const makeAppLayer = (
   // Hosted Cloud cannot attach a per-tenant client certificate to `fetch`, so
   // pushes go through the HMAC-signed relay. Without a relay the service is a
   // no-op: devices still poll for DDM changes, so policy still converges.
-  const apns = makeHostedApns(outboundFetch);
+  const apns = makeHostedApns();
 
   const apnsLayer = Layer.succeed(ApnsService, apns);
 
@@ -999,14 +992,13 @@ const makeAppLayer = (
         url: services.origin,
         token: apiEnv.SERVICES_TOKEN,
         origin: env.ORIGIN,
-        fetch: outboundFetch,
       })
     : undefined;
   const remoteBilling = servicesBilling ? undefined : remoteBillingConfig();
   const billing =
     servicesBilling ??
     (remoteBilling
-      ? makeRemoteBillingService({ ...remoteBilling, origin: env.ORIGIN, fetch: outboundFetch })
+      ? makeRemoteBillingService({ ...remoteBilling, origin: env.ORIGIN })
       : undefined);
 
   const servicesLayer = Layer.mergeAll(
@@ -1176,7 +1168,6 @@ const makeAppLayer = (
           schema,
           apns,
           authSecret: env.AUTH_SECRET,
-          webhookFetch: outboundFetch,
         });
 
         yield* applePush
@@ -1227,7 +1218,6 @@ const makeAppLayer = (
 const getAppHandler = (
   env: Env,
   cryptoLayer: CryptoLayer,
-  outboundFetch: typeof globalThis.fetch,
   httpClientLayer: Layer.Layer<HttpClient.HttpClient>,
 ) => {
   // SAFETY: makeAppLayer returns the combined router/service layer; the web
@@ -1235,7 +1225,7 @@ const getAppHandler = (
   // layer's inferred requirement channel includes framework request services
   // that `toWebHandler` cannot name, so the assertion stays at this boundary.
   return HttpRouter.toWebHandler(
-    makeAppLayer(env, cryptoLayer, outboundFetch, httpClientLayer) as Layer.Layer<
+    makeAppLayer(env, cryptoLayer, httpClientLayer) as Layer.Layer<
       unknown,
       unknown,
       HttpRouter.HttpRouter
@@ -1425,18 +1415,11 @@ export const createApiRuntime = (
   cryptoLayer: CryptoLayer,
   options: {
     readonly cacheHandler?: boolean;
-    /** Replace the single outbound Fetch reference in tests or custom hosts. */
-    readonly fetchLayer?: Layer.Layer<typeof FetchHttpClient.Fetch>;
+    /** Replace the single outbound Effect transport in tests or custom hosts. */
+    readonly httpClientLayer?: Layer.Layer<HttpClient.HttpClient>;
   } = {},
 ) => {
-  const fetchLayer =
-    options.fetchLayer ?? Layer.succeed(FetchHttpClient.Fetch, globalThis.fetch.bind(globalThis));
-  const outboundFetch = Effect.runSync(
-    Effect.gen(function* () {
-      return yield* FetchHttpClient.Fetch;
-    }).pipe(Effect.provide(fetchLayer)),
-  );
-  const httpClientLayer = FetchHttpClient.layer.pipe(Layer.provide(fetchLayer));
+  const httpClientLayer = options.httpClientLayer ?? FetchHttpClient.layer;
 
   // A Node process serves many requests from one runtime, so rebuilding the
   // service graph per request would create a new MySQL pool every time. The
@@ -1445,13 +1428,12 @@ export const createApiRuntime = (
   const handlers = new WeakMap<Env, ReturnType<typeof getAppHandler>>();
 
   const appHandler = (env: Env) => {
-    if (!options.cacheHandler)
-      return getAppHandler(env, cryptoLayer, outboundFetch, httpClientLayer);
+    if (!options.cacheHandler) return getAppHandler(env, cryptoLayer, httpClientLayer);
 
     let handler = handlers.get(env);
 
     if (!handler) {
-      handler = getAppHandler(env, cryptoLayer, outboundFetch, httpClientLayer);
+      handler = getAppHandler(env, cryptoLayer, httpClientLayer);
       handlers.set(env, handler);
     }
 
@@ -1703,22 +1685,14 @@ export const createApiRuntime = (
           }),
           ...(graphConfigured
             ? [
-                observeJob(
-                  "Scheduled Entra directory sync failed",
-                  entraSyncJob(env, outboundFetch),
-                  (result) => {
-                    console.log("Scheduled Entra directory sync complete", result);
-                  },
-                ),
+                observeJob("Scheduled Entra directory sync failed", entraSyncJob(env), (result) => {
+                  console.log("Scheduled Entra directory sync complete", result);
+                }),
               ]
             : []),
-          observeJob(
-            "Scheduled Google directory sync failed",
-            googleSyncJob(env, outboundFetch),
-            (result) => {
-              console.log("Scheduled Google directory sync complete", result);
-            },
-          ),
+          observeJob("Scheduled Google directory sync failed", googleSyncJob(env), (result) => {
+            console.log("Scheduled Google directory sync complete", result);
+          }),
         ];
         const hourly = runScheduledJobs(
           jobs,
@@ -1801,17 +1775,15 @@ export const createApiRuntime = (
               url: services.origin,
               token: apiEnv.SERVICES_TOKEN,
               origin: env.ORIGIN,
-              fetch: outboundFetch,
             })
           : remoteBillingConfig()
             ? makeRemoteBillingService({
                 ...remoteBillingConfig()!,
                 origin: env.ORIGIN,
-                fetch: outboundFetch,
               })
             : undefined;
 
-        yield* reportLicenseUsage(db, env, outboundFetch).pipe(
+        yield* reportLicenseUsage(db, env).pipe(
           Effect.catch((error) =>
             Effect.logWarning("Scheduled licence usage report failed", { error }),
           ),
@@ -1828,7 +1800,6 @@ export const createApiRuntime = (
             // Outbound webhook retries need the same secret used to seal endpoint
             // secrets; retention/pruning runs regardless.
             webhookAuthSecret: apiEnv.AUTH_SECRET,
-            webhookFetch: outboundFetch,
             authSecret: apiEnv.AUTH_SECRET,
             notifyCredentialExpiry,
             // Review the public origin certificate as part of the daily run too;
@@ -1904,7 +1875,7 @@ export const createApiRuntime = (
         // tenant. Without Graph credentials the sweep is a no-op. The same
         // callback as the hourly sweep re-derives linked groups and wakes their
         // devices, so memberships written by this tick converge immediately.
-        const refreshMemberships = makeMembershipRefresher(db, env, outboundFetch);
+        const refreshMemberships = makeMembershipRefresher(db, env);
 
         const entra = yield* Effect.exit(
           entraSyncEffect(db, env, apiEnv.MAINTENANCE_ENTRA_SYNC_CONCURRENCY, refreshMemberships),

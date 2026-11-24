@@ -601,5 +601,5 @@ export const AzureOidcLive = (config?: AzureOidcConfig) =>
     }),
   );
 
-export const AzureOidcFetchLive = (config?: AzureOidcConfig) =>
-  AzureOidcLive(config).pipe(Layer.provide(FetchHttpClient.layer));
+/** @deprecated Supply HttpClient at the composition root; retained as an alias. */
+export const AzureOidcFetchLive = AzureOidcLive;

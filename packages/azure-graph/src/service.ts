@@ -1252,5 +1252,5 @@ export const AzureGraphLive = (config: AzureGraphConfig) =>
     }),
   );
 
-export const AzureGraphFetchLive = (config: AzureGraphConfig) =>
-  AzureGraphLive(config).pipe(Layer.provide(FetchHttpClient.layer));
+/** @deprecated Supply HttpClient at the composition root; retained as an alias. */
+export const AzureGraphFetchLive = AzureGraphLive;
