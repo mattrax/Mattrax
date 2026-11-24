@@ -9,6 +9,7 @@ import {
   EnrollmentNotice,
 } from "./enrollment-feedback";
 import { EnrollmentPasswordInput } from "./enrollment-password-input";
+import { deviceLimitCardDescription } from "~/lib/enrollment-presentation";
 
 const authenticated = (
   overrides: Partial<Extract<EnrollmentResponse, { authenticated: true }>> = {},
@@ -43,6 +44,8 @@ describe("enrollment password progressive enhancement", () => {
     expect(html).toContain('type="password"');
     expect(html).toContain('name="code"');
     expect(html).toContain("required");
+    expect(html).not.toContain("aria-pressed");
+    expect(html).not.toContain("aria-controls");
     // The reveal control and its padding must not drop the caller's sizing.
     expect(html).toContain("h-12");
     expect(html).toContain("pr-12");
@@ -129,6 +132,13 @@ describe("enrollment link problem SSR", () => {
     expect(html).toContain(title);
     expect(html).toContain(message);
     expect(html).toContain('href="' + href + '"');
+  });
+});
+
+describe("enrollment device-limit copy", () => {
+  it("explains a reached allowance in the card description", () => {
+    expect(deviceLimitCardDescription()).toContain("device limit");
+    expect(deviceLimitCardDescription()).not.toContain("Choose your device type");
   });
 });
 

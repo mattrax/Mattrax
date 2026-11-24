@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import type { AndroidEnrollment, PlatformEnrollment, WindowsEnrollment } from "~/lib/enterprise";
 import type { EnrollmentPlatform } from "~/lib/enrollment-platform";
 
@@ -40,17 +41,32 @@ export const enrollmentLinkProblemCopy = (status: EnrollmentLinkProblemStatus) =
   };
 };
 
+/**
+ * The payload each platform panel renders. The tab readiness check and the
+ * panel itself share these, so a tab can never claim "Ready" for a payload
+ * that the panel then refuses to show.
+ */
+export const AppleReady = Schema.Struct({ profile: Schema.String });
+
+export const WindowsReady = Schema.Struct({ discoveryUrl: Schema.String });
+
+export const AndroidReady = Schema.Struct({
+  qrCode: Schema.optional(Schema.NullOr(Schema.String)),
+  enrollmentToken: Schema.String,
+  policyName: Schema.optional(Schema.NullOr(Schema.String)),
+  expiresAt: Schema.optional(Schema.NullOr(Schema.String)),
+  provisioningMode: Schema.Literals(["work-profile", "fully-managed", "dedicated"]),
+});
+
+/** True when this platform payload is one a panel can actually render. */
 export const enrollmentPlatformAvailable = (
   platform: EnrollmentPlatform,
   value: PlatformEnrollment | WindowsEnrollment | AndroidEnrollment,
 ): boolean => {
-  if (typeof value !== "object" || value === null) return false;
+  if (platform === "apple") return Schema.is(AppleReady)(value);
+  if (platform === "windows") return Schema.is(WindowsReady)(value);
 
-  if (platform === "apple") return "profile" in value && typeof value.profile === "string";
-  if (platform === "windows")
-    return "discoveryUrl" in value && typeof value.discoveryUrl === "string";
-
-  return "enrollmentToken" in value && typeof value.enrollmentToken === "string";
+  return Schema.is(AndroidReady)(value);
 };
 
 const platformError = (value: PlatformEnrollment | WindowsEnrollment | AndroidEnrollment) => {
@@ -70,10 +86,20 @@ export const enrollmentPlatformUnavailableCopy = (
     .trim()
     .replace(/[.!?]+$/, "");
 
+  // A reached allowance is reported as a plain "disabled" platform, so it is
+  // matched first or it reads as a platform switch.
+  if (/device limit|plan limit/i.test(error ?? ""))
+    return {
+      title: "This organization can't enroll another device",
+      message:
+        "The device allowance for this organization has been reached. Ask your administrator to raise the limit, or remove a device before enrolling another one.",
+      tone: "warning" as const,
+    };
+
   if (/disabled/i.test(error ?? ""))
     return {
-      title: `${label} enrollment is turned off`,
-      message: `${label} enrollment is disabled. Ask your administrator to turn it on, then reload this page.`,
+      title: `${label} enrollment is unavailable`,
+      message: `${label} enrollment is turned off, or this organization has reached its device limit. Ask your administrator to check, then reload this page.`,
       tone: "warning" as const,
     };
 
@@ -99,14 +125,6 @@ export const enrollmentPlatformUnavailableCopy = (
       tone: "danger" as const,
     };
 
-  if (/device limit/i.test(error ?? ""))
-    return {
-      title: "This organization can't enroll another device",
-      message:
-        "Ask your administrator about the device limit or remove an old device before enrolling another one.",
-      tone: "warning" as const,
-    };
-
   if (platform === "android" && value === "unavailable")
     return {
       title: "Android enrollment isn't connected yet",
@@ -123,6 +141,10 @@ export const enrollmentPlatformUnavailableCopy = (
     tone: "warning" as const,
   };
 };
+
+/** Card copy while a reached allowance stops new devices from enrolling. */
+export const deviceLimitCardDescription = (): string =>
+  "This organization can't enroll another device until its device limit is raised.";
 
 /** Pick the higher-contrast foreground for an arbitrary tenant brand colour. */
 export const accessibleBrandForeground = (colour: string): "white" | "black" => {

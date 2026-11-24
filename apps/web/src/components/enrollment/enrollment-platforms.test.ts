@@ -123,13 +123,27 @@ describe("enrollment platform panels", () => {
   it("explains disabled platforms instead of exposing dead actions", () => {
     const html = renderOptions(enrollment({}));
 
-    expect(html).toContain("Apple enrollment is turned off");
-    expect(html).toContain("Windows enrollment is turned off");
-    expect(html).toContain("Android enrollment is turned off");
+    expect(html).toContain("Apple enrollment is unavailable");
+    expect(html).toContain("Windows enrollment is unavailable");
+    expect(html).toContain("Android enrollment is unavailable");
+    expect(html).toContain("or this organization has reached its device limit");
     expect(html).not.toContain("Install Apple profile");
     expect(html).not.toContain("Copy Windows discovery URL");
     expect(html).toContain('data-available="false"');
     expect(html).toContain("You do not need to erase or reset your device");
+  });
+
+  it("uses a figure caption instead of labelling the code element directly", () => {
+    const html = renderOptions(
+      enrollment({
+        windows: { discoveryUrl: "https://mdm.test/windows", tenantScoped: true },
+      }),
+    );
+
+    expect(html).toContain("<figure");
+    expect(html).toContain("<figcaption");
+    expect(html).not.toContain('aria-labelledby="windows-discovery-label"');
+    expect(html).toContain('id="windows-discovery-url"');
   });
 
   it("keeps every tab connected to a rendered panel", () => {
@@ -138,6 +152,7 @@ describe("enrollment platform panels", () => {
     for (const platform of ["apple", "windows", "android"]) {
       expect(html).toContain('id="enrollment-tab-' + platform + '"');
       expect(html).toContain('id="enrollment-panel-' + platform + '"');
+      expect(html).toContain('aria-describedby="enrollment-tab-' + platform + '-status"');
       expect(html).toContain('aria-controls="enrollment-panel-' + platform + '"');
     }
   });

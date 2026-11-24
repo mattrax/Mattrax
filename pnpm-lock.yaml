@@ -576,6 +576,7 @@ snapshots:
 				"cf": "catalog:",
 				"filesystem-routing": "catalog:",
 				"happy-dom": "catalog:",
+				"jsqr": "catalog:",
 				"shadcn": "catalog:",
 				"vite": {
 					"specifier": "npm:@voidzero-dev/vite-plus-core@^8.3.8000",

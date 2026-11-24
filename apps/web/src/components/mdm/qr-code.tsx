@@ -1,4 +1,5 @@
 import { createMemo, Show } from "solid-js";
+import { cn } from "@mattrax/ui";
 import { qrPath } from "~/lib/qr";
 
 /**
@@ -8,8 +9,9 @@ import { qrPath } from "~/lib/qr";
  */
 export function QrCode(props: { value: string; label?: string; class?: string; size?: number }) {
   const qr = createMemo(() => (props.value ? qrPath(props.value) : null));
-  const classes = () =>
-    "block h-auto max-w-full bg-[var(--qr-background)]" + (props.class ? " " + props.class : "");
+  // The fixed light background keeps the code scannable everywhere; a caller
+  // that frames it can still override the surface through `cn` merging.
+  const classes = () => cn("block h-auto max-w-full bg-[var(--qr-background)]", props.class);
 
   return (
     <Show when={qr()}>

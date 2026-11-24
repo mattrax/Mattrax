@@ -79,8 +79,8 @@ test.describe("device enrollment", () => {
     ).toBeVisible();
 
     await page.getByRole("tab", { name: /^Android$/ }).click();
-    await expect(page.getByText("Android enrollment is turned off")).toBeVisible();
-    await expect(page.getByText(/Android enrollment is disabled/i)).toBeVisible();
+    await expect(page.getByText("Android enrollment is unavailable")).toBeVisible();
+    await expect(page.getByText(/reached its device limit/i)).toBeVisible();
   });
 
   test("explains when Windows enrollment is turned off", async ({ page }) => {
@@ -93,8 +93,8 @@ test.describe("device enrollment", () => {
 
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
     await page.getByRole("tab", { name: /^Windows$/ }).click();
-    await expect(page.getByText("Windows enrollment is turned off")).toBeVisible();
-    await expect(page.getByText(/Windows enrollment is disabled/i)).toBeVisible();
+    await expect(page.getByText("Windows enrollment is unavailable")).toBeVisible();
+    await expect(page.getByText(/reached its device limit/i)).toBeVisible();
     await expect(page.getByRole("button", { name: "Copy Windows discovery URL" })).toHaveCount(0);
   });
 
@@ -109,18 +109,17 @@ test.describe("device enrollment", () => {
     await gotoHydrated(page, `/enroll/${enrollment.id}`);
     await expect(page.getByText(/administrator has set an enrollment password/i)).toBeVisible();
 
-    // The reveal control is a real toggle rather than a password field with a
-    // decorative icon.
+    // The reveal control changes its label instead of claiming a pressed
+    // toggle state, so the announced action is never contradictory.
     const password = page.getByLabel("Enrollment password");
     const reveal = page.getByRole("button", { name: "Show password" });
     await expect(password).toHaveAttribute("type", "password");
-    await expect(reveal).toHaveAttribute("aria-pressed", "false");
+    await expect(password).toHaveAttribute("required", "");
+    await expect(reveal).not.toHaveAttribute("aria-pressed");
     await reveal.click();
-    await expect(page.getByRole("button", { name: "Hide password" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    await expect(page.getByRole("button", { name: "Hide password" })).toBeVisible();
     await expect(password).toHaveAttribute("type", "text");
+    await expect(password).toBeFocused();
 
     await password.fill("wrong");
     await page.getByRole("button", { name: /^continue$/i }).click();
@@ -147,11 +146,14 @@ test.describe("device enrollment", () => {
     const noJs = await context.newPage();
 
     try {
-      // Exercise a real native form submission with scripting disabled.
+      // Exercise a real native form submission with scripting disabled. The
+      // input carries `required`, so an empty submit never reaches the server
+      // and the browser reports the missing password itself.
       await noJs.goto(`/enroll/${enrollment.id}`);
       await expect(noJs.getByLabel("Enrollment password")).toBeVisible();
       await expect(noJs.locator("form")).toHaveAttribute("method", "get");
       await expect(noJs.locator('input[name="code"]')).toHaveCount(1);
+      await expect(noJs.locator('input[name="code"]')).toHaveAttribute("required", "");
 
       await noJs.getByLabel("Enrollment password").fill("secret-code");
       await noJs.getByLabel("Enrollment password").press("Enter");
@@ -332,7 +334,10 @@ test.describe("device enrollment", () => {
     await page.getByRole("button", { name: "Continue to enrollment" }).click();
 
     await expect(page.getByText("Device details saved")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "What are you setting up?" })).toBeVisible();
+    const platformHeading = page.getByRole("heading", { name: "What are you setting up?" });
+    await expect(platformHeading).toBeVisible();
+    // The form is replaced in place, so focus must land on the new step.
+    await expect(platformHeading).toBeFocused();
     for (const platform of ["Apple", "Windows", "Android"]) {
       const tab = page.getByRole("tab", { name: platform, exact: true });
       const box = await tab.boundingBox();

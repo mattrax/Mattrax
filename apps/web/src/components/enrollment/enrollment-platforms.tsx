@@ -29,22 +29,15 @@ import {
 import type { EnrollmentPlatform } from "~/lib/enrollment-platform";
 import {
   accessibleBrandForeground,
+  AndroidReady,
+  AppleReady,
   enrollmentPlatformAvailable,
   enrollmentPlatformLabel,
   enrollmentPlatformUnavailableCopy,
   formatEnrollmentDate,
+  WindowsReady,
 } from "~/lib/enrollment-presentation";
 import { EnrollmentNotice, EnrollmentStatus, EnrollmentSteps } from "./enrollment-feedback";
-
-const AppleReady = Schema.Struct({ profile: Schema.String });
-const WindowsReady = Schema.Struct({ discoveryUrl: Schema.String });
-const AndroidReady = Schema.Struct({
-  qrCode: Schema.optional(Schema.NullOr(Schema.String)),
-  enrollmentToken: Schema.String,
-  policyName: Schema.optional(Schema.NullOr(Schema.String)),
-  expiresAt: Schema.optional(Schema.NullOr(Schema.String)),
-  provisioningMode: Schema.Literals(["work-profile", "fully-managed", "dedicated"]),
-});
 
 type AuthenticatedEnrollment = Extract<EnrollmentResponse, { authenticated: true }>;
 type PlatformValue = PlatformEnrollment | WindowsEnrollment | AndroidEnrollment;
@@ -145,7 +138,13 @@ export function EnrollmentOptions(props: {
     <div>
       <div class="mb-5">
         <p class="label-caps">Choose your platform</p>
-        <h2 class="mt-1 text-xl font-semibold text-foreground">What are you setting up?</h2>
+        <h2
+          id="enrollment-platform-heading"
+          tabindex={-1}
+          class="mt-1 text-xl font-semibold text-foreground outline-none"
+        >
+          What are you setting up?
+        </h2>
         <p class="mt-1 text-sm leading-6 text-muted-foreground">
           Select your device type and follow the steps. Unavailable platforms explain what to do
           next.
@@ -415,19 +414,18 @@ function WindowsPane(props: { windows: WindowsEnrollment; supportEmail: string }
       </p>
 
       <div class="space-y-2">
-        <p id="windows-discovery-label" class="text-xs font-medium text-foreground">
-          Windows enrollment link
-        </p>
         <div class="flex flex-col gap-2 sm:flex-row">
-          <div class="min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-3">
+          <figure class="m-0 min-w-0 flex-1 rounded-lg border border-border bg-card px-3 py-3">
+            <figcaption id="windows-discovery-label" class="text-xs font-medium text-foreground">
+              Windows enrollment link
+            </figcaption>
             <code
               id="windows-discovery-url"
-              aria-labelledby="windows-discovery-label"
-              class="block break-all font-mono text-xs leading-5 text-foreground"
+              class="mt-1 block break-all font-mono text-xs leading-5 text-foreground"
             >
               {url}
             </code>
-          </div>
+          </figure>
           <Button
             variant="outline"
             aria-label="Copy Windows discovery URL"

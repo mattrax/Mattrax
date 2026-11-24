@@ -62,9 +62,9 @@ describe("enrollment platform readiness", () => {
         error: "Apple enrollment is disabled! Contact your administrator.",
       }),
     ).toEqual({
-      title: "Apple enrollment is turned off",
+      title: "Apple enrollment is unavailable",
       message:
-        "Apple enrollment is disabled. Ask your administrator to turn it on, then reload this page.",
+        "Apple enrollment is turned off, or this organization has reached its device limit. Ask your administrator to check, then reload this page.",
       tone: "warning",
     });
     expect(
@@ -90,6 +90,16 @@ describe("enrollment platform readiness", () => {
     ).toMatchObject({ title: "Android enrollment isn't connected yet" });
     expect(
       enrollmentPlatformUnavailableCopy("apple", { error: "The device limit has been reached" }),
+    ).toMatchObject({
+      title: "This organization can't enroll another device",
+      message: expect.stringContaining("device allowance"),
+    });
+    // A plan limit arrives as its own sentence and must not read as a switch.
+    expect(
+      enrollmentPlatformUnavailableCopy("windows", {
+        error:
+          "The device limit for this plan has been reached. Contact your administrator to upgrade.",
+      }),
     ).toMatchObject({ title: "This organization can't enroll another device" });
     expect(enrollmentPlatformUnavailableCopy("android", "unavailable")).toMatchObject({
       title: "Android enrollment isn't connected yet",

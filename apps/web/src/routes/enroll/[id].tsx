@@ -22,7 +22,10 @@ import { Label } from "~/components/ui/label";
 import { ChevronRight, KeyRound, ShieldCheck } from "~/components/ui/icons";
 import type { EnrollmentResponse } from "~/lib/enterprise";
 import { lookupPublicEnrollment } from "~/lib/enrollment.server";
-import { enrollmentLinkProblemCopy } from "~/lib/enrollment-presentation";
+import {
+  deviceLimitCardDescription,
+  enrollmentLinkProblemCopy,
+} from "~/lib/enrollment-presentation";
 
 const isAuthenticatedEnrollment = (
   value: EnrollmentResponse | undefined,
@@ -45,7 +48,7 @@ export const route = defineFileRoute("/enroll/:id", {
   preload: ({ params, location }) => getEnrollment(params.id, codeFromQuery(location.query)),
 });
 
-function EnrollPage(props: { id: string; code: string }) {
+function EnrollPage(props: { id: string; code: string; codeProvided: boolean }) {
   const enrollment = createMemo(() => getEnrollment(props.id, props.code), {
     deferStream: true,
   });
@@ -87,7 +90,9 @@ function EnrollPage(props: { id: string; code: string }) {
 
   const [detailsSaved, setDetailsSaved] = createSignal(false);
   const [passwordEdited, setPasswordEdited] = createSignal(false);
-  const passwordInvalid = () => Boolean(props.code) && !passwordEdited();
+  // `code` is only echoed back once the server has seen it, so an explicitly
+  // empty value (`?code=`) still means "an attempt was made and rejected".
+  const passwordInvalid = () => (Boolean(props.code) || props.codeProvided) && !passwordEdited();
   const needsDetails = () => {
     const value = authenticated();
 
@@ -104,6 +109,7 @@ function EnrollPage(props: { id: string; code: string }) {
 
     if (status !== "found") return enrollmentLinkProblemCopy(status).description;
     if (!authenticated()) return "Enter the enrollment password from your administrator.";
+    if (deviceLimit()?.reached) return deviceLimitCardDescription();
     if (needsDetails() && !detailsSaved()) return "First, tell us which device you are enrolling.";
 
     return "Choose your device type, then follow the setup steps.";
@@ -192,6 +198,7 @@ function EnrollPage(props: { id: string; code: string }) {
                   <EnrollmentPasswordInput
                     id="enrollment-password"
                     name="code"
+                    required
                     autocomplete="off"
                     autocapitalize="none"
                     spellcheck={false}
@@ -242,7 +249,16 @@ function EnrollPage(props: { id: string; code: string }) {
                           enrollment={authenticatedEnrollment()}
                           id={props.id}
                           code={props.code}
-                          onSaved={() => setDetailsSaved(true)}
+                          onSaved={() => {
+                            setDetailsSaved(true);
+                            // The details form is replaced in place, so send
+                            // focus to the step that appeared instead of
+                            // dropping it on <body>.
+                            if (!isServer)
+                              queueMicrotask(() =>
+                                document.getElementById("enrollment-platform-heading")?.focus(),
+                              );
+                          }}
                         />
                       }
                     >
@@ -283,5 +299,11 @@ function EnrollPage(props: { id: string; code: string }) {
 }
 
 export default function EnrollRoute(props: RouteProps<typeof route>) {
-  return <EnrollPage id={props.params.id ?? ""} code={codeFromQuery(props.location.query)} />;
+  return (
+    <EnrollPage
+      id={props.params.id ?? ""}
+      code={codeFromQuery(props.location.query)}
+      codeProvided={props.location.query.code !== undefined}
+    />
+  );
 }
