@@ -135,6 +135,27 @@ const queryFor = (condition: any) =>
 const camel = (value: string) =>
   value.replaceAll(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
+/**
+ * MySQL considers a row changed only when at least one assigned value differs.
+ * Dates compare by instant and JSON-shaped values compare structurally so a
+ * same-value update is modelled as `affectedRows: 0`.
+ */
+const sameValue = (left: RowValue | undefined, right: RowValue): boolean => {
+  // MySQL has one NULL value: assigning undefined/null over NULL is unchanged.
+  const a = left === undefined ? null : left;
+  const b = right === undefined ? null : right;
+
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+
+  if (Array.isArray(a) && Array.isArray(b))
+    return a.length === b.length && a.every((item, index) => sameValue(item, b[index]!));
+
+  if (a !== null && b !== null && typeof a === "object" && typeof b === "object")
+    return JSON.stringify(a) === JSON.stringify(b);
+
+  return a === b;
+};
+
 /** Values the fake orders and compares: everything normalises to one of these. */
 type Comparable = number | string;
 
@@ -610,15 +631,25 @@ class UpdateBuilder {
 
     for (const row of this.store[this.table]) {
       if (matches(condition, row)) {
-        affectedRows++;
+        let changed = false;
 
-        for (const [key, value] of Object.entries(this.patch))
-          if (value !== undefined) row[key] = value;
+        for (const [key, value] of Object.entries(this.patch)) {
+          if (value === undefined) continue;
+
+          if (!sameValue(row[key], value)) changed = true;
+
+          // Store the assigned value even for a NULL no-op so fake rows match
+          // the column state a real MySQL row would have.
+          row[key] = value;
+        }
+
+        // MySQL reports changed rows, not matched rows, unless the driver
+        // enables CLIENT_FOUND_ROWS. Same-value updates therefore resolve
+        // with affectedRows: 0 and must not be mistaken for a lost row.
+        if (changed) affectedRows++;
       }
     }
 
-    // Drizzle's MySQL update resolves to a result with `affectedRows`, which
-    // conditional claims rely on for compare-and-set semantics.
     return Effect.succeed({ affectedRows });
   }
 }

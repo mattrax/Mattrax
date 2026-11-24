@@ -1132,11 +1132,86 @@ const decodeApplicationUpload = (content: string) =>
     return bytes;
   });
 
+type McpActivityDispatch = {
+  readonly request: HttpServerRequest;
+  readonly tenantId: string;
+  readonly method: string;
+  readonly permission: Permission;
+  readonly status: number;
+};
+
+type McpActivityObserver = (dispatch: McpActivityDispatch) => Effect.Effect<void>;
+
+const MCP_ACTIVITY_TOOL_MAX = 128;
+const MCP_ACTIVITY_METHOD_MAX = 16;
+const MCP_ACTIVITY_PATH_MAX = 512;
+
+const requestHeader = (request: unknown, name: string): string | undefined => {
+  if (!Predicate.isObject(request) || !("headers" in request)) return undefined;
+
+  const headers = request.headers;
+
+  if (headers instanceof Headers) return headers.get(name)?.trim() || undefined;
+  if (!Predicate.isObject(headers)) return undefined;
+
+  const value = name in headers ? headers[name] : undefined;
+  const text = Array.isArray(value) ? value[0] : value;
+
+  return typeof text === "string" ? text.trim() || undefined : undefined;
+};
+
+/**
+ * The success status the service actually returned. Most handlers resolve a
+ * domain value (HTTP 200); handlers that expose a status envelope carry the
+ * real 201/204/… value, and an explicit void result is the endpoint's 204.
+ */
+export const mcpActivityResponseStatus = (value: unknown): number => {
+  if (value === undefined) return 204;
+
+  const envelope = Schema.decodeUnknownOption(
+    Schema.Struct({ status: Schema.Number }),
+  )(value);
+
+  return Option.isSome(envelope)
+    ? Math.max(100, Math.min(599, Math.trunc(envelope.value.status)))
+    : 200;
+};
+
+const mcpActivityErrorStatus = (error: unknown): number => {
+  const tag = Schema.is(Schema.Struct({ _tag: Schema.String }))(error) ? error._tag : "";
+
+  switch (tag) {
+    case "EnterpriseBadRequest":
+      return 400;
+    case "EnterpriseUnauthorized":
+      return 401;
+    case "EnterpriseForbidden":
+    case "EnterprisePermissionDenied":
+    case "StepUpRequired":
+      return 403;
+    case "EnterpriseNotFound":
+      return 404;
+    case "EnterpriseConflict":
+    case "EnterpriseLastTenantAccount":
+    case "EnterpriseTenantHasMembers":
+    case "ApprovalRequired":
+      return 409;
+    case "EnterpriseNotConfigured":
+      return 503;
+    case "EnterpriseUpstreamError":
+    case "EnterpriseStripeError":
+      return 502;
+    default:
+      return 500;
+  }
+};
+
 const wrapServiceErrors = <S extends object>(
   service: S,
   permissions = false,
   fallbackAnalytics?: EnterpriseAnalytics,
   diagnostics = makeEnterpriseErrorDiagnostics(),
+  observeMcpActivity?: McpActivityObserver,
 ): S =>
   new Proxy(service, {
     get(_target, property) {
@@ -1162,7 +1237,49 @@ const wrapServiceErrors = <S extends object>(
               })
             : result;
 
-        const withAnalytics = mapped.pipe(
+        // The gateway marker says "this dispatch came from the MCP tool
+        // surface". Keying only on the credential type would also label
+        // ordinary REST calls made with an API token as MCP tool calls and
+        // inflate the same action with unrelated traffic; direct API-token
+        // calls keep their own audit trail and are not MCP invocations. Every
+        // gateway-dispatched call still carries this marker.
+        const activity =
+          observeMcpActivity &&
+          permission &&
+          tenantId &&
+          requestHeader(args[0], "x-mattrax-mcp-authorization") !== undefined
+            ? {
+                observe: observeMcpActivity,
+                request: args[0] as HttpServerRequest,
+                tenantId,
+                method,
+                permission,
+              }
+            : undefined;
+        const withMcpActivity = activity
+          ? mapped.pipe(
+              Effect.tap((value) =>
+                activity.observe({
+                  request: activity.request,
+                  tenantId: activity.tenantId,
+                  method: activity.method,
+                  permission: activity.permission,
+                  status: mcpActivityResponseStatus(value),
+                }),
+              ),
+              Effect.tapError((error) =>
+                activity.observe({
+                  request: activity.request,
+                  tenantId: activity.tenantId,
+                  method: activity.method,
+                  permission: activity.permission,
+                  status: mcpActivityErrorStatus(error),
+                }),
+              ),
+            )
+          : mapped;
+
+        const withAnalytics = withMcpActivity.pipe(
           Effect.tap((value) =>
             Effect.gen(function* () {
               const provided = yield* Effect.serviceOption(EnterpriseAnalyticsService);
@@ -2392,13 +2509,7 @@ export const createEnterpriseService = ({
       const required = yield* Effect.serviceOption(RequiredPermission);
       const requiredPermission = Option.isSome(required) ? required.value.permission : undefined;
 
-      // Activity attribution is written by the MCP gateway for the caller's own
-      // tool call. It records that the read happened; it must not require the
-      // read grant itself, or a narrowed connection would lose its audit trail.
-      const isMcpActivity =
-        Option.isSome(required) && required.value.method === "recordMcpActivity";
-
-      if (credentialRestricted && credentialGrant && !isMcpActivity) {
+      if (credentialRestricted && credentialGrant) {
         if (requiredPermission && !credentialGrant.has(requiredPermission))
           return yield* Effect.fail(
             diagnoseError(
@@ -2462,11 +2573,7 @@ export const createEnterpriseService = ({
           },
         );
 
-      if (
-        !isMcpActivity &&
-        requiredPermission &&
-        !hasPermission(role.permissions, requiredPermission)
-      )
+      if (requiredPermission && !hasPermission(role.permissions, requiredPermission))
         return yield* Effect.fail(deny(requiredPermission));
 
       // Direct/internal calls without the method-level permission still need a
@@ -11757,10 +11864,15 @@ export const createEnterpriseService = ({
         const address = clientAddress(request.headers);
 
         // Two independent windows: one per account and one per client, so
-        // neither a single mailbox nor a single host can drive a loop.
+        // neither a single mailbox nor a single host can drive a loop. A
+        // self-hosted deployment without a trusted address has no client
+        // identity: a shared `unknown` bucket would let one caller exhaust
+        // everyone else's recovery budget, so only the account window applies
+        // here. Both recovery POST routes are in SENSITIVE_AUTH_PATHS, so the
+        // edge auth bucket still bounds anonymous floods.
         const allowed =
           recoveryLimiter.allow(`account:${email}`) &&
-          recoveryLimiter.allow(`client:${address ?? "unknown"}`);
+          (address === null || recoveryLimiter.allow(`client:${address}`));
 
         if (!allowed)
           return yield* Effect.fail(
@@ -11783,7 +11895,10 @@ export const createEnterpriseService = ({
         // the only barrier for a 256-bit secret.
         const address = clientAddress(request.headers);
 
-        if (!recoveryLimiter.allow(`verify:${address ?? "unknown"}`))
+        // Unknown addresses share no bucket: proof tokens carry 256 bits of
+        // entropy, so skipping the per-client window is safer than letting a
+        // single caller lock every self-hosted recovery proof out.
+        if (address !== null && !recoveryLimiter.allow(`verify:${address}`))
           return yield* Effect.fail(
             new EnterpriseBadRequest({
               message: "Too many recovery attempts. Try again in an hour.",
@@ -35062,35 +35177,30 @@ export const createEnterpriseService = ({
       auth.listMcpConnections(webRequestFromRequest(request, origin)),
     revokeMcpConnection: (request, connectionId) =>
       auth.revokeMcpConnection(webRequestFromRequest(request, origin), connectionId),
-    recordMcpActivity: (request, tenantId, payload) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireTenant(request, tenantId);
-
-        // Only an issued MCP credential (OAuth connection or account API key)
-        // may attribute activity to a tool call. A browser session or a
-        // read-only token must not be able to forge audit entries; the write
-        // scope is enforced in `requireUser`.
-        if (ctx.credential?.type !== "oauth" && ctx.credential?.type !== "api_token")
-          return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "MCP activity requires an MCP credential." }),
-          );
-
-        const body: {
-          tool?: string;
-          method?: string;
-          path?: string;
-          status?: number;
-        } = payload;
-
-        yield* audit(ctx, "mcp.tool_called", "mcp", null, {
-          tool: body.tool ?? null,
-          method: body.method ?? null,
-          path: body.path ?? null,
-          status: body.status ?? null,
-        });
-
-        return ok;
-      }),
+    /**
+     * Rollout-window shim. While supported gateways may still be on the
+     * previous image, this route deliberately answers 403 instead of
+     * accepting caller-authored metadata; the new API records the same
+     * `mcp.tool_called` entry from the authenticated dispatch. Remove this
+     * method (and the domain endpoint) once no supported gateway posts here —
+     * i.e. after the next major release or a release cycle with the derived
+     * path live on every deployment.
+     */
+    recordMcpActivity: (
+      _request: HttpServerRequest,
+      _tenantId: string,
+      _payload: {
+        readonly tool: string;
+        readonly method: string;
+        readonly path: string;
+        readonly status: number;
+      },
+    ) =>
+      Effect.fail(
+        new EnterpriseForbidden({
+          message: "MCP activity is derived from authenticated dispatched calls.",
+        }),
+      ),
     createApiToken: (request, payload) =>
       Effect.gen(function* () {
         const webRequest = webRequestFromRequest(request, origin);
@@ -35511,7 +35621,50 @@ export const createEnterpriseService = ({
       auth.completeStepUpPasskey(webRequestFromRequest(request, origin), payload),
   } satisfies Record<string, (...args: Array<Dynamic>) => Effect.Effect<Dynamic, Dynamic, Dynamic>>;
 
-  return wrapServiceErrors(service, true, analytics, diagnostics);
+  const observeMcpActivity: McpActivityObserver = (dispatch) =>
+    Effect.gen(function* () {
+      if (dispatch.method === "recordMcpActivity") return;
+
+      const path = new URL(dispatch.request.url, origin).pathname;
+      const tenant = /^\/api\/v1\/tenants\/([^/]+)(?:\/|$)/.exec(path)?.[1];
+
+      if (tenant === undefined) return;
+
+      let pathTenant: string;
+
+      try {
+        pathTenant = decodeURIComponent(tenant);
+      } catch {
+        return;
+      }
+
+      if (pathTenant !== dispatch.tenantId) return;
+
+      const httpMethod = dispatch.request.method.toUpperCase();
+      const access =
+        httpMethod === "DELETE"
+          ? "delete"
+          : httpMethod === "GET" || httpMethod === "HEAD"
+            ? "read"
+            : "write";
+      const ctx = yield* requireTenant(dispatch.request, dispatch.tenantId, access).pipe(
+        Effect.provideService(RequiredPermission, {
+          permission: dispatch.permission,
+          method: dispatch.method,
+        }),
+      );
+
+      if (ctx.credential?.type !== "oauth" && ctx.credential?.type !== "api_token") return;
+
+      yield* audit(ctx, "mcp.tool_called", "mcp", null, {
+        tool: dispatch.method.slice(0, MCP_ACTIVITY_TOOL_MAX),
+        method: httpMethod.slice(0, MCP_ACTIVITY_METHOD_MAX),
+        path: path.slice(0, MCP_ACTIVITY_PATH_MAX),
+        status: Math.max(100, Math.min(599, Math.trunc(dispatch.status))),
+      });
+    }).pipe(Effect.catchCause((cause) => Effect.logWarning("MCP activity audit failed", cause)));
+
+  return wrapServiceErrors(service, true, analytics, diagnostics, observeMcpActivity);
 };
 
 /** Device handover export and one-time download. */
