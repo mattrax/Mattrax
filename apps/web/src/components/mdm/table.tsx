@@ -218,7 +218,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
     update();
     media.addEventListener("change", update);
-    onCleanup(() => media.removeEventListener("change", update));
+    return () => media.removeEventListener("change", update);
   });
 
   /** Client tables can still hand search to the parent (to reuse its filter). */
@@ -289,6 +289,18 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   });
 
   const virtualized = () => shouldVirtualizeTableRows(rows().length);
+  const hasTable = () => !props.error && !props.loading && rows().length > 0;
+
+  createEffect(
+    () => hasTable(),
+    (visible) => {
+      if (visible) return;
+
+      viewportResizeObserver?.disconnect();
+      viewportResizeObserver = undefined;
+      viewportRef = undefined;
+    },
+  );
 
   /** Prefix sums turn binary search into a row range without per-scroll layout reads. */
   const rowOffsets = createMemo(() => {
@@ -432,6 +444,40 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       });
     });
     columnResizeObserver.observe(element);
+  };
+
+  const createRowRef = (id: string) => {
+    let element: HTMLTableRowElement | undefined;
+
+    onCleanup(() => {
+      if (!element) return;
+
+      rowResizeObserver?.unobserve(element);
+      if (rowRefs.get(id) === element) rowRefs.delete(id);
+    });
+
+    return (next: HTMLTableRowElement) => {
+      element = next;
+      rowRefs.set(id, next);
+      observeRow(next);
+    };
+  };
+
+  const createColumnRef = (id: string) => {
+    let element: HTMLTableCellElement | undefined;
+
+    onCleanup(() => {
+      if (!element) return;
+
+      columnResizeObserver?.unobserve(element);
+      if (columnRefs.get(id) === element) columnRefs.delete(id);
+    });
+
+    return (next: HTMLTableCellElement) => {
+      element = next;
+      columnRefs.set(id, next);
+      observeColumn(next);
+    };
   };
 
   createEffect(
@@ -622,6 +668,9 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     viewportResizeObserver?.disconnect();
     rowResizeObserver?.disconnect();
     columnResizeObserver?.disconnect();
+    viewportRef = undefined;
+    rowRefs.clear();
+    columnRefs.clear();
   });
 
   const selectedRows = createMemo(() => rows().filter((row) => isSelected(row.id)));
@@ -1325,7 +1374,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         </div>
       </Show>
       <Show
-        when={!props.error && !props.loading && rows().length > 0}
+        when={hasTable()}
         fallback={
           !props.error && !props.loading ? (
             search().trim() ? (
@@ -1372,12 +1421,6 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                   });
                   viewportResizeObserver.observe(element);
                 }
-
-                onCleanup(() => {
-                  viewportResizeObserver?.disconnect();
-                  viewportResizeObserver = undefined;
-                  viewportRef = undefined;
-                });
               }}
               role="region"
               aria-labelledby={captionId}
@@ -1485,15 +1528,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
                         return (
                           <th
-                            ref={(element) => {
-                              columnRefs.set(col.id, element);
-                              observeColumn(element);
-
-                              onCleanup(() => {
-                                columnResizeObserver?.unobserve(element);
-                                if (columnRefs.get(col.id) === element) columnRefs.delete(col.id);
-                              });
-                            }}
+                            ref={createColumnRef(col.id)}
                             data-column-id={col.id}
                             scope="col"
                             aria-colindex={leadingColumnCount() + columnIndex() + 1}
@@ -1577,15 +1612,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
                       return (
                         <tr
-                          ref={(element) => {
-                            rowRefs.set(row.id, element);
-                            observeRow(element);
-
-                            onCleanup(() => {
-                              rowResizeObserver?.unobserve(element);
-                              if (rowRefs.get(row.id) === element) rowRefs.delete(row.id);
-                            });
-                          }}
+                          ref={createRowRef(row.id)}
                           data-row-id={row.id}
                           data-row-index={rowIndex()}
                           aria-rowindex={rowIndex() + 2}
