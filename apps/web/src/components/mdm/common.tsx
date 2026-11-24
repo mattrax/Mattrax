@@ -639,6 +639,47 @@ export function DeviceHealthBadge(props: { level: string; reasons?: ReadonlyArra
   );
 }
 
+/** A small tinted platform tile for table name cells. */
+export function PlatformMark(props: { proto: string; class?: string }) {
+  const style = () =>
+    Match.value(props.proto).pipe(
+      Match.when("apple", () => "bg-foreground/[0.06] text-foreground"),
+      Match.when("win", () => "bg-info/10 text-info"),
+      Match.when("android", () => "bg-success/10 text-success"),
+      Match.orElse(() => "bg-surface text-muted-foreground"),
+    );
+
+  const icon = () =>
+    Match.value(props.proto).pipe(
+      Match.when("apple", () => <Laptop class="size-3" />),
+      Match.when("win", () => <MonitorSmartphone class="size-3" />),
+      Match.when("android", () => <Smartphone class="size-3" />),
+      Match.orElse(() => <TabletSmartphone class="size-3" />),
+    );
+
+  const label = () =>
+    Match.value(props.proto).pipe(
+      Match.when("apple", () => "Apple"),
+      Match.when("win", () => "Windows"),
+      Match.when("android", () => "Android"),
+      Match.orElse((proto) => proto),
+    );
+
+  return (
+    <span
+      class={cn(
+        "flex size-5 shrink-0 items-center justify-center rounded-[5px]",
+        style(),
+        props.class,
+      )}
+      title={label()}
+      aria-hidden="true"
+    >
+      {icon()}
+    </span>
+  );
+}
+
 export function PlatformBadge(props: { proto: string }) {
   const icon = () =>
     Match.value(props.proto).pipe(

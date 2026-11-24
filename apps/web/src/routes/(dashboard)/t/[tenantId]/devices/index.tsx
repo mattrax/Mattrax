@@ -10,29 +10,38 @@ import {
   Page,
   PageHeader,
   PlatformBadge,
+  PlatformMark,
   PresenceDot,
   QueryError,
+  relativeTime,
   usePresenceNow,
 } from "~/components/mdm/common";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { EntityHoverCard } from "~/components/entity-hover-card";
 import { EntityActions } from "~/components/mdm/entity-actions";
-import { MdmTable, readTableColumnVisibility } from "~/components/mdm/table";
+import { MdmTable } from "~/components/mdm/table";
 import type { MdmColumn, MdmSortState } from "~/components/mdm/table";
-import { DeviceViewsMenu } from "~/components/mdm/device-views";
 import { Button } from "~/components/ui/button";
-import { Badge, EmptyState, FilterBar, NativeSelect } from "@mattrax/ui";
+import { Badge, EmptyState, FilterBar } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import {
   Activity,
+  BookOpen,
+  Calendar,
+  Clock,
+  HardDrive,
+  KeyRound,
   Laptop,
+  Monitor,
   MonitorSmartphone,
+  Package,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
   Smartphone,
   UsersRound,
   Wifi,
+  X,
 } from "~/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import {
@@ -50,14 +59,7 @@ import {
   formatDeviceQueryText,
   parseDeviceQueryText,
 } from "~/lib/enterprise";
-import type {
-  DeviceHealthFilter,
-  DeviceQuery,
-  DeviceRow,
-  DeviceView,
-  DeviceViewQuery,
-} from "~/lib/enterprise";
-import { reconcileDeviceViewQuery } from "@mattrax/enterprise-domain/client";
+import type { DeviceHealthFilter, DeviceQuery, DeviceRow } from "~/lib/enterprise";
 import {
   DEVICE_IMPORT_MAX_ROWS,
   parseDeviceImportCsv,
@@ -65,21 +67,14 @@ import {
 } from "~/lib/device-import";
 import type { DeviceImportParseResult } from "~/lib/device-import";
 import { healthRank } from "~/lib/device-health";
-import { SoftwareUpdateTag } from "~/components/software-update-badge";
+import { OsVersionTag } from "~/components/software-update-badge";
 import { decodeSoftwareUpdate } from "~/lib/software-updates";
 import { readDeviceSearchParams, routes } from "~/lib/routes";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { collectAllMatching } from "~/lib/bulk-selection";
 import { useCan } from "~/lib/permissions";
 import { downloadBlob } from "~/lib/download";
-import { toast } from "~/components/toast";
-import {
-  deviceFilterConditions,
-  hasExplicitDeviceSearch,
-  mergeActiveViewQuery,
-  resolveDeviceDefaultView,
-  staleDaysValue,
-} from "~/lib/device-view-query";
+import { deviceFilterConditions, staleDaysValue } from "~/lib/device-view-query";
 import { resolveTenantId } from "~/lib/tenant";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -214,14 +209,6 @@ const FILTER_PARAM_KEYS = [
 /** `setSearchParams` merges, so every known key must be sent (empty deletes). */
 const emptyFilterParams = () => Object.fromEntries(FILTER_PARAM_KEYS.map((key) => [key, ""]));
 
-const summaryTones = {
-  default: "text-foreground",
-  success: "text-success",
-  warning: "text-warning",
-  danger: "text-destructive",
-  brand: "text-brand",
-} as const;
-
 type HealthReason = { code: string; label: string; severity: string };
 
 const statusMeta = {
@@ -320,37 +307,6 @@ function DeviceActivationTag(props: { status?: string | null }) {
   );
 }
 
-/** A single hairline-divided strip keeps the fleet counters compact enough to
- * sit above the table without competing with it. */
-function FleetSummary(props: {
-  items: ReadonlyArray<{
-    label: string;
-    value: string | number;
-    hint: string;
-    tone?: keyof typeof summaryTones;
-  }>;
-}) {
-  return (
-    <div class="hidden overflow-hidden rounded-xl border border-border bg-card shadow-card sm:grid sm:grid-cols-4 sm:divide-x sm:divide-border">
-      <For each={props.items}>
-        {(item) => (
-          <div class="min-w-0 px-4 py-3">
-            <p class="label-caps truncate">{item.label}</p>
-            <p
-              class={`mt-1.5 text-[17px] font-[560] leading-none tracking-[-0.025em] tabular-nums ${
-                summaryTones[item.tone ?? "default"]
-              }`}
-            >
-              {item.value}
-            </p>
-            <p class="mt-1.5 truncate text-[11px] text-muted-foreground">{item.hint}</p>
-          </div>
-        )}
-      </For>
-    </div>
-  );
-}
-
 const RowGroups = Schema.Struct({
   groups: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String }))),
 });
@@ -426,6 +382,18 @@ export default function DevicesPage() {
 
   const [queryOpen, setQueryOpen] = createSignal(false);
 
+  const queryConditionCount = () => {
+    const query = deviceQuery();
+
+    return (query?.all?.length ?? 0) + (query?.any?.length ?? 0) + (query?.none?.length ?? 0);
+  };
+
+  const clearAdvancedQuery = () => {
+    setDeviceQuery(null);
+    setPage(0);
+    setQueryOpen(false);
+  };
+
   const initialPageSize = () => {
     const value = Number(search().pageSize ?? DEFAULT_PAGE_SIZE);
 
@@ -445,7 +413,6 @@ export default function DevicesPage() {
   const [viewColumns, setViewColumns] = createSignal<ReadonlyArray<string> | undefined>(
     initialVisibleColumns(),
   );
-  const [currentViewId, setCurrentViewId] = createSignal(search().view);
 
   // 1-based in the URL so a paged view is shareable; 0-based in state.
   const initialPage = () => {
@@ -605,7 +572,6 @@ export default function DevicesPage() {
       page: page(),
       columns: viewColumns()?.join(",") ?? "",
       pageSize: pageSize(),
-      view: currentViewId() ?? "",
     }),
     (state) => {
       if (!urlInitialised) {
@@ -656,8 +622,6 @@ export default function DevicesPage() {
 
       if (state.pageSize !== DEFAULT_PAGE_SIZE) next.pageSize = String(state.pageSize);
 
-      if (state.view) next.view = state.view;
-
       // Coalesce rapid control changes into one router write. Every
       // `setSearchParams` is a navigation, and a burst of them trips the
       // router's redirect guard.
@@ -690,7 +654,6 @@ export default function DevicesPage() {
     page: initialPage(),
     columns: search().columns ?? "",
     pageSize: search().pageSize ?? "",
-    view: search().view ?? "",
   }));
 
   createEffect(
@@ -719,7 +682,6 @@ export default function DevicesPage() {
         page: page(),
         columns: viewColumns()?.join(",") ?? "",
         pageSize: pageSize() === DEFAULT_PAGE_SIZE ? "" : String(pageSize()),
-        view: currentViewId() ?? "",
       }));
 
       if (filters.q !== local.q) {
@@ -799,8 +761,6 @@ export default function DevicesPage() {
 
       if (filters.pageSize !== local.pageSize)
         setPageSize(filters.pageSize ? Number(filters.pageSize) : DEFAULT_PAGE_SIZE);
-
-      if (filters.view !== local.view) setCurrentViewId(filters.view || undefined);
     },
     { defer: true },
   );
@@ -871,117 +831,6 @@ export default function DevicesPage() {
     queryFn: () => enterprise.listAttributes(params.tenantId),
     placeholderData: { rows: [] },
   }));
-
-  const deviceViews = useQuery(() => ({
-    queryKey: enterpriseKeys.deviceViews(params.tenantId),
-    queryFn: () => enterprise.listDeviceViews(params.tenantId),
-    placeholderData: { views: [] },
-    enabled: can("devices.read"),
-  }));
-
-  /** Attribute filters the URL can represent (one key/value pair). */
-  const viewAttribute = (query: DeviceViewQuery) => {
-    if (!query.attributes) return { key: "", value: "" };
-
-    try {
-      const [entry] = Object.entries(JSON.parse(query.attributes) as Record<string, string>);
-
-      return entry ? { key: entry[0], value: entry[1] } : { key: "", value: "" };
-    } catch {
-      return { key: "", value: "" };
-    }
-  };
-
-  /**
-   * Apply a saved view by writing its query into the table's controls. The URL
-   * mirror then makes the URL canonical, so a copied link reproduces the view.
-   *
-   * References to deleted groups and attributes are dropped first; the view
-   * stays applicable instead of opening an empty or failing table.
-   */
-  const applyView = (view: DeviceView) => {
-    // Placeholder rows are not evidence that a group or attribute was
-    // deleted. Only a successful read can authoritatively prune references.
-    const knownGroups = groups.isSuccess
-      ? new Set((groups.data?.rows ?? []).map((group) => group.id))
-      : undefined;
-    const knownAttributes = attributeDefinitions.isSuccess
-      ? new Set((attributeDefinitions.data?.rows ?? []).map((definition) => definition.key))
-      : undefined;
-    const reconciled = reconcileDeviceViewQuery(view.query, {
-      groupIds: knownGroups,
-      attributeKeys: knownAttributes,
-    });
-    const query = reconciled.query;
-    const attribute = viewAttribute(query);
-    const staleDays = staleDaysValue(
-      query.staleDays === undefined ? undefined : String(query.staleDays),
-    );
-
-    setQ(query.q ?? "");
-    setDebouncedQ(query.q ?? "");
-    setStatus(query.status ?? "");
-    setProto(query.proto ?? "");
-    setGroupId(query.groupId ?? "");
-    setStaleDays(staleDays ?? "");
-    setHealth(query.health ?? "");
-    setPush(query.push ?? "");
-    setLostMode(query.lostMode === "active" || query.lostMode === "inactive" ? query.lostMode : "");
-    setLocalAccount(
-      query.localAccount === "without-secure-token" || query.localAccount === "not-seen-30-days"
-        ? query.localAccount
-        : "",
-    );
-    setSetup(query.setup ?? "");
-    setNotSeenSince(query.notSeenSince ?? "");
-    setActivation(query.activation ?? "");
-    setAttributeKey(attribute.key);
-    setAttributeValue(attribute.value);
-    setDeviceQuery(parseDeviceQueryText(query.query));
-    setSort({ id: query.sort ?? "name", dir: query.direction ?? "asc" });
-    setPageSize(
-      query.pageSize && query.pageSize >= 1 && query.pageSize <= MAX_PAGE_SIZE
-        ? Math.trunc(query.pageSize)
-        : DEFAULT_PAGE_SIZE,
-    );
-    setViewColumns(query.columns.length ? query.columns : undefined);
-    setCurrentViewId(view.id);
-    setPage(0);
-
-    if (reconciled.droppedGroup)
-      toast.warning("View references a deleted group", {
-        description: "The group filter was removed; the rest of the view still applies.",
-      });
-
-    if (reconciled.droppedAttributes.length > 0 || reconciled.droppedColumns.length > 0)
-      toast.warning("View references deleted attributes", {
-        description: "Those attribute filters and columns were removed.",
-        details: [...reconciled.droppedAttributes, ...reconciled.droppedColumns],
-      });
-  };
-
-  // Restore the member's default view once, and only on a bare /devices visit.
-  // The URL at mount is latched: clearing a shared link later must not apply
-  // the default behind the operator's back. Group/attribute reads are not
-  // required — a role may hold devices.read without groups.read.
-  const explicitSearchAtMount = hasExplicitDeviceSearch(searchParams);
-  const defaultViewState = { resolved: false };
-  createEffect(
-    () => ({
-      views: deviceViews.data?.views,
-      ready: deviceViews.isSuccess,
-    }),
-    (state) => {
-      const view = state.views?.find((item) => item.isDefault);
-      const action = resolveDeviceDefaultView(defaultViewState, {
-        explicitAtMount: explicitSearchAtMount,
-        ready: state.ready,
-        hasDefault: Boolean(view),
-      });
-
-      if (action === "apply" && view) applyView(view);
-    },
-  );
 
   const filterFields = createMemo<FilterField[]>(() => {
     const attributes = (attributeDefinitions.data?.rows ?? []).filter(
@@ -1281,27 +1130,33 @@ export default function DevicesPage() {
     {
       id: "name",
       header: "Name",
+      icon: Laptop,
       sort: (row) => row.name,
       search: (row) => row.name,
       cell: (row) => (
-        <EntityHoverCard
-          preview={{ kind: "device", device: row }}
-          href={routes.tenant(params.tenantId).device(row.id)}
-          class="font-[540] text-foreground decoration-border underline-offset-2 hover:underline"
-        >
-          {row.name}
-        </EntityHoverCard>
+        <span class="flex items-center gap-2">
+          <PlatformMark proto={row.proto} />
+          <EntityHoverCard
+            preview={{ kind: "device", device: row }}
+            href={routes.tenant(params.tenantId).device(row.id)}
+            class="font-[540] text-foreground decoration-border underline-offset-2 hover:underline"
+          >
+            {row.name}
+          </EntityHoverCard>
+        </span>
       ),
     },
     {
       id: "status",
       header: "Status",
+      icon: Activity,
       sort: (row) => row.status,
       cell: (row) => <DeviceStatusTag status={row.status} />,
     },
     {
       id: "health",
       header: "Health",
+      icon: ShieldCheck,
       // The API sorts this column (health is derived, not stored); the
       // local comparator keeps the same worst-first order if a row set is
       // ever sorted on the client.
@@ -1312,18 +1167,29 @@ export default function DevicesPage() {
       ),
     },
     {
+      // Keep the saved-view id: the column used to show update status.
       id: "osUpdate",
-      header: "OS updates",
-      cell: (row) => <SoftwareUpdateTag info={decodeSoftwareUpdate(row.osUpdate)} />,
+      header: "OS version",
+      icon: Monitor,
+      cell: (row) => (
+        <OsVersionTag
+          proto={row.proto}
+          version={row.osVersion}
+          build={row.osBuild}
+          info={decodeSoftwareUpdate(row.osUpdate)}
+        />
+      ),
     },
     {
       id: "platform",
       header: "Platform",
+      icon: MonitorSmartphone,
       cell: (row) => <PlatformBadge proto={row.proto} />,
     },
     {
       id: "activation",
       header: "Activation",
+      icon: KeyRound,
       // Sorted by the API in administrative order (activated,
       // not-activated, unknown); the local comparator only matters if a
       // row set is ever sorted on the client.
@@ -1335,6 +1201,7 @@ export default function DevicesPage() {
     {
       id: "serial",
       header: "Serial",
+      icon: HardDrive,
       search: (row) => row.serial,
       cell: (row) => (
         <span class="font-mono text-[11.5px] text-muted-foreground">{row.serial ?? "Unknown"}</span>
@@ -1343,12 +1210,14 @@ export default function DevicesPage() {
     {
       id: "model",
       header: "Model",
+      icon: Laptop,
       search: (row) => row.model,
       cell: (row) => <span class="text-muted-foreground">{row.model ?? "Unknown"}</span>,
     },
     {
       id: "assetTag",
       header: "Asset tag",
+      icon: Package,
       search: (row) => row.assetTag,
       cell: (row) => row.assetTag ?? "—",
       defaultHidden: true,
@@ -1356,6 +1225,7 @@ export default function DevicesPage() {
     {
       id: "groups",
       header: "Groups",
+      icon: UsersRound,
       cell: (row) => {
         const groups = rowGroups(row);
 
@@ -1385,6 +1255,7 @@ export default function DevicesPage() {
     {
       id: "notes",
       header: "Notes",
+      icon: BookOpen,
       search: (row) => row.notes,
       cell: (row) =>
         row.notes ? (
@@ -1395,66 +1266,40 @@ export default function DevicesPage() {
       defaultHidden: true,
     },
     {
+      id: "enrolledAt",
+      header: "Enrolled",
+      icon: Calendar,
+      sort: (row) => row.enrolledAt,
+      sortId: "enrolledAt",
+      class: "text-right",
+      cell: (row) => (
+        <span class="tabular-nums text-muted-foreground">{formatDeviceDate(row.enrolledAt)}</span>
+      ),
+      defaultHidden: true,
+    },
+    {
       id: "lastSeen",
       header: "Last seen",
+      icon: Clock,
       sort: (row) => row.lastSeenAt,
       sortId: "lastSeenAt",
       class: "text-right",
-      cell: (row) => (
-        <span class="flex items-center justify-end gap-1.5 tabular-nums text-muted-foreground">
-          <PresenceDot online={devicePresence(row, presenceNow()).online} />
-          <span title={devicePresence(row, presenceNow()).online ? "Online" : "Offline"}>
-            {formatDeviceDate(row.lastSeenAt)}
+      cell: (row) => {
+        const presence = devicePresence(row, presenceNow());
+
+        return (
+          <span class="flex items-center justify-end gap-1.5 tabular-nums text-muted-foreground">
+            <PresenceDot online={presence.online} />
+            <span
+              title={`${formatDeviceDate(row.lastSeenAt)} · ${presence.online ? "Online" : "Offline"}`}
+            >
+              {relativeTime(row.lastSeenAt)}
+            </span>
           </span>
-        </span>
-      ),
+        );
+      },
     },
   ]);
-
-  /**
-   * Visible column ids for saving. A saved view owns the set; otherwise the
-   * table's persisted picker state is the source, so "save current view" keeps
-   * the columns the operator can actually see.
-   */
-  const currentVisibleColumns = () => {
-    const explicit = viewColumns();
-
-    if (explicit) return explicit;
-    const stored = readTableColumnVisibility("devices");
-
-    return deviceColumns()
-      .filter(
-        (column) => stored[column.id] === false || (!stored[column.id] && !column.defaultHidden),
-      )
-      .map((column) => column.id);
-  };
-
-  const currentViewQuery = (activeView?: DeviceView): DeviceViewQuery => {
-    const state = filters();
-    const current: DeviceViewQuery = {
-      q: state.q,
-      status: state.status,
-      proto: state.proto,
-      groupId: state.groupId,
-      staleDays: state.staleDays,
-      health: state.health,
-      push: state.push,
-      lostMode: state.lostMode,
-      localAccount: state.localAccount,
-      setup: state.setup,
-      notSeenSince: state.notSeenSince,
-      activation: state.activation,
-      attributes: state.attributes,
-      query: state.query,
-      sort: state.sort,
-      direction: state.direction,
-      columns: currentVisibleColumns(),
-      pageSize: pageSize(),
-    };
-
-    // Update merges the stored view so fields the table cannot edit survive.
-    return activeView ? mergeActiveViewQuery(activeView.query, current) : current;
-  };
 
   const total = () => devices.data?.total ?? 0;
   const pageCount = () => Math.max(1, Math.ceil(total() / pageSize()));
@@ -1522,50 +1367,10 @@ export default function DevicesPage() {
     setSort({ id: "name", dir: "asc" });
     setPageSize(DEFAULT_PAGE_SIZE);
     setViewColumns(undefined);
-    setCurrentViewId(undefined);
     setPage(0);
     // Write immediately as well as through the mirror effect so clearing is
     // reflected even if a signal happened to already hold an empty value.
     setSearchParams(emptyFilterParams(), { replace: true });
-  };
-
-  // Cheap fleet signals derived from the rows already on screen. Nothing here
-  // issues another request; the totals come from the existing search response.
-  const fleet = () => {
-    const rows = devices.data?.devices ?? [];
-
-    const stale = rows.filter((row) => {
-      const seen = row.lastSeenAt ? new Date(row.lastSeenAt).getTime() : Number.NaN;
-
-      return Number.isFinite(seen) && Date.now() - seen > 7 * 24 * 60 * 60 * 1000;
-    }).length;
-
-    return [
-      {
-        label: "Devices",
-        value: total(),
-        hint: hasFilters() ? "Matching current filters" : "In this tenant",
-      },
-      {
-        label: "Enrolled",
-        value: rows.filter((row) => row.status === "enrolled").length,
-        hint: `of ${rows.length} on this page`,
-        tone: rows.some((row) => row.status === "enrolled")
-          ? ("success" as const)
-          : ("default" as const),
-      },
-      {
-        label: "Stale 7d",
-        value: stale,
-        hint: "No check-in for 7 days",
-        tone: stale > 0 ? ("warning" as const) : ("default" as const),
-      },
-      {
-        label: "No asset tag",
-        value: rows.filter((row) => !row.assetTag).length,
-        hint: "Unlabelled in inventory",
-      },
-    ];
   };
 
   const exportCsv = async () => {
@@ -1642,10 +1447,7 @@ export default function DevicesPage() {
         }
       />
 
-      <FleetSummary items={fleet()} />
-
       <QueryError error={groups.error} onRetry={() => void groups.refetch()} />
-      <QueryError error={deviceViews.error} onRetry={() => void deviceViews.refetch()} />
 
       <Show when={exportError()}>
         <ErrorText error={exportError()} />
@@ -1672,6 +1474,7 @@ export default function DevicesPage() {
       <MdmTable<DeviceRow>
         mode="server"
         rows={devices.data?.devices}
+        rowNumberStart={page() * pageSize()}
         selectable={canAny(["devices.command", "devices.write", "groups.write"])}
         total={devices.data?.total}
         selectionKey={JSON.stringify(filters())}
@@ -1691,56 +1494,54 @@ export default function DevicesPage() {
           setPage(0);
         }}
         searchPlaceholder="Search name, serial, model, platform, group, notes…"
-        toolbar={
-          <div class="space-y-2">
-            <div class="flex flex-wrap items-center gap-2">
-              <FilterBar
-                fields={filterFields()}
-                conditions={filterConditions()}
-                onChange={applyFilters}
-                hideClear
-              />
-              <div class="ml-auto flex flex-wrap items-center gap-1.5">
-                <DeviceViewsMenu
-                  tenantId={params.tenantId ?? ""}
-                  views={deviceViews.data?.views ?? []}
-                  currentViewId={currentViewId()}
-                  canSave={can("devices.read")}
-                  canPublish={can("devices.write")}
-                  currentQuery={currentViewQuery}
-                  onApply={applyView}
-                  onCurrentViewDeleted={() => setCurrentViewId(undefined)}
-                />
-                <NativeSelect
-                  class="h-7 rounded-full border-border bg-card px-2 text-[11.5px] text-muted-foreground"
-                  aria-label="Sort devices"
-                  value={sort()?.id ?? "name"}
-                  onChange={(event) => {
-                    setSort({ id: event.currentTarget.value, dir: sort()?.dir ?? "asc" });
-                    setPage(0);
-                  }}
+        inlineToolbar={
+          <FilterBar
+            inline
+            fields={filterFields()}
+            conditions={filterConditions()}
+            onChange={applyFilters}
+            hideClear
+            filterExtra={
+              <>
+                <Show
+                  when={deviceQuery()}
+                  fallback={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      class="h-7 rounded-full border-border bg-card px-2.5 text-[11.5px] text-muted-foreground"
+                      aria-expanded={queryOpen() ? "true" : "false"}
+                      onClick={() => setQueryOpen((value) => !value)}
+                    >
+                      <SlidersHorizontal class="size-3.5" />
+                      Advanced
+                    </Button>
+                  }
                 >
-                  <option value="name">Sort: name</option>
-                  <option value="health">Sort: health</option>
-                  <option value="activation">Sort: activation</option>
-                  <option value="lastSeenAt">Sort: last seen</option>
-                  <option value="enrolledAt">Sort: enrolled</option>
-                  <option value="status">Sort: status</option>
-                </NativeSelect>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                  onClick={() => {
-                    setSort({
-                      id: sort()?.id ?? "name",
-                      dir: sort()?.dir === "desc" ? "asc" : "desc",
-                    });
-                    setPage(0);
-                  }}
-                >
-                  {sort()?.dir === "desc" ? "Descending" : "Ascending"}
-                </Button>
+                  <span class="inline-flex h-7 items-center rounded-full border border-border bg-card pl-1.5 pr-0.5">
+                    <button
+                      type="button"
+                      class="flex h-full items-center gap-1.5 rounded-full pr-1 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                      aria-expanded={queryOpen() ? "true" : "false"}
+                      onClick={() => setQueryOpen((value) => !value)}
+                    >
+                      <SlidersHorizontal class="size-3.5 text-subtle-foreground" />
+                      <span class="text-muted-foreground">Query</span>
+                      <span class="font-[520] text-foreground">
+                        {queryConditionCount()} condition{queryConditionCount() === 1 ? "" : "s"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      class="flex size-5 shrink-0 items-center justify-center rounded-full text-subtle-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                      aria-label="Clear advanced query"
+                      title="Clear advanced query"
+                      onClick={clearAdvancedQuery}
+                    >
+                      <X class="size-3" />
+                    </button>
+                  </span>
+                </Show>
                 <Show when={hasFilters()}>
                   <Button
                     variant="ghost"
@@ -1751,51 +1552,26 @@ export default function DevicesPage() {
                     Clear filters
                   </Button>
                 </Show>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                  aria-expanded={queryOpen() ? "true" : "false"}
-                  onClick={() => setQueryOpen((value) => !value)}
-                >
-                  Advanced query
-                  <Show when={deviceQuery()?.all?.length}>
-                    <Badge variant="subtle" class="tabular-nums">
-                      {deviceQuery()!.all!.length}
-                    </Badge>
-                  </Show>
-                </Button>
-                <Show when={deviceQuery()}>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                    onClick={() => {
-                      setDeviceQuery(null);
-                      setPage(0);
-                    }}
-                  >
-                    Clear query
-                  </Button>
-                </Show>
-              </div>
+              </>
+            }
+          />
+        }
+        toolbar={
+          <Show when={queryOpen()}>
+            <div class="animate-in rounded-xl border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
+              <DeviceQueryBuilder
+                compact
+                query={deviceQuery()}
+                onChange={(query) => {
+                  setDeviceQuery(query);
+                  setPage(0);
+                }}
+              />
+              <p class="mt-2 text-[10.5px] text-muted-foreground">
+                The URL reproduces this filtered view.
+              </p>
             </div>
-            <Show when={queryOpen()}>
-              <div class="animate-in rounded-xl border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
-                <DeviceQueryBuilder
-                  compact
-                  query={deviceQuery()}
-                  onChange={(query) => {
-                    setDeviceQuery(query);
-                    setPage(0);
-                  }}
-                />
-                <p class="mt-2 text-[10.5px] text-muted-foreground">
-                  The URL reproduces this filtered view.
-                </p>
-              </div>
-            </Show>
-          </div>
+          </Show>
         }
         footer={
           <div

@@ -745,7 +745,18 @@ export type FilterBarProps = {
   conjunction?: string;
   /** Hide the clear-all button. */
   hideClear?: boolean;
-  /** Extra controls rendered after the filters. */
+  /**
+   * Render the trigger, applied chips and children as one horizontally
+   * scrollable strip for a table header. This keeps the header on one row
+   * however many filters are active.
+   */
+  inline?: boolean;
+  /**
+   * A filter-adjacent control rendered with the chips, such as the device
+   * table's advanced-query trigger.
+   */
+  filterExtra?: JSX.Element;
+  /** Extra controls rendered after the filters (in the inline strip). */
   children?: JSX.Element;
 };
 
@@ -769,50 +780,79 @@ export function FilterBar(props: FilterBarProps) {
     props.onChange(props.conditions.filter((_, currentIndex) => currentIndex !== index));
   };
 
+  const chips = () => (
+    <For each={props.conditions} keyed={false}>
+      {(condition, index) => (
+        <div class="flex min-w-0 items-center gap-1.5">
+          <Show when={index > 0}>
+            <span class="shrink-0 text-[11px] text-subtle-foreground">
+              {props.conjunction ?? "and"}
+            </span>
+          </Show>
+          <Show when={fieldById(condition().field)}>
+            {(field) => (
+              <FilterChip
+                fields={fields()}
+                field={field()}
+                condition={condition}
+                onChange={(next) => update(index, next)}
+                onRemove={() => remove(index)}
+              />
+            )}
+          </Show>
+        </div>
+      )}
+    </For>
+  );
+
+  const addFilter = (compact: boolean) => (
+    <AddFilter
+      fields={fields()}
+      addLabel={props.conditions.length > 0 ? "Add filter" : (props.label ?? "Filter")}
+      compact={compact}
+      onCreate={(condition) => props.onChange([...props.conditions, condition])}
+    />
+  );
+
+  const clear = () => (
+    <Show when={props.conditions.length > 0 && !props.hideClear}>
+      <button
+        type="button"
+        class={clearButtonClass()}
+        aria-label="Clear filters"
+        onClick={() => props.onChange([])}
+      >
+        <X class="size-3" />
+        Clear
+      </button>
+    </Show>
+  );
+
+  if (props.inline) {
+    return (
+      <div
+        role={props.conditions.length > 0 ? "group" : undefined}
+        aria-label={props.conditions.length > 0 ? "Active filters" : undefined}
+        class={cn(
+          "flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-auto",
+          props.class,
+        )}
+      >
+        {chips()}
+        {addFilter(props.conditions.length > 0)}
+        {props.filterExtra}
+        {clear()}
+        {props.children}
+      </div>
+    );
+  }
+
   return (
     <div class={cn("flex min-w-0 flex-wrap items-center gap-1.5", props.class)}>
-      <For each={props.conditions} keyed={false}>
-        {(condition, index) => (
-          <div class="flex min-w-0 items-center gap-1.5">
-            <Show when={index > 0}>
-              <span class="shrink-0 text-[11px] text-subtle-foreground">
-                {props.conjunction ?? "and"}
-              </span>
-            </Show>
-            <Show when={fieldById(condition().field)}>
-              {(field) => (
-                <FilterChip
-                  fields={fields()}
-                  field={field()}
-                  condition={condition}
-                  onChange={(next) => update(index, next)}
-                  onRemove={() => remove(index)}
-                />
-              )}
-            </Show>
-          </div>
-        )}
-      </For>
-
-      <AddFilter
-        fields={fields()}
-        addLabel={props.conditions.length > 0 ? "Add filter" : (props.label ?? "Filter")}
-        compact={props.conditions.length > 0}
-        onCreate={(condition) => props.onChange([...props.conditions, condition])}
-      />
-
-      <Show when={props.conditions.length > 0 && !props.hideClear}>
-        <button
-          type="button"
-          class={clearButtonClass()}
-          aria-label="Clear filters"
-          onClick={() => props.onChange([])}
-        >
-          <X class="size-3" />
-          Clear
-        </button>
-      </Show>
-
+      {chips()}
+      {addFilter(props.conditions.length > 0)}
+      {props.filterExtra}
+      {clear()}
       {props.children}
     </div>
   );
