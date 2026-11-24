@@ -146,8 +146,7 @@ export const route = {
         : [
             () =>
               queryClient.ensureQueryData({
-                queryKey: enterpriseKeys.deviceSearch(tenantId, defaultDeviceSearch),
-                queryFn: () => enterprise.searchDevices(tenantId, defaultDeviceSearch),
+                ...enterpriseQueries.deviceSearch(tenantId, defaultDeviceSearch),
               }),
           ]),
       () => queryClient.ensureQueryData(enterpriseQueries.list(tenantId, "group")),
@@ -806,17 +805,11 @@ export default function DevicesPage() {
   });
 
   const devices = useQuery(() => ({
-    queryKey: enterpriseKeys.deviceSearch(params.tenantId, {
+    ...enterpriseQueries.deviceSearch(params.tenantId, {
       ...filters(),
       limit: pageSize(),
       offset: page() * pageSize(),
     }),
-    queryFn: () =>
-      enterprise.searchDevices(params.tenantId, {
-        ...filters(),
-        limit: pageSize(),
-        offset: page() * pageSize(),
-      }),
     placeholderData: keepPreviousData,
   }));
 
