@@ -1,4 +1,7 @@
-import { Data, Effect, Schema } from "effect";
+import { Clock, Context, Data, Duration, Effect, Layer, Schema } from "effect";
+import { SecureRandom, Signature } from "effect/crypto";
+import { FetchHttpClient } from "effect/http";
+import { JoseError, Jwt, Jwks } from "effect/jose";
 
 /**
  * Google OIDC verification for Pub/Sub push deliveries.
@@ -8,9 +11,6 @@ import { Data, Effect, Schema } from "effect";
  * Verifying it here (issuer, audience, signature via Google's JWKS and the
  * expected service-account email) is what stops an unauthenticated caller from
  * posting fake enrollment or command notifications.
- *
- * Implemented with WebCrypto so it works in Workers, Node and tests without an
- * extra dependency.
  */
 
 /** Google publishes its OIDC signing keys here. */
@@ -19,56 +19,13 @@ export const GOOGLE_OIDC_JWKS_URI = "https://www.googleapis.com/oauth2/v3/certs"
 /** Google's OIDC issuer, in both forms seen in tokens. */
 export const GOOGLE_OIDC_ISSUERS = ["https://accounts.google.com", "accounts.google.com"] as const;
 
-const JWKS_CACHE_MS = 60 * 60 * 1000;
-
 const CLOCK_SKEW_SECONDS = 60;
+const MAX_OIDC_TOKEN_BYTES = 16 * 1024;
 
 export class PubSubAuthError extends Data.TaggedError("PubSubAuthError")<{
   message: string;
   cause?: unknown;
 }> {}
-
-type SigningJwk = {
-  readonly kty: "RSA";
-  readonly kid?: string;
-  readonly use?: string;
-  readonly alg?: string;
-  readonly n: string;
-  readonly e: string;
-};
-
-type CachedJwkSet = { readonly keys: ReadonlyArray<SigningJwk>; readonly expiresAt: number };
-
-const jwksCache = new Map<string, CachedJwkSet>();
-
-/** Unknown kids that recently forced a refetch; avoid a JWKS-fetch oracle. */
-const unknownKidCache = new Map<string, number>();
-
-const UNKNOWN_KID_NEGATIVE_CACHE_MS = 60 * 1000;
-
-const textDecoder = new TextDecoder();
-
-function decodeBase64Url(input: string): Uint8Array<ArrayBuffer> {
-  const normalized = input.replaceAll("-", "+").replaceAll("_", "/");
-  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
-  const binary = atob(padded);
-
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-}
-
-function decodeJsonPart(input: string, label: string): Schema.JsonObject {
-  try {
-    const value = Schema.decodeUnknownSync(Schema.Json)(
-      JSON.parse(textDecoder.decode(decodeBase64Url(input))),
-    );
-
-    if (!Schema.is(Schema.JsonObject)(value)) throw new Error(`${label} is not an object`);
-
-    return value;
-  } catch (error) {
-    throw new PubSubAuthError({ message: `OIDC token ${label} is not valid JSON`, cause: error });
-  }
-}
 
 export type PubSubOidcVerifierConfig = {
   /** The audience Google is configured to use for the push subscription. */
@@ -79,11 +36,21 @@ export type PubSubOidcVerifierConfig = {
   readonly jwksUri?: string;
   /** Accepted issuers; defaults to Google's. */
   readonly issuers?: ReadonlyArray<string>;
-  /** Injectable fetch and clock for tests. */
+  /**
+   * Fetch implementation used by the compatibility verifier. Scoped service
+   * consumers should inject `HttpClient.HttpClient` instead.
+   */
   readonly fetch?: typeof globalThis.fetch;
+  /** Clock override retained for compatibility; prefer the Effect Clock service. */
   readonly now?: () => number;
   /** Reject tokens older than this even if `exp` is still in the future. */
   readonly maxAgeSeconds?: number;
+  /** How long a fetched JWKS remains cached. Defaults to one hour. */
+  readonly jwksTimeToLive?: Duration.Input;
+  /** Minimum interval between unknown-key refreshes. Defaults to one minute. */
+  readonly jwksCooldown?: Duration.Input;
+  /** Complete JWKS request and body-read deadline. Defaults to five seconds. */
+  readonly jwksTimeout?: Duration.Input;
 };
 
 export type PubSubOidcClaims = {
@@ -99,46 +66,6 @@ export type PubSubOidcClaims = {
 
 type MutableClaims = { -readonly [K in keyof PubSubOidcClaims]: PubSubOidcClaims[K] };
 
-async function fetchJwks(uri: string, fetcher: typeof globalThis.fetch): Promise<CachedJwkSet> {
-  const cached = jwksCache.get(uri);
-
-  if (cached && cached.expiresAt > Date.now()) return cached;
-
-  const response = await fetcher(uri, {
-    headers: { accept: "application/json" },
-  });
-
-  if (!response.ok) throw new Error(`JWKS request returned HTTP ${response.status}`);
-  const json = Schema.decodeUnknownSync(Schema.Json)(await response.json());
-
-  if (!Schema.is(Schema.JsonObject)(json) || !Array.isArray(json["keys"]))
-    throw new Error("JWKS response has no keys array");
-
-  const keys = json["keys"].filter(
-    (key): key is SigningJwk =>
-      Schema.is(Schema.JsonObject)(key) &&
-      key["kty"] === "RSA" &&
-      Schema.is(Schema.String)(key["n"]) &&
-      Schema.is(Schema.String)(key["e"]) &&
-      (key["alg"] === undefined || key["alg"] === "RS256") &&
-      (key["use"] === undefined || key["use"] === "sig"),
-  );
-
-  if (keys.length === 0) throw new Error("JWKS response has no usable RS256 keys");
-  const entry = { keys, expiresAt: Date.now() + JWKS_CACHE_MS } satisfies CachedJwkSet;
-  jwksCache.set(uri, entry);
-
-  return entry;
-}
-
-function audienceMatches(audience: Schema.Json | undefined, expected: string): boolean {
-  if (Schema.is(Schema.String)(audience)) return audience === expected;
-
-  if (Array.isArray(audience)) return audience.some((value) => value === expected);
-
-  return false;
-}
-
 function stringClaim(value: Schema.Json | undefined): string | undefined {
   return Schema.is(Schema.String)(value) && value.length > 0 ? value : undefined;
 }
@@ -147,175 +74,229 @@ function numberClaim(value: Schema.Json | undefined): number | undefined {
   return Schema.is(Schema.Number)(value) && Number.isFinite(value) ? value : undefined;
 }
 
+function authError(message: string, cause?: unknown): PubSubAuthError {
+  return new PubSubAuthError({ message, cause });
+}
+
+function mapJwtError(cause: Jwt.JwtError): PubSubAuthError {
+  if (!JoseError.isJoseError(cause)) {
+    return authError("OIDC token claims are invalid", cause);
+  }
+
+  switch (cause.reason._tag) {
+    case "InvalidToken":
+      return authError("OIDC token is malformed", cause);
+    case "AlgorithmNotAllowed":
+      return authError("OIDC token alg must be RS256", cause);
+    case "SignatureVerificationFailed":
+      return authError("OIDC signature is invalid", cause);
+    case "KeyNotFound":
+      return authError("OIDC signing key not found", cause);
+    case "AmbiguousKey":
+      return authError("OIDC signing key is ambiguous", cause);
+    case "InvalidKey":
+      return authError("Invalid OIDC signing key", cause);
+    case "KeySetUnavailable":
+      return authError(`Could not load Google signing keys: ${cause.reason.message}`, cause);
+    case "InvalidArgument":
+      return authError(`Pub/Sub OIDC configuration is invalid: ${cause.reason.message}`, cause);
+    case "ClaimValidationFailed": {
+      const { claim, reason } = cause.reason;
+
+      if (claim === "iss") return authError("OIDC issuer is not trusted", cause);
+      if (claim === "aud") return authError("OIDC audience does not match", cause);
+      if (claim === "exp") return authError("OIDC token has expired", cause);
+      if (claim === "iat") {
+        return authError(
+          reason === "tooOld" ? "OIDC token is too old" : "OIDC token is not valid yet",
+          cause,
+        );
+      }
+
+      return authError(`OIDC token claim "${claim}" is invalid`, cause);
+    }
+    case "DecryptionFailed":
+      return authError("OIDC signature check failed", cause);
+  }
+}
+
+const verifyWithServices = Effect.fnUntraced(function* (
+  token: string,
+  config: PubSubOidcVerifierConfig,
+  jwks: Jwks.Jwks["Service"],
+  signature: Signature.Signature["Service"],
+): Effect.fn.Return<PubSubOidcClaims, PubSubAuthError> {
+  if (config.audience.trim() === "") {
+    return yield* Effect.fail(authError("Pub/Sub audience is not configured"));
+  }
+
+  if (new TextEncoder().encode(token).byteLength > MAX_OIDC_TOKEN_BYTES) {
+    return yield* Effect.fail(authError("OIDC token is too large"));
+  }
+
+  const unverified = yield* Jwt.decodeUnverified(token).pipe(Effect.mapError(mapJwtError));
+
+  if (unverified.protectedHeader.alg !== "RS256") {
+    return yield* Effect.fail(authError("OIDC token alg must be RS256"));
+  }
+
+  if (!stringClaim(unverified.protectedHeader.kid)) {
+    return yield* Effect.fail(authError("OIDC token has no kid"));
+  }
+
+  const verified = yield* Jwt.verifyWithKeySet(Schema.JsonObject, token, {
+    algorithms: ["RS256"],
+    issuer: config.issuers ?? GOOGLE_OIDC_ISSUERS,
+    audience: config.audience,
+    clockTolerance: CLOCK_SKEW_SECONDS * 1000,
+    requiredClaims: ["iss", "aud", "exp"],
+  }).pipe(
+    Effect.provideService(Jwks.Jwks, jwks),
+    Effect.provideService(Signature.Signature, signature),
+    Effect.mapError(mapJwtError),
+  );
+
+  const claims = verified.claims;
+  const now = Math.floor((yield* Clock.currentTimeMillis) / 1000);
+  const issuedAt = numberClaim(claims["iat"]);
+
+  if (issuedAt !== undefined && issuedAt - CLOCK_SKEW_SECONDS > now) {
+    return yield* Effect.fail(authError("OIDC token is not valid yet"));
+  }
+
+  if (
+    issuedAt !== undefined &&
+    config.maxAgeSeconds !== undefined &&
+    issuedAt + config.maxAgeSeconds + CLOCK_SKEW_SECONDS < now
+  ) {
+    return yield* Effect.fail(authError("OIDC token is too old"));
+  }
+
+  const email = stringClaim(claims["email"]);
+  const rawEmailVerified = claims["email_verified"];
+  const emailVerified = Schema.is(Schema.Boolean)(rawEmailVerified) ? rawEmailVerified : undefined;
+
+  if (config.serviceAccountEmail) {
+    if (!email || email.toLowerCase() !== config.serviceAccountEmail.toLowerCase()) {
+      return yield* Effect.fail(authError("OIDC token is from an unexpected service account"));
+    }
+
+    if (emailVerified === false) {
+      return yield* Effect.fail(authError("OIDC token email is not verified"));
+    }
+  }
+
+  const audience = verified.registeredClaims.aud;
+  const issuer = stringClaim(claims["iss"]);
+  const expiresAt = numberClaim(claims["exp"]);
+
+  if (issuer === undefined || expiresAt === undefined) {
+    return yield* Effect.fail(authError("OIDC token claims are invalid"));
+  }
+
+  const result: MutableClaims = {
+    issuer,
+    audience: typeof audience === "string" ? audience : config.audience,
+    expiresAt,
+    claims,
+  };
+
+  const subject = stringClaim(claims["sub"]);
+
+  if (subject !== undefined) result.subject = subject;
+  if (email !== undefined) result.email = email;
+  if (emailVerified !== undefined) result.emailVerified = emailVerified;
+  if (issuedAt !== undefined) result.issuedAt = issuedAt;
+
+  return result;
+});
+
+export interface PubSubOidcVerifierService {
+  readonly verify: (token: string) => Effect.Effect<PubSubOidcClaims, PubSubAuthError>;
+}
+
+/** A verifier whose JWKS cache lives and dies with its Effect layer scope. */
+export class PubSubOidcVerifier extends Context.Service<
+  PubSubOidcVerifier,
+  PubSubOidcVerifierService
+>()("@mattrax/dm-android/PubSubOidcVerifier") {}
+
+/**
+ * Scoped Google OIDC verifier. Provide an `HttpClient.HttpClient`; closing the
+ * layer aborts in-flight JWKS requests and discards the cached key set.
+ * The injected client must not follow redirects.
+ */
+export const PubSubOidcVerifierLive = (config: PubSubOidcVerifierConfig) =>
+  Layer.effect(
+    PubSubOidcVerifier,
+    Effect.gen(function* () {
+      const clock = yield* Clock.Clock;
+      const jwks = yield* Jwks.Jwks;
+      const signature = yield* Signature.Signature;
+
+      return PubSubOidcVerifier.of({
+        verify: (token) =>
+          verifyWithServices(token, config, jwks, signature).pipe(
+            Effect.provideService(Clock.Clock, clock),
+          ),
+      });
+    }),
+  ).pipe(
+    Layer.provide(
+      Jwks.layerRemote({
+        url: config.jwksUri ?? GOOGLE_OIDC_JWKS_URI,
+        timeToLive: config.jwksTimeToLive ?? "1 hour",
+        cooldown: config.jwksCooldown ?? "1 minute",
+        timeout: config.jwksTimeout ?? "5 seconds",
+      }),
+    ),
+    Layer.provide(Signature.layerWebCrypto.pipe(Layer.provide(SecureRandom.layerWebCrypto))),
+  );
+
+function clockWithOverride(clock: Clock.Clock, now: (() => number) | undefined): Clock.Clock {
+  if (now === undefined) return clock;
+
+  const currentTimeMillis = () => Math.trunc(now());
+  const currentTimeNanos = () => BigInt(currentTimeMillis()) * 1_000_000n;
+
+  return {
+    currentTimeMillisUnsafe: currentTimeMillis,
+    currentTimeMillis: Effect.sync(currentTimeMillis),
+    currentTimeNanosUnsafe: currentTimeNanos,
+    currentTimeNanos: Effect.sync(currentTimeNanos),
+    monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
+    monotonicTimeNanos: clock.monotonicTimeNanos,
+    sleep: (duration) => clock.sleep(duration),
+  };
+}
+
 /**
  * Verify a Pub/Sub OIDC bearer token and return its claims.
  *
- * Fails closed on any malformed header, unknown key, bad signature, wrong
- * issuer/audience, expired token or unexpected service-account email.
+ * This compatibility entry point creates a scoped JWKS service per call. Use
+ * `PubSubOidcVerifierLive` when keys should be cached across requests.
  */
 export function verifyPubSubOidcToken(
   token: string,
   config: PubSubOidcVerifierConfig,
 ): Effect.Effect<PubSubOidcClaims, PubSubAuthError> {
-  return Effect.gen(function* () {
-    if (config.audience.trim() === "")
-      return yield* Effect.fail(
-        new PubSubAuthError({ message: "Pub/Sub audience is not configured" }),
-      );
+  const fetchLayer = FetchHttpClient.layer.pipe(
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, config.fetch ?? globalThis.fetch)),
+    Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })),
+  );
 
-    const parts = token.split(".");
+  return Clock.clockWith((clock) =>
+    Effect.gen(function* () {
+      const verifier = yield* PubSubOidcVerifier;
 
-    if (parts.length !== 3 || parts.some((part) => part === ""))
-      return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token is malformed" }));
-
-    const header = yield* Effect.try({
-      try: () => decodeJsonPart(parts[0] ?? "", "header"),
-      catch: (cause) =>
-        cause instanceof PubSubAuthError
-          ? cause
-          : new PubSubAuthError({ message: "OIDC token header is invalid", cause }),
-    });
-
-    if (header["alg"] !== "RS256")
-      return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token alg must be RS256" }));
-    const kid = stringClaim(header["kid"]);
-
-    if (!kid) return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token has no kid" }));
-
-    const claims = yield* Effect.try({
-      try: () => decodeJsonPart(parts[1] ?? "", "payload"),
-      catch: (cause) =>
-        cause instanceof PubSubAuthError
-          ? cause
-          : new PubSubAuthError({ message: "OIDC token payload is invalid", cause }),
-    });
-
-    const jwksUri = config.jwksUri ?? GOOGLE_OIDC_JWKS_URI;
-    const fetcher = config.fetch ?? globalThis.fetch;
-
-    const loadKeys = () =>
-      Effect.tryPromise({
-        try: () => fetchJwks(jwksUri, fetcher),
-        catch: (cause) =>
-          new PubSubAuthError({ message: "Could not load Google signing keys", cause }),
-      });
-
-    const nowMs = config.now?.() ?? Date.now();
-    const negativeKey = `${jwksUri}:${kid}`;
-    const blockedUntil = unknownKidCache.get(negativeKey);
-
-    if (blockedUntil !== undefined && blockedUntil > nowMs)
-      return yield* Effect.fail(new PubSubAuthError({ message: "OIDC signing key not found" }));
-
-    let keySet = yield* loadKeys();
-    let jwk = keySet.keys.find((candidate) => candidate.kid === kid);
-
-    if (!jwk) {
-      // Keys rotate; an unknown kid may just mean our cache is stale. Only
-      // refetch once per kid per minute so random kids cannot amplify egress.
-      jwksCache.delete(jwksUri);
-      keySet = yield* loadKeys();
-      jwk = keySet.keys.find((candidate) => candidate.kid === kid);
-    }
-
-    if (!jwk) {
-      if (unknownKidCache.size > 1000) unknownKidCache.clear();
-      unknownKidCache.set(negativeKey, nowMs + UNKNOWN_KID_NEGATIVE_CACHE_MS);
-
-      return yield* Effect.fail(new PubSubAuthError({ message: "OIDC signing key not found" }));
-    }
-
-    const signingJwk = jwk;
-
-    const key = yield* Effect.tryPromise({
-      try: () =>
-        crypto.subtle.importKey(
-          "jwk",
-          { kty: "RSA", n: signingJwk.n, e: signingJwk.e },
-          { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-          false,
-          ["verify"],
-        ),
-      catch: (cause) => new PubSubAuthError({ message: "Invalid OIDC signing key", cause }),
-    });
-
-    const valid = yield* Effect.tryPromise({
-      try: () =>
-        crypto.subtle.verify(
-          { name: "RSASSA-PKCS1-v1_5" },
-          key,
-          decodeBase64Url(parts[2] ?? ""),
-          new TextEncoder().encode(`${parts[0]}.${parts[1]}`),
-        ),
-      catch: (cause) => new PubSubAuthError({ message: "OIDC signature check failed", cause }),
-    });
-
-    if (!valid)
-      return yield* Effect.fail(new PubSubAuthError({ message: "OIDC signature is invalid" }));
-
-    const issuer = stringClaim(claims["iss"]);
-    const acceptedIssuers: ReadonlyArray<string> = config.issuers ?? GOOGLE_OIDC_ISSUERS;
-
-    if (!issuer || !acceptedIssuers.includes(issuer))
-      return yield* Effect.fail(new PubSubAuthError({ message: "OIDC issuer is not trusted" }));
-
-    if (!audienceMatches(claims["aud"], config.audience))
-      return yield* Effect.fail(new PubSubAuthError({ message: "OIDC audience does not match" }));
-
-    const now = Math.floor((config.now?.() ?? Date.now()) / 1000);
-    const expiresAt = numberClaim(claims["exp"]);
-
-    if (expiresAt === undefined || expiresAt + CLOCK_SKEW_SECONDS <= now)
-      return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token has expired" }));
-
-    const issuedAt = numberClaim(claims["iat"]);
-
-    if (issuedAt !== undefined && issuedAt - CLOCK_SKEW_SECONDS > now)
-      return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token is not valid yet" }));
-
-    if (issuedAt !== undefined && config.maxAgeSeconds !== undefined) {
-      if (issuedAt + config.maxAgeSeconds + CLOCK_SKEW_SECONDS < now)
-        return yield* Effect.fail(new PubSubAuthError({ message: "OIDC token is too old" }));
-    }
-
-    const email = stringClaim(claims["email"]);
-
-    const rawEmailVerified = claims["email_verified"];
-    const emailVerified = Schema.is(Schema.Boolean)(rawEmailVerified)
-      ? rawEmailVerified
-      : undefined;
-
-    if (config.serviceAccountEmail) {
-      if (!email || email.toLowerCase() !== config.serviceAccountEmail.toLowerCase())
-        return yield* Effect.fail(
-          new PubSubAuthError({ message: "OIDC token is from an unexpected service account" }),
-        );
-
-      if (emailVerified === false)
-        return yield* Effect.fail(
-          new PubSubAuthError({ message: "OIDC token email is not verified" }),
-        );
-    }
-
-    const result: MutableClaims = {
-      issuer,
-      audience: stringClaim(claims["aud"]) ?? config.audience,
-      expiresAt,
-      claims,
-    };
-
-    const subject = stringClaim(claims["sub"]);
-
-    if (subject !== undefined) result.subject = subject;
-
-    if (email !== undefined) result.email = email;
-
-    if (emailVerified !== undefined) result.emailVerified = emailVerified;
-
-    if (issuedAt !== undefined) result.issuedAt = issuedAt;
-
-    return result;
-  });
+      return yield* verifier.verify(token);
+    }).pipe(
+      Effect.provide(PubSubOidcVerifierLive(config)),
+      Effect.provide(fetchLayer),
+      Effect.provideService(Clock.Clock, clockWithOverride(clock, config.now)),
+      Effect.mapError((cause) => (JoseError.isJoseError(cause) ? mapJwtError(cause) : cause)),
+    ),
+  );
 }
 
 /** Extract a bearer token from an `Authorization` header value. */
@@ -325,8 +306,7 @@ export function bearerToken(header: string | undefined): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
-/** Clear the module-level JWKS cache. Tests only. */
+/** @deprecated JWKS caches are now scoped to their verifier layer. */
 export function clearJwksCache(): void {
-  jwksCache.clear();
-  unknownKidCache.clear();
+  return;
 }

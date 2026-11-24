@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { Schema } from "effect";
+import { Effect, Layer, Result, Schema } from "effect";
+import { Digest } from "effect/crypto";
 import {
+  AndroidPolicyHashError,
   PolicyMergeError,
+  androidPolicyHashEffect,
   androidPolicyHash,
   androidPolicyIdForHash,
   canonicalPolicyJson,
   compileAndroidPolicy,
+  compileAndroidPolicyResult,
   compileAndroidPolicyWithHash,
+  compileAndroidPolicyWithHashEffect,
   mergeAndroidPolicies,
+  mergeAndroidPoliciesResult,
   mergeAssignedAndroidApplications,
 } from "../src/index.js";
 
@@ -107,6 +113,48 @@ describe("mergeAndroidPolicies", () => {
   });
 });
 
+describe("typed Android policy validation", () => {
+  it("returns a successful Result for a valid policy", () => {
+    const result = mergeAndroidPoliciesResult([
+      { cameraDisabled: true },
+      { screenCaptureDisabled: true },
+    ]);
+
+    expect(Result.isSuccess(result)).toBe(true);
+
+    if (Result.isSuccess(result)) {
+      expect(result.success).toEqual({
+        cameraDisabled: true,
+        screenCaptureDisabled: true,
+      });
+    }
+  });
+
+  it("returns PolicyMergeError as data instead of throwing", () => {
+    const result = mergeAndroidPoliciesResult([{ name: "enterprises/LC123/policies/other" }]);
+
+    expect(Result.isFailure(result)).toBe(true);
+
+    if (Result.isFailure(result)) {
+      expect(result.failure).toBeInstanceOf(PolicyMergeError);
+      expect(result.failure).toMatchObject({ key: "name", path: "name" });
+    }
+  });
+
+  it("returns typed configuration validation failures", () => {
+    const result = compileAndroidPolicyResult([
+      { kind: "mttx.android.policy.designer", data: { policy: "not an object" } },
+    ]);
+
+    expect(Result.isFailure(result)).toBe(true);
+
+    if (Result.isFailure(result)) {
+      expect(result.failure).toBeInstanceOf(PolicyMergeError);
+      expect(result.failure.path).toBe("mttx.android.policy.designer.policy");
+    }
+  });
+});
+
 describe("androidPolicyHash", () => {
   it("returns a deterministic 64-character hex digest", async () => {
     const hash = await androidPolicyHash({ screenCaptureDisabled: true });
@@ -135,6 +183,46 @@ describe("androidPolicyHash", () => {
 
     const reordered = { screenCaptureDisabled: true, cameraDisabled: true };
     await expect(androidPolicyHash(merged)).resolves.toBe(await androidPolicyHash(reordered));
+  });
+});
+
+describe("typed Android policy hashing", () => {
+  it("hashes through the injectable Digest service", async () => {
+    const hash = await Effect.runPromise(
+      androidPolicyHashEffect({ screenCaptureDisabled: true }).pipe(
+        Effect.provide(Digest.layerWebCrypto),
+      ),
+    );
+
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    await expect(androidPolicyHash({ screenCaptureDisabled: true })).resolves.toBe(hash);
+  });
+
+  it("maps crypto defects to AndroidPolicyHashError", async () => {
+    const cause = new Error("digest unavailable");
+    const digest = Layer.succeed(Digest.Digest, {
+      digest: () => Effect.die(cause),
+      digestHex: () => Effect.die(cause),
+    });
+
+    const error = await Effect.runPromise(
+      Effect.flip(androidPolicyHashEffect({ cameraDisabled: true }).pipe(Effect.provide(digest))),
+    );
+
+    expect(error).toBeInstanceOf(AndroidPolicyHashError);
+    expect(error.cause).toBe(cause);
+  });
+
+  it("compiles and hashes with typed validation failures", async () => {
+    const error = await Effect.runPromise(
+      Effect.flip(
+        compileAndroidPolicyWithHashEffect([
+          { kind: "mttx.android.policy.designer", data: { policy: { name: "read-only" } } },
+        ]).pipe(Effect.provide(Digest.layerWebCrypto)),
+      ),
+    );
+
+    expect(error).toBeInstanceOf(PolicyMergeError);
   });
 });
 

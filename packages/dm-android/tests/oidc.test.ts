@@ -1,8 +1,16 @@
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { Context, Effect, Exit, Fiber, Layer, Scope } from "effect";
 import type { Schema } from "effect";
-import { Effect } from "effect";
-import { base64UrlEncode, clearJwksCache, verifyPubSubOidcToken } from "../src/index.js";
+import { TestClock } from "effect/testing";
+import {
+  PubSubAuthError,
+  PubSubOidcVerifier,
+  PubSubOidcVerifierLive,
+  base64UrlEncode,
+  verifyPubSubOidcToken,
+} from "../src/index.js";
 import type { PubSubOidcVerifierConfig } from "../src/index.js";
+import { mockFetch } from "./helpers.js";
 
 const audience = "https://mattrax.test/api/v1/android/pubsub";
 
@@ -11,6 +19,15 @@ const serviceAccountEmail = "android-pubsub@test-project.iam.gserviceaccount.com
 const jwksUri = "https://keys.test/jwks";
 
 const kid = "test-key-1";
+
+function deferredPromise<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+
+  return { promise, resolve };
+}
 
 let privateKey: CryptoKey;
 
@@ -22,7 +39,7 @@ const encoder = new TextEncoder();
 
 function sign(
   claims: Schema.JsonObject,
-  options: { kid?: string; header?: Schema.JsonObject } = {},
+  options: { kid?: string; header?: Schema.JsonObject; key?: CryptoKey } = {},
 ): Promise<string> {
   return (async () => {
     const header = base64UrlEncode(
@@ -35,7 +52,7 @@ function sign(
 
     const signature = await crypto.subtle.sign(
       { name: "RSASSA-PKCS1-v1_5" },
-      privateKey,
+      options.key ?? privateKey,
       encoder.encode(`${header}.${payload}`),
     );
 
@@ -70,6 +87,18 @@ function config(overrides: Partial<PubSubOidcVerifierConfig> = {}): PubSubOidcVe
   };
 }
 
+function scopedConfig(overrides: Partial<PubSubOidcVerifierConfig> = {}): PubSubOidcVerifierConfig {
+  return {
+    audience,
+    serviceAccountEmail,
+    jwksUri,
+    jwksTimeToLive: "1 hour",
+    jwksCooldown: "1 minute",
+    jwksTimeout: "1 second",
+    ...overrides,
+  };
+}
+
 const verify = (token: string, overrides: Partial<PubSubOidcVerifierConfig> = {}) =>
   Effect.runPromise(verifyPubSubOidcToken(token, config(overrides)));
 
@@ -100,8 +129,6 @@ describe("verifyPubSubOidcToken", () => {
         headers: { "content-type": "application/json" },
       });
   });
-
-  beforeEach(() => clearJwksCache());
 
   it("accepts a valid Google-signed token", async () => {
     const result = await verify(await sign(claims()));
@@ -183,12 +210,225 @@ describe("verifyPubSubOidcToken", () => {
 
   it("rejects malformed tokens and non-RS256 algorithms", async () => {
     expect((await rejection("not-a-token")).message).toContain("malformed");
+    expect((await rejection(await sign(claims(), { kid: "" }))).message).toContain("no kid");
     const token = await sign(claims(), { header: { alg: "HS256" } });
     expect((await rejection(token)).message).toContain("RS256");
+  });
+
+  it("rejects oversized tokens before verification", async () => {
+    const error = await rejection("x".repeat(17 * 1024));
+    expect(error.message).toContain("too large");
+  });
+
+  it("enforces the configured maximum token age", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const error = await rejection(await sign(claims({ iat: now - 1200, exp: now + 600 })), {
+      maxAgeSeconds: 600,
+    });
+    expect(error.message).toContain("too old");
   });
 
   it("refuses to verify without an audience", async () => {
     const error = await rejection(await sign(claims()), { audience: "" });
     expect(error.message).toContain("audience is not configured");
+  });
+
+  it("caches JWKS in the verifier scope until its Effect-clock TTL expires", async () => {
+    const now = 1_700_000_000;
+    const token = await sign(claims({ iat: now - 10, exp: now + 3600 }));
+    const mock = mockFetch(() => jwksResponse());
+    const layer = PubSubOidcVerifierLive(scopedConfig({ jwksTimeToLive: "10 minutes" })).pipe(
+      Layer.provide(mock.layer),
+    );
+
+    const program = Effect.gen(function* () {
+      yield* TestClock.setTime(now * 1000);
+      const verifier = yield* PubSubOidcVerifier;
+      yield* verifier.verify(token);
+      yield* TestClock.adjust("9 minutes");
+      yield* verifier.verify(token);
+      yield* TestClock.adjust("2 minutes");
+      yield* verifier.verify(token);
+    });
+
+    await Effect.runPromise(program.pipe(Effect.provide(layer), Effect.provide(TestClock.layer())));
+
+    expect(mock.requests.filter((request) => request.pathname === "/jwks")).toHaveLength(2);
+  });
+
+  it("refreshes JWKS for an unknown key after the cooldown", async () => {
+    const now = 1_700_000_000;
+    const rotated = await crypto.subtle.generateKey(
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        hash: "SHA-256",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+      },
+      true,
+      ["sign", "verify"] as const,
+    );
+    const rotatedJwk: JsonWebKey & { kid?: string } = {
+      ...(await crypto.subtle.exportKey("jwk", rotated.publicKey)),
+    };
+    rotatedJwk.kid = "rotated-key";
+    rotatedJwk.alg = "RS256";
+    rotatedJwk.use = "sig";
+
+    let fetches = 0;
+    const mock = mockFetch(() => {
+      fetches++;
+
+      return new Response(JSON.stringify({ keys: [fetches === 1 ? publicJwk : rotatedJwk] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const layer = PubSubOidcVerifierLive(scopedConfig()).pipe(Layer.provide(mock.layer));
+    const token = await sign(claims({ iat: now - 10, exp: now + 600 }), {
+      kid: "rotated-key",
+      key: rotated.privateKey,
+    });
+
+    const program = Effect.gen(function* () {
+      yield* TestClock.setTime(now * 1000);
+      const verifier = yield* PubSubOidcVerifier;
+      const first = yield* Effect.flip(verifier.verify(token));
+      const coolingDown = yield* Effect.flip(verifier.verify(token));
+      expect(fetches).toBe(1);
+      yield* TestClock.adjust("1 minute");
+      const refreshed = yield* verifier.verify(token);
+      const cached = yield* verifier.verify(token);
+
+      return { first, coolingDown, refreshed, cached };
+    });
+
+    const result = await Effect.runPromise(
+      program.pipe(Effect.provide(layer), Effect.provide(TestClock.layer())),
+    );
+
+    expect(result.first).toBeInstanceOf(PubSubAuthError);
+    expect(result.first.message).toContain("signing key not found");
+    expect(result.coolingDown.message).toContain("signing key not found");
+    expect(result.refreshed.email).toBe(serviceAccountEmail);
+    expect(result.cached.email).toBe(serviceAccountEmail);
+    expect(fetches).toBe(2);
+  });
+
+  it("bounds JWKS header and body reads with a timeout", async () => {
+    const now = 1_700_000_000;
+    const token = await sign(claims({ iat: now - 10, exp: now + 600 }));
+    const started = deferredPromise<void>();
+    const mock = mockFetch(() => {
+      started.resolve();
+
+      return new Promise<Response>(() => {
+        // Intentionally never settles; the Effect deadline interrupts the read.
+      });
+    });
+    const layer = PubSubOidcVerifierLive(scopedConfig()).pipe(Layer.provide(mock.layer));
+
+    const program = Effect.gen(function* () {
+      yield* TestClock.setTime(now * 1000);
+      const verifier = yield* PubSubOidcVerifier;
+      const fiber = yield* verifier.verify(token).pipe(Effect.forkChild);
+      yield* Effect.promise(() => started.promise);
+      yield* TestClock.adjust("1 second");
+
+      return yield* Fiber.join(fiber);
+    });
+
+    const error = await Effect.runPromise(
+      Effect.flip(program).pipe(Effect.provide(layer), Effect.provide(TestClock.layer())),
+    );
+
+    expect(error).toBeInstanceOf(PubSubAuthError);
+    expect(error.message).toContain("timed out");
+  });
+
+  it("times out and aborts a stalled JWKS response body", async () => {
+    const now = 1_700_000_000;
+    const token = await sign(claims({ iat: now - 10, exp: now + 600 }));
+    const started = deferredPromise<void>();
+    let aborted = false;
+    const mock = mockFetch((_request, init) => {
+      started.resolve();
+      init?.signal?.addEventListener(
+        "abort",
+        () => {
+          aborted = true;
+        },
+        { once: true },
+      );
+
+      return new Response(
+        new ReadableStream({
+          cancel() {
+            aborted = true;
+          },
+        }),
+      );
+    });
+    const layer = PubSubOidcVerifierLive(scopedConfig()).pipe(Layer.provide(mock.layer));
+
+    const program = Effect.gen(function* () {
+      yield* TestClock.setTime(now * 1000);
+      const verifier = yield* PubSubOidcVerifier;
+      const fiber = yield* verifier.verify(token).pipe(Effect.forkChild);
+      yield* Effect.promise(() => started.promise);
+      yield* TestClock.adjust("1 second");
+
+      return yield* Fiber.join(fiber);
+    });
+
+    const error = await Effect.runPromise(
+      Effect.flip(program.pipe(Effect.provide(layer), Effect.provide(TestClock.layer()))),
+    );
+
+    expect(error).toBeInstanceOf(PubSubAuthError);
+    expect(error.message).toContain("timed out");
+    expect(aborted).toBe(true);
+  });
+
+  it("aborts an in-flight JWKS request when the verifier scope closes", async () => {
+    const now = 1_700_000_000;
+    const token = await sign(claims({ iat: now - 10, exp: now + 600 }));
+    const started = deferredPromise<void>();
+    let aborted = false;
+    const mock = mockFetch((_request, init) => {
+      started.resolve();
+      init?.signal?.addEventListener(
+        "abort",
+        () => {
+          aborted = true;
+        },
+        { once: true },
+      );
+
+      return new Promise<Response>(() => {
+        // Intentionally never settles; closing the scope aborts the request.
+      });
+    });
+    const layer = PubSubOidcVerifierLive(scopedConfig()).pipe(Layer.provide(mock.layer));
+
+    const program = Effect.gen(function* () {
+      yield* TestClock.setTime(now * 1000);
+      const scope = yield* Scope.make();
+      const context = yield* Layer.buildWithScope(layer, scope);
+      const verifier = Context.get(context, PubSubOidcVerifier);
+      const fiber = yield* verifier.verify(token).pipe(Effect.forkChild);
+      yield* Effect.promise(() => started.promise);
+      yield* Scope.close(scope, Exit.void);
+
+      return yield* Fiber.join(fiber);
+    }).pipe(Effect.scoped);
+
+    const error = await Effect.runPromise(
+      Effect.flip(program.pipe(Effect.provide(TestClock.layer()))),
+    );
+
+    expect(aborted).toBe(true);
+    expect(error).toBeInstanceOf(PubSubAuthError);
+    expect(error.message).toContain("Could not load Google signing keys");
   });
 });
