@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Schema } from "effect";
 import { Effect } from "effect";
 import * as asn1js from "asn1js";
@@ -575,6 +575,29 @@ describe("ADE profile links", () => {
     );
 
     expect(info.enrollmentUrl).toBe("https://mdm.example.com/api/v1/abm/ade/enroll");
+  });
+
+  it("reports token verification outages as upstream failures", async () => {
+    const signed = await runEffect(
+      createAdeProfileToken({
+        authSecret,
+        organizationId,
+        serial: "SERIAL-1",
+        profileUuid: "profile-1",
+        ttlSeconds: 60,
+      }),
+    );
+    const verify = vi
+      .spyOn(crypto.subtle, "verify")
+      .mockRejectedValueOnce(new Error("crypto unavailable"));
+
+    try {
+      await expect(
+        runEffect(readAdeProfileToken({ authSecret, token: signed.token })),
+      ).rejects.toMatchObject({ kind: "upstream" });
+    } finally {
+      verify.mockRestore();
+    }
   });
 
   it("signs a tenant/serial/profile-bound link and rejects tampering", async () => {

@@ -1711,7 +1711,11 @@ describe("enterprise service policy flow", () => {
 
   const interceptDeploymentInserts = (
     db: any,
-    respond: (row: any, attempt: number, commit: () => void) => Effect.Effect<any, any>,
+    respond: (
+      row: any,
+      attempt: number,
+      commit: () => Effect.Effect<unknown, unknown>,
+    ) => Effect.Effect<any, any>,
   ) => {
     const insert = db.insert.bind(db);
     const attempts: any[] = [];
@@ -1725,13 +1729,14 @@ describe("enterprise service policy flow", () => {
 
       builder.values = (rows: any) => {
         const row = Array.isArray(rows) ? rows[0] : rows;
+        const pending = values(rows);
+        // The fake applies writes when the builder is yielded, not in values().
+        const commit = Effect.gen(function* () {
+          yield* pending;
+        });
         attempts.push(row);
 
-        return Effect.suspend(() =>
-          respond(row, attempts.length, () => {
-            values(rows);
-          }),
-        );
+        return Effect.suspend(() => respond(row, attempts.length, () => commit));
       };
 
       return builder;
@@ -2062,7 +2067,7 @@ describe("enterprise service policy flow", () => {
     const attempts = interceptDeploymentInserts(db, (_row, attempt, commit) =>
       attempt === 1
         ? Effect.fail(snapshotCollision("policy_deployment.policy_deployment_version_unique"))
-        : Effect.sync(commit),
+        : Effect.suspend(commit),
     );
 
     await runEffect(
@@ -2084,7 +2089,7 @@ describe("enterprise service policy flow", () => {
   it("acknowledges an ambiguously committed snapshot without inserting again", async () => {
     const { db, service, headers, tenant, policy } = await makePolicyContext();
     const attempts = interceptDeploymentInserts(db, (_row, _attempt, commit) =>
-      Effect.sync(commit).pipe(
+      Effect.suspend(commit).pipe(
         Effect.andThen(Effect.fail(snapshotCollision("policy_deployment.PRIMARY"))),
       ),
     );

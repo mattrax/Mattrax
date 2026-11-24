@@ -1869,6 +1869,9 @@ export const createAdeProfileToken = (input: {
       serial: input.serial,
       profileUuid: input.profileUuid,
     }).pipe(
+      Effect.catchTag("TokenError", (cause) =>
+        Effect.fail(fail("upstream", "Could not sign the ADE profile URL.", cause)),
+      ),
       Effect.catchDefect((cause) =>
         Effect.fail(fail("upstream", "Could not sign the ADE profile URL.", cause)),
       ),
@@ -1889,6 +1892,13 @@ export const readAdeProfileToken = (input: {
 }): Effect.Effect<AdeProfileToken, AppleBusinessManagerError> =>
   Effect.gen(function* () {
     const payload = yield* verifyToken(input.authSecret, input.token).pipe(
+      Effect.catchTag("TokenError", (cause) =>
+        Effect.fail(
+          cause.reason === "crypto"
+            ? fail("upstream", "The ADE profile link could not be verified.", cause)
+            : fail("invalid_token", "The ADE profile link is invalid or has expired.", cause),
+        ),
+      ),
       Effect.catchDefect((cause) =>
         Effect.fail(
           fail("invalid_token", "The ADE profile link is invalid or has expired.", cause),
