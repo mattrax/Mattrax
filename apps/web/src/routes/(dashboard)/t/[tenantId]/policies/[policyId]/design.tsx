@@ -78,6 +78,14 @@ export const route = {
   },
 };
 
+/** Read secondary query data only after success so pending async values never throw during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function PolicyDesignerPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -91,7 +99,7 @@ export default function PolicyDesignerPage() {
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
 
-  const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+  const row = () => Option.getOrUndefined(decodePolicyRow(settledQueryData(policy)));
   const guard = createStaleWriteGuard(() => row()?.updatedAt);
   /** Bumped by "Reload latest" to remount the designer from the saved draft. */
   const [draftEpoch, setDraftEpoch] = createSignal(0);
@@ -290,7 +298,7 @@ export default function PolicyDesignerPage() {
         </div>
         <div class="flex min-h-0 flex-1 flex-col">
           <Show
-            when={ready() && policy.data}
+            when={ready() && settledQueryData(policy)}
             fallback={
               <Show
                 when={policy.isError}
