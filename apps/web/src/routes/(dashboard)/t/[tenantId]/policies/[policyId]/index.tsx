@@ -7,7 +7,7 @@ import {
   certificateRenewalDueAt,
 } from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, For, Show } from "solid-js";
 import {
   ErrorText,
   Field,
@@ -241,7 +241,12 @@ const describe = (kind: string, data: Schema.Json | undefined) => {
           ? ` · ${String(record.passwordAgeDays)} day password`
           : ""),
       collections: [
-        { label: isString(record.accountName) ? String(record.accountName) : "Built-in administrator", platform: "windows" },
+        {
+          label: isString(record.accountName)
+            ? String(record.accountName)
+            : "Built-in administrator",
+          platform: "windows",
+        },
       ],
       platforms: ["windows"],
     };
@@ -1549,6 +1554,19 @@ function AddConfigurationDialog(props: {
   const [requireAlphanumeric, setRequireAlphanumeric] = createSignal(false);
   const [allowSimple, setAllowSimple] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
+  const errorId = createUniqueId();
+  let ssidInput: HTMLInputElement | undefined;
+  let passwordInput: HTMLInputElement | undefined;
+
+  const ssidInvalid = () => preset() === "wifi" && error() === "Enter the network name (SSID).";
+  const passwordInvalid = () => preset() === "wifi" && error() === "Enter the Wi-Fi password.";
+
+  const fail = (message: string, field?: "ssid" | "password") => {
+    setError(message);
+
+    if (field === "ssid") ssidInput?.focus();
+    if (field === "password") passwordInput?.focus();
+  };
 
   const reset = () => {
     setSsid("");
@@ -1568,16 +1586,22 @@ function AddConfigurationDialog(props: {
     setError(null);
   };
 
+  const choosePreset = (next: "wifi" | "passcode" | "laps") => {
+    setPreset(next);
+    setError(null);
+  };
+
   const submit = () => {
     setError(null);
     const next: PolicyConfigurations = Object.fromEntries(props.existing);
 
     if (preset() === "wifi") {
-      if (!ssid().trim()) return setError("Enter the network name (SSID).");
+      if (!ssid().trim()) return fail("Enter the network name (SSID).", "ssid");
 
-      if (security() !== "open" && !password()) return setError("Enter the Wi-Fi password.");
+      if (security() !== "open" && !password())
+        return fail("Enter the Wi-Fi password.", "password");
 
-      if (!apple() && !windows()) return setError("Choose at least one platform.");
+      if (!apple() && !windows()) return fail("Choose at least one platform.");
 
       const value = {
         ssid: ssid().trim(),
@@ -1598,13 +1622,13 @@ function AddConfigurationDialog(props: {
       }
     } else if (preset() === "laps") {
       if (lapsAgeDays() < 1 || lapsAgeDays() > 365)
-        return setError("The password age must be between 1 and 365 days.");
+        return fail("The password age must be between 1 and 365 days.");
 
       if (lapsBackupDirectory() === "entra-id" && lapsAgeDays() < 7)
-        return setError("Entra-backed Windows LAPS requires a password age of at least 7 days.");
+        return fail("Entra-backed Windows LAPS requires a password age of at least 7 days.");
 
       if (lapsLength() < 8 || lapsLength() > 64)
-        return setError("The password length must be between 8 and 64 characters.");
+        return fail("The password length must be between 8 and 64 characters.");
 
       next["mttx.windows.laps"] = {
         backupDirectory: lapsBackupDirectory(),
@@ -1648,7 +1672,7 @@ function AddConfigurationDialog(props: {
         <div class="mt-4 grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setPreset("wifi")}
+            onClick={() => choosePreset("wifi")}
             class={`pressable rounded-lg border p-3 text-left ${
               preset() === "wifi"
                 ? "border-foreground/25 bg-hover"
@@ -1663,7 +1687,7 @@ function AddConfigurationDialog(props: {
           </button>
           <button
             type="button"
-            onClick={() => setPreset("passcode")}
+            onClick={() => choosePreset("passcode")}
             class={`pressable rounded-lg border p-3 text-left ${
               preset() === "passcode"
                 ? "border-foreground/25 bg-hover"
@@ -1678,7 +1702,7 @@ function AddConfigurationDialog(props: {
           </button>
           <button
             type="button"
-            onClick={() => setPreset("laps")}
+            onClick={() => choosePreset("laps")}
             class={`pressable rounded-lg border p-3 text-left ${
               preset() === "laps"
                 ? "border-foreground/25 bg-hover"
@@ -1697,8 +1721,15 @@ function AddConfigurationDialog(props: {
           <div class="mt-4 space-y-3">
             <Field label="Network name (SSID)">
               <Input
+                ref={ssidInput}
                 value={ssid()}
-                onInput={(event) => setSsid(event.currentTarget.value)}
+                aria-invalid={ssidInvalid() ? "true" : undefined}
+                aria-describedby={ssidInvalid() ? errorId : undefined}
+                onInput={(event) => {
+                  setSsid(event.currentTarget.value);
+
+                  if (ssidInvalid() && event.currentTarget.value.trim()) setError(null);
+                }}
                 placeholder="Staff Wi-Fi"
               />
             </Field>
@@ -1723,8 +1754,15 @@ function AddConfigurationDialog(props: {
               <Show when={security() !== "open"}>
                 <Field label="Password">
                   <PasswordInput
+                    ref={passwordInput}
                     value={password()}
-                    onInput={(event) => setPassword(event.currentTarget.value)}
+                    aria-invalid={passwordInvalid() ? "true" : undefined}
+                    aria-describedby={passwordInvalid() ? errorId : undefined}
+                    onInput={(event) => {
+                      setPassword(event.currentTarget.value);
+
+                      if (passwordInvalid() && event.currentTarget.value) setError(null);
+                    }}
                   />
                 </Field>
               </Show>
@@ -1818,11 +1856,7 @@ function AddConfigurationDialog(props: {
                 onChange={(event) => {
                   const value = event.currentTarget.value;
 
-                  if (
-                    value === "entra-id" ||
-                    value === "active-directory" ||
-                    value === "disabled"
-                  )
+                  if (value === "entra-id" || value === "active-directory" || value === "disabled")
                     setLapsBackupDirectory(value);
                 }}
               >
@@ -1865,17 +1899,22 @@ function AddConfigurationDialog(props: {
               </select>
             </Field>
             <p class="text-[11.5px] leading-relaxed text-muted-foreground">
-              Requires Windows 11 22H2+/Server 2025. Only an Entra ID backup can be read by
-              Mattrax; rotation works with Active Directory, but a disabled backup cannot
-              rotate because the password would be stored nowhere. Passphrase complexity is
-              Windows 11 24H2+ only and is not offered on this baseline.
+              Requires Windows 11 22H2+/Server 2025. Only an Entra ID backup can be read by Mattrax;
+              rotation works with Active Directory, but a disabled backup cannot rotate because the
+              password would be stored nowhere. Passphrase complexity is Windows 11 24H2+ only and
+              is not offered on this baseline.
             </p>
           </div>
         </Show>
 
-        <Show when={error()}>
-          {(message) => <p class="mt-3 text-[12.5px] text-destructive">{message()}</p>}
-        </Show>
+        <p
+          id={errorId}
+          role="alert"
+          aria-live="polite"
+          class={error() ? "mt-3 text-[12.5px] text-destructive" : "sr-only"}
+        >
+          {error()}
+        </p>
 
         <DialogFooter class="mt-5 flex-row justify-end gap-2 bg-transparent p-0">
           <Button variant="outline" onClick={() => props.onOpenChange(false)}>

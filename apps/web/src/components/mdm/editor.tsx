@@ -66,7 +66,6 @@ const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
 
 const decodeCustomProfile = Schema.decodeUnknownOption(CustomProfile);
 
-
 const decodeDeviceConfig = Schema.decodeUnknownOption(DeviceConfig);
 
 const decodeWindowsConfig = Schema.decodeUnknownOption(WindowsConfig);
@@ -109,6 +108,7 @@ export function PolicyConfigurationEditor() {
   }));
 
   const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+  const seededPolicyId = createMemo(() => row()?.id);
   const guard = createStaleWriteGuard(() => row()?.updatedAt);
   const [canEdit, setCanEdit] = createSignal(false);
   /** Bumped by "Reload latest" to reseed the form from the refetched policy. */
@@ -139,9 +139,9 @@ export function PolicyConfigurationEditor() {
   };
 
   // Seed per policy, and again only when the operator explicitly reloads the
-  // latest version. A background refetch after a 412 must keep the draft.
+  // latest version. The memo keeps same-policy refetches from changing the key.
   createEffect(
-    () => `${row()?.id ?? ""}:${reseed()}`,
+    () => `${seededPolicyId() ?? ""}:${reseed()}`,
     () => seedFromRow(),
   );
 
@@ -599,7 +599,6 @@ function ScopeSelect(props: {
     </label>
   );
 }
-
 
 function DeviceSection(props: {
   config: PolicyConfiguration;
