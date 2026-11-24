@@ -1,4 +1,5 @@
-import { Clock, Context, Data, Duration, Effect, Layer, Schema } from "effect";
+import { Clock, Context, Data, Duration, Effect, Exit, Layer, Schema, Scope } from "effect";
+import type { HttpClient } from "effect/http";
 import { SecureRandom, Signature } from "effect/crypto";
 import { JoseError, Jwt, Jwks } from "effect/jose";
 
@@ -213,12 +214,126 @@ export class PubSubOidcVerifier extends Context.Service<
   PubSubOidcVerifierService
 >()("@mattrax/dm-android/PubSubOidcVerifier") {}
 
+export type PubSubOidcVerifierOptions = {
+  /**
+   * Reuse one remote key set across rebuilt request layers. Enable this in a
+   * hosted runtime where the Effect graph is per request; tests and short-lived
+   * hosts keep the default scoped layer.
+   */
+  readonly sharedJwks?: boolean;
+};
+
+const SHARED_JWKS_LIMIT = 16;
+const sharedJwksScope = Scope.makeUnsafe();
+const sharedJwks = new Map<
+  string,
+  { readonly service: Jwks.Jwks["Service"]; readonly expiresAt: number }
+>();
+const sharedJwksFlights = new Map<
+  string,
+  Effect.Effect<Jwks.Jwks["Service"], JoseError.JoseError, HttpClient.HttpClient>
+>();
+
+const jwksOptions = (config: PubSubOidcVerifierConfig) => ({
+  url: config.jwksUri ?? GOOGLE_OIDC_JWKS_URI,
+  timeToLive: config.jwksTimeToLive ?? "1 hour",
+  cooldown: config.jwksCooldown ?? "1 minute",
+  timeout: config.jwksTimeout ?? "5 seconds",
+});
+
+/**
+ * Drop a cached key set, for example after a suspected key compromise.
+ *
+ * An in-flight refresh is detached from the cache: existing waiters may still
+ * finish their own request, but they cannot repopulate the entry because the
+ * completion checks that it is still the registered flight. The next request
+ * starts a fresh fetch. No request layer or socket is retained by this cache.
+ */
+export const invalidateSharedJwks = (uri: string): void => {
+  sharedJwks.delete(uri);
+  sharedJwksFlights.delete(uri);
+};
+
+const trimSharedJwks = () => {
+  while (sharedJwks.size > SHARED_JWKS_LIMIT) {
+    const oldest = sharedJwks.keys().next().value;
+
+    if (oldest === undefined) break;
+    sharedJwks.delete(oldest);
+  }
+};
+
+const sharedJwksService = (config: PubSubOidcVerifierConfig) =>
+  Effect.gen(function* () {
+    const options = jwksOptions(config);
+    const now = yield* Clock.currentTimeMillis;
+    const ttl = Duration.toMillis(Duration.fromInputUnsafe(options.timeToLive));
+    const cached = sharedJwks.get(options.url);
+
+    if (cached && cached.expiresAt > now) {
+      // Refresh insertion order so capacity evicts the least-recently used URI.
+      sharedJwks.delete(options.url);
+      sharedJwks.set(options.url, cached);
+
+      return cached.service;
+    }
+
+    const inFlight = sharedJwksFlights.get(options.url);
+
+    if (inFlight) return yield* inFlight;
+
+    // `Effect.cached` keeps the shared build alive while at least one caller
+    // waits, and it never caches interruption: if every caller leaves, the run
+    // is interrupted and the next request retries. A flight therefore cannot
+    // wedge future callers on a permanently pending promise. The explicit map
+    // entry only removes the completed run so a later expiry starts a fetch.
+    const cachedEffect = yield* Effect.cached(
+      Jwks.makeRemote(options).pipe(Effect.provideService(Scope.Scope, sharedJwksScope)),
+    );
+    const entry: Effect.Effect<Jwks.Jwks["Service"], JoseError.JoseError, HttpClient.HttpClient> =
+      cachedEffect.pipe(
+        Effect.tap((service) =>
+          Effect.gen(function* () {
+            if (sharedJwksFlights.get(options.url) !== entry) return;
+
+            const completedAt = yield* Clock.currentTimeMillis;
+
+            sharedJwks.delete(options.url);
+            sharedJwks.set(options.url, {
+              service,
+              expiresAt: completedAt + ttl,
+            });
+            trimSharedJwks();
+          }),
+        ),
+        Effect.onExit((exit) =>
+          Exit.hasInterrupts(exit)
+            ? Effect.void
+            : Effect.sync(() => {
+                if (sharedJwksFlights.get(options.url) === entry)
+                  sharedJwksFlights.delete(options.url);
+              }),
+        ),
+      );
+
+    sharedJwksFlights.set(options.url, entry);
+
+    return yield* entry;
+  });
+
 /**
  * Scoped Google OIDC verifier. Provide an `HttpClient.HttpClient`; closing the
  * layer aborts in-flight JWKS requests and discards the cached key set.
  * The injected client must not follow redirects.
+ *
+ * With `sharedJwks`, the remote key set is built in a module scope instead, so
+ * a hosted request rebuild does not pay for another JWKS fetch. The service
+ * still refetches unknown kids after its cooldown, so key rotation is picked up.
  */
-export const PubSubOidcVerifierLive = (config: PubSubOidcVerifierConfig) =>
+export const PubSubOidcVerifierLive = (
+  config: PubSubOidcVerifierConfig,
+  options: PubSubOidcVerifierOptions = {},
+) =>
   Layer.effect(
     PubSubOidcVerifier,
     Effect.gen(function* () {
@@ -235,12 +350,9 @@ export const PubSubOidcVerifierLive = (config: PubSubOidcVerifierConfig) =>
     }),
   ).pipe(
     Layer.provide(
-      Jwks.layerRemote({
-        url: config.jwksUri ?? GOOGLE_OIDC_JWKS_URI,
-        timeToLive: config.jwksTimeToLive ?? "1 hour",
-        cooldown: config.jwksCooldown ?? "1 minute",
-        timeout: config.jwksTimeout ?? "5 seconds",
-      }),
+      options.sharedJwks
+        ? Layer.effect(Jwks.Jwks, sharedJwksService(config))
+        : Jwks.layerRemote(jwksOptions(config)),
     ),
     Layer.provide(Signature.layerWebCrypto.pipe(Layer.provide(SecureRandom.layerWebCrypto))),
   );

@@ -121,7 +121,7 @@ import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmConfig, AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
 import { ScepService } from "@mattrax/scep";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { ScepRepositoryLive } from "@mattrax/mdm-core";
+import { BackgroundDeliveryKeepAlive, ScepRepositoryLive } from "@mattrax/mdm-core";
 import { managementWebhookOpenApi } from "@mattrax/management-backend-http";
 import {
   Db,
@@ -144,6 +144,12 @@ import { metricsResponse, telemetry } from "./telemetry.js";
 import { logBestEffortFailure } from "./bestEffort.js";
 import { runScheduledJobs, scheduledRuntimeLayer } from "./scheduledRuntime.js";
 import { softwareUpdateRequestService } from "./softwareUpdateRuntime.js";
+import {
+  backgroundDeliveryKeepAlive,
+  hostedAndroidManagementOptions,
+  hostedAndroidRouteOptions,
+  hostedAzureGraphOptions,
+} from "./runtimeWiring.js";
 import {
   DAILY_CRON,
   HOURLY_CRON,
@@ -793,7 +799,7 @@ const makeMembershipRefresher = (db: EnterpriseDb, env: Env) => {
         deviceIds,
       }).pipe(
         logBestEffortFailure("android_policy_sync", organizationId),
-        Effect.provide(androidManagementLayer(androidConfig)),
+        Effect.provide(androidManagementLayer(androidConfig, hostedAndroidManagementOptions)),
       );
     });
 };
@@ -1000,6 +1006,9 @@ const makeAppLayer = (
   const managementBackendLayer = ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
     apns,
     authSecret: env.AUTH_SECRET,
+    // A hosted request must not build a fresh worker pool, or lose queued
+    // delivery work, when its service graph is rebuilt.
+    isolateWideDelivery: true,
     // Tenant-scoped enrollment URLs carry a signed tenant token, so Cloud no
     // longer needs a deployment-wide pin. An explicitly configured pin is kept
     // as a fallback for single-tenant deployments that still use the old
@@ -1056,11 +1065,14 @@ const makeAppLayer = (
 
   const azureGraphLayer =
     env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET
-      ? AzureGraphLive({
-          clientId: env.AZURE_CLIENT_ID,
-          clientSecret: env.AZURE_CLIENT_SECRET,
-          origin: env.ORIGIN,
-        })
+      ? AzureGraphLive(
+          {
+            clientId: env.AZURE_CLIENT_ID,
+            clientSecret: env.AZURE_CLIENT_SECRET,
+            origin: env.ORIGIN,
+          },
+          hostedAzureGraphOptions,
+        )
       : Layer.empty;
 
   // Hosted Cloud forwards tenant billing to the services deployment. A
@@ -1141,7 +1153,7 @@ const makeAppLayer = (
       ),
     ),
     AzureOidcLive(),
-    androidManagementLayer(androidConfig),
+    androidManagementLayer(androidConfig, hostedAndroidManagementOptions),
   );
 
   const appWithDevRoutes = Layer.mergeAll(
@@ -1221,6 +1233,7 @@ const makeAppLayer = (
       authSecret: env.AUTH_SECRET,
       config: androidConfig,
       planLimits,
+      ...hostedAndroidRouteOptions,
     }).pipe(Layer.provide(HttpServer.layerServices)),
     // Authenticated, tenant-scoped SSE invalidation. Mounted as a raw route so
     // it can return a bounded streaming body instead of an HttpApi JSON value.
@@ -1262,7 +1275,7 @@ const makeAppLayer = (
           deviceIds,
         }).pipe(
           logBestEffortFailure("android_policy_sync", organizationId),
-          Effect.provide(androidManagementLayer(androidConfig)),
+          Effect.provide(androidManagementLayer(androidConfig, hostedAndroidManagementOptions)),
         );
       }),
   );
@@ -1558,6 +1571,7 @@ export const createApiRuntime = (
           const requestServices = new Map<string, unknown>([
             [EnterpriseAnalyticsService.key, analytics],
             [SoftwareUpdateBackground.key, softwareUpdateRequestService(ctx)],
+            [BackgroundDeliveryKeepAlive.key, backgroundDeliveryKeepAlive(ctx)],
           ]);
 
           if (trace) requestServices.set(Tracer.ParentSpan.key, trace.span);

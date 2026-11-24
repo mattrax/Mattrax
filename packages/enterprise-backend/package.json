@@ -33,6 +33,7 @@
     "@mattrax/scep": "workspace:*",
     "@simplewebauthn/server": "catalog:",
     "@yielded/auth": "catalog:",
+    "@yielded/auth-persistence": "catalog:",
     "@yielded/auth-persistence-drizzle": "catalog:",
     "@yielded/auth-platform-workerd": "catalog:",
     "@yielded/auth-simplewebauthn": "catalog:",
