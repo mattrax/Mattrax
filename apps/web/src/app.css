@@ -33,8 +33,60 @@ html {
   background-color: var(--background);
 }
 
+:root {
+  /* QR modules keep absolute contrast in every theme and in forced colors. */
+  --qr-background: #ffffff;
+  --qr-foreground: #000000;
+}
+
 body {
   min-height: 100svh;
+}
+
+/* ---------------------------------------------------------------------------
+ * Public enrollment
+ *
+ * A calm, single-column flow on phones and a two-column setup/help layout on
+ * larger screens. All colour comes from the active theme; only the QR code
+ * keeps fixed black/white modules because scanners need that contrast.
+ * ------------------------------------------------------------------------- */
+
+.enrollment-page {
+  background-image: radial-gradient(
+    40rem 24rem at 50% -12rem,
+    color-mix(in oklab, var(--enrollment-brand, var(--brand-solid)) 12%, transparent),
+    transparent
+  );
+}
+
+.enrollment-page :where(input, select) {
+  min-height: 3rem;
+  font-size: max(1rem, 1em);
+}
+
+@media (min-width: 640px) {
+  .enrollment-page :where(input, select) {
+    min-height: 2.5rem;
+    font-size: 0.875rem;
+  }
+}
+
+.enrollment-page :where(a, button, input, select, summary):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.enrollment-page svg[role="img"] {
+  forced-color-adjust: none;
+}
+
+@media (forced-colors: active) {
+  .enrollment-page [data-slot="card"],
+  .enrollment-page [role="alert"],
+  .enrollment-page aside,
+  .enrollment-page details {
+    border: 1px solid CanvasText;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -148,11 +200,11 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
- * Light islands
+ * Legacy surface compatibility
  *
- * Enrollment pages run inside a fixed light palette even when the dashboard is
- * dark. The `.theme-light` token block lives in @mattrax/ui; these rules undo
- * the few stone utilities the marketing and auth copy still uses.
+ * A few older marketing and auth surfaces still name stone palette utilities.
+ * Map those names to the active semantic tokens rather than forcing a light
+ * island, so they follow the same theme as the rest of the app.
  * ------------------------------------------------------------------------- */
 
 .auth-page .bg-white,
@@ -203,23 +255,6 @@ body {
 
 .border-stone-300 {
   border-color: var(--input);
-}
-
-.theme-light .text-stone-950,
-.theme-light .text-stone-900,
-.theme-light .text-stone-800 {
-  color: var(--foreground);
-}
-
-.theme-light .text-stone-700,
-.theme-light .text-stone-600,
-.theme-light .text-stone-500,
-.theme-light .text-stone-400 {
-  color: var(--muted-foreground);
-}
-
-.theme-light .bg-white {
-  background-color: var(--card);
 }
 
 .divide-stone-100 > :not([hidden]) ~ :not([hidden]),
