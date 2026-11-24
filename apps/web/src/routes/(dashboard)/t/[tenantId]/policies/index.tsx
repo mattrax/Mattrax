@@ -268,20 +268,25 @@ export default function PoliciesPage() {
         searchPlaceholder="Search policies…"
         sortValue={sort()}
         onSortChange={setSort}
+        inlineToolbar={
+          <EntityQueryBar
+            split
+            fields={fields}
+            conditions={conditions()}
+            onChange={updateConditions}
+          />
+        }
         toolbar={
-          <div class="space-y-2">
-            <EntityQueryBar fields={fields} conditions={conditions()} onChange={updateConditions} />
-            <Show when={loadingWarning()}>
-              <p
-                role="status"
-                aria-live="polite"
-                class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-[12px] text-muted-foreground"
-              >
-                Filters changed — loading results. The rows below are from the previous filter until
-                this finishes.
-              </p>
-            </Show>
-          </div>
+          <Show when={loadingWarning()}>
+            <p
+              role="status"
+              aria-live="polite"
+              class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-[12px] text-muted-foreground"
+            >
+              Filters changed — loading results. The rows below are from the previous filter until
+              this finishes.
+            </p>
+          </Show>
         }
         footer={
           <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-card">

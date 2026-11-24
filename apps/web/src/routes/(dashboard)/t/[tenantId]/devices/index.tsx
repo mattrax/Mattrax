@@ -10,8 +10,10 @@ import {
   Page,
   PageHeader,
   PlatformBadge,
+  PlatformMark,
   PresenceDot,
   QueryError,
+  relativeTime,
   usePresenceNow,
 } from "~/components/mdm/common";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
@@ -19,14 +21,19 @@ import { EntityHoverCard } from "~/components/entity-hover-card";
 import { EntityActions } from "~/components/mdm/entity-actions";
 import { MdmTable, readTableColumnVisibility } from "~/components/mdm/table";
 import type { MdmColumn, MdmSortState } from "~/components/mdm/table";
-import { DeviceViewsMenu } from "~/components/mdm/device-views";
+import { DeviceViewsTabs } from "~/components/mdm/device-views";
 import { Button } from "~/components/ui/button";
 import { Badge, EmptyState, FilterBar, NativeSelect } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import {
   Activity,
+  BookOpen,
+  Download,
+  HardDrive,
+  KeyRound,
   Laptop,
   MonitorSmartphone,
+  Package,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
@@ -1281,27 +1288,33 @@ export default function DevicesPage() {
     {
       id: "name",
       header: "Name",
+      icon: Laptop,
       sort: (row) => row.name,
       search: (row) => row.name,
       cell: (row) => (
-        <EntityHoverCard
-          preview={{ kind: "device", device: row }}
-          href={routes.tenant(params.tenantId).device(row.id)}
-          class="font-[540] text-foreground decoration-border underline-offset-2 hover:underline"
-        >
-          {row.name}
-        </EntityHoverCard>
+        <span class="flex items-center gap-2">
+          <PlatformMark proto={row.proto} />
+          <EntityHoverCard
+            preview={{ kind: "device", device: row }}
+            href={routes.tenant(params.tenantId).device(row.id)}
+            class="font-[540] text-foreground decoration-border underline-offset-2 hover:underline"
+          >
+            {row.name}
+          </EntityHoverCard>
+        </span>
       ),
     },
     {
       id: "status",
       header: "Status",
+      icon: Activity,
       sort: (row) => row.status,
       cell: (row) => <DeviceStatusTag status={row.status} />,
     },
     {
       id: "health",
       header: "Health",
+      icon: ShieldCheck,
       // The API sorts this column (health is derived, not stored); the
       // local comparator keeps the same worst-first order if a row set is
       // ever sorted on the client.
@@ -1314,16 +1327,19 @@ export default function DevicesPage() {
     {
       id: "osUpdate",
       header: "OS updates",
+      icon: Download,
       cell: (row) => <SoftwareUpdateTag info={decodeSoftwareUpdate(row.osUpdate)} />,
     },
     {
       id: "platform",
       header: "Platform",
+      icon: MonitorSmartphone,
       cell: (row) => <PlatformBadge proto={row.proto} />,
     },
     {
       id: "activation",
       header: "Activation",
+      icon: KeyRound,
       // Sorted by the API in administrative order (activated,
       // not-activated, unknown); the local comparator only matters if a
       // row set is ever sorted on the client.
@@ -1335,6 +1351,7 @@ export default function DevicesPage() {
     {
       id: "serial",
       header: "Serial",
+      icon: HardDrive,
       search: (row) => row.serial,
       cell: (row) => (
         <span class="font-mono text-[11.5px] text-muted-foreground">{row.serial ?? "Unknown"}</span>
@@ -1343,12 +1360,14 @@ export default function DevicesPage() {
     {
       id: "model",
       header: "Model",
+      icon: Laptop,
       search: (row) => row.model,
       cell: (row) => <span class="text-muted-foreground">{row.model ?? "Unknown"}</span>,
     },
     {
       id: "assetTag",
       header: "Asset tag",
+      icon: Package,
       search: (row) => row.assetTag,
       cell: (row) => row.assetTag ?? "—",
       defaultHidden: true,
@@ -1356,6 +1375,7 @@ export default function DevicesPage() {
     {
       id: "groups",
       header: "Groups",
+      icon: UsersRound,
       cell: (row) => {
         const groups = rowGroups(row);
 
@@ -1385,6 +1405,7 @@ export default function DevicesPage() {
     {
       id: "notes",
       header: "Notes",
+      icon: BookOpen,
       search: (row) => row.notes,
       cell: (row) =>
         row.notes ? (
@@ -1397,17 +1418,24 @@ export default function DevicesPage() {
     {
       id: "lastSeen",
       header: "Last seen",
+      icon: RefreshCw,
       sort: (row) => row.lastSeenAt,
       sortId: "lastSeenAt",
       class: "text-right",
-      cell: (row) => (
-        <span class="flex items-center justify-end gap-1.5 tabular-nums text-muted-foreground">
-          <PresenceDot online={devicePresence(row, presenceNow()).online} />
-          <span title={devicePresence(row, presenceNow()).online ? "Online" : "Offline"}>
-            {formatDeviceDate(row.lastSeenAt)}
+      cell: (row) => {
+        const presence = devicePresence(row, presenceNow());
+
+        return (
+          <span class="flex items-center justify-end gap-1.5 tabular-nums text-muted-foreground">
+            <PresenceDot online={presence.online} />
+            <span
+              title={`${formatDeviceDate(row.lastSeenAt)} · ${presence.online ? "Online" : "Offline"}`}
+            >
+              {relativeTime(row.lastSeenAt)}
+            </span>
           </span>
-        </span>
-      ),
+        );
+      },
     },
   ]);
 
@@ -1643,6 +1671,18 @@ export default function DevicesPage() {
         }
       />
 
+      <DeviceViewsTabs
+        tenantId={params.tenantId ?? ""}
+        views={deviceViews.data?.views ?? []}
+        currentViewId={currentViewId()}
+        canSave={can("devices.read")}
+        canPublish={can("devices.write")}
+        currentQuery={currentViewQuery}
+        onApply={applyView}
+        onClear={clearFilters}
+        onCurrentViewDeleted={() => setCurrentViewId(undefined)}
+      />
+
       <FleetSummary items={fleet()} />
 
       <QueryError error={groups.error} onRetry={() => void groups.refetch()} />
@@ -1673,6 +1713,7 @@ export default function DevicesPage() {
       <MdmTable<DeviceRow>
         mode="server"
         rows={devices.data?.devices}
+        rowNumberStart={page() * pageSize()}
         selectable={canAny(["devices.command", "devices.write", "groups.write"])}
         total={devices.data?.total}
         selectionKey={JSON.stringify(filters())}
@@ -1692,111 +1733,101 @@ export default function DevicesPage() {
           setPage(0);
         }}
         searchPlaceholder="Search name, serial, model, platform, group, notes…"
-        toolbar={
-          <div class="space-y-2">
-            <div class="flex flex-wrap items-center gap-2">
-              <FilterBar
-                fields={filterFields()}
-                conditions={filterConditions()}
-                onChange={applyFilters}
-                hideClear
-              />
-              <div class="ml-auto flex flex-wrap items-center gap-1.5">
-                <DeviceViewsMenu
-                  tenantId={params.tenantId ?? ""}
-                  views={deviceViews.data?.views ?? []}
-                  currentViewId={currentViewId()}
-                  canSave={can("devices.read")}
-                  canPublish={can("devices.write")}
-                  currentQuery={currentViewQuery}
-                  onApply={applyView}
-                  onCurrentViewDeleted={() => setCurrentViewId(undefined)}
-                />
-                <NativeSelect
-                  class="h-7 rounded-full border-border bg-card px-2 text-[11.5px] text-muted-foreground"
-                  aria-label="Sort devices"
-                  value={sort()?.id ?? "name"}
-                  onChange={(event) => {
-                    setSort({ id: event.currentTarget.value, dir: sort()?.dir ?? "asc" });
-                    setPage(0);
-                  }}
+        inlineToolbar={
+          <FilterBar
+            split
+            fields={filterFields()}
+            conditions={filterConditions()}
+            onChange={applyFilters}
+            hideClear
+          >
+            <div class="ml-auto flex flex-wrap items-center gap-1.5">
+              <NativeSelect
+                class="h-7 rounded-full border-border bg-card px-2 text-[11.5px] text-muted-foreground"
+                aria-label="Sort devices"
+                value={sort()?.id ?? "name"}
+                onChange={(event) => {
+                  setSort({ id: event.currentTarget.value, dir: sort()?.dir ?? "asc" });
+                  setPage(0);
+                }}
+              >
+                <option value="name">Sort: name</option>
+                <option value="health">Sort: health</option>
+                <option value="activation">Sort: activation</option>
+                <option value="lastSeenAt">Sort: last seen</option>
+                <option value="enrolledAt">Sort: enrolled</option>
+                <option value="status">Sort: status</option>
+              </NativeSelect>
+              <Button
+                variant="ghost"
+                size="xs"
+                class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
+                onClick={() => {
+                  setSort({
+                    id: sort()?.id ?? "name",
+                    dir: sort()?.dir === "desc" ? "asc" : "desc",
+                  });
+                  setPage(0);
+                }}
+              >
+                {sort()?.dir === "desc" ? "Descending" : "Ascending"}
+              </Button>
+              <Show when={hasFilters()}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
+                  onClick={clearFilters}
                 >
-                  <option value="name">Sort: name</option>
-                  <option value="health">Sort: health</option>
-                  <option value="activation">Sort: activation</option>
-                  <option value="lastSeenAt">Sort: last seen</option>
-                  <option value="enrolledAt">Sort: enrolled</option>
-                  <option value="status">Sort: status</option>
-                </NativeSelect>
+                  Clear filters
+                </Button>
+              </Show>
+              <Button
+                variant="ghost"
+                size="xs"
+                class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
+                aria-expanded={queryOpen() ? "true" : "false"}
+                onClick={() => setQueryOpen((value) => !value)}
+              >
+                Advanced query
+                <Show when={deviceQuery()?.all?.length}>
+                  <Badge variant="subtle" class="tabular-nums">
+                    {deviceQuery()!.all!.length}
+                  </Badge>
+                </Show>
+              </Button>
+              <Show when={deviceQuery()}>
                 <Button
                   variant="ghost"
                   size="xs"
                   class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
                   onClick={() => {
-                    setSort({
-                      id: sort()?.id ?? "name",
-                      dir: sort()?.dir === "desc" ? "asc" : "desc",
-                    });
+                    setDeviceQuery(null);
                     setPage(0);
                   }}
                 >
-                  {sort()?.dir === "desc" ? "Descending" : "Ascending"}
+                  Clear query
                 </Button>
-                <Show when={hasFilters()}>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                    onClick={clearFilters}
-                  >
-                    Clear filters
-                  </Button>
-                </Show>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                  aria-expanded={queryOpen() ? "true" : "false"}
-                  onClick={() => setQueryOpen((value) => !value)}
-                >
-                  Advanced query
-                  <Show when={deviceQuery()?.all?.length}>
-                    <Badge variant="subtle" class="tabular-nums">
-                      {deviceQuery()!.all!.length}
-                    </Badge>
-                  </Show>
-                </Button>
-                <Show when={deviceQuery()}>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                    onClick={() => {
-                      setDeviceQuery(null);
-                      setPage(0);
-                    }}
-                  >
-                    Clear query
-                  </Button>
-                </Show>
-              </div>
+              </Show>
             </div>
-            <Show when={queryOpen()}>
-              <div class="animate-in rounded-xl border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
-                <DeviceQueryBuilder
-                  compact
-                  query={deviceQuery()}
-                  onChange={(query) => {
-                    setDeviceQuery(query);
-                    setPage(0);
-                  }}
-                />
-                <p class="mt-2 text-[10.5px] text-muted-foreground">
-                  The URL reproduces this filtered view.
-                </p>
-              </div>
-            </Show>
-          </div>
+          </FilterBar>
+        }
+        toolbar={
+          <Show when={queryOpen()}>
+            <div class="animate-in rounded-xl border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
+              <DeviceQueryBuilder
+                compact
+                query={deviceQuery()}
+                onChange={(query) => {
+                  setDeviceQuery(query);
+                  setPage(0);
+                }}
+              />
+              <p class="mt-2 text-[10.5px] text-muted-foreground">
+                The URL reproduces this filtered view.
+              </p>
+            </div>
+          </Show>
         }
         footer={
           <div

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { DeviceViewQuery } from "@mattrax/enterprise-domain/client";
 import {
   deviceFilterConditions,
+  deviceViewSearchQuery,
   hasExplicitDeviceSearch,
   mergeActiveViewQuery,
   resolveDeviceDefaultView,
@@ -133,6 +134,48 @@ describe("updating an active view", () => {
       mergeActiveViewQuery(view({ attributes: JSON.stringify({ region: "EU" }) }), view({}))
         .attributes,
     ).toBe(JSON.stringify({ region: "EU" }));
+  });
+});
+
+describe("view counts", () => {
+  it("reuses the view's filters but drops its UI-only fields", () => {
+    expect(
+      deviceViewSearchQuery(
+        view({
+          q: "mac",
+          status: "enrolled",
+          staleDays: 7,
+          columns: ["name", "serial"],
+          pageSize: 200,
+        }),
+      ),
+    ).toEqual({
+      q: "mac",
+      query: undefined,
+      status: "enrolled",
+      proto: undefined,
+      groupId: undefined,
+      notSeenSince: undefined,
+      staleDays: 7,
+      health: undefined,
+      push: undefined,
+      lostMode: undefined,
+      localAccount: undefined,
+      setup: undefined,
+      activation: undefined,
+      attributes: undefined,
+      sort: undefined,
+      direction: undefined,
+      limit: 1,
+      offset: 0,
+    });
+  });
+
+  it("asks for only the total when counting a tab", () => {
+    expect(deviceViewSearchQuery(view(), { limit: 1, offset: 0 })).toMatchObject({
+      limit: 1,
+      offset: 0,
+    });
   });
 });
 

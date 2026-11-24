@@ -113,6 +113,58 @@ test.describe("device fleet management", () => {
     await expect(page).toHaveURL(new RegExp(`/groups/(${alpha.id}|${beta.id})$`));
   });
 
+  test("switches saved views from the table's tabs", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Views Tenant");
+
+    const view = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/device-views`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Windows fleet",
+        visibility: "tenant",
+        query: {
+          proto: "win",
+          columns: ["name", "status", "platform"],
+          sort: "name",
+          direction: "asc",
+          pageSize: 50,
+        },
+      }),
+    });
+
+    await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+
+    const tabs = page.getByRole("navigation", { name: "Device views" });
+
+    // The unfiltered list is a tab like any other, and every tab reports the
+    // number of rows opening it would show.
+    await expect(tabs.getByRole("button", { name: /All devices/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await expect(tabs.getByRole("button", { name: /Windows fleet/ })).toContainText("0");
+
+    await tabs.getByRole("button", { name: /Windows fleet/ }).click();
+
+    await expect(page).toHaveURL(new RegExp(`view=${view.id}`));
+    await expect.poll(() => new URL(page.url()).searchParams.get("proto")).toBe("win");
+    await expect(tabs.getByRole("button", { name: /Windows fleet/ })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+
+    // "All devices" clears the view's filters instead of only changing the tab.
+    await tabs.getByRole("button", { name: /All devices/ }).click();
+    await expect.poll(() => new URL(page.url()).searchParams.get("proto")).toBeNull();
+
+    // Saving and managing views moved from the toolbar menu into the tab row.
+    await page.getByRole("button", { name: "Save view" }).click();
+    await expect(
+      page.getByRole("dialog").getByRole("heading", { name: "Save view" }),
+    ).toBeVisible();
+    await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByRole("button", { name: "Manage saved views" })).toBeVisible();
+  });
+
   test("keeps typed device search and sends it to the search endpoint", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Search Tenant");
     const search = page.getByPlaceholder(/search name/i);

@@ -1,13 +1,13 @@
-import { useQueryClient } from "@tanstack/solid-query";
-import { createSignal, For, Show } from "solid-js";
+import { useQuery, useQueryClient } from "@tanstack/solid-query";
+import { createMemo, createSignal, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
-import { Badge, Button, Label, NativeSelect } from "@mattrax/ui";
+import { Button, Label, NativeSelect } from "@mattrax/ui";
 import type {
   DeviceView,
   DeviceViewQuery,
   DeviceViewVisibility,
 } from "@mattrax/enterprise-domain/client";
-import { ChevronDown, Plus, Settings, Star } from "~/components/ui/icons";
+import { Ellipsis, Plus, Star } from "~/components/ui/icons";
 import {
   Dialog,
   DialogContent,
@@ -23,24 +23,28 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { toast } from "~/components/toast";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { deviceViewSearchQuery } from "~/lib/device-view-query";
 import { ErrorText } from "./common";
+import { MdmTableTabs } from "./table";
+import type { MdmTableTab } from "./table";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 
 /**
- * The device toolbar's saved-view menu.
+ * The device table's saved-view tabs.
  *
- * The page owns applying a view to the URL; this component owns the CRUD
+ * Tabs sit above the table like a spreadsheet's sheets: one per saved view,
+ * plus the unfiltered list. Counts come from the same search endpoint the
+ * table uses, so a tab always promises the number of rows opening it will
+ * show. The page owns applying a view to the URL; this component owns the CRUD
  * dialogs and cache invalidation so the device page does not grow another
  * hundred lines of form state.
  */
-export function DeviceViewsMenu(props: {
+export function DeviceViewsTabs(props: {
   tenantId: string;
   views: ReadonlyArray<DeviceView>;
   currentViewId: string | undefined;
@@ -51,6 +55,8 @@ export function DeviceViewsMenu(props: {
   /** The query the current table state would save; active view merges extras. */
   currentQuery: (activeView?: DeviceView) => DeviceViewQuery;
   onApply: (view: DeviceView) => void;
+  /** Drop every filter and return to the unfiltered list. */
+  onClear: () => void;
   /** Drop the active-view marker after deleting the selected view. */
   onCurrentViewDeleted: () => void;
 }) {
@@ -70,6 +76,64 @@ export function DeviceViewsMenu(props: {
   const [deleteError, setDeleteError] = createSignal<unknown>();
 
   const current = () => props.views.find((view) => view.id === props.currentViewId);
+
+  // One cheap search per tab, limit 1, gives every tab its count without a
+  // new API surface. A single query owns them all: N observers would each
+  // subscribe to the table's invalidation and could tear down the page under
+  // a modal, while one query means one refetch for the whole strip. Failed
+  // counts simply leave that tab without a number.
+  const countQueries = createMemo(() => [
+    { id: "all", query: { limit: 1, offset: 0 } },
+    ...props.views.map((view) => ({
+      id: view.id,
+      query: deviceViewSearchQuery(view.query),
+    })),
+  ]);
+
+  const counts = useQuery(() => ({
+    queryKey: [
+      ...enterpriseKeys.deviceSearchPrefix(props.tenantId),
+      "view-counts",
+      countQueries().map((item) => [item.id, item.query] as const),
+    ],
+    queryFn: async () => {
+      const results = await Promise.allSettled(
+        countQueries().map((item) =>
+          enterprise.searchDevices(props.tenantId, item.query).then((result) => result.total),
+        ),
+      );
+
+      return results.map((result) => (result.status === "fulfilled" ? result.value : undefined));
+    },
+    staleTime: 60_000,
+    retry: false,
+  }));
+
+  const countAt = (index: number) => counts.data?.[index];
+
+  const tabs = createMemo<MdmTableTab[]>(() => [
+    { id: "all", label: "All devices", count: countAt(0) },
+    ...props.views.map((view, index) => ({
+      id: view.id,
+      label: view.name,
+      count: countAt(index + 1),
+      icon: view.isDefault ? (
+        <Star class="size-3 shrink-0 text-brand" aria-label="Your default view" />
+      ) : undefined,
+    })),
+  ]);
+
+  const selectTab = (id: string) => {
+    if (id === "all") {
+      props.onClear();
+
+      return;
+    }
+
+    const view = props.views.find((item) => item.id === id);
+
+    if (view) props.onApply(view);
+  };
 
   const canEdit = (view: DeviceView) =>
     view.visibility === "tenant" ? props.canPublish : view.isOwner;
@@ -211,180 +275,177 @@ export function DeviceViewsMenu(props: {
   };
 
   const menuTrigger = (): JSX.Element => (
-    <DropdownMenuTrigger class="flex h-7 items-center gap-1.5 rounded-full border border-border bg-card px-2.5 text-[11.5px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60">
-      <Settings class="size-3.5" />
-      <span class="max-w-32 truncate">{current()?.name ?? "Views"}</span>
-      <ChevronDown class="size-3.5" />
+    <DropdownMenuTrigger class="flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60">
+      <Ellipsis class="size-4" />
+      <span class="sr-only">Manage saved views</span>
     </DropdownMenuTrigger>
   );
 
   return (
-    <Show when={props.canSave}>
-      <DropdownMenu placement="bottom-end">
-        {menuTrigger()}
-        <DropdownMenuContent class="w-64">
-          <DropdownMenuLabel>Saved views</DropdownMenuLabel>
-          <Show
-            when={props.views.length > 0}
-            fallback={
-              <p class="px-2 py-2 text-[12px] text-muted-foreground">
-                Save the current filters and columns to reuse them later.
-              </p>
-            }
-          >
-            <DropdownMenuRadioGroup
-              value={props.currentViewId ?? ""}
-              onValueChange={(value) => {
-                const view = props.views.find((item) => item.id === value);
-
-                if (view) props.onApply(view);
-              }}
+    <>
+      <div class="flex items-center gap-2">
+        <MdmTableTabs
+          tabs={tabs()}
+          value={props.currentViewId ?? "all"}
+          onSelect={selectTab}
+          label="Device views"
+          class="flex-1"
+        />
+        <Show when={props.canSave}>
+          <div class="flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="xs"
+              class="h-7 gap-1 rounded-md px-2 text-[11.5px] text-muted-foreground"
+              onClick={openCreate}
             >
-              <For each={props.views}>
-                {(view) => (
-                  <DropdownMenuRadioItem value={view.id} indicator="check">
-                    <span class="flex min-w-0 flex-1 items-center gap-1.5">
-                      <span class="truncate">{view.name}</span>
-                      <Show when={view.visibility === "tenant"}>
-                        <Badge variant="subtle">Tenant</Badge>
-                      </Show>
-                      <Show when={view.isDefault}>
-                        <Star class="size-3 shrink-0 text-brand" aria-label="Your default" />
-                      </Show>
-                    </span>
-                  </DropdownMenuRadioItem>
-                )}
-              </For>
-            </DropdownMenuRadioGroup>
-          </Show>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={openCreate}>
-            <Plus class="size-3.5" />
-            Save current view…
-          </DropdownMenuItem>
-          <Show when={current()}>
-            {(view) => (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  disabled={!canEdit(view()) || pendingAction() !== null}
-                  onSelect={() => void updateQuery(view())}
-                >
-                  {pendingAction() === "update" ? "Updating…" : `Update “${view().name}”`}
+              <Plus class="size-3.5" />
+              Save view
+            </Button>
+            <DropdownMenu placement="bottom-end">
+              {menuTrigger()}
+              <DropdownMenuContent class="w-64">
+                <DropdownMenuLabel>Saved views</DropdownMenuLabel>
+                <p class="px-2 pb-1.5 text-[11px] text-muted-foreground">
+                  {props.views.length > 0
+                    ? "Switch views from the tabs above."
+                    : "Save the current filters and columns to reuse them later."}
+                </p>
+                <DropdownMenuItem onSelect={openCreate}>
+                  <Plus class="size-3.5" />
+                  Save current view…
                 </DropdownMenuItem>
-                <DropdownMenuItem disabled={!canEdit(view())} onSelect={() => openRename(view())}>
-                  Rename…
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={pendingAction() !== null}
-                  onSelect={() => void duplicate(view())}
-                >
-                  {pendingAction() === "duplicate" ? "Duplicating…" : "Duplicate"}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={pendingAction() !== null}
-                  onSelect={() => void toggleDefault(view())}
-                >
-                  {pendingAction() === "default"
-                    ? "Saving…"
-                    : view().isDefault
-                      ? "Clear my default"
-                      : "Set as my default"}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  variant="destructive"
-                  disabled={!canEdit(view())}
-                  onSelect={() => {
-                    setDeleteError(undefined);
-                    setDeleteTarget(view());
-                  }}
-                >
-                  Delete
-                </DropdownMenuItem>
-              </>
-            )}
-          </Show>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <Dialog open={editorOpen()} onOpenChange={(open) => !busy() && setEditorOpen(open)}>
-        <DialogContent class="max-w-md rounded-lg p-6">
-          <DialogHeader>
-            <DialogTitle>{editingId() ? "Rename view" : "Save view"}</DialogTitle>
-            <DialogDescription>
-              {editingId()
-                ? "Change the name, description or who can see this view. The filters stay as they are."
-                : "Save the current filters, sort and visible columns as a named view."}
-            </DialogDescription>
-          </DialogHeader>
-          <div class="space-y-3">
-            <div class="space-y-1.5">
-              <Label for="device-view-name">Name</Label>
-              <Input
-                id="device-view-name"
-                value={name()}
-                maxlength={120}
-                placeholder="MIA Macs"
-                onInput={(event) => setName(event.currentTarget.value)}
-              />
-            </div>
-            <div class="space-y-1.5">
-              <Label for="device-view-description">Description</Label>
-              <Input
-                id="device-view-description"
-                value={description()}
-                maxlength={2000}
-                placeholder="Optional"
-                onInput={(event) => setDescription(event.currentTarget.value)}
-              />
-            </div>
-            <div class="space-y-1.5">
-              <Label for="device-view-visibility">Visibility</Label>
-              <NativeSelect
-                id="device-view-visibility"
-                value={visibility()}
-                onChange={(event) =>
-                  setVisibility(event.currentTarget.value as DeviceViewVisibility)
-                }
-              >
-                <option value="private">Private to me</option>
-                <Show when={props.canPublish}>
-                  <option value="tenant">Everyone in this tenant</option>
+                <Show when={current()}>
+                  {(view) => (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={!canEdit(view()) || pendingAction() !== null}
+                        onSelect={() => void updateQuery(view())}
+                      >
+                        {pendingAction() === "update" ? "Updating…" : `Update “${view().name}”`}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!canEdit(view())}
+                        onSelect={() => openRename(view())}
+                      >
+                        Rename…
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={pendingAction() !== null}
+                        onSelect={() => void duplicate(view())}
+                      >
+                        {pendingAction() === "duplicate" ? "Duplicating…" : "Duplicate"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={pendingAction() !== null}
+                        onSelect={() => void toggleDefault(view())}
+                      >
+                        {pendingAction() === "default"
+                          ? "Saving…"
+                          : view().isDefault
+                            ? "Clear my default"
+                            : "Set as my default"}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        disabled={!canEdit(view())}
+                        onSelect={() => {
+                          setDeleteError(undefined);
+                          setDeleteTarget(view());
+                        }}
+                      >
+                        Delete
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </Show>
-              </NativeSelect>
-              <p class="text-[11px] text-muted-foreground">
-                {visibility() === "tenant"
-                  ? "Tenant views can be opened by every member. Managing devices is required to publish."
-                  : "Only you can see and manage a private view."}
-              </p>
-            </div>
-            <ErrorText error={errored()} />
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-          <DialogFooter class="mt-5">
-            <Button variant="outline" disabled={busy()} onClick={() => setEditorOpen(false)}>
-              Cancel
-            </Button>
-            <Button disabled={busy() || !name().trim()} onClick={() => void saveEditor()}>
-              {busy() ? "Saving…" : editingId() ? "Save changes" : "Save view"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </Show>
+      </div>
 
-      <ConfirmDialog
-        open={deleteTarget() !== undefined}
-        onOpenChange={(open) => {
-          if (!open && !deleteBusy()) setDeleteTarget(undefined);
-        }}
-        title="Delete view"
-        description={`Delete “${deleteTarget()?.name ?? "this view"}”? The filters and columns stay in the URL, but the saved view is gone.`}
-        confirmLabel="Delete view"
-        destructive
-        pending={deleteBusy()}
-        error={deleteError()}
-        onConfirm={() => void confirmDelete()}
-      />
-    </Show>
+      <Show when={props.canSave}>
+        <Dialog open={editorOpen()} onOpenChange={(open) => !busy() && setEditorOpen(open)}>
+          <DialogContent class="max-w-md rounded-lg p-6">
+            <DialogHeader>
+              <DialogTitle>{editingId() ? "Rename view" : "Save view"}</DialogTitle>
+              <DialogDescription>
+                {editingId()
+                  ? "Change the name, description or who can see this view. The filters stay as they are."
+                  : "Save the current filters, sort and visible columns as a named view."}
+              </DialogDescription>
+            </DialogHeader>
+            <div class="space-y-3">
+              <div class="space-y-1.5">
+                <Label for="device-view-name">Name</Label>
+                <Input
+                  id="device-view-name"
+                  value={name()}
+                  maxlength={120}
+                  placeholder="MIA Macs"
+                  onInput={(event) => setName(event.currentTarget.value)}
+                />
+              </div>
+              <div class="space-y-1.5">
+                <Label for="device-view-description">Description</Label>
+                <Input
+                  id="device-view-description"
+                  value={description()}
+                  maxlength={2000}
+                  placeholder="Optional"
+                  onInput={(event) => setDescription(event.currentTarget.value)}
+                />
+              </div>
+              <div class="space-y-1.5">
+                <Label for="device-view-visibility">Visibility</Label>
+                <NativeSelect
+                  id="device-view-visibility"
+                  value={visibility()}
+                  onChange={(event) =>
+                    setVisibility(event.currentTarget.value as DeviceViewVisibility)
+                  }
+                >
+                  <option value="private">Private to me</option>
+                  <Show when={props.canPublish}>
+                    <option value="tenant">Everyone in this tenant</option>
+                  </Show>
+                </NativeSelect>
+                <p class="text-[11px] text-muted-foreground">
+                  {visibility() === "tenant"
+                    ? "Tenant views can be opened by every member. Managing devices is required to publish."
+                    : "Only you can see and manage a private view."}
+                </p>
+              </div>
+              <ErrorText error={errored()} />
+            </div>
+            <DialogFooter class="mt-5">
+              <Button variant="outline" disabled={busy()} onClick={() => setEditorOpen(false)}>
+                Cancel
+              </Button>
+              <Button disabled={busy() || !name().trim()} onClick={() => void saveEditor()}>
+                {busy() ? "Saving…" : editingId() ? "Save changes" : "Save view"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <ConfirmDialog
+          open={deleteTarget() !== undefined}
+          onOpenChange={(open) => {
+            if (!open && !deleteBusy()) setDeleteTarget(undefined);
+          }}
+          title="Delete view"
+          description={`Delete “${deleteTarget()?.name ?? "this view"}”? The filters and columns stay in the URL, but the saved view is gone.`}
+          confirmLabel="Delete view"
+          destructive
+          pending={deleteBusy()}
+          error={deleteError()}
+          onConfirm={() => void confirmDelete()}
+        />
+      </Show>
+    </>
   );
 }

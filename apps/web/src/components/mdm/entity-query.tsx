@@ -58,6 +58,8 @@ export function EntityQueryBar<T>(props: {
   onChange: (conditions: EntityCondition[]) => void;
   label?: string;
   disabled?: boolean;
+  /** Share the table header row and wrap applied chips onto a second row. */
+  split?: boolean;
 }) {
   return (
     <FilterBar
@@ -66,6 +68,7 @@ export function EntityQueryBar<T>(props: {
       onChange={(conditions) => props.onChange(fromFilterConditions(conditions))}
       label={props.label}
       disabled={props.disabled}
+      split={props.split}
     />
   );
 }

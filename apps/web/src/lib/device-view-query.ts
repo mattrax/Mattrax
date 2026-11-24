@@ -1,5 +1,5 @@
 import { Option, Schema } from "effect";
-import type { DeviceViewQuery } from "@mattrax/enterprise-domain/client";
+import type { DeviceSearchQuery, DeviceViewQuery } from "@mattrax/enterprise-domain/client";
 import type { FilterCondition } from "@mattrax/ui";
 
 /** Query-string keys that describe an explicit device search. */
@@ -42,6 +42,35 @@ export type DeviceFilterState = {
   attributeKey: string;
   attributeValue: string;
 };
+
+/**
+ * Turn a saved view into the search a count badge (or a reopened table) runs.
+ * The view's column selection and page size describe the UI, not the result,
+ * so they are left out of the query.
+ */
+export const deviceViewSearchQuery = (
+  query: DeviceViewQuery,
+  page: { limit?: number; offset?: number } = {},
+): DeviceSearchQuery => ({
+  q: query.q,
+  query: query.query,
+  status: query.status,
+  proto: query.proto,
+  groupId: query.groupId,
+  notSeenSince: query.notSeenSince,
+  staleDays: query.staleDays,
+  health: query.health,
+  push: query.push,
+  lostMode: query.lostMode,
+  localAccount: query.localAccount,
+  setup: query.setup,
+  activation: query.activation,
+  attributes: query.attributes,
+  sort: query.sort,
+  direction: query.direction,
+  limit: page.limit ?? 1,
+  offset: page.offset ?? 0,
+});
 
 /**
  * Build the chips shown by the device table's FilterBar.

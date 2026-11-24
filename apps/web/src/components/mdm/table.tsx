@@ -29,6 +29,8 @@ import { toggleVisibleColumnIds } from "./table-columns";
 export type MdmColumn<T> = {
   id: string;
   header: string;
+  /** Small glyph drawn before the header label. */
+  icon?: (props: { class?: string }) => JSX.Element;
   class?: string;
   cell: (row: T) => JSX.Element;
   sort?: (row: T) => string | number | undefined | null;
@@ -42,6 +44,68 @@ export type MdmColumn<T> = {
 type SortState = { id: string; dir: "asc" | "desc" } | null;
 
 export type MdmSortState = SortState;
+
+/** One named table view in {@link MdmTableTabs}. */
+export type MdmTableTab = {
+  id: string;
+  label: string;
+  /** Rows the tab opens; omitted while the count is still loading. */
+  count?: number;
+  /** Small marker before the label, such as the member's default-view star. */
+  icon?: JSX.Element;
+};
+
+/**
+ * The tab strip above a table. It only draws tabs and reports the chosen id;
+ * the page decides what "All" and each saved view mean.
+ */
+export function MdmTableTabs(props: {
+  tabs: ReadonlyArray<MdmTableTab>;
+  value: string;
+  onSelect: (id: string) => void;
+  label?: string;
+  class?: string;
+}) {
+  return (
+    <nav
+      aria-label={props.label ?? "Table views"}
+      class={cn("-mb-px flex min-w-0 items-center gap-1 overflow-x-auto pb-1", props.class)}
+    >
+      <For each={props.tabs}>
+        {(tab) => {
+          const active = () => props.value === tab.id;
+
+          return (
+            <button
+              type="button"
+              class={cn(
+                "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-[520] outline-none transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:ring-ring/50",
+                active()
+                  ? "border-border bg-card text-foreground shadow-card"
+                  : "border-transparent text-muted-foreground hover:bg-hover hover:text-foreground",
+              )}
+              aria-current={active() ? "page" : undefined}
+              onClick={() => props.onSelect(tab.id)}
+            >
+              {tab.icon}
+              <span class="max-w-44 truncate">{tab.label}</span>
+              <Show when={tab.count !== undefined}>
+                <span
+                  class={cn(
+                    "text-[11px] tabular-nums",
+                    active() ? "text-muted-foreground" : "text-subtle-foreground",
+                  )}
+                >
+                  {tab.count!.toLocaleString()}
+                </span>
+              </Show>
+            </button>
+          );
+        }}
+      </For>
+    </nav>
+  );
+}
 
 /** Extra state handed to the bulk bar when the whole filtered set is selected. */
 export type MdmBulkSelection = {
@@ -127,7 +191,13 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   onSearchChange?: (value: string) => void;
   sortValue?: MdmSortState;
   onSortChange?: (value: MdmSortState) => void;
-  /** Extra controls rendered below the search row (filters, export, …). */
+  /**
+   * Controls rendered on the search row itself: a split FilterBar (its applied
+   * chips wrap onto their own row) and the page's sort/view actions. Pages
+   * that only need a second row keep using `toolbar`.
+   */
+  inlineToolbar?: JSX.Element;
+  /** Extra controls rendered below the search row (warnings, export, …). */
   toolbar?: JSX.Element;
   /** Rendered below the table (pagination, range summary, …). */
   footer?: JSX.Element;
@@ -141,6 +211,13 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   selectionKey?: string;
   /** Accessible name for the table. */
   caption?: string;
+  /**
+   * Show the leading row-number column. Server tables paginated by offset pass
+   * their offset via {@link rowNumberStart} so numbering continues.
+   */
+  rowNumbers?: boolean;
+  /** Rows before the current page, used to number an offset-paginated table. */
+  rowNumberStart?: number;
 }) {
   const [selected, setSelected] = createSignal<Record<string, true>>({});
   const [allMatching, setAllMatching] = createSignal(false);
@@ -824,6 +901,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
             </Button>
           </Show>
         </div>
+        {props.inlineToolbar}
         <div class="ml-auto flex items-center gap-1.5">
           <Show when={props.isFetching && !props.loading}>
             <LoadingState label="Refreshing…" size={12} />
@@ -1001,57 +1079,77 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                       />
                     </th>
                   </Show>
+                  <Show when={props.rowNumbers ?? true}>
+                    <th
+                      scope="col"
+                      class="label-caps hidden h-8 w-8 pl-2 pr-1 text-right align-middle sm:table-cell"
+                    >
+                      <span class="sr-only">Row</span>
+                      <span aria-hidden="true">#</span>
+                    </th>
+                  </Show>
                   <For each={visibleColumns()}>
-                    {(col) => (
-                      <th
-                        scope="col"
-                        aria-sort={
-                          sort()?.id === sortColumnId(col)
-                            ? sort()!.dir === "asc"
-                              ? "ascending"
-                              : "descending"
-                            : undefined
-                        }
-                        class={cn(
-                          "label-caps h-8 whitespace-nowrap px-3 text-left align-middle",
-                          col.class,
-                        )}
-                      >
-                        <Show when={col.sort} fallback={col.header}>
-                          {(() => {
-                            const sorted = () => sort()?.id === sortColumnId(col);
-                            const ascending = () => sort()?.dir === "asc";
+                    {(col) => {
+                      const label = () => (
+                        <span class="inline-flex items-center gap-1.5 whitespace-nowrap">
+                          <Show when={col.icon}>
+                            {(icon) => icon()({ class: "size-3 text-subtle-foreground" })}
+                          </Show>
+                          {col.header}
+                        </span>
+                      );
 
-                            return (
-                              <button
-                                type="button"
-                                class="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.085em] outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
-                                onClick={() => toggleSort(sortColumnId(col))}
-                              >
-                                {col.header}
-                                <Show
-                                  when={sorted()}
-                                  fallback={
-                                    <ChevronsUpDown
-                                      class="size-3 text-subtle-foreground/70"
+                      return (
+                        <th
+                          scope="col"
+                          aria-sort={
+                            sort()?.id === sortColumnId(col)
+                              ? sort()!.dir === "asc"
+                                ? "ascending"
+                                : "descending"
+                              : undefined
+                          }
+                          class={cn(
+                            "label-caps h-8 whitespace-nowrap px-3 text-left align-middle",
+                            col.class,
+                          )}
+                        >
+                          <Show when={col.sort} fallback={label()}>
+                            {(() => {
+                              const sorted = () => sort()?.id === sortColumnId(col);
+                              const ascending = () => sort()?.dir === "asc";
+
+                              return (
+                                <button
+                                  type="button"
+                                  class="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.085em] outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                                  onClick={() => toggleSort(sortColumnId(col))}
+                                >
+                                  {label()}
+                                  <Show
+                                    when={sorted()}
+                                    fallback={
+                                      <ChevronsUpDown
+                                        class="size-3 text-subtle-foreground/70"
+                                        aria-hidden="true"
+                                      />
+                                    }
+                                  >
+                                    <ChevronDown
+                                      class={cn(
+                                        "size-3 text-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
+                                        ascending() && "rotate-180",
+                                      )}
                                       aria-hidden="true"
                                     />
-                                  }
-                                >
-                                  <ChevronDown
-                                    class={cn(
-                                      "size-3 text-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
-                                      ascending() && "rotate-180",
-                                    )}
-                                    aria-hidden="true"
-                                  />
-                                </Show>
-                              </button>
-                            );
-                          })()}
-                        </Show>
-                      </th>
-                    )}
+                                  </Show>
+                                </button>
+                              );
+                            })()}
+                          </Show>
+                        </th>
+                      );
+                    }}
                   </For>
                 </tr>
               </thead>
@@ -1100,6 +1198,11 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                               onChange={(e) => toggleRow(row, e.currentTarget.checked)}
                               aria-label={`Select ${row.name ?? row.id} (Shift-click to select a range)`}
                             />
+                          </td>
+                        </Show>
+                        <Show when={props.rowNumbers ?? true}>
+                          <td class="hidden h-9 w-8 select-none pl-2 pr-1 text-right align-middle text-[11px] tabular-nums text-subtle-foreground sm:table-cell">
+                            {(props.rowNumberStart ?? 0) + rowIndex() + 1}
                           </td>
                         </Show>
                         <For each={visibleColumns()}>
