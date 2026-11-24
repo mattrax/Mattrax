@@ -329,41 +329,55 @@ export function DataTable<T>(props: {
   empty: JSX.Element;
   /** Names the table for screen readers; defaults to the visible column headers. */
   caption?: string;
+  /** Mobile-only guidance for tables that keep their columns on one line. */
+  swipeHint?: string;
 }) {
   const caption = () =>
     props.caption ?? `Table: ${props.columns.map((column) => column.header).join(", ")}`;
 
   return (
     <Show when={(props.rows?.length ?? 0) > 0} fallback={props.empty}>
-      <Table containerClass="page-enter" class="text-[12.5px]">
-        <TableCaption class="sr-only">{caption()}</TableCaption>
-        <TableHeader>
-          <TableRow class="bg-surface hover:bg-surface">
-            <For each={props.columns}>
-              {(col) => (
-                <TableHead scope="col" class={col.class}>
-                  {col.header}
-                </TableHead>
+      <div>
+        <Show when={props.swipeHint}>
+          {(hint) => (
+            <p class="rounded-t-xl border border-border border-b-0 bg-surface px-3 py-1.5 text-[11px] text-muted-foreground sm:hidden">
+              {hint()}
+            </p>
+          )}
+        </Show>
+        <Table
+          containerClass={cn("page-enter", props.swipeHint && "rounded-t-none sm:rounded-xl")}
+          class="text-[12.5px]"
+        >
+          <TableCaption class="sr-only">{caption()}</TableCaption>
+          <TableHeader>
+            <TableRow class="bg-surface hover:bg-surface">
+              <For each={props.columns}>
+                {(col) => (
+                  <TableHead scope="col" class={col.class}>
+                    {col.header}
+                  </TableHead>
+                )}
+              </For>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            <For each={props.rows}>
+              {(row) => (
+                <TableRow>
+                  <For each={props.columns}>
+                    {(col) => (
+                      <TableCell class={cn("text-muted-foreground", col.class)}>
+                        {col.cell(row)}
+                      </TableCell>
+                    )}
+                  </For>
+                </TableRow>
               )}
             </For>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          <For each={props.rows}>
-            {(row) => (
-              <TableRow>
-                <For each={props.columns}>
-                  {(col) => (
-                    <TableCell class={cn("text-muted-foreground", col.class)}>
-                      {col.cell(row)}
-                    </TableCell>
-                  )}
-                </For>
-              </TableRow>
-            )}
-          </For>
-        </TableBody>
-      </Table>
+          </TableBody>
+        </Table>
+      </div>
     </Show>
   );
 }

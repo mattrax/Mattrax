@@ -37,7 +37,7 @@ export const route = {
 const statusTone = (status: string | null | undefined) => {
   switch (status) {
     case "succeeded":
-      return "border-success/30 text-success-foreground";
+      return "border-success/30 text-success";
     case "failed":
       return "border-destructive/30 text-destructive";
     case "queued":
@@ -59,6 +59,7 @@ export default function ScriptsPage() {
 
   const setEnabled = useMutation(() => ({
     mutationFn: (enabled: boolean) => enterprise.patchScriptSettings(params.tenantId, { enabled }),
+    meta: { inlineError: true },
     onMutate: (enabled) =>
       optimisticUpdate<Awaited<ReturnType<typeof enterprise.listScripts>>>(
         qc,
@@ -236,6 +237,7 @@ export default function ScriptsPage() {
             rows={rows()}
             columns={columns}
             caption="Scripts"
+            swipeHint="Swipe the table sideways to see more columns."
             empty={
               <EmptyState
                 title="No scripts yet"

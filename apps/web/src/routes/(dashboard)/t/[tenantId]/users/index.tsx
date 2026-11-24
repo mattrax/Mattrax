@@ -94,10 +94,11 @@ export default function UsersPage() {
         cell: (row) => (
           <span class="flex flex-wrap items-center gap-1.5">
             <span
+              data-success-badge="active"
               class={
                 row.disabled
                   ? "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                  : "inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success-foreground"
+                  : "inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success"
               }
             >
               <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />

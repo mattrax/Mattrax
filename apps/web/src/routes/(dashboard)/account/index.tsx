@@ -535,7 +535,6 @@ export default function AccountPage() {
   return (
     <Page class="max-w-[860px]">
       <PageHeader
-        eyebrow="Your account"
         title="Account"
         description="Manage your personal information and security settings."
         meta={
@@ -549,7 +548,8 @@ export default function AccountPage() {
                 >
                   <Badge
                     variant="outline"
-                    class="border-success/25 bg-success/10 text-success-foreground"
+                    data-success-badge="verified"
+                    class="border-success/25 bg-success/10 text-success"
                   >
                     Verified
                   </Badge>
@@ -590,7 +590,7 @@ export default function AccountPage() {
           )}
         </Show>
         <Show when={nameSuccess()}>
-          <p class="mt-2 text-[12.5px] text-success-foreground">Name updated successfully.</p>
+          <p class="mt-2 text-[12.5px] text-success">Name updated successfully.</p>
         </Show>
       </Panel>
 
@@ -673,7 +673,7 @@ export default function AccountPage() {
           )}
         </Show>
         <Show when={defaultTenantSaved()}>
-          <p role="status" aria-live="polite" class="mt-2 text-[12.5px] text-success-foreground">
+          <p role="status" aria-live="polite" class="mt-2 text-[12.5px] text-success">
             Default tenant updated.
           </p>
         </Show>
@@ -689,7 +689,8 @@ export default function AccountPage() {
           <Show when={emailVerified()} fallback={<Badge variant="outline">Not verified</Badge>}>
             <Badge
               variant="outline"
-              class="border-success/25 bg-success/10 text-success-foreground"
+              data-success-badge="verified"
+              class="border-success/25 bg-success/10 text-success"
             >
               Verified
             </Badge>
@@ -704,7 +705,7 @@ export default function AccountPage() {
         <Show
           when={!emailSent()}
           fallback={
-            <div class="rounded-lg border border-success/25 bg-success/[0.08] px-4 py-3 text-[12.5px] leading-relaxed text-success-foreground">
+            <div class="rounded-lg border border-success/25 bg-success/[0.08] px-4 py-3 text-[12.5px] leading-relaxed text-success">
               Verification email sent. Please check your inbox and click the link to confirm the
               change.
             </div>
@@ -780,7 +781,8 @@ export default function AccountPage() {
                     <Show when={item.current}>
                       <Badge
                         variant="outline"
-                        class="border-success/25 bg-success/10 text-success-foreground"
+                        data-success-badge="current-session"
+                        class="border-success/25 bg-success/10 text-success"
                       >
                         This session
                       </Badge>
