@@ -1,6 +1,16 @@
 import { useParams, useSearchParams } from "@solidjs/router";
+import type { JSX } from "@solidjs/web";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Loading,
+  onCleanup,
+  Show,
+  untrack,
+} from "solid-js";
 import { Match, Option, Schema } from "effect";
 import {
   devicePresence,
@@ -22,7 +32,7 @@ import { EntityActions } from "~/components/mdm/entity-actions";
 import { MdmTable } from "~/components/mdm/table";
 import type { MdmColumn, MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
-import { Badge, EmptyState, FilterBar } from "@mattrax/ui";
+import { Badge, EmptyState, FilterBar, Skeleton } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import {
   Activity,
@@ -90,6 +100,45 @@ const defaultDeviceSearch = {
   sort: "name" as const,
   direction: "asc" as const,
 };
+
+/** Keep the page frame visible while the first device search is in flight. */
+function DevicesTableSkeleton() {
+  return (
+    <div
+      data-testid="devices-table-skeleton"
+      aria-busy="true"
+      class="overflow-hidden rounded-xl border border-border bg-card"
+    >
+      <span role="status" class="sr-only">
+        Loading rows…
+      </span>
+      <For each={[0, 1, 2, 3, 4, 5]}>{() => <Skeleton class="h-9 rounded-none" />}</For>
+    </div>
+  );
+}
+
+/** Give query reads a tracking scope inside the route's Loading boundary. */
+function DeviceTableSlot(props: {
+  children: () => JSX.Element;
+  total: () => number;
+  page: () => number;
+  pageSize: () => number;
+  setPage: (value: number) => void;
+}) {
+  // Deleting the last row of the final page should not leave the user stranded.
+  createEffect(
+    () => ({ total: props.total(), page: props.page(), pageSize: props.pageSize() }),
+    ({ total, page, pageSize }) => {
+      const last = Math.max(0, Math.ceil(total / pageSize) - 1);
+
+      if (page > last) props.setPage(last);
+    },
+  );
+
+  const content = createMemo(() => props.children());
+
+  return <>{content()}</>;
+}
 
 /** Search parameters that make the destination key differ from the default page. */
 const deviceListOverrides = [
@@ -1316,16 +1365,6 @@ export default function DevicesPage() {
       };
     });
 
-  // Deleting the last row of the final page should not leave the user stranded.
-  createEffect(
-    () => ({ total: total(), page: page() }),
-    ({ total, page }) => {
-      const last = Math.max(0, Math.ceil(total / pageSize()) - 1);
-
-      if (page > last) setPage(last);
-    },
-  );
-
   const hasFilters = () =>
     Boolean(
       debouncedQ() ||
@@ -1427,7 +1466,7 @@ export default function DevicesPage() {
                 {exporting() ? "Exporting…" : "Export CSV"}
               </Button>
             </div>
-            <Show when={can("enrollment.write") && (total() > 0 || hasFilters())}>
+            <Show when={can("enrollment.write") && (devices.isSuccess || hasFilters())}>
               <Button
                 as="a"
                 href={routes.tenant(params.tenantId).settingsTab("enrollment")}
@@ -1464,186 +1503,198 @@ export default function DevicesPage() {
           </Button>
         </div>
       </Show>
-      <MdmTable<DeviceRow>
-        mode="server"
-        rows={devices.data?.devices}
-        rowNumberStart={page() * pageSize()}
-        selectable={canAny(["devices.command", "devices.write", "groups.write"])}
-        total={devices.data?.total}
-        selectionKey={JSON.stringify(filters())}
-        loading={devices.isPending}
-        isFetching={devices.isFetching}
-        onRefresh={() => void devices.refetch()}
-        error={devices.error}
-        storageKey="devices"
-        visibleColumnIds={() => viewColumns()}
-        onVisibleColumnsChange={(columns) => setViewColumns(columns)}
-        rowHref={(row) => routes.tenant(params.tenantId).device(row.id)}
-        searchValue={q()}
-        onSearchChange={setQ}
-        sortValue={sort()}
-        onSortChange={(value) => {
-          setSort(value);
-          setPage(0);
-        }}
-        searchPlaceholder="Search name, serial, model, platform, group, notes…"
-        inlineToolbar={
-          <FilterBar
-            inline
-            fields={filterFields()}
-            conditions={filterConditions()}
-            onChange={applyFilters}
-            hideClear
-            filterExtra={
-              <>
-                <Show
-                  when={deviceQuery()}
-                  fallback={
+      <Loading fallback={<DevicesTableSkeleton />}>
+        <DeviceTableSlot
+          total={total}
+          page={page}
+          pageSize={pageSize}
+          setPage={(value) => setPage(value)}
+        >
+          {() => (
+            <MdmTable<DeviceRow>
+              mode="server"
+              rows={devices.data?.devices}
+              rowNumberStart={page() * pageSize()}
+              selectable={canAny(["devices.command", "devices.write", "groups.write"])}
+              total={devices.data?.total}
+              selectionKey={JSON.stringify(filters())}
+              loading={devices.isPending}
+              isFetching={devices.isFetching}
+              onRefresh={() => void devices.refetch()}
+              error={devices.error}
+              storageKey="devices"
+              visibleColumnIds={() => viewColumns()}
+              onVisibleColumnsChange={(columns) => setViewColumns(columns)}
+              rowHref={(row) => routes.tenant(params.tenantId).device(row.id)}
+              searchValue={q()}
+              onSearchChange={setQ}
+              sortValue={sort()}
+              onSortChange={(value) => {
+                setSort(value);
+                setPage(0);
+              }}
+              searchPlaceholder="Search name, serial, model, platform, group, notes…"
+              inlineToolbar={
+                <FilterBar
+                  inline
+                  fields={filterFields()}
+                  conditions={filterConditions()}
+                  onChange={applyFilters}
+                  hideClear
+                  filterExtra={
+                    <>
+                      <Show
+                        when={deviceQuery()}
+                        fallback={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            class="h-7 rounded-full border-border bg-card px-2.5 text-[11.5px] text-muted-foreground"
+                            aria-expanded={queryOpen() ? "true" : "false"}
+                            onClick={() => setQueryOpen((value) => !value)}
+                          >
+                            <SlidersHorizontal class="size-3.5" />
+                            Advanced
+                          </Button>
+                        }
+                      >
+                        <span class="inline-flex h-7 items-center rounded-full border border-border bg-card pl-1.5 pr-0.5">
+                          <button
+                            type="button"
+                            class="flex h-full items-center gap-1.5 rounded-full pr-1 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                            aria-expanded={queryOpen() ? "true" : "false"}
+                            onClick={() => setQueryOpen((value) => !value)}
+                          >
+                            <SlidersHorizontal class="size-3.5 text-subtle-foreground" />
+                            <span class="text-muted-foreground">Query</span>
+                            <span class="font-[520] text-foreground">
+                              {queryConditionCount()} condition
+                              {queryConditionCount() === 1 ? "" : "s"}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            class="flex size-5 shrink-0 items-center justify-center rounded-full text-subtle-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                            aria-label="Clear advanced query"
+                            title="Clear advanced query"
+                            onClick={clearAdvancedQuery}
+                          >
+                            <X class="size-3" />
+                          </button>
+                        </span>
+                      </Show>
+                      <Show when={hasFilters()}>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
+                          onClick={clearFilters}
+                        >
+                          Clear filters
+                        </Button>
+                      </Show>
+                    </>
+                  }
+                />
+              }
+              toolbar={
+                <Show when={queryOpen()}>
+                  <div class="animate-in rounded-xl border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
+                    <DeviceQueryBuilder
+                      compact
+                      query={deviceQuery()}
+                      onChange={(query) => {
+                        setDeviceQuery(query);
+                        setPage(0);
+                      }}
+                    />
+                    <p class="mt-2 text-[10.5px] text-muted-foreground">
+                      The URL reproduces this filtered view.
+                    </p>
+                  </div>
+                </Show>
+              }
+              footer={
+                <div
+                  class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-card"
+                  aria-busy={devices.isFetching ? "true" : undefined}
+                >
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    class="text-[12px] tabular-nums text-muted-foreground"
+                  >
+                    Page {page() + 1} of {pageCount()}
+                    <Show when={total() > 0}>
+                      <span class="text-muted-foreground">
+                        {" "}
+                        · {total().toLocaleString()} device{total() === 1 ? "" : "s"}
+                      </span>
+                    </Show>
+                  </span>
+                  <div class="flex items-center gap-1.5">
                     <Button
                       variant="outline"
                       size="sm"
-                      class="h-7 rounded-full border-border bg-card px-2.5 text-[11.5px] text-muted-foreground"
-                      aria-expanded={queryOpen() ? "true" : "false"}
-                      onClick={() => setQueryOpen((value) => !value)}
+                      disabled={page() === 0}
+                      onClick={() => setPage((value) => Math.max(0, value - 1))}
                     >
-                      <SlidersHorizontal class="size-3.5" />
-                      Advanced
+                      Previous
                     </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={(page() + 1) * pageSize() >= total()}
+                      onClick={() => setPage((value) => value + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              }
+              actions={(selected, clear, select, selection) => (
+                <EntityActions
+                  entity="device"
+                  selected={selected}
+                  clear={clear}
+                  select={select}
+                  allMatching={selection.allMatching}
+                  total={selection.total}
+                  resolveAll={resolveAllDevices}
+                />
+              )}
+              empty={
+                <EmptyState
+                  icon={<Laptop />}
+                  title={hasFilters() ? "No matching devices" : "No devices"}
+                  description={
+                    hasFilters()
+                      ? "No devices match the current filters. Clear them or try a different search."
+                      : "Devices will appear here after users enroll through this tenant's enrollment URL."
                   }
-                >
-                  <span class="inline-flex h-7 items-center rounded-full border border-border bg-card pl-1.5 pr-0.5">
-                    <button
-                      type="button"
-                      class="flex h-full items-center gap-1.5 rounded-full pr-1 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
-                      aria-expanded={queryOpen() ? "true" : "false"}
-                      onClick={() => setQueryOpen((value) => !value)}
-                    >
-                      <SlidersHorizontal class="size-3.5 text-subtle-foreground" />
-                      <span class="text-muted-foreground">Query</span>
-                      <span class="font-[520] text-foreground">
-                        {queryConditionCount()} condition{queryConditionCount() === 1 ? "" : "s"}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      class="flex size-5 shrink-0 items-center justify-center rounded-full text-subtle-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
-                      aria-label="Clear advanced query"
-                      title="Clear advanced query"
-                      onClick={clearAdvancedQuery}
-                    >
-                      <X class="size-3" />
-                    </button>
-                  </span>
-                </Show>
-                <Show when={hasFilters()}>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                    onClick={clearFilters}
-                  >
-                    Clear filters
-                  </Button>
-                </Show>
-              </>
-            }
-          />
-        }
-        toolbar={
-          <Show when={queryOpen()}>
-            <div class="animate-in rounded-xl border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
-              <DeviceQueryBuilder
-                compact
-                query={deviceQuery()}
-                onChange={(query) => {
-                  setDeviceQuery(query);
-                  setPage(0);
-                }}
-              />
-              <p class="mt-2 text-[10.5px] text-muted-foreground">
-                The URL reproduces this filtered view.
-              </p>
-            </div>
-          </Show>
-        }
-        footer={
-          <div
-            class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-card"
-            aria-busy={devices.isFetching ? "true" : undefined}
-          >
-            <span
-              role="status"
-              aria-live="polite"
-              class="text-[12px] tabular-nums text-muted-foreground"
-            >
-              Page {page() + 1} of {pageCount()}
-              <Show when={total() > 0}>
-                <span class="text-muted-foreground">
-                  {" "}
-                  · {total().toLocaleString()} device{total() === 1 ? "" : "s"}
-                </span>
-              </Show>
-            </span>
-            <div class="flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={page() === 0}
-                onClick={() => setPage((value) => Math.max(0, value - 1))}
-              >
-                Previous
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={(page() + 1) * pageSize() >= total()}
-                onClick={() => setPage((value) => value + 1)}
-              >
-                Next
-              </Button>
-            </div>
-          </div>
-        }
-        actions={(selected, clear, select, selection) => (
-          <EntityActions
-            entity="device"
-            selected={selected}
-            clear={clear}
-            select={select}
-            allMatching={selection.allMatching}
-            total={selection.total}
-            resolveAll={resolveAllDevices}
-          />
-        )}
-        empty={
-          <EmptyState
-            icon={<Laptop />}
-            title={hasFilters() ? "No matching devices" : "No devices"}
-            description={
-              hasFilters()
-                ? "No devices match the current filters. Clear them or try a different search."
-                : "Devices will appear here after users enroll through this tenant's enrollment URL."
-            }
-            action={
-              hasFilters() ? (
-                <Button variant="outline" size="sm" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              ) : (
-                <Show when={can("enrollment.write")}>
-                  <LinkButton
-                    href={routes.tenant(params.tenantId).settingsTab("enrollment")}
-                    size="sm"
-                  >
-                    Enroll device
-                  </LinkButton>
-                </Show>
-              )
-            }
-          />
-        }
-        columns={deviceColumns()}
-      />
+                  action={
+                    hasFilters() ? (
+                      <Button variant="outline" size="sm" onClick={clearFilters}>
+                        Clear filters
+                      </Button>
+                    ) : (
+                      <Show when={can("enrollment.write")}>
+                        <LinkButton
+                          href={routes.tenant(params.tenantId).settingsTab("enrollment")}
+                          size="sm"
+                        >
+                          Enroll device
+                        </LinkButton>
+                      </Show>
+                    )
+                  }
+                />
+              }
+              columns={deviceColumns()}
+            />
+          )}
+        </DeviceTableSlot>
+      </Loading>
 
       <input
         ref={(element) => {

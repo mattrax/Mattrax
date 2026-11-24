@@ -292,6 +292,10 @@ snapshots:
 					"specifier": "^0.5.0",
 					"version": "0.5.0",
 				},
+				"happy-dom": {
+					"specifier": "^21.0.4",
+					"version": "21.0.4",
+				},
 				"mysql2": {
 					"specifier": "^3.24.6",
 					"version": "3.24.6",
@@ -565,6 +569,7 @@ snapshots:
 				"@types/node": "catalog:",
 				"cf": "catalog:",
 				"filesystem-routing": "catalog:",
+				"happy-dom": "catalog:",
 				"shadcn": "catalog:",
 				"vite": {
 					"specifier": "npm:@voidzero-dev/vite-plus-core@^8.3.8000",
@@ -5553,6 +5558,10 @@ snapshots:
 			"integrity": "sha512-lrpDziQipxCEeK5kWxvljWYhUvOiB2A9izZd9B2AFarYAkqZshb4lPbRs7zKEic6eGtH8V/2qJW+dPp9OtF6bw==",
 		},
 
+		"@types/whatwg-mimetype@3.0.2": {
+			"integrity": "sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==",
+		},
+
 		"@types/ws@8.18.2": {
 			"integrity": "sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==",
 			"dependencies": {
@@ -6724,6 +6733,14 @@ snapshots:
 			},
 		},
 
+		"buffer-image-size@0.6.4": {
+			"integrity": "sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ==",
+			"engines": {"node": ">=4.0"},
+			"dependencies": {
+				"@types/node": "26.6.6",
+			},
+		},
+
 		"buffer@5.7.1": {
 			"integrity": "sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ==",
 			"dependencies": {
@@ -7627,6 +7644,11 @@ snapshots:
 			"engines": {"node": ">=0.12"},
 		},
 
+		"entities@7.0.1": {
+			"integrity": "sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==",
+			"engines": {"node": ">=0.12"},
+		},
+
 		"entities@9.0.0": {
 			"integrity": "sha512-oJFNDJg3kTPwAD1cNn2+WmUq4wFoo09npc3Ydf1D7ED4smRiWrsKnaLxykrTWgyGEcusc87P5dxlAleol9kpkg==",
 			"engines": {"node": ">=20.19.0"},
@@ -8390,6 +8412,20 @@ snapshots:
 
 		"graceful-fs@4.2.12": {
 			"integrity": "sha512-iuyGF2E4oafQfPsRrG2wtY2ILupMhvtdrhzrxB+0VcjsPpSPttpfYdjnGFGsTi5MaJFjI1jOKHPQ6UTbTj9TAw==",
+		},
+
+		"happy-dom@21.0.4": {
+			"integrity": "sha512-tFm+GaLBgo6o0awHnvHaNoraVo27qJ+2tZEtZ+cIa08hXbeitrxAJajLI05hsUy/2/YTKcUjQYzHe5mCcraLBw==",
+			"engines": {"node": ">=20.0.0"},
+			"dependencies": {
+				"@types/node": "26.6.6",
+				"@types/whatwg-mimetype": "3.0.2",
+				"@types/ws": "8.18.2",
+				"buffer-image-size": "0.6.4",
+				"entities": "7.0.1",
+				"whatwg-mimetype": "3.0.0",
+				"ws": "8.23.0",
+			},
 		},
 
 		"has-flag@4.0.0": {
@@ -12626,6 +12662,10 @@ snapshots:
 					"version": "0.28.2",
 					"below": true,
 				},
+				"happy-dom": {
+					"version": "21.0.4",
+					"below": true,
+				},
 				"jiti": {
 					"version": "2.7.0",
 					"below": true,
@@ -12739,6 +12779,7 @@ snapshots:
 				},
 				"happy-dom": {
 					"specifier": "*",
+					"version": "21.0.4",
 					"optional": true,
 				},
 				"jsdom": {
@@ -12796,6 +12837,11 @@ snapshots:
 
 		"whatwg-fetch@3.6.20": {
 			"integrity": "sha512-EqhiFU6daOA8kpjOWTL0olhVOF3i7OrFzSYiGsEMB8GcXS+RrzauAERX65xMeNWVqxA6HXH2m69Z9LaKKdisfg==",
+		},
+
+		"whatwg-mimetype@3.0.0": {
+			"integrity": "sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==",
+			"engines": {"node": ">=12"},
 		},
 
 		"whatwg-url@5.0.0": {

@@ -19,7 +19,16 @@ import type {
   DeviceActivityResponse,
 } from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
-import { createEffect, createMemo, createSignal, Errored, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createOptimistic,
+  createSignal,
+  Errored,
+  For,
+  Loading,
+  Show,
+} from "solid-js";
 import { isServer } from "@solidjs/web";
 import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import type { JSX } from "@solidjs/web";
@@ -117,11 +126,7 @@ import {
 } from "~/lib/device-artwork";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { defaultApplyNameToDevice, shouldQueueDeviceNamePush } from "~/lib/device-name";
-import {
-  optimisticallyPatchItem,
-  optimisticallyRemoveDevices,
-  optimisticUpdate,
-} from "~/lib/optimistic";
+import { optimisticallyPatchItem, optimisticallyRemoveDevices } from "~/lib/optimistic";
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { SoftwareUpdateTag } from "~/components/software-update-badge";
@@ -145,6 +150,11 @@ type GroupMembership = {
   inheritedFrom?: ReadonlyArray<{ id: string; name: string }>;
 };
 
+type GroupMembershipState = {
+  resolved: boolean;
+  groups: readonly GroupMembership[];
+};
+
 const ACTIVITY_PAGE_SIZE = 50;
 
 /** The command endpoint returns the newest 200 rows; page them on the client. */
@@ -159,6 +169,14 @@ const decodeEffectivePolicy = Schema.decodeUnknownOption(EffectivePolicyResponse
 const decodeJson = Schema.decodeUnknownOption(Schema.Json);
 
 const isString = Schema.is(Schema.String);
+
+/** Read secondary query data only after success so first loads keep local fallbacks. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
 
 const chipVariants: Record<ChipTone, "success" | "warning" | "destructive" | "brand" | "outline"> =
   {
@@ -390,8 +408,8 @@ function WindowsSecurityCard(props: {
         <Show
           when={
             props.canCommand &&
-            security.data?.laps.configured &&
-            security.data.laps.backupDirectory !== "disabled"
+            settledQueryData(security)?.laps.configured &&
+            settledQueryData(security)?.laps.backupDirectory !== "disabled"
           }
         >
           <Button
@@ -413,7 +431,7 @@ function WindowsSecurityCard(props: {
       }
     >
       <Show
-        when={security.data}
+        when={settledQueryData(security)}
         fallback={
           <Show when={security.isError} fallback={<SkeletonRows rows={5} />}>
             <QueryError error={security.error} onRetry={() => void security.refetch()} />
@@ -622,7 +640,7 @@ function WindowsSecurityCard(props: {
             <div class="border-t border-border pt-4">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <h3 class="text-[12.5px] font-medium text-foreground">Diagnostic archives</h3>
-                <Show when={props.canCommand && diagnostics.data?.supported}>
+                <Show when={props.canCommand && settledQueryData(diagnostics)?.supported}>
                   <Button
                     variant="outline"
                     size="sm"
@@ -634,7 +652,7 @@ function WindowsSecurityCard(props: {
                 </Show>
               </div>
               <Show
-                when={diagnostics.data}
+                when={settledQueryData(diagnostics)}
                 fallback={
                   <Show when={diagnostics.isError} fallback={<SkeletonRows rows={2} />}>
                     <QueryError
@@ -812,12 +830,20 @@ function AbmPanel(props: {
   adeUrl: () => string | null;
 }) {
   const abmConfig = useQuery(() => enterpriseQueries.abm(props.tenantId));
+  const [configured, setConfigured] = createSignal(false);
+
+  createEffect(
+    () => settledQueryData(abmConfig)?.configured === true,
+    (value) => {
+      setConfigured(value);
+    },
+  );
 
   // A tenant without an ABM credential has no inventory to look a serial up in;
   // skipping the request keeps the console free of expected 404s.
   const abmDevice = useQuery(() => ({
     ...enterpriseQueries.abmDevice(props.tenantId, props.serial),
-    enabled: Boolean(props.serial) && abmConfig.data?.configured === true,
+    enabled: Boolean(props.serial) && configured(),
   }));
 
   return (
@@ -827,13 +853,13 @@ function AbmPanel(props: {
     >
       <div class="space-y-3 text-[12.5px]">
         <Show
-          when={abmDevice.data}
+          when={configured() && settledQueryData(abmDevice)}
           fallback={
             <Show
               when={abmDevice.isError}
               fallback={
                 <p class="text-muted-foreground">
-                  {abmConfig.data?.configured === false
+                  {!configured()
                     ? "Apple Business Manager is not connected for this tenant."
                     : "This serial is not in the tenant's Apple Business Manager inventory."}{" "}
                   <a
@@ -939,6 +965,23 @@ export const route = {
 };
 
 export default function DeviceDetailPage() {
+  const params = useParams();
+
+  return (
+    <Loading
+      fallback={
+        <Page wide>
+          <PageSkeleton rows={8} />
+        </Page>
+      }
+      on={[params.tenantId, params.deviceId]}
+    >
+      <DeviceDetailContent />
+    </Loading>
+  );
+}
+
+function DeviceDetailContent() {
   // Presence is a function of the clock, so a device drops offline after the
   // 15-minute window even if no new event arrives.
   const presenceNow = usePresenceNow();
@@ -948,16 +991,15 @@ export default function DeviceDetailPage() {
   const { can } = useCan();
   // A list row is enough to paint the page, never enough to authorise a write
   // against detail-only fields. Wait for the authoritative response first.
-  const authoritative = () => Boolean(row()) && !device.isPlaceholderData;
-  const writable = () => can("devices.write") && authoritative();
-  const canCommand = () => can("devices.command") && authoritative();
+  const writable = () => can("devices.write") && authoritativeLoaded();
+  const canCommand = () => can("devices.command") && authoritativeLoaded();
   /** The server derives the legal action set from platform, status and reported capabilities. */
   const supports = (action: DeviceActionName) =>
     (
       Option.getOrUndefined(Schema.decodeUnknownOption(DeviceActionNameList)(row()?.actions)) ?? []
     ).includes(action);
-  const canRevealKey = () => can("devices.recovery_key") && authoritative();
-  const canHandover = () => can("devices.handover") && authoritative();
+  const canRevealKey = () => can("devices.recovery_key") && authoritativeLoaded();
+  const canHandover = () => can("devices.handover") && authoritativeLoaded();
 
   const device = useQuery(() => ({
     queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
@@ -965,8 +1007,26 @@ export default function DeviceDetailPage() {
     placeholderData: () =>
       entitySummaryPlaceholder(queryClient, params.tenantId, "device", params.deviceId),
   }));
+  const authoritativeLoaded = () => device.dataUpdatedAt > 0 && !device.isPlaceholderData;
 
   const row = () => Option.getOrUndefined(decodeDeviceRow(device.data));
+  const rowSnapshot = () =>
+    Option.getOrUndefined(
+      decodeDeviceRow(
+        queryClient.getQueryData(enterpriseKeys.item(params.tenantId, "device", params.deviceId)),
+      ),
+    );
+  // useQuery snapshots options untracked. Derive enabling predicates from
+  // settled cache snapshots and metadata, never from pending query data.
+  const trackedDeviceSnapshot = () => {
+    // Track the settled cache timestamp without reading the suspending data resource.
+    void device.dataUpdatedAt;
+
+    return rowSnapshot();
+  };
+  const platform = () => trackedDeviceSnapshot()?.proto;
+  const deviceSerial = () => trackedDeviceSnapshot()?.serial ?? undefined;
+  const deviceName = () => trackedDeviceSnapshot()?.name;
 
   /**
    * Presence-only secret check. It is a separate read so the device payload
@@ -1041,7 +1101,7 @@ export default function DeviceDetailPage() {
   const [usersDirty, setUsersDirty] = createSignal(false);
 
   createEffect(
-    () => deviceUsers.data,
+    () => settledQueryData(deviceUsers),
     (data) => {
       // A background refetch must not discard unsaved checkbox changes.
       if (!data || usersDirty()) return;
@@ -1156,7 +1216,8 @@ export default function DeviceDetailPage() {
   const [handoverOpen, setHandoverOpen] = createSignal(false);
 
   /** Secret kinds the delete flow must warn about, from presence metadata. */
-  const escrowedSecretKinds = () => handoverImpact.data?.devices[0]?.secretKinds ?? [];
+  const escrowedSecretKinds = () =>
+    writable() ? (settledQueryData(handoverImpact)?.devices[0]?.secretKinds ?? []) : [];
 
   const [confirmName, setConfirmName] = createSignal("");
 
@@ -1178,31 +1239,37 @@ export default function DeviceDetailPage() {
    */
   const currentApplyName = () => defaultApplyNameToDevice(row()?.namePushEnabled);
 
+  let seededDeviceId: string | undefined;
+
   createEffect(
-    () => ({ id: row()?.id, placeholder: device.isPlaceholderData }),
-    ({ placeholder }) => {
-      // Seed editors only from detail data. The id stays the same when a
-      // placeholder is replaced, so the placeholder transition is what must
-      // trigger the reseed.
-      if (placeholder) return;
+    () => {
+      const snapshot = rowSnapshot();
 
-      const device = row();
+      return {
+        id: snapshot?.id,
+        placeholder: device.isPlaceholderData,
+        updatedAt: device.dataUpdatedAt,
+        device: snapshot,
+      };
+    },
+    (value) => {
+      if (!value.device || value.placeholder || seededDeviceId === value.id) return;
 
-      if (device) {
-        setName(device.name);
-        setAssetTag(device.assetTag ?? "");
-        setNotes(device.notes ?? "");
-        setApplyName(defaultApplyNameToDevice(device.namePushEnabled));
-        setLockScreenMessage(device.effectiveLockScreenMessage ?? "");
-        setLockScreenIncludeAssetTag(device.effectiveLockScreenIncludeAssetTag ?? false);
-        const mode = Option.getOrUndefined(
-          Schema.decodeUnknownOption(DeviceAppleState)(device.apple),
-        )?.lostMode;
+      seededDeviceId = value.id;
+      const device = value.device;
+      setName(device.name);
+      setAssetTag(device.assetTag ?? "");
+      setNotes(device.notes ?? "");
+      setApplyName(defaultApplyNameToDevice(device.namePushEnabled));
+      setLockScreenMessage(device.effectiveLockScreenMessage ?? "");
+      setLockScreenIncludeAssetTag(device.effectiveLockScreenIncludeAssetTag ?? false);
+      const mode = Option.getOrUndefined(
+        Schema.decodeUnknownOption(DeviceAppleState)(device.apple),
+      )?.lostMode;
 
-        setLostModeMessage(mode?.message ?? "");
-        setLostModePhone(mode?.phone ?? "");
-        setLostModeFootnote(mode?.footnote ?? "");
-      }
+      setLostModeMessage(mode?.message ?? "");
+      setLostModePhone(mode?.phone ?? "");
+      setLostModeFootnote(mode?.footnote ?? "");
     },
   );
 
@@ -1210,6 +1277,8 @@ export default function DeviceDetailPage() {
   // turn one command into a chain of round trips after the UI had already
   // moved on, so the refetches run together and callers do not await them.
   const invalidate = async () => {
+    const serial = deviceSerial();
+
     await Promise.all([
       queryClient.invalidateQueries({
         queryKey: enterpriseKeys.item(params.tenantId, "device", params.deviceId),
@@ -1243,7 +1312,7 @@ export default function DeviceDetailPage() {
         queryKey: enterpriseKeys.applicationInventory(params.tenantId),
       }),
       queryClient.invalidateQueries({
-        queryKey: enterpriseKeys.abmDevice(params.tenantId, row()?.serial ?? undefined),
+        queryKey: enterpriseKeys.abmDevice(params.tenantId, serial),
       }),
     ]);
   };
@@ -1348,8 +1417,9 @@ export default function DeviceDetailPage() {
 
       // The editor is seeded from the effective message, so reseed it from the
       // refreshed row instead of leaving the cleared override on screen.
-      setLockScreenMessage(row()?.effectiveLockScreenMessage ?? "");
-      setLockScreenIncludeAssetTag(row()?.effectiveLockScreenIncludeAssetTag ?? false);
+      const refreshed = rowSnapshot();
+      setLockScreenMessage(refreshed?.effectiveLockScreenMessage ?? "");
+      setLockScreenIncludeAssetTag(refreshed?.effectiveLockScreenIncludeAssetTag ?? false);
     },
     onError: (error) => {
       toast.error("Could not clear the lock screen message", {
@@ -1370,8 +1440,8 @@ export default function DeviceDetailPage() {
       // Capture the pre-save values before the optimistic write. Reading the
       // row in onSuccess compares against the optimistic name and loses the
       // fact that the operator renamed the device.
-      const previousName = row()?.name ?? null;
-      const previousApplyName = currentApplyName();
+      const previousName = rowSnapshot()?.name ?? null;
+      const previousApplyName = defaultApplyNameToDevice(rowSnapshot()?.namePushEnabled);
 
       const restore = await optimisticallyPatchItem(
         queryClient,
@@ -1432,13 +1502,21 @@ export default function DeviceDetailPage() {
    * failed assignment can put the previous list back. */
   const groupsKey = () =>
     [...enterpriseKeys.item(params.tenantId, "device", params.deviceId), "groups"] as const;
+  const membershipTerm = () => deviceSerial() ?? deviceName();
+  const [optimisticMemberships, setOptimisticMemberships] = createOptimistic<
+    GroupMembershipState | undefined
+  >(undefined);
+  const [membershipBusyOverlay, setMembershipBusyOverlay] = createOptimistic(false);
 
-  const snapshotGroups = () =>
-    optimisticUpdate(
-      queryClient,
-      groupsKey(),
-      (current: { resolved: boolean; groups: readonly GroupMembership[] }) => current,
-    );
+  const snapshotGroups = () => {
+    const previous = queryClient.getQueriesData<GroupMembershipState>({ queryKey: groupsKey() });
+
+    void queryClient.cancelQueries({ queryKey: groupsKey() });
+
+    return () => {
+      for (const [key, data] of previous) queryClient.setQueryData(key, data);
+    };
+  };
 
   const invalidateGroups = async () => {
     await queryClient.invalidateQueries({
@@ -1450,62 +1528,95 @@ export default function DeviceDetailPage() {
     await invalidate();
   };
 
+  // Solid Query mutations do not supply React-style onMutate context, so each
+  // flight keeps the cache rollback that onError must run.
+  let membershipMutationInFlight = false;
+  let restoreGroupAdd: (() => void) | undefined;
+
   const addToGroup = useMutation(() => ({
     mutationFn: (groupId: string) =>
       enterprise.patchGroupMembers(params.tenantId, groupId, {
         assign: { devices: [params.deviceId!] },
       }),
-    onMutate: async (groupId) => {
+    onMutate: (groupId) => {
+      setMembershipBusyOverlay(true);
       const name = knownGroup(groupId)?.name ?? groupId;
-      const restore = await snapshotGroups();
+      restoreGroupAdd = snapshotGroups();
+      const current = queryClient.getQueryData<GroupMembershipState>([
+        ...groupsKey(),
+        membershipTerm() ?? "",
+      ]) ?? { resolved: true, groups: [] };
 
-      queryClient.setQueryData(
-        groupsKey(),
-        (current: { resolved: boolean; groups: readonly GroupMembership[] } | undefined) =>
+      setOptimisticMemberships({
+        ...current,
+        groups: current.groups.some((group) => group.id === groupId)
+          ? current.groups
+          : [...current.groups, { id: groupId, name }],
+      });
+
+      queryClient.setQueriesData(
+        { queryKey: groupsKey() },
+        (current: GroupMembershipState | undefined) =>
           current && !current.groups.some((group) => group.id === groupId)
             ? { ...current, groups: [...current.groups, { id: groupId, name }] }
             : current,
       );
-
-      return { restore };
     },
     onSuccess: () => {
+      membershipMutationInFlight = false;
+      restoreGroupAdd = undefined;
       setSelectedGroupId("");
       toast.success("Device added to group");
       void invalidateGroups();
     },
-    onError: (error, _groupId, context) => {
-      context?.restore();
+    onError: (error, _groupId) => {
+      membershipMutationInFlight = false;
+      restoreGroupAdd?.();
+      restoreGroupAdd = undefined;
       toast.error("Could not add the device to the group", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       });
     },
   }));
 
+  let restoreGroupRemove: (() => void) | undefined;
+
   const removeFromGroup = useMutation(() => ({
     mutationFn: (groupId: string) =>
       enterprise.patchGroupMembers(params.tenantId, groupId, {
         unassign: { devices: [params.deviceId!] },
       }),
-    onMutate: async (groupId) => {
-      const restore = await snapshotGroups();
+    onMutate: (groupId) => {
+      setMembershipBusyOverlay(true);
+      restoreGroupRemove = snapshotGroups();
+      const current = queryClient.getQueryData<GroupMembershipState>([
+        ...groupsKey(),
+        membershipTerm() ?? "",
+      ]) ?? { resolved: true, groups: [] };
 
-      queryClient.setQueryData(
-        groupsKey(),
-        (current: { resolved: boolean; groups: readonly GroupMembership[] } | undefined) =>
+      setOptimisticMemberships({
+        ...current,
+        groups: current.groups.filter((group) => group.id !== groupId),
+      });
+
+      queryClient.setQueriesData(
+        { queryKey: groupsKey() },
+        (current: GroupMembershipState | undefined) =>
           current
             ? { ...current, groups: current.groups.filter((group) => group.id !== groupId) }
             : current,
       );
-
-      return { restore };
     },
     onSuccess: () => {
+      membershipMutationInFlight = false;
+      restoreGroupRemove = undefined;
       toast.success("Device removed from group");
       void invalidateGroups();
     },
-    onError: (error, _groupId, context) => {
-      context?.restore();
+    onError: (error, _groupId) => {
+      membershipMutationInFlight = false;
+      restoreGroupRemove?.();
+      restoreGroupRemove = undefined;
       toast.error("Could not remove the device from the group", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       });
@@ -1525,6 +1636,21 @@ export default function DeviceDetailPage() {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       }),
   }));
+
+  const membershipBusy = () =>
+    membershipBusyOverlay() || addToGroup.isPending || removeFromGroup.isPending;
+  const startAddToGroup = (groupId: string) => {
+    if (!groupId || membershipMutationInFlight) return;
+
+    membershipMutationInFlight = true;
+    addToGroup.mutate(groupId);
+  };
+  const startRemoveFromGroup = (groupId: string) => {
+    if (membershipMutationInFlight) return;
+
+    membershipMutationInFlight = true;
+    removeFromGroup.mutate(groupId);
+  };
 
   const commands = useQuery(() => ({
     queryKey: [...enterpriseKeys.item(params.tenantId, "device", params.deviceId), "commands"],
@@ -1551,7 +1677,7 @@ export default function DeviceDetailPage() {
     enabled: Boolean(params.tenantId) && !isServer,
   }));
 
-  const activityEvents = createMemo(() => mergeActivityPages(activity.data?.pages));
+  const activityEvents = createMemo(() => mergeActivityPages(settledQueryData(activity)?.pages));
 
   // Command history pages on the client: the endpoint already bounds the
   // response, and this keeps the panel's height predictable.
@@ -1572,7 +1698,7 @@ export default function DeviceDetailPage() {
     },
   );
 
-  const commandRows = () => commands.data?.commands ?? [];
+  const commandRows = () => settledQueryData(commands)?.commands ?? [];
   const visibleCommands = () => commandRows().slice(0, commandLimit());
   const hasOlderCommands = () => commandRows().length > commandLimit();
   const commandHistoryTruncated = () => commandRows().length >= COMMAND_FETCH_LIMIT;
@@ -1586,7 +1712,7 @@ export default function DeviceDetailPage() {
     ...enterpriseQueries.deviceWindowsFailures(params.tenantId, params.deviceId),
     // Never fetch the history for a non-Windows device: the section does not
     // render and the endpoint would return nothing useful.
-    enabled: row()?.proto === "win",
+    enabled: platform() === "win",
   }));
 
   const effectivePolicy = useQuery(() =>
@@ -1608,9 +1734,13 @@ export default function DeviceDetailPage() {
    * reported to the backend owners so this can become a direct read.
    */
   const groupMemberships = useQuery(() => ({
-    queryKey: [...enterpriseKeys.item(params.tenantId, "device", params.deviceId), "groups"],
+    queryKey: [
+      ...enterpriseKeys.item(params.tenantId, "device", params.deviceId),
+      "groups",
+      membershipTerm() ?? "",
+    ],
     queryFn: async (): Promise<{ resolved: boolean; groups: readonly GroupMembership[] }> => {
-      const term = row()?.serial ?? row()?.name;
+      const term = membershipTerm();
 
       if (!term) return { resolved: true, groups: [] };
 
@@ -1619,8 +1749,13 @@ export default function DeviceDetailPage() {
 
       return match ? { resolved: true, groups: match.groups } : { resolved: false, groups: [] };
     },
-    enabled: tab() === "scope" && Boolean(params.tenantId && params.deviceId && row()),
+    enabled:
+      tab() === "scope" &&
+      authoritativeLoaded() &&
+      Boolean(params.tenantId && params.deviceId && membershipTerm()),
   }));
+
+  const membershipState = () => optimisticMemberships() ?? settledQueryData(groupMemberships);
 
   const groupDirectory = useQuery(() => ({
     queryKey: enterpriseKeys.list(params.tenantId, "group"),
@@ -1628,18 +1763,19 @@ export default function DeviceDetailPage() {
     enabled: tab() === "scope" && Boolean(params.tenantId),
   }));
 
-  const knownGroup = (id: string) => groupDirectory.data?.rows.find((group) => group.id === id);
+  const knownGroup = (id: string) =>
+    settledQueryData(groupDirectory)?.rows.find((group) => group.id === id);
 
   const membershipRows = () =>
-    (groupMemberships.data?.groups ?? []).map((group) => ({
+    (membershipState()?.groups ?? []).map((group) => ({
       ...group,
       kind: group.source === "directory" ? ("directory" as const) : knownGroup(group.id)?.kind,
     }));
 
-  const assignedGroupIds = () => new Set((groupMemberships.data?.groups ?? []).map((g) => g.id));
+  const assignedGroupIds = () => new Set((membershipState()?.groups ?? []).map((g) => g.id));
 
   const joinableGroups = () =>
-    (groupDirectory.data?.rows ?? []).filter(
+    (settledQueryData(groupDirectory)?.rows ?? []).filter(
       (group) =>
         group.kind !== "dynamic" && !group.directoryGroupId && !assignedGroupIds().has(group.id),
     );
@@ -1666,21 +1802,34 @@ export default function DeviceDetailPage() {
   const [adeUrl, setAdeUrl] = createSignal<string | null>(null);
 
   const assignAbm = useMutation(() => ({
-    mutationFn: () => enterprise.assignAbmDevice(params.tenantId, row()!.serial!),
+    mutationFn: () => {
+      const serial = deviceSerial();
+
+      if (!serial) throw new Error("This device has no serial number.");
+
+      return enterprise.assignAbmDevice(params.tenantId, serial);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: enterpriseKeys.abmDevice(params.tenantId, row()?.serial ?? undefined),
+        queryKey: enterpriseKeys.abmDevice(params.tenantId, deviceSerial()),
       });
       await queryClient.invalidateQueries({ queryKey: enterpriseKeys.abm(params.tenantId) });
     },
   }));
 
   const adeProfile = useMutation(() => ({
-    mutationFn: () => enterprise.getAbmDeviceProfileUrl(params.tenantId, row()!.serial!),
+    mutationFn: () => {
+      const serial = deviceSerial();
+
+      if (!serial) throw new Error("This device has no serial number.");
+
+      return enterprise.getAbmDeviceProfileUrl(params.tenantId, serial);
+    },
     onSuccess: (result) => setAdeUrl(result.url),
   }));
 
-  const resolved = () => Option.getOrUndefined(decodeEffectivePolicy(effectivePolicy.data));
+  const resolved = () =>
+    Option.getOrUndefined(decodeEffectivePolicy(settledQueryData(effectivePolicy)));
   const [manifestUrl, setManifestUrl] = createSignal("");
   const [lockPin, setLockPin] = createSignal<string | null>(null);
   const [recoveryDialogOpen, setRecoveryDialogOpen] = createSignal(false);
@@ -2179,7 +2328,8 @@ export default function DeviceDetailPage() {
     setRecoveryDialogOpen(true);
   };
 
-  const appNames = (): readonly DeviceApplication[] => applications.data?.applications ?? [];
+  const appNames = (): readonly DeviceApplication[] =>
+    settledQueryData(applications)?.applications ?? [];
 
   /**
    * Provisioning mode Google actually gave the device. `DEVICE_OWNER` is a
@@ -2331,7 +2481,7 @@ export default function DeviceDetailPage() {
     policyDeliveryState({
       policyId: policy.policyId,
       kinds: policy.kinds,
-      declarations: health.data?.declarations,
+      declarations: settledQueryData(health)?.declarations,
       tracked: row()?.proto === "apple",
     });
 
@@ -2348,7 +2498,7 @@ export default function DeviceDetailPage() {
   };
 
   const pushBadge = () => {
-    const push = health.data?.push;
+    const push = settledQueryData(health)?.push;
 
     if (!push) return { label: "Unknown", tone: "muted" } as const;
 
@@ -2362,7 +2512,7 @@ export default function DeviceDetailPage() {
   };
 
   const declarationIssues = () =>
-    (health.data?.declarations ?? []).filter((declaration) => {
+    (settledQueryData(health)?.declarations ?? []).filter((declaration) => {
       const valid = declaration.valid.trim().toLowerCase();
 
       return (
@@ -2391,7 +2541,7 @@ export default function DeviceDetailPage() {
       .filter(Boolean);
   };
 
-  const certificates = () => health.data?.certificates ?? [];
+  const certificates = () => settledQueryData(health)?.certificates ?? [];
   const hasActiveCertificate = () => certificates().some((certificate) => !certificate.revokedAt);
 
   const confirmDescription = () =>
@@ -2523,7 +2673,7 @@ export default function DeviceDetailPage() {
                     <Show when={row()!.awaitingConfiguration}>
                       <Badge variant="warning">Awaiting setup</Badge>
                     </Show>
-                    <DeviceHealthTag level={health.data?.health.level ?? "unknown"} />
+                    <DeviceHealthTag level={settledQueryData(health)?.health.level ?? "unknown"} />
                     <Show when={isMacOsUpdateTracked(osUpdate())}>
                       <SoftwareUpdateTag info={osUpdate()} />
                     </Show>
@@ -2831,7 +2981,7 @@ export default function DeviceDetailPage() {
                       description="Newest Windows faults recorded for this device, kept for 30 days."
                     >
                       <Show
-                        when={windowsFailures.data}
+                        when={platform() === "win" && settledQueryData(windowsFailures)}
                         fallback={
                           <div class="p-4 sm:p-5">
                             <Show
@@ -2936,7 +3086,7 @@ export default function DeviceDetailPage() {
                     }
                   >
                     <Show
-                      when={applications.data}
+                      when={settledQueryData(applications)}
                       fallback={
                         <div class="p-4 sm:p-5">
                           <Show when={applications.isError} fallback={<SkeletonRows rows={4} />}>
@@ -2997,9 +3147,9 @@ export default function DeviceDetailPage() {
                   </DetailCard>
                   <Show
                     when={
-                      restrictedSoftware.data &&
-                      (restrictedSoftware.data.violations.length > 0 ||
-                        restrictedSoftware.data.rules.length > 0)
+                      settledQueryData(restrictedSoftware) &&
+                      ((settledQueryData(restrictedSoftware)?.violations.length ?? 0) > 0 ||
+                        (settledQueryData(restrictedSoftware)?.rules.length ?? 0) > 0)
                     }
                   >
                     <DetailCard
@@ -3008,7 +3158,7 @@ export default function DeviceDetailPage() {
                       description="Deny-list matches recorded for this device, and the rules that apply here."
                     >
                       <Show
-                        when={restrictedSoftware.data!.violations.length > 0}
+                        when={settledQueryData(restrictedSoftware)!.violations.length > 0}
                         fallback={
                           <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
                             No restricted software has been detected on this device.
@@ -3016,7 +3166,7 @@ export default function DeviceDetailPage() {
                         }
                       >
                         <ul class="divide-y divide-border">
-                          <For each={restrictedSoftware.data!.violations}>
+                          <For each={settledQueryData(restrictedSoftware)!.violations}>
                             {(violation) => (
                               <li class="px-4 py-3 text-[12.5px] sm:px-5">
                                 <div class="flex flex-wrap items-center justify-between gap-2">
@@ -3062,13 +3212,13 @@ export default function DeviceDetailPage() {
                           </For>
                         </ul>
                       </Show>
-                      <Show when={restrictedSoftware.data!.rules.length > 0}>
+                      <Show when={settledQueryData(restrictedSoftware)!.rules.length > 0}>
                         <div class="border-t border-border px-4 py-3 sm:px-5">
                           <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                             Applicable rules
                           </p>
                           <ul class="mt-2 space-y-1.5">
-                            <For each={restrictedSoftware.data!.rules}>
+                            <For each={settledQueryData(restrictedSoftware)!.rules}>
                               {(rule) => (
                                 <li class="flex flex-wrap items-center justify-between gap-2 text-[12px]">
                                   <span class="min-w-0 truncate text-foreground">{rule.name}</span>
@@ -3193,7 +3343,7 @@ export default function DeviceDetailPage() {
                   </Show>
                   <DetailCard flush title="Activity" description="Newest first.">
                     <Show
-                      when={activity.data}
+                      when={settledQueryData(activity)}
                       fallback={
                         <div class="p-4 sm:p-5">
                           <Show when={activity.isError} fallback={<SkeletonRows rows={5} />}>
@@ -3366,10 +3516,14 @@ export default function DeviceDetailPage() {
                   <DetailCard
                     title="Health"
                     description="Compliance rollup from enrollment, check-in freshness and declaration state."
-                    action={<DeviceHealthTag level={health.data?.health.level ?? "unknown"} />}
+                    action={
+                      <DeviceHealthTag
+                        level={settledQueryData(health)?.health.level ?? "unknown"}
+                      />
+                    }
                   >
                     <Show
-                      when={health.data}
+                      when={settledQueryData(health)}
                       fallback={
                         <Show when={health.isError} fallback={<SkeletonRows rows={5} />}>
                           <QueryError error={health.error} onRetry={() => void health.refetch()} />
@@ -3380,20 +3534,22 @@ export default function DeviceDetailPage() {
                         <div class="space-y-4">
                           <div class="space-y-2">
                             <p class="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
-                              Last seen {formatDeviceDate(health.data.health.lastSeenAt)}
-                              <Show when={health.data.health.level === "missing"}>
+                              Last seen{" "}
+                              {formatDeviceDate(settledQueryData(health)?.health.lastSeenAt)}
+                              <Show when={settledQueryData(health)?.health.level === "missing"}>
                                 <Chip tone="brand">MIA</Chip>
                               </Show>
                               <Show
                                 when={
-                                  health.data.health.stale && health.data.health.level !== "missing"
+                                  settledQueryData(health)?.health.stale &&
+                                  settledQueryData(health)?.health.level !== "missing"
                                 }
                               >
                                 <Chip tone="warning">Stale</Chip>
                               </Show>
                             </p>
                             <Show
-                              when={health.data.health.reasons.length > 0}
+                              when={(settledQueryData(health)?.health.reasons.length ?? 0) > 0}
                               fallback={
                                 <p class="text-[12.5px] text-success">
                                   No compliance or inventory issues detected.
@@ -3401,7 +3557,7 @@ export default function DeviceDetailPage() {
                               }
                             >
                               <ul class="space-y-1.5">
-                                <For each={health.data.health.reasons}>
+                                <For each={settledQueryData(health)?.health.reasons ?? []}>
                                   {(reason) => (
                                     <li class="flex items-start gap-2 text-[12.5px]">
                                       <span
@@ -3440,9 +3596,10 @@ export default function DeviceDetailPage() {
                           <div class="space-y-2 border-t border-border pt-3">
                             <p class="label-caps flex flex-wrap items-center gap-2">
                               Failing declarations
-                              <Show when={(health.data?.declarations.length ?? 0) > 0}>
+                              <Show when={(settledQueryData(health)?.declarations.length ?? 0) > 0}>
                                 <span class="ml-2 normal-case tracking-normal text-muted-foreground">
-                                  {declarationIssues().length} of {health.data?.declarations.length}
+                                  {declarationIssues().length} of{" "}
+                                  {settledQueryData(health)?.declarations.length}
                                 </span>
                               </Show>
                             </p>
@@ -3550,7 +3707,7 @@ export default function DeviceDetailPage() {
                         </div>
 
                         <Show
-                          when={(health.data?.managedCertificates ?? []).some(
+                          when={(settledQueryData(health)?.managedCertificates ?? []).some(
                             (certificate) => certificate.source !== "scep",
                           )}
                         >
@@ -3563,7 +3720,7 @@ export default function DeviceDetailPage() {
                             </p>
                             <ul class="divide-y divide-border">
                               <For
-                                each={(health.data?.managedCertificates ?? []).filter(
+                                each={(settledQueryData(health)?.managedCertificates ?? []).filter(
                                   (certificate) => certificate.source !== "scep",
                                 )}
                               >
@@ -3612,7 +3769,7 @@ export default function DeviceDetailPage() {
                           </div>
                         </Show>
 
-                        <Show when={row()!.proto === "apple" && health.data?.push}>
+                        <Show when={row()!.proto === "apple" && settledQueryData(health)?.push}>
                           <div class="space-y-2 border-t border-border pt-3">
                             <div class="flex flex-wrap items-center justify-between gap-2">
                               <p class="label-caps flex flex-wrap items-center gap-2">
@@ -3622,24 +3779,24 @@ export default function DeviceDetailPage() {
                             </div>
                             <dl class="grid">
                               <MetaRow label="Last attempt">
-                                {relativeTime(health.data.push.lastAttemptAt)}
+                                {relativeTime(settledQueryData(health)?.push.lastAttemptAt)}
                               </MetaRow>
                               <MetaRow label="Last success">
-                                {relativeTime(health.data.push.lastSuccessAt)}
+                                {relativeTime(settledQueryData(health)?.push.lastSuccessAt)}
                               </MetaRow>
                               <MetaRow label="Consecutive failures">
-                                {health.data.push.consecutiveFailures}
+                                {settledQueryData(health)?.push.consecutiveFailures}
                               </MetaRow>
                               <MetaRow label="Push credentials">
-                                {health.data.push.configured ? "Present" : "Missing"}
+                                {settledQueryData(health)?.push.configured ? "Present" : "Missing"}
                               </MetaRow>
                             </dl>
-                            <Show when={health.data.push.lastError}>
+                            <Show when={settledQueryData(health)?.push.lastError}>
                               <p class="rounded-lg bg-destructive/[0.07] p-2 text-[11.5px] text-destructive">
-                                {health.data.push.lastError}
+                                {settledQueryData(health)?.push.lastError}
                               </p>
                             </Show>
-                            <Show when={health.data.push.invalidToken}>
+                            <Show when={settledQueryData(health)?.push.invalidToken}>
                               <p class="text-[11.5px] text-destructive">
                                 Apple rejected this device token. The device must re-enroll before
                                 it can receive pushes again.
@@ -3881,7 +4038,7 @@ export default function DeviceDetailPage() {
                         settings on its next check-in and has no per-login channel.
                       </p>
                       <Show
-                        when={directory.data}
+                        when={settledQueryData(directory)}
                         fallback={
                           <Show when={directory.isError} fallback={<SkeletonRows rows={4} />}>
                             <QueryError
@@ -3892,7 +4049,9 @@ export default function DeviceDetailPage() {
                         }
                       >
                         <Show
-                          when={(directory.data?.users ?? []).some((user) => !user.disabled)}
+                          when={(settledQueryData(directory)?.users ?? []).some(
+                            (user) => !user.disabled,
+                          )}
                           fallback={
                             <p class="text-[12.5px] text-muted-foreground">
                               No directory users. Sync Entra or SCIM first.
@@ -3901,7 +4060,9 @@ export default function DeviceDetailPage() {
                         >
                           <div class="max-h-64 divide-y divide-border overflow-auto">
                             <For
-                              each={(directory.data?.users ?? []).filter((user) => !user.disabled)}
+                              each={(settledQueryData(directory)?.users ?? []).filter(
+                                (user) => !user.disabled,
+                              )}
                             >
                               {(user) => (
                                 <label class="flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
@@ -3955,9 +4116,11 @@ export default function DeviceDetailPage() {
                         <div class="space-y-2 border-t border-border/60 pt-3">
                           <div class="flex flex-wrap items-center justify-between gap-2">
                             <span class="label-caps">Apple user channels</span>
-                            <Show when={appleUsers.data}>
+                            <Show when={settledQueryData(appleUsers)}>
                               <Badge variant="outline" class="shrink-0 text-[10px]">
-                                {appleUserEnrollmentLabel(appleUsers.data.enrollmentMode)}
+                                {appleUserEnrollmentLabel(
+                                  settledQueryData(appleUsers)?.enrollmentMode,
+                                )}
                               </Badge>
                             </Show>
                           </div>
@@ -3969,7 +4132,7 @@ export default function DeviceDetailPage() {
                             device channel and are never replayed here.
                           </p>
                           <Show
-                            when={appleUsers.data}
+                            when={settledQueryData(appleUsers)}
                             fallback={
                               <Show when={appleUsers.isError} fallback={<SkeletonRows rows={2} />}>
                                 <QueryError
@@ -3980,7 +4143,7 @@ export default function DeviceDetailPage() {
                             }
                           >
                             <Show
-                              when={appleUsers.data.users.length > 0}
+                              when={(settledQueryData(appleUsers)?.users.length ?? 0) > 0}
                               fallback={
                                 <p class="text-[12.5px] text-muted-foreground">
                                   No user channels yet. A channel appears after the next user signs
@@ -3989,7 +4152,7 @@ export default function DeviceDetailPage() {
                               }
                             >
                               <div class="divide-y divide-border">
-                                <For each={appleUsers.data.users}>
+                                <For each={settledQueryData(appleUsers)?.users ?? []}>
                                   {(user) => (
                                     <div class="flex flex-wrap items-start gap-2 px-2.5 py-2">
                                       <div class="min-w-0 flex-1">
@@ -4048,7 +4211,7 @@ export default function DeviceDetailPage() {
                                         >
                                           <option value="">No directory identity</option>
                                           <For
-                                            each={(directory.data?.users ?? []).filter(
+                                            each={(settledQueryData(directory)?.users ?? []).filter(
                                               (person) => !person.disabled,
                                             )}
                                           >
@@ -4725,7 +4888,7 @@ export default function DeviceDetailPage() {
                 >
                   <div class="space-y-3">
                     <Show
-                      when={groupMemberships.data}
+                      when={membershipState()}
                       fallback={
                         <Show when={groupMemberships.isError} fallback={<SkeletonRows rows={3} />}>
                           <QueryError
@@ -4799,8 +4962,8 @@ export default function DeviceDetailPage() {
                                       <Button
                                         variant="ghost"
                                         size="xs"
-                                        disabled={removeFromGroup.isPending}
-                                        onClick={() => removeFromGroup.mutate(group.id)}
+                                        disabled={membershipBusy()}
+                                        onClick={() => startRemoveFromGroup(group.id)}
                                       >
                                         Remove
                                       </Button>
@@ -4822,7 +4985,10 @@ export default function DeviceDetailPage() {
                         </ReadOnlyNotice>
                       }
                     >
-                      <Show when={groupDirectory.data} fallback={<SkeletonRows rows={1} />}>
+                      <Show
+                        when={settledQueryData(groupDirectory)}
+                        fallback={<SkeletonRows rows={1} />}
+                      >
                         <Show
                           when={joinableGroups().length > 0}
                           fallback={
@@ -4838,6 +5004,7 @@ export default function DeviceDetailPage() {
                             <NativeSelect
                               id="device-group-select"
                               class="h-7 text-[12px]"
+                              disabled={membershipBusy()}
                               value={selectedGroupId()}
                               onChange={(event) => setSelectedGroupId(event.currentTarget.value)}
                             >
@@ -4848,8 +5015,8 @@ export default function DeviceDetailPage() {
                             </NativeSelect>
                             <Button
                               size="sm"
-                              disabled={!selectedGroupId() || addToGroup.isPending}
-                              onClick={() => addToGroup.mutate(selectedGroupId())}
+                              disabled={!selectedGroupId() || membershipBusy()}
+                              onClick={() => startAddToGroup(selectedGroupId())}
                             >
                               {addToGroup.isPending ? "Adding…" : "Add"}
                             </Button>
@@ -4872,7 +5039,7 @@ export default function DeviceDetailPage() {
                   }
                 >
                   <Show
-                    when={effectivePolicy.data}
+                    when={settledQueryData(effectivePolicy)}
                     fallback={
                       <Show when={effectivePolicy.isError} fallback={<SkeletonRows rows={4} />}>
                         <QueryError
@@ -5412,7 +5579,9 @@ function DeviceAttributesPanel(props: {
   );
 
   const visible = () =>
-    (definitions.data?.rows ?? []).filter((definition) => definition.visibility === "visible");
+    (settledQueryData(definitions)?.rows ?? []).filter(
+      (definition) => definition.visibility === "visible",
+    );
 
   const dirty = () => {
     const current = draft();
@@ -5508,7 +5677,8 @@ function DeviceAttributesPanel(props: {
             {(definition: AttributeDefinitionRow) => {
               const value = () => draft()[definition.key] ?? "";
 
-              const collectionState = () => collection.data?.collection[definition.key];
+              const collectionState = () =>
+                settledQueryData(collection)?.collection[definition.key];
 
               const isCleared = () => Boolean(cleared()[definition.key]);
 
