@@ -41,6 +41,7 @@ import {
   StepUpRequired,
   fleetMigrationHttpApi,
   makeEnterpriseClient,
+  restrictedSoftwareHttpApi,
   scriptHttpApi,
   formatDeviceQueryText,
   parseDeviceQueryText,
@@ -123,6 +124,9 @@ import type {
   PatchScriptAssignmentsRequest,
   RunScriptRequest,
   ScriptSettings,
+  CreateRestrictedSoftwareRequest,
+  PatchRestrictedSoftwareRequest,
+  PatchRestrictedSoftwareAssignmentsRequest,
 } from "@mattrax/enterprise-domain/client";
 
 export type {
@@ -133,6 +137,19 @@ export type {
   DashboardReportRun,
   DashboardReportRunListResponse,
   DashboardReportListResponse,
+} from "@mattrax/enterprise-domain/client";
+
+export type {
+  CreateRestrictedSoftwareRequest,
+  DeviceRestrictedSoftwareResponse,
+  PatchRestrictedSoftwareAssignmentsRequest,
+  PatchRestrictedSoftwareRequest,
+  RestrictedSoftwareAssignmentInfo,
+  RestrictedSoftwareDetail,
+  RestrictedSoftwareListResponse,
+  RestrictedSoftwareRuleInfo,
+  RestrictedSoftwareViolationInfo,
+  RestrictedSoftwareViolationsResponse,
 } from "@mattrax/enterprise-domain/client";
 
 export type {
@@ -564,6 +581,26 @@ export const enterpriseKeys = {
   application: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "application", keyTenant(tenantId), id ?? ""] as const,
   scripts: (tenantId: RouteParam) => ["enterprise", "scripts", keyTenant(tenantId)] as const,
+  restrictedSoftware: (tenantId: RouteParam) =>
+    ["enterprise", "restricted-software", keyTenant(tenantId)] as const,
+  restrictedSoftwareRule: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "restricted-software-rule", keyTenant(tenantId), id ?? ""] as const,
+  restrictedSoftwareViolations: (
+    tenantId: RouteParam,
+    query: { status?: string; platform?: string; ruleId?: string } = {},
+  ) =>
+    [
+      "enterprise",
+      "restricted-software-violations",
+      keyTenant(tenantId),
+      query.status ?? "",
+      query.platform ?? "",
+      query.ruleId ?? "",
+    ] as const,
+  deviceRestrictedSoftware: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "device-restricted-software", keyTenant(tenantId), id ?? ""] as const,
+  restrictedSoftwareTargets: (tenantId: RouteParam) =>
+    ["enterprise", "restricted-software-targets", keyTenant(tenantId)] as const,
   fleetMigrations: (tenantId: RouteParam) =>
     ["enterprise", "fleet-migrations", keyTenant(tenantId)] as const,
   fleetMigration: (tenantId: RouteParam, migrationId: RouteParam) =>
@@ -657,6 +694,18 @@ const scriptClientEffect = (headers: Readonly<Record<string, string>>) => {
   const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
 
   return HttpApiClient.make(scriptHttpApi, {
+    baseUrl,
+    transformClient: (client) =>
+      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+  });
+};
+
+/** Restricted software is its own contract for the same declaration-size reason. */
+const restrictedSoftwareClientEffect = (headers: Readonly<Record<string, string>>) => {
+  const event = isServer ? getRequestEvent() : undefined;
+  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+
+  return HttpApiClient.make(restrictedSoftwareHttpApi, {
     baseUrl,
     transformClient: (client) =>
       HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
@@ -962,6 +1011,22 @@ function migrationEndpoint<A, E>(
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
     (headers) => Effect.map(migrationClientEffect(headers), (client) => client.FleetMigration),
+    call,
+    options,
+  );
+}
+
+type RestrictedSoftwareApiClient = Effect.Success<
+  ReturnType<typeof restrictedSoftwareClientEffect>
+>["RestrictedSoftwareApi"];
+
+function restrictedSoftwareEndpoint<A, E>(
+  call: (api: RestrictedSoftwareApiClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) =>
+      Effect.map(restrictedSoftwareClientEffect(headers), (client) => client.RestrictedSoftwareApi),
     call,
     options,
   );
@@ -2116,6 +2181,80 @@ export const enterprise = {
       api.patchPolicyAssignments({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         payload,
+      }),
+    ),
+  listRestrictedSoftware: (tenantId: RouteParam) =>
+    restrictedSoftwareEndpoint((api) =>
+      api.listRestrictedSoftware({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getRestrictedSoftware: (tenantId: RouteParam, id: RouteParam) =>
+    restrictedSoftwareEndpoint((api) =>
+      api.getRestrictedSoftware({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  createRestrictedSoftware: (tenantId: RouteParam, payload: CreateRestrictedSoftwareRequest) =>
+    restrictedSoftwareEndpoint(
+      (api) =>
+        api.createRestrictedSoftware({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload,
+        }),
+      { stepUp: "restricted-software-change" },
+    ),
+  patchRestrictedSoftware: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: PatchRestrictedSoftwareRequest,
+  ) =>
+    restrictedSoftwareEndpoint(
+      (api) =>
+        api.patchRestrictedSoftware({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          payload,
+        }),
+      { stepUp: "restricted-software-change" },
+    ),
+  deleteRestrictedSoftware: (tenantId: RouteParam, id: RouteParam) =>
+    restrictedSoftwareEndpoint(
+      (api) =>
+        api.deleteRestrictedSoftware({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        }),
+      { stepUp: "restricted-software-change" },
+    ),
+  patchRestrictedSoftwareAssignments: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: PatchRestrictedSoftwareAssignmentsRequest,
+  ) =>
+    restrictedSoftwareEndpoint(
+      (api) =>
+        api.patchRestrictedSoftwareAssignments({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          payload,
+        }),
+      { stepUp: "restricted-software-change" },
+    ),
+  listRestrictedSoftwareViolations: (
+    tenantId: RouteParam,
+    query: {
+      status?: "open" | "resolved";
+      platform?: "apple" | "win" | "android";
+      ruleId?: string;
+      limit?: number;
+    } = {},
+  ) =>
+    restrictedSoftwareEndpoint((api) =>
+      api.listRestrictedSoftwareViolations({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query,
+      }),
+    ),
+  getDeviceRestrictedSoftware: (tenantId: RouteParam, id: RouteParam) =>
+    restrictedSoftwareEndpoint((api) =>
+      api.getDeviceRestrictedSoftware({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
       }),
     ),
   listScripts: (tenantId: RouteParam) =>
@@ -3546,6 +3685,53 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.scripts(tenantId),
       queryFn: () => enterprise.listScripts(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  restrictedSoftware: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.restrictedSoftware(tenantId),
+      queryFn: () => enterprise.listRestrictedSoftware(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  restrictedSoftwareRule: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.restrictedSoftwareRule(tenantId, id),
+      queryFn: () => enterprise.getRestrictedSoftware(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  restrictedSoftwareViolations: (
+    tenantId: RouteParam,
+    query: {
+      status?: "open" | "resolved";
+      platform?: "apple" | "win" | "android";
+      ruleId?: string;
+    } = {},
+  ) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.restrictedSoftwareViolations(tenantId, query),
+      queryFn: () => enterprise.listRestrictedSoftwareViolations(tenantId, query),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  deviceRestrictedSoftware: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.deviceRestrictedSoftware(tenantId, id),
+      queryFn: () => enterprise.getDeviceRestrictedSoftware(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  restrictedSoftwareTargets: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.restrictedSoftwareTargets(tenantId),
+      queryFn: async () => {
+        const [devices, groups] = await Promise.all([
+          enterprise.list(tenantId, "device"),
+          enterprise.list(tenantId, "group"),
+        ]);
+
+        return {
+          devices: devices.rows.map((row) => ({ id: row.id, name: row.name })),
+          groups: groups.rows.map((row) => ({ id: row.id, name: row.name })),
+        };
+      },
       enabled: Boolean(tenantId) && !isServer,
     }),
   script: (tenantId: RouteParam, id: RouteParam) =>

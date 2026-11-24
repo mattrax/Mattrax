@@ -4,6 +4,7 @@ use crate::exec;
 use crate::host::{self, HostContext};
 use crate::logging::Logger;
 use crate::profiles::{self, InstalledScript};
+use crate::restricted::{self, LiveRestrictedRunner};
 use crate::result::{self, ScriptResult};
 use crate::state::{self, AgentState, ScriptState};
 use crate::trigger::{self, TriggerKind};
@@ -75,6 +76,14 @@ impl Agent {
             Local::now(),
             &host,
             self.runner.as_ref(),
+            &self.logger,
+        );
+
+        restricted::tick(
+            &restricted::installed_restricted_software(),
+            &mut state.restricted,
+            Local::now(),
+            &LiveRestrictedRunner,
             &self.logger,
         );
 

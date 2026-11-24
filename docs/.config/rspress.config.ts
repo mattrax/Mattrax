@@ -150,6 +150,7 @@ export default defineConfig({
             { text: "Applications", link: "/manage/applications" },
             { text: "Software catalogue", link: "/manage/software-catalogue" },
             { text: "Scripts", link: "/manage/scripts" },
+            { text: "Restricted software", link: "/manage/restricted-software" },
             { text: "AI agents and MCP", link: "/manage/mcp" },
             { text: "Security", link: "/manage/security" },
           ],

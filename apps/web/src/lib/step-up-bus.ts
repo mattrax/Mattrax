@@ -30,6 +30,7 @@ export const STEP_UP_ACTIONS = [
   "android-disconnect",
   "script-change",
   "script-run",
+  "restricted-software-change",
   "billing-portal",
   "sso-policy",
   "tenant-mfa-policy",
@@ -195,6 +196,8 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "change this script";
     case "script-run":
       return "run this script on your devices";
+    case "restricted-software-change":
+      return "change this restricted software rule";
     case "billing-portal":
       return "open the billing portal";
     case "sso-policy":

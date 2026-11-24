@@ -33,6 +33,8 @@ import {
   scriptAgentApi,
   scriptApi,
   EnterpriseService as EnterpriseServiceTag,
+  restrictedSoftwareApi,
+  restrictedSoftwareAgentApi,
 } from "@mattrax/enterprise-domain";
 import {
   EnterpriseAnalyticsService,
@@ -65,6 +67,8 @@ import {
   realtimeRoutes,
   scriptAgentHandlers,
   scriptHandlers,
+  restrictedSoftwareHandlers,
+  restrictedSoftwareAgentHandlers,
   scimRoutes,
   ScimMembershipNotifier,
   appleBusinessManager,
@@ -95,6 +99,7 @@ import {
   sessionCookie,
   billingEntitlementRoutes,
   drainEmailOutbox,
+  notifyRestrictedSoftwareViolations,
   sendTransactionalEmail,
   loadTrustedScepCaCertificates,
   runServerCertificateCheck,
@@ -294,6 +299,8 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(fleetMigrationApi)
   .add(scriptApi)
   .add(scriptAgentApi)
+  .add(restrictedSoftwareApi)
+  .add(restrictedSoftwareAgentApi)
   .add(authHttp)
   .add(appleMdmApi)
   .annotateMerge(
@@ -367,6 +374,8 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "FleetMigration", fleetMigrationHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),
+  HttpApiBuilder.group(apiRoot, "RestrictedSoftwareApi", restrictedSoftwareHandlers),
+  HttpApiBuilder.group(apiRoot, "RestrictedSoftwareAgentApi", restrictedSoftwareAgentHandlers),
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
 ).pipe(authHttps.middleware);
 
@@ -625,6 +634,26 @@ const emailOutboxJob = (env: Env) =>
       maxAttempts: apiEnv.MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS,
     });
   });
+
+/**
+ * Deliver pending restricted-software violation events. Inventory writes mark
+ * new violations with `notifiedAt = null`; this sweep signs the webhook and
+ * queues the optional email, then records that the event went out.
+ */
+const restrictedSoftwareNotificationsJob = (env: Env) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    return yield* notifyRestrictedSoftwareViolations({
+      db,
+      authSecret: env.AUTH_SECRET,
+      email: resolveMailer(env).transport,
+    });
+  }).pipe(
+    Effect.orDie,
+    Effect.provide(Db.layer),
+    Effect.provide(databaseLayer(env)),
+  );
 
 /**
  * Review the deployment origin's TLS certificate. Runs from the hourly trigger
@@ -1690,6 +1719,14 @@ export const createApiRuntime = (
             if (result.queued > 0 || result.failed > 0)
               console.log("Scheduled dashboard reports complete", result);
           }),
+          observeJob(
+            "Scheduled restricted software notifications failed",
+            restrictedSoftwareNotificationsJob(env),
+            (result) => {
+              if (result.notified > 0)
+                console.log("Scheduled restricted software notifications complete", result);
+            },
+          ),
           ...(graphConfigured
             ? [
                 observeJob("Scheduled Entra directory sync failed", entraSyncJob(env), (result) => {

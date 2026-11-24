@@ -368,6 +368,8 @@ export const routes = {
       softwareCatalogueTitle: (titleId: string) =>
         `${base}/applications/catalogue/${segment(titleId)}`,
       scripts: () => `${base}/scripts`,
+      restrictedSoftware: () => `${base}/restricted-software`,
+      restrictedSoftwareRule: (ruleId: string) => `${base}/restricted-software/${segment(ruleId)}`,
       migrations: () => `${base}/migration`,
       migration: (migrationId: string) => `${base}/migration/${segment(migrationId)}`,
       newScript: () => `${base}/scripts/new`,

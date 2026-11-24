@@ -55,6 +55,7 @@ import {
   RefreshCw,
   Search as SearchIcon,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   User,
   UsersRound,
@@ -484,6 +485,14 @@ function navFor(tenantId: string | undefined): NavItem[] {
     item("scripts", "Scripts", tenant.scripts(), CommandIcon, "tenant", {
       permission: "scripts.read",
     }),
+    item(
+      "restricted-software",
+      "Restricted software",
+      tenant.restrictedSoftware(),
+      ShieldAlert,
+      "tenant",
+      { permission: "restricted_software.read" },
+    ),
   ];
 }
 
@@ -531,9 +540,7 @@ function SidebarLink(props: {
         class={cn(
           "shrink-0 transition-colors duration-[var(--duration-hover)] ease-swift",
           props.collapsed ? "size-4" : "size-3.5",
-          props.active
-            ? "text-foreground"
-            : "text-subtle-foreground group-hover:text-foreground",
+          props.active ? "text-foreground" : "text-subtle-foreground group-hover:text-foreground",
         )}
       />
       <span class={props.collapsed ? "sr-only" : "truncate"}>{props.item.label}</span>

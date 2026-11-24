@@ -33,26 +33,35 @@ pub struct InstalledScript {
     pub device_token: String,
 }
 
-/// Installed scripts from every installed profile. Repeated profiles yield
-/// repeated scripts, which the result endpoint deduplicates on run id.
-pub fn installed_scripts() -> Vec<InstalledScript> {
+/// Every installed configuration profile. Shared by the script and restricted
+/// software readers so both see the same profile snapshot in one tick.
+pub(crate) fn installed_profile_values() -> Vec<Value> {
     #[cfg(target_os = "macos")]
     {
-        let mut scripts = Vec::new();
+        let mut profiles = Vec::new();
 
         for identifier in installed_profile_identifiers() {
             if let Some(profile) = profile_contents(&identifier) {
-                scripts.extend(scripts_from_profile(&profile));
+                profiles.push(profile);
             }
         }
 
-        scripts
+        profiles
     }
 
     #[cfg(not(target_os = "macos"))]
     {
         Vec::new()
     }
+}
+
+/// Installed scripts from every installed profile. Repeated profiles yield
+/// repeated scripts, which the result endpoint deduplicates on run id.
+pub fn installed_scripts() -> Vec<InstalledScript> {
+    installed_profile_values()
+        .iter()
+        .flat_map(scripts_from_profile)
+        .collect()
 }
 
 /// Parse one installed profile (the `profiles -P -p <id>` output).

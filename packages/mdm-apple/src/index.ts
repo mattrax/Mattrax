@@ -4,7 +4,9 @@ import {
   Db,
   deviceLimitForOrganization,
   reconcileApplicationUninstalls,
+  reconcileRestrictedSoftwareForDevice,
   recordApplicationInstall,
+  resolveRestrictedSoftwareForDevice,
   schema as s,
 } from "@mattrax/enterprise-core";
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
@@ -42,12 +44,16 @@ import {
   buildInstallApplicationPayload,
   buildInstallEnterpriseApplicationPayload,
   buildAppleManifest,
+  buildRestrictedSoftwareProfile,
   buildScriptProfile,
   createAppleProfileSigner,
   signAppleProfilePlist,
   appleInstallAssetExpiresAt,
-  scriptProfileIdentifier,
+  scriptProfileDocumentIdentifier,
   signAppleAssetTokenEffect,
+  isRestrictedSoftwareProfileIdentifier,
+  planRestrictedSoftwareProfileChanges,
+  restrictedSoftwareProfileDocumentIdentifier,
   appleUploadKind,
   appleUploadSupportsDevice,
   buildRemoveApplicationPayload,
@@ -1719,6 +1725,15 @@ const applyInstalledApplications = (
       at: timestamp,
     });
 
+    // A fresh Apple inventory is also a restricted-software detection point;
+    // Android and Windows run the same reconciliation inside
+    // `replaceDeviceApplications`.
+    yield* reconcileRestrictedSoftwareForDevice(db, {
+      deviceId: device.id,
+      organizationId: device.organizationId,
+      at: timestamp,
+    }).pipe(Effect.catch(() => Effect.void));
+
     // A returned licence frees the seat for another device, but only now that
     // this device reported the app gone. A release failure is logged: the
     // uninstall itself already succeeded and the licence can be returned from
@@ -2502,18 +2517,21 @@ const policyInstalledProfiles = (
 ): ReadonlyMap<string, string> =>
   new Map(
     [...installed].filter(
-      ([identifier]) => !identifier.startsWith(APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX),
+      ([identifier]) =>
+        !identifier.startsWith(APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX) &&
+        !isRestrictedSoftwareProfileIdentifier(identifier),
     ),
   );
 
 /** Legacy profiles the device has installed, from its own command history. */
 const installedLegacyProfiles = (
   deviceId: string,
+  limit: number | null = 200,
 ): Effect.Effect<ReadonlyMap<string, string>, unknown, Db> =>
   Effect.gen(function* () {
     const db = yield* Db;
 
-    const history = yield* db
+    const query = db
       .select({ requestType: s.deviceCommand.requestType, payload: s.deviceCommand.payload })
       .from(s.deviceCommand)
       .where(
@@ -2523,8 +2541,12 @@ const installedLegacyProfiles = (
           eq(s.deviceCommand.status, "succeeded"),
         ),
       )
-      .orderBy(desc(s.deviceCommand.createdAt))
-      .limit(200);
+      .orderBy(desc(s.deviceCommand.createdAt));
+
+    // Restricted-software removal is durable: profile commands are rare, and
+    // a fixed 200-row window could forget a profile installed long ago. Policy
+    // and script callers keep the bounded default.
+    const history = limit === null ? yield* query : yield* query.limit(limit);
 
     return yield* Effect.promise(() =>
       installedProfiles(
@@ -3026,7 +3048,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
           desired.push({
             scriptId: script.id,
-            identifier: scriptProfileIdentifier(script.id),
+            identifier: scriptProfileDocumentIdentifier(script.id),
             digest: yield* Effect.promise(() => profileDigest(profile)),
             profile,
           });
@@ -3042,6 +3064,138 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               identifier: profile.identifier,
               policyId: profile.scriptId,
               kind: "com.mattrax.script",
+              content: profile.profile,
+            }),
+            at,
+          );
+
+        for (const identifier of changes.remove)
+          yield* queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at);
+
+        return { installed: changes.install.length, removed: changes.remove.length };
+      });
+
+    /**
+     * Install, update and remove `com.mattrax.restricted-software` profiles
+     * for one Mac. Only agent-enforceable rules (kill process / delete app on
+     * macOS) are delivered; a detection-only rule never becomes a profile the
+     * device cannot honour.
+     */
+    const syncAppleRestrictedSoftware = (
+      device: DeviceRow,
+      at: Date,
+    ): Effect.Effect<
+      { readonly installed: number; readonly removed: number } | void,
+      unknown,
+      Db
+    > =>
+      Effect.gen(function* () {
+        const [active] = yield* db
+          .select({ id: s.deviceCommand.id })
+          .from(s.deviceCommand)
+          .where(
+            and(
+              eq(s.deviceCommand.deviceId, device.id),
+              inArray(s.deviceCommand.requestType, ["InstallProfile", "RemoveProfile"]),
+              inArray(s.deviceCommand.status, [...ACTIVE_COMMAND_STATUSES]),
+            ),
+          )
+          .limit(1);
+
+        if (active) return;
+
+        const installed = yield* installedLegacyProfiles(device.id, null);
+        const installedProfiles = new Map(
+          [...installed].filter(([identifier]) =>
+            isRestrictedSoftwareProfileIdentifier(identifier),
+          ),
+        );
+
+        const removeProfiles = (identifiers: ReadonlyArray<string>) =>
+          Effect.forEach(identifiers, (identifier) =>
+            queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at),
+          );
+
+        if (device.proto !== "apple" || appleOsFamily(device.osEdition) !== "macOS") {
+          yield* removeProfiles([...installedProfiles.keys()]);
+
+          return;
+        }
+
+        const resolved = yield* resolveRestrictedSoftwareForDevice(db, {
+          organizationId: device.organizationId,
+          deviceId: device.id,
+        });
+
+        const candidates = resolved.rules.filter(
+          ({ rule, capability }) =>
+            capability.mode === "agent" &&
+            (rule.action === "kill-process" || rule.action === "delete-app") &&
+            (rule.matchType === "bundle-id" || rule.matchType === "process-name"),
+        );
+
+        // Removal must not depend on token issuance: a tenant that rotated or
+        // removed AUTH_SECRET still needs stale profiles taken off the Mac.
+        const desiredIdentifiers = new Set(
+          candidates.map(({ rule }) => restrictedSoftwareProfileDocumentIdentifier(rule.id)),
+        );
+        const stale = [...installedProfiles.keys()].filter(
+          (identifier) => !desiredIdentifiers.has(identifier),
+        );
+
+        yield* removeProfiles(stale);
+
+        if (candidates.length === 0) return { installed: 0, removed: stale.length };
+
+        if (!authSecret) {
+          yield* Effect.logWarning(
+            `Cannot install restricted software on ${device.id}: AUTH_SECRET is not configured. Existing stale profiles were removed.`,
+          );
+
+          return { installed: 0, removed: stale.length };
+        }
+
+        const token = yield* Effect.promise(() => scriptAgentToken(device.id, authSecret));
+        const desired: Array<{
+          ruleId: string;
+          identifier: string;
+          digest: string;
+          profile: Uint8Array;
+        }> = [];
+
+        for (const { rule } of candidates) {
+          const profile = yield* Effect.promise(() =>
+            buildRestrictedSoftwareProfile({
+              ruleId: rule.id,
+              name: rule.name,
+              matchType: rule.matchType as "bundle-id" | "process-name",
+              matchValue: rule.matchValue,
+              action: rule.action as "kill-process" | "delete-app",
+              message: rule.message,
+              intervalSeconds: 300,
+              serverUrl: `${origin}/api`,
+              deviceToken: token,
+            }),
+          );
+
+          desired.push({
+            ruleId: rule.id,
+            identifier: restrictedSoftwareProfileDocumentIdentifier(rule.id),
+            digest: yield* Effect.promise(() => profileDigest(profile)),
+            profile,
+          });
+        }
+
+        const changes = planRestrictedSoftwareProfileChanges(desired, installedProfiles);
+
+        for (const profile of changes.install)
+          yield* queueAppleCommand(
+            device,
+            "InstallProfile",
+            installProfilePayload({
+              identifier: profile.identifier,
+              policyId: profile.ruleId,
+              kind: "com.mattrax.restricted-software",
               content: profile.profile,
             }),
             at,
@@ -6451,6 +6605,18 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             yield* syncAppleScripts(device, at).pipe(
               Effect.catch((error) =>
                 Effect.logWarning(`Failed to deliver scripts to ${device.id}: ${String(error)}`),
+              ),
+            );
+
+            // Restricted software profiles are delivered only when the Mac's
+            // agent can enforce the rule. A queued script profile above may
+            // occupy the one-profile-in-flight slot; this pass then runs on
+            // the next check-in.
+            yield* syncAppleRestrictedSoftware(device, at).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning(
+                  `Failed to deliver restricted software to ${device.id}: ${String(error)}`,
+                ),
               ),
             );
 

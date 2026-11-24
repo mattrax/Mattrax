@@ -39,6 +39,8 @@ export * from "./windowsSecurity.ts";
 
 export * from "./scripts.ts";
 
+export * from "./restrictedSoftware.ts";
+
 export * from "./fleetMigration.ts";
 
 export * from "./deviceInventory.ts";

@@ -26,6 +26,7 @@ import {
   deviceApplication,
   deviceCommand,
 } from "./schema.ts";
+import { reconcileRestrictedSoftwareForDevice } from "./restrictedSoftware.ts";
 
 /** Largest inventory accepted from one device; larger reports are truncated. */
 export const MAX_DEVICE_APPLICATIONS = 2_000;
@@ -352,6 +353,20 @@ export const replaceDeviceApplications = (
             at: input.reportedAt,
           }),
           applications.length,
+        ),
+      ),
+      // A fresh inventory is the moment a banned app becomes known. Running
+      // detection here means every platform that replaces inventory through
+      // this helper (Android and Windows today) gets violation recording
+      // without a second delivery path.
+      Effect.tap((count) =>
+        reconcileRestrictedSoftwareForDevice(db, {
+          deviceId: input.deviceId,
+          organizationId: input.organizationId,
+          at: input.reportedAt,
+        }).pipe(
+          Effect.catch(() => Effect.succeed(undefined)),
+          Effect.as(count),
         ),
       ),
     );
