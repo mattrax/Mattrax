@@ -11,7 +11,6 @@ import {
   onSettled,
   Show,
   Switch,
-  untrack,
 } from "solid-js";
 import { ErrorText, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
 import { DocumentationLink } from "~/components/mdm/documentation-link";
@@ -109,6 +108,7 @@ export function PolicyConfigurationEditor() {
   }));
 
   const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+  const seededPolicyId = createMemo(() => row()?.id);
   const guard = createStaleWriteGuard(() => row()?.updatedAt);
   const [canEdit, setCanEdit] = createSignal(false);
   /** Bumped by "Reload latest" to reseed the form from the refetched policy. */
@@ -139,11 +139,10 @@ export function PolicyConfigurationEditor() {
   };
 
   // Seed per policy, and again only when the operator explicitly reloads the
-  // latest version. seedFromRow reads the row itself, so untrack it to keep
-  // background refetches from becoming implicit reseeds.
+  // latest version. The memo keeps same-policy refetches from changing the key.
   createEffect(
-    () => `${row()?.id ?? ""}:${reseed()}`,
-    () => untrack(seedFromRow),
+    () => `${seededPolicyId() ?? ""}:${reseed()}`,
+    () => seedFromRow(),
   );
 
   const dirty = createMemo(

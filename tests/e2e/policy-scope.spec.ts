@@ -86,6 +86,7 @@ test("keeps Windows scope after an invalid URI so correcting only the URI succee
   await expect(page).toHaveURL(/\/editor$/);
 
   const policyUrl = page.url().replace(/\/editor$/, "");
+  const policyId = policyUrl.split("/").at(-1)!;
   await page.getByRole("button", { name: /^edit$/i }).click();
   await page.getByRole("button", { name: "Windows", exact: true }).click();
 
@@ -96,9 +97,16 @@ test("keeps Windows scope after an invalid URI so correcting only the URI succee
   await scope.selectOption("user");
   await omaUri.fill("./Vendor/MSFT/Policy/Config/Privacy/AllowTelemetry");
   await windows.getByLabel("Value").fill("1");
+  const refetch = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      new URL(response.url()).pathname.endsWith(`/policies/${policyId}`),
+  );
   await page.getByRole("button", { name: /^save$/i }).click();
 
   await expect(windows.getByRole("alert")).toContainText('must start with "./User/"');
+  await refetch;
+  await page.waitForLoadState("networkidle");
   await expect(scope).toHaveValue("user");
   await expect(omaUri).toHaveValue("./Vendor/MSFT/Policy/Config/Privacy/AllowTelemetry");
 
