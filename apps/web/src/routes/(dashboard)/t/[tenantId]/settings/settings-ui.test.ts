@@ -58,7 +58,11 @@ describe("settings UI contracts", () => {
     );
     const content = layout.slice(layout.indexOf('data-slot="settings-content"'));
 
-    expect(layout).toContain("xl:[grid-template-areas:nav_masthead_nav_content]");
+    expect(layout).toContain("[grid-template-areas:'masthead'_'nav'_'content']");
+    expect(layout).toContain("xl:[grid-template-areas:'nav_masthead'_'nav_content']");
+    expect(layout).toContain("grid-rows-[auto_auto_minmax(0,1fr)]");
+    expect(layout).toContain("xl:grid-cols-[248px_minmax(0,1fr)]");
+    expect(layout).toContain("xl:grid-rows-[auto_minmax(0,1fr)]");
     expect(masthead).toContain("[grid-area:masthead]");
     expect(content).toContain("[grid-area:content]");
   });

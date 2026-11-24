@@ -118,7 +118,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
 
   return (
     <TenantProfileDraftContext value={draft}>
-      <div class="grid h-full min-h-0 w-full flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)] [grid-template-areas:masthead_nav_content] overflow-hidden bg-page xl:grid-cols-[248px_minmax(0,1fr)] xl:grid-rows-[auto_minmax(0,1fr)] xl:[grid-template-areas:nav_masthead_nav_content]">
+      <div class="grid h-full min-h-0 w-full flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)] [grid-template-areas:'masthead'_'nav'_'content'] overflow-hidden bg-page xl:grid-cols-[248px_minmax(0,1fr)] xl:grid-rows-[auto_minmax(0,1fr)] xl:[grid-template-areas:'nav_masthead'_'nav_content']">
         <header
           data-slot="settings-masthead"
           class="[grid-area:masthead] flex flex-col gap-1.5 border-b border-border px-8 py-3 sm:px-10 sm:py-4 xl:px-12"
