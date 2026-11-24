@@ -18,6 +18,17 @@ export type Row = { [key: string]: RowValue };
 
 export type Store = { [key: string]: Row[] };
 
+/** Active device-bound SCEP identity for Apple read-boundary fixtures. */
+export const appleIdentityCertificate = (overrides: Row = {}) => ({
+  serial: "a1b2c3",
+  organizationId: "org-1",
+  deviceId: "device-1",
+  notAfter: new Date("2099-01-01T00:00:00.000Z"),
+  revokedAt: null,
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  ...overrides,
+});
+
 /** Read a row value that the test seeded as a string. */
 export const stringValue = (value: RowValue): string =>
   Schema.decodeUnknownSync(Schema.String)(value);

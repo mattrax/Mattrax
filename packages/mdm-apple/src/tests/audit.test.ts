@@ -13,7 +13,7 @@ import {
   pushInvalidTokenTransition,
   writeSystemAudit,
 } from "@mattrax/mdm-core";
-import { dbRows, makeDb, tableName } from "./fake-db.js";
+import { appleIdentityCertificate, dbRows, makeDb, tableName } from "./fake-db.js";
 import type { Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
@@ -59,6 +59,14 @@ const setup = () => {
       organization("org-2", "second"),
     ],
     [tableName(schema.device)]: [device("device-1", "org-1"), device("device-2", "org-2")],
+    [tableName(schema.scepIssuedCertificate)]: [
+      appleIdentityCertificate({ serial: "a1b2c", deviceId: "device-1" }),
+      appleIdentityCertificate({
+        serial: "a1b2d",
+        organizationId: "org-2",
+        deviceId: "device-2",
+      }),
+    ],
   });
 
   // SAFETY: The fake store implements only the query chains these tests exercise.
@@ -736,6 +744,9 @@ describe("Apple status-report diffs", () => {
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1", "first")],
       [tableName(schema.device)]: [device("device-1", "org-1")],
+      [tableName(schema.scepIssuedCertificate)]: [
+        appleIdentityCertificate({ serial: "a1b2c", deviceId: "device-1" }),
+      ],
     });
 
     // SAFETY: the fake store implements only the query chains this test uses.
@@ -770,15 +781,7 @@ describe("failure attribution", () => {
       ...device("device-3", "org-1"),
     });
 
-    (db.store[tableName(schema.scepIssuedCertificate)] ??= []).push({
-      __table: tableName(schema.scepIssuedCertificate),
-      serial: "a1b2c",
-      organizationId: "org-1",
-      deviceId: "device-3",
-      notAfter: new Date("2027-01-01T00:00:00Z"),
-      createdAt: now,
-      revokedAt: null,
-    });
+    db.store[tableName(schema.scepIssuedCertificate)]![0]!.deviceId = "device-3";
 
     await run(
       backend.appleRecordFailure!({

@@ -9,7 +9,7 @@ import {
   CATALOGUE_APPLICATION_ASSET_KIND,
   catalogueApplicationAssetIdentifier,
 } from "@mattrax/mdm-core";
-import { makeDb, tableName } from "./fake-db.js";
+import { appleIdentityCertificate, makeDb, tableName } from "./fake-db.js";
 import type { Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
@@ -30,6 +30,8 @@ const scope = {
   _tag: "device" as const,
   udid: "udid-1",
   identityCertificate: "CN=Device,OU=org-1",
+  identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
 };
 
@@ -40,6 +42,7 @@ const device = (overrides: { osEdition?: string; osVersion?: string } = {}) => (
   status: "enrolled",
   name: "device-1",
   dmIdentifier: "udid-1",
+  dmIdentityFingerprint: "fingerprint-1",
   osEdition: overrides.osEdition ?? "macOS",
   osVersion: overrides.osVersion ?? "14.0",
   capabilities: null,
@@ -83,6 +86,7 @@ const setup = (
       },
     ],
     [tableName(schema.device)]: [options.device ?? device()],
+    [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
     [tableName(schema.deviceApple)]: [
       {
         deviceId: "device-1",
