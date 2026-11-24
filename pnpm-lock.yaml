@@ -378,7 +378,7 @@ snapshots:
 		"patchedDependencies": {
 			"@tanstack/solid-query@6.0.0-rc.5": "19df8b3c8d5de48347d4fbe7632795c7bb18c7d3a3c816c65a53cb9dfc936e82",
 			"@yielded/auth-persistence-drizzle@0.1.0-beta.47": "a1799976a7c271cc71a923d663f77816fbbdfb3d8de775589c3cdb264a78cc94",
-			"@yielded/auth-persistence@0.1.0-beta.47": "dcca6468bec1caec68bc8ba25201ceb92017ea1c06741e9ba165bfb4249876a8",
+			"@yielded/auth-persistence@0.1.0-beta.47": "ce2858c59fda56d8f8bb8227a6be1d8cea280ccbf209fdc2e4af48045a9d462f",
 		},
 	},
 

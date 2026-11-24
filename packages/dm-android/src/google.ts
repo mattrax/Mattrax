@@ -352,6 +352,10 @@ export const makeGoogleTokenCache = (
         return undefined;
       }
 
+      // Refresh insertion order so capacity evicts the least-recently used key.
+      entries.delete(key);
+      entries.set(key, entry);
+
       return entry;
     },
     set: (key, token) => {

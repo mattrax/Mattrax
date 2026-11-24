@@ -198,6 +198,49 @@ describe("AzureGraph", () => {
     expect(tokenCalls).toBe(1);
   });
 
+  it("keys a shared cache by app registration and secret", async () => {
+    const cases: ReadonlyArray<readonly [AzureGraphConfig, AzureGraphConfig]> = [
+      [
+        { ...config, clientId: "client-a", clientSecret: "secret-a" },
+        { ...config, clientId: "client-a", clientSecret: "secret-b" },
+      ],
+      [
+        { ...config, clientId: "client-c", clientSecret: "secret-c" },
+        { ...config, clientId: "client-d", clientSecret: "secret-c" },
+      ],
+    ];
+
+    for (const [first, second] of cases) {
+      let tokenCalls = 0;
+      const tokenCache = makeAzureGraphTokenCache();
+      const layer = (graphConfig: AzureGraphConfig) =>
+        AzureGraphLive(graphConfig, { tokenCache }).pipe(
+          Layer.provide(
+            mockLayer((url) => {
+              if (isTokenRequest(url)) {
+                tokenCalls++;
+
+                return tokenResponse(`token-${tokenCalls}`);
+              }
+
+              return domainsResponse([contosoDomain]);
+            }),
+          ),
+        );
+      const domains = (graphLayer: ReturnType<typeof layer>) =>
+        Effect.gen(function* () {
+          const graph = yield* AzureGraph;
+
+          return yield* graph.domains(tenantId);
+        }).pipe(Effect.provide(graphLayer));
+
+      await Effect.runPromise(domains(layer(first)));
+      await Effect.runPromise(domains(layer(second)));
+
+      expect(tokenCalls).toBe(2);
+    }
+  });
+
   it("expires and revokes a shared token instead of reusing it", async () => {
     let tokenCalls = 0;
     let reject = false;

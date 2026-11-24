@@ -25,7 +25,13 @@ export function extractTopicFromCertPem(pem: string): Promise<string | null> {
   const key = pem.trim();
   const cached = topicCache.get(key);
 
-  if (cached) return cached;
+  if (cached) {
+    // Refresh insertion order so eviction drops the least-recently used PEM.
+    topicCache.delete(key);
+    topicCache.set(key, cached);
+
+    return cached;
+  }
 
   const parsed = parseTopic(pem);
   topicCache.set(key, parsed);

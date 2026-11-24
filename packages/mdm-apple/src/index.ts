@@ -2749,6 +2749,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   .backgroundDelivery!.enqueue(
                     `webhook:${event.type}`,
                     deliverQueuedWebhook(db, id, deliveryOptions),
+                    { organizationId: event.organizationId },
                   )
                   .pipe(Effect.asVoid);
             })
@@ -2915,7 +2916,20 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       });
 
       return options.backgroundDelivery
-        ? options.backgroundDelivery.enqueue("apns:post-enrollment", delivery).pipe(Effect.asVoid)
+        ? options.backgroundDelivery
+            .enqueue("apns:post-enrollment", delivery, { organizationId })
+            .pipe(
+              // The queue logs its own drop with the tenant. Keep the APNs path
+              // explicit too: a dropped wake-up is safe (the device polls) but
+              // must be diagnosable instead of silently discarded.
+              Effect.flatMap((accepted) =>
+                accepted
+                  ? Effect.void
+                  : Effect.logWarning(
+                      `APNs post-enrollment wake-up was dropped for tenant ${organizationId}`,
+                    ),
+              ),
+            )
         : delivery.pipe(
             Effect.catch((error) =>
               Effect.logWarning(`Failed to send post-enrollment APNs push: ${String(error)}`),

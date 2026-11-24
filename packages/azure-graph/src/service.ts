@@ -350,6 +350,10 @@ export const makeAzureGraphTokenCache = (
         return undefined;
       }
 
+      // Refresh insertion order so capacity evicts the least-recently used key.
+      entries.delete(tenantId);
+      entries.set(tenantId, entry);
+
       return entry;
     },
     set: (tenantId, entry) => {
@@ -555,6 +559,15 @@ export const AzureGraphLive = (config: AzureGraphConfig, options: AzureGraphLive
       const timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
       const tokenCache = options.tokenCache ?? makeAzureGraphTokenCache();
 
+      // A shared cache may serve more than one app registration or secret
+      // generation in the same process. Key by client identity and the secret
+      // itself so rotating credentials can never reuse another app's token.
+      // The secret only ever lives in this in-memory key and is never logged.
+      const tenantCacheKey = (tenantId: string) =>
+        [config.clientId, loginBaseUrl, config.clientSecret, normalizeTenantId(tenantId)].join(
+          "\0",
+        );
+
       const execute = (
         tenantId: string,
         makeRequest: () => HttpClientRequest.HttpClientRequest,
@@ -678,7 +691,7 @@ export const AzureGraphLive = (config: AzureGraphConfig, options: AzureGraphLive
 
           if (result.status === 401 || result.status === 403) {
             // A rejected credential must not keep serving the cached token.
-            tokenCache.delete(tenantId);
+            tokenCache.delete(tenantCacheKey(tenantId));
 
             return yield* Effect.fail(
               new AzureGraphUnauthorized({
@@ -738,13 +751,14 @@ export const AzureGraphLive = (config: AzureGraphConfig, options: AzureGraphLive
         Effect.gen(function* () {
           const tenant = normalizeTenantId(tenantId);
           const now = yield* Clock.currentTimeMillis;
-          const cached = tokenCache.get(tenant, now);
+          const cacheKey = tenantCacheKey(tenant);
+          const cached = tokenCache.get(cacheKey, now);
 
           if (cached) return cached.token;
 
-          const entry = yield* tokenCache.load(tenant, fetchToken(tenant));
+          const entry = yield* tokenCache.load(cacheKey, fetchToken(tenant));
 
-          tokenCache.set(tenant, entry);
+          tokenCache.set(cacheKey, entry);
 
           return entry.token;
         });
@@ -768,7 +782,7 @@ export const AzureGraphLive = (config: AzureGraphConfig, options: AzureGraphLive
 
           if (result.status === 401) {
             // Revocation or a secret rotation invalidates the cached token.
-            tokenCache.delete(normalizeTenantId(tenantId));
+            tokenCache.delete(tenantCacheKey(tenantId));
 
             return yield* Effect.fail(
               new AzureGraphUnauthorized({
@@ -874,7 +888,7 @@ export const AzureGraphLive = (config: AzureGraphConfig, options: AzureGraphLive
 
           if (result.status === 401) {
             // Revocation or a secret rotation invalidates the cached token.
-            tokenCache.delete(normalizeTenantId(tenantId));
+            tokenCache.delete(tenantCacheKey(tenantId));
 
             return yield* Effect.fail(
               new AzureGraphUnauthorized({

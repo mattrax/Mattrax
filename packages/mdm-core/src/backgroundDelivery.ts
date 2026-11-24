@@ -27,16 +27,27 @@ export type BackgroundDeliveryOptions = {
   readonly shutdownTimeoutMs?: number;
 };
 
+/** Tenant identity attached to a queued job for drop diagnostics. */
+export type BackgroundDeliveryJobContext = {
+  readonly organizationId?: string;
+  readonly tenantId?: string;
+};
+
 type DeliveryJob = {
   readonly name: string;
   readonly effect: Effect.Effect<void, unknown>;
+  readonly context: BackgroundDeliveryJobContext;
   /** Resolves once the job has finished, failed, or been interrupted. */
   readonly done: Deferred.Deferred<void>;
 };
 
 export type BackgroundDeliveryService = {
   /** Returns false immediately when the bounded queue is full or closing. */
-  readonly enqueue: (name: string, effect: Effect.Effect<void, unknown>) => Effect.Effect<boolean>;
+  readonly enqueue: (
+    name: string,
+    effect: Effect.Effect<void, unknown>,
+    context?: BackgroundDeliveryJobContext,
+  ) => Effect.Effect<boolean>;
   /**
    * Worker fibers currently started. Zero until the first accepted job, which
    * is what lets an ordinary API request avoid creating unused fibers.
@@ -87,6 +98,11 @@ const failed = Metric.counter("mdm_background_delivery_failed_total", { incremen
  * job is registered with the host invocation until it settles. That keeps the
  * queue alive after the response without making the response wait for the full
  * shutdown grace period.
+ *
+ * Jobs must close over the dependencies they need (database handle, APNs
+ * transport, HTTP client). The queue can outlive the layer or request that
+ * enqueued a job and never resolves services from that request context, so a
+ * leaked request layer is not required for delivery to succeed.
  *
  * This queue is process-local. Webhook callers persist attempt-0
  * `webhook_delivery` rows before enqueueing, so a crash or full queue does not
@@ -179,9 +195,14 @@ export const BackgroundDeliveryLive = (
       );
 
       return BackgroundDelivery.of({
-        enqueue: (name, effect) =>
+        enqueue: (name, effect, context = {}) =>
           Effect.gen(function* () {
-            const job: DeliveryJob = { name, effect, done: yield* Deferred.make<void>() };
+            const job: DeliveryJob = {
+              name,
+              effect,
+              context,
+              done: yield* Deferred.make<void>(),
+            };
             const accepted = yield* Queue.offer(queue, job);
 
             if (accepted) {
@@ -194,7 +215,12 @@ export const BackgroundDeliveryLive = (
                 keepAlive.value.track(Effect.runPromise(Deferred.await(job.done)));
             } else {
               yield* Metric.update(dropped, 1);
-              yield* Effect.logWarning(`Background delivery queue is full; dropped ${name}`);
+
+              const tenant = context.organizationId ?? context.tenantId;
+
+              yield* Effect.logWarning(
+                `Background delivery queue is full; dropped ${name}${tenant ? ` for tenant ${tenant}` : ""}`,
+              );
             }
 
             return accepted;

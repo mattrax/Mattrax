@@ -138,7 +138,7 @@ index aa60bbb1d6e1bb74fb763b2ebf33dea1ba3da018..d73840e465dae2d88645755cefe3273c
 diff --git a/src/internal/storage-validation.ts b/src/internal/storage-validation.ts
 --- a/src/internal/storage-validation.ts
 +++ b/src/internal/storage-validation.ts
-@@ -98,6 +98,75 @@
+@@ -98,6 +98,79 @@
    { defaultValue: () => undefined },
  );
  
@@ -186,6 +186,10 @@ diff --git a/src/internal/storage-validation.ts b/src/internal/storage-validatio
 +    return undefined;
 +  }
 +
++  // Refresh insertion order so capacity evicts the least-recently used relation.
++  sharedMetadata.delete(key);
++  sharedMetadata.set(key, entry);
++
 +  return entry.value;
 +};
 +
@@ -214,7 +218,7 @@ diff --git a/src/internal/storage-validation.ts b/src/internal/storage-validatio
  /** Share metadata only while constructing one service graph. Captured contexts
   * cannot reuse it after acquisition succeeds, fails, or is interrupted. */
  export const withStorageValidation = Effect.fnUntraced(function* <A, E, R>(
-@@ -152,9 +221,20 @@
+@@ -152,9 +225,20 @@
  
      const tables = new Map(physical.map((table) => [qualifiedTableName(table), table]));
  
@@ -238,7 +242,7 @@ diff --git a/src/internal/storage-validation.ts b/src/internal/storage-validatio
  
      const relations = missing.map(([relation]) => relation);
  
-@@ -279,7 +359,12 @@
+@@ -279,7 +363,12 @@
      `.pipe(Effect.flatMap(Schema.decodeUnknownEffect(PgMetadata)));
              });
  
@@ -252,7 +256,7 @@ diff --git a/src/internal/storage-validation.ts b/src/internal/storage-validatio
      }
  
      return byRelation;
-@@ -288,15 +373,19 @@
+@@ -288,15 +377,19 @@
      reportPersistenceFailure(effect, Schema.is(PersistenceConfigurationError), {
        markReported: true,
      }),
@@ -276,7 +280,7 @@ diff --git a/src/internal/storage-validation.ts b/src/internal/storage-validatio
  );
  
  /** Batch physical metadata reads, reusing only the current acquisition snapshot.
-@@ -317,10 +406,13 @@
+@@ -317,10 +410,13 @@
      const actual = byRelation.get(`${dialect}:${relation}`);
  
      for (const column of Object.values(table.columns)) {
@@ -294,7 +298,7 @@ diff --git a/src/internal/storage-validation.ts b/src/internal/storage-validatio
 diff --git a/dist/internal/storage-validation.mjs b/dist/internal/storage-validation.mjs
 --- a/dist/internal/storage-validation.mjs
 +++ b/dist/internal/storage-validation.mjs
-@@ -47,6 +47,42 @@
+@@ -47,6 +47,44 @@
  	}
  });
  const CurrentMetadata = Context.Reference("@yielded/auth-persistence/StorageMetadata", { defaultValue: () => void 0 });
@@ -316,6 +320,8 @@ diff --git a/dist/internal/storage-validation.mjs b/dist/internal/storage-valida
 +		sharedMetadata.delete(key);
 +		return void 0;
 +	}
++	sharedMetadata.delete(key);
++	sharedMetadata.set(key, entry);
 +	return entry.value;
 +};
 +const writeSharedMetadata = (dialect, value, now) => {
@@ -337,7 +343,7 @@ diff --git a/dist/internal/storage-validation.mjs b/dist/internal/storage-valida
  /** Share metadata only while constructing one service graph. Captured contexts
  * cannot reuse it after acquisition succeeds, fails, or is interrupted. */
  const withStorageValidation = Effect.fnUntraced(function* (effect) {
-@@ -68,7 +104,15 @@
+@@ -68,7 +106,15 @@
  	const cache = yield* CurrentMetadata;
  	const byRelation = cache?.active ? cache.clients.get(captured) ?? /* @__PURE__ */ new Map() : /* @__PURE__ */ new Map();
  	if (cache?.active) cache.clients.set(captured, byRelation);
@@ -354,7 +360,7 @@ diff --git a/dist/internal/storage-validation.mjs b/dist/internal/storage-valida
  	const relations = missing.map(([relation]) => relation);
  	if (relations.length > 0) {
  		const metadata = yield* dialect === "sqlite" ? Effect.gen(function* () {
-@@ -158,10 +202,17 @@
+@@ -158,10 +204,17 @@
        from (values ${requested}) requested(relation)
      `.pipe(Effect.flatMap(Schema.decodeUnknownEffect(PgMetadata)));
  		});
@@ -374,7 +380,7 @@ diff --git a/dist/internal/storage-validation.mjs b/dist/internal/storage-valida
  /** Batch physical metadata reads, reusing only the current acquisition snapshot.
  * Every requirement is still checked; later acquisitions read fresh metadata. */
  const validateStorageBatch = Effect.fnUntraced(function* (dialect, requirements) {
-@@ -170,7 +221,10 @@
+@@ -170,7 +223,10 @@
  	for (const { table, required } of requirements) {
  		const relation = qualifiedTableName(table);
  		const actual = byRelation.get(`${dialect}:${relation}`);
@@ -386,7 +392,7 @@ diff --git a/dist/internal/storage-validation.mjs b/dist/internal/storage-valida
  		yield* validateKeys(table, required, actual?.keys ?? []);
  	}
  });
-@@ -221,6 +275,6 @@
+@@ -221,6 +277,6 @@
              where x.key = 1 and x.name = ${column.name} and x.coll = 'BINARY'))`).length === 1;
  });
  //#endregion

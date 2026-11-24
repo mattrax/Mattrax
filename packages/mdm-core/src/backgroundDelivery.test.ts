@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Deferred, Effect, Ref } from "effect";
+import { Deferred, Effect, Logger, Ref } from "effect";
 import {
   BackgroundDelivery,
   BackgroundDeliveryKeepAlive,
@@ -173,6 +173,82 @@ describe("background delivery", () => {
     );
 
     expect(delivered).toBe(1);
+  });
+
+  it("pins shared-queue drop behavior across tenants and names the dropped tenant", async () => {
+    const messages: string[] = [];
+    const logger = Logger.make<unknown, void>((options) => {
+      messages.push(String(options.message));
+    });
+
+    const accepted = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const delivery = yield* BackgroundDelivery;
+          const started = yield* Deferred.make<void>();
+          const release = yield* Deferred.make<void>();
+
+          yield* delivery.enqueue(
+            "tenant-a",
+            Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(release))),
+            { organizationId: "org-a" },
+          );
+          yield* Deferred.await(started);
+
+          const queued = yield* delivery.enqueue("tenant-b", Effect.void, {
+            organizationId: "org-b",
+          });
+          const rejected = yield* delivery.enqueue("tenant-c", Effect.void, {
+            organizationId: "org-c",
+          });
+
+          yield* Deferred.succeed(release, undefined);
+
+          return { queued, rejected };
+        }).pipe(Effect.provide(BackgroundDeliveryLive({ capacity: 1, concurrency: 1 }))),
+      ).pipe(Effect.provide(Logger.layer([logger]))),
+    );
+
+    // One tenant's slow job occupies the single worker; another tenant's job
+    // fits in the buffer, and the next tenant is dropped. This is the intended
+    // bounded best-effort policy, not per-tenant isolation.
+    expect(accepted).toEqual({ queued: true, rejected: false });
+    expect(messages.some((message) => message.includes("tenant-c"))).toBe(true);
+    expect(messages.some((message) => message.includes("org-c"))).toBe(true);
+  });
+
+  it("runs a queued job after the enqueuing layer scope has closed", async () => {
+    const gate = await Effect.runPromise(Deferred.make<void>());
+    const done = await Effect.runPromise(Deferred.make<void>());
+    const count = await Effect.runPromise(Ref.make(0));
+
+    try {
+      await Effect.runPromise(
+        Effect.scoped(
+          Effect.gen(function* () {
+            const delivery = yield* BackgroundDelivery;
+
+            yield* delivery.enqueue(
+              "after-close",
+              Effect.gen(function* () {
+                yield* Deferred.await(gate);
+                yield* Ref.update(count, (value) => value + 1);
+                yield* Deferred.succeed(done, undefined);
+              }),
+            );
+          }).pipe(Effect.provide(SharedBackgroundDeliveryLive({ concurrency: 1 }))),
+        ),
+      );
+
+      expect(await Effect.runPromise(Deferred.isDone(done))).toBe(false);
+
+      await Effect.runPromise(Deferred.succeed(gate, undefined));
+      await Effect.runPromise(Deferred.await(done));
+
+      expect(await Effect.runPromise(Ref.get(count))).toBe(1);
+    } finally {
+      await resetSharedBackgroundDelivery();
+    }
   });
 
   it("shares one isolate-scoped queue across rebuilt request layers", async () => {

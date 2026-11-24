@@ -1,15 +1,5 @@
-import {
-  Clock,
-  Context,
-  Data,
-  Deferred,
-  Duration,
-  Effect,
-  Exit,
-  Layer,
-  Schema,
-  Scope,
-} from "effect";
+import { Clock, Context, Data, Duration, Effect, Exit, Layer, Schema, Scope } from "effect";
+import type { HttpClient } from "effect/http";
 import { SecureRandom, Signature } from "effect/crypto";
 import { JoseError, Jwt, Jwks } from "effect/jose";
 
@@ -241,7 +231,7 @@ const sharedJwks = new Map<
 >();
 const sharedJwksFlights = new Map<
   string,
-  Deferred.Deferred<Jwks.Jwks["Service"], JoseError.JoseError>
+  Effect.Effect<Jwks.Jwks["Service"], JoseError.JoseError, HttpClient.HttpClient>
 >();
 
 const jwksOptions = (config: PubSubOidcVerifierConfig) => ({
@@ -251,15 +241,26 @@ const jwksOptions = (config: PubSubOidcVerifierConfig) => ({
   timeout: config.jwksTimeout ?? "5 seconds",
 });
 
-/** Drop a cached key set, for example after a suspected key compromise. */
+/**
+ * Drop a cached key set, for example after a suspected key compromise.
+ *
+ * An in-flight refresh is detached from the cache: existing waiters may still
+ * finish their own request, but they cannot repopulate the entry because the
+ * completion checks that it is still the registered flight. The next request
+ * starts a fresh fetch. No request layer or socket is retained by this cache.
+ */
 export const invalidateSharedJwks = (uri: string): void => {
   sharedJwks.delete(uri);
+  sharedJwksFlights.delete(uri);
 };
 
-/** Test hook: forget all shared key sets. */
-export const resetSharedJwksForTests = (): void => {
-  sharedJwks.clear();
-  sharedJwksFlights.clear();
+const trimSharedJwks = () => {
+  while (sharedJwks.size > SHARED_JWKS_LIMIT) {
+    const oldest = sharedJwks.keys().next().value;
+
+    if (oldest === undefined) break;
+    sharedJwks.delete(oldest);
+  }
 };
 
 const sharedJwksService = (config: PubSubOidcVerifierConfig) =>
@@ -269,38 +270,53 @@ const sharedJwksService = (config: PubSubOidcVerifierConfig) =>
     const ttl = Duration.toMillis(Duration.fromInputUnsafe(options.timeToLive));
     const cached = sharedJwks.get(options.url);
 
-    if (cached && cached.expiresAt > now) return cached.service;
+    if (cached && cached.expiresAt > now) {
+      // Refresh insertion order so capacity evicts the least-recently used URI.
+      sharedJwks.delete(options.url);
+      sharedJwks.set(options.url, cached);
+
+      return cached.service;
+    }
 
     const inFlight = sharedJwksFlights.get(options.url);
 
-    if (inFlight) return yield* Deferred.await(inFlight);
+    if (inFlight) return yield* inFlight;
 
-    const deferred = yield* Deferred.make<Jwks.Jwks["Service"], JoseError.JoseError>();
-    sharedJwksFlights.set(options.url, deferred);
-
-    const exit = yield* Effect.exit(
+    // `Effect.cached` keeps the shared build alive while at least one caller
+    // waits, and it never caches interruption: if every caller leaves, the run
+    // is interrupted and the next request retries. A flight therefore cannot
+    // wedge future callers on a permanently pending promise. The explicit map
+    // entry only removes the completed run so a later expiry starts a fetch.
+    const cachedEffect = yield* Effect.cached(
       Jwks.makeRemote(options).pipe(Effect.provideService(Scope.Scope, sharedJwksScope)),
     );
+    const entry: Effect.Effect<Jwks.Jwks["Service"], JoseError.JoseError, HttpClient.HttpClient> =
+      cachedEffect.pipe(
+        Effect.tap((service) =>
+          Effect.sync(() => {
+            if (sharedJwksFlights.get(options.url) !== entry) return;
 
-    if (sharedJwksFlights.get(options.url) === deferred) sharedJwksFlights.delete(options.url);
+            sharedJwks.delete(options.url);
+            sharedJwks.set(options.url, {
+              service,
+              expiresAt: Date.now() + ttl,
+            });
+            trimSharedJwks();
+          }),
+        ),
+        Effect.onExit((exit) =>
+          Exit.hasInterrupts(exit)
+            ? Effect.void
+            : Effect.sync(() => {
+                if (sharedJwksFlights.get(options.url) === entry)
+                  sharedJwksFlights.delete(options.url);
+              }),
+        ),
+      );
 
-    if (Exit.isSuccess(exit)) {
-      sharedJwks.set(options.url, {
-        service: exit.value,
-        expiresAt: now + ttl,
-      });
+    sharedJwksFlights.set(options.url, entry);
 
-      while (sharedJwks.size > SHARED_JWKS_LIMIT) {
-        const oldest = sharedJwks.keys().next().value;
-
-        if (oldest === undefined) break;
-        sharedJwks.delete(oldest);
-      }
-    }
-
-    yield* Deferred.done(deferred, exit);
-
-    return yield* Exit.isSuccess(exit) ? Effect.succeed(exit.value) : Effect.failCause(exit.cause);
+    return yield* entry;
   });
 
 /**

@@ -8,7 +8,7 @@ import {
   PubSubOidcVerifier,
   PubSubOidcVerifierLive,
   base64UrlEncode,
-  resetSharedJwksForTests,
+  invalidateSharedJwks,
 } from "../src/index.js";
 import type { PubSubOidcVerifierConfig } from "../src/index.js";
 import { mockFetch } from "./helpers.js";
@@ -281,7 +281,30 @@ describe("PubSubOidcVerifier", () => {
       expect(second.email).toBe(first.email);
       expect(mock.requests.filter((request) => request.pathname === "/jwks")).toHaveLength(1);
     } finally {
-      resetSharedJwksForTests();
+      invalidateSharedJwks(jwksUri);
+    }
+  });
+
+  it("invalidates a shared key set so the next request fetches again", async () => {
+    const token = await sign(claims());
+    const mock = mockFetch(() => jwksResponse());
+    const layer = () =>
+      PubSubOidcVerifierLive(scopedConfig(), { sharedJwks: true }).pipe(Layer.provide(mock.layer));
+    const verifyOnce = () =>
+      Effect.gen(function* () {
+        const verifier = yield* PubSubOidcVerifier;
+
+        return yield* verifier.verify(token);
+      }).pipe(Effect.provide(layer()));
+
+    try {
+      await Effect.runPromise(verifyOnce());
+      invalidateSharedJwks(jwksUri);
+      await Effect.runPromise(verifyOnce());
+
+      expect(mock.requests.filter((request) => request.pathname === "/jwks")).toHaveLength(2);
+    } finally {
+      invalidateSharedJwks(jwksUri);
     }
   });
 
