@@ -45,79 +45,12 @@ type SortState = { id: string; dir: "asc" | "desc" } | null;
 
 export type MdmSortState = SortState;
 
-/** One named table view in {@link MdmTableTabs}. */
-export type MdmTableTab = {
-  id: string;
-  label: string;
-  /** Rows the tab opens; omitted while the count is still loading. */
-  count?: number;
-  /** Small marker before the label, such as the member's default-view star. */
-  icon?: JSX.Element;
-};
-
-/**
- * The tab strip above a table. It only draws tabs and reports the chosen id;
- * the page decides what "All" and each saved view mean.
- */
-export function MdmTableTabs(props: {
-  tabs: ReadonlyArray<MdmTableTab>;
-  value: string;
-  onSelect: (id: string) => void;
-  label?: string;
-  class?: string;
-}) {
-  return (
-    <nav
-      aria-label={props.label ?? "Table views"}
-      class={cn("-mb-px flex min-w-0 items-center gap-1 overflow-x-auto pb-1", props.class)}
-    >
-      <For each={props.tabs}>
-        {(tab) => {
-          const active = () => props.value === tab.id;
-
-          return (
-            <button
-              type="button"
-              class={cn(
-                "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-[12px] font-[520] outline-none transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:ring-ring/50",
-                active()
-                  ? "border-border bg-card text-foreground shadow-card"
-                  : "border-transparent text-muted-foreground hover:bg-hover hover:text-foreground",
-              )}
-              aria-current={active() ? "page" : undefined}
-              onClick={() => props.onSelect(tab.id)}
-            >
-              {tab.icon}
-              <span class="max-w-44 truncate">{tab.label}</span>
-              <Show when={tab.count !== undefined}>
-                <span
-                  class={cn(
-                    "text-[11px] tabular-nums",
-                    active() ? "text-muted-foreground" : "text-subtle-foreground",
-                  )}
-                >
-                  {tab.count!.toLocaleString()}
-                </span>
-              </Show>
-            </button>
-          );
-        }}
-      </For>
-    </nav>
-  );
-}
-
 /** Extra state handed to the bulk bar when the whole filtered set is selected. */
 export type MdmBulkSelection = {
   allMatching: boolean;
   total: number;
   setAllMatching: (value: boolean) => void;
 };
-
-/** Read a table's persisted column visibility (an empty map means defaults). */
-export function readTableColumnVisibility(key: string | undefined): Record<string, boolean> {
-  return readVisibility(key);
-}
 
 function readVisibility(key: string | undefined): Record<string, boolean> {
   if (!key || typeof localStorage === "undefined") return {};
