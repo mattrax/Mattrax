@@ -1,7 +1,9 @@
+import type { TenantOnboardingState } from "@mattrax/enterprise-domain/client";
 import { describe, expect, it, vi } from "vitest";
 import {
   ONBOARDING_STALE_MILLIS,
   ONBOARDING_WRITE_PERMISSIONS,
+  onboardingIsDismissed,
   onboardingQueryEnabled,
   readOnboardingDismissal,
   writeOnboardingDismissal,
@@ -18,6 +20,18 @@ describe("onboarding query access", () => {
 
   it("does not refetch a checklist already known to be dismissed", () => {
     expect(onboardingQueryEnabled(true, true, true)).toBe(false);
+  });
+
+  it("re-enables when authoritative cache data replaces a failed optimistic dismissal", () => {
+    let cache: Pick<TenantOnboardingState, "dismissedAt"> = {
+      dismissedAt: "2026-11-24T12:00:00.000Z",
+    };
+
+    expect(onboardingQueryEnabled(true, true, onboardingIsDismissed(cache))).toBe(false);
+
+    cache = { dismissedAt: null };
+
+    expect(onboardingQueryEnabled(true, true, onboardingIsDismissed(cache))).toBe(true);
   });
 
   it("fetches once for an eligible member with no dismissal", () => {

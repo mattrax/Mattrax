@@ -105,6 +105,39 @@ describe("AnalyticsQueue", () => {
     await queue.flush();
   });
 
+  it("delivers a lifecycle batch while a normal send is in flight", async () => {
+    const clock = controlledClock();
+    let rejectNormal: ((error: Error) => void) | undefined;
+    const send = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            rejectNormal = reject;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const beacon = vi.fn().mockResolvedValue(undefined);
+    const queue = new AnalyticsQueue<string>({ delay: 100, send, schedule: clock.schedule });
+
+    queue.push("normal");
+    clock.fire();
+    queue.push("pageleave");
+    await queue.flushPendingWith(beacon);
+
+    expect(beacon).toHaveBeenCalledExactlyOnceWith(["pageleave"]);
+    expect(send).toHaveBeenCalledTimes(1);
+
+    rejectNormal?.(new Error("offline during unload"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(queue.size).toBe(1);
+
+    clock.fire();
+    await Promise.resolve();
+    expect(send.mock.calls[1]?.[0]).toEqual(["normal"]);
+  });
+
   it("requeues a failed batch instead of dropping it", async () => {
     const clock = controlledClock();
     const send = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);

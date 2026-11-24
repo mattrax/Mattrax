@@ -44,6 +44,39 @@ test.describe("onboarding query gating", () => {
     expect(onboardingRequests).toHaveLength(1);
   });
 
+  test("a failed dismissal restores the query and reload cache", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Onboarding Rollback");
+    const onboardingRequests: string[] = [];
+    page.on("request", (request) => {
+      if (
+        request.method() === "GET" &&
+        request.url().includes(`/api/v1/tenants/${tenant.id}/onboarding`)
+      )
+        onboardingRequests.push(request.url());
+    });
+
+    await gotoHydrated(page, `/t/${tenant.id}`);
+    await expect(page.getByRole("heading", { name: "Get started" })).toBeVisible();
+    await page.route(`**/api/v1/tenants/${tenant.id}/onboarding`, async (route) => {
+      if (route.request().method() === "PATCH") await route.abort("failed");
+      else await route.continue();
+    });
+
+    await page.getByRole("button", { name: "Dismiss the Get started checklist" }).click();
+    await expect(page.getByRole("heading", { name: "Get started" })).toBeVisible();
+
+    await primaryNav(page).getByRole("link", { name: "Devices", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+    await primaryNav(page).getByRole("link", { name: "Overview", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Get started" })).toBeVisible();
+    expect(onboardingRequests).toHaveLength(1);
+
+    await page.unroute(`**/api/v1/tenants/${tenant.id}/onboarding`);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Get started" })).toBeVisible();
+    expect(onboardingRequests).toHaveLength(2);
+  });
+
   test("a read-only member makes no onboarding request", async ({ page, context }) => {
     const tenant = await bootstrapTenant(page, "Onboarding Member");
     const email = uniqueEmail("onboarding-member");

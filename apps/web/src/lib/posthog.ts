@@ -180,7 +180,7 @@ const flush = (beacon = false): Promise<void> => {
   if (!config || !analyticsQueue) return Promise.resolve();
 
   if (beacon && navigator.sendBeacon)
-    return analyticsQueue.flushWith((batch) =>
+    return analyticsQueue.flushPendingWith((batch) =>
       Promise.resolve(
         navigator.sendBeacon(
           endpoint(),

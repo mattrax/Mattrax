@@ -1,4 +1,4 @@
-import type { Permission } from "@mattrax/enterprise-domain/client";
+import type { Permission, TenantOnboardingState } from "@mattrax/enterprise-domain/client";
 
 export const ONBOARDING_WRITE_PERMISSIONS: ReadonlyArray<Permission> = [
   "groups.write",
@@ -8,6 +8,10 @@ export const ONBOARDING_WRITE_PERMISSIONS: ReadonlyArray<Permission> = [
 ];
 
 export const ONBOARDING_STALE_MILLIS = 30_000;
+
+export const onboardingIsDismissed = (
+  state: Pick<TenantOnboardingState, "dismissedAt"> | undefined,
+): boolean => state?.dismissedAt != null;
 
 export const onboardingQueryEnabled = (
   permissionsKnown: boolean,

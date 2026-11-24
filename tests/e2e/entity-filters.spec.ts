@@ -75,10 +75,25 @@ test.describe("entity table filters", () => {
     await valueList.focus();
     await page.keyboard.press("End");
     await expect(valueList).toHaveAttribute("aria-activedescendant", /option-99$/);
-    await page.keyboard.press("Enter");
-    await expect(page.getByRole("button", { name: "Environment is env-99" })).toBeVisible();
+    const activeId = await valueList.getAttribute("aria-activedescendant");
+    const activeOption = page.locator(`[id="${activeId}"]`);
+    await expect(activeOption).toBeVisible();
+    const optionBox = await activeOption.boundingBox();
 
-    await page.getByRole("button", { name: "Environment is env-99" }).click();
+    if (!optionBox) throw new Error("The active filter option was not measurable.");
+
+    await page.mouse.move(optionBox.x + optionBox.width / 2, optionBox.y + optionBox.height / 2);
+    await page.mouse.down();
+    await expect(valueList).toBeFocused();
+    await page.mouse.up();
+    const chip = page.getByRole("button", { name: "Environment is env-99" });
+    await expect(chip).toBeVisible();
+
+    await chip.focus();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("button", { name: "Remove Environment filter" })).toBeFocused();
+
+    await chip.click();
     const valueSearch = page.getByLabel("Search Environment values");
     await valueSearch.fill("env-42");
     await expect(valueList.getByRole("option")).toHaveCount(1);

@@ -14,6 +14,7 @@ import {
 import {
   ONBOARDING_STALE_MILLIS,
   ONBOARDING_WRITE_PERMISSIONS,
+  onboardingIsDismissed,
   onboardingQueryEnabled,
   readOnboardingDismissal,
   writeOnboardingDismissal,
@@ -56,7 +57,7 @@ export function OnboardingChecklist(props: { tenantId: string }) {
   });
   const queryKey = () => enterpriseKeys.onboarding(props.tenantId);
   const [dismissed, setDismissed] = createSignal(
-    queryClient.getQueryData<TenantOnboardingState>(queryKey())?.dismissedAt != null,
+    onboardingIsDismissed(queryClient.getQueryData<TenantOnboardingState>(queryKey())),
   );
   const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
     if (
@@ -66,7 +67,7 @@ export function OnboardingChecklist(props: { tenantId: string }) {
       return;
 
     const data = event.query.state.data as TenantOnboardingState | undefined;
-    setDismissed(data?.dismissedAt != null);
+    setDismissed(onboardingIsDismissed(data));
   });
   onCleanup(unsubscribe);
 
@@ -115,7 +116,14 @@ export function OnboardingChecklist(props: { tenantId: string }) {
       return { previous, identity };
     },
     onError: (_error, _variables, context) => {
-      if (context?.previous) queryClient.setQueryData(queryKey(), context.previous);
+      const restored =
+        context?.previous ?? queryClient.getQueryData<TenantOnboardingState>(queryKey());
+
+      if (restored) {
+        queryClient.setQueryData(queryKey(), restored);
+        setDismissed(onboardingIsDismissed(restored));
+      } else setDismissed(false);
+
       if (context)
         writeOnboardingDismissal(
           browserStorage(),

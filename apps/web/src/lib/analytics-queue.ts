@@ -109,6 +109,28 @@ export class AnalyticsQueue<T> {
     if (this.inFlight) return this.inFlight;
     if (this.disposed || this.pending.length === 0) return Promise.resolve();
 
+    return this.startSend(send);
+  };
+
+  /**
+   * Lifecycle delivery must not wait for a normal send that may still be in
+   * flight while the document unloads. Drain only the currently pending batch
+   * through the durable sender; the normal batch keeps its own retry path.
+   */
+  flushPendingWith = (send: (batch: ReadonlyArray<T>) => Promise<void>): Promise<void> => {
+    if (this.disposed || this.pending.length === 0) return Promise.resolve();
+
+    this.clearTimer();
+    const batch = this.pending;
+    this.pending = [];
+
+    return send(batch).catch(() => {
+      this.pending.unshift(...batch);
+      if (!this.disposed && !this.inFlight) this.scheduleFlush();
+    });
+  };
+
+  private startSend(send: (batch: ReadonlyArray<T>) => Promise<void>): Promise<void> {
     this.clearTimer();
     const batch = this.pending;
     this.pending = [];
@@ -123,7 +145,7 @@ export class AnalyticsQueue<T> {
     });
 
     return this.inFlight;
-  };
+  }
 
   dispose(): void {
     this.disposed = true;

@@ -158,6 +158,7 @@ function FieldOptionRow(props: {
   position: number;
   setSize: number;
   onFocus?: () => void;
+  onPointerEnter?: () => void;
   onClick: () => void;
 }) {
   return (
@@ -171,6 +172,10 @@ function FieldOptionRow(props: {
       tabindex={-1}
       class={optionClass}
       onFocus={props.onFocus}
+      onPointerEnter={props.onPointerEnter}
+      // Pointer selection updates the active descendant without moving DOM
+      // focus onto a tabindex=-1 option. Keyboard focus stays on the listbox.
+      onPointerDown={(event) => event.preventDefault()}
       onClick={props.onClick}
     >
       <Show when={props.option.icon}>
@@ -195,7 +200,7 @@ type VirtualPickerListProps = {
   multiselectable?: boolean;
   rows: Accessor<ReadonlyArray<FilterPickerRow>>;
   optionCount: Accessor<number>;
-  renderRow: (row: FilterPickerRow, focusOption: (optionIndex: number) => void) => JSX.Element;
+  renderRow: (row: FilterPickerRow, trackOption: (optionIndex: number) => void) => JSX.Element;
   onActivate: (optionIndex: number) => void;
 };
 
@@ -318,10 +323,7 @@ function VirtualPickerList(props: VirtualPickerListProps) {
               class="absolute inset-x-0"
               style={{ top: `${entry.top}px`, height: `${entry.row.height}px` }}
             >
-              {props.renderRow(entry.row, (optionIndex) => {
-                setActiveIndex(optionIndex);
-                listRef?.focus();
-              })}
+              {props.renderRow(entry.row, (optionIndex) => setActiveIndex(optionIndex))}
             </div>
           )}
         </For>
@@ -441,7 +443,7 @@ function FieldPicker(props: {
 
             if (field) props.onPick(field);
           }}
-          renderRow={(row, focusOption) => {
+          renderRow={(row, trackOption) => {
             if (row.fieldId === undefined)
               return (
                 <p role="presentation" class="label-caps flex h-6 items-center px-2">
@@ -459,7 +461,8 @@ function FieldPicker(props: {
                 option={{ value: field.id, label: field.label, icon: field.icon }}
                 position={row.optionIndex! + 1}
                 setSize={model().options.length}
-                onFocus={() => focusOption(row.optionIndex!)}
+                onFocus={() => trackOption(row.optionIndex!)}
+                onPointerEnter={() => trackOption(row.optionIndex!)}
                 onClick={() => props.onPick(field)}
               />
             );
@@ -553,7 +556,7 @@ function ValueEditor(props: {
 
             if (option) toggle(option.value);
           }}
-          renderRow={(row, focusOption) => {
+          renderRow={(row, trackOption) => {
             const option = optionById().get(row.fieldId!);
 
             if (!option) return null;
@@ -565,7 +568,8 @@ function ValueEditor(props: {
                 selected={props.condition.values.includes(option.value)}
                 position={row.optionIndex! + 1}
                 setSize={options().length}
-                onFocus={() => focusOption(row.optionIndex!)}
+                onFocus={() => trackOption(row.optionIndex!)}
+                onPointerEnter={() => trackOption(row.optionIndex!)}
                 onClick={() => toggle(option.value)}
               />
             );

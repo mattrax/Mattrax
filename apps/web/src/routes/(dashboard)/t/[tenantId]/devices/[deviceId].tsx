@@ -129,6 +129,7 @@ import { defaultApplyNameToDevice, shouldQueueDeviceNamePush } from "~/lib/devic
 import { optimisticallyPatchItem, optimisticallyRemoveDevices } from "~/lib/optimistic";
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
+import { deviceRestrictedSoftwareQueryEnabled } from "~/lib/restricted-software-query";
 import { SoftwareUpdateTag } from "~/components/software-update-badge";
 import { OsComplianceTag } from "~/components/os-compliance-badge";
 import {
@@ -1723,9 +1724,20 @@ function DeviceDetailContent() {
     enterpriseQueries.deviceApplications(params.tenantId, params.deviceId),
   );
 
-  const restrictedSoftware = useQuery(() =>
-    enterpriseQueries.deviceRestrictedSoftware(params.tenantId, params.deviceId),
-  );
+  const restrictedSoftware = useQuery(() => {
+    const options = enterpriseQueries.deviceRestrictedSoftware(params.tenantId, params.deviceId);
+
+    return {
+      ...options,
+      enabled:
+        options.enabled &&
+        deviceRestrictedSoftwareQueryEnabled({
+          canRead: can("restricted_software.read"),
+          overview: tab() === "overview",
+          hasDevice: Boolean(params.tenantId && params.deviceId),
+        }),
+    };
+  });
 
   /**
    * Device detail does not include group memberships, but the tenant-scoped

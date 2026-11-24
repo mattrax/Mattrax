@@ -21,7 +21,8 @@ const setupBrowser = () => {
     visibilityState: "visible",
     addEventListener: vi.fn(),
   };
-  const sendBeacon = vi.fn(() => true);
+  const sendBeacon = vi.fn((_url: string, _data: Blob) => true);
+  const fetch = vi.fn().mockResolvedValue({ ok: true });
 
   vi.stubGlobal("localStorage", localStorage);
   vi.stubGlobal("window", window);
@@ -32,12 +33,12 @@ const setupBrowser = () => {
     origin: "https://mattrax.example",
   });
   vi.stubGlobal("navigator", { sendBeacon });
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true }));
+  vi.stubGlobal("fetch", fetch);
 
-  return { stored, setItem, windowListeners, sendBeacon };
+  return { stored, setItem, windowListeners, sendBeacon, fetch };
 };
 
-describe("PostHog identity persistence", () => {
+describe("PostHog persistence and lifecycle delivery", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.useFakeTimers();
@@ -72,5 +73,40 @@ describe("PostHog identity persistence", () => {
     expect(persisted.distinctId).toEqual(expect.any(String));
     expect(persisted.sessionId).toEqual(expect.any(String));
     expect(persisted.activeAt).toEqual(expect.any(Number));
+  });
+
+  it("beacons pageleave while a normal send is pending, then retries the rejected normal batch", async () => {
+    const browser = setupBrowser();
+    let rejectNormal: ((error: Error) => void) | undefined;
+    browser.fetch.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectNormal = reject;
+        }),
+    );
+    const posthog = await import("./posthog");
+
+    await posthog.initPostHog();
+    posthog.capturePostHog("normal-event");
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(browser.fetch).toHaveBeenCalledTimes(1);
+
+    browser.windowListeners.get("pagehide")?.();
+    expect(browser.sendBeacon).toHaveBeenCalledOnce();
+    const beacon = browser.sendBeacon.mock.calls[0]?.[1] as Blob;
+    const payload = JSON.parse(await beacon.text());
+    expect(payload.batch.map((event: { event: string }) => event.event)).toEqual(["$pageleave"]);
+
+    rejectNormal?.(new Error("normal send rejected during unload"));
+    await Promise.resolve();
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(browser.fetch).toHaveBeenCalledTimes(2);
+    const retry = browser.fetch.mock.calls[1]?.[1] as RequestInit;
+    const retryPayload = JSON.parse(String(retry.body));
+    expect(retryPayload.batch.map((event: { event: string }) => event.event)).toEqual([
+      "normal-event",
+    ]);
   });
 });
