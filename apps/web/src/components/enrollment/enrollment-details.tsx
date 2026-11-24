@@ -102,23 +102,33 @@ export function EnrollmentDetails(props: {
     setSaving(true);
     setError(null);
 
-    const result = await submitPublicEnrollmentAnswers(props.id, {
-      code: props.code || undefined,
-      serial: serial().trim(),
-      name: name().trim() || undefined,
-      assetTag: assetTag().trim() || undefined,
-      answers: answers(),
-    });
+    const trimmedName = name().trim();
+    const trimmedAssetTag = assetTag().trim();
 
-    setSaving(false);
+    try {
+      // Server-function arguments travel as JSON, which cannot carry
+      // `undefined`, so absent optionals are omitted rather than set.
+      const result = await submitPublicEnrollmentAnswers(props.id, {
+        serial: serial().trim(),
+        answers: answers(),
+        ...(props.code ? { code: props.code } : {}),
+        ...(trimmedName ? { name: trimmedName } : {}),
+        ...(trimmedAssetTag ? { assetTag: trimmedAssetTag } : {}),
+      });
 
-    if (!result.ok) {
-      setError(result.message);
+      if (!result.ok) {
+        setError(result.message);
 
-      return;
+        return;
+      }
+
+      props.onSaved();
+    } catch {
+      // A failed server call must never leave the form stuck on "Saving…".
+      setError("Enrollment is temporarily unavailable. Try again shortly.");
+    } finally {
+      setSaving(false);
     }
-
-    props.onSaved();
   };
 
   return (

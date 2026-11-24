@@ -35,6 +35,7 @@ describe("enrollment password progressive enhancement", () => {
         id: "enrollment-password",
         name: "code",
         autocomplete: "off",
+        class: "h-12 pr-12",
         required: true,
       }),
     );
@@ -42,6 +43,9 @@ describe("enrollment password progressive enhancement", () => {
     expect(html).toContain('type="password"');
     expect(html).toContain('name="code"');
     expect(html).toContain("required");
+    // The reveal control and its padding must not drop the caller's sizing.
+    expect(html).toContain("h-12");
+    expect(html).toContain("pr-12");
     expect(html).not.toContain("Show password");
     expect(html).not.toContain("<button");
   });

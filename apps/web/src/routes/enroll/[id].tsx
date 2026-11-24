@@ -180,7 +180,6 @@ function EnrollPage(props: { id: string; code: string }) {
                 class="mx-auto max-w-sm space-y-4"
                 method="get"
                 action={"/enroll/" + encodeURIComponent(props.id)}
-                aria-labelledby="enrollment-password-label"
               >
                 <div class="flex items-start gap-3 rounded-xl border border-border bg-card p-3">
                   <KeyRound class="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
@@ -189,9 +188,7 @@ function EnrollPage(props: { id: string; code: string }) {
                   </p>
                 </div>
                 <div class="space-y-1.5">
-                  <Label id="enrollment-password-label" for="enrollment-password">
-                    Enrollment password
-                  </Label>
+                  <Label for="enrollment-password">Enrollment password</Label>
                   <EnrollmentPasswordInput
                     id="enrollment-password"
                     name="code"

@@ -32,12 +32,7 @@ export function EnrollmentNotice(props: {
   action?: { href: string; label: string };
 }) {
   const tone = () => noticeTone[props.tone ?? "info"];
-  const Icon = () =>
-    props.tone === "danger" || props.tone === "warning" ? (
-      <CircleAlert class={`size-5 shrink-0 ${tone().icon}`} />
-    ) : (
-      <Info class={`size-5 shrink-0 ${tone().icon}`} />
-    );
+  const urgent = () => props.tone === "danger" || props.tone === "warning";
 
   return (
     <div
@@ -46,7 +41,12 @@ export function EnrollmentNotice(props: {
       class={`rounded-xl border p-4 ${tone().container}`}
     >
       <div class="flex items-start gap-3">
-        <Icon />
+        <Show
+          when={urgent()}
+          fallback={<Info class={`size-5 shrink-0 ${tone().icon}`} aria-hidden="true" />}
+        >
+          <CircleAlert class={`size-5 shrink-0 ${tone().icon}`} aria-hidden="true" />
+        </Show>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-foreground">{props.title}</p>
           <p class="mt-1 text-sm leading-6 text-muted-foreground">{props.message}</p>
