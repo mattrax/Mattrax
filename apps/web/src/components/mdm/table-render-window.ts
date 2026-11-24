@@ -17,6 +17,12 @@ export const shouldVirtualizeTableRows = (rowCount: number) =>
 export const shouldVirtualizeTableColumns = (columnCount: number) =>
   columnCount > TABLE_COLUMN_VIRTUALIZATION_THRESHOLD;
 
+export const getTableLeadingColumnCount = (state: {
+  selectable: boolean;
+  rowNumbers: boolean;
+  rowNumbersVisible: boolean;
+}) => (state.selectable ? 1 : 0) + (state.rowNumbers && state.rowNumbersVisible ? 1 : 0);
+
 export type TableRenderWindow = {
   readonly start: number;
   readonly end: number;

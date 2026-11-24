@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyRangeSelection } from "~/lib/table-selection";
 import {
+  getTableLeadingColumnCount,
   getTableRenderWindow,
   shouldVirtualizeTableColumns,
   shouldVirtualizeTableRows,
@@ -130,6 +131,32 @@ describe("shouldVirtualizeTableColumns", () => {
     expect(shouldVirtualizeTableColumns(8)).toBe(false);
     expect(shouldVirtualizeTableColumns(12)).toBe(false);
     expect(shouldVirtualizeTableColumns(13)).toBe(true);
+  });
+});
+
+describe("getTableLeadingColumnCount", () => {
+  it("matches the exposed leading columns at desktop and phone widths", () => {
+    expect(
+      getTableLeadingColumnCount({
+        selectable: true,
+        rowNumbers: true,
+        rowNumbersVisible: true,
+      }),
+    ).toBe(2);
+    expect(
+      getTableLeadingColumnCount({
+        selectable: true,
+        rowNumbers: true,
+        rowNumbersVisible: false,
+      }),
+    ).toBe(1);
+    expect(
+      getTableLeadingColumnCount({
+        selectable: false,
+        rowNumbers: true,
+        rowNumbersVisible: false,
+      }),
+    ).toBe(0);
   });
 });
 

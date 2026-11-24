@@ -45,6 +45,7 @@ import {
   TABLE_MAX_VIEWPORT_HEIGHT,
   TABLE_ROW_HEIGHT,
   getTableRenderWindow,
+  getTableLeadingColumnCount,
   shouldVirtualizeTableColumns,
   shouldVirtualizeTableRows,
 } from "./table-render-window";
@@ -181,6 +182,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   // The server cannot see the platform; keep the SSR hint stable ("CtrlF")
   // and switch to the Mac glyph after hydration so both trees match.
   const [modKey, setModKey] = createSignal("Ctrl");
+  const [rowNumbersVisible, setRowNumbersVisible] = createSignal(true);
 
   const [hidden, setHidden] = createSignal<Record<string, boolean>>(
     readTableColumnVisibility(props.storageKey),
@@ -208,6 +210,16 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
   const serverMode = () => props.mode === "server";
   const selectable = () => props.selectable ?? true;
+  const rowNumberColumn = () => (props.rowNumbers ?? true) && rowNumbersVisible();
+
+  onSettled(() => {
+    const media = window.matchMedia("(min-width: 640px)");
+    const update = () => setRowNumbersVisible(media.matches);
+
+    update();
+    media.addEventListener("change", update);
+    onCleanup(() => media.removeEventListener("change", update));
+  });
 
   /** Client tables can still hand search to the parent (to reuse its filter). */
   const parentSearch = () =>
@@ -344,7 +356,12 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const renderedColumns = createMemo(() =>
     visibleColumns().slice(columnWindow().start, columnWindow().end),
   );
-  const leadingColumnCount = () => (selectable() ? 1 : 0) + ((props.rowNumbers ?? true) ? 1 : 0);
+  const leadingColumnCount = () =>
+    getTableLeadingColumnCount({
+      selectable: selectable(),
+      rowNumbers: props.rowNumbers ?? true,
+      rowNumbersVisible: rowNumbersVisible(),
+    });
   const columnCount = () => leadingColumnCount() + visibleColumns().length;
   const renderedColumnCount = () =>
     leadingColumnCount() +
@@ -635,7 +652,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       const element = rowRefs.get(target.id);
 
       if (!element) return;
-      element.focus({ preventScroll: true });
+      element.focus({ preventScroll: virtualized() });
       setPendingRowFocus(null);
     },
   );
@@ -698,6 +715,33 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   // Keyboard focus stays on a single row so the table is one tab stop, the
   // roving-tabindex pattern.
 
+  const rowWindowAt = (top: number) =>
+    virtualized()
+      ? getTableRenderWindow({
+          rowCount: rows().length,
+          offsets: rowOffsets(),
+          scrollTop: top,
+          viewportHeight: Math.max(1, viewportHeight() - TABLE_HEADER_HEIGHT),
+          focusIndex: activeRow(),
+        })
+      : { start: 0, end: rows().length, top: 0, bottom: 0 };
+
+  const preserveFocusForScroll = (top: number) => {
+    if (typeof document === "undefined" || !viewportRef) return;
+
+    const active = activeRow();
+    const row = active >= 0 ? rows()[active] : undefined;
+    const element = row ? rowRefs.get(row.id) : undefined;
+    const window = rowWindowAt(top);
+
+    if (
+      element?.contains(document.activeElement) &&
+      (active < window.start || active >= window.end)
+    ) {
+      viewportRef.focus({ preventScroll: true });
+    }
+  };
+
   const revealRow = (index: number) => {
     if (!virtualized() || !viewportRef) return;
 
@@ -722,6 +766,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     setScrollTop(nextTop);
   };
 
+  const activateRow = (index: number) => {
+    if (!rows()[index]) return;
+
+    setActiveRow(index);
+    setPendingRowFocus(index);
+    revealRow(index);
+  };
+
   const moveRow = (event: KeyboardEvent, index: number, row: T) => {
     if (!props.rowHref || event.defaultPrevented || event.isComposing) return;
 
@@ -733,9 +785,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         Math.min(rows().length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
       );
 
-      setActiveRow(next);
-      setPendingRowFocus(next);
-      revealRow(next);
+      activateRow(next);
 
       return;
     }
@@ -744,6 +794,32 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       event.preventDefault();
       navigate(props.rowHref(row));
     }
+  };
+
+  const onViewportKeyDown = (event: KeyboardEvent) => {
+    if (
+      event.target !== event.currentTarget ||
+      event.defaultPrevented ||
+      event.isComposing ||
+      !props.rowHref ||
+      rows().length === 0
+    )
+      return;
+
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+
+    const window = renderWindow();
+    const active = activeRow();
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const next =
+      active >= window.start && active < window.end
+        ? Math.max(0, Math.min(rows().length - 1, active + direction))
+        : direction > 0
+          ? window.start
+          : window.end - 1;
+
+    activateRow(next);
   };
 
   const onTableKeyDown = (event: KeyboardEvent) => {
@@ -770,7 +846,12 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       const target = event.target;
       const inSearch = target instanceof Node && Boolean(searchRef?.contains(target));
 
-      if (!inSearch && !(target instanceof Node && tableRef?.contains(target))) return;
+      if (
+        !inSearch &&
+        !(target instanceof Node && tableRef?.contains(target)) &&
+        !(target instanceof Node && viewportRef?.contains(target))
+      )
+        return;
 
       if (!search() && selectedCount() === 0) return;
 
@@ -1248,321 +1329,350 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         }
       >
         <div class="relative" aria-busy={props.loading || props.isFetching ? "true" : undefined}>
-          {/* oxlint-disable jsx-a11y/no-noninteractive-tabindex -- Overflow regions need keyboard scrolling access. */}
-          <div
-            ref={(element) => {
-              viewportRef = element;
-              setViewportHeight(element.clientHeight);
-              setViewportWidth(element.clientWidth);
-              setScrollTop(0);
-              setScrollLeft(0);
-              latestScrollTop = 0;
-              latestScrollLeft = 0;
-              viewportResizeObserver?.disconnect();
-
-              if (typeof ResizeObserver !== "undefined") {
-                viewportResizeObserver = new ResizeObserver((entries) => {
-                  const size = entries[0]?.contentRect;
-
-                  if (size?.height) setViewportHeight(size.height);
-                  if (size?.width) setViewportWidth(size.width);
-                });
-                viewportResizeObserver.observe(element);
-              }
-
-              onCleanup(() => {
-                viewportResizeObserver?.disconnect();
-                viewportResizeObserver = undefined;
-                viewportRef = undefined;
-              });
-            }}
-            role="region"
-            aria-labelledby={captionId}
-            tabindex={0}
-            data-virtualized={virtualized() ? "true" : undefined}
-            data-columns-virtualized={columnsVirtualized() ? "true" : undefined}
-            style={
-              virtualized()
-                ? ({
-                    "max-block-size": `min(65vh, ${TABLE_MAX_VIEWPORT_HEIGHT}px)`,
-                  } as JSX.CSSProperties)
-                : undefined
-            }
-            class={cn(
-              "page-enter overflow-x-auto rounded-xl border border-border bg-card shadow-card outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
-              virtualized() && "overflow-y-auto",
-            )}
-            onScroll={(event) => {
-              latestScrollTop = event.currentTarget.scrollTop;
-              latestScrollLeft = event.currentTarget.scrollLeft;
-
-              if (scrollFrame !== undefined || typeof requestAnimationFrame === "undefined") return;
-              scrollFrame = requestAnimationFrame(() => {
-                scrollFrame = undefined;
-                setScrollTop(latestScrollTop);
-                setScrollLeft(latestScrollLeft);
-              });
-            }}
-          >
+          <div class="page-enter overflow-hidden rounded-xl border border-border bg-card shadow-card">
             <p class="border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground sm:hidden">
               Swipe the table sideways to see more columns.
             </p>
-            {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Rows carry the roving tabindex; the table delegates their arrow/Enter keys. */}
-            <table
+            {/* oxlint-disable jsx-a11y/no-noninteractive-tabindex -- Overflow regions need keyboard scrolling access. */}
+            {/* oxlint-disable jsx-a11y/no-noninteractive-element-interactions -- The scroll region resumes row navigation after wheel scrolling unmounts the focused row. */}
+            <div
               ref={(element) => {
-                tableRef = element;
+                viewportRef = element;
+                setViewportHeight(element.clientHeight);
+                setViewportWidth(element.clientWidth);
+                setScrollTop(0);
+                setScrollLeft(0);
+                latestScrollTop = 0;
+                latestScrollLeft = 0;
+                viewportResizeObserver?.disconnect();
+
+                if (typeof ResizeObserver !== "undefined") {
+                  viewportResizeObserver = new ResizeObserver((entries) => {
+                    const size = entries[0]?.contentRect;
+
+                    if (size?.height) setViewportHeight(size.height);
+                    if (size?.width) setViewportWidth(size.width);
+                  });
+                  viewportResizeObserver.observe(element);
+                }
+
+                onCleanup(() => {
+                  viewportResizeObserver?.disconnect();
+                  viewportResizeObserver = undefined;
+                  viewportRef = undefined;
+                });
               }}
-              class="w-full caption-bottom border-separate border-spacing-0 text-[12.5px]"
-              aria-rowcount={rows().length + 1}
-              aria-colcount={columnCount()}
-              onKeyDown={onTableKeyDown}
-              onFocusIn={() => {
-                setTableFocused(true);
-              }}
-              onFocusOut={(event) => {
-                if (
-                  !tableRef?.contains(
-                    event.relatedTarget instanceof Node ? event.relatedTarget : null,
-                  )
-                )
-                  setTableFocused(false);
+              role="region"
+              aria-labelledby={captionId}
+              tabindex={0}
+              data-virtualized={virtualized() ? "true" : undefined}
+              data-columns-virtualized={columnsVirtualized() ? "true" : undefined}
+              style={
+                virtualized()
+                  ? ({
+                      "max-block-size": `min(65vh, ${TABLE_MAX_VIEWPORT_HEIGHT}px)`,
+                    } as JSX.CSSProperties)
+                  : undefined
+              }
+              class={cn(
+                "overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                virtualized() && "overflow-y-auto",
+              )}
+              onKeyDown={onViewportKeyDown}
+              onScroll={(event) => {
+                latestScrollTop = event.currentTarget.scrollTop;
+                latestScrollLeft = event.currentTarget.scrollLeft;
+
+                if (scrollFrame !== undefined || typeof requestAnimationFrame === "undefined")
+                  return;
+                scrollFrame = requestAnimationFrame(() => {
+                  scrollFrame = undefined;
+                  preserveFocusForScroll(latestScrollTop);
+                  setScrollTop(latestScrollTop);
+                  setScrollLeft(latestScrollLeft);
+                });
               }}
             >
-              <caption id={captionId} class="sr-only">
-                {props.caption ?? "Data table"}
-              </caption>
-              <thead class="sticky top-0 z-20 bg-surface text-left">
-                <tr class="border-b border-border">
-                  <Show when={selectable()}>
-                    <th scope="col" class="h-8 w-10 pl-4 pr-0">
-                      <input
-                        ref={(el) => (selectAllRef = el)}
-                        type="checkbox"
-                        class="size-3.5 accent-[var(--primary)]"
-                        checked={allSelected()}
-                        onChange={toggleAll}
-                        aria-label={
-                          allMatching()
-                            ? `Deselect all ${props.total ?? 0} matching rows`
-                            : `Select all ${rows().length} rows on this page`
-                        }
-                      />
-                    </th>
-                  </Show>
-                  <Show when={props.rowNumbers ?? true}>
-                    <th
-                      scope="col"
-                      class="label-caps hidden h-8 w-8 pl-2 pr-1 text-right align-middle sm:table-cell"
-                    >
-                      <span class="sr-only">Row</span>
-                      <span aria-hidden="true">#</span>
-                    </th>
-                  </Show>
-                  <Show when={columnWindow().top > 0}>
-                    <th
-                      aria-hidden="true"
-                      data-column-spacer="left"
-                      style={{ width: `${columnWindow().top}px`, padding: 0, border: 0 }}
-                    />
-                  </Show>
-                  <For each={renderedColumns()}>
-                    {(col, index) => {
-                      const columnIndex = () => columnWindow().start + index();
-                      const label = () => (
-                        <span class="inline-flex items-center gap-1.5 whitespace-nowrap">
-                          <Show when={col.icon}>
-                            {(icon) => icon()({ class: "size-3 text-subtle-foreground" })}
-                          </Show>
-                          {col.header}
-                        </span>
-                      );
-
-                      return (
-                        <th
-                          ref={(element) => {
-                            columnRefs.set(col.id, element);
-                            observeColumn(element);
-
-                            onCleanup(() => {
-                              columnResizeObserver?.unobserve(element);
-                              if (columnRefs.get(col.id) === element) columnRefs.delete(col.id);
-                            });
-                          }}
-                          data-column-id={col.id}
-                          scope="col"
-                          aria-colindex={leadingColumnCount() + columnIndex() + 1}
-                          aria-sort={
-                            sort()?.id === sortColumnId(col)
-                              ? sort()!.dir === "asc"
-                                ? "ascending"
-                                : "descending"
-                              : undefined
+              {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Rows carry the roving tabindex; the table delegates their arrow/Enter keys. */}
+              <table
+                ref={(element) => {
+                  tableRef = element;
+                }}
+                class="w-full caption-bottom border-separate border-spacing-0 text-[12.5px]"
+                aria-rowcount={rows().length + 1}
+                aria-colcount={columnCount()}
+                onKeyDown={onTableKeyDown}
+                onFocusIn={() => {
+                  setTableFocused(true);
+                }}
+                onFocusOut={(event) => {
+                  if (
+                    !tableRef?.contains(
+                      event.relatedTarget instanceof Node ? event.relatedTarget : null,
+                    )
+                  )
+                    setTableFocused(false);
+                }}
+              >
+                <caption id={captionId} class="sr-only">
+                  {props.caption ?? "Data table"}
+                </caption>
+                <thead class="sticky top-0 z-20 bg-surface text-left">
+                  <tr>
+                    <Show when={selectable()}>
+                      <th
+                        scope="col"
+                        aria-colindex={1}
+                        class="h-8 w-10 border-b border-border pl-4 pr-0"
+                      >
+                        <input
+                          ref={(el) => (selectAllRef = el)}
+                          type="checkbox"
+                          class="size-3.5 accent-[var(--primary)]"
+                          checked={allSelected()}
+                          onChange={toggleAll}
+                          aria-label={
+                            allMatching()
+                              ? `Deselect all ${props.total ?? 0} matching rows`
+                              : `Select all ${rows().length} rows on this page`
                           }
-                          class={cn(
-                            "label-caps h-8 whitespace-nowrap px-3 text-left align-middle",
-                            col.class,
-                          )}
-                        >
-                          <Show when={col.sort} fallback={label()}>
-                            {(() => {
-                              const sorted = () => sort()?.id === sortColumnId(col);
-                              const ascending = () => sort()?.dir === "asc";
+                        />
+                      </th>
+                    </Show>
+                    <Show when={rowNumberColumn()}>
+                      <th
+                        scope="col"
+                        aria-colindex={selectable() ? 2 : 1}
+                        class="label-caps h-8 w-8 border-b border-border pl-2 pr-1 text-right align-middle"
+                      >
+                        <span class="sr-only">Row</span>
+                        <span aria-hidden="true">#</span>
+                      </th>
+                    </Show>
+                    <Show when={columnWindow().top > 0}>
+                      <th
+                        aria-hidden="true"
+                        data-column-spacer="left"
+                        style={{ width: `${columnWindow().top}px`, padding: 0, border: 0 }}
+                      />
+                    </Show>
+                    <For each={renderedColumns()}>
+                      {(col, index) => {
+                        const columnIndex = () => columnWindow().start + index();
+                        const label = () => (
+                          <span class="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <Show when={col.icon}>
+                              {(icon) => icon()({ class: "size-3 text-subtle-foreground" })}
+                            </Show>
+                            {col.header}
+                          </span>
+                        );
 
-                              return (
-                                <button
-                                  type="button"
-                                  class="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.085em] outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
-                                  onClick={() => toggleSort(sortColumnId(col))}
-                                >
-                                  {label()}
-                                  <Show
-                                    when={sorted()}
-                                    fallback={
-                                      <ChevronsUpDown
-                                        class="size-3 text-subtle-foreground/70"
+                        return (
+                          <th
+                            ref={(element) => {
+                              columnRefs.set(col.id, element);
+                              observeColumn(element);
+
+                              onCleanup(() => {
+                                columnResizeObserver?.unobserve(element);
+                                if (columnRefs.get(col.id) === element) columnRefs.delete(col.id);
+                              });
+                            }}
+                            data-column-id={col.id}
+                            scope="col"
+                            aria-colindex={leadingColumnCount() + columnIndex() + 1}
+                            aria-sort={
+                              sort()?.id === sortColumnId(col)
+                                ? sort()!.dir === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : undefined
+                            }
+                            class={cn(
+                              "label-caps h-8 whitespace-nowrap border-b border-border px-3 text-left align-middle",
+                              col.class,
+                            )}
+                          >
+                            <Show when={col.sort} fallback={label()}>
+                              {(() => {
+                                const sorted = () => sort()?.id === sortColumnId(col);
+                                const ascending = () => sort()?.dir === "asc";
+
+                                return (
+                                  <button
+                                    type="button"
+                                    class="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.085em] outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                                    onClick={() => toggleSort(sortColumnId(col))}
+                                  >
+                                    {label()}
+                                    <Show
+                                      when={sorted()}
+                                      fallback={
+                                        <ChevronsUpDown
+                                          class="size-3 text-subtle-foreground/70"
+                                          aria-hidden="true"
+                                        />
+                                      }
+                                    >
+                                      <ChevronDown
+                                        class={cn(
+                                          "size-3 text-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
+                                          ascending() && "rotate-180",
+                                        )}
                                         aria-hidden="true"
                                       />
-                                    }
-                                  >
-                                    <ChevronDown
-                                      class={cn(
-                                        "size-3 text-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
-                                        ascending() && "rotate-180",
-                                      )}
-                                      aria-hidden="true"
-                                    />
-                                  </Show>
-                                </button>
-                              );
-                            })()}
+                                    </Show>
+                                  </button>
+                                );
+                              })()}
+                            </Show>
+                          </th>
+                        );
+                      }}
+                    </For>
+                    <Show when={columnWindow().bottom > 0}>
+                      <th
+                        aria-hidden="true"
+                        data-column-spacer="right"
+                        style={{ width: `${columnWindow().bottom}px`, padding: 0, border: 0 }}
+                      />
+                    </Show>
+                  </tr>
+                </thead>
+                <tbody
+                  class={cn(
+                    "transition-opacity duration-150 ease-swift",
+                    props.isFetching && "opacity-60",
+                  )}
+                >
+                  <Show when={renderWindow().top > 0}>
+                    <tr
+                      aria-hidden="true"
+                      data-table-spacer="top"
+                      style={{ height: `${renderWindow().top}px`, padding: 0, border: 0 }}
+                    >
+                      <td colspan={renderedColumnCount()} style={{ padding: 0, border: 0 }} />
+                    </tr>
+                  </Show>
+                  <For each={renderedRows()}>
+                    {(row, index) => {
+                      const rowIndex = () => renderWindow().start + index();
+                      const rowSeparator = () => (rowIndex() > 0 ? "border-t border-border" : "");
+
+                      return (
+                        <tr
+                          ref={(element) => {
+                            rowRefs.set(row.id, element);
+                            observeRow(element);
+
+                            onCleanup(() => {
+                              rowResizeObserver?.unobserve(element);
+                              if (rowRefs.get(row.id) === element) rowRefs.delete(row.id);
+                            });
+                          }}
+                          data-row-id={row.id}
+                          data-row-index={rowIndex()}
+                          aria-rowindex={rowIndex() + 2}
+                          tabindex={
+                            props.rowHref ? (tabRowIndex() === rowIndex() ? 0 : -1) : undefined
+                          }
+                          onFocus={() => setActiveRow(rowIndex())}
+                          onKeyDown={(event) => moveRow(event, rowIndex(), row)}
+                          class={cn(
+                            "relative h-9 outline-none transition-colors duration-100 ease-swift hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                            props.rowHref && "cursor-pointer active:bg-active",
+                            isSelected(row.id) && "bg-surface",
+                          )}
+                        >
+                          <Show when={selectable()}>
+                            <td
+                              aria-colindex={1}
+                              class={cn(
+                                "relative z-10 h-9 w-10 pl-4 pr-0 align-middle",
+                                rowSeparator(),
+                              )}
+                            >
+                              <input
+                                type="checkbox"
+                                class="size-3.5 accent-[var(--primary)]"
+                                checked={isSelected(row.id)}
+                                // The click/keydown capture the modifier because a
+                                // `change` event carries no shiftKey. Click fires
+                                // before change, and a Shift+Space activation produces
+                                // the same click.
+                                onClick={(event) => {
+                                  rangeGesture = event.shiftKey;
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === " " || event.key === "Enter")
+                                    rangeGesture = event.shiftKey;
+                                }}
+                                onChange={(e) => toggleRow(row, e.currentTarget.checked)}
+                                aria-label={`Select ${row.name ?? row.id} (Shift-click to select a range)`}
+                              />
+                            </td>
                           </Show>
-                        </th>
+                          <Show when={rowNumberColumn()}>
+                            <td
+                              aria-colindex={selectable() ? 2 : 1}
+                              class={cn(
+                                "h-9 w-8 select-none pl-2 pr-1 text-right align-middle text-[11px] tabular-nums text-subtle-foreground",
+                                rowSeparator(),
+                              )}
+                            >
+                              {(props.rowNumberStart ?? 0) + rowIndex() + 1}
+                            </td>
+                          </Show>
+                          <Show when={columnWindow().top > 0}>
+                            <td
+                              aria-hidden="true"
+                              data-column-spacer="left"
+                              style={{ width: `${columnWindow().top}px`, padding: 0, border: 0 }}
+                            />
+                          </Show>
+                          <For each={renderedColumns()}>
+                            {(col, index) => (
+                              <td
+                                aria-colindex={
+                                  leadingColumnCount() + columnWindow().start + index() + 1
+                                }
+                                class={cn(
+                                  "h-9 whitespace-nowrap px-3 align-middle",
+                                  rowSeparator(),
+                                  col.class,
+                                )}
+                              >
+                                {col.cell(row)}
+                              </td>
+                            )}
+                          </For>
+                          <Show when={columnWindow().bottom > 0}>
+                            <td
+                              aria-hidden="true"
+                              data-column-spacer="right"
+                              style={{ width: `${columnWindow().bottom}px`, padding: 0, border: 0 }}
+                            />
+                          </Show>
+                        </tr>
                       );
                     }}
                   </For>
-                  <Show when={columnWindow().bottom > 0}>
-                    <th
+                  <Show when={renderWindow().bottom > 0}>
+                    <tr
                       aria-hidden="true"
-                      data-column-spacer="right"
-                      style={{ width: `${columnWindow().bottom}px`, padding: 0, border: 0 }}
-                    />
+                      data-table-spacer="bottom"
+                      style={{ height: `${renderWindow().bottom}px`, padding: 0, border: 0 }}
+                    >
+                      <td colspan={renderedColumnCount()} style={{ padding: 0, border: 0 }} />
+                    </tr>
                   </Show>
-                </tr>
-              </thead>
-              <tbody
-                class={cn(
-                  "divide-y divide-border transition-opacity duration-150 ease-swift",
-                  props.isFetching && "opacity-60",
-                )}
-              >
-                <Show when={renderWindow().top > 0}>
-                  <tr
-                    aria-hidden="true"
-                    data-table-spacer="top"
-                    style={{ height: `${renderWindow().top}px`, padding: 0, border: 0 }}
-                  >
-                    <td colspan={renderedColumnCount()} style={{ padding: 0, border: 0 }} />
-                  </tr>
-                </Show>
-                <For each={renderedRows()}>
-                  {(row, index) => {
-                    const rowIndex = () => renderWindow().start + index();
-
-                    return (
-                      <tr
-                        ref={(element) => {
-                          rowRefs.set(row.id, element);
-                          observeRow(element);
-
-                          onCleanup(() => {
-                            rowResizeObserver?.unobserve(element);
-                            if (rowRefs.get(row.id) === element) rowRefs.delete(row.id);
-                          });
-                        }}
-                        data-row-id={row.id}
-                        data-row-index={rowIndex()}
-                        aria-rowindex={rowIndex() + 2}
-                        tabindex={
-                          props.rowHref ? (tabRowIndex() === rowIndex() ? 0 : -1) : undefined
-                        }
-                        onFocus={() => setActiveRow(rowIndex())}
-                        onKeyDown={(event) => moveRow(event, rowIndex(), row)}
-                        class={cn(
-                          "relative h-9 outline-none transition-colors duration-100 ease-swift hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
-                          props.rowHref && "cursor-pointer active:bg-active",
-                          isSelected(row.id) && "bg-surface",
-                        )}
-                      >
-                        <Show when={selectable()}>
-                          <td class="relative z-10 h-9 w-10 pl-4 pr-0 align-middle">
-                            <input
-                              type="checkbox"
-                              class="size-3.5 accent-[var(--primary)]"
-                              checked={isSelected(row.id)}
-                              // The click/keydown capture the modifier because a
-                              // `change` event carries no shiftKey. Click fires
-                              // before change, and a Shift+Space activation produces
-                              // the same click.
-                              onClick={(event) => {
-                                rangeGesture = event.shiftKey;
-                              }}
-                              onKeyDown={(event) => {
-                                if (event.key === " " || event.key === "Enter")
-                                  rangeGesture = event.shiftKey;
-                              }}
-                              onChange={(e) => toggleRow(row, e.currentTarget.checked)}
-                              aria-label={`Select ${row.name ?? row.id} (Shift-click to select a range)`}
-                            />
-                          </td>
-                        </Show>
-                        <Show when={props.rowNumbers ?? true}>
-                          <td class="hidden h-9 w-8 select-none pl-2 pr-1 text-right align-middle text-[11px] tabular-nums text-subtle-foreground sm:table-cell">
-                            {(props.rowNumberStart ?? 0) + rowIndex() + 1}
-                          </td>
-                        </Show>
-                        <Show when={columnWindow().top > 0}>
-                          <td
-                            aria-hidden="true"
-                            data-column-spacer="left"
-                            style={{ width: `${columnWindow().top}px`, padding: 0, border: 0 }}
-                          />
-                        </Show>
-                        <For each={renderedColumns()}>
-                          {(col, index) => (
-                            <td
-                              aria-colindex={
-                                leadingColumnCount() + columnWindow().start + index() + 1
-                              }
-                              class={cn("h-9 whitespace-nowrap px-3 align-middle", col.class)}
-                            >
-                              {col.cell(row)}
-                            </td>
-                          )}
-                        </For>
-                        <Show when={columnWindow().bottom > 0}>
-                          <td
-                            aria-hidden="true"
-                            data-column-spacer="right"
-                            style={{ width: `${columnWindow().bottom}px`, padding: 0, border: 0 }}
-                          />
-                        </Show>
-                      </tr>
-                    );
-                  }}
-                </For>
-                <Show when={renderWindow().bottom > 0}>
-                  <tr
-                    aria-hidden="true"
-                    data-table-spacer="bottom"
-                    style={{ height: `${renderWindow().bottom}px`, padding: 0, border: 0 }}
-                  >
-                    <td colspan={renderedColumnCount()} style={{ padding: 0, border: 0 }} />
-                  </tr>
-                </Show>
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
+            {/* oxlint-enable jsx-a11y/no-noninteractive-tabindex */}
+            {/* oxlint-enable jsx-a11y/no-noninteractive-element-interactions */}
           </div>
-          {/* oxlint-enable jsx-a11y/no-noninteractive-tabindex */}
           <span
             class="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-xl bg-gradient-to-l from-card to-transparent sm:hidden"
             aria-hidden="true"
