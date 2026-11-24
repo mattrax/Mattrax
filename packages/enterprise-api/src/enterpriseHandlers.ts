@@ -419,7 +419,12 @@ import {
   windowsMsiUninstallPayload,
 } from "@mattrax/enterprise-backend";
 import type { AutopilotProfileValues } from "@mattrax/enterprise-backend";
-import { parseAppleApplicationConfiguration, validateConfiguration } from "@mattrax/mdm-apple";
+import {
+  parseAppleApplicationConfiguration,
+  prepareCertificateConfiguration,
+  validateConfiguration,
+} from "@mattrax/mdm-apple";
+import { parseCertificateConfigurationKind } from "@mattrax/enterprise-domain";
 import { serializePlist } from "@mattrax/plist";
 import {
   appleByodBlockers,
@@ -2863,6 +2868,10 @@ export const createEnterpriseService = ({
     readonly entries: ReadonlyArray<readonly [string, Schema.Json]>;
     readonly scopeFor: (kind: string) => "device" | "user";
     readonly escrowCertificateFingerprintSha256: string | null;
+    /** Existing kinds on the policy plus the ones being written. */
+    readonly configurationKinds?: ReadonlyArray<string>;
+    /** Final delivery scope per kind, for cross-kind S/MIME validation. */
+    readonly configurationScopes?: Readonly<Record<string, "device" | "user">>;
   }) =>
     Effect.gen(function* () {
       if (input.entries.length === 0) return;
@@ -2880,6 +2889,8 @@ export const createEnterpriseService = ({
         yield* validateConfiguration(kind, configuration, {
           escrowCertificateFingerprintSha256: input.escrowCertificateFingerprintSha256,
           scope,
+          configurationKinds: input.configurationKinds,
+          configurationScopes: input.configurationScopes,
         }).pipe(Effect.mapError((message) => new EnterpriseBadRequest({ message })));
 
         const variableProblem = policyConfigurationVariableProblem(configuration, attributeKeys);
@@ -2939,6 +2950,109 @@ export const createEnterpriseService = ({
             }),
           );
       }
+    });
+
+  /**
+   * Split certificate configurations into public metadata and sealed material.
+   *
+   * A PFX upload is huge and secret, so it must never reach `configuration.data`.
+   * The prepared entry is what the transaction writes: the sanitised JSON plus
+   * an optional sealed material row. An update that reuses the stored PFX has
+   * `material: null` and keeps the existing row.
+   */
+  type PreparedCertificateMaterial = {
+    readonly sealedPfx: string;
+    readonly sealedPassword: string;
+    readonly fileName: string | null;
+    readonly certificatePem: string;
+    readonly subject: string;
+    readonly notAfter: Date;
+    readonly fingerprintSha256: string;
+    readonly materialSha256: string;
+  };
+
+  const preparePolicyConfigurations = (input: {
+    readonly policyId: string;
+    readonly entries: ReadonlyArray<readonly [string, Schema.Json]>;
+    readonly scopeFor: (kind: string) => "device" | "user";
+    readonly authSecret: string;
+  }) =>
+    Effect.gen(function* () {
+      const prepared: Array<{
+        readonly kind: string;
+        readonly data: Schema.Json;
+        readonly scope: "device" | "user";
+        readonly material: PreparedCertificateMaterial | null;
+      }> = [];
+
+      for (const [kind, data] of input.entries) {
+        const parsed = parseCertificateConfigurationKind(kind);
+        const scope = input.scopeFor(kind);
+
+        if (!parsed || parsed.type === "trusted-root") {
+          prepared.push({ kind, data, scope, material: null });
+          continue;
+        }
+
+        if (!input.authSecret)
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message:
+                "Certificate material cannot be sealed because this deployment has no AUTH_SECRET.",
+            }),
+          );
+
+        const result = yield* Effect.promise(() =>
+          prepareCertificateConfiguration({ kind, data, authSecret: input.authSecret }),
+        );
+
+        if (!result.ok)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: result.message }));
+
+        const object = Option.getOrUndefined(
+          Schema.decodeUnknownOption(Schema.JsonObject)(result.data),
+        );
+        let scoped =
+          parsed.platform === "windows" && object ? { ...object, channel: scope } : result.data;
+
+        if (!result.material) {
+          const [existing] = yield* db
+            .select()
+            .from(schema.policyCertificateMaterial)
+            .where(
+              and(
+                eq(schema.policyCertificateMaterial.policyId, input.policyId),
+                eq(schema.policyCertificateMaterial.kind, kind),
+              ),
+            )
+            .limit(1);
+
+          if (!existing)
+            return yield* Effect.fail(
+              new EnterpriseBadRequest({
+                message: `"${kind}" has no certificate material. Upload the PFX and its leaf certificate the first time the configuration is saved.`,
+              }),
+            );
+
+          // Metadata is derived from the sealed material, never from the
+          // client, so an edit cannot claim a subject/fingerprint the stored
+          // PFX does not contain.
+          scoped = {
+            ...(object ?? {}),
+            certificatePem: existing.certificatePem,
+            subject: existing.subject,
+            notAfter: existing.notAfter.toISOString(),
+            fingerprintSha256: existing.fingerprintSha256,
+            materialSha256: existing.materialSha256,
+            ...(existing.fileName ? { fileName: existing.fileName } : {}),
+            ...(parsed.platform === "windows" ? { channel: scope } : {}),
+          };
+        }
+
+        prepared.push({ kind, data: scoped, scope, material: result.material });
+      }
+
+      return prepared;
     });
 
   /**
@@ -12307,6 +12421,8 @@ export const createEnterpriseService = ({
             yield* validateConfiguration(kind, configuration, {
               escrowCertificateFingerprintSha256: null,
               scope,
+              configurationKinds: Object.keys(configurations),
+              configurationScopes: policy.configurationScopes,
             }).pipe(
               Effect.mapError(
                 (message) =>
@@ -24517,6 +24633,79 @@ export const createEnterpriseService = ({
           { concurrency: "unbounded" },
         );
 
+        const inventoryCertificates = Schema.is(Schema.Array(Schema.Json))(device.managedCertificates)
+          ? device.managedCertificates.flatMap((entry) => {
+              if (!Schema.is(Schema.JsonObject)(entry)) return [];
+              const identifier = entry["identifier"];
+              const subject = entry["subject"];
+
+              if (!Schema.is(Schema.String)(identifier) || !Schema.is(Schema.String)(subject))
+                return [];
+
+              return [
+                {
+                  identifier,
+                  subject,
+                  isIdentity: entry["isIdentity"] === true,
+                  fingerprintSha256: Schema.is(Schema.String)(entry["fingerprintSha256"])
+                    ? entry["fingerprintSha256"]
+                    : null,
+                  notAfter: Schema.is(Schema.String)(entry["notAfter"])
+                    ? entry["notAfter"]
+                    : null,
+                  source: "apple-inventory" as const,
+                },
+              ];
+            })
+          : [];
+
+        // The effective policy names the certificate kinds in scope. Their
+        // sealed material's public leaf metadata is the only certificate
+        // inventory Windows has, and it is useful on Apple before the device's
+        // first status report.
+        const effective = yield* resolveEffectivePolicyForDevice(db, device, {
+          // Windows has no per-login channel, so user-scoped certificate
+          // profiles are delivered to (and shown for) the machine.
+          includeUserScoped: device.proto === "win",
+        });
+        const devicePlatform =
+          device.proto === "win" ? "windows" : device.proto === "android" ? "android" : "apple";
+        const certificateConfigurations = effective.configurations.filter((configuration) => {
+          const parsed = parseCertificateConfigurationKind(configuration.kind);
+
+          return parsed?.platform === devicePlatform;
+        });
+        const materialRows =
+          certificateConfigurations.length > 0
+            ? yield* db
+                .select()
+                .from(schema.policyCertificateMaterial)
+                .where(
+                  and(
+                    eq(schema.policyCertificateMaterial.organizationId, ctx.organization.id),
+                    inArray(
+                      schema.policyCertificateMaterial.policyId,
+                      [...new Set(certificateConfigurations.map((entry) => entry.policyId))],
+                    ),
+                  ),
+                )
+            : [];
+        const materialKinds = new Set(
+          certificateConfigurations.map((entry) => `${entry.policyId}\u0000${entry.kind}`),
+        );
+        const policyCertificates = materialRows
+          .filter((row) => materialKinds.has(`${row.policyId}\u0000${row.kind}`))
+          .map((row) => ({
+            identifier: row.fingerprintSha256,
+            subject: row.subject,
+            isIdentity: parseCertificateConfigurationKind(row.kind)?.type !== "trusted-root",
+            fingerprintSha256: row.fingerprintSha256,
+            notAfter: row.notAfter.toISOString(),
+            source: "policy-material" as const,
+            policyId: row.policyId,
+            kind: row.kind,
+          }));
+
         return {
           health: normalizeDeviceHealth(
             rowDeviceHealth(device, declarations, apple?.awaitingConfiguration ?? null, {
@@ -24527,6 +24716,18 @@ export const createEnterpriseService = ({
           ),
           declarations: declarations.map(rowDeclaration),
           certificates: certificates.map(rowCertificate),
+          managedCertificates: [
+            ...inventoryCertificates,
+            ...certificates.map((certificate) => ({
+              identifier: certificate.serial,
+              subject: "SCEP identity",
+              isIdentity: true,
+              fingerprintSha256: null,
+              notAfter: certificate.notAfter.toISOString(),
+              source: "scep" as const,
+            })),
+            ...policyCertificates,
+          ],
           push: rowPushInfo(apple),
           windows: device.proto === "win" ? rowWindowsSecurity(device) : null,
         };
@@ -26393,6 +26594,15 @@ export const createEnterpriseService = ({
           configurations.length > 0 ? yield* tenantEscrowFingerprint(ctx.organization.id) : null;
 
         const policyId = id();
+        const prepared = yield* preparePolicyConfigurations({
+          policyId,
+          entries: configurations,
+          scopeFor,
+          authSecret: authSecret ?? "",
+        });
+
+        if (prepared.some((entry) => entry.material))
+          yield* requireStepUp(auth, request, "certificate-upload");
 
         // Validate before the insert: a rejected kind must not leave an empty
         // policy behind, and an import saves the policy and its settings as one
@@ -26400,9 +26610,13 @@ export const createEnterpriseService = ({
         yield* validatePolicyConfigurations({
           organizationId: ctx.organization.id,
           policyId,
-          entries: configurations,
+          entries: prepared.map((entry) => [entry.kind, entry.data] as const),
           scopeFor,
           escrowCertificateFingerprintSha256: escrowFingerprint,
+          configurationKinds: prepared.map((entry) => entry.kind),
+          configurationScopes: Object.fromEntries(
+            prepared.map((entry) => [entry.kind, entry.scope]),
+          ),
         });
 
         yield* db.transaction((tx) =>
@@ -26418,24 +26632,55 @@ export const createEnterpriseService = ({
               updatedAt: now(),
             });
 
-            if (configurations.length > 0)
+            if (prepared.length > 0)
               yield* tx.insert(schema.configuration).values(
                 yield* Effect.all(
-                  configurations.map(([kind, data]) =>
-                    Effect.map(hashJson(data), (hash) => ({
+                  prepared.map((entry) =>
+                    Effect.map(hashJson(entry.data), (hash) => ({
                       policyId,
-                      kind,
-                      scope: scopeFor(kind),
-                      data,
+                      kind: entry.kind,
+                      scope: entry.scope,
+                      data: entry.data,
                       hash,
                     })),
                   ),
                 ),
               );
+
+            for (const entry of prepared) {
+              if (!entry.material) continue;
+
+              yield* tx.insert(schema.policyCertificateMaterial).values({
+                kind: entry.kind,
+                policyId,
+                organizationId: ctx.organization.id,
+                sealedPfx: entry.material.sealedPfx,
+                sealedPassword: entry.material.sealedPassword,
+                fileName: entry.material.fileName,
+                certificatePem: entry.material.certificatePem,
+                subject: entry.material.subject,
+                notAfter: entry.material.notAfter,
+                fingerprintSha256: entry.material.fingerprintSha256,
+                materialSha256: entry.material.materialSha256,
+                createdAt: now(),
+                updatedAt: now(),
+              });
+            }
           }),
         );
 
         yield* tagNewResource(ctx, db, "policy", policyId);
+
+        for (const entry of prepared) {
+          if (!entry.material) continue;
+
+          yield* audit(ctx, "policy.certificate_uploaded", "policy", policyId, {
+            kind: entry.kind,
+            subject: entry.material.subject,
+            fingerprintSha256: entry.material.fingerprintSha256,
+            notAfter: entry.material.notAfter.toISOString(),
+          });
+        }
         yield* audit(ctx, "policy.created", "policy", policyId, {
           name: body.name,
           ...(body.enabled === false ? { enabled: false } : {}),
@@ -26556,17 +26801,69 @@ export const createEnterpriseService = ({
             ? (existingScopes.get(kind) ?? "device")
             : (body.configurationScopes[kind] ?? "device");
 
-        // Validate the whole patch before mutating anything so a bad
-        // configuration cannot leave the policy half-updated.
-        yield* validatePolicyConfigurations({
-          organizationId: ctx.organization.id,
+        const prepared = yield* preparePolicyConfigurations({
           policyId,
           entries: configurations.flatMap(([kind, data]) =>
             data === null ? [] : [[kind, data] as const],
           ),
           scopeFor,
-          escrowCertificateFingerprintSha256: escrowFingerprint,
+          authSecret: authSecret ?? "",
         });
+
+        if (prepared.some((entry) => entry.material))
+          yield* requireStepUp(auth, request, "certificate-upload");
+
+        // Validate the whole patch before mutating anything so a bad
+        // configuration cannot leave the policy half-updated.
+        const finalKinds = [
+          ...new Set([...existingScopes.keys(), ...prepared.map((entry) => entry.kind)]),
+        ].filter((kind) => !configurations.some(([removed, data]) => removed === kind && data === null));
+        const finalScopes = Object.fromEntries(
+          finalKinds.map((kind) => [kind, scopeFor(kind)]),
+        );
+
+        yield* validatePolicyConfigurations({
+          organizationId: ctx.organization.id,
+          policyId,
+          entries: prepared.map((entry) => [entry.kind, entry.data] as const),
+          scopeFor,
+          escrowCertificateFingerprintSha256: escrowFingerprint,
+          configurationKinds: finalKinds,
+          configurationScopes: finalScopes,
+        });
+
+        // A certificate kind that is deleted or moved between channels can
+        // invalidate an existing S/MIME mail profile that references it. Those
+        // files are not being written, so validate them against the final set.
+        const preparedKinds = new Set(prepared.map((entry) => entry.kind));
+        const existingMailConfigurations = yield* db
+          .select({
+            kind: schema.configuration.kind,
+            data: schema.configuration.data,
+          })
+          .from(schema.configuration)
+          .where(
+            and(
+              eq(schema.configuration.policyId, policyId),
+              like(schema.configuration.kind, "mttx.apple.mail.%"),
+            ),
+          );
+
+        for (const mail of existingMailConfigurations) {
+          if (preparedKinds.has(mail.kind)) continue;
+          const configuration = Option.getOrUndefined(
+            Schema.decodeUnknownOption(Schema.Json)(mail.data),
+          );
+
+          if (configuration === undefined) continue;
+
+          yield* validateConfiguration(mail.kind, configuration, {
+            escrowCertificateFingerprintSha256: escrowFingerprint,
+            scope: scopeFor(mail.kind),
+            configurationKinds: finalKinds,
+            configurationScopes: finalScopes,
+          }).pipe(Effect.mapError((message) => new EnterpriseBadRequest({ message })));
+        }
 
         // The row write and every configuration write commit together. The
         // row is locked while its version is compared, so a concurrent edit
@@ -26616,14 +26913,80 @@ export const createEnterpriseService = ({
                       eq(schema.configuration.kind, kind),
                     ),
                   );
-              } else {
-                const hash = yield* hashJson(data);
-                const scope = scopeFor(kind);
-
                 yield* tx
-                  .insert(schema.configuration)
-                  .values({ policyId, kind, scope, data, hash })
-                  .onDuplicateKeyUpdate({ set: { data, hash, scope } });
+                  .delete(schema.policyCertificateMaterial)
+                  .where(
+                    and(
+                      eq(schema.policyCertificateMaterial.policyId, policyId),
+                      eq(schema.policyCertificateMaterial.kind, kind),
+                    ),
+                  );
+              }
+            }
+
+            for (const entry of prepared) {
+              const hash = yield* hashJson(entry.data);
+
+              yield* tx
+                .insert(schema.configuration)
+                .values({
+                  policyId,
+                  kind: entry.kind,
+                  scope: entry.scope,
+                  data: entry.data,
+                  hash,
+                })
+                .onDuplicateKeyUpdate({ set: { data: entry.data, hash, scope: entry.scope } });
+
+              if (!entry.material) continue;
+
+              const [existingMaterial] = yield* tx
+                .select({ kind: schema.policyCertificateMaterial.kind })
+                .from(schema.policyCertificateMaterial)
+                .where(
+                  and(
+                    eq(schema.policyCertificateMaterial.policyId, policyId),
+                    eq(schema.policyCertificateMaterial.kind, entry.kind),
+                  ),
+                )
+                .limit(1);
+
+              if (existingMaterial) {
+                yield* tx
+                  .update(schema.policyCertificateMaterial)
+                  .set({
+                    sealedPfx: entry.material.sealedPfx,
+                    sealedPassword: entry.material.sealedPassword,
+                    fileName: entry.material.fileName,
+                    certificatePem: entry.material.certificatePem,
+                    subject: entry.material.subject,
+                    notAfter: entry.material.notAfter,
+                    fingerprintSha256: entry.material.fingerprintSha256,
+                    materialSha256: entry.material.materialSha256,
+                    updatedAt: now(),
+                  })
+                  .where(
+                    and(
+                      eq(schema.policyCertificateMaterial.policyId, policyId),
+                      eq(schema.policyCertificateMaterial.kind, entry.kind),
+                    ),
+                  );
+              } else {
+                yield* tx.insert(schema.policyCertificateMaterial).values({
+                  kind: entry.kind,
+                  policyId,
+                  organizationId: ctx.organization.id,
+                  sealedPfx: entry.material.sealedPfx,
+                  sealedPassword: entry.material.sealedPassword,
+                  fileName: entry.material.fileName,
+                  certificatePem: entry.material.certificatePem,
+                  subject: entry.material.subject,
+                  notAfter: entry.material.notAfter,
+                  fingerprintSha256: entry.material.fingerprintSha256,
+                  materialSha256: entry.material.materialSha256,
+                  createdAt: now(),
+                  updatedAt: now(),
+                });
               }
             }
 
@@ -26654,6 +27017,17 @@ export const createEnterpriseService = ({
         const affectedDevices = yield* applePush.deviceIdsInPolicies([policyId]);
         yield* pushPolicyDevices(ctx.organization.id, { policyId }, affectedDevices);
         yield* syncAndroidDevices(ctx.organization.id, affectedDevices);
+        for (const entry of prepared) {
+          if (!entry.material) continue;
+
+          yield* audit(ctx, "policy.certificate_uploaded", "policy", policyId, {
+            kind: entry.kind,
+            subject: entry.material.subject,
+            fingerprintSha256: entry.material.fingerprintSha256,
+            notAfter: entry.material.notAfter.toISOString(),
+          });
+        }
+
         yield* audit(ctx, "policy.updated", "policy", policyId, {
           fields: Object.keys(body).filter((field) => field !== "expectedUpdatedAt"),
           ...(body.enabled === undefined ? {} : { enabled: body.enabled }),
@@ -27087,6 +27461,39 @@ export const createEnterpriseService = ({
         const entries = Object.entries(snapshot).filter(
           ([kind]) => kind !== POLICY_SNAPSHOT_SCOPES_KEY && kind !== POLICY_SNAPSHOT_ENABLED_KEY,
         );
+
+        // Material rows are not versioned with the configuration snapshot. A
+        // rollback that claims an old certificate would leave the current PFX
+        // in place and silently deliver the wrong identity, so refuse it.
+        const identityEntries = entries.filter(([kind]) =>
+          parseCertificateConfigurationKind(kind),
+        );
+
+        if (identityEntries.length > 0) {
+          const materialRows = yield* db
+            .select()
+            .from(schema.policyCertificateMaterial)
+            .where(eq(schema.policyCertificateMaterial.policyId, policyId));
+          const materialByKind = new Map(materialRows.map((row) => [row.kind, row]));
+
+          for (const [kind, data] of identityEntries) {
+            const parsed = parseCertificateConfigurationKind(kind);
+
+            if (!parsed || parsed.type === "trusted-root") continue;
+            const material = materialByKind.get(kind);
+            const wanted = Schema.is(Schema.JsonObject)(data)
+              ? data["materialSha256"]
+              : undefined;
+
+            if (material && wanted === material.materialSha256) continue;
+
+            return yield* Effect.fail(
+              new EnterpriseConflict({
+                message: `Cannot roll back "${kind}": its certificate material has changed since this version. Upload the PFX for this version before rolling back.`,
+              }),
+            );
+          }
+        }
 
         if (entries.length > 0)
           yield* db.insert(schema.configuration).values(
@@ -30441,6 +30848,25 @@ export const createEnterpriseService = ({
             })),
           );
         yield* copyResourceTags(ctx, db, "policy", policyId, newId);
+
+        // Certificate material stays sealed under the same deployment secret,
+        // so a duplicate copies the ciphertext instead of asking for the PFX
+        // again (or silently producing a policy that cannot deliver).
+        const certificateMaterials = yield* db
+          .select()
+          .from(schema.policyCertificateMaterial)
+          .where(eq(schema.policyCertificateMaterial.policyId, policyId));
+
+        if (certificateMaterials.length)
+          yield* db.insert(schema.policyCertificateMaterial).values(
+            certificateMaterials.map((material) => ({
+              ...material,
+              policyId: newId,
+              organizationId: ctx.organization.id,
+              createdAt: now(),
+              updatedAt: now(),
+            })),
+          );
         yield* audit(ctx, "policy.duplicated", "policy", newId, { sourceId: policyId });
         yield* snapshotPolicy(ctx, newId);
 

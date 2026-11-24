@@ -354,6 +354,46 @@ for a token service the server does not support.
 - There is no published CRL or OCSP endpoint. Revocation is enforced at renewal and on
   mTLS check-in.
 
+### Certificate profiles (trusted root, PKCS, imported PFX)
+
+SCEP issues the device identity. Other certificates — Wi-Fi/VPN client identities and
+S/MIME — are separate policy profiles:
+
+| Kind                          | Delivery                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `mttx.apple.certificate.<id>` | `com.apple.asset.credential.certificate` + `security.certificate` declaration (macOS 14/iOS 17+), or `com.apple.security.pkcs1` on legacy devices |
+| `mttx.apple.pkcs.<id>`        | `com.apple.asset.credential.identity` + `security.identity` declaration, or `com.apple.security.pkcs12` on legacy devices |
+| `mttx.apple.pfx.<id>`         | Same identity path as PKCS, without CA/template metadata                  |
+| `mttx.apple.mail.<id>`        | `account.mail` declaration with S/MIME identity references, or `com.apple.mail.managed` |
+
+The trusted root must be delivered before the issued certificate is useful. Apple has no
+on-device PKCS/NDES client: a PKCS profile records how the CA issued the certificate
+(CA, template, subject format, key usage, validity, renewal threshold) and delivers the
+PKCS#12 that the operator's enterprise connector produced. Mattrax does not call the CA
+or issue per-device certificates. Imported PFX is for an existing PKCS#12, including a
+shared S/MIME decryption identity.
+
+The PFX and password are sealed with `AUTH_SECRET` and never appear in policy JSON, API
+responses, deployment snapshots or tenant exports. Legacy delivery embeds them in a
+`com.apple.security.pkcs12` profile, so the `InstallProfile` command payload is sealed in
+`device_command` as well and only opened when the command is handed to the device or when
+installed-profile reconciliation reads command history. Upload
+the leaf certificate alongside the PFX; Mattrax parses the PKCS#12, verifies the password
+and requires the leaf's fingerprint to match, and metadata always comes from the PFX. The
+same PKCS#12 is delivered to every device/user in scope.
+
+User-scoped identities use the DDM user channel. Legacy delivery has no user channel, so a
+user-scoped identity is not installed on a pre-DDM device. S/MIME on a DDM mail account
+with password authentication needs a credentials asset Mattrax does not create; that
+combination is reported as unsupported. Apple defines `account.mail` S/MIME only on iOS 17+,
+so a macOS declaration omits the `SMIME` dictionary.
+
+Identity assets are private keys, not public roots. The asset endpoint requires the signed
+per-device token and re-resolves the device's effective policy before serving the JSON
+credential; a tenant mTLS certificate alone is accepted only for non-secret certificate
+assets. A token for an unassigned or unenrolled device, another tenant's device, or an
+expired link is refused.
+
 ## APNs
 
 Apple push is per tenant.

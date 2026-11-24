@@ -34,6 +34,7 @@ export const STEP_UP_ACTIONS = [
   "tenant-mfa-policy",
   "scep-ca-rotate",
   "scep-ca-import",
+  "certificate-upload",
   "passkey-enroll",
   "passkey-remove",
 ] as const;

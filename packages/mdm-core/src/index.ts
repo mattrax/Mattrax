@@ -2,6 +2,8 @@ export * from "./applicationAssignments.js";
 
 export * from "./applications.js";
 
+export * from "./certificateProfiles.js";
+
 export * from "./audit.js";
 
 export * from "./backgroundDelivery.js";
@@ -28,6 +30,7 @@ export * from "./localAccounts.js";
 
 export * from "./lostMode.js";
 
+export * from "./policyCertificateStore.js";
 export * from "./policyResolution.js";
 
 export * from "./policyResolutionStore.js";

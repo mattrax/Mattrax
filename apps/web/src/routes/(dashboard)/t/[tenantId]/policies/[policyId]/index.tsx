@@ -1,7 +1,11 @@
 import { useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH, PolicyRow } from "@mattrax/enterprise-domain/client";
+import {
+  APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  PolicyRow,
+  certificateRenewalDueAt,
+} from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import {
@@ -183,8 +187,47 @@ const describe = (kind: string, data: Schema.Json | undefined) => {
 
   if (isString(record.pem))
     return {
-      title: "Certificate",
-      subtitle: "PEM certificate attached to this policy",
+      title: kindLabel(kind),
+      subtitle: "Trusted root certificate attached to this policy",
+      collections: [],
+      platforms: [platformForKind(kind)],
+    };
+
+  if (isString(record.materialSha256)) {
+    const renewal = isString(record.notAfter)
+      ? certificateRenewalDueAt(record.notAfter, {
+          validityDays: typeof record.validityDays === "number" ? record.validityDays : null,
+          renewalThresholdPercent:
+            typeof record.renewalThresholdPercent === "number"
+              ? record.renewalThresholdPercent
+              : null,
+        })
+      : null;
+
+    return {
+      title: kindLabel(kind),
+      subtitle: [
+        isString(record.subject) ? record.subject : "Certificate identity",
+        isString(record.notAfter)
+          ? `expires ${new Date(record.notAfter).toLocaleDateString()}`
+          : null,
+        renewal ? `renewal due ${renewal.toLocaleDateString()}` : null,
+        isString(record.template) ? `template ${record.template}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      collections: [],
+      platforms: [platformForKind(kind)],
+    };
+  }
+
+  if (isRecord(record.incoming))
+    return {
+      title: kindLabel(kind),
+      subtitle: [
+        isString(record.visibleName) ? record.visibleName : "Mail account",
+        isRecord(record.smime) ? "S/MIME configured" : "S/MIME off",
+      ].join(" · "),
       collections: [],
       platforms: ["apple"],
     };
@@ -230,7 +273,18 @@ const textareaClass =
 const kindLabel = (kind: string) => {
   if (kind === "mttx.apple.device") return "Device restrictions";
 
-  if (kind.startsWith("mttx.apple.certificate")) return "Certificate";
+  if (kind.startsWith("mttx.apple.certificate") || kind.startsWith("mttx.windows.certificate"))
+    return "Trusted root certificate";
+
+  if (kind.startsWith("mttx.android.certificate")) return "Android trusted root";
+
+  if (kind.startsWith("mttx.apple.pkcs") || kind.startsWith("mttx.windows.pkcs"))
+    return "PKCS certificate";
+
+  if (kind.startsWith("mttx.apple.pfx") || kind.startsWith("mttx.windows.pfx"))
+    return "Imported PFX certificate";
+
+  if (kind.startsWith("mttx.apple.mail")) return "Mail account (S/MIME)";
 
   if (kind === "mttx.apple.lockScreenMessage") return "Lock screen message";
 

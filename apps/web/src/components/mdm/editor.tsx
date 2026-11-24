@@ -19,6 +19,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ChevronDown } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
+import { CertificateEditor, MailEditor } from "~/components/mdm/policy-certificates";
 import { StaleWriteBanner } from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
 import { chord, useCommands } from "~/lib/commands";
@@ -39,7 +40,6 @@ import { decodePolicyConfiguration, decodePolicyConfigurationOrEmpty } from "~/l
 import type { PolicyConfiguration } from "~/lib/policy-config";
 
 const keys = {
-  cert: "mttx.apple.certificate.default",
   app: "mttx.apple.application.default",
   custom: "mttx.apple.custom.default",
   device: "mttx.apple.device",
@@ -51,8 +51,6 @@ const CustomProfile = Schema.Struct({
   fileName: Schema.optional(Schema.String),
   signed: Schema.optional(Schema.Boolean),
 });
-
-const CertificateConfig = Schema.Struct({ pem: Schema.optional(Schema.String) });
 
 const DeviceConfig = Schema.Struct({ camera: Schema.optional(Schema.Boolean) });
 
@@ -68,7 +66,6 @@ const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
 
 const decodeCustomProfile = Schema.decodeUnknownOption(CustomProfile);
 
-const decodeCertificate = Schema.decodeUnknownOption(CertificateConfig);
 
 const decodeDeviceConfig = Schema.decodeUnknownOption(DeviceConfig);
 
@@ -88,7 +85,8 @@ const APPLE_RESTRICTIONS_DOCS = appleDocumentationUrl({
 
 const sections = [
   { id: "custom", label: "Profiles", hint: "mobileconfig" },
-  { id: "security", label: "Certificates", hint: "PEM" },
+  { id: "security", label: "Certificates", hint: "PKCS/PFX" },
+  { id: "mail", label: "Mail", hint: "S/MIME" },
   { id: "device", label: "Restrictions", hint: "Apple" },
   { id: "windows", label: "Windows", hint: "OMA-URI" },
   { id: "raw", label: "JSON", hint: "Raw" },
@@ -398,7 +396,10 @@ export function PolicyConfigurationEditor() {
           <fieldset disabled={!canEdit()} class="min-w-0 space-y-5 disabled:opacity-70">
             <Switch>
               <Match when={active() === "security"}>
-                <SecuritySection config={config()} setKey={setKey} />
+                <CertificateEditor config={config()} setKey={setKey} />
+              </Match>
+              <Match when={active() === "mail"}>
+                <MailEditor config={config()} setKey={setKey} />
               </Match>
               <Match when={active() === "device"}>
                 <DeviceSection config={config()} setKey={setKey} />
@@ -505,6 +506,8 @@ function activeTitle(active: string) {
 
   if (active === "raw") return "JSON";
 
+  if (active === "mail") return "Mail account";
+
   return "Certificates";
 }
 
@@ -518,7 +521,9 @@ function sectionDescription(active: string) {
 
   if (active === "raw") return "The full configuration map, with a delivery scope per setting.";
 
-  return "Certificates attached to this policy.";
+  if (active === "mail") return "An Apple Mail account with S/MIME signing and encryption.";
+
+  return "Trusted roots, PKCS and imported PFX identities for Apple, Windows and Android.";
 }
 
 function EditorNav(props: {
@@ -595,54 +600,6 @@ function ScopeSelect(props: {
   );
 }
 
-function SecuritySection(props: {
-  config: PolicyConfiguration;
-  setKey: (key: string, value: Schema.Json) => void;
-}) {
-  const cert = () => Option.getOrUndefined(decodeCertificate(props.config[keys.cert]));
-
-  const uploadCert = async () =>
-    props.setKey(keys.cert, {
-      pem: await (
-        await selectFile(".pem,text/plain,application/pem,application/x-pem-file")
-      ).text(),
-    });
-
-  return (
-    <Show
-      when={cert()}
-      fallback={
-        <div class="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5">
-          <p class="text-[12.5px] text-muted-foreground">
-            Upload a PEM certificate for this policy.
-          </p>
-          <Button onClick={uploadCert}>Upload certificate</Button>
-        </div>
-      }
-    >
-      {(value) => (
-        <div class="space-y-3">
-          <p class="text-[11.5px] leading-relaxed text-muted-foreground">
-            Certificates are device-channel credentials. User-scoped certificate delivery is not
-            implemented, so this configuration is always device scope.
-          </p>
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="text-[12.5px] text-muted-foreground">A PEM certificate is configured.</p>
-            <div class="flex gap-2">
-              <Button onClick={uploadCert}>Replace</Button>
-              <Button variant="outline" onClick={() => props.setKey(keys.cert, null)}>
-                Remove
-              </Button>
-            </div>
-          </div>
-          <pre class="max-h-64 overflow-auto rounded-lg border border-border bg-muted/20 p-3 font-mono text-[11px] leading-relaxed text-foreground/90">
-            {value().pem}
-          </pre>
-        </div>
-      )}
-    </Show>
-  );
-}
 
 function DeviceSection(props: {
   config: PolicyConfiguration;

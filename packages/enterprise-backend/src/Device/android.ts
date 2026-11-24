@@ -1543,7 +1543,11 @@ const compileEffectiveAndroidPolicy = (input: {
     );
 
     const configurations: Array<AndroidPolicyConfiguration> = effective.configurations.map(
-      (configuration) => ({ kind: configuration.kind, data: configuration.data }),
+      (configuration) => ({
+        kind: configuration.kind,
+        data: configuration.data,
+        policyId: configuration.policyId,
+      }),
     );
 
     // The tenant OS policy is rendered as a systemUpdate fragment rather than

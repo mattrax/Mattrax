@@ -27,6 +27,7 @@ import {
   index,
   int,
   json,
+  mediumtext,
   mysqlTable,
   primaryKey,
   text,
@@ -2509,6 +2510,12 @@ export const device = mysqlTable(
     /** Number of certificates in the last `security.certificate.list` report. */
     managedCertificateCount: int("managed_certificate_count"),
     /**
+     * Managed certificates from the last `security.certificate.list` report:
+     * identifier, subject, identity flag, SHA-256 fingerprint and expiry. The
+     * status item is a full list, so a report replaces this value.
+     */
+    managedCertificates: json("managed_certificates"),
+    /**
      * Apps from the last `mdm.app` report (MDM-installed apps only; DDM-managed
      * apps are excluded by Apple). Bounded by the ingester.
      */
@@ -4307,6 +4314,47 @@ export const configuration = mysqlTable(
   ],
 );
 
+/**
+ * Sealed PKCS#12 material for a policy's certificate configuration.
+ *
+ * The PFX and its password never live in `configuration.data`: that JSON is
+ * returned by the API, copied into deployment snapshots and included in tenant
+ * exports. Both secrets are AES-256-GCM sealed with `AUTH_SECRET` here and only
+ * opened while building a device payload.
+ */
+export const policyCertificateMaterial = mysqlTable(
+  "policy_certificate_material",
+  {
+    kind: shortText("kind").notNull(),
+    policyId: id("policy_id")
+      .notNull()
+      .references(() => policy.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Sealed base64 PKCS#12 bytes; uploads are capped at 5 MB. */
+    sealedPfx: mediumtext("sealed_pfx").notNull(),
+    /** Sealed PFX password; empty string is sealed as a value too. */
+    sealedPassword: text("sealed_password").notNull(),
+    fileName: shortText("file_name"),
+    /** Public leaf certificate PEM, used for expiry, renewal and the device page. */
+    certificatePem: mediumtext("certificate_pem").notNull(),
+    subject: shortText("subject").notNull(),
+    notAfter: timestamp("not_after").notNull(),
+    /** Lowercase hex SHA-256 of the leaf certificate DER. */
+    fingerprintSha256: varchar("fingerprint_sha256", { length: 64 }).notNull(),
+    /** Lowercase hex SHA-256 of the PFX bytes; changes the configuration hash. */
+    materialSha256: varchar("material_sha256", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.kind, table.policyId] }),
+    index("policy_certificate_material_org_idx").on(table.organizationId, table.notAfter),
+    index("policy_certificate_material_policy_idx").on(table.policyId),
+  ],
+);
+
 /** Immutable policy configuration snapshots for history and rollback. */
 export const policyDeployment = mysqlTable(
   "policy_deployment",
@@ -5444,6 +5492,7 @@ export const relations = defineRelations(
     deviceViewDefault,
     policy,
     policyDeployment,
+    policyCertificateMaterial,
     configuration,
     groupDevice,
     groupGroup,
@@ -5878,6 +5927,16 @@ export const relations = defineRelations(
       directDevices: r.many.devicePolicy({ from: r.policy.id, to: r.devicePolicy.policyId }),
       users: r.many.userPolicy({ from: r.policy.id, to: r.userPolicy.policyId }),
       userGroups: r.many.userGroupPolicy({ from: r.policy.id, to: r.userGroupPolicy.policyId }),
+      certificateMaterials: r.many.policyCertificateMaterial({
+        from: r.policy.id,
+        to: r.policyCertificateMaterial.policyId,
+      }),
+    },
+    policyCertificateMaterial: {
+      policy: r.one.policy({
+        from: r.policyCertificateMaterial.policyId,
+        to: r.policy.id,
+      }),
     },
     configuration: {
       policy: r.one.policy({ from: r.configuration.policyId, to: r.policy.id }),

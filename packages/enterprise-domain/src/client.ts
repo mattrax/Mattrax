@@ -57,6 +57,8 @@ export * from "./Cutover.ts";
 
 export * from "./stepUp.ts";
 
+export * from "./certificates.ts";
+
 export * from "./approvals.ts";
 
 export * from "./ssr.ts";

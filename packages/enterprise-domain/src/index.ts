@@ -34,6 +34,8 @@ export * from "./softwareUpdates.ts";
 
 export * from "./osPolicy.ts";
 
+export * from "./certificates.ts";
+
 export * from "./deviceActions.ts";
 export * from "./windowsSecurity.ts";
 

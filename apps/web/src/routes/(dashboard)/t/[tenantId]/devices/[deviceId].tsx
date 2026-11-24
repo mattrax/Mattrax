@@ -3503,6 +3503,71 @@ export default function DeviceDetailPage() {
                           </Show>
                         </div>
 
+                        <Show
+                          when={
+                            (health.data?.managedCertificates ?? []).some(
+                              (certificate) => certificate.source !== "scep",
+                            )
+                          }
+                        >
+                          <div class="space-y-2 border-t border-border pt-3">
+                            <p class="label-caps">Managed certificates</p>
+                            <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                              Apple reports managed certificates and their expiry. Windows has no
+                              certificate inventory, so an entry marked Policy material is what the
+                              policy delivers rather than device evidence.
+                            </p>
+                            <ul class="divide-y divide-border">
+                              <For
+                                each={(health.data?.managedCertificates ?? []).filter(
+                                  (certificate) => certificate.source !== "scep",
+                                )}
+                              >
+                                {(certificate) => (
+                                  <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-[11.5px]">
+                                    <span class="min-w-0 flex-1">
+                                      <span class="block truncate font-medium text-foreground">
+                                        {certificate.subject}
+                                      </span>
+                                      <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
+                                        {certificate.identifier}
+                                      </span>
+                                    </span>
+                                    <span class="flex flex-wrap items-center gap-2">
+                                      <Chip
+                                        tone={
+                                          certificate.source === "apple-inventory"
+                                            ? "success"
+                                            : "muted"
+                                        }
+                                      >
+                                        {certificate.source === "apple-inventory"
+                                          ? "Device"
+                                          : "Policy material"}
+                                      </Chip>
+                                      <Chip tone="muted">
+                                        {certificate.isIdentity ? "identity" : "certificate"}
+                                      </Chip>
+                                      <Show when={certificate.notAfter}>
+                                        {(notAfter) => (
+                                          <>
+                                            <span class="text-muted-foreground">
+                                              expires {formatDate(notAfter())}
+                                            </span>
+                                            <Chip tone={certificateTone(notAfter(), false)}>
+                                              {certificateDaysLabel(notAfter())}
+                                            </Chip>
+                                          </>
+                                        )}
+                                      </Show>
+                                    </span>
+                                  </li>
+                                )}
+                              </For>
+                            </ul>
+                          </div>
+                        </Show>
+
                         <Show when={row()!.proto === "apple" && health.data?.push}>
                           <div class="space-y-2 border-t border-border pt-3">
                             <div class="flex flex-wrap items-center justify-between gap-2">
