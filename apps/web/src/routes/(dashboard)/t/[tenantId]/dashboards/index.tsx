@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@mattrax/ui";
 import { Input } from "~/components/ui/input";
+import { ScopeTagSelect } from "~/components/scope-tags/scope-tag-select";
 import {
   ChevronDown,
   Ellipsis,
@@ -96,6 +97,7 @@ export default function DashboardsPage() {
   );
 
   const [name, setName] = createSignal("");
+  const [scopeTags, setScopeTags] = createSignal<Array<string>>([]);
   const [error, setError] = createSignal<string | null>(null);
   const [createOpen, setCreateOpen] = createSignal(false);
   const [filter, setFilter] = createSignal<Filter>("all");
@@ -152,9 +154,25 @@ export default function DashboardsPage() {
 
       return enterprise.createDashboard(params.tenantId, { name: title });
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
+      // Tagging is a second request. If it fails, keep the created resource
+      // and let the detail page's tag editor retry rather than leaving the
+      // form ready to create a duplicate on the next click.
+      if (scopeTags().length > 0) {
+        try {
+          await enterprise.setScopeTagAssignments(params.tenantId, {
+            resourceType: "dashboard",
+            resourceIds: [result.id],
+            tagIds: scopeTags(),
+          });
+        } catch {
+          // The resource exists; its tag editor remains available.
+        }
+      }
+
       setCreateOpen(false);
       setName("");
+      setScopeTags([]);
       setError(null);
       navigate(routes.tenant(params.tenantId).dashboard(result.id, { edit: "1" }));
       void invalidate();
@@ -505,6 +523,11 @@ export default function DashboardsPage() {
               autofocus
             />
           </label>
+          <ScopeTagSelect
+            tenantId={params.tenantId!}
+            value={scopeTags()}
+            onChange={setScopeTags}
+          />
           <Show when={error()}>
             <p role="alert" class="text-[12px] text-destructive">
               {error()}

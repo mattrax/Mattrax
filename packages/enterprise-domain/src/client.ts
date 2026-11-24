@@ -16,6 +16,8 @@ export * from "./Errors.ts";
 
 export * from "./rbac.ts";
 
+export * from "./ScopeTag.ts";
+
 export * from "./branding.ts";
 
 export * from "./webhooks.ts";

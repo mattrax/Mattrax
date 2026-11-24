@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { StaleWriteBanner } from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import {
   ErrorText,
   Field,
@@ -1379,6 +1380,17 @@ export default function ApplicationDetailPage() {
                     </dd>
                   </div>
                 </dl>
+              </Panel>
+
+              <Panel
+                title="Scope tags"
+                description="Limit which delegated administrators can see and change this application."
+              >
+                <ScopeTagAssignmentEditor
+                  tenantId={params.tenantId!}
+                  resourceType="application"
+                  resourceIds={[params.applicationId!]}
+                />
               </Panel>
 
               <Show when={application().platform === "apple" || storefronts().length > 0}>

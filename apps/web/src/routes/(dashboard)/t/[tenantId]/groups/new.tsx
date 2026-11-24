@@ -13,6 +13,7 @@ import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise"
 import type { DynamicGroupKind, DynamicGroupRules } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { AccessDenied, useCan } from "~/lib/permissions";
+import { ScopeTagSelect } from "~/components/scope-tags/scope-tag-select";
 import { queryClient } from "~/lib/query-client";
 
 export const route = {
@@ -40,6 +41,7 @@ export default function NewGroupPage() {
   const [rules, setRules] = createSignal<DynamicGroupRules>({ version: 1 });
   const [devices, setDevices] = createSignal<Set<string>>(new Set());
   const [policies, setPolicies] = createSignal<Set<string>>(new Set());
+  const [scopeTags, setScopeTags] = createSignal<Array<string>>([]);
 
   const deviceList = useQuery(() => enterpriseQueries.list(params.tenantId, "device"));
 
@@ -65,7 +67,25 @@ export default function NewGroupPage() {
         policies: [...policies()],
       }),
     onSuccess: async ({ id }) => {
+      // Tagging is a second request. If it fails, keep the created resource
+      // and let the detail page's tag editor retry rather than leaving the
+      // form ready to create a duplicate on the next click.
+      if (scopeTags().length > 0) {
+        try {
+          await enterprise.setScopeTagAssignments(params.tenantId, {
+            resourceType: "group",
+            resourceIds: [id],
+            tagIds: scopeTags(),
+          });
+        } catch {
+          // The resource exists; its tag editor remains available.
+        }
+      }
+
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "group") });
+      await qc.invalidateQueries({
+        queryKey: enterpriseKeys.scopeTagAssignmentsPrefix(params.tenantId),
+      });
       await qc.invalidateQueries({
         queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, "group"),
       });
@@ -191,6 +211,11 @@ export default function NewGroupPage() {
                   />
                 </div>
               </Show>
+              <ScopeTagSelect
+                tenantId={params.tenantId!}
+                value={scopeTags()}
+                onChange={setScopeTags}
+              />
               <ErrorText error={create.error} />
               <div class="flex flex-wrap items-center gap-2 border-t border-border pt-4">
                 <Button

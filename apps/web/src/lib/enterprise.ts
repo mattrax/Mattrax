@@ -333,7 +333,8 @@ type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["Ente
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceHandover"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseOnboarding"] &
-  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApproval"];
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApproval"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseScopeTag"];
 
 type EnterpriseAccountClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseAccount"];
 
@@ -454,6 +455,18 @@ export const enterpriseKeys = {
   accounts: (tenantId: RouteParam) =>
     ["enterprise", "tenant-accounts", keyTenant(tenantId)] as const,
   roles: (tenantId: RouteParam) => ["enterprise", "tenant-roles", keyTenant(tenantId)] as const,
+  scopeTags: (tenantId: RouteParam) =>
+    ["enterprise", "scope-tags", keyTenant(tenantId)] as const,
+  scopeTagAssignmentsPrefix: (tenantId: RouteParam) =>
+    ["enterprise", "scope-tag-assignments", keyTenant(tenantId)] as const,
+  scopeTagAssignments: (tenantId: RouteParam, resourceType: string, resourceIds?: string) =>
+    [
+      "enterprise",
+      "scope-tag-assignments",
+      keyTenant(tenantId),
+      resourceType,
+      resourceIds ?? "",
+    ] as const,
   approvalPolicies: (tenantId: RouteParam) =>
     ["enterprise", "approval-policies", keyTenant(tenantId)] as const,
   approvalRequests: (tenantId: RouteParam, query: ApprovalRequestQuery = {}) =>
@@ -823,6 +836,7 @@ function endpoint<A, E>(
         ...client.EnterpriseWindows,
         ...client.EnterpriseOnboarding,
         ...client.EnterpriseApproval,
+        ...client.EnterpriseScopeTag,
       })),
     call,
     options,
@@ -3112,7 +3126,12 @@ export const enterprise = {
     ),
   inviteAccount: (
     tenantId: RouteParam,
-    payload: { email: string; role?: string; roleId?: string | null },
+    payload: {
+      email: string;
+      role?: string;
+      roleId?: string | null;
+      scopeTagIds?: ReadonlyArray<string>;
+    },
   ) =>
     endpoint((api) =>
       api.inviteTenantAccount({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
@@ -3201,6 +3220,87 @@ export const enterprise = {
   listRoles: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listTenantRoles({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  listScopeTags: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.listScopeTags({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  createScopeTag: (
+    tenantId: RouteParam,
+    payload: { name: string; description?: string | null },
+  ) =>
+    endpoint((api) =>
+      api.createScopeTag({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  patchScopeTag: (
+    tenantId: RouteParam,
+    tagId: RouteParam,
+    payload: { name?: string; description?: string | null },
+  ) =>
+    endpoint((api) =>
+      api.patchScopeTag({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          tagId: required(tagId, "tagId"),
+        },
+        payload,
+      }),
+    ),
+  deleteScopeTag: (tenantId: RouteParam, tagId: RouteParam) =>
+    endpoint((api) =>
+      api.deleteScopeTag({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          tagId: required(tagId, "tagId"),
+        },
+      }),
+    ),
+  listScopeTagAssignments: (
+    tenantId: RouteParam,
+    resourceType: "device" | "group" | "policy" | "application" | "script" | "dashboard",
+    resourceIds?: ReadonlyArray<string>,
+  ) =>
+    endpoint((api) =>
+      api.listScopeTagAssignments({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query: {
+          resourceType,
+          ...(resourceIds && resourceIds.length > 0
+            ? { resourceIds: resourceIds.join(",") }
+            : {}),
+        },
+      }),
+    ),
+  setScopeTagAssignments: (
+    tenantId: RouteParam,
+    payload: {
+      resourceType: "device" | "group" | "policy" | "application" | "script" | "dashboard";
+      resourceIds: ReadonlyArray<string>;
+      tagIds: ReadonlyArray<string>;
+    },
+  ) =>
+    endpoint((api) =>
+      api.setScopeTagAssignments({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  setMemberScopeTags: (
+    tenantId: RouteParam,
+    accountId: RouteParam,
+    tagIds: ReadonlyArray<string>,
+  ) =>
+    endpoint((api) =>
+      api.setMemberScopeTags({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          accountId: required(accountId, "accountId"),
+        },
+        payload: { tagIds: [...tagIds] },
+      }),
     ),
   listApprovalPolicies: (tenantId: RouteParam) =>
     endpoint((api) =>
@@ -3749,6 +3849,58 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.roles(tenantId),
       queryFn: () => enterprise.listRoles(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  scopeTags: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.scopeTags(tenantId),
+      queryFn: () => enterprise.listScopeTags(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  scopeTagAssignments: (
+    tenantId: RouteParam,
+    resourceType: "device" | "group" | "policy" | "application" | "script" | "dashboard",
+    resourceIds?: ReadonlyArray<string>,
+  ) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.scopeTagAssignments(
+        tenantId,
+        resourceType,
+        resourceIds?.join(","),
+      ),
+      queryFn: async () => {
+        if (!resourceIds || resourceIds.length === 0)
+          return enterprise.listScopeTagAssignments(tenantId, resourceType);
+
+        // The endpoint bounds one query at 200 ids. Merge the chunks so a
+        // select-all-matching editor sees every resource, not just the first
+        // page.
+        const byResource = new Map<string, Array<string>>();
+
+        for (let index = 0; index < resourceIds.length; index += 200) {
+          const page = await enterprise.listScopeTagAssignments(
+            tenantId,
+            resourceType,
+            resourceIds.slice(index, index + 200),
+          );
+
+          for (const assignment of page.assignments) {
+            const tags = byResource.get(assignment.resourceId) ?? [];
+
+            for (const tagId of assignment.tagIds)
+              if (!tags.includes(tagId)) tags.push(tagId);
+            byResource.set(assignment.resourceId, tags);
+          }
+        }
+
+        return {
+          assignments: [...byResource.entries()].map(([resourceId, tagIds]) => ({
+            resourceType,
+            resourceId,
+            tagIds,
+          })),
+        };
+      },
       enabled: Boolean(tenantId),
     }),
   accounts: (tenantId: RouteParam) =>

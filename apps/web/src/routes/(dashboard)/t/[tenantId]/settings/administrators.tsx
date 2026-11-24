@@ -33,6 +33,7 @@ import type {
   TenantRole,
 } from "~/lib/enterprise";
 import { ReadOnlyNotice, useTenantPermissions } from "~/lib/permissions";
+import { ScopeTagBadges, ScopeTagSelect } from "~/components/scope-tags/scope-tag-select";
 import {
   optimisticallyRemoveCollectionItems,
   optimisticallyUpdateCollection,
@@ -250,6 +251,30 @@ export default function AdministratorsSettingsPage() {
     queryFn: () => enterprise.listAccounts(params.tenantId),
   }));
 
+  const [tagTarget, setTagTarget] = createSignal<TenantAccount | null>(null);
+  const [tagSelection, setTagSelection] = createSignal<Array<string>>([]);
+
+  const saveScopeTags = useMutation(() => ({
+    mutationFn: () => {
+      const target = tagTarget();
+
+      if (!target) throw new Error("No administrator selected");
+
+      return enterprise.setMemberScopeTags(
+        params.tenantId,
+        target.accountId,
+        tagSelection(),
+      );
+    },
+    onSuccess: async () => {
+      setTagTarget(null);
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: enterpriseKeys.accounts(params.tenantId) }),
+        qc.invalidateQueries({ queryKey: enterpriseKeys.scopeTags(params.tenantId) }),
+      ]);
+    },
+  }));
+
   const invitations = useQuery(() => ({
     queryKey: enterpriseKeys.invitations(params.tenantId),
     queryFn: () => enterprise.listInvitations(params.tenantId),
@@ -308,6 +333,7 @@ export default function AdministratorsSettingsPage() {
   const unavailableChoices = createMemo(() => roleChoices().filter((choice) => !choice.assignable));
 
   const [email, setEmail] = createSignal("");
+  const [inviteTags, setInviteTags] = createSignal<Array<string>>([]);
   const [role, setRole] = createSignal("builtin:member");
   const [inviteResult, setInviteResult] = createSignal<InviteResult | null>(null);
   const [copied, setCopied] = createSignal<string | null>(null);
@@ -466,6 +492,7 @@ export default function AdministratorsSettingsPage() {
       return enterprise.inviteAccount(params.tenantId, {
         email: email().trim(),
         ...invitation,
+        ...(inviteTags().length > 0 ? { scopeTagIds: inviteTags() } : {}),
       });
     },
     onMutate: async () => {
@@ -493,6 +520,7 @@ export default function AdministratorsSettingsPage() {
       setMintedLinks((current) => ({ ...current, [result.id]: result.inviteUrl }));
       setCopied(null);
       setEmail("");
+      setInviteTags([]);
     },
     onError: (_error, _variables, restore) => restore?.(),
     onSettled: () =>
@@ -997,6 +1025,17 @@ export default function AdministratorsSettingsPage() {
               {invite.isPending ? "Sending…" : "Send invitation"}
             </Button>
           </form>
+          <Show when={can("scope_tags.write")}>
+            <div class="mt-4 border-t border-border pt-4">
+              <ScopeTagSelect
+                tenantId={params.tenantId!}
+                value={inviteTags()}
+                onChange={setInviteTags}
+                legend="Starting scope tags (optional)"
+                hint="An unscoped administrator sees the whole tenant. Add at least one tag to start this invitee with a regional or team scope."
+              />
+            </div>
+          </Show>
           <ErrorText error={invite.error} />
 
           <Show when={invitationOptions.data && !roleChoices().some((choice) => choice.assignable)}>
@@ -1349,6 +1388,32 @@ export default function AdministratorsSettingsPage() {
                       </div>
                     </EntityHoverCard>
                     <div class="flex shrink-0 flex-wrap items-center gap-2">
+                      <div class="flex flex-col items-end gap-1">
+                        <ScopeTagBadges
+                          tenantId={params.tenantId!}
+                          tagIds={account.scopeTagIds ?? []}
+                        />
+                        <Show
+                          when={
+                            can("members.write") &&
+                            can("scope_tags.write") &&
+                            !isBuiltInOwnerUser(account)
+                          }
+                        >
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            class="min-h-8"
+                            onClick={() => {
+                              setTagSelection([...(account.scopeTagIds ?? [])]);
+                              setTagTarget(account);
+                            }}
+                          >
+                            Scope tags
+                          </Button>
+                        </Show>
+                      </div>
                       <Show
                         when={!isSelf() && can("members.write")}
                         fallback={
@@ -1912,6 +1977,51 @@ export default function AdministratorsSettingsPage() {
         pending={cancelOwnershipTransfer.isPending}
         onConfirm={() => cancelOwnershipTransfer.mutate()}
       />
+
+      <Dialog
+        open={tagTarget() !== null}
+        onOpenChange={(open) => {
+          if (!open) setTagTarget(null);
+        }}
+      >
+        <DialogContent class="max-w-lg">
+          <DialogHeader class="gap-1.5">
+            <DialogTitle class="text-[15px] font-semibold">Scope tags</DialogTitle>
+            <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
+              Choose the tagged resources{" "}
+              <span class="font-medium text-foreground">
+                {tagTarget()?.name ?? "this administrator"}
+              </span>{" "}
+              can reach. With no tags they see the whole tenant; with tags they see only resources
+              carrying one of them.
+            </DialogDescription>
+          </DialogHeader>
+          <div class="mt-4">
+            <ScopeTagSelect
+              tenantId={params.tenantId!}
+              value={tagSelection()}
+              onChange={setTagSelection}
+            />
+          </div>
+          <ErrorText error={saveScopeTags.error} />
+          <DialogFooter class="mt-4">
+            <Button
+              variant="outline"
+              class="min-h-11 sm:min-h-0"
+              onClick={() => setTagTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              class="min-h-11 sm:min-h-0"
+              disabled={saveScopeTags.isPending}
+              onClick={() => saveScopeTags.mutate()}
+            >
+              {saveScopeTags.isPending ? "Saving…" : "Save scope tags"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={roleToDelete() !== null}

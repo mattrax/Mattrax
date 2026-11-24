@@ -28,6 +28,7 @@ import {
 } from "~/lib/bulk-members";
 import type { BulkFailure, BulkOutcome } from "~/lib/bulk-members";
 import { optimisticallyRemoveRows, optimisticallyUpdateDeviceSearch } from "~/lib/optimistic";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 
 type Named = { id: string; name: string };
 
@@ -310,6 +311,8 @@ export function EntityActions(props: {
   const [handoverOpen, setHandoverOpen] = createSignal(false);
   const [handoverTargets, setHandoverTargets] = createSignal<Named[]>([]);
   const [handoverPending, setHandoverPending] = createSignal(false);
+  const [tagOpen, setTagOpen] = createSignal(false);
+  const [tagTargets, setTagTargets] = createSignal<Named[]>([]);
 
   /**
    * The rows the action should touch. An "all matching" selection asks the
@@ -442,6 +445,27 @@ export function EntityActions(props: {
           Hand over
         </Button>
       </Show>
+      <Show when={can("scope_tags.write")}>
+        <Button
+          variant="outline"
+          onClick={async () => {
+            try {
+              const selected = await targets();
+
+              if (selected.length === 0) return;
+
+              setTagTargets(selected);
+              setTagOpen(true);
+            } catch (error) {
+              toast.error("Could not prepare the tags", {
+                description: errorMessage(raisedFailure(error), "Try again in a moment."),
+              });
+            }
+          }}
+        >
+          Scope tags
+        </Button>
+      </Show>
       <Show when={props.entity !== "group" && can("groups.write")}>
         <ScopeGroupsAction
           targets={targets}
@@ -520,6 +544,30 @@ export function EntityActions(props: {
           }}
         />
       </Show>
+      <Dialog open={tagOpen()} onOpenChange={setTagOpen}>
+        <DialogContent class="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Scope tags</DialogTitle>
+            <DialogDescription>
+              Replace the tags on {tagTargets().length} selected{" "}
+              {bulkEntityNoun(props.entity, tagTargets().length)}. Saving refreshes the visible
+              list.
+            </DialogDescription>
+          </DialogHeader>
+          <Show when={tagTargets().length > 0}>
+            <ScopeTagAssignmentEditor
+              tenantId={params.tenantId!}
+              resourceType={props.entity}
+              resourceIds={tagTargets().map((row) => row.id)}
+              onSaved={() => {
+                setTagOpen(false);
+                void invalidate();
+              }}
+            />
+          </Show>
+        </DialogContent>
+      </Dialog>
+
       <Show when={props.entity !== "device" && canDelete()}>
         <ConfirmAction
           title={`Delete ${bulkEntityNoun(props.entity, count())}?`}
