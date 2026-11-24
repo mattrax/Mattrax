@@ -400,6 +400,7 @@ const keyTenant = (tenantId: RouteParam) =>
 
 export const enterpriseKeys = {
   me: () => ["enterprise", "me"] as const,
+  accountDeletion: () => ["enterprise", "account-deletion"] as const,
   tenants: () => ["enterprise", "tenants"] as const,
   tenant: (tenantId: RouteParam) => ["enterprise", "tenant", keyTenant(tenantId)] as const,
   backups: (tenantId: RouteParam) => ["enterprise", "backups", keyTenant(tenantId)] as const,
@@ -939,6 +940,15 @@ export type ApplicationInstallerPayload = {
 
 export const enterprise = {
   me: () => accountEndpoint((api) => api.me({})),
+  /** Whether this account can be deleted, and the tenant the cascade would remove. */
+  getAccountDeletion: () => accountEndpoint((api) => api.getAccountDeletion({})),
+  /**
+   * Delete the account and the solo tenant it owns. The server re-checks the
+   * typed address and the ownership/membership rules, so the result is not
+   * trusted from the preview alone.
+   */
+  deleteAccount: (payload: { confirmEmail: string }) =>
+    accountEndpoint((api) => api.deleteMe({ payload })),
   /** Account-level profile fields, including the default landing tenant. */
   updateMe: (payload: UpdateMeRequest) => accountEndpoint((api) => api.updateMe({ payload })),
   /** Platform operator catalogue; the API rejects non-superadmins. */
@@ -3236,6 +3246,11 @@ export const meQueryOptions = (userId?: string, enabled = true) => {
 
 export const enterpriseQueries = {
   me: (userId?: string) => meQueryOptions(userId),
+  accountDeletion: () =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.accountDeletion(),
+      queryFn: () => enterprise.getAccountDeletion(),
+    }),
   adminAccounts: (query: AdminAccountsQuery = {}) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.adminAccounts(query),

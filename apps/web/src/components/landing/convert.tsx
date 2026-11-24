@@ -1,8 +1,10 @@
 import { ArrowRight, Check, ChevronDown } from "@mattrax/ui";
 import { For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
+import { authClient } from "~/lib/auth";
+import { publicPrimaryCta } from "~/lib/public-auth-cta";
 import { faqStructuredData } from "~/lib/site";
-import { Eyebrow } from "./primitives";
+import { Eyebrow, NoJsStartFree } from "./primitives";
 
 type PricePlan = {
   readonly name: string;
@@ -47,6 +49,13 @@ const plans: readonly PricePlan[] = [
 ];
 
 export function Pricing() {
+  const session = authClient.useSession();
+  const signedIn = () => Boolean(session().data?.user);
+  const action = (plan: PricePlan) =>
+    plan.href === "/register"
+      ? publicPrimaryCta(session().isPending, signedIn())
+      : { label: plan.cta, href: plan.href };
+
   return (
     <section id="pricing" class="lx-section" aria-labelledby="pricing-title">
       <div class="lx-shell">
@@ -84,14 +93,30 @@ export function Pricing() {
                 </ul>
 
                 <div class="lx-button-slot">
-                  <Button
-                    as="a"
-                    href={plan.href}
-                    variant={plan.secondary ? "outline" : "default"}
-                    class="w-full"
+                  <Show
+                    when={action(plan)}
+                    fallback={
+                      <div
+                        data-js-pending
+                        class="h-9 w-full animate-pulse rounded-lg bg-hover"
+                        aria-hidden="true"
+                      />
+                    }
                   >
-                    {plan.cta}
-                  </Button>
+                    {(value) => (
+                      <Button
+                        as="a"
+                        href={value().href}
+                        variant={plan.secondary ? "outline" : "default"}
+                        class="w-full"
+                      >
+                        {value().label}
+                      </Button>
+                    )}
+                  </Show>
+                  <Show when={plan.href === "/register"}>
+                    <NoJsStartFree class="w-full" />
+                  </Show>
                 </div>
               </div>
             )}
@@ -216,6 +241,10 @@ export function Faq() {
 }
 
 export function Closing() {
+  const session = authClient.useSession();
+  const signedIn = () => Boolean(session().data?.user);
+  const cta = () => publicPrimaryCta(session().isPending, signedIn());
+
   return (
     <section class="lx-closing" aria-labelledby="closing-title">
       <div class="lx-shell">
@@ -231,10 +260,24 @@ export function Closing() {
           </p>
 
           <div class="lx-closing__actions">
-            <Button as="a" href="/register" size="lg" class="h-10 px-5">
-              Start free
-              <ArrowRight class="size-3.5" />
-            </Button>
+            <Show
+              when={cta()}
+              fallback={
+                <div
+                  data-js-pending
+                  class="h-10 w-32 animate-pulse rounded-lg bg-secondary"
+                  aria-hidden="true"
+                />
+              }
+            >
+              {(action) => (
+                <Button as="a" href={action().href} size="lg" class="h-10 px-5">
+                  {action().label}
+                  <ArrowRight class="size-3.5" />
+                </Button>
+              )}
+            </Show>
+            <NoJsStartFree />
             <Button
               as="a"
               href="mailto:hello@mattrax.app?subject=Mattrax%20for%20our%20fleet"

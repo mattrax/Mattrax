@@ -30,6 +30,7 @@ import { enterprise, enterpriseKeys, enterpriseQueries, meQueryOptions } from "~
 import type { McpConnectionInfo } from "~/lib/enterprise";
 import { optimisticallyPatchMe, optimisticallyUpdateCollection } from "~/lib/optimistic";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { routes } from "~/lib/routes";
 
 /** "2h ago" style label for a session's last authenticated request. */
 const relativeTime = (value: string) => {
@@ -104,41 +105,19 @@ export default function AccountPage() {
     })();
   });
 
-  const [deleteConfirm, setDeleteConfirm] = createSignal("");
-  const [deleteError, setDeleteError] = createSignal<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = createSignal(false);
+  const [deleteEmail, setDeleteEmail] = createSignal("");
 
-  const deleteAccount = async () => {
-    setDeleteError(null);
+  const openDeletionConfirmation = () => {
+    setDeleteDialogOpen(false);
+    setDeleteEmail("");
+    navigate(routes.accountDelete());
+  };
 
-    try {
-      const response = await fetch("/api/v1/me", {
-        method: "DELETE",
-        credentials: "include",
-        headers: { "x-effect-auth-csrf": "1" },
-      });
+  const emailMatches = () => {
+    const expected = (email() ?? "").trim().toLowerCase();
 
-      if (!response.ok) {
-        const body = Option.getOrUndefined(
-          Schema.decodeUnknownOption(Schema.Json)(await response.json().catch(() => undefined)),
-        );
-
-        setDeleteError(
-          errorMessage(
-            body !== undefined
-              ? raisedFailure(body)
-              : { message: `Request failed (${response.status})` },
-          ),
-        );
-
-        return;
-      }
-
-      window.location.href = "/";
-    } catch (error) {
-      setDeleteError(
-        errorMessage(raisedFailure(error), "Could not delete your account. Try again."),
-      );
-    }
+    return expected.length > 0 && deleteEmail().trim().toLowerCase() === expected;
   };
 
   const [name, setName] = createSignal("");
@@ -1116,37 +1095,62 @@ export default function AccountPage() {
               Delete account
             </h2>
             <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-              This removes your account and solo tenants you own. Tenants with other administrators
-              are kept. Type your email address to confirm.
+              Deleting your account also deletes the tenant you own, including its devices,
+              policies, audit history and subscription. Mattrax checks that you are the only member
+              and owner first, and explains what to do if you are not.
             </p>
           </div>
         }
       >
-        <div class="flex flex-col gap-2 sm:flex-row">
-          <Input
-            type="email"
-            aria-label="Type your email address to confirm account deletion"
-            class="h-9 sm:flex-1"
-            placeholder={email() ?? ""}
-            value={deleteConfirm()}
-            onInput={(event) => setDeleteConfirm(event.currentTarget.value)}
-          />
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={deleteConfirm() !== email()}
-            onClick={deleteAccount}
-          >
-            Delete account
-          </Button>
-        </div>
-        <Show when={deleteError()}>
-          {(msg) => (
-            <p role="alert" class="mt-2 text-[12.5px] text-destructive">
-              {msg()}
-            </p>
-          )}
-        </Show>
+        <Button type="button" variant="destructive" onClick={() => setDeleteDialogOpen(true)}>
+          Delete account
+        </Button>
+
+        <Dialog open={deleteDialogOpen()} onOpenChange={setDeleteDialogOpen}>
+          <DialogContent class="max-w-md text-foreground">
+            <DialogHeader>
+              <DialogTitle>Delete your account?</DialogTitle>
+              <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
+                Your account and the tenant you own are deleted together. Devices are sent an
+                unenroll request, the subscription is cancelled, and policies, audit history and
+                stored files are removed. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div class="mt-3">
+              <Field label="Type your email address to continue">
+                <Input
+                  type="email"
+                  autofocus
+                  autocomplete="email"
+                  placeholder={email() ?? ""}
+                  value={deleteEmail()}
+                  onInput={(event) => setDeleteEmail(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && emailMatches()) {
+                      event.preventDefault();
+                      openDeletionConfirmation();
+                    }
+                  }}
+                />
+              </Field>
+            </div>
+
+            <DialogFooter class="mt-4 border-t border-border pt-3">
+              <Button type="button" variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={!emailMatches()}
+                onClick={openDeletionConfirmation}
+              >
+                Continue
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </Panel>
     </Page>
   );

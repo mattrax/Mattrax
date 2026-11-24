@@ -6,6 +6,9 @@ import { StepUpGrantResponse } from "../stepUp.js";
 import { StepUpMethods } from "../stepUp.js";
 import { StepUpPasskeyStarted } from "../stepUp.js";
 import { AccountAuditSearchResponse } from "../Account.js";
+import { AccountDeletionPreview } from "../Account.js";
+import { AccountDeletionRequest } from "../Account.js";
+import { AccountDeletionResponse } from "../Account.js";
 import { AccountRecoveryResponse } from "../Account.js";
 import { AccountSessionsResponse } from "../Account.js";
 import { LoginAttemptsResponse } from "../Account.js";
@@ -274,9 +277,19 @@ export const enterpriseAccountApi = HttpApiGroup.make("EnterpriseAccount")
     }),
   )
   .add(
-    HttpApiEndpoint.delete("deleteMe", "/v1/me", {
+    HttpApiEndpoint.get("getAccountDeletion", "/v1/me/deletion", {
       error: EnterpriseAccountErrors,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: AccountDeletionPreview,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteMe", "/v1/me", {
+      error: [
+        ...EnterpriseAccountErrors,
+        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+      ],
+      payload: AccountDeletionRequest,
+      success: AccountDeletionResponse,
     }),
   )
   .prefix("/api");

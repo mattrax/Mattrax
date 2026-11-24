@@ -1758,6 +1758,15 @@ html.js .lx-deploy__panel[data-on] {
   }
 }
 
+/** Pending CTA skeletons are for JS clients; no-JS gets the real fallback link. */
+html:not(.js) [data-js-pending] {
+  display: none !important;
+}
+
+html.js [data-no-js-only] {
+  display: none !important;
+}
+
 @media (pointer: coarse) {
   :is(.lx-action, .lx-seg button, .lx-price a[data-slot="button"], .lx-link) {
     position: relative;

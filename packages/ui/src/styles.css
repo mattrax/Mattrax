@@ -118,8 +118,16 @@
   --shell: #f7f7f4;
   /** The content canvas inside the frame, one tone for every dashboard page. */
   --page: #fbfbf9;
-  /** The ocean behind the region globe; land uses the card tone. */
-  --globe-ocean: #eaf0f5;
+  /**
+   * The region globe. Land and ocean are at least 3:1 against each other and
+   * the coastline is at least 3:1 against both, so the map stays legible
+   * without relying on colour alone (country shapes and borders remain).
+   */
+  --globe-ocean: #6587a6;
+  --globe-land: #f8f4e9;
+  --globe-land-stroke: #1f3549;
+  --globe-selected: #6b1d42;
+  --globe-hover: #a63f6d;
   --scrim: rgb(24 24 22 / 0.28);
 
   --brand: #6550b9;
@@ -178,7 +186,11 @@
   --surface-raised: #242421;
   --shell: #151514;
   --page: #131312;
-  --globe-ocean: #121a22;
+  --globe-ocean: #0b1a2b;
+  --globe-land: #667887;
+  --globe-land-stroke: #dbe6ef;
+  --globe-selected: #f3e8ff;
+  --globe-hover: #a5f3fc;
   --scrim: rgb(0 0 0 / 0.55);
 
   --brand: #b3a4f5;

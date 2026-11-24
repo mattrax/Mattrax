@@ -9556,6 +9556,118 @@ export const createEnterpriseService = ({
       };
     });
 
+  /**
+   * Everything the account-deletion preview and `DELETE /v1/me` must agree on.
+   *
+   * Deletion is only safe when it is the same operation as deleting the
+   * tenant: one membership, one member, sole owner. Anything else is refused
+   * with a reason the dashboard can explain, rather than quietly removing one
+   * membership or cascading a tenant other people still use.
+   */
+  const accountDeletionPreviewFor = (user: { readonly id: string; readonly email: string }) =>
+    Effect.gen(function* () {
+      const memberships = yield* db.query.member.findMany({
+        where: { accountId: user.id },
+      });
+
+      const [accounts] = yield* db.select({ value: count() }).from(schema.account);
+      const lastAccount = (accounts?.value ?? 0) <= 1;
+
+      if (memberships.length > 1)
+        return {
+          canDelete: false,
+          blockers: [
+            {
+              code: "multiple_tenants" as const,
+              message: `You belong to ${memberships.length} tenants. Leave every other tenant in Settings → Administrators before deleting your account, so one deletion cannot affect more than one organisation.`,
+            },
+          ],
+          lastAccount,
+        };
+
+      const membership = memberships[0];
+
+      if (!membership) return { canDelete: true, blockers: [], lastAccount };
+
+      const organization = yield* db.query.organization.findFirst({
+        where: { id: membership.organizationId },
+      });
+
+      if (!organization)
+        return yield* Effect.fail(
+          new EnterpriseDbError({ message: "The tenant could not be loaded for deletion" }),
+        );
+
+      const members = yield* db
+        .select({ role: schema.member.role, customRoleId: schema.member.customRoleId })
+        .from(schema.member)
+        .where(eq(schema.member.organizationId, membership.organizationId));
+
+      const [devices] = yield* db
+        .select({ value: count() })
+        .from(schema.device)
+        .where(eq(schema.device.organizationId, membership.organizationId));
+
+      const tenantName = organization.displayName ?? organization.name;
+      const memberCount = members.length;
+      const ownerCount = members.filter((member) => isBuiltInOwnerMember(member)).length;
+      const otherMembers = Math.max(0, memberCount - 1);
+      const blockers: Array<{
+        readonly code:
+          | "tenant_has_other_owners"
+          | "tenant_has_other_members"
+          | "tenant_owner_required"
+          | "tenant_delete_requires_approval";
+        readonly message: string;
+      }> = [];
+
+      if (ownerCount > 1)
+        blockers.push({
+          code: "tenant_has_other_owners",
+          message: `${tenantName} has another owner. Remove your own administrator access in Settings → Administrators before deleting your account.`,
+        });
+      else if (!isBuiltInOwnerMember(membership))
+        blockers.push({
+          code: memberCount > 1 ? "tenant_has_other_members" : "tenant_owner_required",
+          message:
+            memberCount > 1
+              ? `You share ${tenantName} with other members. Remove your own administrator access in Settings → Administrators before deleting your account.`
+              : `Only a tenant owner can delete ${tenantName} by deleting their account. Ask another owner to remove your membership first.`,
+        });
+
+      if (memberCount > 1 && isBuiltInOwnerMember(membership))
+        blockers.push({
+          code: "tenant_has_other_members",
+          message: `${tenantName} still has ${otherMembers} other ${otherMembers === 1 ? "member" : "members"}. Remove them or transfer the tenant before deleting your account, because the tenant is deleted with it.`,
+        });
+
+      // Four-eyes is a tenant property. Only report it when nothing more
+      // fundamental blocks the deletion, so the next step is the useful one.
+      if (blockers.length === 0) {
+        const policies = yield* approvalPoliciesFor(membership.organizationId, "tenant.delete");
+
+        if (policies.length > 0)
+          blockers.push({
+            code: "tenant_delete_requires_approval",
+            message: `${tenantName} requires approval to delete. Open the tenant settings and delete the tenant explicitly so another administrator can approve it.`,
+          });
+      }
+
+      return {
+        canDelete: blockers.length === 0,
+        blockers,
+        tenant: {
+          id: organization.id,
+          name: tenantName,
+          slug: organization.slug,
+          memberCount,
+          ownerCount,
+          deviceCount: devices?.value ?? 0,
+        },
+        lastAccount,
+      };
+    });
+
   const service = {
     /**
      * The account and tenant shell. Kept as one helper so bootstrap reuses the
@@ -9901,143 +10013,165 @@ export const createEnterpriseService = ({
 
         return ok;
       }),
-    deleteMe: (request) =>
+    getAccountDeletion: (request) =>
       Effect.gen(function* () {
         const { user } = yield* auth.requireUser({ headers: request.headers });
         yield* identifyUser(user);
 
-        // Remove solo tenants with the account; keep shared tenants for the
-        // remaining administrators.
-        const memberships = yield* db.query.member.findMany({
-          where: { accountId: user.id },
-        });
+        return yield* accountDeletionPreviewFor(user);
+      }),
+    deleteMe: (request, payload) =>
+      Effect.gen(function* () {
+        const { user } = yield* auth.requireUser({ headers: request.headers });
+        yield* identifyUser(user);
 
-        for (const membership of memberships) {
-          const [members] = yield* db
-            .select({ value: count() })
-            .from(schema.member)
-            .where(eq(schema.member.organizationId, membership.organizationId));
+        // The typed address proves the person knows which account they are
+        // deleting. It is checked here as well as in the dashboard, so a direct
+        // API call cannot skip the confirmation.
+        if (payload.confirmEmail.trim().toLowerCase() !== user.email.trim().toLowerCase())
+          return yield* Effect.fail(
+            new EnterpriseBadRequest({
+              message: "Type the email address for this account to confirm deletion.",
+            }),
+          );
 
-          if ((members?.value ?? 0) <= 1) {
-            // Deleting the account would delete the tenant. That path was
-            // never the explicit tenant delete, so it must not bypass the
-            // four-eyes policy a tenant configured for it.
-            if (!isBuiltInOwnerMember(membership))
-              return yield* Effect.fail(
-                new EnterpriseForbidden({
-                  message:
-                    "Only the tenant owner can delete this tenant by deleting their account. Transfer ownership or remove the membership explicitly.",
-                }),
-              );
+        const preview = yield* accountDeletionPreviewFor(user);
 
-            const deletePolicies = yield* approvalPoliciesFor(
-              membership.organizationId,
-              "tenant.delete",
+        if (!preview.canDelete)
+          return yield* Effect.fail(
+            new EnterpriseForbidden({
+              message: preview.blockers.map((blocker) => blocker.message).join(" "),
+            }),
+          );
+
+        // A tenant is deleted with its sole member. Reuse the explicit tenant
+        // teardown so subscription, devices and stored objects are reclaimed
+        // exactly as they are from Settings → Delete tenant; a failed step
+        // keeps both rows so the operator can retry.
+        const deletedTenants: Array<{ id: string; name: string }> = [];
+
+        if (preview.tenant) {
+          const [organization] = yield* db
+            .select()
+            .from(schema.organization)
+            .where(eq(schema.organization.id, preview.tenant.id))
+            .limit(1);
+
+          if (!organization)
+            return yield* Effect.fail(
+              new EnterpriseDbError({ message: "The tenant could not be loaded for deletion" }),
             );
 
-            if (deletePolicies.length > 0)
-              return yield* Effect.fail(
-                new EnterpriseForbidden({
-                  message:
-                    "This tenant requires approval to delete. Open the tenant settings and delete the tenant explicitly so another administrator can approve it.",
+          yield* teardownTenant(db, storage, {
+            organizationId: organization.id,
+            actor: { id: user.id, email: user.email },
+            deps: {
+              preflight: () => preflightTeardown(organization),
+              unenrollDevices: teardownDevices,
+              cancelSubscription: teardownSubscription,
+            },
+          }).pipe(
+            Effect.catchTag("TenantTeardownInProgress", (error) =>
+              Effect.fail(
+                diagnoseError(new EnterpriseConflict({ message: error.message }), {
+                  code: "conflict",
+                  reason: "teardown_in_progress",
+                  details: { retryAfterSeconds: error.retryAfterSeconds },
                 }),
-              );
-
-            // A solo tenant is deleted with the account, so its subscription,
-            // devices and objects must be reclaimed exactly as the explicit
-            // tenant delete does. A failed teardown keeps both rows so the
-            // operator can retry instead of silently leaving Stripe billing.
-            const [organization] = yield* db
-              .select()
-              .from(schema.organization)
-              .where(eq(schema.organization.id, membership.organizationId))
-              .limit(1);
-
-            if (!organization)
-              return yield* Effect.fail(
-                new EnterpriseDbError({ message: "The tenant could not be loaded for deletion" }),
-              );
-
-            yield* teardownTenant(db, storage, {
-              organizationId: organization.id,
-              actor: { id: user.id, email: user.email },
-              deps: {
-                preflight: () => preflightTeardown(organization),
-                unenrollDevices: teardownDevices,
-                cancelSubscription: teardownSubscription,
-              },
-            }).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new EnterpriseDbError({
+              ),
+            ),
+            Effect.mapError((cause: TenantTeardownStepFailed | EnterpriseConflict) =>
+              cause instanceof EnterpriseConflict
+                ? cause
+                : new EnterpriseDbError({
                     message: `${cause.message} The account was kept so the deletion can be retried.`,
                   }),
-              ),
-            );
-          } else {
-            if (
-              isBuiltInOwnerMember(membership) &&
-              (yield* ownerCount(membership.organizationId)) <= 1
-            )
-              return yield* Effect.fail(
-                new EnterpriseForbidden({
-                  message: "Transfer ownership of this tenant before deleting your account.",
-                }),
-              );
-            yield* db.delete(schema.member).where(eq(schema.member.id, membership.id));
-          }
-        }
-
-        yield* db
-          .delete(schema.accountApiToken)
-          .where(eq(schema.accountApiToken.accountId, user.id));
-        yield* db.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
-        yield* db.delete(schema.member).where(eq(schema.member.accountId, user.id));
-        // Private views and defaults belong to the account; tenant views are
-        // the tenant's and survive with their owner reference set null.
-        yield* db
-          .delete(schema.deviceViewDefault)
-          .where(eq(schema.deviceViewDefault.accountId, user.id));
-        yield* db
-          .delete(schema.deviceView)
-          .where(
-            and(
-              eq(schema.deviceView.createdByAccountId, user.id),
-              eq(schema.deviceView.visibility, "private"),
             ),
           );
 
-        // Yielded Auth owns these tables; remove the subject's auth state.
-        // In-flight passkey ceremonies carry no subject column and expire on
-        // their own.
-        const authTables = [authPending, authSessions, authCredentials, authIdentifiers];
-
-        for (const table of authTables) {
-          if (table) yield* db.delete(table).where(eq(table.subjectId, user.id));
+          deletedTenants.push({ id: organization.id, name: preview.tenant.name });
         }
 
+        // Auth state, the audit row and the account row commit together. If
+        // any step fails, the rollback keeps the session usable and leaves no
+        // `account.deleted` row behind; a retry then starts from a clean
+        // account row. The tenant teardown already happened, so it is not
+        // repeated.
         yield* db
-          .delete(schema.authPasskeyCredentials)
-          .where(eq(schema.authPasskeyCredentials.subjectId, user.id));
-        yield* db
-          .delete(schema.authTotpFactors)
-          .where(
-            sql`JSON_UNQUOTE(JSON_EXTRACT(${schema.authTotpFactors.state}, '$.subjectId')) = ${user.id}`,
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              yield* tx
+                .delete(schema.accountApiToken)
+                .where(eq(schema.accountApiToken.accountId, user.id));
+              yield* tx.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
+              yield* tx.delete(schema.member).where(eq(schema.member.accountId, user.id));
+              // Private views and defaults belong to the account; tenant views
+              // are the tenant's and survive with their owner reference set null.
+              yield* tx
+                .delete(schema.deviceViewDefault)
+                .where(eq(schema.deviceViewDefault.accountId, user.id));
+              yield* tx
+                .delete(schema.deviceView)
+                .where(
+                  and(
+                    eq(schema.deviceView.createdByAccountId, user.id),
+                    eq(schema.deviceView.visibility, "private"),
+                  ),
+                );
+
+              // Yielded Auth owns these tables; remove the subject's auth state.
+              // In-flight passkey ceremonies carry no subject column and expire
+              // on their own.
+              const authTables = [authPending, authSessions, authCredentials, authIdentifiers];
+
+              for (const table of authTables) {
+                if (table) yield* tx.delete(table).where(eq(table.subjectId, user.id));
+              }
+
+              yield* tx
+                .delete(schema.authPasskeyCredentials)
+                .where(eq(schema.authPasskeyCredentials.subjectId, user.id));
+              yield* tx
+                .delete(schema.authTotpFactors)
+                .where(
+                  sql`JSON_UNQUOTE(JSON_EXTRACT(${schema.authTotpFactors.state}, '$.subjectId')) = ${user.id}`,
+                );
+
+              // The audit row outlives the account: `subject_user_id` is set
+              // null by the foreign key and the email snapshot remains until
+              // retention prunes it, so the deletion itself is still answerable
+              // later. Writing it in this transaction means a failed account
+              // delete cannot leave a false "deleted" entry.
+              yield* recordAccountAudit(tx, {
+                subjectAccountId: user.id,
+                subjectEmail: user.email,
+                action: ACCOUNT_AUDIT.deleted,
+                targetType: "account",
+                targetId: user.id,
+                metadata: {
+                  tenants: deletedTenants,
+                  lastAccount: preview.lastAccount,
+                  account: { id: user.id, email: user.email },
+                },
+              });
+
+              yield* tx.delete(schema.account).where(eq(schema.account.id, user.id));
+            }),
+          )
+          .pipe(
+            Effect.mapError(() =>
+              new EnterpriseDbError({
+                message: preview.tenant
+                  ? "The tenant was deleted, but the rest of your account could not be removed. Nothing else was changed, so your sign-in still works; retry to finish."
+                  : "Your account could not be deleted. Nothing was changed; retry to finish.",
+              }),
+            ),
           );
 
-        // The audit row outlives the account: `subject_user_id` is set null by
-        // the foreign key and the email snapshot remains until retention
-        // prunes it, so the deletion itself is still answerable later.
-        yield* recordAccountAudit(db, {
-          subjectAccountId: user.id,
-          subjectEmail: user.email,
-          action: ACCOUNT_AUDIT.deleted,
-          targetType: "account",
-        }).pipe(Effect.catchCause(() => Effect.void));
-
-        yield* db.delete(schema.account).where(eq(schema.account.id, user.id));
-
-        return ok;
+        return {
+          status: "ok" as const,
+          deletedTenants,
+        };
       }).pipe(Effect.tapCause((cause) => Effect.logError(`deleteMe failed: ${String(cause)}`))),
     listAccountSessions: (request) =>
       Effect.gen(function* () {
@@ -30777,8 +30911,11 @@ export const enterpriseAccountHandlers = (
     .handle("updateMe", ({ request, payload }) =>
       Effect.flatMap(EnterpriseService, (service) => service.updateMe(request, payload)),
     )
-    .handle("deleteMe", ({ request }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.deleteMe(request)),
+    .handle("getAccountDeletion", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.getAccountDeletion(request)),
+    )
+    .handle("deleteMe", ({ request, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) => service.deleteMe(request, payload)),
     );
 
 export const enterpriseAdminHandlers = (

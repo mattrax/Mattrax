@@ -12,7 +12,6 @@ import {
   useDashboardWidgetBatch,
 } from "~/components/dashboard/widget";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
-import { DashboardReportsPanel } from "~/components/dashboard/reports";
 import { Badge } from "~/components/ui/badge";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { toast } from "~/components/toast";
@@ -25,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "~/components/ui/dialog";
-import { GripVertical, Plus, Star, X } from "~/components/ui/icons";
+import { BookOpen, GripVertical, Plus, Star, X } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { DashboardWidget, DashboardWidgetType } from "~/lib/enterprise";
@@ -36,6 +35,7 @@ import { queryClient as appQueryClient } from "~/lib/query-client";
 import { cn } from "~/lib/utils";
 import { useCan } from "~/lib/permissions";
 import { PinDashboardButton } from "~/components/pin-dashboard-button";
+import { routes } from "~/lib/routes";
 import { resolveTenantId } from "~/lib/tenant";
 
 export const route = {
@@ -734,6 +734,17 @@ export default function DashboardPage() {
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <Show when={dashboard.data}>
+            <Button
+              as="a"
+              href={routes.tenant(params.tenantId).dashboardReports(params.dashboardId!)}
+              size="sm"
+              variant="outline"
+            >
+              <BookOpen class="size-3.5" />
+              Reports
+            </Button>
+          </Show>
+          <Show when={dashboard.data}>
             {(current) => (
               <PinDashboardButton
                 tenantId={resolveTenantId(params.tenantId) ?? params.tenantId ?? ""}
@@ -775,57 +786,46 @@ export default function DashboardPage() {
       </Show>
 
       <Show when={editing()}>
-        <div class="rounded-lg border border-border bg-card p-3.5">
-          <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] sm:items-end">
-            <label>
-              <span class="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
-              <Input
-                value={name()}
-                onInput={(event) => setName(event.currentTarget.value)}
-                class="h-8"
-              />
-            </label>
-            <label>
-              <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
-                Description
-              </span>
-              <Input
-                value={description()}
-                onInput={(event) => setDescription(event.currentTarget.value)}
-                class="h-8"
-                placeholder="What this dashboard is for"
-              />
-            </label>
+        <div class="rounded-lg border border-border bg-card px-2.5 py-2">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <Input
+              aria-label="Dashboard name"
+              value={name()}
+              onInput={(event) => setName(event.currentTarget.value)}
+              class="h-7 min-w-[10rem] flex-1"
+            />
+            <Input
+              aria-label="Dashboard description"
+              value={description()}
+              onInput={(event) => setDescription(event.currentTarget.value)}
+              class="h-7 min-w-[14rem] flex-[2]"
+              placeholder="What this dashboard is for"
+            />
             <Button
-              size="sm"
+              size="xs"
               disabled={saveSettings.isPending || !name().trim()}
               onClick={() => saveSettings.mutate()}
             >
               {saveSettings.isPending ? "Saving…" : "Save details"}
             </Button>
-          </div>
-          <Show when={settingsError()}>
-            <p role="alert" class="mt-2 text-[12px] text-destructive">
-              {settingsError()}
-            </p>
-          </Show>
-          <div class="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span class="hidden sm:inline">
-              Drag widgets to move them. Use the corner handle to resize.
-            </span>
-            <span class="sm:hidden">
-              Open this dashboard on a larger screen to rearrange widgets.
+            <span class="hidden text-[10.5px] text-muted-foreground sm:inline">
+              Drag to move · corner to resize
             </span>
             <Button
               size="xs"
               variant="ghost"
-              class="text-muted-foreground hover:text-destructive"
+              class="ml-auto text-muted-foreground hover:text-destructive"
               disabled={removeDashboard.isPending}
               onClick={() => setConfirmDeleteDashboard(true)}
             >
               Delete dashboard
             </Button>
           </div>
+          <Show when={settingsError()}>
+            <p role="alert" class="mt-1.5 text-[12px] text-destructive">
+              {settingsError()}
+            </p>
+          </Show>
         </div>
       </Show>
 
@@ -951,8 +951,6 @@ export default function DashboardPage() {
           </div>
         </DashboardWidgetBatchProvider>
       </Show>
-
-      <DashboardReportsPanel tenantId={params.tenantId!} dashboardId={params.dashboardId!} />
 
       <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>
         <DialogContent class="max-w-2xl rounded-xl border border-border bg-card p-5">
