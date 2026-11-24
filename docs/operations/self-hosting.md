@@ -129,7 +129,7 @@ mdm.example.com {
 			# Browsers may connect without a client certificate. Any certificate
 			# a device presents must verify against the device CA.
 			mode verify_if_given
-			trust_pool file /path/to/apple-device-ca.pem
+			trust_pool file /path/to/apple-ca-bundle.pem /path/to/tenant-scep-ca-bundle.pem
 		}
 	}
 
@@ -159,6 +159,45 @@ mdm.example.com {
 Stock nginx `$ssl_client_fingerprint` is SHA-1 and must not be sent as
 `x-device-identity-certificate-sha256`. Use Caddy as above, or configure another
 proxy to compute SHA-256 over the verified client certificate's DER encoding.
+
+### Device CA bundle
+
+`apple-ca-bundle.pem` contains the Apple trust roots. The second file must contain
+every tenant SCEP CA that signs Windows identities, plus retired anchors still
+inside their overlap window. Windows WSTEP enrollment uses the tenant's SCEP CA;
+Mattrax creates it on first use, rotates it automatically 400 days before expiry,
+and supports manual rotation and import. The current certificate is stored in
+`scep_ca`. Rotation writes the predecessor to `scep_ca_trust` with a
+`trust_until` deadline so existing devices can keep checking in until they renew.
+
+Regenerate `tenant-scep-ca-bundle.pem` after a tenant CA is created, rotated or
+imported, and on a schedule after daily maintenance. Add a new current CA before
+its first Windows management check-in, and retain retired anchors until
+`trust_until` passes. The following MySQL query produces the complete PEM bundle;
+run it on the database host, then validate the bundle, replace it atomically,
+and reload Caddy:
+
+```bash
+bundle=$(mktemp /path/to/tenant-scep-ca-bundle.pem.XXXXXX)
+trap 'rm -f "$bundle"' EXIT
+mysql --batch --raw --skip-column-names -h 127.0.0.1 -u mattrax -p mattrax -e '
+  SELECT cert_pem FROM scep_ca
+  UNION
+  SELECT cert_pem FROM scep_ca_trust
+  WHERE trust_until > UTC_TIMESTAMP();
+' > "$bundle"
+openssl crl2pkcs7 -nocrl -certfile "$bundle" |
+  openssl pkcs7 -print_certs -noout >/dev/null
+chmod 0644 "$bundle"
+mv -f "$bundle" /path/to/tenant-scep-ca-bundle.pem
+trap - EXIT
+caddy reload --config /etc/caddy/Caddyfile
+```
+
+Caddy loads trust-pool files when the configuration is adapted, so a file change
+alone is not enough; reload after every update. An Apple-only pool rejects Windows
+client certificates. Android management requests do not present an mTLS client
+certificate and continue through `verify_if_given` without identity headers.
 
 Set `TRUST_DEVICE_IDENTITY_HEADERS=1` **only** when the proxy verifies device
 certificates and overwrites the headers as above. Also set

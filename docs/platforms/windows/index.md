@@ -57,7 +57,7 @@ The Windows device posts a SOAP discovery request to the URL. Mattrax returns:
 
 ### 3. Policy and certificate
 
-The device requests a WSTEP policy, then submits a CSR. Mattrax signs it with the global
+The device requests a WSTEP policy, then submits a CSR. Mattrax signs it with the tenant's
 SCEP CA, sets the certificate OU to the tenant id, and returns:
 
 - `signedCertificate`

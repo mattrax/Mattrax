@@ -30,10 +30,19 @@ describe("self-hosted compose configuration", () => {
     expect(caddyExample).toBeDefined();
     expect(caddyExample).toContain("mode verify_if_given");
     expect(caddyExample).toContain(
+      "trust_pool file /path/to/apple-ca-bundle.pem /path/to/tenant-scep-ca-bundle.pem",
+    );
+    expect(caddyExample).not.toContain("/path/to/apple-device-ca.pem");
+    expect(caddyExample).toContain(
       "header_up x-device-identity-certificate-sha256 {tls_client_fingerprint}",
     );
     expect(caddyExample).not.toContain('x-device-identity-certificate-sha256 ""');
     expect(selfHostingDocs).toContain("serial-only fallback is no longer valid");
+    expect(selfHostingDocs).toContain("every tenant SCEP CA that signs Windows identities");
+    expect(selfHostingDocs).toContain("SELECT cert_pem FROM scep_ca");
+    expect(selfHostingDocs).toContain("SELECT cert_pem FROM scep_ca_trust");
+    expect(selfHostingDocs).toContain("trust_until > UTC_TIMESTAMP()");
+    expect(selfHostingDocs).toContain("caddy reload --config /etc/caddy/Caddyfile");
   });
 });
 
