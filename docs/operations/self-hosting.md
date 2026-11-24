@@ -187,6 +187,14 @@ Migrations are forward-only, so take a database dump and a `mattrax-data`
 backup before a version jump: rolling back to an older image may need that
 backup rather than only re-pinning `MATTRAX_VERSION`.
 
+### Breaking change: hosted services endpoints
+
+`APNS_RELAY_URL` and `MATTRAX_BILLING_URL` are no longer read. Remove them,
+and the old separate relay secret, from the container environment. Push and
+billing always use `https://services.mattrax.app`, and a custom relay is no
+longer supported. `MATTRAX_LICENSE_KEY` authenticates both the hosted relay
+and billing; without a licence the relay is disabled and devices poll.
+
 ## Building from source
 
 The compose file is pull-based by default. A checkout can build the same
@@ -290,13 +298,13 @@ there is no endpoint to configure.
 | Licence billing | `MATTRAX_LICENSE_KEY` | A daily count of enrolled devices and tenants, plus the licence summary, portal, checkout and invoice requests an owner starts.                                               |
 
 The licence key is issued against the cloud billing account (see
-[Operations](/admin/operations#deployment-licences)). It authenticates both
-calls, so the deployment needs no second shared secret; `APNS_RELAY_SECRET`
-exists only for a caller that authenticates to the relay with an HMAC secret.
-The hosted relay holds the Apple connectivity and the Stripe secret, so the
-install does not need vendor APNs credentials to wake devices. The release has
-no separate relay URL: a self-hosted install always wakes devices through the
-hosted relay.
+[Operations](/admin/operations#deployment-licences)). It authenticates both the
+hosted relay and billing calls, so the deployment needs no separate shared
+secret. The hosted relay holds the Apple connectivity and the Stripe secret, so
+the install does not need vendor APNs credentials to wake devices. The release
+has no separate relay URL: a self-hosted install always wakes devices through
+the hosted relay. Without a licence the relay is disabled and devices poll for
+changes.
 
 Self-hosted deployments are billed to the operator for the whole deployment,
 based on enrolled devices. The install does not need its own Stripe account:

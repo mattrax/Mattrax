@@ -14,9 +14,10 @@ A deployment picks one transport and provides `ApnsService`:
 | `RelayPushTransport` (`ApnsServiceRelay`)                   | Hosted multi-tenant Cloud. POSTs an HMAC-SHA256 signed request to the services APNs relay because a single Worker cannot select a client certificate per tenant. |
 | `NoopPushTransport` (`ApnsServiceNoop`)                     | Fallback when no transport is configured. `push` fails with a clear `ApnsError`; devices still poll so declarative management converges.                         |
 
-Cloud uses the relay when `APNS_RELAY_SECRET` is set; the relay URL is derived
-from the hosted services origin. Without it (or a self-hosted
-`MATTRAX_LICENSE_KEY`) it falls back to the no-op transport.
+Cloud uses the relay when `SERVICES_TOKEN` is set, signing with that token as
+the HMAC key; the relay URL is derived from the hosted services origin.
+Self-hosted installs authenticate with `MATTRAX_LICENSE_KEY`. Without either it
+falls back to the no-op transport.
 
 ## Certificate lifecycle
 

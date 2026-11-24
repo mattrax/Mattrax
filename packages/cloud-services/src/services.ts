@@ -24,11 +24,13 @@ const parseServicesUrl = (value: string): string => {
   try {
     url = new URL(value);
   } catch {
-    throw new Error("MATTRAX_SERVICES_URL must be an http(s) URL");
+    throw new Error("MATTRAX_SERVICES_URL must be an https: URL");
   }
 
-  if (url.protocol !== "https:" && url.protocol !== "http:")
-    throw new Error("MATTRAX_SERVICES_URL must be an http(s) URL");
+  if (url.protocol !== "https:") throw new Error("MATTRAX_SERVICES_URL must be an https: URL");
+
+  if (url.pathname !== "/" || url.search || url.hash || url.username || url.password)
+    throw new Error("MATTRAX_SERVICES_URL must be an origin without a path, query or credentials");
 
   return url.origin;
 };
@@ -36,7 +38,8 @@ const parseServicesUrl = (value: string): string => {
 /**
  * Derive every hosted endpoint from the single services origin. Passing an
  * empty value (the Worker's default text binding) selects the hosted
- * deployment; a trailing slash is normalised so paths are never doubled.
+ * deployment; a trailing slash is normalised so paths are never doubled. An
+ * override must be an `https:` origin with no path, query or credentials.
  */
 export const servicesUrls = (override?: string | null): ServicesUrls => {
   const origin = parseServicesUrl(override?.trim() || DEFAULT_SERVICES_URL);

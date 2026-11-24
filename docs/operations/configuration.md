@@ -102,7 +102,7 @@ stream with the actor, target and before/after state.
 
 | Variable              | Purpose                                                    |
 | --------------------- | ---------------------------------------------------------- |
-| `SERVICES_TOKEN`      | Shared Cloud-to-services bearer token                      |
+| `SERVICES_TOKEN`      | Shared Cloud-to-services bearer and APNs relay HMAC key    |
 | `STRIPE_*`            | Configured on the services deployment, not the application |
 | `MATTRAX_PLAN_LIMITS` | JSON plan/seat catalogue                                   |
 
@@ -113,6 +113,12 @@ The hosted services origin is built into the application at
 self-hosted installs both use it, so the billing endpoints
 (`/v1/billing/hosted/*` and `/api/platform/billing/*`) and the APNs relay
 (`/v1/apns/push`) are derived from the same origin.
+
+`APNS_RELAY_URL` and `MATTRAX_BILLING_URL` are no longer read, and a custom
+relay is not supported: push and billing always use the built-in origin. Cloud
+authenticates the relay with `SERVICES_TOKEN`; a self-hosted install uses
+`MATTRAX_LICENSE_KEY`. The old separate relay secret is also ignored; remove
+all three from an upgraded deployment.
 
 ```json
 {
@@ -133,13 +139,13 @@ self-hosted installs both use it, so the billing endpoints
 | `APPLE_PROFILE_SIGNING_CERT`             | Leaf certificate used to CMS-sign Apple profiles                                                |
 | `APPLE_PROFILE_SIGNING_KEY`              | RSA PKCS#8 PEM private key for profile signing                                                  |
 | `APPLE_PROFILE_SIGNING_CHAIN`            | Optional intermediate/root PEM bundle                                                           |
-| `APNS_RELAY_SECRET`                      | Optional relay HMAC secret; self-hosted installs use `MATTRAX_LICENSE_KEY` instead              |
 | `MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS` | Lifetime of the bearer SCEP challenge in an enrollment profile, 60–86400 seconds (default 3600) |
 
 Without the vendor key, tenants upload a manually signed APNs certificate. Pushes
-go through the hosted relay at `https://services.mattrax.app/v1/apns/push`;
-without `APNS_RELAY_SECRET` (or a self-hosted `MATTRAX_LICENSE_KEY`) Cloud has
-no authorised push transport and devices poll.
+go through the hosted relay at `https://services.mattrax.app/v1/apns/push`.
+Cloud authenticates with `SERVICES_TOKEN`; a self-hosted install uses its
+`MATTRAX_LICENSE_KEY`. Without either there is no authorised push transport and
+devices poll.
 
 When the profile signing identity is absent, the owning tenant's SCEP CA signs profile
 downloads. The CA is created on first use, so there is no unsigned window. A configured

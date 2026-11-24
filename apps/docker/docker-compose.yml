@@ -40,9 +40,6 @@ services:
       # Optional support form or calendar URL shown in the app menu.
       SUPPORT_URL: ${SUPPORT_URL:-}
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-}
-      # The relay URL is derived from the built-in services origin; only the
-      # optional HMAC secret is configured.
-      APNS_RELAY_SECRET: ${APNS_RELAY_SECRET:-}
       CLOUD_APPLE_VENDOR_CERT: ${CLOUD_APPLE_VENDOR_CERT:-}
       CLOUD_APPLE_VENDOR_KEY: ${CLOUD_APPLE_VENDOR_KEY:-}
       APPLE_PROFILE_SIGNING_CERT: ${APPLE_PROFILE_SIGNING_CERT:-}

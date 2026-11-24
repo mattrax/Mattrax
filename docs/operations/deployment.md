@@ -36,7 +36,6 @@ Repository variables (Settings → Secrets and variables → Actions → Variabl
 | `PREVIEW_HYPERDRIVE_ID`  | Hyperdrive config for the preview database.                                            |
 | `PREVIEW_STORAGE_BUCKET` | R2 bucket for preview uploads and backups. Must exist before the first preview deploy. |
 | `PRODUCTION_ORIGIN`      | Optional. Defaults to `https://e.mattrax.app`.                                         |
-| `SERVICES_TOKEN`         | Shared token for the hosted services deployment (billing and entitlements).            |
 
 The Workers' own secrets are shared by production and every Preview of that
 Worker, so they only need to be set once (for example with `cf secrets put`):
@@ -47,6 +46,8 @@ Worker, so they only need to be set once (for example with `cf secrets put`):
   defaults to `http://localhost:9050`.
 - `AUTH_SECRET`, `TRUSTED_ORIGINS`, the Stripe keys, Apple/Android/Entra
   credentials and `POSTHOG_*` as used by production.
+- `SERVICES_TOKEN` on the API Worker, matching the services deployment. It
+  authorises hosted billing and signs APNs relay requests.
 - `DEV_MAILBOX_SECRET` on **both** Workers. Previews opt into
   `DEV_MAILBOX=true` + `DEV_MAILBOX_ALLOW_REMOTE=true`, which requires this
   secret; it lets a tester read sign-up codes from `/api/debug/emails` without

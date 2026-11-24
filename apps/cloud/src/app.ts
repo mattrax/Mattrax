@@ -669,14 +669,15 @@ const services = servicesUrls(apiEnv.MATTRAX_SERVICES_URL);
 
 const makeHostedApns = (env: Env) => {
   const url = services.apnsRelay;
-  // A self-hosted deployment already holds a licence key; reusing it for the
+  // Hosted Cloud signs relay requests with the shared services token. A
+  // self-hosted deployment already holds a licence key; reusing it for the
   // relay keeps push working without a second shared secret.
   const licenseKey =
     typeof process === "undefined" ? undefined : process.env.MATTRAX_LICENSE_KEY?.trim();
 
   return makeApnsService(
-    env.APNS_RELAY_SECRET
-      ? RelayPushTransport({ url, secret: env.APNS_RELAY_SECRET })
+    env.SERVICES_TOKEN
+      ? RelayPushTransport({ url, secret: env.SERVICES_TOKEN })
       : licenseKey
         ? RelayPushTransport({ url, token: licenseKey })
         : NoopPushTransport(

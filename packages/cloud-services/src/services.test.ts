@@ -28,10 +28,25 @@ describe("hosted services URLs", () => {
     });
   });
 
-  it("rejects a value that is not an http(s) URL", () => {
-    expect(() => servicesUrls("not a URL")).toThrow("MATTRAX_SERVICES_URL must be an http(s) URL");
+  it("rejects a value that is not an https: URL", () => {
+    expect(() => servicesUrls("not a URL")).toThrow("MATTRAX_SERVICES_URL must be an https: URL");
     expect(() => servicesUrls("ftp://services.example.com")).toThrow(
-      "MATTRAX_SERVICES_URL must be an http(s) URL",
+      "MATTRAX_SERVICES_URL must be an https: URL",
+    );
+    expect(() => servicesUrls("http://services.example.com")).toThrow(
+      "MATTRAX_SERVICES_URL must be an https: URL",
+    );
+  });
+
+  it("rejects an origin with a path, query or credentials", () => {
+    expect(() => servicesUrls("https://services.example.com/v1")).toThrow(
+      "MATTRAX_SERVICES_URL must be an origin without a path, query or credentials",
+    );
+    expect(() => servicesUrls("https://services.example.com?region=us")).toThrow(
+      "MATTRAX_SERVICES_URL must be an origin without a path, query or credentials",
+    );
+    expect(() => servicesUrls("https://user:pass@services.example.com")).toThrow(
+      "MATTRAX_SERVICES_URL must be an origin without a path, query or credentials",
     );
   });
 });

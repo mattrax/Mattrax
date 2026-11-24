@@ -136,6 +136,7 @@ export const apiWorker = {
      * previews set it.
      */
     MATTRAX_SERVICES_URL: bindings.text(process.env.MATTRAX_SERVICES_URL ?? ""),
+    /** Shared services token: hosted billing bearer and APNs relay HMAC key. */
     SERVICES_TOKEN: bindings.secret(),
     /** Optional JSON plan catalogue; absent means unlimited plans. */
     MATTRAX_PLAN_LIMITS: bindings.secret(),
@@ -153,7 +154,6 @@ export const apiWorker = {
     CLOUD_APPLE_VENDOR_CERT: bindings.secret(),
     CLOUD_APPLE_VENDOR_KEY: bindings.secret(),
     // Apple profile signing is optional (see `useAppleProfileSigning` below).
-    APNS_RELAY_SECRET: bindings.secret(),
     AZURE_CLIENT_ID: bindings.secret(),
     AZURE_CLIENT_SECRET: bindings.secret(),
     /** Deployment-wide Google Workspace directory sync (optional). */

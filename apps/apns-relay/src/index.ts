@@ -1,3 +1,10 @@
+/**
+ * Standalone APNs relay, separate from the hosted `apps/services` deployment.
+ *
+ * It keeps its own `APNS_RELAY_SECRET` because it is an independent relay that
+ * only implements the push protocol. The hosted services relay shares
+ * `SERVICES_TOKEN` with Cloud and uses the deployment licence for self-hosting.
+ */
 import { createServer } from "node:http";
 import { Effect } from "effect";
 import { NodePushTransport, relaySignature } from "@mattrax/apns";

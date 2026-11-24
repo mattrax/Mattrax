@@ -35,6 +35,7 @@ export declare const apiWorker: {
      * previews set it.
      */
     MATTRAX_SERVICES_URL: import("cf/config").TextBinding<string>;
+    /** Shared services token: hosted billing bearer and APNs relay HMAC key. */
     SERVICES_TOKEN: import("cf/config").SecretBinding;
     /** Optional JSON plan catalogue; absent means unlimited plans. */
     MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
@@ -51,7 +52,6 @@ export declare const apiWorker: {
     MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: import("cf/config").TextBinding<"3600">;
     CLOUD_APPLE_VENDOR_CERT: import("cf/config").SecretBinding;
     CLOUD_APPLE_VENDOR_KEY: import("cf/config").SecretBinding;
-    APNS_RELAY_SECRET: import("cf/config").SecretBinding;
     AZURE_CLIENT_ID: import("cf/config").SecretBinding;
     AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
     GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON?: import("cf/config").SecretBinding | undefined;
@@ -168,6 +168,7 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) =>
            * previews set it.
            */
           MATTRAX_SERVICES_URL: import("cf/config").TextBinding<string>;
+          /** Shared services token: hosted billing bearer and APNs relay HMAC key. */
           SERVICES_TOKEN: import("cf/config").SecretBinding;
           /** Optional JSON plan catalogue; absent means unlimited plans. */
           MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
@@ -184,7 +185,6 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) =>
           MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: import("cf/config").TextBinding<"3600">;
           CLOUD_APPLE_VENDOR_CERT: import("cf/config").SecretBinding;
           CLOUD_APPLE_VENDOR_KEY: import("cf/config").SecretBinding;
-          APNS_RELAY_SECRET: import("cf/config").SecretBinding;
           AZURE_CLIENT_ID: import("cf/config").SecretBinding;
           AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
           GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON?: import("cf/config").SecretBinding | undefined;
@@ -299,6 +299,7 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) =>
            * previews set it.
            */
           MATTRAX_SERVICES_URL: import("cf/config").TextBinding<string>;
+          /** Shared services token: hosted billing bearer and APNs relay HMAC key. */
           SERVICES_TOKEN: import("cf/config").SecretBinding;
           /** Optional JSON plan catalogue; absent means unlimited plans. */
           MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
@@ -315,7 +316,6 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) =>
           MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: import("cf/config").TextBinding<"3600">;
           CLOUD_APPLE_VENDOR_CERT: import("cf/config").SecretBinding;
           CLOUD_APPLE_VENDOR_KEY: import("cf/config").SecretBinding;
-          APNS_RELAY_SECRET: import("cf/config").SecretBinding;
           AZURE_CLIENT_ID: import("cf/config").SecretBinding;
           AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
           GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON?: import("cf/config").SecretBinding | undefined;

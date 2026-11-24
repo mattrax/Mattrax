@@ -36,8 +36,7 @@ const failure = (message: string) => new EnterpriseStripeError({ message });
 const endpoint = (base: string, path: string) => {
   const url = new URL(path, base.endsWith("/") ? base : `${base}/`);
 
-  if (url.protocol !== "https:" && url.protocol !== "http:")
-    throw new Error("MATTRAX_SERVICES_URL must be an http(s) URL");
+  if (url.protocol !== "https:") throw new Error("MATTRAX_SERVICES_URL must be an https: URL");
 
   return url.toString();
 };
