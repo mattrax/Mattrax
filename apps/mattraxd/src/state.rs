@@ -8,7 +8,12 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
+use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+static NEXT_TEMP_FILE_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -61,8 +66,10 @@ where
 }
 
 /// Write through a sibling temp file and rename, so a crash mid-write cannot
-/// leave a truncated state file. Failures are reported to the caller; the
-/// daemon logs them and keeps running with in-memory state.
+/// leave a truncated state file. On Unix the state directory is mode `0700` and
+/// the temp file is created as `0600` before any data is written. Failures are
+/// reported to the caller; the daemon logs them and keeps running with
+/// in-memory state.
 pub fn save(path: &Path, state: &AgentState) -> io::Result<()> {
     save_json(path, state)
 }
@@ -72,20 +79,22 @@ where
     T: Serialize,
 {
     if let Some(directory) = path.parent() {
-        fs::create_dir_all(directory)?;
+        ensure_private_directory(directory)?;
     }
 
     let data = serde_json::to_vec(value)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    let temporary = path.with_extension(format!("json.tmp.{}", std::process::id()));
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let temporary = path.with_extension(format!(
+        "json.tmp.{}.{nonce}.{}",
+        std::process::id(),
+        NEXT_TEMP_FILE_ID.fetch_add(1, Ordering::Relaxed)
+    ));
 
-    fs::write(&temporary, &data)?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o600))?;
-    }
+    write_private_temp(&temporary, &data)?;
 
     // Windows cannot rename over an existing file. Losing the atomic swap
     // there is acceptable: the data is flushed to the temp file first.
@@ -95,6 +104,64 @@ where
     }
 
     fs::rename(&temporary, path)?;
+
+    Ok(())
+}
+
+pub(crate) fn ensure_private_directory(directory: &Path) -> io::Result<()> {
+    if directory.as_os_str().is_empty() {
+        return Ok(());
+    }
+
+    fs::create_dir_all(directory)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn prepare_private_path(path: &Path) -> io::Result<()> {
+    if let Some(directory) = path.parent() {
+        ensure_private_directory(directory)?;
+    }
+
+    #[cfg(unix)]
+    if path.exists() {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    }
+
+    Ok(())
+}
+
+fn create_private_temp(path: &Path) -> io::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    options.open(path)
+}
+
+fn write_private_temp(path: &Path, data: &[u8]) -> io::Result<()> {
+    let mut file = create_private_temp(path)?;
+    let result = (|| {
+        file.write_all(data)?;
+        file.sync_all()
+    })();
+
+    if let Err(error) = result {
+        let _ = fs::remove_file(path);
+        return Err(error);
+    }
 
     Ok(())
 }
@@ -183,6 +250,53 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             let mode = fs::metadata(&path).expect("metadata").permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
+            let directory_mode = fs::metadata(path.parent().expect("state directory"))
+                .expect("directory metadata")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(directory_mode, 0o700);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn temp_files_are_private_at_creation_and_are_never_overwritten() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempdir().expect("temp dir");
+        let path = directory.path().join("state.json.tmp");
+        let file = create_private_temp(&path).expect("private temp file");
+        let mode = fs::metadata(&path).expect("metadata").permissions().mode() & 0o777;
+
+        assert_eq!(mode, 0o600);
+        drop(file);
+
+        fs::write(&path, b"original").expect("replace temp contents");
+        let error =
+            create_private_temp(&path).expect_err("create_new must reject an existing file");
+        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
+        assert_eq!(fs::read(&path).expect("read temp"), b"original");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_restricts_an_existing_state_directory() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempdir().expect("temp dir");
+        let state_directory = directory.path().join("state");
+        fs::create_dir(&state_directory).expect("state directory");
+        fs::set_permissions(&state_directory, fs::Permissions::from_mode(0o755))
+            .expect("make directory public");
+
+        save(&state_directory.join("state.json"), &AgentState::default()).expect("state saves");
+
+        let mode = fs::metadata(&state_directory)
+            .expect("directory metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
     }
 }

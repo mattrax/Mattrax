@@ -5,7 +5,10 @@
 //! `curl` is used exactly as the Swift agent did, so proxy and TLS behaviour
 //! follows the host configuration and no TLS stack is linked into the daemon.
 //! Restricted-software results use a persisted queue and one bounded worker so
-//! network failures cannot stall local enforcement.
+//! network failures cannot stall local enforcement. Delivery is at-least-once:
+//! a crash after a successful POST but before queue removal can replay the same
+//! result. Retries preserve `occurredAt`, so audit consumers should tolerate
+//! duplicate rows with the same rule, action and occurrence timestamp.
 
 use crate::logging::Logger;
 use crate::profiles::InstalledScript;
@@ -156,6 +159,8 @@ fn restricted_curl_arguments(server_url: &str, device_token: &str) -> Vec<String
 
 /// A single network worker drains persisted enforcement results. Enqueueing
 /// never performs network I/O, so an endpoint outage cannot delay later rules.
+/// Delivery is at-least-once; retries keep the original `occurredAt` value and
+/// audit consumers should tolerate duplicate rows for that occurrence.
 #[derive(Clone)]
 pub struct RestrictedResultQueue {
     path: PathBuf,
@@ -178,8 +183,8 @@ impl RestrictedResultQueue {
         logger: Logger,
         sender: Arc<dyn RestrictedResultSender>,
     ) -> Self {
-        let pending = if path.exists() {
-            match fs::read(&path)
+        let pending = match state::prepare_private_path(&path) {
+            Ok(()) if path.exists() => match fs::read(&path)
                 .map_err(|error| error.to_string())
                 .and_then(|data| {
                     serde_json::from_slice::<PendingRestrictedResults>(&data)
@@ -192,9 +197,14 @@ impl RestrictedResultQueue {
                     ));
                     PendingRestrictedResults::default()
                 }
+            },
+            Ok(()) => PendingRestrictedResults::default(),
+            Err(error) => {
+                logger.log(format!(
+                    "could not secure restricted result queue; starting empty: {error}"
+                ));
+                PendingRestrictedResults::default()
             }
-        } else {
-            PendingRestrictedResults::default()
         };
 
         let mut pending = pending;
@@ -262,6 +272,26 @@ impl RestrictedResultQueue {
         RestrictedResultWorker {
             stop,
             thread: Some(thread),
+        }
+    }
+
+    /// One-shot runs have no long-lived worker. Attempt every currently due
+    /// delivery synchronously after local enforcement; failures remain persisted
+    /// with their retry deadline for the next daemon start.
+    pub(crate) fn drain_ready(&self) {
+        loop {
+            let now = unix_timestamp();
+            let ready = self
+                .lock_pending()
+                .entries
+                .iter()
+                .any(|entry| entry.next_attempt_at <= now);
+
+            if !ready {
+                return;
+            }
+
+            self.deliver_due(now);
         }
     }
 
@@ -584,6 +614,37 @@ mod tests {
         assert_eq!(test_queue(path, sender).pending_len(), 0);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn loading_the_queue_restricts_existing_directory_and_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().expect("temp dir");
+        let state_directory = directory.path().join("state");
+        let path = state_directory.join("restricted-results.json");
+        let sender = Arc::new(RecordingSender::default());
+        let rule = restricted_rule("rule-1");
+        let first = test_queue(path.clone(), sender.clone());
+        first.enqueue(&rule, &restricted_result(&rule));
+        drop(first);
+
+        fs::set_permissions(&state_directory, fs::Permissions::from_mode(0o755))
+            .expect("make directory public");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("make queue public");
+
+        let restarted = test_queue(path.clone(), sender);
+
+        assert_eq!(restarted.pending_len(), 1);
+        let directory_mode = fs::metadata(&state_directory)
+            .expect("directory metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        let file_mode = fs::metadata(&path).expect("metadata").permissions().mode() & 0o777;
+        assert_eq!(directory_mode, 0o700);
+        assert_eq!(file_mode, 0o600);
+    }
+
     #[test]
     fn failed_delivery_persists_backoff_and_retries_when_due() {
         let directory = tempfile::tempdir().expect("temp dir");
@@ -656,7 +717,8 @@ mod tests {
     #[test]
     fn the_persistent_queue_is_bounded_and_private() {
         let directory = tempfile::tempdir().expect("temp dir");
-        let path = directory.path().join("restricted-results.json");
+        let state_directory = directory.path().join("state");
+        let path = state_directory.join("restricted-results.json");
         let sender = Arc::new(RecordingSender::default());
         let queue = test_queue(path.clone(), sender);
 
@@ -684,6 +746,12 @@ mod tests {
             use std::os::unix::fs::PermissionsExt;
             let mode = fs::metadata(&path).expect("metadata").permissions().mode() & 0o777;
             assert_eq!(mode, 0o600);
+            let directory_mode = fs::metadata(&state_directory)
+                .expect("directory metadata")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(directory_mode, 0o700);
         }
     }
 

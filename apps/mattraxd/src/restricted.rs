@@ -56,6 +56,7 @@ pub struct RestrictedResult {
 }
 
 impl RestrictedResult {
+    #[cfg(any(target_os = "macos", test))]
     fn succeeded(
         rule: &InstalledRestrictedSoftware,
         killed: usize,
@@ -73,6 +74,7 @@ impl RestrictedResult {
         }
     }
 
+    #[cfg(target_os = "macos")]
     fn failed(rule: &InstalledRestrictedSoftware, detail: String) -> Self {
         Self {
             rule_id: rule.id.clone(),
@@ -85,7 +87,7 @@ impl RestrictedResult {
         }
     }
 
-    #[cfg_attr(target_os = "macos", allow(dead_code))]
+    #[cfg(not(target_os = "macos"))]
     fn skipped(rule: &InstalledRestrictedSoftware, detail: String) -> Self {
         Self {
             rule_id: rule.id.clone(),
@@ -220,12 +222,17 @@ pub trait RestrictedRunner {
 /// The process table and bundle inventory collected once for an enforcement
 /// tick. Rules only filter this snapshot; destructive actions still revalidate
 /// their targets immediately before signalling or deletion.
+#[cfg(any(target_os = "macos", test))]
 #[derive(Debug, Clone)]
 pub struct EnforcementSnapshot {
     pub(crate) processes: Result<Vec<(u32, String)>, String>,
     pub(crate) bundles: Vec<BundleSnapshot>,
     pub(crate) allowed_roots: Vec<PathBuf>,
 }
+
+#[cfg(all(not(target_os = "macos"), not(test)))]
+#[derive(Debug, Clone, Default)]
+pub struct EnforcementSnapshot;
 
 #[derive(Debug, Clone)]
 pub(crate) struct BundleSnapshot {
@@ -314,22 +321,23 @@ pub fn endpoint_for(server_url: &str) -> String {
     )
 }
 
+#[cfg(target_os = "macos")]
 fn enforce_live(
     rule: &InstalledRestrictedSoftware,
     snapshot: &EnforcementSnapshot,
 ) -> RestrictedResult {
-    #[cfg(target_os = "macos")]
-    {
-        enforce_macos(rule, snapshot)
-    }
+    enforce_macos(rule, snapshot)
+}
 
-    #[cfg(not(target_os = "macos"))]
-    {
-        RestrictedResult::skipped(
-            rule,
-            "Restricted software enforcement is only supported on macOS.".into(),
-        )
-    }
+#[cfg(not(target_os = "macos"))]
+fn enforce_live(
+    rule: &InstalledRestrictedSoftware,
+    _snapshot: &EnforcementSnapshot,
+) -> RestrictedResult {
+    RestrictedResult::skipped(
+        rule,
+        "Restricted software enforcement is only supported on macOS.".into(),
+    )
 }
 
 /// Process names a rule cannot target. Mirrors the server-side validation; the
@@ -416,6 +424,7 @@ fn validated_bundles(
         .collect()
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn bundles_for_rule(
     rule: &InstalledRestrictedSoftware,
     snapshot: &EnforcementSnapshot,
@@ -455,10 +464,18 @@ fn live_snapshot(include_bundles: bool) -> EnforcementSnapshot {
 
 #[cfg(not(target_os = "macos"))]
 fn live_snapshot(_include_bundles: bool) -> EnforcementSnapshot {
-    EnforcementSnapshot {
-        processes: Ok(Vec::new()),
-        bundles: Vec::new(),
-        allowed_roots: Vec::new(),
+    #[cfg(test)]
+    {
+        EnforcementSnapshot {
+            processes: Ok(Vec::new()),
+            bundles: Vec::new(),
+            allowed_roots: Vec::new(),
+        }
+    }
+
+    #[cfg(not(test))]
+    {
+        EnforcementSnapshot
     }
 }
 
@@ -545,6 +562,7 @@ pub fn deletion_roots() -> Vec<PathBuf> {
     roots
 }
 
+#[cfg(target_os = "macos")]
 fn bundle_roots_from(allowed_roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut roots = allowed_roots.to_vec();
     let system = PathBuf::from("/System/Applications");
@@ -863,6 +881,7 @@ pub fn terminate_with(
     (stopped, None)
 }
 
+#[cfg(any(target_os = "macos", test))]
 struct RecheckingProcessControl<'a> {
     control: &'a dyn ProcessControl,
     rule: &'a InstalledRestrictedSoftware,
@@ -870,6 +889,7 @@ struct RecheckingProcessControl<'a> {
     bundles: Vec<PathBuf>,
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl RecheckingProcessControl<'_> {
     fn command_matches(&self, pid: u32, bundles: &[PathBuf]) -> bool {
         self.control.command(pid).is_some_and(|command| {
@@ -878,6 +898,7 @@ impl RecheckingProcessControl<'_> {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 impl ProcessControl for RecheckingProcessControl<'_> {
     fn signal(&self, pid: u32, signal: i32) -> Result<(), KillFailure> {
         // A shared snapshot can outlive a PID. Re-read the executable and
@@ -900,6 +921,7 @@ impl ProcessControl for RecheckingProcessControl<'_> {
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
 fn terminate_matches_with(
     matches: Vec<(u32, String)>,
     rule: &InstalledRestrictedSoftware,
@@ -1329,11 +1351,17 @@ mod tests {
     }
 
     fn empty_snapshot() -> EnforcementSnapshot {
-        EnforcementSnapshot {
+        let snapshot = EnforcementSnapshot {
             processes: Ok(Vec::new()),
             bundles: Vec::new(),
             allowed_roots: Vec::new(),
-        }
+        };
+        assert!(snapshot
+            .processes
+            .as_ref()
+            .expect("process snapshot")
+            .is_empty());
+        snapshot
     }
 
     #[cfg(target_os = "macos")]
