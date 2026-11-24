@@ -146,9 +146,10 @@ export const Registration = Schema.Struct({
   email: Schema.String.check(Schema.isMaxLength(320)).pipe(Schema.decodeTo(AuthSchema.Email)),
   /**
    * Proof that the address completed the guest verification code. The created
-   * subject starts with a verified email when it matches a live challenge.
+   * subject starts verified only when it matches a live challenge. Registration
+   * cannot provision an account without this mailbox proof.
    */
-  grant: Schema.optional(Schema.String.check(Schema.isMaxLength(128))),
+  grant: Schema.NonEmptyString.check(Schema.isMaxLength(128)),
 });
 
 export type Registration = typeof Registration.Type;
