@@ -237,8 +237,8 @@ describe("directory-linked device groups", () => {
 
     // SAFETY: the fake select builder exposes `for`; wrapping it lets the test
     // observe that the recompute takes a row lock before reading memberships.
-    db.select = (...args: any[]) => {
-      const builder = originalSelect(...args);
+    db.select = ((...args: any[]) => {
+      const builder: any = originalSelect(args[0]);
       const originalFor = builder.for.bind(builder);
 
       builder.for = (strength: string) => {
@@ -248,7 +248,7 @@ describe("directory-linked device groups", () => {
       };
 
       return builder;
-    };
+    }) as typeof db.select;
 
     await runEffect(syncDirectoryGroup(db, organizationId, "group-1", { now }));
 

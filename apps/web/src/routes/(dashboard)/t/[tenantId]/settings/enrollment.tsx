@@ -21,6 +21,7 @@ import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
 import { StatusChip as Chip } from "~/components/settings/status-chip";
+import { AppleByodPanel } from "~/components/settings/apple-byod-panel";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -30,6 +31,7 @@ export const route = {
     // builder, pre-registrations and activity log load with the page.
     return preloadPage([
       () => queryClient.ensureQueryData(enterpriseQueries.enrollment(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.appleByod(params.tenantId)),
       () => queryClient.ensureQueryData(enterpriseQueries.apns(params.tenantId)),
       () => queryClient.ensureQueryData(enterpriseQueries.scepCa(params.tenantId)),
       () => queryClient.ensureQueryData(enterpriseQueries.android(params.tenantId)),
@@ -459,6 +461,8 @@ export default function EnrollmentSettingsPage() {
           </Show>
         </div>
       </Panel>
+
+      <AppleByodPanel tenantId={params.tenantId ?? ""} canWrite={writable()} />
 
       <Panel
         title="SCEP identity"

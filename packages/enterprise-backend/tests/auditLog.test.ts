@@ -69,9 +69,11 @@ describe("normalizeAuditSearchQuery", () => {
   });
 
   it("rejects unknown enum filters", () => {
-    expect(() => normalizeAuditSearchQuery({ category: "everything" })).toThrow(/category/);
-    expect(() => normalizeAuditSearchQuery({ protocol: "ios" })).toThrow(/protocol/);
-    expect(() => normalizeAuditSearchQuery({ actorType: "robot" })).toThrow(/actorType/);
+    expect(() => normalizeAuditSearchQuery({ category: "everything" as never })).toThrow(
+      /category/,
+    );
+    expect(() => normalizeAuditSearchQuery({ protocol: "ios" as never })).toThrow(/protocol/);
+    expect(() => normalizeAuditSearchQuery({ actorType: "robot" as never })).toThrow(/actorType/);
   });
 
   it("rejects over-long filters", () => {

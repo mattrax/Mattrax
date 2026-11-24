@@ -36,6 +36,12 @@ import { makeDb, runEffect } from "./helpers.js";
 
 const organizationId = "org-1";
 
+const deliveryError = (error: unknown) => {
+  if (!(error instanceof AndroidDeliveryError)) throw new Error("Expected Android delivery error");
+
+  return error;
+};
+
 const otherOrganizationId = "org-2";
 
 const enterpriseName = "enterprises/LC123";
@@ -704,7 +710,7 @@ describe("Android Enterprise delivery", () => {
       ),
     );
 
-    expect(missing.kind).toBe("unauthorized");
+    expect(deliveryError(missing).kind).toBe("unauthorized");
 
     const wrongAudienceToken = await sign({ aud: "https://other.test/pubsub" });
 
@@ -723,7 +729,7 @@ describe("Android Enterprise delivery", () => {
       ),
     );
 
-    expect(wrongAudience.kind).toBe("unauthorized");
+    expect(deliveryError(wrongAudience).kind).toBe("unauthorized");
 
     const wrongIssuerToken = await sign({ iss: "https://evil.test" });
 
@@ -742,7 +748,7 @@ describe("Android Enterprise delivery", () => {
       ),
     );
 
-    expect(wrongIssuer.kind).toBe("unauthorized");
+    expect(deliveryError(wrongIssuer).kind).toBe("unauthorized");
 
     const validToken = await sign();
     const [header, payload, signature] = validToken.split(".");
@@ -763,7 +769,7 @@ describe("Android Enterprise delivery", () => {
       ),
     );
 
-    expect(badSignature.kind).toBe("unauthorized");
+    expect(deliveryError(badSignature).kind).toBe("unauthorized");
     expect(db.store.device).toHaveLength(0);
   });
 
@@ -981,6 +987,144 @@ describe("Android Enterprise delivery", () => {
     expect(calls.policies[1].policy.applications).toEqual([
       { packageName: "com.microsoft.teams", installType: "AVAILABLE" },
     ]);
+  });
+
+  it("compiles in-scope restricted software as installType BLOCKED", async () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      policy: [
+        {
+          id: "policy-1",
+          organizationId,
+          name: "Android baseline",
+          notes: null,
+          priority: 10,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      configuration: [
+        {
+          policyId: "policy-1",
+          kind: "mttx.android.policy.designer",
+          data: {
+            policy: {
+              applications: [{ packageName: "com.example.banned", installType: "FORCE_INSTALLED" }],
+            },
+          },
+          hash: "hash-1",
+        },
+      ],
+      device_policy: [{ deviceId: "device-1", policyId: "policy-1", mode: "include" }],
+      restricted_software: [
+        {
+          id: "rule-1",
+          organizationId,
+          name: "Block Banned",
+          platform: "android",
+          matchType: "android-package",
+          matchValue: "com.example.banned",
+          matchKey: "com.example.banned",
+          action: "block-install",
+          message: null,
+          notificationEmails: [],
+          enabled: true,
+          createdByAccountId: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "rule-2",
+          organizationId,
+          name: "Unscoped",
+          platform: "android",
+          matchType: "android-package",
+          matchValue: "com.example.unscoped",
+          matchKey: "com.example.unscoped",
+          action: "block-install",
+          message: null,
+          notificationEmails: [],
+          enabled: true,
+          createdByAccountId: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      restricted_software_assignment: [
+        {
+          restrictedSoftwareId: "rule-1",
+          organizationId,
+          targetType: "device",
+          targetId: "device-1",
+          mode: "include",
+          createdAt: now,
+        },
+        {
+          restrictedSoftwareId: "rule-2",
+          organizationId,
+          targetType: "group",
+          targetId: "group-without-members",
+          mode: "include",
+          createdAt: now,
+        },
+      ],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
+
+    expect(calls.policies[0].policy.applications).toEqual([
+      { packageName: "com.example.banned", installType: "BLOCKED" },
+    ]);
+  });
+
+  it("does not compile a restricted rule from another tenant", async () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      restricted_software: [
+        {
+          id: "rule-foreign",
+          organizationId: otherOrganizationId,
+          name: "Foreign",
+          platform: "android",
+          matchType: "android-package",
+          matchValue: "com.example.banned",
+          matchKey: "com.example.banned",
+          action: "block-install",
+          message: null,
+          notificationEmails: [],
+          enabled: true,
+          createdByAccountId: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      restricted_software_assignment: [
+        {
+          restrictedSoftwareId: "rule-foreign",
+          organizationId: otherOrganizationId,
+          targetType: "device",
+          targetId: "device-1",
+          mode: "include",
+          createdAt: now,
+        },
+      ],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
+
+    expect(calls.policies[0].policy.applications ?? []).toEqual([]);
   });
 
   it("issues an enrollment token only while the enterprise is active", async () => {
@@ -1783,7 +1927,7 @@ describe("Android device inventory", () => {
     // The fixture is the complete `device` row shape this merge is written for;
     // `Object.assign` keeps its required columns while the patch overrides the
     // ones the merge produced.
-    const existing: AndroidDeviceRow = Object.assign(androidDeviceRow(), first);
+    const existing = Object.assign(androidDeviceRow(), first) as AndroidDeviceRow;
 
     const partial = parseAndroidDeviceResource(
       { name: deviceName, state: "ACTIVE", lastStatusReportTime: statusReportTime },

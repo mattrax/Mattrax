@@ -21,6 +21,7 @@ import type {
 import { Match, Option, Schema } from "effect";
 import { createEffect, createMemo, createSignal, Errored, For, Show } from "solid-js";
 import { isServer } from "@solidjs/web";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import type { JSX } from "@solidjs/web";
 import {
   DevicePresenceBadge,
@@ -1548,6 +1549,10 @@ export default function DeviceDetailPage() {
     enterpriseQueries.deviceApplications(params.tenantId, params.deviceId),
   );
 
+  const restrictedSoftware = useQuery(() =>
+    enterpriseQueries.deviceRestrictedSoftware(params.tenantId, params.deviceId),
+  );
+
   /**
    * Device detail does not include group memberships, but the tenant-scoped
    * device search does (the same data the list's Groups column uses). Resolve
@@ -2944,6 +2949,94 @@ export default function DeviceDetailPage() {
                       </Show>
                     </Show>
                   </DetailCard>
+                  <Show
+                    when={
+                      restrictedSoftware.data &&
+                      (restrictedSoftware.data.violations.length > 0 ||
+                        restrictedSoftware.data.rules.length > 0)
+                    }
+                  >
+                    <DetailCard
+                      flush
+                      title="Restricted software"
+                      description="Deny-list matches recorded for this device, and the rules that apply here."
+                    >
+                      <Show
+                        when={restrictedSoftware.data!.violations.length > 0}
+                        fallback={
+                          <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
+                            No restricted software has been detected on this device.
+                          </p>
+                        }
+                      >
+                        <ul class="divide-y divide-border">
+                          <For each={restrictedSoftware.data!.violations}>
+                            {(violation) => (
+                              <li class="px-4 py-3 text-[12.5px] sm:px-5">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                  <span class="min-w-0">
+                                    <a
+                                      href={`/t/${params.tenantId}/restricted-software/${violation.ruleId}`}
+                                      class="font-medium text-foreground hover:underline"
+                                    >
+                                      {violation.ruleName}
+                                    </a>
+                                    <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
+                                      {violation.matchedBundleId}
+                                    </span>
+                                  </span>
+                                  <span class="flex shrink-0 items-center gap-1.5 text-[11px]">
+                                    <Chip
+                                      tone={
+                                        violation.enforcementState === "enforced"
+                                          ? "success"
+                                          : violation.enforcementState === "failed"
+                                            ? "danger"
+                                            : violation.enforcementState === "pending"
+                                              ? "warning"
+                                              : "muted"
+                                      }
+                                    >
+                                      {violation.enforcementState === "detection-only"
+                                        ? "Detection only"
+                                        : violation.enforcementState}
+                                    </Chip>
+                                    <Chip tone={violation.status === "open" ? "warning" : "muted"}>
+                                      {violation.status}
+                                    </Chip>
+                                  </span>
+                                </div>
+                                <Show when={violation.enforcementDetail}>
+                                  <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                                    {violation.enforcementDetail}
+                                  </p>
+                                </Show>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </Show>
+                      <Show when={restrictedSoftware.data!.rules.length > 0}>
+                        <div class="border-t border-border px-4 py-3 sm:px-5">
+                          <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                            Applicable rules
+                          </p>
+                          <ul class="mt-2 space-y-1.5">
+                            <For each={restrictedSoftware.data!.rules}>
+                              {(rule) => (
+                                <li class="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+                                  <span class="min-w-0 truncate text-foreground">{rule.name}</span>
+                                  <span class="text-[11px] text-muted-foreground">
+                                    {rule.enforcement.label}
+                                  </span>
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                        </div>
+                      </Show>
+                    </DetailCard>
+                  </Show>
                   <Show when={row()!.android}>
                     {(android) => (
                       <DetailCard
@@ -3410,6 +3503,71 @@ export default function DeviceDetailPage() {
                           </Show>
                         </div>
 
+                        <Show
+                          when={
+                            (health.data?.managedCertificates ?? []).some(
+                              (certificate) => certificate.source !== "scep",
+                            )
+                          }
+                        >
+                          <div class="space-y-2 border-t border-border pt-3">
+                            <p class="label-caps">Managed certificates</p>
+                            <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                              Apple reports managed certificates and their expiry. Windows has no
+                              certificate inventory, so an entry marked Policy material is what the
+                              policy delivers rather than device evidence.
+                            </p>
+                            <ul class="divide-y divide-border">
+                              <For
+                                each={(health.data?.managedCertificates ?? []).filter(
+                                  (certificate) => certificate.source !== "scep",
+                                )}
+                              >
+                                {(certificate) => (
+                                  <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-[11.5px]">
+                                    <span class="min-w-0 flex-1">
+                                      <span class="block truncate font-medium text-foreground">
+                                        {certificate.subject}
+                                      </span>
+                                      <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
+                                        {certificate.identifier}
+                                      </span>
+                                    </span>
+                                    <span class="flex flex-wrap items-center gap-2">
+                                      <Chip
+                                        tone={
+                                          certificate.source === "apple-inventory"
+                                            ? "success"
+                                            : "muted"
+                                        }
+                                      >
+                                        {certificate.source === "apple-inventory"
+                                          ? "Device"
+                                          : "Policy material"}
+                                      </Chip>
+                                      <Chip tone="muted">
+                                        {certificate.isIdentity ? "identity" : "certificate"}
+                                      </Chip>
+                                      <Show when={certificate.notAfter}>
+                                        {(notAfter) => (
+                                          <>
+                                            <span class="text-muted-foreground">
+                                              expires {formatDate(notAfter())}
+                                            </span>
+                                            <Chip tone={certificateTone(notAfter(), false)}>
+                                              {certificateDaysLabel(notAfter())}
+                                            </Chip>
+                                          </>
+                                        )}
+                                      </Show>
+                                    </span>
+                                  </li>
+                                )}
+                              </For>
+                            </ul>
+                          </div>
+                        </Show>
+
                         <Show when={row()!.proto === "apple" && health.data?.push}>
                           <div class="space-y-2 border-t border-border pt-3">
                             <div class="flex flex-wrap items-center justify-between gap-2">
@@ -3656,6 +3814,16 @@ export default function DeviceDetailPage() {
                     >
                       {(content) => <Markdown content={content()} />}
                     </Show>
+                  </DetailCard>
+                  <DetailCard
+                    title="Scope tags"
+                    description="Limit which delegated administrators can see and command this device."
+                  >
+                    <ScopeTagAssignmentEditor
+                      tenantId={params.tenantId!}
+                      resourceType="device"
+                      resourceIds={[params.deviceId!]}
+                    />
                   </DetailCard>
                   <DetailCard
                     title="Users"

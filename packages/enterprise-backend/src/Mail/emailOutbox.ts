@@ -34,6 +34,7 @@ export const EMAIL_OUTBOX_TEMPLATES = [
   "credential_expiry",
   "dashboard_report",
   "approval_request",
+  "restricted_software_violation",
 ] as const;
 
 export type EmailOutboxTemplate = (typeof EMAIL_OUTBOX_TEMPLATES)[number];

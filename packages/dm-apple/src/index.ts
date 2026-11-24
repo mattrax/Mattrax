@@ -31,3 +31,5 @@ export * from "./profile-signing.js";
 export * from "./supportedOs.js";
 
 export * from "./scripts.js";
+
+export * from "./restrictedSoftware.js";

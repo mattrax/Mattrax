@@ -25,8 +25,19 @@ pub struct ScriptState {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+pub struct RestrictedState {
+    /// Digest of the last applied rule revision.
+    pub digest: String,
+    /// Unix seconds of the last enforcement pass.
+    pub last_run: i64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct AgentState {
     pub scripts: BTreeMap<String, ScriptState>,
+    /// Restricted software rules by rule id.
+    pub restricted: BTreeMap<String, RestrictedState>,
     /// `kern.boottime`, so a reboot fires startup triggers once.
     pub last_boot: String,
     /// Last console user, so login/logout can be detected.

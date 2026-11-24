@@ -49,7 +49,7 @@ describe("per-platform compilation of policy variables", () => {
     });
   });
 
-  it("resolves Windows SyncML node values", () => {
+  it("resolves Windows SyncML node values", async () => {
     const data = substitutePolicyVariables(
       {
         omaUri: "./Vendor/MSFT/Policy/Config/DeviceLock/DeviceName",
@@ -59,14 +59,14 @@ describe("per-platform compilation of policy variables", () => {
       context,
     );
 
-    expect(
+    await expect(
       windowsPolicyNodes({
         policyId: "policy-1",
         kind: "mttx.windows.custom.devicename",
         data,
         hash: "hash-1",
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         omaUri: "./Vendor/MSFT/Policy/Config/DeviceLock/DeviceName",
         value: "Alice's MacBook (Acme Ltd)",
@@ -75,7 +75,7 @@ describe("per-platform compilation of policy variables", () => {
     ]);
   });
 
-  it("leaves a missing attribute value empty instead of shipping literal text", () => {
+  it("leaves a missing attribute value empty instead of shipping literal text", async () => {
     expect(
       substitutePolicyVariables(
         {

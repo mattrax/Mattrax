@@ -15,6 +15,7 @@ import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { Badge } from "~/components/ui/badge";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
 import { toast } from "~/components/toast";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -1199,6 +1200,19 @@ export default function DashboardPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <section class="rounded-xl border border-border bg-card p-4">
+        <h2 class="text-[12.5px] font-medium text-foreground">Scope tags</h2>
+        <p class="mb-3 mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+          Limit which delegated administrators can see and edit this dashboard. Its widgets are
+          tenant-wide queries, so a scoped administrator cannot run them yet.
+        </p>
+        <ScopeTagAssignmentEditor
+          tenantId={params.tenantId!}
+          resourceType="dashboard"
+          resourceIds={[params.dashboardId!]}
+        />
+      </section>
 
       <p class="text-[11px] text-muted-foreground">
         Shared with everyone in this tenant.

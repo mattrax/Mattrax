@@ -3,10 +3,17 @@ import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { DN } from "./ldapjs-dn.js";
 import {
   osPolicyRuleFromRow,
+  parseCertificateConfigurationKind,
   windowsOsUpdatePolicyNodes,
   windowsRotationTerminalOutcome,
 } from "@mattrax/enterprise-domain";
-import { windowsPolicyNodes } from "@mattrax/mdm-core";
+import { openSecret, sealSecret } from "@mattrax/crypto";
+import {
+  certificateMaterialKey,
+  loadCertificateMaterials,
+  windowsPfxCertInstallParent,
+  windowsPolicyNodes,
+} from "@mattrax/mdm-core";
 import { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
 import { planWindowsRotationPoll } from "./windowsRotation.js";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
@@ -214,9 +221,15 @@ type WindowsStateCommandPayload = {
   locURI: string;
   cmdID?: string;
   data?: string;
+  /** Sealed replacement for `data` on certificate-secret nodes. */
+  sealedData?: string;
   format?: string;
   hash?: string;
 };
+
+/** PFX blobs and passwords must not stay plaintext in command history. */
+const windowsCertificateSecretNode = (uri: string): boolean =>
+  /\/PFXCertPassword$/.test(uri) || /\/PFXCertBlob$/.test(uri);
 
 export type WindowsBackendOptions = {
   readonly db: Db["Service"];
@@ -1867,6 +1880,15 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             applied.delete(uri);
             delivered.delete(uri);
             reverting.delete(uri);
+
+            // A PFX identity is deleted through its parent; clear the child
+            // leaves recorded under it so a later policy does not think they
+            // are still installed.
+            const prefix = `${uri}/`;
+
+            for (const key of delivered.keys()) if (key.startsWith(prefix)) delivered.delete(key);
+            for (const key of applied) if (key.startsWith(prefix)) applied.delete(key);
+
             revertedAt = timestamp;
           } else {
             applied.add(uri);
@@ -2350,7 +2372,20 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           policyId: configuration.policyId,
           kind: configuration.kind,
           data: configuration.data,
+          scope: configuration.scope === "user" ? ("user" as const) : ("device" as const),
         }));
+
+        // Certificate profiles need their sealed PKCS#12; load once, then pass
+        // the material for each configuration into node generation.
+        const certificateMaterials = yield* loadCertificateMaterials(
+          db,
+          authSecret ?? "",
+          organizationId,
+          configurations.map((configuration) => ({
+            policyId: configuration.policyId,
+            kind: configuration.kind,
+          })),
+        );
 
         const commands: Array<WindowsCommand> = [];
 
@@ -2359,6 +2394,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           readonly data: string;
           readonly format?: string;
           readonly hash: string;
+          readonly operation?: "Add" | "Replace";
         };
 
         // Resolve duplicate OMA-URIs deterministically. A policy with a
@@ -2372,12 +2408,29 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
 
         if (device.status === "enrolled") {
           for (const configuration of sorted) {
-            for (const node of windowsPolicyNodes({
-              policyId: configuration.policyId,
-              kind: configuration.kind,
-              data: configuration.data,
-              hash: "",
-            })) {
+            const dataObject = Schema.is(Schema.JsonObject)(configuration.data)
+              ? configuration.data
+              : null;
+            const data =
+              parseCertificateConfigurationKind(configuration.kind) && dataObject
+                ? { ...dataObject, channel: configuration.scope }
+                : configuration.data;
+
+            const policyNodes = yield* Effect.promise(() =>
+              windowsPolicyNodes(
+                {
+                  policyId: configuration.policyId,
+                  kind: configuration.kind,
+                  data,
+                  hash: "",
+                },
+                certificateMaterials.get(
+                  certificateMaterialKey(configuration.policyId, configuration.kind),
+                ),
+              ),
+            );
+
+            for (const node of policyNodes) {
               if (desired.has(node.omaUri)) continue;
 
               const value = node.value;
@@ -2394,9 +2447,13 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
                 windowsPolicyNodeHash(serializedValue, node.format),
               );
 
-              const desiredNode = node.format
-                ? { uri: node.omaUri, data: serializedValue, hash, format: node.format }
-                : { uri: node.omaUri, data: serializedValue, hash };
+              const desiredNode: DesiredPolicyNode = {
+                uri: node.omaUri,
+                data: serializedValue,
+                hash,
+                ...(node.format ? { format: node.format } : {}),
+                ...(node.operation ? { operation: node.operation } : {}),
+              };
 
               desired.set(node.omaUri, desiredNode);
             }
@@ -2492,8 +2549,11 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
         // A URI that is desired again after a pending revert must not leave a
         // stale `Delete` row (or pending-revert state) behind.
         for (const uri of desired.keys()) {
+          const parent = windowsPfxCertInstallParent(uri);
+
           if (reverting.delete(uri)) policyStateChanged = true;
-          const deleteRow = deleteRowsByUri.get(uri);
+          if (parent && reverting.delete(parent)) policyStateChanged = true;
+          const deleteRow = deleteRowsByUri.get(uri) ?? (parent ? deleteRowsByUri.get(parent) : undefined);
 
           if (deleteRow && commandStatusIsActive(deleteRow.status)) {
             yield* db
@@ -2521,10 +2581,22 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
             row?.id ??
             (yield* Effect.promise(() => windowsPolicyCommandId(device.id, "replace", entry.uri)));
 
+          const secretNode = windowsCertificateSecretNode(entry.uri);
+          const sealedData: string | null = secretNode
+            ? yield* Effect.promise(() => sealSecret(authSecret ?? "", node.data))
+            : null;
+          // Add is only correct while no acknowledged blob exists for this
+          // URI. After a parent Delete the child applied state is cleared, so
+          // a re-add uses Add again; a stale succeeded command row must not
+          // force Replace on a blob the device no longer has.
+          const operation =
+            node.operation === "Add" && applied.has(entry.uri)
+              ? "Replace"
+              : (node.operation ?? "Replace");
           const payload: WindowsStateCommandPayload = {
-            kind: "Replace",
+            kind: operation,
             locURI: entry.uri,
-            data: node.data,
+            ...(sealedData !== null ? { sealedData } : { data: node.data }),
             hash: entry.hash,
           };
 
@@ -2538,7 +2610,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           });
 
           const command: WindowsCommand = {
-            kind: "Replace",
+            kind: operation,
             cmdID: commandId,
             locURI: entry.uri,
             data: node.data,
@@ -2551,38 +2623,58 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           policyStateChanged = true;
         }
 
+        // A PFX identity is removed by deleting its parent PFXCertInstall/{id}
+        // node. Deleting each leaf leaves the private key behind, and the CSP
+        // does not define a meaningful delete for every child.
+        const removeTargets = new Map<string, string[]>();
+
         for (const uri of policyPlan.remove) {
-          const row = deleteRowsByUri.get(uri);
+          const target = windowsPfxCertInstallParent(uri) ?? uri;
+          const leaves = removeTargets.get(target) ?? [];
 
-          const replaceRow = replaceRowsByUri.get(uri);
+          leaves.push(uri);
+          removeTargets.set(target, leaves);
+        }
 
-          if (replaceRow && commandStatusIsActive(replaceRow.status))
-            yield* db
-              .update(s.deviceCommand)
-              .set({
-                status: "cancelled",
-                dedupeKey: null,
-                resultStatus: RECONCILED_RESULT_STATUS,
-                resultDetail: "The setting left every policy; a delete replaces delivery.",
-                updatedAt: timestamp,
-              })
-              .where(
-                and(eq(s.deviceCommand.id, replaceRow.id), eq(s.deviceCommand.deviceId, device.id)),
-              );
+        for (const [target, leaves] of removeTargets) {
+          for (const leaf of leaves) {
+            const replaceRow = replaceRowsByUri.get(leaf);
 
+            if (replaceRow && commandStatusIsActive(replaceRow.status))
+              yield* db
+                .update(s.deviceCommand)
+                .set({
+                  status: "cancelled",
+                  dedupeKey: null,
+                  resultStatus: RECONCILED_RESULT_STATUS,
+                  resultDetail: "The setting left every policy; a delete replaces delivery.",
+                  updatedAt: timestamp,
+                })
+                .where(
+                  and(
+                    eq(s.deviceCommand.id, replaceRow.id),
+                    eq(s.deviceCommand.deviceId, device.id),
+                  ),
+                );
+
+          }
+
+          const row = deleteRowsByUri.get(target);
           const commandId =
             row?.id ??
-            (yield* Effect.promise(() => windowsPolicyCommandId(device.id, "delete", uri)));
+            (yield* Effect.promise(() =>
+              windowsPolicyCommandId(device.id, "delete", target),
+            ));
 
           yield* writeStateCommand({
             id: commandId,
             requestType: WINDOWS_POLICY_DELETE_REQUEST_TYPE,
-            payload: { kind: "Delete", locURI: uri },
+            payload: { kind: "Delete", locURI: target },
             existing: row,
           });
 
-          commands.push({ kind: "Delete", cmdID: commandId, locURI: uri });
-          reverting.add(uri);
+          commands.push({ kind: "Delete", cmdID: commandId, locURI: target });
+          reverting.add(target);
           policyStateChanged = true;
         }
 
@@ -2735,7 +2827,10 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
           const payload = commandPayload(command.payload);
           const kind = payloadString(payload, "kind") ?? "Exec";
           const locURI = payloadString(payload, "locURI");
-          const data = payloadString(payload, "data");
+          const sealedData = payloadString(payload, "sealedData");
+          const data: string | undefined = sealedData
+            ? yield* Effect.promise(() => openSecret(authSecret ?? "", sealedData))
+            : payloadString(payload, "data");
           const format = payloadString(payload, "format");
 
           const syncCommand: WindowsCommand = {

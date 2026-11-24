@@ -43,6 +43,8 @@ const DEVICE_READ = new Set([
   "listEnrollmentQuestions",
   "getPolicyVariables",
   "listDeviceAttributeCollection",
+  "listDeviceAppleUsers",
+  "listWindowsFailures",
 ]);
 
 const DEVICE_WRITE = new Set([
@@ -65,6 +67,9 @@ const DEVICE_WRITE = new Set([
   "deleteAttribute",
   "setDeviceAttributes",
   "importDeviceAttributes",
+  "deviceAppleUserAction",
+  "bindAppleUserIdentity",
+  "unbindAppleUserIdentity",
 ]);
 
 const GROUP_READ = new Set([
@@ -112,6 +117,8 @@ const APPLICATION_READ = new Set([
   "getApplication",
   "getApplicationInventory",
   "downloadApplication",
+  "searchSoftwareCatalogue",
+  "getSoftwareCatalogueTitle",
 ]);
 
 const APPLICATION_WRITE = new Set([
@@ -125,6 +132,7 @@ const APPLICATION_WRITE = new Set([
   "installApplication",
   "uninstallApplication",
   "uploadApplication",
+  "addSoftwareCatalogueTitle",
 ]);
 
 const SCRIPT_READ = new Set([
@@ -145,6 +153,20 @@ const SCRIPT_WRITE = new Set([
   // "Collect now" queues a manual run, so it needs the same write permission
   // as Run on assigned devices.
   "collectDeviceAttribute",
+]);
+
+const RESTRICTED_SOFTWARE_READ = new Set([
+  "listRestrictedSoftware",
+  "getRestrictedSoftware",
+  "listRestrictedSoftwareViolations",
+  "getDeviceRestrictedSoftware",
+]);
+
+const RESTRICTED_SOFTWARE_WRITE = new Set([
+  "createRestrictedSoftware",
+  "patchRestrictedSoftware",
+  "deleteRestrictedSoftware",
+  "patchRestrictedSoftwareAssignments",
 ]);
 
 const DASHBOARD_READ = new Set([
@@ -288,6 +310,15 @@ const ROLE_READ = new Set(["listTenantRoles"]);
 
 const ROLE_WRITE = new Set(["createTenantRole", "patchTenantRole", "deleteTenantRole"]);
 
+const SCOPE_TAG_READ = new Set(["listScopeTags", "listScopeTagAssignments"]);
+
+const SCOPE_TAG_WRITE = new Set([
+  "createScopeTag",
+  "patchScopeTag",
+  "deleteScopeTag",
+  "setScopeTagAssignments",
+]);
+
 const EXPLICIT = {
   getTenant: "tenant.read",
   // The overview checklist is an aggregate read of data this role may already
@@ -427,6 +458,10 @@ export const permissionForMethod = (method: string): Permission | undefined => {
 
   if (SCRIPT_WRITE.has(method)) return "scripts.write";
 
+  if (RESTRICTED_SOFTWARE_READ.has(method)) return "restricted_software.read";
+
+  if (RESTRICTED_SOFTWARE_WRITE.has(method)) return "restricted_software.write";
+
   if (DASHBOARD_READ.has(method)) return "dashboards.read";
 
   if (DASHBOARD_WRITE.has(method)) return "dashboards.write";
@@ -454,6 +489,10 @@ export const permissionForMethod = (method: string): Permission | undefined => {
   if (ROLE_READ.has(method)) return "roles.read";
 
   if (ROLE_WRITE.has(method)) return "roles.write";
+
+  if (SCOPE_TAG_READ.has(method)) return "scope_tags.read";
+
+  if (SCOPE_TAG_WRITE.has(method)) return "scope_tags.write";
 
   // Public invitations: accepting and previewing are token-bound and gated by
   // the caller layer's rate limit instead of a tenant membership.
@@ -582,7 +621,22 @@ export type TenantAccess = {
   readonly member: typeof schema.member.$inferSelect;
   readonly organization: typeof schema.organization.$inferSelect;
   readonly role: ResolvedTenantRole;
+  /**
+   * Scope tags this membership may reach. Empty means unscoped (tenant-wide),
+   * which is the upgrade default and the effective state for every built-in
+   * owner regardless of rows.
+   */
+  readonly scopeTagIds: ReadonlyArray<string>;
 };
+
+/**
+ * True when the membership is not narrowed to specific tags. Owners are always
+ * unscoped so a tenant cannot lock itself out by tagging its owner.
+ */
+export const isUnscopedMember = (
+  member: OwnerCandidate,
+  scopeTagIds: ReadonlyArray<string>,
+): boolean => isBuiltInOwnerMember(member) || scopeTagIds.length === 0;
 
 /**
  * Load a caller's membership, organisation and effective role in one query.
@@ -599,7 +653,7 @@ export const loadTenantAccess = (
   organizationId: string,
 ): Effect.Effect<TenantAccess | undefined, unknown, never> =>
   Effect.gen(function* () {
-    const [row] = yield* db
+    const rows = yield* db
       .select({
         member: schema.member,
         organization: schema.organization,
@@ -608,6 +662,7 @@ export const loadTenantAccess = (
           name: schema.tenantRole.name,
           permissions: schema.tenantRole.permissions,
         },
+        scopeTagId: schema.memberScopeTag.tagId,
       })
       .from(schema.member)
       .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
@@ -618,20 +673,40 @@ export const loadTenantAccess = (
           eq(schema.tenantRole.organizationId, schema.member.organizationId),
         ),
       )
+      .leftJoin(
+        schema.memberScopeTag,
+        and(
+          eq(schema.memberScopeTag.memberId, schema.member.id),
+          eq(schema.memberScopeTag.organizationId, schema.member.organizationId),
+        ),
+      )
       .where(
         and(
           eq(schema.member.accountId, accountId),
           eq(schema.member.organizationId, organizationId),
         ),
-      )
-      .limit(1);
+      );
+
+    const row = rows[0];
 
     if (!row) return undefined;
+
+    // The scope-tag join duplicates the membership once per allowed tag, so
+    // collapse the rows here instead of issuing a second query. Keeping this to
+    // one round trip matters: it runs on every tenant request.
+    const scopeTagIds = [
+      ...new Set(
+        rows
+          .map((entry: { scopeTagId?: string | null }) => entry.scopeTagId)
+          .filter((tagId): tagId is string => typeof tagId === "string" && tagId.length > 0),
+      ),
+    ];
 
     return {
       member: row.member,
       organization: row.organization,
       role: resolveTenantRoleFrom(row.member, row.customRole?.id ? row.customRole : undefined),
+      scopeTagIds,
     };
   });
 

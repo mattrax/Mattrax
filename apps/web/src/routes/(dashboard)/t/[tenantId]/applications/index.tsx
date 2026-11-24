@@ -12,6 +12,7 @@ import {
   PlatformBadge,
   relativeTime,
 } from "~/components/mdm/common";
+import { ApplicationViewTabs } from "~/components/mdm/application-view-tabs";
 import { MdmTable } from "~/components/mdm/table";
 import type { MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
@@ -176,7 +177,7 @@ export default function ApplicationsPage() {
   return (
     <Page>
       <PageHeader
-        eyebrow="Catalogue"
+        eyebrow="Applications"
         title="Applications"
         description="Catalogue installers and assign them to groups or devices."
         meta={
@@ -200,6 +201,7 @@ export default function ApplicationsPage() {
           </div>
         }
       />
+      <ApplicationViewTabs tenantId={params.tenantId ?? ""} active="applications" />
       <MdmTable<ApplicationRow>
         mode="server"
         rows={rows()}

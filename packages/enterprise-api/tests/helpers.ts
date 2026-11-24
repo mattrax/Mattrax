@@ -1,6 +1,8 @@
-import { Effect, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import type { HttpServerRequest } from "effect/http";
+import { HttpRouter } from "effect/http";
 import { createEnterpriseSchema } from "@mattrax/enterprise-backend";
+import type { EnterpriseDb } from "@mattrax/enterprise-backend";
 
 export const schema = createEnterpriseSchema();
 
@@ -20,9 +22,19 @@ type RowValue =
   | ReadonlyArray<RowValue>
   | Row;
 
-type Row = { [column: string]: RowValue };
+export type Row = { [column: string]: RowValue };
 
-type Store = Record<string, Row[]>;
+export type Store = Record<string, Row[]>;
+
+export type TestDb = EnterpriseDb & {
+  readonly store: Record<string, any[]>;
+  readonly query: any;
+  failNextWrite(
+    operation: WriteOperation,
+    table: string,
+    options?: { readonly occurrence?: number; readonly error?: unknown },
+  ): TestDb;
+};
 
 const tableSymbol = (description: string) => (value: Row) =>
   Object.getOwnPropertySymbols(value).find((symbol) => symbol.description === description)!;
@@ -513,7 +525,7 @@ const project = (fields: any, row: Row) => {
       if (Schema.is(Schema.Record(Schema.String, Schema.Any))(field)) {
         const entries = Object.entries(field);
 
-        if (entries.length > 0 && entries.every(([, value]) => value?.table))
+        if (entries.length > 0 && entries.every(([, value]: [string, any]) => value?.table))
           return [
             key,
             Object.fromEntries(
@@ -895,7 +907,7 @@ class DeleteBuilder {
   }
 }
 
-export const makeDb = (initial: Partial<Store> = {}) => {
+export const makeDb = (initial: Partial<Store> = {}): TestDb => {
   const store: Store = Object.fromEntries(
     Object.values(schema).map((table) => [tableName(table), []]),
   );
@@ -978,6 +990,22 @@ export const makeDb = (initial: Partial<Store> = {}) => {
 export const runEffect = async <A, E>(
   effect: Effect.Effect<A, E, any> | Promise<Effect.Effect<A, E, any>>,
 ) => Effect.runPromise((await effect) as Effect.Effect<A, E, never>);
+
+export const makeHttpHandler = <A, E, R>(layer: Layer.Layer<A, E, R>) =>
+  // SAFETY: these contract tests provide the service and HTTP platform layers;
+  // the cast only removes Effect's request-context requirement at the boundary.
+  HttpRouter.toWebHandler(layer as Layer.Layer<HttpRouter.HttpRouter>).handler;
+
+export const requireField = <T extends object, K extends string>(
+  value: T,
+  field: K,
+  // oxlint-disable-next-line quality/no-unsafe-dictionary-type -- The requested discriminant is validated at runtime.
+): T & { readonly [P in K]: any } => {
+  if (!(field in value)) throw new Error(`Expected fixture field ${field}`);
+
+  // oxlint-disable-next-line quality/no-unsafe-dictionary-type -- The requested discriminant is validated at runtime.
+  return value as T & { readonly [P in K]: any };
+};
 
 export const request = (
   headers: Record<string, string> = {},

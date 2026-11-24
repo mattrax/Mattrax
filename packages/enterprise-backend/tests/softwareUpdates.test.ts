@@ -92,7 +92,8 @@ const makeFeedDb = (options: FeedDbOptions = {}) => {
 
   // SAFETY: the loader only calls select/insert/update with the shapes above;
   // the cast avoids implementing the rest of Drizzle's client surface.
-  return { db: db as EnterpriseDb, rows };
+  // oxlint-disable-next-line quality/no-chained-type-assertions -- The loader uses only the select/insert/update shapes above.
+  return { db: db as unknown as EnterpriseDb, rows };
 };
 
 const feedBody = (version = "26.7.3") => ({

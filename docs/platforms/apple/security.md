@@ -257,7 +257,7 @@ items are joined by the platform-specific ones the device's OS supports:
 | `softwareupdate.install-state`   | 14+   | 17+        | tvOS 18.4+, visionOS 26+     |
 | `softwareupdate.pending-version` | 14+   | 17+        |                              |
 | `softwareupdate.failure-reason`  | 14+   | 17+        |                              |
-| `security.certificate.list`      | 14+   | 17+        | count only is stored         |
+| `security.certificate.list`      | 14+   | 17+        | subject, identity flag, fingerprint and expiry |
 | `security.lockdown-mode`         | 27+   | 27+        | not reported before then     |
 
 The declaration's server token hashes the item list, so adding an item makes
@@ -297,6 +297,7 @@ update availability, managed flag and last-reported time.
 | `osUpdateInstallState`, `osUpdatePendingVersion`    | DDM status                   |
 | `osUpdateFailureCount`, `osUpdateFailureReason`     | DDM status                   |
 | `securityLockdownMode`, `managedCertificateCount`   | DDM status                   |
+| `managedCertificates`                               | DDM status (details)         |
 | `managementApps`                                    | DDM status                   |
 | `lastSeenAt`                                        | Check-in                     |
 | `inventoryUpdatedAt`                                | Last inventory write         |

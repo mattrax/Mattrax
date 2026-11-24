@@ -51,14 +51,14 @@ const makeContext = (
     onboardingBranding: options.onboardingBranding,
   }).pipe(Layer.provide(Layer.succeed(Db, db)));
 
-  const run = <A>(work: (auth: EnterpriseAuth["Service"]) => Effect.Effect<A, any, any>) =>
-    runEffect(
+  const run = async <A>(work: (auth: EnterpriseAuth["Service"]) => Effect.Effect<A, any, any>) =>
+    (await runEffect(
       Effect.gen(function* () {
         const auth = yield* EnterpriseAuth;
 
         return yield* work(auth);
       }).pipe(Effect.provide(Live)),
-    );
+    )) as any;
 
   return { db, run };
 };

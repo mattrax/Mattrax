@@ -34,10 +34,14 @@ export * from "./softwareUpdates.ts";
 
 export * from "./osPolicy.ts";
 
+export * from "./certificates.ts";
+
 export * from "./deviceActions.ts";
 export * from "./windowsSecurity.ts";
 
 export * from "./scripts.ts";
+
+export * from "./restrictedSoftware.ts";
 
 export * from "./fleetMigration.ts";
 

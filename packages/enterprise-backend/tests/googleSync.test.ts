@@ -557,6 +557,7 @@ describe("Google Workspace directory sync", () => {
     );
 
     expect(outcome.status).toBe("error");
+    if (outcome.status !== "error") throw new Error("Expected sync failure");
     expect(outcome.message).toContain("[redacted]");
     expect(outcome.message).not.toContain(secret);
     expect(JSON.stringify(errors)).not.toContain(secret);
@@ -759,6 +760,7 @@ describe("Google Workspace credential storage", () => {
       Effect.flip(loadGoogleDirectoryConfig({ db, organizationId: "org-1", authSecret })),
     );
 
+    if (!(error instanceof Error)) throw new Error("Expected configuration error");
     expect(error.message).toMatch(/could not be decrypted/);
     expect(error.message).not.toContain("SECRETKEYMATERIAL");
   });

@@ -10,7 +10,7 @@ import {
   StepUpRequired,
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "device-handover-test-secret";
@@ -121,8 +121,7 @@ const makeContext = async (options?: {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
-    storage,
+    storage: storage as any,
     // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret,
@@ -997,14 +996,14 @@ describe("device handover archives", () => {
 
     const insert = db.insert;
 
-    db.insert = (table: any) => {
+    db.insert = ((table: any) => {
       if (table === schema.auditLog)
         return {
           values: () => Effect.fail(new Error("audit outage")),
         } as any;
 
       return insert(table);
-    };
+    }) as typeof db.insert;
 
     const downloaded = await runEffect(
       service.downloadDeviceHandover(request(headers), tenant.id, created.id, {
@@ -1027,14 +1026,14 @@ describe("device handover archives", () => {
 
     const insert = db.insert;
 
-    db.insert = (table: any) => {
+    db.insert = ((table: any) => {
       if (table === schema.deviceHandoverArchive)
         return {
           values: () => Effect.fail(new Error("insert failed")),
         } as any;
 
       return insert(table);
-    };
+    }) as typeof db.insert;
 
     await expect(
       runEffect(

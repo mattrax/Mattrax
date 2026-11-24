@@ -7,7 +7,7 @@ import {
   EnterpriseDbError,
   EnterpriseForbidden,
 } from "@mattrax/enterprise-domain";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "account-deletion-test-secret";
@@ -135,7 +135,6 @@ const makeContext = (
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     // SAFETY: teardown lists and deletes tenant-prefixed objects; these tests
@@ -156,8 +155,7 @@ const makeContext = (
 
 const headers = { cookie: "mattrax_session=user-1" };
 
-const submit = <A, E>(effect: Effect.Effect<A, E, any>) =>
-  Effect.runPromise(Effect.result(effect));
+const submit = <A, E>(effect: Effect.Effect<A, E, any>) => runEffect(Effect.result(effect));
 
 const failureTag = (outcome: any) => (outcome._tag === "Failure" ? outcome.failure._tag : "ok");
 
@@ -208,9 +206,7 @@ describe("account deletion preview", () => {
     const preview = await runEffect(service.getAccountDeletion(request(headers)));
 
     expect(preview.canDelete).toBe(false);
-    expect(preview.blockers.map((blocker) => blocker.code)).toContain(
-      "tenant_has_other_owners",
-    );
+    expect(preview.blockers.map((blocker) => blocker.code)).toContain("tenant_has_other_owners");
     expect(preview.tenant?.ownerCount).toBe(2);
   });
 
@@ -222,9 +218,7 @@ describe("account deletion preview", () => {
     const preview = await runEffect(service.getAccountDeletion(request(headers)));
 
     expect(preview.canDelete).toBe(false);
-    expect(preview.blockers.map((blocker) => blocker.code)).toContain(
-      "tenant_has_other_members",
-    );
+    expect(preview.blockers.map((blocker) => blocker.code)).toContain("tenant_has_other_members");
     expect(preview.blockers[0]?.message).toContain("1 other member");
   });
 
@@ -238,9 +232,7 @@ describe("account deletion preview", () => {
     const preview = await runEffect(service.getAccountDeletion(request(headers)));
 
     expect(preview.canDelete).toBe(false);
-    expect(preview.blockers.map((blocker) => blocker.code)).toContain(
-      "tenant_has_other_members",
-    );
+    expect(preview.blockers.map((blocker) => blocker.code)).toContain("tenant_has_other_members");
     expect(preview.blockers[0]?.message).toContain("Remove your own administrator access");
   });
 
@@ -368,10 +360,10 @@ describe("deleting an account", () => {
       return symbol ? table[symbol] : undefined;
     };
 
-    db.delete = (table: any) =>
+    db.delete = ((table: any) =>
       tableName(table) === "account"
         ? { where: () => Effect.fail(new Error("account delete failed")) }
-        : originalDelete(table);
+        : originalDelete(table)) as typeof db.delete;
 
     const failed = await submit(
       service.deleteMe(request(headers), { confirmEmail: "owner@example.com" }),

@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
-import { arrayBufferToBase64, exportPrivateKeyJwk, generateCaKeyPair } from "@mattrax/crypto";
+import {
+  arrayBufferToBase64,
+  exportPrivateKeyJwk,
+  generateCaKeyPair,
+  sealSecret,
+} from "@mattrax/crypto";
 import { certToPem, createCaCertificate, pemToCert, signScepCsr } from "@mattrax/scep";
 import { MdmOrigin, UnknownDevice } from "@mattrax/management-backend";
 import {
@@ -1711,6 +1716,43 @@ describe("Windows command history and desired-state policy", () => {
     ];
   };
 
+  const seedPfxPolicy = async (db: ReturnType<typeof makeDb>, deviceId: string) => {
+    const createdAt = new Date("2024-01-01T00:00:00Z");
+    const pfx = new Uint8Array([0x30, 0x82, 0x01, 0x02]);
+
+    seedPolicy(db, deviceId, []);
+    db.store[table(schema.configuration)][0].kind = "mttx.windows.pfx.wifi";
+    db.store[table(schema.configuration)][0].data = {
+      channel: "device",
+      keyLocation: "software",
+      certificatePem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+      subject: "person@example.com",
+      notAfter: "2027-01-01T00:00:00.000Z",
+      fingerprintSha256: "a".repeat(64),
+      materialSha256: "b".repeat(64),
+    };
+    db.store[table(schema.policyCertificateMaterial)] = [
+      {
+        __table: table(schema.policyCertificateMaterial),
+        kind: "mttx.windows.pfx.wifi",
+        policyId: "policy-1",
+        organizationId: "org-early",
+        sealedPfx: await sealSecret(authSecret, arrayBufferToBase64(pfx.buffer)),
+        sealedPassword: await sealSecret(authSecret, "pfx-secret"),
+        fileName: "person.pfx",
+        certificatePem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+        subject: "person@example.com",
+        notAfter: new Date("2027-01-01T00:00:00.000Z"),
+        fingerprintSha256: "a".repeat(64),
+        materialSha256: "b".repeat(64),
+        createdAt,
+        updatedAt: createdAt,
+      },
+    ];
+
+    return pfx;
+  };
+
   const enroll = async () => {
     const result = await setup();
 
@@ -1762,6 +1804,66 @@ describe("Windows command history and desired-state policy", () => {
     expect(
       dbRows(db, table(schema.deviceCommand)).find((row) => row.id === replace.cmdID),
     ).toMatchObject({ status: "succeeded", resultStatus: "200" });
+  });
+
+  it("delivers the first PFX blob as Add and seals the stored command payload", async () => {
+    const { backend, db, device } = await enroll();
+
+    suppressInventory(db);
+    const pfx = await seedPfxPolicy(db, String(device.id));
+    const pfxBase64 = arrayBufferToBase64(pfx.buffer);
+    const first = await checkin(backend);
+    const add = first.commands.find(
+      (command) =>
+        command.kind === "Add" && (command.locURI ?? "").endsWith("/PFXCertBlob"),
+    );
+
+    expect(add).toBeDefined();
+    expect(add?.data).toBe(pfxBase64);
+    expect(first.commands.some((command) => command.locURI?.endsWith("/PFXCertPassword"))).toBe(
+      true,
+    );
+
+    const stored = dbRows(db, table(schema.deviceCommand)).find(
+      (row) => row.id === add?.cmdID,
+    );
+
+    expect(stored).toMatchObject({ requestType: WINDOWS_POLICY_REPLACE_REQUEST_TYPE });
+    expect(JSON.stringify(stored?.payload)).not.toContain(pfxBase64);
+    expect(JSON.stringify(stored?.payload)).not.toContain("pfx-secret");
+  });
+
+  it("uses Add again after a parent Delete clears the applied blob", async () => {
+    const { backend, db, device } = await enroll();
+
+    suppressInventory(db);
+    await seedPfxPolicy(db, String(device.id));
+    const first = await checkin(backend);
+    const add = first.commands.find(
+      (command) => command.kind === "Add" && (command.locURI ?? "").endsWith("/PFXCertBlob"),
+    )!;
+
+    await checkin(backend, { statuses: [{ cmdRef: add.cmdID, data: "200" }] });
+    expect(dbRows(db, table(schema.device))[0].windowsPolicyApplied).toContain(add.locURI);
+
+    db.store[table(schema.policy)][0].enabled = false;
+    const removed = await checkin(backend);
+    const parentDelete = removed.commands.find(
+      (command) =>
+        command.kind === "Delete" &&
+        (command.locURI ?? "").endsWith("/PFXCertInstall/policy-1-mttx-windows-pfx-wifi"),
+    );
+
+    expect(parentDelete).toBeDefined();
+    await checkin(backend, { statuses: [{ cmdRef: parentDelete!.cmdID, data: "200" }] });
+
+    db.store[table(schema.policy)][0].enabled = true;
+    const readded = await checkin(backend);
+    const blobCommands = readded.commands.filter((command) =>
+      (command.locURI ?? "").endsWith("/PFXCertBlob"),
+    );
+
+    expect(blobCommands.map((command) => command.kind)).toEqual(["Add"]);
   });
 
   it("records the rejected OMA-URI and status on the device", async () => {

@@ -692,6 +692,7 @@ snapshots:
 			"name": "@mattrax/dm-android",
 			"dependencies": {
 				"@mattrax/crypto": "workspace:*",
+				"@mattrax/enterprise-domain": "workspace:*",
 				"effect": "catalog:",
 			},
 			"devDependencies": {
@@ -789,6 +790,7 @@ snapshots:
 				"@mattrax/mdm-windows": "workspace:*",
 				"@mattrax/plist": "workspace:*",
 				"@mattrax/scep": "workspace:*",
+				"@mattrax/software": "workspace:*",
 				"drizzle-orm": "catalog:",
 				"effect": "catalog:",
 			},
@@ -879,6 +881,7 @@ snapshots:
 			"dependencies": {
 				"@mattrax/crypto": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
+				"@mattrax/software": "workspace:*",
 				"@xmldom/xmldom": "catalog:",
 				"@yielded/auth": "catalog:",
 				"effect": "catalog:",
@@ -1023,6 +1026,7 @@ snapshots:
 		"packages/mdm-windows": {
 			"name": "@mattrax/mdm-windows",
 			"dependencies": {
+				"@mattrax/crypto": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
@@ -1033,7 +1037,6 @@ snapshots:
 				"effect": "catalog:",
 			},
 			"devDependencies": {
-				"@mattrax/crypto": "workspace:*",
 				"@types/node": "catalog:",
 				"asn1js": "catalog:",
 				"pkijs": "catalog:",
@@ -1078,7 +1081,16 @@ snapshots:
 			},
 		},
 
-		"packages/software": {},
+		"packages/software": {
+			"name": "@mattrax/software",
+			"dependencies": {
+				"effect": "catalog:",
+			},
+			"devDependencies": {
+				"typescript": "catalog:",
+				"vitest": "catalog:",
+			},
+		},
 
 		"packages/ui": {
 			"name": "@mattrax/ui",

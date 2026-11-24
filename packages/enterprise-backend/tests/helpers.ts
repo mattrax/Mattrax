@@ -1,8 +1,36 @@
 import { Effect, Schema } from "effect";
 import type { HttpServerRequest } from "effect/http";
+import { MySqlTable } from "drizzle-orm/mysql-core";
 import { createEnterpriseSchema } from "../src/schema.ts";
+import type { EnterpriseDb, EnterpriseOrganization } from "../src/schema.ts";
 
 export const schema = createEnterpriseSchema();
+
+export const makeOrganization = (
+  input: Partial<EnterpriseOrganization> & Pick<EnterpriseOrganization, "id" | "name" | "slug">,
+): EnterpriseOrganization => {
+  const now = new Date("2026-01-01T00:00:00.000Z");
+
+  return {
+    logo: null,
+    displayName: null,
+    supportEmail: null,
+    brandColor: null,
+    metadata: null,
+    requireMfa: false,
+    scriptsEnabled: true,
+    localAccountHealthEnabled: true,
+    localAdminRotationDays: null,
+    appStoreRegion: null,
+    autoUnlinkUnavailableApplications: false,
+    billingPlan: null,
+    billingStatus: null,
+    onboardingFollowUpSentAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...input,
+  };
+};
 
 /**
  * A value the fake store holds for one column: the scalars, dates and nested
@@ -20,11 +48,22 @@ type RowValue =
   | ReadonlyArray<RowValue>
   | Row;
 
-type Row = { [column: string]: RowValue };
+export type Row = { [column: string]: RowValue };
 
-type Store = Record<string, Row[]>;
+export type Store = Record<string, Row[]>;
 
-type DrizzleTable = { readonly __table?: Row };
+type DrizzleTable = MySqlTable;
+
+const isDrizzleTable = (value: unknown): value is DrizzleTable => value instanceof MySqlTable;
+
+const defaultTables = Object.fromEntries(
+  Object.entries(schema).filter(([, value]) => isDrizzleTable(value)),
+);
+
+export type TestDb = EnterpriseDb & {
+  readonly store: Record<string, any[]>;
+  readonly query: any;
+};
 
 const tableSymbol = (description: string) => (value: DrizzleTable) =>
   Object.getOwnPropertySymbols(value).find((symbol) => symbol.description === description)!;
@@ -618,8 +657,8 @@ class DeleteBuilder {
 
 export const makeDb = (
   initial: Partial<Store> = {},
-  tables: Record<string, DrizzleTable> = schema,
-) => {
+  tables: Record<string, DrizzleTable> = defaultTables,
+): TestDb => {
   const store: Store = Object.fromEntries(
     Object.values(tables).map((table) => [tableName(table), []]),
   );

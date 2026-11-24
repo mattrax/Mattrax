@@ -18,6 +18,7 @@ import { ScriptEditor } from "~/components/mdm/script-editor";
 import type { ScriptDraftValues } from "~/components/mdm/script-editor";
 import { StaleWriteBanner } from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ConfirmDialog } from "~/components/ui/confirm-dialog";
@@ -696,6 +697,16 @@ export default function ScriptDetailPage() {
                         <dd>{formatDate(detail().script.updatedAt)}</dd>
                       </div>
                     </dl>
+                  </Panel>
+                  <Panel
+                    title="Scope tags"
+                    description="Limit which delegated administrators can see and run this script."
+                  >
+                    <ScopeTagAssignmentEditor
+                      tenantId={params.tenantId!}
+                      resourceType="script"
+                      resourceIds={[params.scriptId!]}
+                    />
                   </Panel>
                 </div>
               </div>

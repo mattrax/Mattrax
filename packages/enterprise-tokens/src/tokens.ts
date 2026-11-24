@@ -45,6 +45,8 @@ export type TokenPayload = {
   verifier?: string;
   /** Hash of the emailed verification code bound into the link. */
   codeHash?: string;
+  /** Apple BYOD device request bound into the BYOD SSO state token. */
+  challengeId?: string;
   /** Absolute expiry of the passkey step-up request binding. */
   requestBindingExpiresAtMillis?: number;
   /** SSR shell snapshot (see `ssrToken.ts`); validated again by its owner. */
@@ -77,6 +79,7 @@ export const TokenPayloadSchema = Schema.Struct({
   flowId: Schema.optional(Schema.String),
   verifier: Schema.optional(Schema.String),
   codeHash: Schema.optional(Schema.String),
+  challengeId: Schema.optional(Schema.String),
   requestBindingExpiresAtMillis: Schema.optional(Schema.Number),
   // SSR shell snapshot. The fields stay loosely typed here so every token
   // purpose shares one primitive; `ssrToken.ts` performs the strict decode.

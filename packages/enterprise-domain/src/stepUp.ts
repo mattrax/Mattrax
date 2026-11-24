@@ -28,11 +28,13 @@ export const STEP_UP_ACTIONS = [
   "android-disconnect",
   "script-change",
   "script-run",
+  "restricted-software-change",
   "billing-portal",
   "sso-policy",
   "tenant-mfa-policy",
   "scep-ca-rotate",
   "scep-ca-import",
+  "certificate-upload",
   "passkey-enroll",
   "passkey-remove",
 ] as const;

@@ -17,7 +17,9 @@ import {
 import type { AndroidPolicyConfiguration, IssueCommandParams } from "@mattrax/dm-android";
 import {
   deviceLimitForOrganization,
+  markAndroidRestrictedSoftwarePolicyDelivered,
   replaceDeviceApplications,
+  resolveRestrictedSoftwareForDevice,
   schema,
 } from "@mattrax/enterprise-core";
 import type { EnterpriseDb, PlanLimitsConfig } from "@mattrax/enterprise-core";
@@ -61,6 +63,15 @@ import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
  */
 
 export const DEFAULT_ANDROID_POLICY_ID = "mattrax-default";
+
+/**
+ * Synthetic configuration kind carrying `installType: BLOCKED` entries from
+ * restricted software rules. It is appended after the tenant's own policies and
+ * the OS-update fragment, so a deny rule wins over an install fragment for the
+ * same package.
+ */
+export const ANDROID_RESTRICTED_SOFTWARE_CONFIGURATION_KIND =
+  "mttx.android.policy.restricted-software";
 
 /**
  * Status reporting Mattrax always requests. Google only reports
@@ -1532,7 +1543,11 @@ const compileEffectiveAndroidPolicy = (input: {
     );
 
     const configurations: Array<AndroidPolicyConfiguration> = effective.configurations.map(
-      (configuration) => ({ kind: configuration.kind, data: configuration.data }),
+      (configuration) => ({
+        kind: configuration.kind,
+        data: configuration.data,
+        policyId: configuration.policyId,
+      }),
     );
 
     // The tenant OS policy is rendered as a systemUpdate fragment rather than
@@ -1598,6 +1613,50 @@ const compileEffectiveAndroidPolicy = (input: {
           `Android application ${application.applicationId} has an invalid package name and was not added to the policy for ${input.deviceId}`,
         );
     }
+
+    // Restricted software is compiled last so a BLOCKED entry wins over a
+    // FORCE_INSTALLED entry for the same package. It is scoped per device, so
+    // only rules whose include/exclude scope resolves here are added. Only
+    // Block installation is expressible: Google has no process-kill or
+    // app-removal command, and those actions stay detection-only.
+    const restricted = yield* resolveRestrictedSoftwareForDevice(input.db, {
+      organizationId: input.organizationId,
+      deviceId: input.deviceId,
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new AndroidDeliveryError({
+            kind: "upstream",
+            message: `Could not resolve restricted software for the Android policy: ${describeAndroidError(cause)}`,
+            cause,
+          }),
+      ),
+    );
+
+    const blockedPackages = [
+      ...new Set(
+        restricted.rules
+          .filter(
+            ({ rule, capability }) =>
+              capability.mode === "policy" &&
+              rule.action === "block-install" &&
+              rule.matchType === "android-package" &&
+              isAndroidPackageName(rule.matchValue),
+          )
+          .map(({ rule }) => rule.matchValue.trim()),
+      ),
+    ].sort();
+
+    if (blockedPackages.length > 0)
+      configurations.push({
+        kind: ANDROID_RESTRICTED_SOFTWARE_CONFIGURATION_KIND,
+        data: {
+          applications: blockedPackages.map((packageName) => ({
+            packageName,
+            installType: "BLOCKED",
+          })),
+        },
+      });
 
     const compiled = compileAndroidPolicy(configurations);
 
@@ -1814,6 +1873,22 @@ export const syncAndroidPoliciesForTenant = (input: {
     );
 
     for (const outcome of outcomes) {
+      // `skipped` means Google already holds this exact compiled policy, so a
+      // pending block violation is just as delivered as after an update.
+      if (outcome.status === "updated" || outcome.status === "skipped") {
+        yield* markAndroidRestrictedSoftwarePolicyDelivered(input.db, {
+          organizationId: input.organizationId,
+          deviceId: outcome.device.id,
+          at: now(),
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning(
+              `Could not mark restricted software enforced for ${outcome.device.id}: ${String(error)}`,
+            ),
+          ),
+        );
+      }
+
       if (outcome.status === "updated") {
         updated += 1;
 

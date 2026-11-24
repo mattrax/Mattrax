@@ -194,6 +194,10 @@ export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
   "devices.read",
   "identity.read",
   "enrollment.read",
+  // Scope tags are a settings surface even for a role that only reads them.
+  "scope_tags.read",
+  // OS updates and Migration are settings tabs gated by devices.read.
+  "devices.read",
   "management.read",
   "webhooks.read",
   "audit.read",

@@ -115,8 +115,8 @@ const makeLedgerDb = () => {
   const db = makeDb();
   const insert = db.insert.bind(db);
 
-  db.insert = (table: any) => {
-    const builder = insert(table);
+  db.insert = ((table: any) => {
+    const builder: any = insert(table);
 
     if (table !== servicesSchema.stripeEvent) return builder;
 
@@ -132,7 +132,7 @@ const makeLedgerDb = () => {
     };
 
     return builder;
-  };
+  }) as typeof db.insert;
 
   return db;
 };
@@ -141,8 +141,10 @@ const makeFailingLedgerDb = (error: unknown) => {
   const db = makeDb();
   const insert = db.insert.bind(db);
 
-  db.insert = (table: any) =>
-    table === servicesSchema.stripeEvent ? { values: () => Effect.fail(error) } : insert(table);
+  db.insert = ((table: any) =>
+    table === servicesSchema.stripeEvent
+      ? { values: () => Effect.fail(error) }
+      : insert(table)) as typeof db.insert;
 
   return db;
 };
@@ -906,15 +908,15 @@ describe("POST /api/v1/billing/webhook", () => {
     seedOrganization(db, "org-1", "cus_1");
     const update = db.update.bind(db);
 
-    db.update = (table: any) => {
-      const builder = update(table);
+    db.update = ((table: any) => {
+      const builder: any = update(table);
 
       if (table !== servicesSchema.stripeEvent) return builder;
 
       const set = builder.set.bind(builder);
 
       builder.set = (patch: any) => {
-        const next = set(patch);
+        const next: any = set(patch);
 
         next.where = (_condition: any) =>
           Effect.fail(
@@ -932,7 +934,7 @@ describe("POST /api/v1/billing/webhook", () => {
       };
 
       return builder;
-    };
+    }) as typeof db.update;
 
     const payload = JSON.stringify(event("customer.subscription.created", subscription()));
     const response = await makeHandler(db)(
