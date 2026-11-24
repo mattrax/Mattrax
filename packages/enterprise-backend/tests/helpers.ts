@@ -626,7 +626,9 @@ class UpdateBuilder {
 class DeleteBuilder {
   private readonly store: Store;
   private readonly table: string;
-  private removed: Row[] = [];
+  private condition: any;
+  private limitCount?: number;
+  private returnRows = false;
 
   constructor(store: Store, table: string) {
     this.store = store;
@@ -634,24 +636,36 @@ class DeleteBuilder {
   }
 
   where(condition: any) {
-    const kept: Row[] = [];
+    this.condition = condition;
 
-    for (const row of this.store[this.table]) {
-      if (matches(condition, row)) this.removed.push(row);
-      else kept.push(row);
-    }
+    return this;
+  }
 
-    this.store[this.table] = kept;
+  limit(count: number) {
+    this.limitCount = count;
 
     return this;
   }
 
   returning() {
+    this.returnRows = true;
+
     return this;
   }
 
   [Symbol.iterator]() {
-    return Effect.succeed(this.removed)[Symbol.iterator]();
+    // Drizzle executes deletes lazily and resolves to affectedRows unless a
+    // RETURNING clause was requested. Keeping that shape lets chunk-bound
+    // maintenance tests observe the same termination condition as MySQL.
+    return Effect.sync(() => {
+      const matching = (this.store[this.table] ?? []).filter((row) => matches(this.condition, row));
+      const removed = this.limitCount === undefined ? matching : matching.slice(0, this.limitCount);
+      const removedSet = new Set(removed);
+
+      this.store[this.table] = (this.store[this.table] ?? []).filter((row) => !removedSet.has(row));
+
+      return this.returnRows ? removed : { affectedRows: removed.length };
+    })[Symbol.iterator]();
   }
 }
 
