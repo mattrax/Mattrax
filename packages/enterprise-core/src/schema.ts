@@ -3287,6 +3287,166 @@ export const deviceApplication = mysqlTable(
   ],
 );
 
+/**
+ * One tenant deny-list entry for an application that must not be installed or
+ * run. Unlike `application`, which is an install catalogue, a restricted
+ * software record is independent of installation policy: the same title can
+ * be both catalogued and restricted, and the restrictive rule wins.
+ *
+ * `matchKey` is a normalised copy of `matchValue`. It is what the unique index
+ * uses so two administrators cannot create rules that differ only by case or
+ * surrounding whitespace.
+ */
+export const restrictedSoftware = mysqlTable(
+  "restricted_software",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    /**
+     * Which property the inventory or agent compares. The value is validated
+     * against the platform so a bundle id can never be stored for Windows or
+     * an MSI ProductCode for Android.
+     */
+    matchType: varchar("match_type", {
+      length: 24,
+      enum: ["bundle-id", "process-name", "msi-product-code", "android-package"],
+    }).notNull(),
+    matchValue: shortText("match_value").notNull(),
+    /** Lower-cased, trimmed `matchValue`; the unique key and match input. */
+    matchKey: shortText("match_key").notNull(),
+    action: varchar("action", {
+      length: 20,
+      enum: ["block-install", "kill-process", "delete-app"],
+    }).notNull(),
+    /** Shown to the device user by an agent that can display one. */
+    message: text("message"),
+    /** Explicit recipients for the optional violation email. */
+    notificationEmails: json("notification_emails").$type<Array<string>>(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("restricted_software_match_unique").on(
+      table.organizationId,
+      table.platform,
+      table.matchKey,
+    ),
+    index("restricted_software_organization_created_idx").on(table.organizationId, table.createdAt),
+    // Supports the author foreign key when an account is deleted.
+    index("restricted_software_created_by_idx").on(table.createdByAccountId),
+  ],
+);
+
+/**
+ * Device or group scope for a restricted software rule.
+ *
+ * `include` adds a target; `exclude` vetoes group delivery. A direct device
+ * include wins over a group exclude, matching policy resolution so an
+ * administrator can carve one device back in.
+ */
+export const restrictedSoftwareAssignment = mysqlTable(
+  "restricted_software_assignment",
+  {
+    restrictedSoftwareId: id("restricted_software_id")
+      .notNull()
+      .references(() => restrictedSoftware.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    targetType: varchar("target_type", { length: 16, enum: ["device", "group"] }).notNull(),
+    targetId: id("target_id").notNull(),
+    mode: varchar("mode", { length: 16, enum: ["include", "exclude"] })
+      .notNull()
+      .default("include"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.restrictedSoftwareId, table.targetType, table.targetId] }),
+    index("restricted_software_assignment_target_idx").on(table.targetType, table.targetId),
+    index("restricted_software_assignment_organization_idx").on(table.organizationId),
+  ],
+);
+
+/**
+ * One detected violation of a restricted software rule on one device.
+ *
+ * The unique key `(restrictedSoftwareId, deviceId)` is the de-duplication
+ * boundary: a later inventory report updates `lastDetectedAt` and
+ * `occurrenceCount` instead of appending another row. A violation that was
+ * resolved and then reappears is reopened with a fresh audit/webhook event.
+ */
+export const restrictedSoftwareViolation = mysqlTable(
+  "restricted_software_violation",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    restrictedSoftwareId: id("restricted_software_id")
+      .notNull()
+      .references(() => restrictedSoftware.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    /** The rule's action when this episode was recorded; an edit resets enforcement. */
+    action: varchar("action", {
+      length: 20,
+      enum: ["block-install", "kill-process", "delete-app"],
+    }).notNull(),
+    matchType: shortText("match_type").notNull(),
+    matchKey: shortText("match_key").notNull(),
+    /** Inventory identifier that matched (bundle id, package or ProductCode). */
+    matchedBundleId: shortText("matched_bundle_id").notNull(),
+    applicationName: shortText("application_name"),
+    applicationVersion: shortText("application_version"),
+    status: varchar("status", { length: 16, enum: ["open", "resolved"] })
+      .notNull()
+      .default("open"),
+    /** Honest enforcement state for the platform/action combination. */
+    enforcementState: varchar("enforcement_state", {
+      length: 20,
+      enum: ["detection-only", "pending", "enforced", "failed"],
+    })
+      .notNull()
+      .default("detection-only"),
+    /** Bounded, secret-free explanation of the last enforcement attempt. */
+    enforcementDetail: text("enforcement_detail"),
+    occurrenceCount: int("occurrence_count").notNull().default(1),
+    firstDetectedAt: timestamp("first_detected_at").notNull(),
+    lastDetectedAt: timestamp("last_detected_at").notNull(),
+    lastEnforcedAt: timestamp("last_enforced_at"),
+    resolvedAt: timestamp("resolved_at"),
+    /** Set by the notification sweeper after webhook/email delivery. */
+    notifiedAt: timestamp("notified_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("restricted_software_violation_rule_device_unique").on(
+      table.restrictedSoftwareId,
+      table.deviceId,
+    ),
+    index("restricted_software_violation_organization_status_idx").on(
+      table.organizationId,
+      table.status,
+      table.lastDetectedAt,
+    ),
+    index("restricted_software_violation_device_idx").on(table.deviceId, table.lastDetectedAt),
+    // The notification sweep scans only pending rows; this keeps it bounded
+    // even in a tenant with a long violation history.
+    index("restricted_software_violation_notified_idx").on(table.notifiedAt),
+  ],
+);
+
 export const applePushCertificate = mysqlTable("apple_push_certificate", {
   organizationId: id("organization_id")
     .primaryKey()

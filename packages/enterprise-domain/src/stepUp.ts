@@ -28,6 +28,7 @@ export const STEP_UP_ACTIONS = [
   "android-disconnect",
   "script-change",
   "script-run",
+  "restricted-software-change",
   "billing-portal",
   "sso-policy",
   "tenant-mfa-policy",

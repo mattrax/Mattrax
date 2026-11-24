@@ -983,6 +983,144 @@ describe("Android Enterprise delivery", () => {
     ]);
   });
 
+  it("compiles in-scope restricted software as installType BLOCKED", async () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      policy: [
+        {
+          id: "policy-1",
+          organizationId,
+          name: "Android baseline",
+          notes: null,
+          priority: 10,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      configuration: [
+        {
+          policyId: "policy-1",
+          kind: "mttx.android.policy.designer",
+          data: {
+            policy: {
+              applications: [{ packageName: "com.example.banned", installType: "FORCE_INSTALLED" }],
+            },
+          },
+          hash: "hash-1",
+        },
+      ],
+      device_policy: [{ deviceId: "device-1", policyId: "policy-1", mode: "include" }],
+      restricted_software: [
+        {
+          id: "rule-1",
+          organizationId,
+          name: "Block Banned",
+          platform: "android",
+          matchType: "android-package",
+          matchValue: "com.example.banned",
+          matchKey: "com.example.banned",
+          action: "block-install",
+          message: null,
+          notificationEmails: [],
+          enabled: true,
+          createdByAccountId: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "rule-2",
+          organizationId,
+          name: "Unscoped",
+          platform: "android",
+          matchType: "android-package",
+          matchValue: "com.example.unscoped",
+          matchKey: "com.example.unscoped",
+          action: "block-install",
+          message: null,
+          notificationEmails: [],
+          enabled: true,
+          createdByAccountId: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      restricted_software_assignment: [
+        {
+          restrictedSoftwareId: "rule-1",
+          organizationId,
+          targetType: "device",
+          targetId: "device-1",
+          mode: "include",
+          createdAt: now,
+        },
+        {
+          restrictedSoftwareId: "rule-2",
+          organizationId,
+          targetType: "group",
+          targetId: "group-without-members",
+          mode: "include",
+          createdAt: now,
+        },
+      ],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
+
+    expect(calls.policies[0].policy.applications).toEqual([
+      { packageName: "com.example.banned", installType: "BLOCKED" },
+    ]);
+  });
+
+  it("does not compile a restricted rule from another tenant", async () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      restricted_software: [
+        {
+          id: "rule-foreign",
+          organizationId: otherOrganizationId,
+          name: "Foreign",
+          platform: "android",
+          matchType: "android-package",
+          matchValue: "com.example.banned",
+          matchKey: "com.example.banned",
+          action: "block-install",
+          message: null,
+          notificationEmails: [],
+          enabled: true,
+          createdByAccountId: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      restricted_software_assignment: [
+        {
+          restrictedSoftwareId: "rule-foreign",
+          organizationId: otherOrganizationId,
+          targetType: "device",
+          targetId: "device-1",
+          mode: "include",
+          createdAt: now,
+        },
+      ],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
+
+    expect(calls.policies[0].policy.applications ?? []).toEqual([]);
+  });
+
   it("issues an enrollment token only while the enterprise is active", async () => {
     const db = makeDb({
       organization: [organizationRow(organizationId, "Acme")],

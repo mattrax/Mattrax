@@ -7,6 +7,9 @@
     "jsx": "preserve",
     "jsxImportSource": "@solidjs/web",
     "allowSyntheticDefaultImports": true,
+    "paths": {
+      "~/*": ["../../apps/web/src/*"]
+    },
     "noEmit": true,
     "declaration": false,
     "emitDeclarationOnly": false,

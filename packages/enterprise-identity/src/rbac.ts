@@ -147,6 +147,20 @@ const SCRIPT_WRITE = new Set([
   "collectDeviceAttribute",
 ]);
 
+const RESTRICTED_SOFTWARE_READ = new Set([
+  "listRestrictedSoftware",
+  "getRestrictedSoftware",
+  "listRestrictedSoftwareViolations",
+  "getDeviceRestrictedSoftware",
+]);
+
+const RESTRICTED_SOFTWARE_WRITE = new Set([
+  "createRestrictedSoftware",
+  "patchRestrictedSoftware",
+  "deleteRestrictedSoftware",
+  "patchRestrictedSoftwareAssignments",
+]);
+
 const DASHBOARD_READ = new Set([
   "listDashboards",
   "getDashboard",
@@ -426,6 +440,10 @@ export const permissionForMethod = (method: string): Permission | undefined => {
   if (SCRIPT_READ.has(method)) return "scripts.read";
 
   if (SCRIPT_WRITE.has(method)) return "scripts.write";
+
+  if (RESTRICTED_SOFTWARE_READ.has(method)) return "restricted_software.read";
+
+  if (RESTRICTED_SOFTWARE_WRITE.has(method)) return "restricted_software.write";
 
   if (DASHBOARD_READ.has(method)) return "dashboards.read";
 

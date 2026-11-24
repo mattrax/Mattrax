@@ -189,6 +189,17 @@ export type {
 } from "./Policy/scripts.ts";
 
 export {
+  createRestrictedSoftware,
+  deleteRestrictedSoftware,
+  deviceRestrictedSoftware,
+  getRestrictedSoftwareDetail,
+  listRestrictedSoftware,
+  listRestrictedSoftwareViolations,
+  patchRestrictedSoftwareAssignments,
+  updateRestrictedSoftware,
+} from "./Policy/restrictedSoftware.ts";
+
+export {
   ANDROID_NOTIFICATION_TYPES,
   ANDROID_PROVISIONING_MODES,
   ANDROID_PUBSUB_RETENTION_DAYS,
@@ -290,6 +301,18 @@ export type {
   OwnershipTransferEmail,
   OwnershipTransferEmailInput,
 } from "./Mail/ownershipTransferEmail.ts";
+
+export { restrictedSoftwareViolationEmail } from "./Mail/restrictedSoftwareEmail.ts";
+
+export type {
+  RestrictedSoftwareViolationEmail,
+  RestrictedSoftwareViolationEmailInput,
+} from "./Mail/restrictedSoftwareEmail.ts";
+
+export {
+  RESTRICTED_SOFTWARE_NOTIFICATION_BATCH,
+  notifyRestrictedSoftwareViolations,
+} from "./Mail/restrictedSoftwareNotifications.ts";
 
 export { onboardingFollowUpEmail, welcomeEmail } from "./Tenant/onboardingEmail.ts";
 

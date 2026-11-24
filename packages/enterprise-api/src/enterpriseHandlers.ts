@@ -29,6 +29,8 @@ import type {
   enterpriseWindowsApi,
   enterpriseApprovalApi,
   fleetMigrationApi,
+  restrictedSoftwareAgentApi,
+  restrictedSoftwareApi,
   scriptAgentApi,
   scriptApi,
 } from "@mattrax/enterprise-domain";
@@ -236,6 +238,7 @@ import type {
   AdminAccountInfo,
   AdminAccountMembership,
 } from "@mattrax/enterprise-domain";
+import { restrictedSoftwareAgentResultRejection } from "@mattrax/enterprise-domain";
 import { makeApplicationStoreService } from "./appStore.js";
 import { derivePolicyDelivery, resolvePolicyScopes } from "./policyList.js";
 import { resolvePolicyDeployment } from "./policyDeployment.js";
@@ -255,6 +258,10 @@ import {
   R2_IMMUTABLE_CACHE_CONTROL,
   R2_PRIVATE_CACHE_CONTROL,
   recordApplicationInstall,
+  reconcileRestrictedSoftwareForOrganization,
+  recordRestrictedSoftwareEnforcement,
+  resolveRestrictedSoftwareForDevice,
+  restrictedSoftwareDeviceIds,
   tenantLimitForAccount,
   WINDOWS_FAILURE_RETENTION_DAYS,
 } from "@mattrax/enterprise-core";
@@ -580,8 +587,16 @@ import {
   createAndroidEnrollmentToken,
   createAndroidSignup,
   disconnectAndroidEnterprise,
+  createRestrictedSoftware,
+  deleteRestrictedSoftware,
+  deviceRestrictedSoftware,
+  getRestrictedSoftwareDetail,
   isAndroidConfigured,
   issueAndroidCommand,
+  listRestrictedSoftware,
+  listRestrictedSoftwareViolations,
+  patchRestrictedSoftwareAssignments,
+  updateRestrictedSoftware,
   loadAndroidEnterprise,
   reconcileAndroidEnterprise,
   refreshAndroidDevice,
@@ -2226,6 +2241,24 @@ export const createEnterpriseService = ({
       organizationId,
       deviceIds: deviceIds ? deviceIds : undefined,
     }).pipe(Effect.catch(() => Effect.void));
+
+  /**
+   * Wake the devices a restricted-software change affects. Apple devices get an
+   * APNs push so the agent profile is installed or removed on the next
+   * check-in; Android devices receive a fresh policy synchronously.
+   */
+  const refreshRestrictedSoftwareDevices = (
+    organizationId: string,
+    deviceIds: ReadonlyArray<string>,
+  ) =>
+    Effect.gen(function* () {
+      const ids = [...new Set(deviceIds)];
+
+      if (ids.length === 0) return;
+
+      yield* applePush.pushAppleDevices(ids);
+      yield* syncAndroidDevices(organizationId, ids);
+    });
 
   const r2Layer = R2StorageLive(storage);
   const effectiveR2 = r2 ?? R2.make(storage);
@@ -20522,6 +20555,259 @@ export const createEnterpriseService = ({
           duplicate: result.duplicate,
         };
       }),
+    listRestrictedSoftware: (request, tenantId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        return yield* listRestrictedSoftware(db, ctx.organization.id);
+      }),
+    getRestrictedSoftware: (request, tenantId, ruleId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const detail = yield* getRestrictedSoftwareDetail(db, ctx.organization.id, ruleId);
+
+        if (!detail)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Rule not found" }));
+
+        return detail;
+      }),
+    createRestrictedSoftware: (request, tenantId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "restricted-software-change");
+
+        const result = yield* createRestrictedSoftware(
+          db,
+          ctx.organization.id,
+          ctx.account.id,
+          payload,
+          now(),
+        );
+
+        if ("problem" in result)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: result.problem }));
+
+        yield* audit(ctx, "restricted_software.created", "restricted_software", result.id, {
+          name: payload.name.trim(),
+          platform: payload.platform,
+          matchType: payload.matchType,
+          action: payload.action,
+        });
+
+        return { id: result.id };
+      }),
+    patchRestrictedSoftware: (request, tenantId, ruleId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "restricted-software-change");
+
+        const precondition = yield* preconditionFromRequest(request, payload.expectedUpdatedAt);
+        const result = yield* updateRestrictedSoftware(
+          db,
+          ctx.organization.id,
+          ruleId,
+          payload,
+          now(),
+          precondition,
+        );
+
+        if ("notFound" in result)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Rule not found" }));
+
+        if ("problem" in result && result.problem)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: result.problem }));
+
+        if ("stale" in result && result.current)
+          return yield* Effect.fail(
+            preconditionFailure({
+              resource: "restricted_software",
+              precondition,
+              current: {
+                id: result.current.id,
+                name: result.current.name,
+                updatedAt: result.current.updatedAt,
+              },
+              record: {
+                id: result.current.id,
+                name: result.current.name,
+                platform: result.current.platform,
+                matchType: result.current.matchType,
+                matchValue: result.current.matchValue,
+                action: result.current.action,
+                message: result.current.message,
+                notificationEmails: result.current.notificationEmails ?? [],
+                enabled: result.current.enabled,
+                createdAt: iso(result.current.createdAt),
+                updatedAt: iso(result.current.updatedAt),
+              },
+            }),
+          );
+
+        yield* audit(ctx, "restricted_software.updated", "restricted_software", ruleId, {
+          fields: Object.keys(payload).filter((field) => field !== "expectedUpdatedAt"),
+        });
+
+        const devices = yield* restrictedSoftwareDeviceIds(db, ctx.organization.id, ruleId);
+
+        yield* reconcileRestrictedSoftwareForOrganization(db, {
+          organizationId: ctx.organization.id,
+          deviceIds: devices.map((device) => device.id),
+          at: now(),
+        });
+        yield* refreshRestrictedSoftwareDevices(
+          ctx.organization.id,
+          devices.map((device) => device.id),
+        );
+
+        return ok;
+      }),
+    deleteRestrictedSoftware: (request, tenantId, ruleId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "restricted-software-change");
+
+        const devices = yield* restrictedSoftwareDeviceIds(db, ctx.organization.id, ruleId);
+        const result = yield* deleteRestrictedSoftware(db, ctx.organization.id, ruleId);
+
+        if (!result.deleted)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Rule not found" }));
+
+        yield* audit(ctx, "restricted_software.deleted", "restricted_software", ruleId);
+        yield* refreshRestrictedSoftwareDevices(
+          ctx.organization.id,
+          devices.map((device) => device.id),
+        );
+
+        return ok;
+      }),
+    patchRestrictedSoftwareAssignments: (request, tenantId, ruleId, payload) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId, "write");
+        yield* requireStepUp(auth, request, "restricted-software-change");
+
+        const before = yield* restrictedSoftwareDeviceIds(db, ctx.organization.id, ruleId);
+        const result = yield* patchRestrictedSoftwareAssignments(
+          db,
+          ctx.organization.id,
+          ruleId,
+          payload,
+          now(),
+        );
+
+        if ("notFound" in result)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Rule not found" }));
+
+        if ("problem" in result)
+          return yield* Effect.fail(new EnterpriseBadRequest({ message: result.problem }));
+
+        const after = yield* restrictedSoftwareDeviceIds(db, ctx.organization.id, ruleId);
+        const affected = [
+          ...new Set([...before.map((device) => device.id), ...after.map((device) => device.id)]),
+        ];
+
+        yield* audit(
+          ctx,
+          "restricted_software.assignments_updated",
+          "restricted_software",
+          ruleId,
+          {
+            assign: payload.assign?.length ?? 0,
+            unassign: payload.unassign?.length ?? 0,
+          },
+        );
+
+        yield* reconcileRestrictedSoftwareForOrganization(db, {
+          organizationId: ctx.organization.id,
+          deviceIds: affected,
+          at: now(),
+        });
+        yield* refreshRestrictedSoftwareDevices(ctx.organization.id, affected);
+
+        return ok;
+      }),
+    listRestrictedSoftwareViolations: (request, tenantId, query) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+
+        return yield* listRestrictedSoftwareViolations(db, ctx.organization.id, query ?? {});
+      }),
+    getDeviceRestrictedSoftware: (request, tenantId, deviceId) =>
+      Effect.gen(function* () {
+        const ctx = yield* requireTenant(request, tenantId);
+        const result = yield* deviceRestrictedSoftware(db, ctx.organization.id, deviceId);
+
+        if (!result)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
+
+        return result;
+      }),
+    reportRestrictedSoftwareAgentResult: (request, payload) =>
+      Effect.gen(function* () {
+        if (!authSecret)
+          return yield* Effect.fail(
+            new EnterpriseInternal({
+              message: "Restricted software agent results require a configured AUTH_SECRET.",
+            }),
+          );
+
+        const header = request.headers.authorization;
+        const token = header?.toLowerCase().startsWith("bearer ")
+          ? header.slice(7).trim()
+          : undefined;
+
+        if (!token)
+          return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthorized" }));
+
+        const deviceId = yield* Effect.promise(() => verifyScriptAgentToken(token, authSecret));
+
+        if (!deviceId)
+          return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthorized" }));
+
+        const device = yield* db.query.device.findFirst({ where: { id: deviceId } });
+
+        if (!device || device.status !== "enrolled")
+          return yield* Effect.fail(new EnterpriseUnauthorized({ message: "Unauthorized" }));
+
+        if (device.proto !== "apple")
+          return yield* Effect.fail(
+            new EnterpriseConflict({
+              message: "Only macOS devices enforce restricted software through the agent.",
+            }),
+          );
+
+        const resolved = yield* resolveRestrictedSoftwareForDevice(db, {
+          organizationId: device.organizationId,
+          deviceId: device.id,
+        });
+        const matched = resolved.rules.find(({ rule }) => rule.id === payload.ruleId);
+
+        if (!matched)
+          return yield* Effect.fail(new EnterpriseNotFound({ message: "Rule not found" }));
+
+        const rejection = restrictedSoftwareAgentResultRejection({
+          capabilityMode: matched.capability.mode,
+          osEdition: device.osEdition,
+          ruleAction: matched.rule.action,
+          reportedAction: payload.action,
+        });
+
+        if (rejection) return yield* Effect.fail(new EnterpriseConflict({ message: rejection }));
+
+        const detail = payload.detail?.replaceAll(/\s+/g, " ").trim().slice(0, 500) || null;
+
+        yield* recordRestrictedSoftwareEnforcement(db, {
+          organizationId: device.organizationId,
+          deviceId: device.id,
+          platform: "apple",
+          ruleId: payload.ruleId,
+          action: matched.rule.action,
+          status: payload.status,
+          detail,
+          at: now(),
+        });
+
+        return { status: "ok" as const };
+      }),
     reportWindowsActivation: (request, payload) =>
       Effect.gen(function* () {
         if (!authSecret)
@@ -34353,6 +34639,64 @@ export const fleetMigrationHandlers = (
  * Device-facing script channel. It shares the `EnterpriseService` handlers but
  * has no session middleware: the device token is the credential.
  */
+/**
+ * Restricted-software configuration handlers. Registered against a dedicated
+ * group so the generated client type stays small.
+ */
+export const restrictedSoftwareHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof restrictedSoftwareApi>,
+) =>
+  handlers
+    .handle("listRestrictedSoftware", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listRestrictedSoftware(request, params.tenantId),
+      ),
+    )
+    .handle("getRestrictedSoftware", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getRestrictedSoftware(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("createRestrictedSoftware", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.createRestrictedSoftware(request, params.tenantId, payload),
+      ),
+    )
+    .handle("patchRestrictedSoftware", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchRestrictedSoftware(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("deleteRestrictedSoftware", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.deleteRestrictedSoftware(request, params.tenantId, params.id),
+      ),
+    )
+    .handle("patchRestrictedSoftwareAssignments", ({ request, params, payload }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.patchRestrictedSoftwareAssignments(request, params.tenantId, params.id, payload),
+      ),
+    )
+    .handle("listRestrictedSoftwareViolations", ({ request, params, query }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.listRestrictedSoftwareViolations(request, params.tenantId, query),
+      ),
+    )
+    .handle("getDeviceRestrictedSoftware", ({ request, params }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        service.getDeviceRestrictedSoftware(request, params.tenantId, params.id),
+      ),
+    );
+
+export const restrictedSoftwareAgentHandlers = (
+  handlers: HttpApiBuilder.Handlers.FromGroup<typeof restrictedSoftwareAgentApi>,
+) =>
+  handlers.handle("reportRestrictedSoftwareAgentResult", ({ request, payload }) =>
+    Effect.flatMap(EnterpriseService, (service) =>
+      service.reportRestrictedSoftwareAgentResult(request, payload),
+    ),
+  );
+
 export const scriptAgentHandlers = (
   handlers: HttpApiBuilder.Handlers.FromGroup<typeof scriptAgentApi>,
 ) =>

@@ -64,6 +64,8 @@ export * from "./Params.js";
 
 export * from "./ScriptApi.js";
 
+export * from "./RestrictedSoftwareApi.js";
+
 export * from "./MigrationApi.js";
 
 export * from "./ApprovalApi.js";

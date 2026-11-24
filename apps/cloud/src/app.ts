@@ -32,6 +32,8 @@ import {
   scriptAgentApi,
   scriptApi,
   EnterpriseService as EnterpriseServiceTag,
+  restrictedSoftwareApi,
+  restrictedSoftwareAgentApi,
 } from "@mattrax/enterprise-domain";
 import {
   EnterpriseAnalyticsService,
@@ -62,6 +64,8 @@ import {
   realtimeRoutes,
   scriptAgentHandlers,
   scriptHandlers,
+  restrictedSoftwareHandlers,
+  restrictedSoftwareAgentHandlers,
   scimRoutes,
   ScimMembershipNotifier,
   appleBusinessManager,
@@ -92,6 +96,7 @@ import {
   sessionCookie,
   billingEntitlementRoutes,
   drainEmailOutbox,
+  notifyRestrictedSoftwareViolations,
   sendTransactionalEmail,
   loadTrustedScepCaCertificates,
   runServerCertificateCheck,
@@ -306,6 +311,8 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(fleetMigrationApi)
   .add(scriptApi)
   .add(scriptAgentApi)
+  .add(restrictedSoftwareApi)
+  .add(restrictedSoftwareAgentApi)
   .add(authHttp)
   .add(appleMdmApi)
   .annotateMerge(
@@ -378,6 +385,8 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "FleetMigration", fleetMigrationHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),
+  HttpApiBuilder.group(apiRoot, "RestrictedSoftwareApi", restrictedSoftwareHandlers),
+  HttpApiBuilder.group(apiRoot, "RestrictedSoftwareAgentApi", restrictedSoftwareAgentHandlers),
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
 ).pipe(authHttps.middleware);
 
@@ -403,7 +412,7 @@ const handlersLayer = Layer.mergeAll(
   // The DiagnosticLog CSP uploads its ZIP to this scoped URL. It is a raw
   // route because the body is binary and the device presents a signed token,
   // not a tenant session.
-  ...[("PUT" as const), ("POST" as const)].map((method) =>
+  ...["PUT" as const, "POST" as const].map((method) =>
     HttpRouter.add(method, "/api/v1/windows-diagnostics/upload", (request) =>
       Effect.flatMap(EnterpriseServiceTag, (service) =>
         Effect.map(
@@ -679,6 +688,22 @@ const emailOutboxJob = (env: Env) =>
       email: resolveMailer(env).transport,
       concurrency: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY),
       maxAttempts: parsePositive(apiEnv.MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS),
+    });
+  }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+
+/**
+ * Deliver pending restricted-software violation events. Inventory writes mark
+ * new violations with `notifiedAt = null`; this sweep signs the webhook and
+ * queues the optional email, then records that the event went out.
+ */
+const restrictedSoftwareNotificationsJob = (env: Env) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    return yield* notifyRestrictedSoftwareViolations({
+      db,
+      authSecret: env.AUTH_SECRET,
+      email: resolveMailer(env).transport,
     });
   }).pipe(Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
 
@@ -1730,6 +1755,19 @@ export const createApiRuntime = (
           Effect.runPromise(Effect.exit(emailOutboxJob(env))).then(
             logOutboxResult,
             (error: unknown) => console.error("Scheduled email outbox job failed", error),
+          ),
+        );
+
+        ctx.waitUntil(
+          Effect.runPromise(Effect.exit(restrictedSoftwareNotificationsJob(env))).then(
+            (exit) => {
+              if (Exit.isFailure(exit))
+                console.error("Scheduled restricted software notifications failed", exit.cause);
+              else if (exit.value.notified > 0)
+                console.log("Scheduled restricted software notifications complete", exit.value);
+            },
+            (error: unknown) =>
+              console.error("Scheduled restricted software notifications job failed", error),
           ),
         );
 
