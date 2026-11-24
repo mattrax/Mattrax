@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { Effect, Layer, Redacted } from "effect";
+import { Effect, Layer } from "effect";
 import type { Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { MysqlClient } from "@effect/sql-mysql2";
@@ -16,6 +16,7 @@ import {
   tenantEntitlement,
 } from "@mattrax/enterprise-billing";
 import { parsePlanLimits } from "@mattrax/enterprise-core";
+import { databaseConfigFromUrl, mysqlClientOptions } from "@mattrax/cloud-services";
 import { StripeService } from "@mattrax/effect-stripe";
 import { apnsRoutes } from "./apns.ts";
 import { createRelayAnalytics } from "./analytics.ts";
@@ -43,38 +44,7 @@ const relayAnalytics = createRelayAnalytics({
 
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
-const database = (() => {
-  const url = new URL(databaseUrl);
-  const databaseName = url.pathname.replace(/^\//, "");
-
-  if (!url.hostname || !databaseName)
-    throw new Error("DATABASE_URL must include a host and database");
-
-  const sslMode = (
-    url.searchParams.get("ssl-mode") ??
-    url.searchParams.get("sslmode") ??
-    ""
-  ).toUpperCase();
-  const ssl = url.searchParams.get("ssl")?.toLowerCase();
-  const sslOptions =
-    sslMode === "DISABLED" || ssl === "false"
-      ? undefined
-      : sslMode === "REQUIRED" || ssl === "true"
-        ? { rejectUnauthorized: false }
-        : sslMode === "VERIFY_CA" || sslMode === "VERIFY_IDENTITY"
-          ? { rejectUnauthorized: true }
-          : undefined;
-
-  return MysqlClient.layer({
-    host: url.hostname,
-    port: Number(url.port || 3306),
-    username: decodeURIComponent(url.username),
-    password: Redacted.make(decodeURIComponent(url.password)),
-    database: databaseName,
-    poolConfig: { disableEval: true, timezone: "Z", ...(sslOptions ? { ssl: sslOptions } : {}) },
-    disablePreparedStatements: true,
-  });
-})();
+const database = MysqlClient.layer(mysqlClientOptions(databaseConfigFromUrl(databaseUrl)));
 
 const servicesDb = ServicesDbService.layer.pipe(Layer.provide(database));
 const stripe = stripeKey ? StripeService.make(stripeKey) : undefined;

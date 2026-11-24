@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { DateTime } from "effect";
 import { describe, expect, it } from "vitest";
 import { relaySignature } from "@mattrax/apns";
 import { resolveApiEnv } from "./envSchema.js";
@@ -82,6 +83,53 @@ describe("services URL environment resolution", () => {
     expect(signedToken).toBe(token);
     expect(await relaySignature(signedToken, timestamp, body)).toBe(
       createHmac("sha256", token).update(`${timestamp}.${body}`).digest("hex"),
+    );
+  });
+
+  describe("typed deployment configuration", () => {
+    it("decodes integer limits and UTC dates", () => {
+      const env = resolveApiEnv({
+        ...base,
+        MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: "3600",
+        MDM_AUDIT_CHECKIN_COALESCE_SECONDS: "0",
+        MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: "4",
+        MAINTENANCE_BACKUP_RETENTION_DAYS: "0",
+        SOFA_FEED_TIMEOUT_MS: "5000",
+        POSTHOG_ERROR_SAMPLE_RATE: "0.5",
+        MATTRAX_ONBOARDING_SINCE: "2026-02-28",
+        MATTRAX_LICENSE_KEY: "  licence-key  ",
+      });
+
+      expect(env.MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS).toBe(3600);
+      expect(env.MDM_AUDIT_CHECKIN_COALESCE_SECONDS).toBe(0);
+      expect(env.MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY).toBe(4);
+      expect(env.MAINTENANCE_BACKUP_RETENTION_DAYS).toBe(0);
+      expect(env.SOFA_FEED_TIMEOUT_MS).toBe(5000);
+      expect(env.POSTHOG_ERROR_SAMPLE_RATE).toBe(0.5);
+      expect(DateTime.toEpochMillis(env.MATTRAX_ONBOARDING_SINCE!)).toBe(Date.UTC(2026, 1, 28));
+      expect(env.MATTRAX_LICENSE_KEY).toBe("licence-key");
+    });
+
+    it.each([
+      ["MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS", "0.5"],
+      ["MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS", "59"],
+      ["MDM_AUDIT_CHECKIN_COALESCE_SECONDS", "1.5"],
+      ["MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY", "0"],
+      ["MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS", "0.9"],
+      ["MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS", "0.9"],
+      ["MAINTENANCE_AUDIT_RETENTION_DAYS", "-1"],
+      ["SOFA_FEED_TIMEOUT_MS", "0"],
+      ["POSTHOG_ERROR_SAMPLE_RATE", "1.1"],
+      ["POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE", "2.5"],
+    ])("rejects invalid numeric %s=%s", (name, value) => {
+      expect(() => resolveApiEnv({ ...base, [name]: value })).toThrow();
+    });
+
+    it.each(["1", "2026-02-30", "2026-13-01", "2026-11-14T00:00:00Z"])(
+      "rejects invalid date-only input %s",
+      (value) => {
+        expect(() => resolveApiEnv({ ...base, MATTRAX_ONBOARDING_SINCE: value })).toThrow();
+      },
     );
   });
 });
