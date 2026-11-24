@@ -154,12 +154,12 @@ import {
   withSessionPresence,
   loginAttemptObserver,
   credentialExpiryEmail,
+  boundedClientAddress,
 } from "@mattrax/cloud-services";
 import type { AnalyticsProperties, SendEmail } from "@mattrax/cloud-services";
 import { AzureOidcLive } from "@mattrax/azure-oidc";
 import { AzureGraphFetchLive } from "@mattrax/azure-graph";
 import { AzureGraph } from "@mattrax/azure-graph";
-import { boundedClientAddress } from "@mattrax/net";
 import { AppleMdmTrust, MdmError, parseSubjectDn } from "@mattrax/dm-apple";
 import { FetchHttpClient } from "effect/http";
 

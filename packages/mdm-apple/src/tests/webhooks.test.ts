@@ -259,7 +259,11 @@ describe("webhook delivery", () => {
     const headers = new Headers(request?.headers);
     const timestamp = Number(headers.get(WEBHOOK_TIMESTAMP_HEADER));
     const header = headers.get(WEBHOOK_SIGNATURE_HEADER);
-    const body = Schema.decodeUnknownSync(Schema.String)(request?.body);
+    // The Effect HTTP client sends text bodies as bytes; decode them back.
+    const raw = Schema.decodeUnknownSync(Schema.Union([Schema.String, Schema.Uint8Array]))(
+      request?.body,
+    );
+    const body = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
     expect(
       await verifyWebhookSignature({
         secret,

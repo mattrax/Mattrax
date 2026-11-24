@@ -1,9 +1,8 @@
 import { Cause, Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
 import type { ApnsService } from "@mattrax/apns";
-import { ApnsError } from "@mattrax/apns";
+import { APNS_REQUEST_TIMEOUT_MS, ApnsError } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
-import { OUTBOUND_TIMEOUTS } from "@mattrax/net";
 import {
   SYSTEM_AUDIT_ACTIONS,
   pushInvalidTokenTransition,
@@ -17,7 +16,7 @@ import { forEachBounded } from "../bounded.ts";
  * but a custom/injected transport (or a wedged DNS resolver inside one) must
  * not be able to hold the request that triggered the push open indefinitely.
  */
-const APNS_PUSH_BACKSTOP_MS = OUTBOUND_TIMEOUTS.apns + 1_000;
+const APNS_PUSH_BACKSTOP_MS = APNS_REQUEST_TIMEOUT_MS + 1_000;
 
 /** Machine-readable class for a failed APNs delivery. */
 export type ApplePushFailureCode = "invalid_token" | "delivery_failed";

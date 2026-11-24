@@ -1,4 +1,5 @@
-import { isIP } from "node:net";
+import { Result } from "effect";
+import { NetAddress } from "effect/net";
 
 /**
  * Client address extraction with one trust policy for the whole server.
@@ -13,10 +14,9 @@ import { isIP } from "node:net";
  *   only after the deployment explicitly opts in (`TRUST_PROXY_HEADERS=1`).
  *
  * The rate limiter keys its buckets with this value and the audit log stores
- * it, so both must agree on what "the client" means. `@mattrax/net` owns the
- * rule; `packages/cloud-services/src/rateLimit.ts` only adapts a `Request` to
- * it, which keeps protocol handlers (which see a header record) on the same
- * policy without depending on the Worker service package.
+ * it, so both must agree on what "the client" means. This module owns the
+ * rule; `src/rateLimit.ts` only adapts a `Request` to it, which keeps
+ * protocol handlers (which see a header record) on the same policy.
  */
 
 /** A header record, or the `Headers` object a fetch-style request exposes. */
@@ -81,7 +81,7 @@ export const clientAddress = (
  * string that looks like an address.
  */
 const validAddress = (value: string | undefined): string | null =>
-  value !== undefined && isIP(value) !== 0 ? value : null;
+  value !== undefined && Result.isSuccess(NetAddress.ipFromString(value)) ? value : null;
 
 /** A stored address is bounded; IPv6 with a zone id still fits comfortably. */
 export const CLIENT_ADDRESS_MAX_LENGTH = 64;

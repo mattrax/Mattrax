@@ -19,7 +19,7 @@
 
 import { Option, Schema } from "effect";
 import { normalisePath } from "@mattrax/enterprise-domain";
-import { clientAddress as trustedClientAddress } from "@mattrax/net";
+import { clientAddress as trustedClientAddress } from "./clientAddress.js";
 
 export { normalisePath };
 
@@ -181,7 +181,7 @@ export const clientKey = (
   // SAFETY: Workers requests expose the platform's `cf` object; Node requests do not.
   const cloudflare = (request as { cf?: unknown }).cf !== undefined;
 
-  // One trust policy is shared with the audit log (`@mattrax/net`). The
+  // One trust policy is shared with the audit log (`./clientAddress.ts`). The
   // limiter needs a stable key even when the address is unknowable, so every
   // unverifiable caller collapses into the blunt `local` bucket; the audit log
   // stores nothing rather than a spoofable value.

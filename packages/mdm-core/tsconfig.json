@@ -11,7 +11,6 @@
     { "path": "../enterprise-core" },
     { "path": "../enterprise-domain" },
     { "path": "../management-backend" },
-    { "path": "../net" },
     { "path": "../plist" },
     { "path": "../scep" }
   ],

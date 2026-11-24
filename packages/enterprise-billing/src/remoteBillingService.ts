@@ -1,5 +1,5 @@
-import { Effect, Option, Schema } from "effect";
-import { OUTBOUND_TIMEOUTS, fetchWithTimeout } from "@mattrax/net";
+import { Effect, Layer, Option, Schema } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import {
   BillingInvoicesResponse,
   BillingSummary,
@@ -23,12 +23,16 @@ export type RemoteBillingOptions = {
   readonly licenseKey: string;
   /** Public origin of this deployment, used for Stripe return URLs. */
   readonly origin: string;
+  /** Override for tests or an egress proxy; defaults to the runtime `fetch`. */
   readonly fetch?: typeof globalThis.fetch;
 };
 
 const BillingUrl = Schema.Struct({ url: Schema.String, quantity: Schema.optional(Schema.Number) });
 
 const ErrorBody = Schema.Struct({ message: Schema.optional(Schema.String) });
+
+/** Licence calls are routine and must fail fast rather than pin a request. */
+export const BILLING_REQUEST_TIMEOUT_MS = 15_000;
 
 const failure = (message: string) => new EnterpriseStripeError({ message });
 
@@ -41,11 +45,16 @@ const endpoint = (base: string, path: string) => {
   return url.toString();
 };
 
+const httpClientLayer = (fetchImpl?: typeof globalThis.fetch) =>
+  fetchImpl === undefined
+    ? FetchHttpClient.layer
+    : FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
+
 export const makeRemoteBillingService = ({
   url,
   licenseKey,
   origin,
-  fetch = globalThis.fetch,
+  fetch,
 }: RemoteBillingOptions): BillingOperations => {
   const post = (
     path: string,
@@ -57,30 +66,33 @@ export const makeRemoteBillingService = ({
         catch: (cause) => failure(cause instanceof Error ? cause.message : "Invalid billing URL"),
       });
 
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetchWithTimeout(
-            target,
-            {
-              method: "POST",
-              headers: {
-                authorization: `Bearer ${licenseKey}`,
-                "content-type": "application/json",
-                accept: "application/json",
-              },
-              body: JSON.stringify({ origin, ...body }),
-            },
-            { timeoutMs: OUTBOUND_TIMEOUTS.billing, fetch },
+      const client = yield* HttpClient.HttpClient;
+
+      // The deadline covers the response body as well as the headers.
+      const exchange = Effect.gen(function* () {
+        const response = yield* client.execute(
+          HttpClientRequest.post(target).pipe(
+            HttpClientRequest.bearerToken(licenseKey),
+            HttpClientRequest.acceptJson,
+            HttpClientRequest.bodyText(JSON.stringify({ origin, ...body }), "application/json"),
           ),
-        catch: () => failure("The billing service is unavailable. Try again shortly."),
-      });
+        );
 
-      const text = yield* Effect.tryPromise({
-        try: () => response.text(),
-        catch: () => failure("The billing service returned an unreadable response."),
-      });
+        return { status: response.status, text: yield* response.text };
+      }).pipe(
+        Effect.mapError(() => failure("The billing service is unavailable. Try again shortly.")),
+        Effect.timeoutOrElse({
+          duration: BILLING_REQUEST_TIMEOUT_MS,
+          orElse: () =>
+            Effect.fail(
+              failure(`The billing service did not answer within ${BILLING_REQUEST_TIMEOUT_MS}ms.`),
+            ),
+        }),
+      );
 
-      if (!response.ok) {
+      const { status, text } = yield* exchange;
+
+      if (status < 200 || status > 299) {
         const parsed = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorBody)(safeJson(text)));
 
         return yield* Effect.fail(
@@ -89,7 +101,7 @@ export const makeRemoteBillingService = ({
       }
 
       return safeJson(text);
-    });
+    }).pipe(Effect.provide(httpClientLayer(fetch)));
 
   const decode = <A>(schema: Schema.Decoder<A>, value: Schema.Json | undefined) =>
     Option.match(Schema.decodeUnknownOption(schema)(value), {

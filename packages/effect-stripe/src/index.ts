@@ -1,11 +1,17 @@
 import { Context, Data, Effect, Layer, Option, Schema } from "effect";
 import type Stripe from "stripe";
-import { OUTBOUND_TIMEOUTS, STRIPE_MAX_NETWORK_RETRIES } from "@mattrax/net";
-import { HttpStripeClient, verifyStripeSignature } from "./http.ts";
+import {
+  HttpStripeClient,
+  STRIPE_MAX_NETWORK_RETRIES,
+  STRIPE_REQUEST_TIMEOUT_MS,
+  verifyStripeSignature,
+} from "./http.ts";
 import type { StripeClientConfig, StripeClientLike } from "./http.ts";
 
 export {
   HttpStripeClient,
+  STRIPE_MAX_NETWORK_RETRIES,
+  STRIPE_REQUEST_TIMEOUT_MS,
   verifyStripeSignature,
   type StripeClientConfig,
   type StripeClientLike,
@@ -304,6 +310,6 @@ export const verifyStripeWebhookSignature = (
   });
 
 export const STRIPE_DEFAULTS = {
-  timeout: OUTBOUND_TIMEOUTS.stripe,
+  timeout: STRIPE_REQUEST_TIMEOUT_MS,
   maxNetworkRetries: STRIPE_MAX_NETWORK_RETRIES,
 } as const;

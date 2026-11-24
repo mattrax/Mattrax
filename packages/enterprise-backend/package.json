@@ -27,7 +27,6 @@
     "@mattrax/entra-id": "workspace:*",
     "@mattrax/google-workspace": "workspace:*",
     "@mattrax/mdm-apple": "workspace:*",
-    "@mattrax/net": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "@simplewebauthn/server": "catalog:",
