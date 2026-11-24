@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { Effect, Schema } from "effect";
+import { Effect, FileSystem, Schema } from "effect";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type {
   CreateGroupRequest as CreateGroupRequestSchema,
@@ -58,12 +57,14 @@ export interface GroupDocumentSource {
   readonly document: PortableGroupDocument;
 }
 
-export const readGroupDocument = (path: string): Effect.Effect<GroupDocumentSource, CliFailure> =>
+export const readGroupDocument = (
+  path: string,
+): Effect.Effect<GroupDocumentSource, CliFailure, FileSystem.FileSystem> =>
   Effect.gen(function* () {
-    const text = yield* Effect.tryPromise({
-      try: () => readFile(path, "utf8"),
-      catch: () => new CliFailure({ message: `Could not read ${path}.` }),
-    });
+    const fs = yield* FileSystem.FileSystem;
+    const text = yield* fs
+      .readFileString(path)
+      .pipe(Effect.mapError(() => new CliFailure({ message: `Could not read ${path}.` })));
 
     const parsed = yield* Effect.try({
       try: () => parseYaml(text),
