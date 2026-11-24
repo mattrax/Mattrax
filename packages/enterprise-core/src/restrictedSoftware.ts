@@ -18,7 +18,7 @@ import {
   restrictedSoftwareCapability,
   restrictedSoftwareScopeApplies,
 } from "@mattrax/enterprise-domain";
-import type { RestrictedSoftwarePlatform } from "@mattrax/enterprise-domain";
+import type { InventoryApplication, RestrictedSoftwarePlatform } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "./db.ts";
 import {
   restrictedSoftware,
@@ -200,6 +200,8 @@ const enforcementFor = (
  * The unique `(rule, device)` row is the de-duplication boundary: a repeated
  * report refreshes `lastDetectedAt` and the occurrence count without producing
  * another violation event. A rule that stops matching resolves the open row.
+ * Callers reporting a fresh inventory can supply it to avoid reading the stored
+ * rows again. Rule and assignment changes omit it and use the saved inventory.
  */
 export const reconcileRestrictedSoftwareForDevice = (
   db: EnterpriseDb,
@@ -207,6 +209,7 @@ export const reconcileRestrictedSoftwareForDevice = (
     readonly organizationId: string;
     readonly deviceId: string;
     readonly at: Date;
+    readonly applications?: ReadonlyArray<InventoryApplication>;
   },
 ): Effect.Effect<
   {
@@ -221,17 +224,20 @@ export const reconcileRestrictedSoftwareForDevice = (
     const resolved = yield* resolveRestrictedSoftwareForDevice(db, input);
     const deviceRow = resolved.device;
 
-    if (!deviceRow) return { detected: 0, reopened: 0, refreshed: 0, resolved: 0 };
+    if (!deviceRow || resolved.rules.length === 0)
+      return { detected: 0, reopened: 0, refreshed: 0, resolved: 0 };
 
-    const applications = yield* db
-      .select()
-      .from(deviceApplication)
-      .where(
-        and(
-          eq(deviceApplication.deviceId, input.deviceId),
-          eq(deviceApplication.organizationId, input.organizationId),
-        ),
-      );
+    const applications =
+      input.applications ??
+      (yield* db
+        .select()
+        .from(deviceApplication)
+        .where(
+          and(
+            eq(deviceApplication.deviceId, input.deviceId),
+            eq(deviceApplication.organizationId, input.organizationId),
+          ),
+        ));
 
     const existing = yield* db
       .select()
