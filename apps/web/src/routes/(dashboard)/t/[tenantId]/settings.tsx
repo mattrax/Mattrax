@@ -1,6 +1,7 @@
 import { useLocation, useParams } from "@solidjs/router";
-import { createEffect, createMemo, For } from "solid-js";
+import { createEffect, createMemo, For, Loading } from "solid-js";
 import type { ParentProps } from "solid-js";
+import { LoadingState } from "@mattrax/ui";
 import { Dynamic } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
 import {
@@ -192,7 +193,18 @@ export default function TenantSettingsLayout(props: ParentProps) {
               (draft.dirty() || draft.saving() || draft.saved()) && "pb-28",
             )}
           >
-            {props.children}
+            {/* Only the pane under the rail swaps while a settings chunk
+                loads. The masthead, rail, unsaved draft and save bar stay
+                mounted. */}
+            <Loading
+              fallback={
+                <div class="flex min-h-40 items-center justify-center py-16">
+                  <LoadingState label="Loading section…" size={18} />
+                </div>
+              }
+            >
+              {props.children}
+            </Loading>
           </div>
         </div>
 

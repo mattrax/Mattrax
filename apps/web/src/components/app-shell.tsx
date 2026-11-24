@@ -7,6 +7,7 @@ import {
   createSignal,
   Errored,
   For,
+  Loading,
   onSettled,
   Show,
   untrack,
@@ -65,7 +66,8 @@ import { routes } from "~/lib/routes";
 import { supportUrl } from "~/lib/support-config-store";
 import { resolveLandingTenant } from "~/lib/tenant";
 import { announce, announcementText, Toaster } from "~/components/toast";
-import { SETTINGS_READ_PERMISSIONS, tenantRoleName, useCan } from "~/lib/permissions";
+import { firstReadableSettingsTab, tenantRoleName, useCan } from "~/lib/permissions";
+import { settingsTabById } from "~/components/settings/settings-tabs";
 import { cn } from "~/lib/utils";
 import { isHydrated } from "~/lib/query-client";
 import { pendingDeployment, reloadForDeployment } from "~/lib/skew-protection";
@@ -74,9 +76,9 @@ import { installTheme } from "~/lib/theme";
 import { setCrossTabTenant } from "~/lib/cross-tab-sync";
 import { BrandLogo } from "~/components/brand-logo";
 import { ErrorPanel } from "~/components/error-boundary";
-import { IndeterminateBar, Skeleton } from "@mattrax/ui";
+import { IndeterminateBar, LoadingState, Skeleton } from "@mattrax/ui";
 
-type NavGroup = "workspace" | "pinned";
+type NavGroup = "tenant" | "pinned";
 
 type NavItem = {
   id: string;
@@ -87,12 +89,10 @@ type NavItem = {
   match: (path: string) => boolean;
   /** Permission the section needs to appear; absent means always visible. */
   permission?: Permission;
-  /** Settings is only useful when at least one settings tab is readable. */
-  settingsGate?: boolean;
 };
 
 const NAV_GROUPS: ReadonlyArray<{ id: NavGroup; label: string }> = [
-  { id: "workspace", label: "Workspace" },
+  { id: "tenant", label: "Tenant" },
   { id: "pinned", label: "Pinned" },
 ];
 
@@ -271,6 +271,48 @@ function SearchButton(props: { compact?: boolean }) {
   );
 }
 
+/**
+ * The header's help destination. The docs are served from `/docs/` by both the
+ * hosted Worker and the self-hosted image, and support is whatever the
+ * deployment configured (`SUPPORT_URL`, falling back to mailto). Both links are
+ * native anchors: `target="_self"` keeps the router from treating the docs as
+ * an SPA route, so the static documentation document loads even when its chunk
+ * has not been visited yet.
+ */
+function HelpMenu() {
+  const support = () => supportUrl();
+  const externalSupport = () => support().startsWith("http");
+
+  return (
+    <DropdownMenu placement="bottom-end">
+      <DropdownMenuTrigger
+        class="inline-flex size-7 items-center justify-center rounded-[7px] border border-transparent text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+        aria-label="Help and documentation"
+        title="Help and documentation"
+      >
+        <HelpCircle class="size-4" aria-hidden="true" />
+        <span class="sr-only">Help and documentation</span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent class="w-[232px]">
+        <DropdownMenuItem as="a" role="menuitem" href="/docs/" target="_self">
+          <BookOpen class="size-3.5 text-muted-foreground" aria-hidden="true" />
+          Documentation
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          as="a"
+          role="menuitem"
+          href={support()}
+          target={externalSupport() ? "_blank" : undefined}
+          rel={externalSupport() ? "noopener" : undefined}
+        >
+          <HelpCircle class="size-3.5 text-muted-foreground" aria-hidden="true" />
+          Support
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 type ShellUser = {
   id?: string;
   name?: string | null;
@@ -351,7 +393,7 @@ function UserMenu(props: {
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => navigate("/account")}>
           <User class="size-3.5 text-muted-foreground" />
-          Account settings
+          Account
         </DropdownMenuItem>
         <Show when={props.superadmin}>
           <DropdownMenuItem onSelect={() => navigate(routes.adminAccounts())}>
@@ -362,10 +404,6 @@ function UserMenu(props: {
         <DropdownMenuItem as="a" role="menuitem" href="/docs/" target="_self">
           <BookOpen class="size-3.5 text-muted-foreground" />
           Documentation
-        </DropdownMenuItem>
-        <DropdownMenuItem as="a" role="menuitem" href="/docs/getting-started/alpha" target="_self">
-          <BookOpen class="size-3.5 text-muted-foreground" />
-          What alpha means
         </DropdownMenuItem>
         <DropdownMenuItem
           as="a"
@@ -421,41 +459,86 @@ function navFor(tenantId: string | undefined): NavItem[] {
 
   // Overview is the tenant root; a prefix match would also match every child.
   return [
-    item("overview", "Overview", base, LayoutDashboard, "workspace", {
+    item("overview", "Overview", base, LayoutDashboard, "tenant", {
       exact: true,
       permission: "tenant.read",
     }),
-    item("dashboards", "Dashboards", tenant.dashboards(), PanelRight, "workspace", {
+    item("dashboards", "Dashboards", tenant.dashboards(), PanelRight, "tenant", {
       permission: "dashboards.read",
     }),
-    item("devices", "Devices", tenant.devices(), MonitorSmartphone, "workspace", {
+    item("devices", "Devices", tenant.devices(), MonitorSmartphone, "tenant", {
       permission: "devices.read",
     }),
-    item("users", "Users", tenant.users(), User, "workspace", {
+    item("users", "Users", tenant.users(), User, "tenant", {
       permission: "members.read",
     }),
-    item("groups", "Groups", tenant.groups(), UsersRound, "workspace", {
+    item("groups", "Groups", tenant.groups(), UsersRound, "tenant", {
       permission: "groups.read",
     }),
-    item("policies", "Policies", tenant.policies(), ShieldCheck, "workspace", {
+    item("policies", "Policies", tenant.policies(), ShieldCheck, "tenant", {
       permission: "policies.read",
     }),
-    item("applications", "Applications", tenant.applications(), Package, "workspace", {
+    item("applications", "Applications", tenant.applications(), Package, "tenant", {
       permission: "applications.read",
     }),
-    item("scripts", "Scripts", tenant.scripts(), CommandIcon, "workspace", {
+    item("scripts", "Scripts", tenant.scripts(), CommandIcon, "tenant", {
       permission: "scripts.read",
     }),
-    {
-      id: "settings",
-      label: "Settings",
-      href: tenant.settings(),
-      group: "workspace",
-      icon: Settings,
-      settingsGate: true,
-      match: (value) => value === tenant.settings() || value.startsWith(`${tenant.settings()}/`),
-    },
   ];
+}
+
+/**
+ * Settings lives below the scrollable sections and directly above the account
+ * row. It keeps the same permission gate as the old navigation entry; the shell
+ * only renders it when at least one settings tab is readable.
+ */
+function settingsNavItem(tenantId: string, href: string): NavItem {
+  const settings = routes.tenant(tenantId).settings();
+
+  return {
+    id: "settings",
+    label: "Settings",
+    href,
+    group: "tenant",
+    icon: Settings,
+    // Any settings pane highlights the one footer entry, even when the link
+    // lands on a later readable tab.
+    match: (value) => value === settings || value.startsWith(`${settings}/`),
+  };
+}
+
+function SidebarLink(props: {
+  item: NavItem;
+  active: boolean;
+  collapsed?: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <a
+      href={props.item.href}
+      aria-current={props.active ? "page" : undefined}
+      onClick={() => props.onNavigate?.()}
+      class={cn(
+        "group flex items-center rounded-md border text-[12.5px] leading-none outline-none transition-[color,background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+        props.collapsed ? "mx-auto h-8 w-10 justify-center px-0" : "h-7 gap-2 px-2",
+        props.active
+          ? "border-border bg-card font-[500] text-foreground shadow-[0_1px_2px_rgb(24_24_22/0.05)]"
+          : "border-transparent text-muted-foreground hover:bg-hover hover:text-foreground",
+      )}
+      title={props.collapsed ? props.item.label : undefined}
+    >
+      <props.item.icon
+        class={cn(
+          "shrink-0 transition-colors duration-[var(--duration-hover)] ease-swift",
+          props.collapsed ? "size-4" : "size-3.5",
+          props.active
+            ? "text-foreground"
+            : "text-subtle-foreground group-hover:text-foreground",
+        )}
+      />
+      <span class={props.collapsed ? "sr-only" : "truncate"}>{props.item.label}</span>
+    </a>
+  );
 }
 
 function NavGroups(props: {
@@ -467,8 +550,8 @@ function NavGroups(props: {
 }) {
   const grouped = (group: NavGroup) => props.items.filter((item) => item.group === group);
 
-  // Settings owns its whole subtree, so every settings pane highlights the one
-  // Settings entry; other entries use their own prefix.
+  // Each entry owns its own subtree; the deepest matching href wins when two
+  // prefixes overlap. Settings is rendered separately in the footer.
   const activeId = createMemo(
     () =>
       props.items
@@ -501,34 +584,12 @@ function NavGroups(props: {
 
                       return (
                         <li>
-                          <a
-                            href={item.href}
-                            aria-current={active() ? "page" : undefined}
-                            onClick={() => props.onNavigate?.()}
-                            class={cn(
-                              "group flex items-center rounded-md border text-[12.5px] leading-none outline-none transition-[color,background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
-                              props.collapsed
-                                ? "mx-auto h-8 w-10 justify-center px-0"
-                                : "h-7 gap-2 px-2",
-                              active()
-                                ? "border-border bg-card font-[500] text-foreground shadow-[0_1px_2px_rgb(24_24_22/0.05)]"
-                                : "border-transparent text-muted-foreground hover:bg-hover hover:text-foreground",
-                            )}
-                            title={props.collapsed ? item.label : undefined}
-                          >
-                            <item.icon
-                              class={cn(
-                                "shrink-0 transition-colors duration-[var(--duration-hover)] ease-swift",
-                                props.collapsed ? "size-4" : "size-3.5",
-                                active()
-                                  ? "text-foreground"
-                                  : "text-subtle-foreground group-hover:text-foreground",
-                              )}
-                            />
-                            <span class={props.collapsed ? "sr-only" : "truncate"}>
-                              {item.label}
-                            </span>
-                          </a>
+                          <SidebarLink
+                            item={item}
+                            active={active()}
+                            collapsed={props.collapsed}
+                            onNavigate={props.onNavigate}
+                          />
                         </li>
                       );
                     }}
@@ -593,6 +654,8 @@ function SidebarPanel(props: {
   superadmin?: boolean;
   activeId: string | undefined;
   items: NavItem[];
+  settings?: NavItem;
+  settingsActive?: boolean;
   path: string;
   label: string;
   collapsed?: boolean;
@@ -634,6 +697,18 @@ function SidebarPanel(props: {
       <Separator />
       <div class="shrink-0 p-2">
         <SidebarUpdate collapsed={props.collapsed} />
+        <Show when={props.settings}>
+          {(item) => (
+            <nav aria-label="Tenant settings" class="mb-1">
+              <SidebarLink
+                item={item()}
+                active={props.settingsActive === true}
+                collapsed={props.collapsed}
+                onNavigate={props.onNavigate}
+              />
+            </nav>
+          )}
+        </Show>
         <UserMenu
           user={props.user}
           onSignOut={props.onSignOut}
@@ -641,6 +716,20 @@ function SidebarPanel(props: {
           collapsed={props.collapsed}
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * The fallback for a route chunk that is still loading. It lives inside the
+ * shell's main region, so a nested-route change keeps the sidebar, header and
+ * this page's own layout mounted instead of replacing the whole dashboard with
+ * the boot splash.
+ */
+function PageContentLoading() {
+  return (
+    <div class="flex flex-1 items-center justify-center py-24">
+      <LoadingState label="Loading page…" size={18} />
     </div>
   );
 }
@@ -785,7 +874,7 @@ export function AppShell(props: {
     return me.data?.tenants.find((tenant) => tenant.id === id)?.slug ?? id;
   });
 
-  const { can, canAny } = useCan();
+  const { can } = useCan();
 
   // Mutations broadcast to other tabs under the tenant currently on screen.
   createEffect(
@@ -829,28 +918,26 @@ export function AppShell(props: {
   });
 
   const navItems = createMemo(() => [
-    ...navFor(navTenant()).filter((item) => {
-      if (item.settingsGate) return canAny(SETTINGS_READ_PERMISSIONS);
-
-      return !item.permission || can(item.permission);
-    }),
+    ...navFor(navTenant()).filter((item) => !item.permission || can(item.permission)),
     ...pinnedItems(),
   ]);
 
-  const settingsLabels = new Map([
-    ["", "General"],
-    ["administrators", "Administrators"],
-    ["approvals", "Approvals"],
-    ["identity", "Identity"],
-    ["enrollment", "Enrollment"],
-    ["management", "Management"],
-    ["migration", "Migration"],
-    ["delivery", "Delivery"],
-    ["integrations", "Integrations"],
-    ["audit", "Audit log"],
-    ["billing", "Billing"],
-    ["storage", "Storage"],
-  ]);
+  /**
+   * Settings is pinned to the sidebar footer, above the account row. Visibility
+   * and the destination both come from the readable tab list, so a role whose
+   * only settings access is `devices.read` (OS updates and Migration) sees the
+   * entry and lands on that tab instead of General's denial.
+   */
+  const settings = createMemo<NavItem | undefined>(() => {
+    const tenant = navTenant();
+
+    if (!tenant) return undefined;
+    const href = firstReadableSettingsTab(can, tenant);
+
+    return href ? settingsNavItem(tenant, href) : undefined;
+  });
+
+  const settingsActive = createMemo(() => settings()?.match(location.pathname) ?? false);
 
   const pageLabel = createMemo(() => {
     const path = location.pathname;
@@ -870,9 +957,9 @@ export function AppShell(props: {
     const settingsSection = /\/settings(?:\/([^/]+))?/.exec(path)?.[1] ?? "";
 
     if (path.includes("/settings")) {
-      const section = settingsLabels.get(settingsSection);
+      const section = settingsTabById(settingsSection);
 
-      if (section) return `Settings · ${section}`;
+      if (section) return `Settings · ${section.label}`;
     }
 
     return navItems().find((item) => item.match(path))?.label ?? "Tenant";
@@ -936,7 +1023,10 @@ export function AppShell(props: {
   );
 
   return (
-    <div class="flex h-dvh overflow-hidden bg-background p-3 text-foreground selection:bg-brand/30 selection:text-foreground sm:p-4 lg:p-6 xl:p-8">
+    <div
+      data-slot="app-shell"
+      class="flex h-dvh overflow-hidden bg-background text-foreground selection:bg-brand/30 selection:text-foreground"
+    >
       <a
         href="#main"
         class="sr-only z-[100] rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
@@ -944,7 +1034,10 @@ export function AppShell(props: {
         Skip to content
       </a>
 
-      <div class="mx-auto flex h-full min-h-0 w-full max-w-[1800px] overflow-hidden rounded-[20px] border border-border bg-shell shadow-[0_1px_2px_rgb(24_24_22/0.04),0_20px_55px_-28px_rgb(24_24_22/0.22)]">
+      <div
+        data-slot="app-frame"
+        class="flex h-full min-h-0 w-full min-w-0 overflow-hidden bg-shell"
+      >
         <aside
           class={cn(
             "hidden h-full shrink-0 overflow-hidden border-r border-border transition-[width] duration-[180ms] ease-swift lg:block",
@@ -957,6 +1050,8 @@ export function AppShell(props: {
             superadmin={superadmin()}
             activeId={activeId()}
             items={navItems()}
+            settings={settings()}
+            settingsActive={settingsActive()}
             path={location.pathname}
             label="Primary"
             collapsed={sidebarCollapsed()}
@@ -964,7 +1059,10 @@ export function AppShell(props: {
         </aside>
 
         <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-          <header class="relative z-40 shrink-0 border-b border-border bg-shell/95 backdrop-blur supports-[backdrop-filter]:bg-shell/85">
+          <header
+            data-slot="app-header"
+            class="relative z-40 shrink-0 border-b border-border bg-shell/95 backdrop-blur supports-[backdrop-filter]:bg-shell/85"
+          >
             <div class="flex h-12 items-center gap-2 px-3 sm:px-5">
               <Button
                 variant="ghost"
@@ -1007,16 +1105,7 @@ export function AppShell(props: {
               </div>
               <div class="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
                 <SearchButton compact />
-                <Button
-                  as="a"
-                  href="/docs/"
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Documentation"
-                  title="Documentation"
-                >
-                  <HelpCircle class="size-4" />
-                </Button>
+                <HelpMenu />
                 <span
                   class="mx-0.5 hidden h-4 w-px bg-border sm:block lg:hidden"
                   aria-hidden="true"
@@ -1045,6 +1134,7 @@ export function AppShell(props: {
           <main
             id="main"
             tabindex="-1"
+            aria-busy={isRouting() ? "true" : undefined}
             class={cn(
               "relative z-10 flex min-h-0 w-full flex-1 flex-col overflow-y-auto bg-page transition-opacity duration-[140ms] ease-swift focus:outline-none",
               isRouting() && "opacity-70",
@@ -1060,7 +1150,9 @@ export function AppShell(props: {
                 before claiming it, so hydration would silently detach controls
                 (column pickers, filters, sort buttons). Rendering the page once
                 hydration finishes keeps every control live on cold loads. */}
-              <Show when={!isServer && isHydrated()}>{props.children}</Show>
+              <Show when={!isServer && isHydrated()}>
+                <Loading fallback={<PageContentLoading />}>{props.children}</Loading>
+              </Show>
             </Errored>
           </main>
         </div>
@@ -1081,6 +1173,8 @@ export function AppShell(props: {
             superadmin={superadmin()}
             activeId={activeId()}
             items={navItems()}
+            settings={settings()}
+            settingsActive={settingsActive()}
             path={location.pathname}
             label="Primary"
             onNavigate={() => setMobileNavOpen(false)}

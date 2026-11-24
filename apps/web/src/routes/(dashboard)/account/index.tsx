@@ -31,6 +31,7 @@ import type { McpConnectionInfo } from "~/lib/enterprise";
 import { optimisticallyPatchMe, optimisticallyUpdateCollection } from "~/lib/optimistic";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { routes } from "~/lib/routes";
+import { refreshMeAfterEmailVerification } from "~/lib/me-refresh";
 
 /** "2h ago" style label for a session's last authenticated request. */
 const relativeTime = (value: string) => {
@@ -55,6 +56,7 @@ const relativeTime = (value: string) => {
 
 export default function AccountPage() {
   const session = authClient.useSession();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const user = () => session().data?.user;
@@ -102,6 +104,7 @@ export default function AccountPage() {
 
       setSearchParams({ emailToken: undefined }, { replace: true });
       await session().refetch();
+      await refreshMeAfterEmailVerification(queryClient, { optimistic: true });
     })();
   });
 
@@ -411,8 +414,6 @@ export default function AccountPage() {
         tenants().find((tenant) => tenant.id === tenantId)?.name ??
         "Unknown tenant")
       : "All tenants";
-
-  const queryClient = useQueryClient();
 
   // Seed from the query's SSR/preloaded value so the first paint already shows
   // the saved choice instead of flashing the empty option.

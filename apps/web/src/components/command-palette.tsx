@@ -38,8 +38,8 @@ import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { reportGlobalError } from "~/lib/global-errors";
 import {
+  firstReadableSettingsTab,
   MIGRATION_MOVE_PERMISSIONS,
-  SETTINGS_READ_PERMISSIONS,
   settingsTabPermissions,
   tenantSectionPermission,
   useCan,
@@ -246,6 +246,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
     const nav = (command: Command) => ({ ...command, href: command.href ?? undefined });
 
     const tenantRoutes = routes.tenant(id);
+    const settingsHref = firstReadableSettingsTab(can, id);
 
     const navigation: Command[] = [
       nav(
@@ -274,9 +275,9 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
         ),
       ),
       nav(navigable("nav-scripts", "Scripts", tenantRoutes.scripts(), go(tenantRoutes.scripts()))),
-      nav(
-        navigable("nav-settings", "Settings", tenantRoutes.settings(), go(tenantRoutes.settings())),
-      ),
+      ...(settingsHref
+        ? [nav(navigable("nav-settings", "Settings", settingsHref, go(settingsHref)))]
+        : []),
     ];
 
     const shortcuts = new Map<string, CommandShortcut>([
@@ -293,7 +294,8 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
 
     const withShortcuts = navigation.flatMap((command) => {
       if (command.id === "nav-settings") {
-        if (!canAny(SETTINGS_READ_PERMISSIONS)) return [];
+        // Added only when a readable settings tab exists; keep it regardless of
+        // the section-level tenant.read permission.
       } else {
         const section = command.id.replace("nav-", "");
         const required = tenantSectionPermission(section);

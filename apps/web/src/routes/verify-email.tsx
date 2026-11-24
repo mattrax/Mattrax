@@ -66,6 +66,20 @@ export default function VerifyEmailPage() {
       }
 
       await session().refetch();
+
+      // The link may be opened without a session, and a token can belong to a
+      // different account than the one signed in here. Refresh only the signed-
+      // in account, and never optimistically patch its row: the session claim
+      // plus the refetched /me decide whether this account is verified.
+      if (session().data?.user) {
+        const [{ refreshMeAfterEmailVerification }, { queryClient }] = await Promise.all([
+          import("~/lib/me-refresh"),
+          import("~/lib/query-client"),
+        ]);
+
+        await refreshMeAfterEmailVerification(queryClient);
+      }
+
       setTokenStatus("ok");
       setMessage("Your email address is verified.");
     })();
@@ -169,6 +183,16 @@ export default function VerifyEmailPage() {
                     email={user().email}
                     onVerified={async () => {
                       await session().refetch();
+                      const [{ refreshMeAfterEmailVerification }, { queryClient }] =
+                        await Promise.all([
+                          import("~/lib/me-refresh"),
+                          import("~/lib/query-client"),
+                        ]);
+
+                      // The code proves this session's address, so it is safe to
+                      // optimistically mark the row before the refetch lands.
+                      await refreshMeAfterEmailVerification(queryClient, { optimistic: true });
+
                       // Defer past the query-cache write: navigation issued in
                       // the same tick is dropped by the router transition.
                       setTimeout(() => navigate(returnTo() ?? "/dashboard", { replace: true }), 0);

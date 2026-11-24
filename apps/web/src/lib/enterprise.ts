@@ -3,7 +3,6 @@ import type { InfiniteData } from "@tanstack/solid-query";
 import type {
   AdminAccountsQuery,
   AppleUserActionName,
-  MeResponse,
   UpdateMeRequest,
   UpdateTenantOsPolicyRequest,
 } from "@mattrax/enterprise-domain/client";
@@ -18,8 +17,8 @@ import {
   registerApprovalRetry,
 } from "~/lib/approval-retry";
 import type { ApprovalRetryInput } from "~/lib/approval-retry";
-import { readMeCache, writeMeCache } from "~/lib/me-cache";
-import { getPreloadedSession, readClientPreloadedMe } from "~/lib/session-store";
+import { ME_QUERY_KEY } from "~/lib/me-keys";
+import { buildMeQueryOptions } from "~/lib/me-options";
 import { rememberTenants, resolveTenant, resolveTenantId } from "~/lib/tenant";
 import {
   requestStepUp,
@@ -399,7 +398,7 @@ const keyTenant = (tenantId: RouteParam) =>
   tenantId ? (resolveTenantId(tenantId) ?? tenantId) : "";
 
 export const enterpriseKeys = {
-  me: () => ["enterprise", "me"] as const,
+  me: () => ME_QUERY_KEY,
   accountDeletion: () => ["enterprise", "account-deletion"] as const,
   tenants: () => ["enterprise", "tenants"] as const,
   tenant: (tenantId: RouteParam) => ["enterprise", "tenant", keyTenant(tenantId)] as const,
@@ -3195,54 +3194,12 @@ export const enterprise = {
     accountEndpoint((api) => api.completeStepUpPasskey({ payload })),
 };
 
-export const meQueryOptions = (userId?: string, enabled = true) => {
-  const cached = readMeCache(userId);
-
-  // The SSR preload carries the same `/me` payload, so the first paint can
-  // render the tenant shell, guard and permission-aware navigation without a
-  // second request. Only data for the signed-in account is accepted.
-  const event = isServer ? getRequestEvent() : undefined;
-  const preloaded = event ? getPreloadedSession(event.request)?.me : readClientPreloadedMe();
-
-  const initialData: MeResponse | undefined =
-    preloaded && (!userId || preloaded.account.id === userId) ? preloaded : undefined;
-
-  // The router addresses tenants by slug while every API call needs the id;
-  // keep the membership list available to that translation after SSR.
-  rememberTenants(initialData?.tenants ?? cached?.data.tenants);
-
-  // The SSR preload skips the queryFn, which is normally what refreshes the
-  // local cache. Persist it here so the next cold load still paints instantly.
-  if (!isServer && initialData) writeMeCache(initialData);
-
-  const options = {
-    queryKey: enterpriseKeys.me(),
-    queryFn: async () => {
-      const data = await enterprise.me();
-      rememberTenants(data.tenants);
-      writeMeCache(data);
-
-      return data;
-    },
-    enabled: !isServer && enabled,
-    // A cold load paints the last known shell immediately; the query still
-    // refreshes in the background.
-    placeholderData: initialData ?? cached?.data,
-    // Paint from the SSR/cached shell immediately, but always revalidate on
-    // mount: tenant creation, invitations and role changes must show up without
-    // waiting for the five-minute SSR token to expire.
-    staleTime: 0,
-  };
-
-  // TanStack renders this observer snapshot immediately without writing it into
-  // the shared cache. On the server that is essential: the module-level query
-  // client outlives a request, so `initialData` there could show one account's
-  // shell to the next visitor. In the browser the client is per-tab and we also
-  // seed the cache so the query is considered fresh.
-  if (!isServer && initialData !== undefined) Object.assign(options, { initialData });
-
-  return queryOptions(options);
-};
+export const meQueryOptions = (userId?: string, enabled = true) =>
+  buildMeQueryOptions({
+    userId,
+    enabled,
+    fetchMe: () => enterprise.me(),
+  });
 
 export const enterpriseQueries = {
   me: (userId?: string) => meQueryOptions(userId),

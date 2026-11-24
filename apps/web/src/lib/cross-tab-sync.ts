@@ -1,5 +1,7 @@
 import { Option, Schema } from "effect";
 import type { QueryClient } from "@tanstack/solid-query";
+import { clearMeCache } from "~/lib/me-cache";
+import { resetMePreload } from "~/lib/me-preload";
 
 /**
  * Cross-tab query synchronisation.
@@ -119,6 +121,26 @@ export const mergeInvalidationKeys = (
   return merged;
 };
 
+/**
+ * The message shape for a pending batch.
+ *
+ * An empty key list is not "invalidate nothing": it is the caller's way of
+ * asking for the active tenant once (`query-client` uses it after a mutation).
+ * Treat it as tenant scope, just like a list above the cap.
+ */
+export const invalidationScope = (
+  keys: readonly (readonly unknown[])[],
+  tenantScope = false,
+):
+  | { readonly scope: "tenant" }
+  | { readonly scope: "keys"; readonly keys: readonly (readonly unknown[])[] } => {
+  if (tenantScope || keys.length === 0) return { scope: "tenant" };
+
+  const merged = mergeInvalidationKeys([], keys);
+
+  return merged === undefined ? { scope: "tenant" } : { scope: "keys", keys: merged };
+};
+
 /** True when a query key belongs to `tenantId` (the id is a key element). */
 export const keyTouchesTenant = (key: readonly unknown[], tenantId: string | null): boolean =>
   tenantId === null || key.some((part) => part === tenantId);
@@ -156,14 +178,14 @@ const flush = () => {
   for (const [id, batch] of pending) {
     pending.delete(id);
 
-    const keys = batch.tenantScope ? undefined : mergeInvalidationKeys([], batch.keys);
+    const shape = invalidationScope(batch.keys, batch.tenantScope);
 
     deliver({
       ...envelope(),
       type: "invalidate",
       tenantId: batch.tenantId,
-      scope: keys === undefined ? "tenant" : "keys",
-      keys: keys ?? [],
+      scope: shape.scope,
+      keys: shape.scope === "keys" ? [...shape.keys] : [],
     });
   }
 };
@@ -259,11 +281,18 @@ export const applyCrossTabMessage = (target: CrossTabCache, message: CrossTabMes
     }
 
     case "reset": {
-      if (message.tenantId === null) target.clear();
-      else
+      if (message.tenantId === null) {
+        // A full reset is a sign-out (or cache drop) in another tab. Drop the
+        // persisted shell and this tab's document preload too so re-signing in
+        // does not seed stale initial data.
+        clearMeCache();
+        resetMePreload();
+        target.clear();
+      } else {
         target.removeQueries({
           predicate: (query) => keyTouchesTenant(query.queryKey, message.tenantId),
         });
+      }
     }
   }
 };

@@ -152,12 +152,12 @@ export function OnboardingChecklist(props: { tenantId: string }) {
           </a>
           <span aria-hidden="true">·</span>
           <a
-            href="/docs/getting-started/alpha"
+            href="/docs/"
             target="_self"
             class="inline-flex items-center gap-1 font-[500] text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground"
           >
             <BookOpen class="size-3" aria-hidden="true" />
-            What alpha means
+            Documentation
           </a>
         </p>
       </section>

@@ -7,6 +7,7 @@ import {
   resolveLandingTenant,
   resolveTenant,
   resolveTenantId,
+  tenantLandingHref,
 } from "./tenant";
 
 const acme = { id: "tenant-a1b2", slug: "acme", name: "Acme" };
@@ -119,5 +120,26 @@ describe("landing tenant precedence", () => {
   it("returns nothing when the account has no memberships", () => {
     expect(resolveLandingTenant([], { defaultTenantId: acme.id })).toBeUndefined();
     expect(resolveLandingTenant(undefined, { lastTenantId: acme.id })).toBeUndefined();
+  });
+
+  it("builds the canonical /t redirect and keeps the tail intact", () => {
+    expect(tenantLandingHref(tenants, { defaultTenantId: globex.id })).toBe("/t/globex");
+    expect(
+      tenantLandingHref(
+        tenants,
+        { defaultTenantId: globex.id, lastTenantId: acme.id },
+        "?health=attention#fleet",
+      ),
+    ).toBe("/t/globex?health=attention#fleet");
+    expect(tenantLandingHref(tenants, { lastTenantId: acme.id })).toBe("/t/acme");
+    expect(tenantLandingHref([], { defaultTenantId: acme.id })).toBeUndefined();
+  });
+
+  it("encodes a slug that is not URL-safe", () => {
+    expect(
+      tenantLandingHref([{ id: "tenant-1", slug: "acme corp", name: "Acme" }], {
+        defaultTenantId: "tenant-1",
+      }),
+    ).toBe("/t/acme%20corp");
   });
 });
