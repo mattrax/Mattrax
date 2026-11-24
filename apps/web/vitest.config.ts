@@ -2,6 +2,11 @@ import { fileURLToPath } from "node:url";
 import solidPlugin from "@solidjs/vite-plugin";
 import { defineConfig } from "vitest/config";
 
+const enrollmentSsrTests = [
+  "src/components/enrollment/enrollment-platforms.test.ts",
+  "src/components/enrollment/enrollment-states.test.ts",
+];
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -30,9 +35,9 @@ export default defineConfig({
           },
         },
         test: {
-          name: "server",
+          name: "enrollment-ssr",
           environment: "node",
-          include: ["src/**/*.test.ts"],
+          include: enrollmentSsrTests,
         },
       },
       {
@@ -45,9 +50,10 @@ export default defineConfig({
           noExternal: true,
         },
         test: {
-          name: "browser",
-          environment: "happy-dom",
-          include: ["src/**/*.test.tsx"],
+          name: "web",
+          environment: "node",
+          include: ["src/**/*.test.{ts,tsx}"],
+          exclude: enrollmentSsrTests,
         },
       },
     ],

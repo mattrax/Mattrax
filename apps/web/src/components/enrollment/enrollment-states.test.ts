@@ -1,5 +1,5 @@
 import { createComponent } from "solid-js";
-import { renderToString } from "solid-js/web";
+import { renderToString } from "@solidjs/web";
 import { describe, expect, it } from "vitest";
 import type { EnrollmentResponse } from "~/lib/enterprise";
 import { EnrollmentDetails } from "./enrollment-details";

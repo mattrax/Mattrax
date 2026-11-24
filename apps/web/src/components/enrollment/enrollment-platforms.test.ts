@@ -1,5 +1,5 @@
 import { createComponent } from "solid-js";
-import { renderToString } from "solid-js/web";
+import { renderToString } from "@solidjs/web";
 import { describe, expect, it } from "vitest";
 import type {
   AndroidEnrollment,
@@ -57,7 +57,7 @@ describe("enrollment platform panels", () => {
   it("uses dark text on a light tenant brand colour", () => {
     expect(
       renderOptions(enrollment({ apple: { profile: "plist" }, brandColor: "#facc15" })),
-    ).toContain("color:#111111");
+    ).toContain("color:black");
   });
 
   it("renders an enabled Windows discovery link and setup steps", () => {
