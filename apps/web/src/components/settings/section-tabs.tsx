@@ -26,11 +26,20 @@ export function SectionTabs(props: {
   tabs: ReadonlyArray<SectionTab>;
   active: string;
   onSelect?: (id: string) => void;
+  /**
+   * Address for a tab that navigates instead of calling `onSelect`.
+   *
+   * Keyboard activation clicks the anchor, so the router's document-level
+   * handler performs the navigation. That keeps tab activation working when
+   * the tablist was adopted across hydration, where a closure captured by
+   * the pre-hydration instance can write to a signal nobody observes.
+   */
+  hrefFor?: (id: string) => string;
   /** Panels are mounted on demand; only link aria-controls when one exists. */
   panelMounted?: (id: string) => boolean;
   class?: string;
 }) {
-  const isTablist = () => props.onSelect !== undefined;
+  const isTablist = () => props.onSelect !== undefined || props.hrefFor !== undefined;
   const activeId = () =>
     props.tabs.some((tab) => tab.id === props.active)
       ? props.active
@@ -95,9 +104,21 @@ export function SectionTabs(props: {
     // flush the keyboard selection only reached the focused button and never
     // the active state. The browser suite caught that as a selected tab with
     // aria-selected="false".
+    const anchor = anchors.get(next);
+
+    // A navigation tab activates through its anchor: the router listens at
+    // the document, not on this component instance, so the click cannot be
+    // lost to a stale hydration closure.
+    if (props.hrefFor) {
+      queueMicrotask(() => anchor?.focus());
+      anchor?.click();
+
+      return;
+    }
+
     props.onSelect?.(next);
     flush();
-    queueMicrotask(() => anchors.get(next)?.focus());
+    queueMicrotask(() => anchor?.focus());
   };
 
   return (
@@ -113,7 +134,7 @@ export function SectionTabs(props: {
       <For each={props.tabs}>
         {(tab) => (
           <Show
-            when={tab.href}
+            when={tab.href ?? props.hrefFor?.(tab.id)}
             fallback={
               <button
                 type="button"
@@ -142,7 +163,18 @@ export function SectionTabs(props: {
                 }}
                 href={href()}
                 class={itemClass(tab.id)}
-                aria-current={activeId() === tab.id ? "page" : undefined}
+                role={props.hrefFor ? "tab" : undefined}
+                tabindex={props.hrefFor ? (activeId() === tab.id ? 0 : -1) : undefined}
+                aria-selected={
+                  props.hrefFor ? (activeId() === tab.id ? "true" : "false") : undefined
+                }
+                aria-controls={
+                  props.hrefFor && tab.panelId && props.panelMounted?.(tab.id)
+                    ? tab.panelId
+                    : undefined
+                }
+                onKeyDown={props.hrefFor ? onKeyDown : undefined}
+                aria-current={!props.hrefFor && activeId() === tab.id ? "page" : undefined}
               >
                 {tab.label}
               </a>

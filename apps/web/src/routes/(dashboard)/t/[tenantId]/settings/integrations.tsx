@@ -91,18 +91,12 @@ export default function IntegrationsSettingsPage() {
   const [rotateError, setRotateError] = createSignal<unknown>();
 
   // The active view lives in the URL so it survives a reload and can be
-  // linked to. A local signal here raced the settings route's hydration: the
-  // keyboard handler wrote the signal but the mounted view kept reading its
-  // initial value (the e2e tabs test caught this), whereas the router's
-  // location updates both the URL and every observer.
-  const [searchParams, setSearchParams] = useSearchParams<{ view?: string }>();
+  // linked to. The tabs render as real anchors, so activation goes through
+  // the router's document-level handler rather than a closure that can be
+  // lost when the tablist is adopted across hydration.
+  const [searchParams] = useSearchParams<{ view?: string }>();
   const tab = (): "endpoints" | "deliveries" =>
     searchParams.view === "deliveries" && canReadDeliveries() ? "deliveries" : "endpoints";
-  const setTab = (id: string) =>
-    setSearchParams(
-      { view: id === "deliveries" ? "deliveries" : undefined },
-      { replace: true },
-    );
   const [endpointId, setEndpointId] = createSignal("");
   const [eventFilter, setEventFilter] = createSignal("");
   const [statusFilter, setStatusFilter] = createSignal<"" | "succeeded" | "failed">("");
@@ -414,7 +408,7 @@ export default function IntegrationsSettingsPage() {
       <SectionTabs
         label="Webhook views"
         active={tab()}
-        onSelect={(id) => setTab(id === "deliveries" ? "deliveries" : "endpoints")}
+        hrefFor={(id) => (id === "deliveries" ? "?view=deliveries" : "?")}
         panelMounted={(id) => tab() === id}
         tabs={[
           {
