@@ -137,11 +137,9 @@ describe("plist", () => {
     });
 
     it("serializes null/undefined as empty string", async () => {
-      // SAFETY: serializePlist renders null/undefined as an empty string at runtime; the typed
-      // contract excludes them, so this test deliberately probes that fallback.
       const [n, u] = await Promise.all([
-        serializePlist(null as never).pipe(Effect.runPromise),
-        serializePlist(undefined as never).pipe(Effect.runPromise),
+        serializePlist(null).pipe(Effect.runPromise),
+        serializePlist(undefined).pipe(Effect.runPromise),
       ]);
 
       expect(n).toContain("<string></string>");
