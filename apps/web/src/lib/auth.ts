@@ -148,9 +148,19 @@ const readAuthResponse = async (
     return { status: response.status, body };
   }
 
-  const request = new Request(url, { ...init, credentials: "include", headers });
+  const webRequest = new Request(url, {
+    ...init,
+    body: typeof init.body === "string" ? undefined : init.body,
+    credentials: "include",
+    headers,
+  });
+  const effectRequest = HttpClientRequest.fromWeb(webRequest);
+  const request =
+    typeof init.body === "string"
+      ? HttpClientRequest.bodyText(effectRequest, init.body, "application/json")
+      : effectRequest;
   const result = await Effect.runPromise(
-    HttpClient.execute(HttpClientRequest.fromWeb(request)).pipe(
+    HttpClient.execute(request).pipe(
       Effect.flatMap((response) =>
         Effect.gen(function* () {
           const body = yield* HttpClientResponse.schemaBodyJson(Schema.Json)(response).pipe(
