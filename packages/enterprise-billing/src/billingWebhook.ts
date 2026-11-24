@@ -1,7 +1,8 @@
-import { Cause, Data, Effect, Option, Schema } from "effect";
+import { Data, Effect, Option, Schema } from "effect";
 import { eq } from "drizzle-orm";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { verifyStripeWebhookSignature } from "@mattrax/effect-stripe";
+import { isUniqueViolationForConstraint } from "@mattrax/enterprise-core";
 import { Db } from "./db.ts";
 import type { ServicesDb } from "./db.ts";
 import { servicesSchema as schema } from "./schema.ts";
@@ -661,31 +662,12 @@ export type ProcessStripeWebhookInput = BillingWebhookConfig & {
   readonly now?: Date;
 };
 
-/**
- * MySQL reports a duplicate unique/primary key as `ER_DUP_ENTRY`/1062. The
- * ledger's primary key is `stripe_event.id`, so a duplicate here means this
- * exact event was already committed by a previous (or concurrent) delivery.
- */
-const ErrorDetails = Schema.Struct({
-  code: Schema.optional(Schema.String),
-  errno: Schema.optional(Schema.Number),
-  message: Schema.optional(Schema.String),
-  cause: Schema.optional(Schema.Unknown),
-});
-
+/** Only the ledger insert can claim an event id for this transaction. */
 const isDuplicateEventError = (cause: unknown): boolean => {
-  const top = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorDetails)(cause));
-  const nested = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorDetails)(top?.cause));
-  const code = top?.code ?? nested?.code;
-  const errno = top?.errno ?? nested?.errno;
-  const message = top?.message ?? nested?.message ?? "";
-
-  // The ledger's primary key is the only unique constraint this transaction
-  // touches, so a duplicate-key driver code identifies this event. Fall back
-  // to the message when a driver does not expose the code.
-  if (code === "ER_DUP_ENTRY" || errno === 1062) return true;
-
-  return /stripe_event/i.test(message);
+  return (
+    isUniqueViolationForConstraint(cause, "services_stripe_event.PRIMARY") ||
+    isUniqueViolationForConstraint(cause, "PRIMARY")
+  );
 };
 
 /** The database surface the apply helpers use; transaction handles included. */
@@ -765,7 +747,7 @@ const syncApplied = (
 /**
  * Verify and apply one Stripe event.
  *
- * The event id is written to `stripe_event` in the same transaction as the
+ * The event id is written to `services_stripe_event` in the same transaction as the
  * subscription/invoice writes. A redelivery (including two instances handling
  * the same event concurrently) loses the primary-key race and is skipped
  * instead of re-applying. A failed apply rolls the marker back, so Stripe's
@@ -790,9 +772,9 @@ export const processStripeWebhook = (input: ProcessStripeWebhookInput) =>
 
     if (!eventId) return yield* Effect.fail(fail("Stripe event is missing an id"));
 
-    const outcome = yield* input.db
-      .transaction((tx: BillingDb) =>
-        Effect.gen(function* () {
+    const outcome = yield* input.db.transaction((tx: BillingDb) =>
+      Effect.gen(function* () {
+        const marker = yield* Effect.gen(function* () {
           yield* tx.insert(schema.stripeEvent).values({
             id: eventId,
             type: event.type,
@@ -801,34 +783,41 @@ export const processStripeWebhook = (input: ProcessStripeWebhookInput) =>
             receivedAt: now,
           });
 
-          const applied = yield* applyVerifiedEvent(
-            { ...input, db: tx },
-            { type: event.type, data: { object: event.data.object } },
-            now,
-          );
+          return { inserted: true as const };
+        }).pipe(
+          Effect.catchCause((cause) =>
+            isDuplicateEventError(cause)
+              ? Effect.succeed({ duplicate: true as const })
+              : Effect.failCause(cause),
+          ),
+        );
 
-          if ("tenantId" in applied && applied.tenantId)
-            yield* tx
-              .update(schema.stripeEvent)
-              .set({ tenantId: applied.tenantId })
-              .where(eq(schema.stripeEvent.id, eventId));
+        // A redelivery loses the primary-key race before any billing writes
+        // run. Other failures, including later writes in this transaction,
+        // must propagate so Stripe retries the event.
+        if ("duplicate" in marker) return marker;
 
-          if ("licenseId" in applied && applied.licenseId)
-            yield* tx
-              .update(schema.stripeEvent)
-              .set({ licenseId: applied.licenseId })
-              .where(eq(schema.stripeEvent.id, eventId));
+        const applied = yield* applyVerifiedEvent(
+          { ...input, db: tx },
+          { type: event.type, data: { object: event.data.object } },
+          now,
+        );
 
-          return applied;
-        }),
-      )
-      .pipe(
-        Effect.catchCause((cause) =>
-          isDuplicateEventError(Cause.squash(cause))
-            ? Effect.succeed({ duplicate: true as const })
-            : Effect.failCause(cause),
-        ),
-      );
+        if ("tenantId" in applied && applied.tenantId)
+          yield* tx
+            .update(schema.stripeEvent)
+            .set({ tenantId: applied.tenantId })
+            .where(eq(schema.stripeEvent.id, eventId));
+
+        if ("licenseId" in applied && applied.licenseId)
+          yield* tx
+            .update(schema.stripeEvent)
+            .set({ licenseId: applied.licenseId })
+            .where(eq(schema.stripeEvent.id, eventId));
+
+        return applied;
+      }),
+    );
 
     if ("duplicate" in outcome) {
       const [recorded] = yield* input.db

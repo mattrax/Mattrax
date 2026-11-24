@@ -1,5 +1,7 @@
 import { Effect, Schema } from "effect";
+import * as SqlError from "effect/sql/SqlError";
 import { describe, expect, it } from "vitest";
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import {
@@ -15,6 +17,7 @@ import {
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseForbidden,
+  EnterpriseInternal,
   EnterpriseLastTenantAccount,
   EnterpriseNotFound,
   EnterpriseNotConfigured,
@@ -1672,6 +1675,71 @@ describe("enterprise service group flow", () => {
 });
 
 describe("enterprise service policy flow", () => {
+  const deploymentQuery = "insert into policy_deployment (id, policy_id, version) values (?, ?, ?)";
+
+  const mysqlDriverError = (errno: number, code: string, message: string) =>
+    Object.assign(new Error(message), { code, errno, sqlMessage: message });
+
+  const snapshotSqlError = (reason: SqlError.SqlErrorReason) =>
+    new EffectDrizzleQueryError({
+      query: deploymentQuery,
+      params: undefined,
+      cause: new SqlError.SqlError({ reason }),
+    });
+
+  const snapshotCollision = (constraint: string) =>
+    snapshotSqlError(
+      new SqlError.UniqueViolation({
+        cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+        message: "Duplicate entry",
+        operation: "insert",
+        constraint,
+      }),
+    );
+
+  const makePolicyContext = async () => {
+    const context = await makeContext();
+    const tenant = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "Acme", slug: "acme" }),
+    );
+    const policy = await runEffect(
+      context.service.createPolicy(request(context.headers), tenant.id, { name: "Baseline" }),
+    );
+
+    return { ...context, tenant, policy };
+  };
+
+  const interceptDeploymentInserts = (
+    db: any,
+    respond: (row: any, attempt: number, commit: () => void) => Effect.Effect<any, any>,
+  ) => {
+    const insert = db.insert.bind(db);
+    const attempts: any[] = [];
+
+    db.insert = (table: any) => {
+      const builder = insert(table);
+
+      if (table !== schema.policyDeployment) return builder;
+
+      const values = builder.values.bind(builder);
+
+      builder.values = (rows: any) => {
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        attempts.push(row);
+
+        return Effect.suspend(() =>
+          respond(row, attempts.length, () => {
+            values(rows);
+          }),
+        );
+      };
+
+      return builder;
+    };
+
+    return attempts;
+  };
+
   it("stores the delivery scope of a configuration", async () => {
     const { db, service, headers } = await makeContext();
 
@@ -1924,6 +1992,157 @@ describe("enterprise service policy flow", () => {
         service.patchPolicy(request(headers), tenant.id, "other-policy", { name: "Denied" }),
       ),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+
+  it.each([
+    {
+      name: "connection",
+      error: () =>
+        snapshotSqlError(
+          new SqlError.ConnectionError({
+            cause: mysqlDriverError(2003, "ECONNREFUSED", "connect ECONNREFUSED"),
+            message: "connect ECONNREFUSED",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "syntax",
+      error: () =>
+        snapshotSqlError(
+          new SqlError.SqlSyntaxError({
+            cause: mysqlDriverError(1064, "ER_PARSE_ERROR", "You have an error in your SQL"),
+            message: "You have an error in your SQL",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "non-unique constraint",
+      error: () =>
+        snapshotSqlError(
+          new SqlError.ConstraintError({
+            cause: mysqlDriverError(1452, "ER_NO_REFERENCED_ROW_2", "Constraint failed"),
+            message: "Constraint failed",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unique constraint on another table",
+      error: () => snapshotCollision("configuration.PRIMARY"),
+    },
+    {
+      name: "unstructured driver duplicate",
+      error: () =>
+        new EffectDrizzleQueryError({
+          query: deploymentQuery,
+          params: undefined,
+          cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+        }),
+    },
+  ])("does not retry a Drizzle-wrapped $name snapshot failure", async ({ error }) => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () => Effect.fail(error()));
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts).toHaveLength(1);
+    expect(db.store.policy_deployment).toHaveLength(1);
+  });
+
+  it("reuses one deployment id when a stale version read collides", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, (_row, attempt, commit) =>
+      attempt === 1
+        ? Effect.fail(snapshotCollision("policy_deployment.policy_deployment_version_unique"))
+        : Effect.sync(commit),
+    );
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: { "mttx.apple.device": { camera: false } },
+      }),
+    );
+
+    expect(attempts.map((row) => row.version)).toEqual([2, 3]);
+    expect(new Set(attempts.map((row) => row.id)).size).toBe(1);
+    expect(db.store.policy_deployment).toHaveLength(2);
+    expect(db.store.policy_deployment.at(-1)).toMatchObject({
+      id: attempts[0].id,
+      version: 3,
+      snapshot: { "mttx.apple.device": { camera: false } },
+    });
+  });
+
+  it("acknowledges an ambiguously committed snapshot without inserting again", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, (_row, _attempt, commit) =>
+      Effect.sync(commit).pipe(
+        Effect.andThen(Effect.fail(snapshotCollision("policy_deployment.PRIMARY"))),
+      ),
+    );
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: { "mttx.apple.device": { camera: false } },
+      }),
+    );
+
+    expect(attempts).toHaveLength(1);
+    expect(db.store.policy_deployment).toHaveLength(2);
+    expect(db.store.policy_deployment.at(-1)).toMatchObject({
+      id: attempts[0].id,
+      version: 2,
+      snapshot: { "mttx.apple.device": { camera: false } },
+    });
+  });
+
+  it("does not accept a committed snapshot with different contents", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, (row) =>
+      Effect.sync(() => {
+        db.store.policy_deployment.push({
+          ...row,
+          snapshot: { "mttx.apple.device": { camera: true } },
+        });
+      }).pipe(Effect.andThen(Effect.fail(snapshotCollision("policy_deployment.PRIMARY")))),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts).toHaveLength(1);
+  });
+
+  it("bounds repeated version collisions and keeps the deployment id fixed", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () =>
+      Effect.fail(snapshotCollision("policy_deployment_version_unique")),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts.map((row) => row.version)).toEqual([2, 3, 4, 5]);
+    expect(new Set(attempts.map((row) => row.id)).size).toBe(1);
+    expect(db.store.policy_deployment).toHaveLength(1);
   });
 
   it("duplicates policy configurations and deletes with partial failure reporting", async () => {

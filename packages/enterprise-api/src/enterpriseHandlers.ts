@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Exit, Match, Option, Predicate, Schema } from "effect";
+import { Cause, Context, Effect, Exit, Match, Option, Predicate, Schedule, Schema } from "effect";
 import type { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
 import { preconditionFailure, preconditionFromRequest } from "./preconditions.js";
@@ -93,6 +93,7 @@ import {
   defaultErrorCode,
   applicationsInventoryStale,
   containsPolicyVariables,
+  canonicalJson,
   deviceCommandStatusLabel,
   deviceActionUnavailableReason,
   deviceAvailableActions,
@@ -214,6 +215,7 @@ import {
   countWindowsFailures,
   deviceLimitForOrganization,
   hasMfaFactor,
+  isUniqueViolationForConstraint,
   listWindowsFailuresForDevice,
   listWindowsFailuresForOrganization,
   R2_IMMUTABLE_CACHE_CONTROL,
@@ -2360,10 +2362,7 @@ export const createEnterpriseService = ({
 
       // `max(version)` can come from a stale Hyperdrive replica, so the first
       // INSERT may collide with the unique (policy_id, version) index even
-      // though the read said the slot was free. Retry with a higher version
-      // instead of trusting a fresh read: every retry is a lower-bound + n, so
-      // it eventually lands above the true maximum without waiting for the
-      // replica to catch up.
+      // though the read said the slot was free.
       const [current] = yield* db
         .select({ version: schema.policyDeployment.version })
         .from(schema.policyDeployment)
@@ -2372,26 +2371,92 @@ export const createEnterpriseService = ({
         .limit(1);
 
       const base = current?.version ?? 0;
-      let attempt = 1;
+      const deploymentId = id();
+      const createdAt = now();
+      let version = base + 1;
 
-      const insertOnce = Effect.suspend(() => {
-        const version = base + attempt;
-        attempt += 1;
+      const isRetryableCollision = (error: unknown) =>
+        isUniqueViolationForConstraint(error, "policy_deployment.PRIMARY") ||
+        isUniqueViolationForConstraint(error, "PRIMARY") ||
+        isUniqueViolationForConstraint(
+          error,
+          "policy_deployment.policy_deployment_version_unique",
+        ) ||
+        isUniqueViolationForConstraint(error, "policy_deployment_version_unique");
 
-        return Effect.gen(function* () {
+      const insertOnce = Effect.suspend(() =>
+        Effect.gen(function* () {
           yield* db.insert(schema.policyDeployment).values({
-            id: id(),
+            id: deploymentId,
             organizationId: ctx.organization.id,
             policyId,
             version,
             snapshot,
             createdByAccountId: ctx.account.id,
-            createdAt: now(),
+            createdAt,
           });
-        });
-      });
+        }).pipe(
+          Effect.catch((error) =>
+            Effect.gen(function* () {
+              if (!isRetryableCollision(error)) return yield* Effect.fail(error);
 
-      yield* Effect.retry(insertOnce, { times: 20 });
+                // A duplicate-key result can accompany an ambiguously
+                // committed insert. Read the fixed id before retrying so the
+                // committed snapshot is acknowledged without another version.
+              const [committed] = yield* db
+                .select({
+                  organizationId: schema.policyDeployment.organizationId,
+                  policyId: schema.policyDeployment.policyId,
+                  snapshot: schema.policyDeployment.snapshot,
+                })
+                .from(schema.policyDeployment)
+                .where(eq(schema.policyDeployment.id, deploymentId))
+                .limit(1);
+
+              if (committed) {
+                const savedSnapshot = Schema.decodeUnknownOption(Schema.Json)(committed.snapshot);
+                const expectedSnapshot = Schema.decodeUnknownOption(Schema.Json)(snapshot);
+
+                if (
+                  committed.organizationId === ctx.organization.id &&
+                  committed.policyId === policyId &&
+                  Option.isSome(savedSnapshot) &&
+                  Option.isSome(expectedSnapshot) &&
+                  canonicalJson(savedSnapshot.value) === canonicalJson(expectedSnapshot.value)
+                )
+                  return;
+
+                return yield* Effect.fail(
+                  new EnterpriseInternal({
+                    message: "Policy deployment id already exists with different contents",
+                  }),
+                );
+              }
+
+              // A version collision belongs to another save. Keep the one
+              // deployment id but move to the next slot; a primary-key
+              // collision with no visible row is retried unchanged in case
+              // the committed row has not reached the read replica yet.
+              if (
+                isUniqueViolationForConstraint(
+                  error,
+                  "policy_deployment.policy_deployment_version_unique",
+                ) ||
+                isUniqueViolationForConstraint(error, "policy_deployment_version_unique")
+              )
+                version += 1;
+
+              return yield* Effect.fail(error);
+            }),
+          ),
+        ),
+      );
+
+      yield* Effect.retry(insertOnce, {
+        times: 3,
+        while: isRetryableCollision,
+        schedule: Schedule.exponential("10 millis"),
+      });
     });
 
   /**

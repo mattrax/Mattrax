@@ -1,8 +1,9 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import type { Schema } from "effect";
-import { Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
+import * as SqlError from "effect/sql/SqlError";
 import { HttpRouter } from "effect/http";
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import { ServicesDbService, servicesSchema } from "@mattrax/enterprise-billing";
 import {
   BillingWebhookError,
@@ -20,6 +21,32 @@ const now = new Date("2026-01-01T00:00:00.000Z");
 const periodStart = 1_767_225_600;
 
 const periodEnd = 1_769_817_600;
+
+const ledgerQuery = "insert into services_stripe_event (id, type) values (?, ?)";
+
+const mysqlDriverError = (errno: number, code: string, message: string) =>
+  Object.assign(new Error(message), { code, errno, sqlMessage: message });
+
+const drizzleSqlError = (reason: SqlError.SqlErrorReason, query = ledgerQuery) =>
+  new EffectDrizzleQueryError({
+    query,
+    params: undefined,
+    cause: new SqlError.SqlError({ reason }),
+  });
+
+const duplicateEventError = (eventId: string) =>
+  drizzleSqlError(
+    new SqlError.UniqueViolation({
+      cause: mysqlDriverError(
+        1062,
+        "ER_DUP_ENTRY",
+        `Duplicate entry '${eventId}' for key 'services_stripe_event.PRIMARY'`,
+      ),
+      message: `Duplicate entry '${eventId}' for key 'services_stripe_event.PRIMARY'`,
+      operation: "insert",
+      constraint: "services_stripe_event.PRIMARY",
+    }),
+  );
 
 const seedOrganization = (
   db: ReturnType<typeof makeDb>,
@@ -81,7 +108,8 @@ const signed = (payload: string, secret = webhookSecret) => ({
 /**
  * The fake database does not enforce primary keys, so this wrapper adds the one
  * constraint the Stripe ledger relies on: a second insert with the same event id
- * fails with MySQL's `ER_DUP_ENTRY`, exactly as production does.
+ * fails through Drizzle and Effect's structured unique-violation error, as in
+ * production.
  */
 const makeLedgerDb = () => {
   const db = makeDb();
@@ -98,16 +126,23 @@ const makeLedgerDb = () => {
       const row = Array.isArray(rows) ? rows[0] : rows;
 
       if (db.store.services_stripe_event.some((existing: any) => existing.id === row.id))
-        throw Object.assign(
-          new Error(`Duplicate entry '${row.id}' for key 'stripe_event.PRIMARY'`),
-          { code: "ER_DUP_ENTRY", errno: 1062 },
-        );
+        return Effect.fail(duplicateEventError(row.id));
 
       return values(rows);
     };
 
     return builder;
   };
+
+  return db;
+};
+
+const makeFailingLedgerDb = (error: unknown) => {
+  const db = makeDb();
+  const insert = db.insert.bind(db);
+
+  db.insert = (table: any) =>
+    table === servicesSchema.stripeEvent ? { values: () => Effect.fail(error) } : insert(table);
 
   return db;
 };
@@ -777,6 +812,143 @@ describe("POST /api/v1/billing/webhook", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ received: true });
     expect(db.store.services_subscription).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      name: "connection",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.ConnectionError({
+            cause: mysqlDriverError(2003, "ECONNREFUSED", "connect ECONNREFUSED"),
+            message: "connect ECONNREFUSED",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "deadlock",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.DeadlockError({
+            cause: mysqlDriverError(1213, "ER_LOCK_DEADLOCK", "Deadlock found"),
+            message: "Deadlock found",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "lock timeout",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.LockTimeoutError({
+            cause: mysqlDriverError(1205, "ER_LOCK_WAIT_TIMEOUT", "Lock wait timeout"),
+            message: "Lock wait timeout",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "non-unique constraint",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.ConstraintError({
+            cause: mysqlDriverError(1452, "ER_NO_REFERENCED_ROW_2", "Constraint failed"),
+            message: "Constraint failed",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unique constraint on another table",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.UniqueViolation({
+            cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+            constraint: "services_subscription.PRIMARY",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unstructured driver duplicate",
+      error: () =>
+        new EffectDrizzleQueryError({
+          query: ledgerQuery,
+          params: undefined,
+          cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+        }),
+    },
+  ])("returns 500 for a Drizzle-wrapped $name failure", async ({ error }) => {
+    const db = makeFailingLedgerDb(error());
+    seedOrganization(db, "org-1", "cus_1");
+    const payload = JSON.stringify(event("customer.subscription.created", subscription()));
+
+    const response = await makeHandler(db)(
+      new Request("http://localhost/api/v1/billing/webhook", {
+        method: "POST",
+        headers: {
+          "stripe-signature": signed(payload).signature,
+          "content-type": "application/json",
+        },
+        body: payload,
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: "Webhook processing failed" });
+    expect(db.store.services_stripe_event).toEqual([]);
+    expect(db.store.services_subscription).toEqual([]);
+  });
+
+  it("returns 500 when a later stripe_event update fails", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+    const update = db.update.bind(db);
+
+    db.update = (table: any) => {
+      const builder = update(table);
+
+      if (table !== servicesSchema.stripeEvent) return builder;
+
+      const set = builder.set.bind(builder);
+
+      builder.set = (patch: any) => {
+        const next = set(patch);
+
+        next.where = (_condition: any) =>
+          Effect.fail(
+            drizzleSqlError(
+              new SqlError.ConnectionError({
+                cause: mysqlDriverError(2013, "CR_SERVER_LOST", "Lost connection"),
+                message: "Lost connection",
+                operation: "update",
+              }),
+              "update services_stripe_event set tenant_id = ? where id = ?",
+            ),
+          );
+
+        return next;
+      };
+
+      return builder;
+    };
+
+    const payload = JSON.stringify(event("customer.subscription.created", subscription()));
+    const response = await makeHandler(db)(
+      new Request("http://localhost/api/v1/billing/webhook", {
+        method: "POST",
+        headers: {
+          "stripe-signature": signed(payload).signature,
+          "content-type": "application/json",
+        },
+        body: payload,
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(db.store.services_stripe_event).toEqual([]);
+    expect(db.store.services_subscription).toEqual([]);
   });
 
   it("returns 400 for a missing signature", async () => {
