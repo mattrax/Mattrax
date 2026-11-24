@@ -23,11 +23,12 @@ import { MdmTable, readTableColumnVisibility } from "~/components/mdm/table";
 import type { MdmColumn, MdmSortState } from "~/components/mdm/table";
 import { DeviceViewsTabs } from "~/components/mdm/device-views";
 import { Button } from "~/components/ui/button";
-import { Badge, EmptyState, FilterBar, NativeSelect } from "@mattrax/ui";
+import { Badge, EmptyState, FilterBar } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import {
   Activity,
   BookOpen,
+  Calendar,
   Download,
   HardDrive,
   KeyRound,
@@ -40,6 +41,7 @@ import {
   Smartphone,
   UsersRound,
   Wifi,
+  X,
 } from "~/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import {
@@ -432,6 +434,18 @@ export default function DevicesPage() {
   );
 
   const [queryOpen, setQueryOpen] = createSignal(false);
+
+  const queryConditionCount = () => {
+    const query = deviceQuery();
+
+    return (query?.all?.length ?? 0) + (query?.any?.length ?? 0) + (query?.none?.length ?? 0);
+  };
+
+  const clearAdvancedQuery = () => {
+    setDeviceQuery(null);
+    setPage(0);
+    setQueryOpen(false);
+  };
 
   const initialPageSize = () => {
     const value = Number(search().pageSize ?? DEFAULT_PAGE_SIZE);
@@ -1416,6 +1430,18 @@ export default function DevicesPage() {
       defaultHidden: true,
     },
     {
+      id: "enrolledAt",
+      header: "Enrolled",
+      icon: Calendar,
+      sort: (row) => row.enrolledAt,
+      sortId: "enrolledAt",
+      class: "text-right",
+      cell: (row) => (
+        <span class="tabular-nums text-muted-foreground">{formatDeviceDate(row.enrolledAt)}</span>
+      ),
+      defaultHidden: true,
+    },
+    {
       id: "lastSeen",
       header: "Last seen",
       icon: RefreshCw,
@@ -1740,77 +1766,60 @@ export default function DevicesPage() {
             conditions={filterConditions()}
             onChange={applyFilters}
             hideClear
-          >
-            <div class="ml-auto flex flex-wrap items-center gap-1.5">
-              <NativeSelect
-                class="h-7 rounded-full border-border bg-card px-2 text-[11.5px] text-muted-foreground"
-                aria-label="Sort devices"
-                value={sort()?.id ?? "name"}
-                onChange={(event) => {
-                  setSort({ id: event.currentTarget.value, dir: sort()?.dir ?? "asc" });
-                  setPage(0);
-                }}
-              >
-                <option value="name">Sort: name</option>
-                <option value="health">Sort: health</option>
-                <option value="activation">Sort: activation</option>
-                <option value="lastSeenAt">Sort: last seen</option>
-                <option value="enrolledAt">Sort: enrolled</option>
-                <option value="status">Sort: status</option>
-              </NativeSelect>
-              <Button
-                variant="ghost"
-                size="xs"
-                class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                onClick={() => {
-                  setSort({
-                    id: sort()?.id ?? "name",
-                    dir: sort()?.dir === "desc" ? "asc" : "desc",
-                  });
-                  setPage(0);
-                }}
-              >
-                {sort()?.dir === "desc" ? "Descending" : "Ascending"}
-              </Button>
-              <Show when={hasFilters()}>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                  onClick={clearFilters}
+            filterExtra={
+              <>
+                <Show
+                  when={deviceQuery()}
+                  fallback={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      class="h-7 rounded-full border-border bg-card px-2.5 text-[11.5px] text-muted-foreground"
+                      aria-expanded={queryOpen() ? "true" : "false"}
+                      onClick={() => setQueryOpen((value) => !value)}
+                    >
+                      <SlidersHorizontal class="size-3.5" />
+                      Advanced
+                    </Button>
+                  }
                 >
-                  Clear filters
-                </Button>
-              </Show>
-              <Button
-                variant="ghost"
-                size="xs"
-                class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                aria-expanded={queryOpen() ? "true" : "false"}
-                onClick={() => setQueryOpen((value) => !value)}
-              >
-                Advanced query
-                <Show when={deviceQuery()?.all?.length}>
-                  <Badge variant="subtle" class="tabular-nums">
-                    {deviceQuery()!.all!.length}
-                  </Badge>
+                  <span class="inline-flex h-7 items-center rounded-full border border-border bg-card pl-1.5 pr-0.5">
+                    <button
+                      type="button"
+                      class="flex h-full items-center gap-1.5 rounded-full pr-1 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                      aria-expanded={queryOpen() ? "true" : "false"}
+                      onClick={() => setQueryOpen((value) => !value)}
+                    >
+                      <SlidersHorizontal class="size-3.5 text-subtle-foreground" />
+                      <span class="text-muted-foreground">Query</span>
+                      <span class="font-[520] text-foreground">
+                        {queryConditionCount()} condition{queryConditionCount() === 1 ? "" : "s"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      class="flex size-5 shrink-0 items-center justify-center rounded-full text-subtle-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                      aria-label="Clear advanced query"
+                      title="Clear advanced query"
+                      onClick={clearAdvancedQuery}
+                    >
+                      <X class="size-3" />
+                    </button>
+                  </span>
                 </Show>
-              </Button>
-              <Show when={deviceQuery()}>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                  onClick={() => {
-                    setDeviceQuery(null);
-                    setPage(0);
-                  }}
-                >
-                  Clear query
-                </Button>
-              </Show>
-            </div>
-          </FilterBar>
+                <Show when={hasFilters()}>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
+                    onClick={clearFilters}
+                  >
+                    Clear filters
+                  </Button>
+                </Show>
+              </>
+            }
+          />
         }
         toolbar={
           <Show when={queryOpen()}>

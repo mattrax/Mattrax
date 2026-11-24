@@ -751,6 +751,11 @@ export type FilterBarProps = {
    * row. The parent must be a wrapping flex container (MdmTable's header is).
    */
   split?: boolean;
+  /**
+   * A filter-adjacent control rendered with the chips, such as the device
+   * table's advanced-query trigger.
+   */
+  filterExtra?: JSX.Element;
   /** Extra controls rendered after the filters (or on the first row when split). */
   children?: JSX.Element;
 };
@@ -828,6 +833,7 @@ export function FilterBar(props: FilterBarProps) {
       <>
         <Show when={props.conditions.length === 0}>
           {addFilter(false)}
+          {props.filterExtra}
           {props.children}
         </Show>
         <Show when={props.conditions.length > 0}>
@@ -839,6 +845,7 @@ export function FilterBar(props: FilterBarProps) {
           >
             {chips()}
             {addFilter(true)}
+            {props.filterExtra}
             {clear()}
           </div>
         </Show>
@@ -850,6 +857,7 @@ export function FilterBar(props: FilterBarProps) {
     <div class={cn("flex min-w-0 flex-wrap items-center gap-1.5", props.class)}>
       {chips()}
       {addFilter(props.conditions.length > 0)}
+      {props.filterExtra}
       {clear()}
       {props.children}
     </div>

@@ -83,14 +83,14 @@ test.describe("dashboards", () => {
     const tenant = await bootstrapTenant(page, "Query Tenant");
     const query = "platform is apple and staleDays at least 14";
     await gotoHydrated(page, `/t/${tenant.id}/devices?query=${encodeURIComponent(query)}`);
-    await expect(page.getByRole("button", { name: /Advanced query/ })).toContainText("2");
+    await expect(page.getByRole("button", { name: /Query 2 conditions/ })).toBeVisible();
     await expect(page).toHaveURL(/query=platform/);
-    await page.getByRole("button", { name: /Advanced query/ }).click();
+    await page.getByRole("button", { name: /Query 2 conditions/ }).click();
     await expect(page.getByRole("button", { name: /Platform is Apple/ })).toBeVisible();
     await expect(
       page.getByRole("button", { name: /Days since check-in at least 14/ }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Clear query" }).click();
+    await page.getByRole("button", { name: "Clear advanced query" }).click();
     await expect(page).not.toHaveURL(/query=/);
   });
 });

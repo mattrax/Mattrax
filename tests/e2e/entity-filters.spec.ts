@@ -23,6 +23,27 @@ test.describe("entity table filters", () => {
     await expect(page.getByRole("link", { name: "Alpha Ops" })).toHaveCount(0);
   });
 
+  test("sorts from a column header", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Header Sort Tenant");
+
+    for (const name of ["Alpha Ops", "Beta Ops"]) {
+      await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
+        method: "POST",
+        body: JSON.stringify({ name }),
+      });
+    }
+
+    await gotoHydrated(page, `/t/${tenant.id}/groups`);
+
+    const header = page.getByRole("columnheader", { name: "Name" });
+
+    await expect(header).toHaveAttribute("aria-sort", "ascending");
+    await header.getByRole("button").click();
+    await expect(header).toHaveAttribute("aria-sort", "descending");
+    await header.getByRole("button").click();
+    await expect(header).not.toHaveAttribute("aria-sort");
+  });
+
   test("adds, edits and removes a filter from the bar", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Filter Bar Tenant");
     await api(page, `/api/v1/tenants/${tenant.id}/groups`, {

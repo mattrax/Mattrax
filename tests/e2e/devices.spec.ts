@@ -202,8 +202,6 @@ test.describe("device fleet management", () => {
     await expect.poll(() => new URL(page.url()).searchParams.get("proto")).toBe("apple");
     await expect(page.getByRole("button", { name: /Status is Enrolled/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Platform is Apple/ })).toBeVisible();
-    await page.getByLabel("Sort devices").selectOption("lastSeenAt");
-    await expect.poll(() => new URL(page.url()).searchParams.get("sort")).toBe("lastSeenAt");
 
     // A group created after mount only appears in the select after a reload.
     const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
@@ -230,7 +228,6 @@ test.describe("device fleet management", () => {
     await expect(page.getByRole("button", { name: /Health is Critical/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Push delivery is Failing/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Last seen is Not in 7 days/ })).toBeVisible();
-    await expect(page.getByLabel("Sort devices")).toHaveValue("lastSeenAt");
 
     // Clearing filters clears both the controls and the URL.
     await page
