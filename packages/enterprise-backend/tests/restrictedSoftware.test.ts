@@ -104,7 +104,7 @@ const violationBase = {
   occurrenceCount: 1,
   firstDetectedAt: now,
   lastDetectedAt: now,
-  lastEnforcedAt: null,
+  lastEnforcedAt: null as Date | null,
   resolvedAt: null,
   notifiedAt: null,
   createdAt: now,
