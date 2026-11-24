@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Approvals — @alchemy.run/domain POC</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b0d10;
+        --panel: #12151a;
+        --panel-2: #171b21;
+        --line: #262c35;
+        --text: #e7ebf0;
+        --muted: #8b95a3;
+        --accent: #7c9cff;
+        --good: #3ddc97;
+        --warn: #f5b94c;
+        --bad: #ff6b6b;
+        font-family: ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 16px 22px;
+        border-bottom: 1px solid var(--line);
+        background: #0e1115;
+      }
+      h1 {
+        font-size: 15px;
+        margin: 0;
+        letter-spacing: 0.01em;
+      }
+      h1 span {
+        color: var(--muted);
+        font-weight: 400;
+      }
+      .actors {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .actor {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--muted);
+        border-radius: 999px;
+        padding: 6px 11px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      .actor[aria-pressed="true"] {
+        border-color: var(--accent);
+        color: var(--text);
+        background: #1a2133;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 360px minmax(0, 1fr);
+        min-height: calc(100vh - 65px);
+      }
+      aside {
+        border-right: 1px solid var(--line);
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        overflow: auto;
+      }
+      section.panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px;
+      }
+      h2 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--muted);
+        margin: 0 0 10px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--muted);
+        margin: 8px 0 4px;
+      }
+      input,
+      select,
+      textarea,
+      button {
+        font: inherit;
+        color: var(--text);
+      }
+      input,
+      select,
+      textarea {
+        width: 100%;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 8px 9px;
+      }
+      textarea {
+        resize: vertical;
+        min-height: 54px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+      }
+      .row > * {
+        flex: 1;
+      }
+      button.primary {
+        width: 100%;
+        margin-top: 12px;
+        background: var(--accent);
+        border: 0;
+        color: #08101f;
+        font-weight: 650;
+        padding: 9px;
+        border-radius: 7px;
+        cursor: pointer;
+      }
+      button.ghost {
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        color: var(--text);
+        padding: 7px 10px;
+        border-radius: 7px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      button.ghost:hover {
+        border-color: #3a4452;
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      ul.queue {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 340px;
+        overflow: auto;
+      }
+      li.request {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px 10px;
+        cursor: pointer;
+        background: var(--panel-2);
+      }
+      li.request:hover {
+        border-color: #38404c;
+      }
+      li.request[aria-current="true"] {
+        border-color: var(--accent);
+      }
+      .request .top {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        align-items: center;
+      }
+      .request .id {
+        font-family: ui-monospace, monospace;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .request .meta {
+        color: var(--muted);
+        font-size: 11.5px;
+        margin-top: 3px;
+      }
+      .pill {
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        padding: 2px 7px;
+        border-radius: 999px;
+        border: 1px solid;
+      }
+      .pending {
+        color: var(--warn);
+        border-color: #6b5320;
+        background: #241d0d;
+      }
+      .approved {
+        color: var(--good);
+        border-color: #1d5c44;
+        background: #0d2019;
+      }
+      .rejected,
+      .expired,
+      .cancelled {
+        color: var(--bad);
+        border-color: #6b2a2a;
+        background: #241010;
+      }
+      .detail {
+        padding: 26px 30px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        overflow: auto;
+      }
+      .detail-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .detail-head h3 {
+        margin: 0;
+        font-size: 21px;
+        font-weight: 600;
+      }
+      .subtle {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+      .fact {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 11px 12px;
+      }
+      .fact .k {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+      }
+      .fact .v {
+        margin-top: 4px;
+        font-size: 14px;
+        overflow-wrap: anywhere;
+      }
+      .decisions {
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .decision {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 9px 11px;
+        background: var(--panel-2);
+      }
+      .decision .note {
+        color: var(--muted);
+        font-size: 12px;
+        margin-top: 2px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .log {
+        font-family: ui-monospace, monospace;
+        font-size: 11.5px;
+        color: var(--muted);
+        white-space: pre-wrap;
+        max-height: 200px;
+        overflow: auto;
+      }
+      .empty {
+        color: var(--muted);
+        text-align: center;
+        padding: 60px 20px;
+        border: 1px dashed var(--line);
+        border-radius: 12px;
+      }
+      .banner {
+        font-size: 11.5px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+      .error {
+        color: var(--bad);
+      }
+      .ok {
+        color: var(--good);
+      }
+      @media (max-width: 900px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+        aside {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Four-eyes approvals <span>· @alchemy.run/domain POC</span></h1>
+      <div class="actors" id="actors"></div>
+    </header>
+    <main>
+      <aside>
+        <section class="panel">
+          <h2>Request approval</h2>
+          <label for="action">Action</label>
+          <select id="action">
+            <option value="tenant.delete">tenant.delete</option>
+            <option value="device.wipe">device.wipe</option>
+            <option value="tenant.export">tenant.export</option>
+            <option value="script.run">script.run</option>
+            <option value="backup.download">backup.download</option>
+          </select>
+          <div class="row">
+            <div>
+              <label for="required">Signatures</label>
+              <input id="required" type="number" min="1" max="10" value="2" />
+            </div>
+            <div>
+              <label for="ttl">Minutes to live</label>
+              <input id="ttl" type="number" min="1" value="2" />
+            </div>
+          </div>
+          <label for="summary">What is being approved</label>
+          <textarea id="summary">Delete the Acme tenant and every device in it.</textarea>
+          <button class="primary" id="create">Request approval</button>
+        </section>
+
+        <section class="panel">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 10px;
+            "
+          >
+            <h2 style="margin: 0">Queue</h2>
+            <label
+              style="margin: 0; display: flex; align-items: center; gap: 5px; font-size: 11.5px"
+            >
+              <input id="mine" type="checkbox" style="width: auto" /> mine
+            </label>
+          </div>
+          <ul class="queue" id="queue">
+            <li class="empty">No requests yet.</li>
+          </ul>
+        </section>
+
+        <section class="panel">
+          <h2>Log</h2>
+          <div class="log" id="log">Ready.</div>
+          <p class="banner">
+            Identity travels in <code>x-actor</code> / a <code>poc-actor</code> cookie so SSE can
+            authenticate. Data is in memory and resets when the server restarts.
+          </p>
+        </section>
+      </aside>
+
+      <section class="detail" id="detail">
+        <div class="empty">Pick a request from the queue, or create one.</div>
+      </section>
+    </main>
+
+    <script type="module">
+      const actors = {
+        Sam: {
+          accountId: "acc-sam",
+          tenantId: "ten-1",
+          role: "owner",
+          permissions: ["approvals.read", "approvals.write"],
+          credential: false,
+        },
+        Alex: {
+          accountId: "acc-alex",
+          tenantId: "ten-1",
+          role: "admin",
+          permissions: ["approvals.read", "approvals.write"],
+          credential: false,
+        },
+        Robin: {
+          accountId: "acc-robin",
+          tenantId: "ten-1",
+          role: "admin",
+          permissions: ["approvals.read", "approvals.write"],
+          credential: false,
+        },
+        Casey: {
+          accountId: "acc-casey",
+          tenantId: "ten-1",
+          role: "auditor",
+          permissions: ["approvals.read"],
+          credential: false,
+        },
+        Morgan: {
+          accountId: "acc-morgan",
+          tenantId: "ten-1",
+          role: "member",
+          permissions: [],
+          credential: false,
+        },
+        Token: {
+          accountId: "acc-token",
+          tenantId: "ten-1",
+          role: "admin",
+          permissions: ["approvals.read", "approvals.write"],
+          credential: true,
+        },
+        Other: {
+          accountId: "acc-other",
+          tenantId: "ten-2",
+          role: "owner",
+          permissions: ["approvals.read", "approvals.write"],
+          credential: false,
+        },
+      };
+      let current = "Sam";
+      let selected = null;
+      let feed = null;
+
+      const $ = (id) => document.getElementById(id);
+      const enc = (value) => encodeURIComponent(JSON.stringify(value));
+      const headers = () => ({
+        "content-type": "application/json",
+        "x-actor": enc(actors[current]),
+      });
+
+      function log(line, kind = "") {
+        const el = $("log");
+        const time = new Date().toLocaleTimeString();
+        el.innerHTML += "\n<span class='" + kind + "'>" + time + "  " + line + "</span>";
+        el.scrollTop = el.scrollHeight;
+      }
+
+      async function api(path, { method = "POST", body, who = current } = {}) {
+        const response = await fetch(path, {
+          method,
+          headers: { "content-type": "application/json", "x-actor": enc(actors[who]) },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        const text = await response.text();
+        const value = text ? JSON.parse(text) : null;
+        if (!response.ok) {
+          const reason = value?._tag
+            ? value._tag + (value.message ? ": " + value.message : "")
+            : response.status;
+          log(method + " " + path + " → " + response.status + " " + reason, "error");
+          throw Object.assign(new Error(reason), { value });
+        }
+        log(method + " " + path + " → " + response.status, "ok");
+        return value;
+      }
+
+      function setActor(name) {
+        current = name;
+        document.cookie = "poc-actor=" + enc(actors[name]) + "; path=/; SameSite=Lax";
+        for (const button of document.querySelectorAll(".actor"))
+          button.setAttribute("aria-pressed", String(button.dataset.actor === name));
+        log(
+          "Acting as " +
+            name +
+            " (" +
+            actors[name].role +
+            (actors[name].credential ? ", token" : "") +
+            ")",
+        );
+        openFeed();
+        void refreshQueue();
+        if (selected) void loadDetail();
+      }
+
+      const actorBar = $("actors");
+      for (const name of Object.keys(actors)) {
+        const button = document.createElement("button");
+        button.className = "actor";
+        button.dataset.actor = name;
+        button.textContent =
+          name + " · " + actors[name].role + (actors[name].credential ? " · token" : "");
+        button.setAttribute("aria-pressed", String(name === current));
+        button.onclick = () => setActor(name);
+        actorBar.append(button);
+      }
+
+      const pill = (status) => "<span class='pill " + status + "'>" + status + "</span>";
+      const when = (ms) =>
+        new Date(ms).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+      const label = (action) =>
+        ({
+          "device.wipe": "Wipe a device",
+          "tenant.delete": "Delete the tenant",
+          "tenant.export": "Export tenant data",
+          "policy.delete": "Delete policies",
+          "script.run": "Run a script",
+          "backup.download": "Download a backup",
+        })[action] ?? action;
+
+      async function refreshQueue(atLeast) {
+        const mine = $("mine").checked;
+        const query = { input: { ...(mine ? { mine: true } : {}) } };
+        if (atLeast) query.atLeast = [atLeast];
+        try {
+          const page = await api("/ApprovalQueue?take=50", { method: "QUERY", body: query });
+          renderQueue(page.entries);
+        } catch (error) {
+          renderQueue([], error.message);
+        }
+      }
+
+      function renderQueue(requests, error) {
+        const queue = $("queue");
+        queue.replaceChildren();
+        if (error) {
+          queue.innerHTML = "<li class='empty error'>" + escapeHtml(error) + "</li>";
+          return;
+        }
+        if (requests.length === 0) {
+          queue.innerHTML = "<li class='empty'>No requests yet.</li>";
+          return;
+        }
+        for (const request of requests) {
+          const item = document.createElement("li");
+          item.className = "request";
+          item.tabIndex = 0;
+          item.setAttribute("role", "button");
+          item.setAttribute("aria-current", String(request.id === selected));
+          item.innerHTML =
+            "<div class='top'><strong>" +
+            escapeHtml(label(request.action)) +
+            "</strong>" +
+            pill(request.status) +
+            "</div>" +
+            "<div class='meta'>" +
+            escapeHtml(request.id) +
+            " · " +
+            request.approvalsReceived +
+            "/" +
+            request.approvalsRequired +
+            " signatures · expires " +
+            when(request.expiresAt) +
+            "</div>";
+          item.onclick = () => select(request.id);
+          item.onkeydown = (event) => {
+            if (event.key === "Enter" || event.key === " ") select(request.id);
+          };
+          queue.append(item);
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(
+          /[&<>"']/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+        );
+      }
+
+      async function select(id) {
+        selected = id;
+        await Promise.all([loadDetail(), refreshQueue()]);
+        openFeed();
+      }
+
+      async function loadDetail() {
+        if (!selected) return;
+        try {
+          const detail = await api("/ApprovalDetail/" + encodeURIComponent(selected), {
+            method: "GET",
+          });
+          renderDetail(detail);
+        } catch (error) {
+          $("detail").innerHTML =
+            "<div class='empty error'>" + escapeHtml(error.message) + "</div>";
+        }
+      }
+
+      function renderDetail(detail) {
+        if (!detail) {
+          $("detail").innerHTML =
+            "<div class='empty'>This request is not visible to " + current + ".</div>";
+          return;
+        }
+        const id = selected;
+        const me = actors[current];
+        const canApprove =
+          detail.status === "pending" &&
+          detail.requestedBy !== me.accountId &&
+          !me.credential &&
+          me.permissions.includes("approvals.write");
+        const canCancel = detail.status === "pending" && detail.requestedBy === me.accountId;
+        const canConsume =
+          detail.status === "approved" &&
+          detail.consumedAt == null &&
+          detail.requestedBy === me.accountId;
+        const received = detail.decisions.filter(
+          (decision) => decision.decision === "approve",
+        ).length;
+
+        $("detail").innerHTML =
+          "<div class='detail-head'><div><h3>" +
+          escapeHtml(label(detail.action)) +
+          "</h3>" +
+          "<div class='subtle'>" +
+          escapeHtml(id) +
+          " · policy " +
+          escapeHtml(detail.policyId) +
+          " · requested by " +
+          escapeHtml(detail.requestedBy) +
+          " at " +
+          when(detail.requestedAt) +
+          "</div></div>" +
+          pill(detail.status) +
+          "</div>" +
+          "<div class='grid'>" +
+          fact("Signatures", received + " of " + detail.approvalsRequired) +
+          fact("Deadline", when(detail.expiresAt)) +
+          fact("Scope", detail.scopeType + (detail.scopeId ? " · " + detail.scopeId : "")) +
+          fact(
+            "Approver requirement",
+            detail.approverRole ?? detail.approverPermission ?? "none beyond approvals.write",
+          ) +
+          fact("Consumed", detail.consumedAt ? when(detail.consumedAt) : "not yet") +
+          fact("Payload hash", "<code>" + escapeHtml(detail.payloadHash) + "</code>") +
+          "</div>" +
+          "<section class='panel'><h2>Payload</h2><div>" +
+          escapeHtml(JSON.stringify(detail.payloadSummary)) +
+          "</div></section>" +
+          "<section class='panel'><h2>Decisions</h2><div class='decisions'>" +
+          (detail.decisions.length === 0
+            ? "<div class='subtle'>Nobody has decided yet.</div>"
+            : detail.decisions
+                .map(
+                  (decision) =>
+                    "<div class='decision'><div><strong>" +
+                    escapeHtml(decision.approverId) +
+                    "</strong> " +
+                    (decision.decision === "approve" ? "approved" : "rejected") +
+                    "<div class='note'>" +
+                    escapeHtml(decision.note ?? "no note") +
+                    "</div></div><div class='subtle'>" +
+                    when(decision.at) +
+                    "</div></div>",
+                )
+                .join("")) +
+          "</div></section>" +
+          "<div class='actions'>" +
+          "<button class='ghost' data-action='approve' " +
+          (canApprove ? "" : "disabled") +
+          ">Approve</button>" +
+          "<button class='ghost' data-action='reject' " +
+          (canApprove ? "" : "disabled") +
+          ">Reject</button>" +
+          "<button class='ghost' data-action='cancel' " +
+          (canCancel ? "" : "disabled") +
+          ">Cancel</button>" +
+          "<button class='ghost' data-action='consume' " +
+          (canConsume ? "" : "disabled") +
+          ">Use approval</button>" +
+          "<button class='ghost' data-action='refresh'>Refresh</button>" +
+          "</div>" +
+          "<div class='banner'>Live: this panel is subscribed to <code>/ApprovalDetail/" +
+          escapeHtml(id) +
+          "/watch</code>. The switch to the current identity also changes what the view returns.</div>";
+
+        for (const button of $("detail").querySelectorAll("button[data-action]"))
+          button.onclick = () => act(button.dataset.action, detail);
+      }
+
+      const fact = (key, value) =>
+        "<div class='fact'><div class='k'>" +
+        key +
+        "</div><div class='v'>" +
+        value +
+        "</div></div>";
+
+      async function act(action, detail) {
+        try {
+          let receipt = null;
+          if (action === "approve")
+            receipt = await api("/ApproveApproval", {
+              body: { target: selected, input: { note: "Approved in the POC" } },
+            });
+          else if (action === "reject")
+            receipt = await api("/RejectApproval", {
+              body: { target: selected, input: { note: "Not this week." } },
+            });
+          else if (action === "cancel")
+            receipt = await api("/CancelApproval", { body: { target: selected, input: {} } });
+          else if (action === "consume")
+            receipt = await api("/ConsumeApproval", {
+              body: { target: selected, input: { payloadHash: detail.payloadHash } },
+            });
+          else if (action === "refresh") {
+            await loadDetail();
+            await refreshQueue();
+            return;
+          }
+
+          if (receipt) {
+            // Read your own write: the query waits for the projection to apply it.
+            await loadDetail();
+            await refreshQueue(receipt);
+          }
+        } catch {
+          await refreshQueue();
+        }
+      }
+
+      function openFeed() {
+        feed?.close();
+        feed = null;
+        if (!selected) return;
+        feed = new EventSource("/ApprovalDetail/" + encodeURIComponent(selected) + "/watch");
+        feed.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          if (data?.state) {
+            renderDetail(data.state);
+            refreshQueue();
+          }
+        };
+        feed.onerror = () => {
+          // A refusal (403) ends the stream; the next identity switch or
+          // selection opens a fresh one.
+        };
+      }
+
+      $("create").onclick = async () => {
+        const id = "ap-" + Math.random().toString(36).slice(2, 8);
+        const action = $("action").value;
+        const payloadHash = "hash-" + Math.random().toString(36).slice(2, 10);
+        const expiresInMs = Math.max(1, Number($("ttl").value)) * 60_000;
+        const input = {
+          action,
+          policyId: "policy-demo",
+          approvalsRequired: Number($("required").value),
+          payloadHash,
+          payloadSummary: { note: $("summary").value },
+          expiresInMs,
+          scopeType: "tenant",
+          scopeId: null,
+        };
+        try {
+          await api("/RequestApproval", { body: { target: id, input } });
+          selected = id;
+          await refreshQueue();
+          await loadDetail();
+          openFeed();
+        } catch {}
+      };
+
+      $("mine").onchange = () => refreshQueue();
+      setActor("Sam");
+    </script>
+  </body>
+</html>

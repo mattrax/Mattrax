@@ -8,6 +8,7 @@
   },
   "files": [],
   "references": [
+    { "path": "./packages/domain-poc" },
     { "path": "./packages/management-backend" },
     { "path": "./packages/mdm-core" },
     { "path": "./packages/mdm-windows" },

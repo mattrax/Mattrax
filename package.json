@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vp run dev",
+    "poc:domain": "pnpm --filter @mattrax/domain-poc dev",
     "dev:cert": "tsx apps/web/scripts/dev-cert.ts",
     "db:up": "docker compose up -d mysql",
     "db:migrate": "pnpm cloud db:migrate",
