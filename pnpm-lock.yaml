@@ -391,6 +391,7 @@ snapshots:
 				"@types/node": "catalog:",
 				"@types/react": "catalog:",
 				"effect": "catalog:",
+				"mysql2": "catalog:",
 				"oxlint": "catalog:",
 				"oxlint-tsgolint": "catalog:",
 				"react": "catalog:",

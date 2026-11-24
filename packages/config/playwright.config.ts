@@ -16,6 +16,9 @@ export default defineConfig({
   // Playwright defaults these to the config file's directory; both are
   // repository-level paths (CI uploads `test-results/`).
   outputDir: path.join(repository, "test-results"),
+  // A reused local dev server can predate the latest migration. Apply pending
+  // migrations before tests even when Playwright did not start the server.
+  globalSetup: fileURLToPath(new URL("./playwright-global-setup.ts", import.meta.url)),
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

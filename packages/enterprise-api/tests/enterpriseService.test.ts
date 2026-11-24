@@ -26,6 +26,8 @@ import {
   EnterpriseUnauthorized,
   EnterpriseUpstreamError,
   StepUpRequired,
+  dashboardQueryForWidget,
+  defaultOverviewWidgets,
   scriptAgentToken,
 } from "@mattrax/enterprise-domain";
 import type { DeviceSearchQuery } from "@mattrax/enterprise-domain";
@@ -249,6 +251,28 @@ describe("enterprise service tenant flow", () => {
         role: "owner",
       }),
     );
+  });
+
+  it("loads the built-in overview for a fresh tenant", async () => {
+    const { service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await expect(runEffect(service.listDashboards(request(headers), tenant.id))).resolves.toEqual({
+      dashboards: [],
+    });
+
+    const queries = defaultOverviewWidgets()
+      .filter((widget) => widget.type !== "markdown")
+      .map(dashboardQueryForWidget);
+    const batch = await runEffect(
+      service.queryDashboardBatch(request(headers), tenant.id, { queries }),
+    );
+
+    expect(batch.results).toHaveLength(queries.length);
+    expect(batch.results).toEqual(queries.map(() => ({ total: 0, rows: [], buckets: [] })));
   });
 
   it("creates shared dashboards and applies partial widget updates", async () => {
