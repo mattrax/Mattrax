@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { Option, Schema } from "effect";
 
 /**
  * Authentication for the hosted APNs relay.
@@ -9,6 +10,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  */
 
 export type RelaySignatureResult = "ok" | "missing" | "stale" | "invalid";
+
+export const RelayTimestamp = Schema.FiniteFromString.pipe(Schema.check(Schema.isInt()));
 
 const safeEqual = (left: string, right: string) => {
   const a = Buffer.from(left);
@@ -26,16 +29,18 @@ export const verifyRelaySignature = (input: {
   readonly timestamp?: string;
   readonly signature?: string;
   readonly body: string;
-  /** Test seam; defaults to the current time. */
-  readonly now?: number;
+  /** Current Unix time in milliseconds, supplied by the request's Clock. */
+  readonly now: number;
 }): RelaySignatureResult => {
   if (!input.token || !input.timestamp || !input.signature) return "missing";
 
-  const timestamp = Number(input.timestamp);
+  const timestamp = Option.getOrUndefined(
+    Schema.decodeUnknownOption(RelayTimestamp)(input.timestamp),
+  );
 
-  if (!Number.isFinite(timestamp)) return "invalid";
+  if (timestamp === undefined) return "invalid";
 
-  if (Math.abs(Math.floor((input.now ?? Date.now()) / 1000) - timestamp) > 300) return "stale";
+  if (Math.abs(Math.floor(input.now / 1000) - timestamp) > 300) return "stale";
 
   return safeEqual(relaySignature(input.token, input.timestamp, input.body), input.signature)
     ? "ok"

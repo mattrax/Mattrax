@@ -8,12 +8,14 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",
+    "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/migrate-cli.ts",
     "typecheck": "tsc --noEmit",
     "db:import-legacy": "tsx scripts/import-legacy.ts"
   },
   "dependencies": {
+    "@effect/platform-node": "catalog:",
     "@effect/sql-mysql2": "catalog:",
     "@mattrax/apns": "workspace:*",
     "@mattrax/cloud-services": "workspace:*",

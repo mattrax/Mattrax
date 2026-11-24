@@ -14,13 +14,11 @@ boundary keeps protocol handling independent from product state.
 | Product services    | `enterprise-api`, `enterprise-backend`, `enterprise-identity`, `enterprise-tokens`, `enterprise-billing`, `entra-id`, `apple-business-manager`, `email` | API composition, domain services and integrations  |
 | Data                | `enterprise-core`                                                                                                                                       | Drizzle/MySQL schema, R2, secrets, plan limits     |
 | Hosted services     | `cloud-services`                                                                                                                                        | Mail, SSO, analytics, rate limits, readiness       |
-| Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                                                                                                             | Dashboard, API and push relay                      |
+| Surfaces            | `apps/web`, `apps/cloud`, `apps/services`                                                                                                               | Dashboard, API, push relay and billing             |
 
-`apps/apns-relay` is a standalone development/custom-fork relay, not a supported
-alternative to the hosted services relay. The application no longer exposes an
-operator setting that targets it; only the internal `MATTRAX_SERVICES_URL` test
-override can. Hosted Cloud uses `apps/services`, and self-hosted production
-deployments use the hosted relay with a licence.
+The APNs relay has a single implementation in `apps/services`. Hosted Cloud
+authenticates with `SERVICES_TOKEN`; self-hosted production deployments use the
+same relay with their deployment licence.
 
 ## Module conventions
 
