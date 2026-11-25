@@ -61,7 +61,23 @@ const draftFrom = (detail: RestrictedSoftwareDetail): Draft => ({
 const selectClass =
   "h-9 w-full rounded-md border border-border bg-surface px-3 text-[12.5px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
+/**
+ * The editor creates queries and effects as soon as it mounts. A reader without
+ * `restricted_software.read` must be refused before any of that runs, otherwise
+ * a disabled (pending) query read replaces the access-denied page with a
+ * loading state.
+ */
 export default function RestrictedSoftwareEditorPage() {
+  const { can } = useCan();
+
+  return (
+    <Show when={can("restricted_software.read")} fallback={<AccessDenied />}>
+      <RestrictedSoftwareEditor />
+    </Show>
+  );
+}
+
+function RestrictedSoftwareEditor() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
