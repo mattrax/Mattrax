@@ -26,12 +26,17 @@ const budgets = {
 module.exports = {
   ci: {
     collect: {
-      url: [
-        "http://localhost:9050/",
-        "http://localhost:9050/login",
-        "http://localhost:9050/register",
-        "http://localhost:9050/designer",
-      ],
+      // PRs run one URL per matrix job (`LHCI_URL`); `main` runs all four in
+      // one job. Both keep three samples per URL, so the median and the
+      // statistical confidence are unchanged.
+      url: process.env.LHCI_URL
+        ? [process.env.LHCI_URL]
+        : [
+            "http://localhost:9050/",
+            "http://localhost:9050/login",
+            "http://localhost:9050/register",
+            "http://localhost:9050/designer",
+          ],
       startServerCommand: "node packages/config/scripts/lighthouse-server.mjs",
       startServerReadyPattern: "Lighthouse server ready",
       startServerReadyTimeout: 120000,

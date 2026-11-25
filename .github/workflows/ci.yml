@@ -270,6 +270,12 @@ jobs:
     name: Typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: mattrax
+      DATABASE_PASSWORD: mattrax
+      DATABASE_NAME: mattraxe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
@@ -286,11 +292,11 @@ jobs:
       - run: pnpm typecheck
 
   build:
-    name: Build docs, Workers and migrations
+    name: Build and migrations
     needs: changes
-    # This job is cheap (~1m15s if every step runs) and every step is gated on
-    # its own paths, so a docs-only PR builds only the docs and a workflow-only
-    # PR finishes after install.
+    # The build steps are gated on their own paths; the migration steps only
+    # run on main and schema-changing PRs. Folding migrations in here keeps the
+    # job count at twenty now that Lighthouse is a four-job matrix.
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -336,10 +342,76 @@ jobs:
           needs.changes.result != 'success' || needs.changes.outputs.cloud == 'true'
         run: test -z "$(git status --porcelain -- apps/cloud/migrations)"
 
+      - name: Start MySQL
+        if: >-
+          github.event_name == 'push' ||
+          needs.changes.result != 'success' ||
+          needs.changes.outputs.schema == 'true'
+        run: |
+          printf '[mysqld]\nmysql_native_password=ON\n' |
+            sudo tee /etc/mysql/mysql.conf.d/zz-ci-native.cnf >/dev/null
+          sudo systemctl start mysql.service
+          ready=""
+          for attempt in $(seq 1 30); do
+            if mysqladmin -h127.0.0.1 -uroot -proot ping >/dev/null 2>&1; then
+              ready="true"
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "true" ]; then
+            echo "::error::MySQL did not answer after ${attempt} attempts"
+            exit 1
+          fi
+          mysql -uroot -proot <<'SQL'
+          CREATE DATABASE IF NOT EXISTS mattraxe;
+          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
+          ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
+          GRANT ALL ON mattraxe.* TO 'mattrax'@'%';
+          SQL
+      - name: Apply every migration from scratch
+        if: >-
+          github.event_name == 'push' ||
+          needs.changes.result != 'success' ||
+          needs.changes.outputs.schema == 'true'
+        run: pnpm cloud db:migrate
+      # The shards load this instead of replaying 104 migrations. It is produced
+      # by the real migration path above, keyed on the migration SQL, so it
+      # cannot describe a schema the migrations do not produce.
+      - name: Dump the migrated schema
+        if: >-
+          github.event_name == 'push' ||
+          needs.changes.result != 'success' ||
+          needs.changes.outputs.schema == 'true'
+        run: |
+          mkdir -p .ci
+          mysqldump -h127.0.0.1 -umattrax -pmattrax \
+            --no-data --skip-comments --no-tablespaces --triggers \
+            --set-gtid-purged=OFF mattraxe > .ci/mysql-schema.sql
+      # `save` rather than the combined action: the cache must be written even
+      # when it already exists, and a concurrent shard may win the race with an
+      # identical dump.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: >-
+          github.event_name == 'push' ||
+          needs.changes.result != 'success' ||
+          needs.changes.outputs.schema == 'true'
+        continue-on-error: true
+        with:
+          path: .ci/mysql-schema.sql
+          key: mysql-schema-v1-${{ runner.os }}-${{ hashFiles('apps/cloud/migrations/*/migration.sql') }}
+
   lighthouse:
-    name: Lighthouse budgets
+    name: Lighthouse budgets (${{ matrix.url }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      # One URL per runner: each job still takes three samples, so the median
+      # and the budget confidence match the single-job `main` run, while the
+      # wall clock is the slowest URL instead of all four in series.
+      fail-fast: false
+      matrix:
+        url: ["/", "/login", "/register", "/designer"]
     # Lighthouse needs no output from another job: it installs, builds the
     # self-host bundle and serves it itself. The budgets are a smoke test for
     # the public pages, not a gate on every commit. Measured over a week of
@@ -357,6 +429,8 @@ jobs:
     if: >-
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.perf == 'true')
+    env:
+      LHCI_URL: http://localhost:9050${{ matrix.url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
@@ -381,91 +455,10 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
-          name: lighthouse-report
+          name: lighthouse-report-${{ strategy.job-index }}
           path: .lighthouseci/
           include-hidden-files: true
           retention-days: 7
-
-  # The real migration path still runs, without putting a 60-second database
-  # cold-start in front of every shard. This job runs on every push to main and
-  # on pull requests that can change the schema (`schema`), applies every
-  # migration to a fresh database, and publishes the resulting schema as the
-  # cache the shards load. It is independent of the shards, so it neither gates
-  # nor delays them; a migration that cannot apply fails here and in the shard
-  # that has to fall back to migrating.
-  migrations:
-    name: Migrations
-    needs: changes
-    if: >-
-      always() &&
-      (github.event_name == 'push' ||
-       needs.changes.result != 'success' ||
-       needs.changes.outputs.schema == 'true')
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      DATABASE_HOST: 127.0.0.1
-      DATABASE_PORT: 3306
-      DATABASE_USER: mattrax
-      DATABASE_PASSWORD: mattrax
-      DATABASE_NAME: mattraxe
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
-        with:
-          version: 12.21.0
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # The runner image ships MySQL 8.4 (see the `e2e` job) and starts it in
-      # ~4s; the alternative, a Docker service, spends ~34s initialising a
-      # container before the first connection. The plugin line is required:
-      # 8.4 disables `mysql_native_password` by default, and the Worker's
-      # mysql2 connection is plain TCP without TLS.
-      - name: Start MySQL
-        run: |
-          printf '[mysqld]\nmysql_native_password=ON\n' |
-            sudo tee /etc/mysql/mysql.conf.d/zz-ci-native.cnf >/dev/null
-          sudo systemctl start mysql.service
-          ready=""
-          for attempt in $(seq 1 30); do
-            if mysqladmin -h127.0.0.1 -uroot -proot ping >/dev/null 2>&1; then
-              ready="true"
-              break
-            fi
-            sleep 1
-          done
-          if [ "$ready" != "true" ]; then
-            echo "::error::MySQL did not answer after ${attempt} attempts"
-            exit 1
-          fi
-          mysql -uroot -proot <<'SQL'
-          CREATE DATABASE IF NOT EXISTS mattraxe;
-          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
-          ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
-          GRANT ALL ON mattraxe.* TO 'mattrax'@'%';
-          SQL
-      - name: Apply every migration from scratch
-        run: pnpm cloud db:migrate
-      # The shards load this instead of replaying 104 migrations. It is produced
-      # by the real migration path above, keyed on the migration SQL, so it
-      # cannot describe a schema the migrations do not produce.
-      - name: Dump the migrated schema
-        run: |
-          mkdir -p .ci
-          mysqldump -h127.0.0.1 -umattrax -pmattrax \
-            --no-data --skip-comments --no-tablespaces --triggers \
-            --set-gtid-purged=OFF mattraxe > .ci/mysql-schema.sql
-      # `save` rather than the combined action: the cache must be written even
-      # when it already exists, and a concurrent shard may win the race with an
-      # identical dump.
-      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        continue-on-error: true
-        with:
-          path: .ci/mysql-schema.sql
-          key: mysql-schema-v1-${{ runner.os }}-${{ hashFiles('apps/cloud/migrations/*/migration.sql') }}
 
   # One runner per shard. The suite runs with a single Playwright worker because
   # its tests share dev-mailbox state and rate-limit buckets through one server;
@@ -481,19 +474,23 @@ jobs:
   # docs/operations/backups.md) started in place. The old Docker service spent
   # ~34s initialising a fresh data directory and another 29s applying 104
   # migrations per shard. The shared schema cache keeps the 29s migration off
-  # the path once main has published it; `migrations` above is the real path.
+  # the path once main has published it; the build job above is the real path.
   #
-  # Twelve shards, not more. This workflow is exactly at the account's 20
-  # concurrent-job limit at twelve (changes + lint + 3 vitest + typecheck +
-  # build + Lighthouse + 12 shards); at sixteen, six shards started 42-99s late
-  # and the slowest passing shard took 4 minutes. The split is also
-  # file-granular: the largest spec carries 17 tests, and a sixteen-shard run
-  # still spent 82s in its heaviest shard's tests against 81s at twelve.
+  # Nine shards. The per-URL Lighthouse matrix adds three jobs, and the build
+  # and migrations now share one, so this is exactly the account's 20-job
+  # limit: changes + lint + 3 vitest + typecheck + build/migrations + 4
+  # Lighthouse + 9 shards. A tenth shard would queue one e2e job, which costs
+  # more than the ~10s it saves.
   #
-  # Measured per-shard cost in the warm run is ~25s setup, ~1s schema restore,
-  # ~2s browser cache, ~22s build-and-serve (MySQL and the schema load run in
-  # the background underneath it) and 80-90s of tests. The tests are the
-  # remaining lever; see the PR body for the policy options.
+  # The floor is not the file list any more: `mfa.spec.ts` is one 81-86s test
+  # (enroll, pending code, recovery code, regenerate, disable, several page
+  # loads), so its shard is 48s fixed + ~86s no matter how many shards exist.
+  # The other eight shards model at ~93s of tests each. The remaining lever is
+  # a faster runner or changing that test, not more shards.
+  #
+  # Measured per-shard cost is ~25s setup, ~1s schema restore, ~2s browser
+  # cache, ~22s build-and-serve (MySQL and the schema load run underneath it)
+  # and the duration-weighted test slice.
   e2e:
     # The denominator comes from the matrix itself, so adding or removing a
     # shard cannot leave a shard running a stale share of the suite.
@@ -514,9 +511,9 @@ jobs:
       matrix:
         # When the policy is enabled, one job runs `playwright test
         # --only-changed` for the PR. It is a single job because the selected
-        # set is usually a handful of specs; the full suite keeps its twelve
+        # set is usually a handful of specs; the full suite keeps its nine
         # shards.
-        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]') }}
+        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2, 3, 4, 5, 6, 7, 8, 9]') }}
     env:
       E2E_CHANNEL: bundled
       # Serve the production build rather than the dev server: a dashboard page
