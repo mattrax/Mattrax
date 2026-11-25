@@ -340,10 +340,6 @@ jobs:
     name: Lighthouse budgets
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      # One sample per URL on pull requests; main keeps the median of three.
-      # `lighthouserc.cjs` documents the reduced statistical confidence.
-      LIGHTHOUSE_RUNS: ${{ github.event_name == 'pull_request' && 1 || 3 }}
     # Lighthouse needs no output from another job: it installs, builds the
     # self-host bundle and serves it itself. The budgets are a smoke test for
     # the public pages, not a gate on every commit. Measured over a week of
