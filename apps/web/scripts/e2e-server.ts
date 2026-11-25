@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from "node:child_process";
+import { rmSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
@@ -19,6 +20,16 @@ import process from "node:process";
 const mode = process.env.E2E_SERVER?.trim().toLowerCase() === "built" ? "built" : "dev";
 
 const repository = path.resolve(import.meta.dirname, "../../..");
+
+if (mode === "built") {
+  // `vite preview` keeps miniflare's HTTP cache on disk. A document cached by an
+  // earlier build keeps its old asset hashes and every script 404s, so the page
+  // never hydrates. Start every built run with a cold cache.
+  rmSync(path.join(repository, "apps/web/.cloudflare/state/v3/cache"), {
+    recursive: true,
+    force: true,
+  });
+}
 
 if (mode === "built" && process.env.E2E_SKIP_BUILD !== "1") {
   console.error("[e2e-server] building the production bundles");
