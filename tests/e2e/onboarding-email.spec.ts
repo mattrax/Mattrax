@@ -25,7 +25,7 @@ test.describe("onboarding email", () => {
     const email = uniqueEmail("welcome");
 
     await installVirtualAuthenticator(page);
-    await page.goto("/register", { waitUntil: "domcontentloaded" });
+    await page.goto("/register", { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#name").fill("Ada Lovelace");
     await page.locator("#email").fill(email);

@@ -424,9 +424,11 @@ test.describe("device enrollment", () => {
     await page.getByLabel("Maximum devices").fill("0");
     await page.getByRole("button", { name: /^save$/i }).click();
     await expect(page.getByLabel("Maximum devices")).toHaveValue("0");
-    // Wait for the save to close the editor before reading the stored value;
-    // the input keeps its typed value while the PATCH is still in flight.
-    await expect(page.getByRole("button", { name: /^save$/i })).toHaveCount(0);
+    // Wait for the editor to close before reading the stored value. The Save
+    // button turns into "Saving…" while the PATCH is in flight, so its absence
+    // only proves the request started; the editor reopening as "Edit settings"
+    // is what proves it settled.
+    await expect(page.getByRole("button", { name: /^edit settings$/i })).toBeVisible();
 
     const enrollment = await api<{ id: string; maxDevices: number }>(
       page,

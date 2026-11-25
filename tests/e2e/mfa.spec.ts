@@ -169,7 +169,7 @@ test.describe("authenticator MFA", () => {
     await confirmStepUp(page);
     await expect(disableCard.getByText(/security settings updated/i)).toBeVisible();
 
-    await page.goto("/login", { waitUntil: "domcontentloaded" });
+    await page.goto("/login", { waitUntil: "networkidle" });
     await signIn(page, email);
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
     await expect(page.getByText(/two-factor authentication required/i)).toHaveCount(0);
