@@ -801,7 +801,10 @@ function ShellBreadcrumb(props: {
   return (
     <nav aria-label="Breadcrumb" class="min-w-0">
       <ol class="flex min-w-0 items-center gap-1.5 text-[12px]">
-        <Show when={props.tenantName && props.tenantHref}>
+        {/* Client-only: the server's account snapshot can name a tenant the
+            client has not loaded yet, and a cold deep link must not show a
+            tenant crumb it cannot confirm. */}
+        <Show when={!isServer && Boolean(props.tenantName && props.tenantHref)}>
           <li class="hidden min-w-0 sm:block">
             <a
               href={props.tenantHref}
@@ -837,14 +840,31 @@ export function AppShell(props: {
   const [lastTenant, setLastTenant] = createSignal<string | undefined>();
   const [mobileNavOpen, setMobileNavOpen] = createSignal(false);
 
+  // A tenant switch is a document navigation; the destination shell takes
+  // focus from this one-shot flag, matching the SPA focus behaviour.
+  onSettled(() => {
+    if (window.sessionStorage.getItem("mattrax:focus-main-on-load") !== "1") return;
+
+    window.sessionStorage.removeItem("mattrax:focus-main-on-load");
+    requestAnimationFrame(() => document.getElementById("main")?.focus({ preventScroll: true }));
+  });
+
   /**
    * Switch tenants from the shell, which outlives the mobile navigation sheet.
    * The switcher lives inside that sheet; navigating from the sheet's own
    * component is lost when the sheet unmounts on close.
    */
+  /**
+   * Switch tenants with a document navigation.
+   *
+   * This is a full account context change, and the SPA transition is discarded
+   * whenever the switcher is used from the mobile sheet's modal. A hard
+   * navigation is the honest interaction; the destination shell moves focus to
+   * main from the one-shot flag so keyboard users still land on the page.
+   */
   const switchTenant = (id: string, slug: string | undefined) => {
-    setMobileNavOpen(false);
-    navigate(routes.tenant(slug || id).overview());
+    window.sessionStorage.setItem("mattrax:focus-main-on-load", "1");
+    window.location.assign(routes.tenant(slug || id).overview());
   };
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
 
@@ -1039,11 +1059,13 @@ export function AppShell(props: {
     if (path.startsWith("/docs")) return "Documentation";
 
     // Settings sections share one navigation entry; naming the section keeps
-    // tabs, history and screen-reader announcements distinguishable.
-    const settingsSection = /\/settings(?:\/([^/]+))?/.exec(path)?.[1] ?? "";
+    // tabs, history and screen-reader announcements distinguishable. Anchor the
+    // match to the route after the tenant: an unanchored `/settings` also
+    // matches a tenant slug such as `settings-breadcrumb-tenant`.
+    const settingsMatch = /^\/t\/[^/]+\/settings(?:\/([^/]+))?/.exec(path);
 
-    if (path.includes("/settings")) {
-      const section = settingsTabById(settingsSection);
+    if (settingsMatch) {
+      const section = settingsTabById(settingsMatch[1] ?? "");
 
       if (section) return `Settings · ${section.label}`;
     }
