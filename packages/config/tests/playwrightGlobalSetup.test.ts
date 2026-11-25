@@ -47,9 +47,10 @@ describe("Playwright database setup", () => {
 
   it("re-exports the shared config and resolves setup from the repository root", () => {
     expect(rootConfig).toBe(playwrightConfig);
-    expect(playwrightConfig.globalSetup).toBe(
+    expect(playwrightConfig.globalSetup).toEqual([
       fileURLToPath(new URL("../playwright-global-setup.ts", import.meta.url)),
-    );
+      fileURLToPath(new URL("../../../tests/e2e/session-setup.ts", import.meta.url)),
+    ]);
   });
 
   it("normalizes blank base URLs consistently", () => {

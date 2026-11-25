@@ -324,6 +324,9 @@ export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
     // isolation boundary. The fallback keeps a stale session (for example
     // after a local database reset) from failing the test.
     await page.context().addCookies([...session.cookies]);
+    // Registration used to install this as a side effect; a shared session
+    // skips registration, and step-up/passkey tests still need it.
+    await installVirtualAuthenticator(page);
     try {
       tenant = await createTenant(page, tenantName);
     } catch (error) {
