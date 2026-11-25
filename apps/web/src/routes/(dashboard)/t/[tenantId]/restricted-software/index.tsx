@@ -23,7 +23,7 @@ import {
   restrictedSoftwareCapability,
 } from "@mattrax/enterprise-domain/client";
 import { AccessDenied, useCan } from "~/lib/permissions";
-import { restrictedSoftwareQueryAccess } from "./restricted-software/query-access";
+import { restrictedSoftwareQueryAccess } from "./query-access";
 
 type View = "rules" | "violations";
 
