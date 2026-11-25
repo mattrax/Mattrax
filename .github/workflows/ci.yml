@@ -260,6 +260,10 @@ jobs:
           --health-retries=20
     env:
       E2E_CHANNEL: bundled
+      # Serve the production build rather than the dev server: a dashboard page
+      # hydrates in ~70ms from built bundles against ~650ms in dev mode, and
+      # every test loads several documents. The build is paid once per shard.
+      E2E_SERVER: built
       E2E_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
       DATABASE_HOST: 127.0.0.1
       DATABASE_PORT: 3306
@@ -316,22 +320,22 @@ jobs:
           docker exec "$MYSQL_CONTAINER_ID" mysql -uroot -proot \
             -e "ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';"
       - run: pnpm cloud db:migrate
-      # Start the dev server outside Playwright so its teardown cannot wait on a
-      # Vite process that `setsid` reparented. Playwright then only runs tests.
-      - name: Start the dev server
+      # Build and start the server outside Playwright so its teardown cannot
+      # wait on a Vite process that `setsid` reparented. Playwright then only
+      # runs tests. `e2e-server.ts` builds the production bundles, starts
+      # `vite preview` on 9050, and returns once the server answers.
+      - name: Build and serve the production bundle
         run: |
-          pnpm web dev > /tmp/web-dev.log 2>&1 &
-          for attempt in $(seq 1 90); do
+          pnpm exec tsx apps/web/scripts/e2e-server.ts > /tmp/e2e-server.log 2>&1 &
+          for attempt in $(seq 1 240); do
             if curl -fsS http://localhost:9050/api/health >/dev/null &&
                curl -fsS http://localhost:9050/login >/dev/null; then
-              # Give the client/SSR optimizers a moment to settle.
-              sleep 10
               exit 0
             fi
             sleep 2
           done
-          echo "::error::dev server did not start after ${attempt} attempts"
-          tail -100 /tmp/web-dev.log
+          echo "::error::e2e server did not start after ${attempt} attempts"
+          tail -100 /tmp/e2e-server.log
           exit 1
       - name: Browser tests
         env:
@@ -345,9 +349,12 @@ jobs:
           # variable is intentionally unquoted.
           # shellcheck disable=SC2086
           pnpm test:e2e $specs
-      - name: Stop the dev server
+      - name: Stop the server
         if: always()
-        run: pkill -9 -f 'vite.js dev' || true
+        run: |
+          pkill -9 -f 'vite.js dev' || true
+          pkill -9 -f 'vite.js preview' || true
+          pkill -9 -f 'apps/web/scripts/e2e-server.ts' || true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
