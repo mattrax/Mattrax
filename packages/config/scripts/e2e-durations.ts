@@ -15,7 +15,7 @@ import path from "node:path";
  * irrelevant here) after downloading the shard artifacts:
  *
  *   gh run download <run-id> -p 'playwright-durations-*' -D /tmp/e2e-reports
- *   pnpm e2e:durations /tmp/e2e-reports/*/playwright-report.json
+ *   pnpm e2e:durations /tmp/e2e-reports/shard-N/playwright-report.json
  *
  * The output is committed so every PR gets the same split without a warm-up
  * run. Failed tests are skipped: a 60s timeout is not a duration.

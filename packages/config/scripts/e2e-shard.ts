@@ -122,7 +122,7 @@ const durations = new Map<string, number>();
 try {
   const parsed = JSON.parse(
     readFileSync(path.join(import.meta.dirname, "spec-durations.json"), "utf8"),
-  ) as Record<string, unknown>;
+  ) as Record<string, number>;
 
   for (const [file, value] of Object.entries(parsed)) {
     if (typeof value === "number" && Number.isFinite(value) && value > 0) durations.set(file, value);
