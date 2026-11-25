@@ -35,8 +35,13 @@ module.exports = {
       startServerCommand: "node packages/config/scripts/lighthouse-server.mjs",
       startServerReadyPattern: "Lighthouse server ready",
       startServerReadyTimeout: 120000,
-      // A single sample keeps the local loop fast; CI medians three runs to
-      // damp runner noise.
+      // A single sample keeps the local loop fast. CI medians three runs to
+      // damp runner noise. Sampling once per URL on pull requests was measured
+      // on #893: it cut the job from 191s to 82s, but a single sample on
+      // unchanged code failed the homepage performance budget (0.70 against
+      // 0.85, 1837ms TBT against 500ms) and the designer budget (0.76 against
+      // 0.8). A noisy sample is not a regression, so PRs keep three samples
+      // until the budgets (or the runner) can absorb single-run variance.
       numberOfRuns: process.env.CI ? 3 : 1,
       settings: {
         // Lighthouse 13 adds the agentic-browsing category; request it
