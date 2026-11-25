@@ -67,6 +67,14 @@ const selectClass =
  * a disabled (pending) query read replaces the access-denied page with a
  * loading state.
  */
+/** Read query data only after success so a pending query cannot suspend the page. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function RestrictedSoftwareEditorPage() {
   const { can } = useCan();
 
@@ -119,7 +127,7 @@ function RestrictedSoftwareEditor() {
   const [targetMode, setTargetMode] = createSignal<"include" | "exclude">("include");
 
   createEffect(
-    () => detail.data,
+    () => settledQueryData(detail),
     (data) => {
       if (!data) return;
 
@@ -144,7 +152,7 @@ function RestrictedSoftwareEditor() {
   );
 
   const targetOptions = createMemo(() => {
-    const data = targets.data;
+    const data = settledQueryData(targets);
 
     if (!data) return [];
 
@@ -207,7 +215,7 @@ function RestrictedSoftwareEditor() {
         return created.id;
       }
 
-      const current = detail.data;
+      const current = settledQueryData(detail);
 
       if (!current) throw new Error("The rule could not be loaded.");
 
@@ -323,8 +331,8 @@ function RestrictedSoftwareEditor() {
           title={isNew() ? "New rule" : draft().name || "Restricted software rule"}
           description="Detect an application in the inventory and act on it where the platform supports enforcement."
           meta={
-            <Show when={!isNew() && detail.data}>
-              <span>{formatDate(detail.data!.rule.updatedAt)}</span>
+            <Show when={!isNew() && settledQueryData(detail)}>
+              <span>{formatDate(settledQueryData(detail)!.rule.updatedAt)}</span>
             </Show>
           }
           actions={
@@ -642,14 +650,14 @@ function RestrictedSoftwareEditor() {
               </Show>
             </Panel>
 
-            <Show when={detail.data && detail.data.rule.openViolationCount > 0}>
+            <Show when={(settledQueryData(detail)?.rule.openViolationCount ?? 0) > 0}>
               <Panel
                 title="Violations"
                 description="Open violations are listed on the fleet view and the device timeline."
               >
                 <p class="text-[12.5px] text-muted-foreground">
-                  {detail.data?.rule.openViolationCount} open violation
-                  {detail.data?.rule.openViolationCount === 1 ? "" : "s"}.
+                  {settledQueryData(detail)?.rule.openViolationCount} open violation
+                  {settledQueryData(detail)?.rule.openViolationCount === 1 ? "" : "s"}.
                 </p>
                 <a
                   href={`/t/${params.tenantId}/restricted-software?rule=${params.ruleId}`}
