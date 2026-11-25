@@ -21,6 +21,10 @@ import path from "node:path";
  *
  * Usage: `e2e-shard.ts <shard>/<total>` prints one repository-relative spec
  * path per line, sorted.
+ *
+ * At twelve shards the current 243 tests split 21, 21, 21 then 20 x 9; the
+ * twelve-shard matrix in `ci.yml` is sized from the per-shard setup cost, and
+ * every shard's share was checked against Playwright's `--list`.
  */
 
 const repository = path.resolve(import.meta.dirname, "../../..");

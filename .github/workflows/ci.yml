@@ -20,16 +20,15 @@ permissions:
   contents: read
 
 jobs:
-  # The browser and Lighthouse suites are the two expensive jobs (the browser
-  # suite was ~85% of a run's wall clock). They cannot be affected by a
-  # Markdown, docs-site, workflow or licence-only change, so this job decides
-  # whether they are worth starting. It always runs (a skipped workflow would
-  # leave required checks pending); the suites themselves are skipped, which
-  # GitHub reports as success.
+  # The expensive jobs cannot be affected by a Markdown, docs-site, workflow or
+  # licence-only change, so this job decides which of them are worth starting.
+  # It always runs (a skipped workflow would leave required checks pending);
+  # the jobs themselves are skipped, which GitHub reports as success.
   #
-  # The filter is deliberately fail-safe: `**` matches everything and only
-  # paths that cannot affect the suites are subtracted, so a path added to the
-  # repository later runs the suites instead of silently skipping them.
+  # Every filter is deliberately fail-safe: `**` matches everything and only
+  # paths that provably cannot affect that job are subtracted, so a path added
+  # to the repository later runs the job instead of silently skipping it. The
+  # step below turns a failed filter into `true` for the same reason.
   changes:
     name: Changed paths
     runs-on: ubuntu-latest
@@ -39,24 +38,99 @@ jobs:
       # dorny/paths-filter lists a pull request's files through the API.
       pull-requests: read
     outputs:
-      suites: ${{ steps.suites.outputs.suites }}
-      # Narrower than `suites`: only the paths that can change what Lighthouse
-      # measures. See the filter below.
-      perf: ${{ steps.suites.outputs.perf }}
+      docs: ${{ steps.outputs.outputs.docs }}
+      cloud: ${{ steps.outputs.outputs.cloud }}
+      web: ${{ steps.outputs.outputs.web }}
+      perf: ${{ steps.outputs.outputs.perf }}
+      suites: ${{ steps.outputs.outputs.suites }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
-        # A filter that cannot run must not silently skip the suites; the step
-        # below turns a missing answer into `true` (run them).
+        # A filter that cannot run must not silently skip a job; the step
+        # below turns a missing answer into `true` (run it).
         continue-on-error: true
         with:
           # `some` (the default) treats `!pattern` as just another alternative,
           # which would match almost everything; `some-with-excludes` is the
-          # "include `**`, then subtract these paths" semantics this filter
-          # needs.
+          # "include `**`, then subtract these paths" semantics these filters
+          # need.
           predicate-quantifier: some-with-excludes
           filters: |
+            # The Rspress site, its theme, and the typedoc runner that reads the
+            # management-backend contract. It cannot see the dashboard, the API
+            # Worker or the other apps.
+            docs:
+              - '**'
+              - '!tests/**'
+              - '!bench/**'
+              - '!apps/web/**'
+              - '!apps/cloud/**'
+              - '!apps/cli/**'
+              - '!apps/docker/**'
+              - '!apps/services/**'
+              - '!apps/mdm-compliance/**'
+              - '!apps/apns-relay/**'
+              - '!apps/mattraxd/**'
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.dockerignore'
+              - '!.zed/**'
+            # The API Worker bundles apps/cloud and the packages it imports.
+            cloud:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!tests/**'
+              - '!bench/**'
+              - '!apps/web/**'
+              - '!apps/cli/**'
+              - '!apps/docker/**'
+              - '!apps/services/**'
+              - '!apps/mdm-compliance/**'
+              - '!apps/apns-relay/**'
+              - '!apps/mattraxd/**'
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.dockerignore'
+              - '!.zed/**'
+            # The dashboard bundle: apps/web plus every package it imports.
+            web:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!tests/**'
+              - '!bench/**'
+              - '!apps/cloud/**'
+              - '!apps/cli/**'
+              - '!apps/docker/**'
+              - '!apps/services/**'
+              - '!apps/mdm-compliance/**'
+              - '!apps/apns-relay/**'
+              - '!apps/mattraxd/**'
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.dockerignore'
+              - '!.zed/**'
+            # Lighthouse serves the self-host build of apps/web, so it is only
+            # worth scheduling when something that build bundles can have moved.
+            # Not `docs/`: the web build derives public routes from it, so a
+            # docs change can move the pages Lighthouse measures.
+            perf:
+              - '**'
+              - '!**/*.md'
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.dockerignore'
+              - '!.zed/**'
+              - '!apps/mattraxd/**'
+              - '!tests/**'
+              - '!bench/**'
+            # The browser suite drives the dashboard over CDP.
             suites:
               - '**'
               - '!**/*.md'
@@ -66,47 +140,120 @@ jobs:
               - '!.gitignore'
               - '!.dockerignore'
               - '!.zed/**'
-            # Lighthouse serves the self-host build of `apps/web`, so it is only
-            # worth scheduling when something that build bundles can have moved.
-            # Same fail-safe shape as `suites`: start from everything and subtract
-            # the paths that cannot reach that build.
-            perf:
-              - '**'
-              - '!**/*.md'
-              # Not `docs/`: the web build derives public routes from it, so a
-              # docs change can move the pages Lighthouse measures.
-              - '!.github/**'
-              - '!LICENSE'
-              - '!.gitignore'
-              - '!.dockerignore'
-              - '!.zed/**'
-              - '!apps/mattraxd/**'
-              - '!tests/**'
-              - '!bench/**'
-      - id: suites
+      # One output per filter. Only a filter that actually ran may say "nothing
+      # to run"; a failed, cancelled or skipped filter falls back to running
+      # the job, as does an empty answer.
+      - id: outputs
         if: always()
         env:
           FILTER_OUTCOME: ${{ steps.filter.outcome }}
-          MATCHED: ${{ steps.filter.outputs.suites }}
-          PERF_MATCHED: ${{ steps.filter.outputs.perf }}
+          DOCS: ${{ steps.filter.outputs.docs }}
+          CLOUD: ${{ steps.filter.outputs.cloud }}
+          WEB: ${{ steps.filter.outputs.web }}
+          PERF: ${{ steps.filter.outputs.perf }}
+          SUITES: ${{ steps.filter.outputs.suites }}
         run: |
-          # Only a filter that actually ran may say "nothing to run". A failed,
-          # cancelled or skipped filter falls back to running the suites, as
-          # does an empty answer.
-          if [ "$FILTER_OUTCOME" = "success" ] && [ -n "$MATCHED" ]; then
-            echo "suites=$MATCHED" >> "$GITHUB_OUTPUT"
+          if [ "$FILTER_OUTCOME" = "success" ]; then
+            {
+              echo "docs=${DOCS:-true}"
+              echo "cloud=${CLOUD:-true}"
+              echo "web=${WEB:-true}"
+              echo "perf=${PERF:-true}"
+              echo "suites=${SUITES:-true}"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "suites=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "docs=true"
+              echo "cloud=true"
+              echo "web=true"
+              echo "perf=true"
+              echo "suites=true"
+            } >> "$GITHUB_OUTPUT"
           fi
 
-          if [ "$FILTER_OUTCOME" = "success" ] && [ -n "$PERF_MATCHED" ]; then
-            echo "perf=$PERF_MATCHED" >> "$GITHUB_OUTPUT"
-          else
-            echo "perf=true" >> "$GITHUB_OUTPUT"
-          fi
+  # The unit job used to run every check in series: lint 1m01s, vitest 4m26s,
+  # typecheck 1m29s and the builds 42s, for 7-8 minutes in a single job. None of
+  # those steps needs another's output, so the wall clock is now the slowest
+  # parallel branch (the vitest shards and typecheck, ~1m50s) instead of their
+  # sum. Install is 4 seconds from the pnpm store cache, so each job installs
+  # itself rather than waiting on an install job.
+  #
+  # Lint, vitest and typecheck always run. They are not gated on the changed
+  # paths because they genuinely read them: `public-routes.test.ts` enumerates
+  # the `docs/` tree, and lint covers the docs theme's components. Only the
+  # builds and the two browser suites can be proven independent of a path.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 12.21.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `prelint` generates the two Workers' `cf` types first.
+      - run: pnpm lint
 
-  check:
-    name: Unit tests, typecheck and docs
+  test:
+    name: Unit tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # Every shard's failure report is useful; do not cancel the rest.
+      fail-fast: false
+      # 5,364 tests in 476 files took 4m26s as one process. Vitest's `--shard`
+      # splits the test files across processes, so three shards cost roughly a
+      # third of the run each; the fourth would save ~20s and add a runner, so
+      # the matrix stops at three.
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 12.21.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Vitest
+        # The denominator comes from the matrix, so changing the shard count
+        # cannot leave a shard running a stale slice of the suite. Vitest
+        # applies the shard across every configured project.
+        run: pnpm test --shard="${{ matrix.shard }}/${{ strategy.job-total }}"
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 12.21.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `pnpm typecheck` generates the two Workers' `cf` types, builds the root
+      # project references once, then checks the dedicated test, tooling and
+      # portable-entrypoint projects.
+      - run: pnpm typecheck
+
+  build:
+    name: Build docs, Workers and migrations
+    needs: changes
+    # This job is cheap (~1m15s if every step runs) and every step is gated on
+    # its own paths, so a docs-only PR builds only the docs and a workflow-only
+    # PR finishes after install.
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -125,42 +272,49 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm test
-      # `pnpm typecheck` generates the two Workers' `cf` types, builds the root
-      # project references once, then checks the dedicated test, tooling and
-      # portable-entrypoint projects.
-      - run: pnpm typecheck
-      - run: pnpm doc:build
+      # The Workers' builds read the generated `cf` types.
+      - run: pnpm -r --if-present run cf:types
+      - name: Build the documentation
+        if: >-
+          needs.changes.result != 'success' || needs.changes.outputs.docs == 'true'
+        run: pnpm doc:build
       # Production Workers must actually build. Typechecking alone did not
       # catch a layer-wiring bug that made every /mdm route return 500.
-      - run: pnpm cloud build
-      - run: pnpm web build
+      - name: Build the API Worker
+        if: >-
+          needs.changes.result != 'success' || needs.changes.outputs.cloud == 'true'
+        run: pnpm cloud build
+      - name: Build the dashboard
+        if: >-
+          needs.changes.result != 'success' || needs.changes.outputs.web == 'true'
+        run: pnpm web build
       # Fail when the schema changes without a committed migration snapshot.
-      - run: pnpm cloud db:generate
-      - run: test -z "$(git status --porcelain -- apps/cloud/migrations)"
+      - name: Generate migrations
+        if: >-
+          needs.changes.result != 'success' || needs.changes.outputs.cloud == 'true'
+        run: pnpm cloud db:generate
+      - name: Fail on an uncommitted migration snapshot
+        if: >-
+          needs.changes.result != 'success' || needs.changes.outputs.cloud == 'true'
+        run: test -z "$(git status --porcelain -- apps/cloud/migrations)"
 
   lighthouse:
     name: Lighthouse budgets
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Lighthouse needs no output from `check`: it installs, builds the
-    # self-host bundle and serves it itself. Waiting for `check` serialised
-    # ~3 minutes in front of a ~3 minute job for no benefit; a broken PR still
-    # fails `check` and this job on its own.
+    # Lighthouse needs no output from another job: it installs, builds the
+    # self-host bundle and serves it itself. The budgets are a smoke test for
+    # the public pages, not a gate on every commit. Measured over a week of
+    # `main` runs, `/designer` - a client rendered canvas editor - scores
+    # 0.83-0.84 against the shared 0.85 budget with 608-657 ms of total
+    # blocking time against 500 ms, so the job failed about half of the pull
+    # requests that could not have moved it. It now runs where its answer is
+    # actionable: on every push to `main`, and on pull requests that touch
+    # something the self-host build bundles (`perf` above).
     #
-    # The budgets are a smoke test for the public pages, not a gate on every
-    # commit. Measured over a week of `main` runs, `/designer` - a client
-    # rendered canvas editor - scores 0.83-0.84 against the shared 0.85 budget
-    # with 608-657 ms of total blocking time against 500 ms, so the job failed
-    # about half of the pull requests that could not have moved it. It now runs
-    # where its answer is actionable: on every push to `main`, and on pull
-    # requests that touch something the self-host build bundles (`perf` above).
-    # The budgets themselves live in `packages/config/lighthouserc.cjs`.
-    #
-    # `needs:` alone would skip this job when `changes` fails or times out, and
-    # a skipped job reports success, so run unless the gate positively decided
-    # the change cannot affect the suite.
+    # `needs:` alone would skip this job when `changes` fails or times out,
+    # and a skipped job reports success, so run unless the gate positively
+    # decided the change cannot affect the suite.
     needs: changes
     if: >-
       always() &&
@@ -202,34 +356,38 @@ jobs:
   # `packages/config/scripts/e2e-shard.ts` assigns the spec files instead of
   # Playwright's `--shard`: a contiguous slice of the file list is only balanced
   # while every spec has the same number of tests, and with eight slices they
-  # held 33, 38, 25, 27, 30, 44, 17 and 29 tests. The heaviest slice - not the
-  # number of runners - was the suite's wall clock. Files are now assigned
-  # largest-first to the emptiest shard, which splits them 31, 31, 31, 30, 30,
-  # 30, 30 and 30, and the assignment is recomputed on every run so a growing
-  # spec moves shard instead of inflating one.
+  # held 33, 38, 25, 27, 30, 44, 17 and 29 tests. Files are assigned
+  # largest-first to the emptiest shard, which splits the current 243 tests
+  # evenly, and the assignment is recomputed on every run so a growing spec
+  # moves shard instead of inflating one.
   #
-  # Each shard pays ~2 minutes of setup (service container, checkout, install,
-  # browser, migrations, dev server), so the matrix stops at eight.
+  # Shard count comes from the measured per-shard cost: fixed setup (container,
+  # checkout, install, browser, migrations) is ~74s, the per-shard build and
+  # server another 14-21s, and the test phase was 49-90s per shard on the first
+  # twelve-shard run. The eighth shard after #890 was 151s; twelve keeps the
+  # slowest shard around 150-190s. Sixteen shards would put this workflow at 24
+  # concurrent jobs, above GitHub's 20-job limit for free-plan repositories, so
+  # its queue would add back what the extra shards save. Twelve it is.
   e2e:
     # The denominator comes from the matrix itself, so adding or removing a
     # shard cannot leave a shard running a stale share of the suite.
     name: Browser tests (CDP, shard ${{ matrix.shard }}/${{ strategy.job-total }})
     needs: changes
     # A failed or timed-out gate must not turn into a skipped (successful)
-    # browser suite; see the `suites` step in the `changes` job.
+    # browser suite; see the `outputs` step in the `changes` job.
     if: >-
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
     runs-on: ubuntu-latest
     # A retried failure costs two 60 second timeouts on its own and the budget
-    # has to swallow one pathological spec, so keep well above the ~10 minute
+    # has to swallow one pathological spec, so keep well above the ~3 minute
     # expectation for a balanced shard.
     timeout-minutes: 45
     strategy:
       # Every shard's failure report is useful; do not cancel the rest.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     services:
       mysql:
         # MySQL 8.0, the version the Worker's mysql2 client is exercised
@@ -262,7 +420,7 @@ jobs:
       E2E_CHANNEL: bundled
       # Serve the production build rather than the dev server: a dashboard page
       # hydrates in ~70ms from built bundles against ~650ms in dev mode, and
-      # every test loads several documents. The build is paid once per shard.
+      # every test loads several documents.
       E2E_SERVER: built
       E2E_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
       DATABASE_HOST: 127.0.0.1
@@ -281,7 +439,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # The browser download is ~9 seconds per shard, and the cache takes the
-      # CDN off the critical path for the other seven. The key is the installed
+      # CDN off the critical path for the other eleven. The key is the installed
       # `@playwright/test` version (pinned in the lockfile) rather than the
       # lockfile hash, so an unrelated dependency bump does not re-download it.
       - name: Resolve the Playwright version
@@ -324,6 +482,12 @@ jobs:
       # wait on a Vite process that `setsid` reparented. Playwright then only
       # runs tests. `e2e-server.ts` builds the production bundles, starts
       # `vite preview` on 9050, and returns once the server answers.
+      #
+      # The build stays per-shard. Building it once was measured and rejected:
+      # the output is 97MB (22MB as an artifact) and uploading it took 4s, but
+      # the shards would have to `needs:` that producer job, so its 59s total
+      # (setup, build, upload) lands in front of every shard instead of
+      # overlapping it, while each shard's own build-and-serve is 14-21s.
       - name: Build and serve the production bundle
         run: |
           pnpm exec tsx apps/web/scripts/e2e-server.ts > /tmp/e2e-server.log 2>&1 &
