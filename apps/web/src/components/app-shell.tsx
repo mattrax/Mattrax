@@ -154,9 +154,9 @@ function TenantSwitcher(props: {
   /** Navigation is owned by the persistent shell, not the disposable sheet. */
   onSwitchTenant?: (id: string, slug: string | undefined) => void;
 }) {
+  const navigate = useNavigate();
   const me = useQuery(() => meQueryOptions(props.userId));
-  const active = () =>
-    settledQueryData(me)?.tenants.find((tenant) => tenant.id === props.activeId);
+  const active = () => settledQueryData(me)?.tenants.find((tenant) => tenant.id === props.activeId);
   const tenants = () => settledQueryData(me)?.tenants ?? [];
   const loading = () => me.isPending && !settledQueryData(me);
 
@@ -168,15 +168,9 @@ function TenantSwitcher(props: {
    * following a link. Reset when the menu opens again so cancelling it still
    * returns to the trigger.
    */
-  const [navigating, setNavigating] = createSignal(false);
 
   return (
-    <DropdownMenu
-      placement="bottom-start"
-      onOpenChange={(open) => {
-        if (open) setNavigating(false);
-      }}
-    >
+    <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
         class={cn(
           "group flex min-w-0 items-center rounded-md text-left outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 data-expanded:bg-hover",
@@ -218,7 +212,6 @@ function TenantSwitcher(props: {
           pointerdown and the item never received the click. */}
       <DropdownMenuContent
         class="max-h-[32rem] w-[272px]"
-        finalFocus={() => (navigating() ? "none" : undefined)}
         container={
           typeof document === "undefined"
             ? undefined
@@ -238,7 +231,6 @@ function TenantSwitcher(props: {
               value={props.activeId}
               onValueChange={(id) => {
                 rememberTenant(id);
-                setNavigating(true);
                 const tenant = tenants().find((item) => item.id === id);
 
                 // The switcher lives inside the navigation sheet on mobile and
@@ -829,6 +821,7 @@ export function AppShell(props: {
   user: ShellUser | undefined;
   onSignOut: () => void | Promise<void>;
 }) {
+  const navigate = useNavigate();
   const location = useLocation();
   const isRouting = useIsRouting();
   const routeTenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
