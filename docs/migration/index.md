@@ -119,3 +119,4 @@ sync.
 - [Jamf](/migration/jamf)
 - [Microsoft Intune](/migration/intune)
 - [Kandji, Mosyle and Addigy](/migration/other-mdms)
+- [Legacy mttx database](/migration/mttx)
