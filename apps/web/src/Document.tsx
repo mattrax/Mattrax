@@ -3,6 +3,7 @@ import type { JSX } from "@solidjs/web";
 import { DEPLOYMENT_ID, DEPLOYMENT_META_NAME } from "~/lib/deployment";
 import { requiresJavaScript } from "~/lib/public-routes";
 import { getPreloadedSession } from "~/lib/session-store";
+import { clientRegistrationNonce, getRegistrationNonce } from "~/lib/registration-nonce";
 import { getPostHogConfig } from "~/lib/posthog-config-store";
 import { getSupportConfig } from "~/lib/support-config-store";
 import { SITE_DEFAULT_ORIGIN, organizationStructuredData } from "~/lib/site";
@@ -49,6 +50,18 @@ export default function Document(props: { children?: JSX.Element }) {
       : window.__MATTRAX_SUPPORT__;
 
   const serializedSupport = support === undefined ? undefined : JSON.stringify(support);
+
+  // A sign-up page render minted this nonce and set the matching cookie. The
+  // client needs the same value after hydration to keep the hidden input's
+  // `nonce` attribute intact.
+  const registrationNonce = request
+    ? getRegistrationNonce(request)
+    : typeof window === "undefined"
+      ? undefined
+      : clientRegistrationNonce();
+
+  const serializedRegistrationNonce =
+    registrationNonce === undefined ? undefined : JSON.stringify(registrationNonce);
 
   return (
     <html lang="en">
@@ -223,6 +236,9 @@ export default function Document(props: { children?: JSX.Element }) {
             that the Worker serves `private, no-store; vary: cookie`. */}
         {serialized !== undefined && (
           <script>{`window.__MATTRAX_SESSION__=${serialized.replaceAll("<", String.raw`\u003c`)};`}</script>
+        )}
+        {serializedRegistrationNonce !== undefined && (
+          <script>{`window.__MATTRAX_REGISTRATION_NONCE__=${serializedRegistrationNonce};`}</script>
         )}
       </body>
     </html>

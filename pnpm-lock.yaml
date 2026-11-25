@@ -285,6 +285,7 @@ snapshots:
 					"specifier": "^4.1.5",
 					"version": "4.1.5",
 				},
+				"email-verification-api": "0.2.0",
 				"fast-plist": {
 					"specifier": "^0.1.3",
 					"version": "0.1.3",
@@ -807,6 +808,7 @@ snapshots:
 				"@mattrax/software": "workspace:*",
 				"drizzle-orm": "catalog:",
 				"effect": "catalog:",
+				"email-verification-api": "catalog:",
 			},
 			"devDependencies": {
 				"@types/node": "catalog:",
@@ -2963,6 +2965,10 @@ snapshots:
 			"engines": {"node": ">=8.0.0"},
 		},
 
+		"@owf/identity-common@0.3.2": {
+			"integrity": "sha512-XH5Bg6zuXc9SeimTe2ZD/+54GnhSyenFSy2Qe/z2HY1ul5j+6/lDNIhI83xct5aOkCD0uZ7zHbMhTI4Nq8YJOQ==",
+		},
+
 		"@oxc-parser/binding-android-arm-eabi@0.139.0": {
 			"integrity": "sha512-22EsXTA3Vc7OvrF4bfT48PFln2UbxkVgrp/Tm32qLw76Dv7SmcInfClJe6yPYamnli6HiqasnESZ5ezN+X4ybg==",
 			"engines": {"node": "^20.19.0 || >=22.12.0"},
@@ -4326,6 +4332,14 @@ snapshots:
 				"@types/react": "19.3.0",
 				"mdast-util-mdx-jsx": "3.2.1",
 				"unified": "11.0.5",
+			},
+		},
+
+		"@sd-jwt/core@0.20.1": {
+			"integrity": "sha512-RUBZ3WxnjicKgQyUysaFNMuC88xXSQlNLK7V1vxSBKYHAoi/yCXtCGlxxj7JXISAJgFTkmPSV5ZEZp0Dt5bXyw==",
+			"engines": {"node": ">=20"},
+			"dependencies": {
+				"@owf/identity-common": "0.3.2",
 			},
 		},
 
@@ -7616,6 +7630,16 @@ snapshots:
 			"integrity": "sha512-rpybw4Ac4ak/An6G1Me2+61xzwobowDGyuJe71QHHOVpkZv4fPVobsLl7WH6zHSKusAMpaHxGKTpOvpy7+r3dQ==",
 		},
 
+		"email-verification-api@0.2.0": {
+			"integrity": "sha512-Nv67usuoiySOtjWy8Eo0k0FtdVu1VdUE62n4guZDpQBzF8xtQd0BBL2USYjr/xzTzFqFMji5xXjlXbNkDs43uw==",
+			"engines": {"node": ">=20"},
+			"dependencies": {
+				"@sd-jwt/core": "0.20.1",
+				"jose": "6.2.18",
+				"zod": "4.6.7",
+			},
+		},
+
 		"emoji-regex@10.6.0": {
 			"integrity": "sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A==",
 		},
@@ -8987,6 +9011,10 @@ snapshots:
 		"jiti@2.7.0": {
 			"integrity": "sha512-AC/7JofJvZGrrneWNaEnJeOLUx+JlGt7tNa0wZiRPT4MY1wmfKjt2+6O2p2uz2+skll8OZZmJMNqeke7kKbNgQ==",
 			"hasBin": true,
+		},
+
+		"jose@6.2.18": {
+			"integrity": "sha512-doV4thUwgkrycJH4yLeqwTGIIZphHl+pk7CPReuMIhYhncmgzdko85MaCG4YQFTxqMFr1/oEH32tZuKKovcDEg==",
 		},
 
 		"jpeg-js@0.4.4": {

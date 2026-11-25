@@ -272,6 +272,16 @@ import type {
   CatalogueAddition,
 } from "@mattrax/enterprise-domain";
 import { restrictedSoftwareAgentResultRejection } from "@mattrax/enterprise-domain";
+import {
+  newRegistrationNonce,
+  readRegistrationNonce,
+  registrationNonceCookie,
+} from "@mattrax/enterprise-domain";
+import {
+  proveRegistrationEmail,
+  registrationAudience,
+  registrationTokenAttempted,
+} from "./registrationVerification.js";
 import { makeApplicationStoreService } from "./appStore.js";
 import {
   CATALOGUE_VERIFIED_AT,
@@ -35144,7 +35154,7 @@ export const createEnterpriseService = ({
       }),
     requestEmailVerification: (request) =>
       auth.requestEmailVerification(webRequestFromRequest(request, origin)),
-    requestRegistrationCode: (_request, payload) =>
+    requestRegistrationCode: (request, payload) =>
       Effect.gen(function* () {
         const address = payload.email.trim().toLowerCase();
         const name = payload.name.trim();
@@ -35180,6 +35190,76 @@ export const createEnterpriseService = ({
             }),
           );
 
+        // Email Verification API (progressive enhancement). The browser fills a
+        // hidden token only when its mailbox provider can vouch for the address.
+        // The nonce must be the one this browser was issued, and verification
+        // must succeed: a token's mere presence is never evidence.
+        const publicOriginHeader = headerValue(request.headers, "x-mattrax-public-origin");
+        const audience = registrationAudience(origin, publicOriginHeader, request.url);
+        const sessionNonce = readRegistrationNonce(headerValue(request.headers, "cookie"));
+        const proof = {
+          email: address,
+          audience,
+          token: payload.token?.trim() || undefined,
+          nonce: payload.nonce?.trim() || undefined,
+          sessionNonce,
+        };
+        const tokenAttempted = registrationTokenAttempted(proof);
+        // Every attempt consumes the binding: the response rotates the cookie
+        // and hands the page the new nonce, so the old value cannot be replayed.
+        const rotatedNonce = tokenAttempted ? newRegistrationNonce() : undefined;
+        const nonceHeaders = rotatedNonce
+          ? { "set-cookie": registrationNonceCookie(rotatedNonce, audience.startsWith("https:")) }
+          : {};
+
+        if (tokenAttempted && (yield* proveRegistrationEmail(proof))) {
+          const code = generateEmailCode();
+          const codeHash = yield* emailCodeHash(authSecret, `register:${address}`, code);
+          const grant = registrationGrant();
+          const now = new Date();
+          const expiresAt = new Date(now.getTime() + EMAIL_CODE_TTL_MS);
+
+          yield* db
+            .insert(schema.registrationVerification)
+            .values({
+              email: address,
+              name,
+              codeHash,
+              grant,
+              attempts: 0,
+              expiresAt,
+              verifiedAt: now,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .onDuplicateKeyUpdate({
+              set: {
+                name,
+                codeHash,
+                grant,
+                attempts: 0,
+                expiresAt,
+                verifiedAt: now,
+                updatedAt: now,
+              },
+            });
+
+          // One transaction, one state: the row is verified and no code was
+          // sent, so the client goes straight to the passkey ceremony.
+          return HttpApiSchema.withHeaders({
+            body: {
+              status: "ok" as const,
+              emailSent: false,
+              verified: true,
+              grant,
+              ...(rotatedNonce === undefined ? {} : { nonce: rotatedNonce }),
+            },
+            headers: nonceHeaders,
+          });
+        }
+
+        // EVP did not verify (or was not attempted): the emailed code is the
+        // fallback, so this is the first point that needs a mailer.
         if (!email)
           return yield* Effect.fail(
             new EnterpriseNotConfigured({
@@ -35254,15 +35334,24 @@ export const createEnterpriseService = ({
             to: address,
             from: DEFAULT_EMAIL_FROM,
             subject: "Your Mattrax verification code",
-            text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. Enter it on the sign-up page to finish creating your account.`,
+            // The digits stand alone on their own line so a mail client's
+            // "Copy code" heuristic can lift them without punctuation.
+            text: `Your Mattrax verification code is:\n\n${code}\n\nIt expires in 15 minutes. Enter it on the sign-up page to finish creating your account.`,
             html: verificationHtml,
+            // WebOTP's desktop/mobile-mail parallel: clients that understand
+            // the header can offer the code without parsing the body.
+            headers: { "OTP-Token": code },
           },
         });
 
-        return {
-          status: "ok" as const,
-          emailSent: outcome === "queued" || outcome === "duplicate" || outcome === "delivered",
-        };
+        return HttpApiSchema.withHeaders({
+          body: {
+            status: "ok" as const,
+            emailSent: outcome === "queued" || outcome === "duplicate" || outcome === "delivered",
+            ...(rotatedNonce === undefined ? {} : { nonce: rotatedNonce }),
+          },
+          headers: nonceHeaders,
+        });
       }),
     verifyRegistrationCode: (_request, payload) =>
       Effect.gen(function* () {
