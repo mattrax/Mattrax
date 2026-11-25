@@ -597,6 +597,13 @@ export default function DevicesPage() {
   // would start a redundant navigation (and delay other settled work).
   let urlInitialised = false;
   let urlWriteTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * The last search string this page wrote. A router write is asynchronous, so
+   * a control change made in the same window (typing while a sort write is in
+   * flight) would otherwise see its own older URL come back and revert the
+   * newer local value — which is how the controlled search box lost its text.
+   */
+
   onCleanup(() => clearTimeout(urlWriteTimer));
   createEffect(
     () => ({
@@ -670,11 +677,17 @@ export default function DevicesPage() {
 
       if (state.pageSize !== DEFAULT_PAGE_SIZE) next.pageSize = String(state.pageSize);
 
-      // Coalesce rapid control changes into one router write. Every
-      // `setSearchParams` is a navigation, and a burst of them trips the
-      // router's redirect guard.
+      // Mirror the controls with `replaceState`, not a router navigation.
+      // Search-param transitions can remount the route (resetting every
+      // control, including text typed while the write was queued) and are
+      // dropped if another transition is settling. The URL still reloads and
+      // links correctly; the page's signals are the source of truth.
       clearTimeout(urlWriteTimer);
-      urlWriteTimer = setTimeout(() => setSearchParams(next, { replace: true }), 150);
+      urlWriteTimer = setTimeout(() => {
+        const search = new URLSearchParams(next).toString();
+        const url = `${window.location.pathname}${search ? `?${search}` : ""}`;
+        window.history.replaceState(window.history.state, "", url);
+      }, 150);
     },
   );
 
@@ -707,6 +720,8 @@ export default function DevicesPage() {
   createEffect(
     urlFilters,
     (filters) => {
+      // Ignore the echo of our own router write: it may predate a keystroke
+      // that has not reached the URL yet, and applying it would discard it.
       // Reads of the controls are deliberately untracked: this effect must run
       // only when the URL changes, not on every keystroke. Reading them inside
       // the compute function would recreate the original feedback loop.

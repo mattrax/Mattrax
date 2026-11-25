@@ -151,9 +151,10 @@ function TenantSwitcher(props: {
   activeId: string | undefined;
   userId: string | undefined;
   collapsed?: boolean;
+  /** Close the mobile sheet before the destination route starts loading. */
+  onNavigate?: () => void;
 }) {
   const me = useQuery(() => meQueryOptions(props.userId));
-  const navigate = useNavigate();
   const active = () =>
     settledQueryData(me)?.tenants.find((tenant) => tenant.id === props.activeId);
   const tenants = () => settledQueryData(me)?.tenants ?? [];
@@ -239,7 +240,15 @@ function TenantSwitcher(props: {
                 rememberTenant(id);
                 setNavigating(true);
                 const tenant = tenants().find((item) => item.id === id);
-                navigate(routes.tenant(tenant?.slug || id).overview());
+
+                // Close the navigation sheet first. The sheet only closes on a
+                // pathname change, so navigating while it is open deadlocks:
+                // the modal transition settles, the router transition waits,
+                // and the URL never moves. Then navigate after both writes.
+                props.onNavigate?.();
+                // Wait for the sheet's exit transition: a router transition
+                // issued while the modal is still closing is discarded.
+                setTimeout(() => navigate(routes.tenant(tenant?.slug || id).overview()), 400);
               }}
             >
               <For each={tenants()}>
@@ -250,19 +259,29 @@ function TenantSwitcher(props: {
                     aria-current={props.activeId === tenant.id ? "true" : undefined}
                     class="h-10 cursor-pointer gap-2.5 pl-2 pr-8"
                   >
-                    <span class="flex size-6 shrink-0 items-center justify-center rounded-[5px] bg-surface text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
-                      {tenantInitials(tenant.name)}
-                    </span>
-                    <span class="min-w-0 flex-1 leading-none">
-                      <span class="block truncate text-[12.5px] font-[500] text-foreground">
-                        {tenant.name}
+                    {/* The visible row is a real anchor, like the mobile
+                        sidebar's links: the router's document-level handler
+                        performs the navigation, which works inside the sheet's
+                        modal where a programmatic transition is dropped. */}
+                    <a
+                      href={routes.tenant(tenant.slug || tenant.id).overview()}
+                      onClick={() => props.onNavigate?.()}
+                      class="flex w-full min-w-0 items-center gap-2.5"
+                    >
+                      <span class="flex size-6 shrink-0 items-center justify-center rounded-[5px] bg-surface text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
+                        {tenantInitials(tenant.name)}
                       </span>
-                      <span class="mt-1 block truncate text-[10.5px] leading-none text-muted-foreground">
-                        <span class="capitalize">{tenantRoleName(tenant) ?? tenant.role}</span>
-                        <span class="px-1 text-subtle-foreground/40">·</span>
-                        <span class="normal-case">{tenant.slug}</span>
+                      <span class="min-w-0 flex-1 leading-none">
+                        <span class="block truncate text-[12.5px] font-[500] text-foreground">
+                          {tenant.name}
+                        </span>
+                        <span class="mt-1 block truncate text-[10.5px] leading-none text-muted-foreground">
+                          <span class="capitalize">{tenantRoleName(tenant) ?? tenant.role}</span>
+                          <span class="px-1 text-subtle-foreground/40">·</span>
+                          <span class="normal-case">{tenant.slug}</span>
+                        </span>
                       </span>
-                    </span>
+                    </a>
                   </DropdownMenuRadioItem>
                 )}
               </For>
@@ -270,7 +289,7 @@ function TenantSwitcher(props: {
           </Show>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => navigate("/tenants/new")} class="h-9 gap-2.5">
+        <DropdownMenuItem as="a" href="/tenants/new" class="h-9 gap-2.5">
           <span class="flex size-6 items-center justify-center rounded-[5px] border border-dashed border-border text-muted-foreground">
             <Plus class="size-3.5" />
           </span>
@@ -724,6 +743,7 @@ function SidebarPanel(props: {
           activeId={props.activeId}
           userId={props.user?.id}
           collapsed={props.collapsed}
+          onNavigate={props.onNavigate}
         />
       </div>
 
@@ -984,12 +1004,21 @@ export function AppShell(props: {
 
   const settingsActive = createMemo(() => settings()?.match(location.pathname) ?? false);
 
-  const pageLabel = createMemo(() => {
+  // A plain function, not a memo: during hydration a memo can keep the
+  // server's value, and on a cold deep link that value can name the wrong
+  // settings section until the route changes again.
+  const pageLabel = () => {
     // Track the router so client navigations recompute, but prefer the address
     // bar: while an async route guard settles the router can still report the
     // parent path, and a cold deep link would name the wrong settings section.
     const routed = location.pathname;
-    const path = !isServer && window.location.pathname ? window.location.pathname : routed;
+    // `isHydrated` establishes a dependency that changes after the first
+    // client render, so the text binding replaces a server-rendered label
+    // (which may have seen an unresolved parent route) with the real URL.
+    const path =
+      !isServer && isHydrated() && window.location.pathname
+        ? window.location.pathname
+        : routed;
 
     if (path === "/account") return "Account";
 
@@ -1012,7 +1041,7 @@ export function AppShell(props: {
     }
 
     return navItems().find((item) => item.match(path))?.label ?? "Tenant";
-  });
+  };
 
   const tenantName = createMemo(() => {
     const id = scopedTenant();
@@ -1023,12 +1052,12 @@ export function AppShell(props: {
   });
 
   /** Section plus tenant, so tabs and bookmarks distinguish their origin. */
-  const pageTitle = createMemo(() => {
+  const pageTitle = () => {
     const label = pageLabel();
     const tenant = tenantName();
 
     return tenant ? `${label} · ${tenant}` : label;
-  });
+  };
 
   createEffect(
     () => pageTitle(),

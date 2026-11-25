@@ -622,7 +622,9 @@ test.describe("device fleet management", () => {
     const search = page.getByLabel("Search table");
     await search.fill("Virtual Device 199");
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toHaveAttribute("data-row-id", "device-199");
+    // The fixture names rows one-based ("Virtual Device 199") but ids are
+    // zero-based ("device-198").
+    await expect(rows.first()).toHaveAttribute("data-row-id", "device-198");
     await expect(viewport).not.toHaveAttribute("data-virtualized", "true");
 
     await search.fill("no-such-device");
