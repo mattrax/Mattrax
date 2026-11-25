@@ -73,7 +73,7 @@ import { settingsTabById } from "~/components/settings/settings-tabs";
 import { cn } from "~/lib/utils";
 import { isHydrated } from "~/lib/query-client";
 import { pendingDeployment, reloadForDeployment } from "~/lib/skew-protection";
-import { isServer } from "@solidjs/web";
+import { getRequestEvent, isServer } from "@solidjs/web";
 import { installTheme } from "~/lib/theme";
 import { setCrossTabTenant } from "~/lib/cross-tab-sync";
 import { BrandLogo } from "~/components/brand-logo";
@@ -151,8 +151,8 @@ function TenantSwitcher(props: {
   activeId: string | undefined;
   userId: string | undefined;
   collapsed?: boolean;
-  /** Close the mobile sheet before the destination route starts loading. */
-  onNavigate?: () => void;
+  /** Navigation is owned by the persistent shell, not the disposable sheet. */
+  onSwitchTenant?: (id: string, slug: string | undefined) => void;
 }) {
   const me = useQuery(() => meQueryOptions(props.userId));
   const active = () =>
@@ -241,14 +241,17 @@ function TenantSwitcher(props: {
                 setNavigating(true);
                 const tenant = tenants().find((item) => item.id === id);
 
-                // Close the navigation sheet first. The sheet only closes on a
-                // pathname change, so navigating while it is open deadlocks:
-                // the modal transition settles, the router transition waits,
-                // and the URL never moves. Then navigate after both writes.
-                props.onNavigate?.();
-                // Wait for the sheet's exit transition: a router transition
-                // issued while the modal is still closing is discarded.
-                setTimeout(() => navigate(routes.tenant(tenant?.slug || id).overview()), 400);
+                // The switcher lives inside the navigation sheet on mobile and
+                // is unmounted as soon as the sheet closes, which makes a
+                // navigation issued from here disappear with it. Hand the
+                // switch to the shell, which stays mounted across the close.
+                if (props.onSwitchTenant) {
+                  props.onSwitchTenant(id, tenant?.slug);
+
+                  return;
+                }
+
+                navigate(routes.tenant(tenant?.slug || id).overview());
               }}
             >
               <For each={tenants()}>
@@ -259,15 +262,7 @@ function TenantSwitcher(props: {
                     aria-current={props.activeId === tenant.id ? "true" : undefined}
                     class="h-10 cursor-pointer gap-2.5 pl-2 pr-8"
                   >
-                    {/* The visible row is a real anchor, like the mobile
-                        sidebar's links: the router's document-level handler
-                        performs the navigation, which works inside the sheet's
-                        modal where a programmatic transition is dropped. */}
-                    <a
-                      href={routes.tenant(tenant.slug || tenant.id).overview()}
-                      onClick={() => props.onNavigate?.()}
-                      class="flex w-full min-w-0 items-center gap-2.5"
-                    >
+                    <span class="flex w-full min-w-0 items-center gap-2.5">
                       <span class="flex size-6 shrink-0 items-center justify-center rounded-[5px] bg-surface text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
                         {tenantInitials(tenant.name)}
                       </span>
@@ -281,7 +276,7 @@ function TenantSwitcher(props: {
                           <span class="normal-case">{tenant.slug}</span>
                         </span>
                       </span>
-                    </a>
+                    </span>
                   </DropdownMenuRadioItem>
                 )}
               </For>
@@ -722,6 +717,7 @@ function SidebarPanel(props: {
   label: string;
   collapsed?: boolean;
   onNavigate?: () => void;
+  onSwitchTenant?: (id: string, slug: string | undefined) => void;
 }) {
   return (
     <div class="flex h-full min-h-0 flex-col bg-shell">
@@ -743,7 +739,7 @@ function SidebarPanel(props: {
           activeId={props.activeId}
           userId={props.user?.id}
           collapsed={props.collapsed}
-          onNavigate={props.onNavigate}
+          onSwitchTenant={props.onSwitchTenant}
         />
       </div>
 
@@ -840,6 +836,16 @@ export function AppShell(props: {
   const superadmin = () => settledQueryData(me)?.account.superadmin === true;
   const [lastTenant, setLastTenant] = createSignal<string | undefined>();
   const [mobileNavOpen, setMobileNavOpen] = createSignal(false);
+
+  /**
+   * Switch tenants from the shell, which outlives the mobile navigation sheet.
+   * The switcher lives inside that sheet; navigating from the sheet's own
+   * component is lost when the sheet unmounts on close.
+   */
+  const switchTenant = (id: string, slug: string | undefined) => {
+    setMobileNavOpen(false);
+    navigate(routes.tenant(slug || id).overview());
+  };
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
 
   onSettled(() => {
@@ -1012,11 +1018,13 @@ export function AppShell(props: {
     // bar: while an async route guard settles the router can still report the
     // parent path, and a cold deep link would name the wrong settings section.
     const routed = location.pathname;
-    // `isHydrated` establishes a dependency that changes after the first
-    // client render, so the text binding replaces a server-rendered label
-    // (which may have seen an unresolved parent route) with the real URL.
-    const path =
-      !isServer && isHydrated() && window.location.pathname
+    // On the server the router location can still be the parent layout while
+    // the deep-link route resolves, so name the section from the actual
+    // request URL. On the client prefer the address bar once hydrated.
+    const requestUrl = isServer ? getRequestEvent()?.request.url : undefined;
+    const path = requestUrl
+      ? new URL(requestUrl).pathname
+      : !isServer && isHydrated() && window.location.pathname
         ? window.location.pathname
         : routed;
 
@@ -1176,6 +1184,7 @@ export function AppShell(props: {
             path={location.pathname}
             label="Primary"
             collapsed={sidebarCollapsed()}
+            onSwitchTenant={switchTenant}
           />
         </aside>
 
@@ -1299,6 +1308,7 @@ export function AppShell(props: {
             path={location.pathname}
             label="Primary"
             onNavigate={() => setMobileNavOpen(false)}
+            onSwitchTenant={switchTenant}
           />
         </SheetContent>
       </Sheet>
