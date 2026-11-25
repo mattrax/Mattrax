@@ -98,6 +98,12 @@ const NAV_GROUPS: ReadonlyArray<{ id: NavGroup; label: string }> = [
   { id: "pinned", label: "Pinned" },
 ];
 
+/** Read account data only after success so a held /me cannot suspend the shell. */
+const settledQueryData = <T,>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined => (query.isSuccess ? query.data : undefined);
+
 const LAST_TENANT_KEY = "mattrax:last-tenant";
 const SIDEBAR_COLLAPSED_KEY = "mattrax:sidebar-collapsed";
 
@@ -148,9 +154,10 @@ function TenantSwitcher(props: {
 }) {
   const me = useQuery(() => meQueryOptions(props.userId));
   const navigate = useNavigate();
-  const active = () => me.data?.tenants.find((tenant) => tenant.id === props.activeId);
-  const tenants = () => me.data?.tenants ?? [];
-  const loading = () => me.isPending && !me.data;
+  const active = () =>
+    settledQueryData(me)?.tenants.find((tenant) => tenant.id === props.activeId);
+  const tenants = () => settledQueryData(me)?.tenants ?? [];
+  const loading = () => me.isPending && !settledQueryData(me);
 
   /**
    * Selecting a tenant leaves the menu for another page, so the default
@@ -810,7 +817,7 @@ export function AppShell(props: {
   const isRouting = useIsRouting();
   const routeTenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
   const me = useQuery(() => meQueryOptions(props.user?.id));
-  const superadmin = () => me.data?.account.superadmin === true;
+  const superadmin = () => settledQueryData(me)?.account.superadmin === true;
   const [lastTenant, setLastTenant] = createSignal<string | undefined>();
   const [mobileNavOpen, setMobileNavOpen] = createSignal(false);
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
@@ -861,17 +868,17 @@ export function AppShell(props: {
     const routeKey = routeTenantId();
 
     if (routeKey) {
-      const tenant = (me.data?.tenants ?? []).find(
+      const tenant = (settledQueryData(me)?.tenants ?? []).find(
         (entry) => entry.id === routeKey || entry.slug === routeKey,
       );
 
       return tenant?.id ?? routeKey;
     }
 
-    const known = me.data?.tenants ?? [];
+    const known = settledQueryData(me)?.tenants ?? [];
 
     return resolveLandingTenant(known, {
-      defaultTenantId: me.data?.account.defaultTenantId,
+      defaultTenantId: settledQueryData(me)?.account.defaultTenantId,
       lastTenantId: lastTenant(),
     })?.id;
   });
@@ -890,7 +897,9 @@ export function AppShell(props: {
     const key = routeTenantId();
 
     if (!key) return undefined;
-    const tenant = (me.data?.tenants ?? []).find((entry) => entry.id === key || entry.slug === key);
+    const tenant = (settledQueryData(me)?.tenants ?? []).find(
+      (entry) => entry.id === key || entry.slug === key,
+    );
 
     return tenant?.slug ?? key;
   });
@@ -907,7 +916,7 @@ export function AppShell(props: {
 
     if (!id) return undefined;
 
-    return me.data?.tenants.find((tenant) => tenant.id === id)?.slug ?? id;
+    return settledQueryData(me)?.tenants.find((tenant) => tenant.id === id)?.slug ?? id;
   });
 
   const { can } = useCan();
@@ -1010,7 +1019,7 @@ export function AppShell(props: {
 
     if (!id) return undefined;
 
-    return me.data?.tenants.find((tenant) => tenant.id === id)?.name;
+    return settledQueryData(me)?.tenants.find((tenant) => tenant.id === id)?.name;
   });
 
   /** Section plus tenant, so tabs and bookmarks distinguish their origin. */
