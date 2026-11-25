@@ -230,33 +230,6 @@ const responseFailure = async (response: Response, fallback: string) => {
   return new Error(presentation.tag ? presentation.message : fallback);
 };
 
-const FILTER_PARAM_KEYS = [
-  "q",
-  "status",
-  "proto",
-  "groupId",
-  "staleDays",
-  "health",
-  "push",
-  "lostMode",
-  "localAccount",
-  "setup",
-  "notSeenSince",
-  "activation",
-  "attributeKey",
-  "attributeValue",
-  "sort",
-  "direction",
-  "query",
-  "page",
-  "columns",
-  "pageSize",
-  "view",
-] as const;
-
-/** `setSearchParams` merges, so every known key must be sent (empty deletes). */
-const emptyFilterParams = () => Object.fromEntries(FILTER_PARAM_KEYS.map((key) => [key, ""]));
-
 type HealthReason = { code: string; label: string; severity: string };
 
 const statusMeta = {
@@ -635,7 +608,9 @@ export default function DevicesPage() {
         return;
       }
 
-      const next = emptyFilterParams();
+      // Only non-empty parameters go into the URL. Starting from every key
+      // with an empty value left `?query=&q=&…` behind when filters cleared.
+      const next: Record<string, string> = {};
 
       if (state.q) next.q = state.q;
 
@@ -1424,7 +1399,7 @@ export default function DevicesPage() {
     setPage(0);
     // Write immediately as well as through the mirror effect so clearing is
     // reflected even if a signal happened to already hold an empty value.
-    setSearchParams(emptyFilterParams(), { replace: true });
+    window.history.replaceState(window.history.state, "", window.location.pathname);
   };
 
   const exportCsv = async () => {

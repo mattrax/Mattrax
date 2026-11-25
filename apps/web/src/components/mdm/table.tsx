@@ -725,7 +725,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
     if (!focusedRowId) return;
     const focusedIndex = rows().findIndex((row) => row.id === focusedRowId);
-    const window = rowWindowAt(top, focusedIndex);
+    // Judge visibility against the rows the viewport actually shows. The
+    // render window also reserves spare rows for a focused row beyond the
+    // viewport; treating those as visible leaves focus on a row that is off
+    // screen, and browsers scroll a moved focused node back into view, which
+    // undoes the user's scroll (or a programmatic one). Move focus to the
+    // viewport instead, keeping the row as the active roving index so
+    // ArrowDown still resumes from it.
+    const window = rowWindowAt(top, -1);
 
     if (focusedIndex >= 0 && (focusedIndex < window.start || focusedIndex >= window.end)) {
       setActiveRow(focusedIndex);
@@ -1389,7 +1396,6 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                 });
               }}
             >
-              {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Rows carry the roving tabindex; the table delegates their arrow/Enter keys. */}
               {/* The spacer cells carry the virtual width. A `w-full` table
                   stretches to its container and stops the scroll range at the
                   rendered columns, so a virtualised table sizes to its content

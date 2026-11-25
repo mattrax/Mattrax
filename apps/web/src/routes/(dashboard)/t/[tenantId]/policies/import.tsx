@@ -78,6 +78,14 @@ type ParsedSource =
       readonly scope?: "device" | "user";
     };
 
+/** Read query data only after success so a pending or disabled query cannot suspend the page. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function ImportPolicyPage() {
   const params = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -98,7 +106,7 @@ export default function ImportPolicyPage() {
   }));
 
   const row = (): PolicyImportTarget | undefined =>
-    Option.getOrUndefined(decodeTarget(target.data));
+    Option.getOrUndefined(decodeTarget(settledQueryData(target)));
 
   /** A `?policy=` that has not loaded is not an invitation to create a policy. */
   const targetPending = () => Boolean(targetId()) && target.isPending;

@@ -152,7 +152,7 @@ function TenantSwitcher(props: {
   userId: string | undefined;
   collapsed?: boolean;
   /** Navigation is owned by the persistent shell, not the disposable sheet. */
-  onSwitchTenant?: (id: string, slug: string | undefined) => void;
+  onSwitchTenant: (id: string, slug: string | undefined) => void;
 }) {
   const me = useQuery(() => meQueryOptions(props.userId));
   const active = () =>
@@ -160,23 +160,8 @@ function TenantSwitcher(props: {
   const tenants = () => settledQueryData(me)?.tenants ?? [];
   const loading = () => me.isPending && !settledQueryData(me);
 
-  /**
-   * Selecting a tenant leaves the menu for another page, so the default
-   * "return focus to the trigger" would fight the shell's focus management and
-   * leave keyboard users on the old sidebar. Send focus to the destination's
-   * main landmark instead; choosing a tenant is an explicit navigation, like
-   * following a link. Reset when the menu opens again so cancelling it still
-   * returns to the trigger.
-   */
-  const [navigating, setNavigating] = createSignal(false);
-
   return (
-    <DropdownMenu
-      placement="bottom-start"
-      onOpenChange={(open) => {
-        if (open) setNavigating(false);
-      }}
-    >
+    <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
         class={cn(
           "group flex min-w-0 items-center rounded-md text-left outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 data-expanded:bg-hover",
@@ -218,7 +203,6 @@ function TenantSwitcher(props: {
           pointerdown and the item never received the click. */}
       <DropdownMenuContent
         class="max-h-[32rem] w-[272px]"
-        finalFocus={() => (navigating() ? "none" : undefined)}
         container={
           typeof document === "undefined"
             ? undefined
@@ -238,20 +222,13 @@ function TenantSwitcher(props: {
               value={props.activeId}
               onValueChange={(id) => {
                 rememberTenant(id);
-                setNavigating(true);
                 const tenant = tenants().find((item) => item.id === id);
 
                 // The switcher lives inside the navigation sheet on mobile and
                 // is unmounted as soon as the sheet closes, which makes a
                 // navigation issued from here disappear with it. Hand the
                 // switch to the shell, which stays mounted across the close.
-                if (props.onSwitchTenant) {
-                  props.onSwitchTenant(id, tenant?.slug);
-
-                  return;
-                }
-
-                navigate(routes.tenant(tenant?.slug || id).overview());
+                props.onSwitchTenant(id, tenant?.slug);
               }}
             >
               <For each={tenants()}>
@@ -717,7 +694,7 @@ function SidebarPanel(props: {
   label: string;
   collapsed?: boolean;
   onNavigate?: () => void;
-  onSwitchTenant?: (id: string, slug: string | undefined) => void;
+  onSwitchTenant: (id: string, slug: string | undefined) => void;
 }) {
   return (
     <div class="flex h-full min-h-0 flex-col bg-shell">
@@ -801,7 +778,10 @@ function ShellBreadcrumb(props: {
   return (
     <nav aria-label="Breadcrumb" class="min-w-0">
       <ol class="flex min-w-0 items-center gap-1.5 text-[12px]">
-        <Show when={props.tenantName && props.tenantHref}>
+        {/* Client-only: the server's account snapshot can name a tenant the
+            client has not loaded yet, and a cold deep link must not show a
+            tenant crumb it cannot confirm. */}
+        <Show when={!isServer && Boolean(props.tenantName && props.tenantHref)}>
           <li class="hidden min-w-0 sm:block">
             <a
               href={props.tenantHref}
@@ -837,14 +817,31 @@ export function AppShell(props: {
   const [lastTenant, setLastTenant] = createSignal<string | undefined>();
   const [mobileNavOpen, setMobileNavOpen] = createSignal(false);
 
+  // A tenant switch is a document navigation; the destination shell takes
+  // focus from this one-shot flag, matching the SPA focus behaviour.
+  onSettled(() => {
+    if (window.sessionStorage.getItem("mattrax:focus-main-on-load") !== "1") return;
+
+    window.sessionStorage.removeItem("mattrax:focus-main-on-load");
+    requestAnimationFrame(() => document.getElementById("main")?.focus({ preventScroll: true }));
+  });
+
   /**
    * Switch tenants from the shell, which outlives the mobile navigation sheet.
    * The switcher lives inside that sheet; navigating from the sheet's own
    * component is lost when the sheet unmounts on close.
    */
+  /**
+   * Switch tenants with a document navigation.
+   *
+   * This is a full account context change, and the SPA transition is discarded
+   * whenever the switcher is used from the mobile sheet's modal. A hard
+   * navigation is the honest interaction; the destination shell moves focus to
+   * main from the one-shot flag so keyboard users still land on the page.
+   */
   const switchTenant = (id: string, slug: string | undefined) => {
-    setMobileNavOpen(false);
-    navigate(routes.tenant(slug || id).overview());
+    window.sessionStorage.setItem("mattrax:focus-main-on-load", "1");
+    window.location.assign(routes.tenant(slug || id).overview());
   };
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
 
@@ -1039,11 +1036,13 @@ export function AppShell(props: {
     if (path.startsWith("/docs")) return "Documentation";
 
     // Settings sections share one navigation entry; naming the section keeps
-    // tabs, history and screen-reader announcements distinguishable.
-    const settingsSection = /\/settings(?:\/([^/]+))?/.exec(path)?.[1] ?? "";
+    // tabs, history and screen-reader announcements distinguishable. Anchor the
+    // match to the route after the tenant: an unanchored `/settings` also
+    // matches a tenant slug such as `settings-breadcrumb-tenant`.
+    const settingsMatch = /^\/t\/[^/]+\/settings(?:\/([^/]+))?/.exec(path);
 
-    if (path.includes("/settings")) {
-      const section = settingsTabById(settingsSection);
+    if (settingsMatch) {
+      const section = settingsTabById(settingsMatch[1] ?? "");
 
       if (section) return `Settings · ${section.label}`;
     }
