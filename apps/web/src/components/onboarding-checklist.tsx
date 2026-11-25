@@ -2,8 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import type { TenantOnboardingState } from "@mattrax/enterprise-domain/client";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
-import { Badge } from "~/components/ui/badge";
-import { BookOpen, Check, ChevronRight, Sparkles, X } from "~/components/ui/icons";
+import { BookOpen, Check, ChevronDown, ChevronRight, X } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import {
   deriveOnboardingSteps,
@@ -41,6 +40,36 @@ function settledQueryData<T>(query: {
   readonly data: T | undefined;
 }): T | undefined {
   return query.isSuccess ? query.data : undefined;
+}
+
+/** A circular readout beside the title; the arc grows as steps are completed. */
+function ProgressRing(props: { done: number; total: number }) {
+  const radius = 14;
+  const circumference = 2 * Math.PI * radius;
+  const offset = () => circumference * (1 - (props.total ? props.done / props.total : 0));
+
+  return (
+    <svg
+      viewBox="0 0 36 36"
+      class="size-9 shrink-0 -rotate-90"
+      role="img"
+      aria-label={`${props.done} of ${props.total} steps complete`}
+    >
+      <circle cx="18" cy="18" r={radius} fill="none" stroke="var(--border)" stroke-width="3" />
+      <circle
+        cx="18"
+        cy="18"
+        r={radius}
+        fill="none"
+        stroke="var(--success)"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-dasharray={String(circumference)}
+        stroke-dashoffset={String(offset())}
+        class="transition-[stroke-dashoffset] duration-500 ease-out motion-reduce:transition-none"
+      />
+    </svg>
+  );
 }
 
 export function OnboardingChecklist(props: { tenantId: string }) {
@@ -112,6 +141,9 @@ export function OnboardingChecklist(props: { tenantId: string }) {
   });
 
   const progress = createMemo(() => onboardingProgress(steps()));
+  const upcoming = createMemo(() => steps().filter((step) => !step.done));
+  const completed = createMemo(() => steps().filter((step) => step.done));
+  const [showCompleted, setShowCompleted] = createSignal(false);
 
   /**
    * The rollback snapshot for the dismissal in flight.
@@ -214,83 +246,120 @@ export function OnboardingChecklist(props: { tenantId: string }) {
     <Show when={visible()}>
       <section
         aria-labelledby="onboarding-title"
-        class="rounded-xl border border-border bg-card px-3.5 py-3.5 shadow-card"
+        class="max-w-2xl animate-in rounded-2xl border border-border bg-card p-5 shadow-card fade-in-0 slide-in-from-bottom-2 duration-300 ease-out motion-reduce:animate-none sm:p-6"
       >
-        <div class="flex items-start gap-3">
-          <span class="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-hover text-foreground">
-            <Sparkles class="size-3.5" aria-hidden="true" />
-          </span>
+        <div class="flex items-start gap-4">
           <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <h2 id="onboarding-title" class="text-[13px] font-[560] text-foreground">
-                Get started
-              </h2>
-              <Badge variant="secondary" class="tabular-nums">
-                {progress().done} of {progress().total} done
-              </Badge>
-            </div>
-            <p class="mt-0.5 text-[12px] leading-5 text-muted-foreground">
-              The short path from an empty tenant to a managed fleet.
+            <h2 id="onboarding-title" class="text-[16px] font-[600] tracking-[-0.01em] text-foreground">
+              Get started
+            </h2>
+            <p class="mt-1 text-[13px] text-muted-foreground">
+              {progress().done} of {progress().total} complete
             </p>
           </div>
+          <ProgressRing done={progress().done} total={progress().total} />
           <button
             type="button"
             aria-label="Dismiss the Get started checklist"
-            class="rounded p-1 text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground disabled:opacity-50"
+            class="-mr-1 -mt-1 rounded-md p-1 text-subtle-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground disabled:opacity-50 motion-reduce:transition-none"
             disabled={dismiss.isPending}
             onClick={() => dismiss.mutate()}
           >
-            <X class="size-3.5" />
+            <X class="size-4" />
           </button>
         </div>
 
-        <ol class="mt-3 grid gap-1.5 sm:grid-cols-2">
-          <For each={steps()}>
+        <ol class="mt-5 flex flex-col gap-1">
+          <For each={upcoming()}>
             {(step, index) => (
-              <li>
-                <a
-                  href={step.href}
-                  class={cn(
-                    "group flex items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors duration-[var(--duration-hover)] ease-swift",
-                    step.done
-                      ? "border-transparent bg-surface hover:bg-hover"
-                      : "border-border hover:border-border-strong hover:bg-hover",
-                  )}
-                >
+              <li
+                data-state={index() === 0 ? "active" : "upcoming"}
+                class={cn(
+                  "rounded-xl transition-colors duration-[var(--duration-panel)] ease-swift motion-reduce:transition-none",
+                  index() === 0 ? "bg-hover" : "hover:bg-hover/60",
+                )}
+              >
+                <a href={step.href} class="group flex items-center gap-3 px-3 py-3">
                   <span
-                    class={cn(
-                      "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full text-[9px] font-[600] tabular-nums",
-                      step.done
-                        ? "bg-foreground text-background"
-                        : "border border-border-strong text-muted-foreground",
-                    )}
+                    class="size-5 shrink-0 rounded-full border border-dashed border-border-strong"
                     aria-hidden="true"
-                  >
-                    <Show when={step.done} fallback={index() + 1}>
-                      <Check class="size-2.5" />
-                    </Show>
-                  </span>
+                  />
                   <span class="min-w-0 flex-1">
-                    <span
-                      class={cn(
-                        "block truncate text-[12px] font-[500]",
-                        step.done ? "text-muted-foreground line-through" : "text-foreground",
-                      )}
-                    >
+                    <span class="block truncate text-[13px] font-[560] text-foreground">
                       {step.title}
                     </span>
-                    <span class="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
-                      {step.description}
-                    </span>
+                    <Show when={index() === 0}>
+                      <span class="mt-1 block truncate text-[12px] leading-4 text-muted-foreground">
+                        {step.description}
+                      </span>
+                    </Show>
                   </span>
-                  <ChevronRight class="mt-1 size-3 shrink-0 text-subtle-foreground transition-transform duration-[var(--duration-hover)] ease-swift group-hover:translate-x-0.5" />
+                  <span
+                    aria-hidden="true"
+                    class={cn(
+                      "shrink-0 rounded-lg px-3 py-1.5 text-[12px] font-[500] transition-[transform,background-color] duration-[var(--duration-hover)] ease-swift motion-reduce:transition-none",
+                      index() === 0
+                        ? "bg-foreground text-background"
+                        : "border border-border bg-card text-foreground group-hover:border-border-strong",
+                    )}
+                  >
+                    Start
+                  </span>
                 </a>
               </li>
             )}
           </For>
         </ol>
 
-        <p class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-2.5 text-[11px] text-muted-foreground">
+        <Show when={completed().length > 0}>
+          <div class="mt-3 border-t border-border pt-3">
+            <button
+              type="button"
+              aria-expanded={showCompleted() ? "true" : "false"}
+              aria-controls="onboarding-completed"
+              class="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[12px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground motion-reduce:transition-none"
+              onClick={() => setShowCompleted((open) => !open)}
+            >
+              <span>Completed ({completed().length})</span>
+              <ChevronDown
+                class={cn(
+                  "size-3.5 transition-transform duration-[var(--duration-hover)] ease-swift motion-reduce:transition-none",
+                  showCompleted() && "rotate-180",
+                )}
+              />
+            </button>
+            <Show when={showCompleted()}>
+              <ul
+                id="onboarding-completed"
+                class="mt-1 flex animate-in flex-col gap-0.5 fade-in-0 slide-in-from-top-1 duration-200 ease-out motion-reduce:animate-none"
+              >
+                <For each={completed()}>
+                  {(step) => (
+                    <li>
+                      <a
+                        href={step.href}
+                        class="group flex items-center gap-3 rounded-lg px-3 py-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover motion-reduce:transition-none"
+                      >
+                        <span
+                          class="flex size-5 shrink-0 items-center justify-center rounded-full bg-foreground text-background"
+                          aria-hidden="true"
+                        >
+                          <Check class="size-3" />
+                        </span>
+                        <span class="min-w-0 flex-1 truncate text-[13px] text-muted-foreground group-hover:text-foreground">
+                          {step.title}
+                        </span>
+                        <ChevronRight class="size-3 shrink-0 text-subtle-foreground" />
+                      </a>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </div>
+        </Show>
+
+        <p class="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-3 text-[11px] text-muted-foreground">
           <span>Stuck, or want a walkthrough?</span>
           <a
             href={supportUrl()}

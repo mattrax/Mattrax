@@ -188,13 +188,13 @@ describe("OnboardingChecklist dismissal", () => {
     );
 
     flush();
-    await vi.waitFor(() => expect(host.textContent).toContain("0 of 5 done"));
+    await vi.waitFor(() => expect(host.textContent).toContain("0 of 5 complete"));
     expect(errors).toEqual([]);
 
     setWrite(true);
     flush();
 
-    await vi.waitFor(() => expect(host.textContent).toContain("1 of 5 done"));
+    await vi.waitFor(() => expect(host.textContent).toContain("1 of 5 complete"));
     expect(errors).toEqual([]);
     expect(host.querySelector('[data-testid="boundary"]')).toBeNull();
   });
@@ -216,7 +216,7 @@ describe("OnboardingChecklist dismissal", () => {
     client.setQueryData(onboardingKey(), onboardingState());
     flush();
 
-    await vi.waitFor(() => expect(host.textContent).toContain("0 of 5 done"));
+    await vi.waitFor(() => expect(host.textContent).toContain("0 of 5 complete"));
     expect(errors).toEqual([]);
   });
 
@@ -414,6 +414,49 @@ describe("OnboardingChecklist dismissal", () => {
 
     await vi.waitFor(() => expect(next.querySelector("#onboarding-title")).toBeNull());
     expect(api.getTenantOnboarding).not.toHaveBeenCalled();
+    expect(errors).toEqual([]);
+  });
+});
+
+describe("OnboardingChecklist checklist layout", () => {
+  it("shows a labelled progress ring beside the written count", async () => {
+    const client = makeClient();
+    const errors: unknown[] = [];
+    api.getTenantOnboarding.mockResolvedValue(onboardingState());
+
+    const host = mount(() => <OnboardingChecklist tenantId="tenant-1" />, client, errors);
+    flush();
+
+    await vi.waitFor(() => expect(host.textContent).toContain("0 of 5 complete"));
+    expect(host.querySelector('svg[aria-label="0 of 5 steps complete"]')).not.toBeNull();
+    expect(errors).toEqual([]);
+  });
+
+  it("highlights the first open step and hides completed steps until asked", async () => {
+    const client = makeClient();
+    const errors: unknown[] = [];
+    api.getTenantOnboarding.mockResolvedValue(onboardingState({ groups: 1 }));
+
+    const host = mount(() => <OnboardingChecklist tenantId="tenant-1" />, client, errors);
+    flush();
+
+    await vi.waitFor(() => expect(host.textContent).toContain("1 of 5 complete"));
+
+    const active = host.querySelector('[data-state="active"]');
+    expect(active?.textContent).toContain("Create a policy");
+    expect(host.querySelectorAll('[data-state="active"]')).toHaveLength(1);
+    expect(host.textContent).toContain("Completed (1)");
+    expect(host.textContent).not.toContain("Create a group");
+
+    const toggle = Array.from(host.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Completed (1)"),
+    )!;
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    toggle.click();
+    flush();
+
+    await vi.waitFor(() => expect(host.textContent).toContain("Create a group"));
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(errors).toEqual([]);
   });
 });
