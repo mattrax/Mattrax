@@ -105,7 +105,12 @@ export function PageBreadcrumbs(props: {
                   </Show>
                   <BreadcrumbItem class={cn(isMiddle() && "hidden sm:inline-flex")}>
                     <Show
-                      when={isLast()}
+                      // The current page is the crumb whose href is this URL.
+                      // A detail route can end its trail at an ancestor (the
+                      // page title dedupes the opaque id crumb), and that
+                      // ancestor must stay navigable instead of being marked
+                      // as the page you are already on.
+                      when={crumb().href === location.pathname}
                       fallback={
                         <BreadcrumbLink href={crumb().href}>{crumb().label}</BreadcrumbLink>
                       }
@@ -384,13 +389,21 @@ export function DataTable<T>(props: {
 
 export function Field(props: { label: string; children: JSX.Element; hint?: string }) {
   return (
-    <label class="grid gap-1.5 text-sm">
-      <span class="text-[12.5px] font-medium text-foreground/90">{props.label}</span>
-      {props.children}
+    <div class="grid gap-1.5 text-sm">
+      {/*
+        The hint stays outside the label element. Inside it, the hint text is
+        part of the control's accessible name ("Key Lowercase letters…"), so
+        screen readers announce the whole sentence and `getByLabel("Key")`
+        no longer finds the field.
+      */}
+      <label class="grid gap-1.5">
+        <span class="text-[12.5px] font-medium text-foreground/90">{props.label}</span>
+        {props.children}
+      </label>
       <Show when={props.hint}>
         <span class="text-[11px] leading-relaxed text-muted-foreground">{props.hint}</span>
       </Show>
-    </label>
+    </div>
   );
 }
 

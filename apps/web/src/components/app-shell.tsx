@@ -152,8 +152,23 @@ function TenantSwitcher(props: {
   const tenants = () => me.data?.tenants ?? [];
   const loading = () => me.isPending && !me.data;
 
+  /**
+   * Selecting a tenant leaves the menu for another page, so the default
+   * "return focus to the trigger" would fight the shell's focus management and
+   * leave keyboard users on the old sidebar. Send focus to the destination's
+   * main landmark instead; choosing a tenant is an explicit navigation, like
+   * following a link. Reset when the menu opens again so cancelling it still
+   * returns to the trigger.
+   */
+  const [navigating, setNavigating] = createSignal(false);
+
   return (
-    <DropdownMenu placement="bottom-start">
+    <DropdownMenu
+      placement="bottom-start"
+      onOpenChange={(open) => {
+        if (open) setNavigating(false);
+      }}
+    >
       <DropdownMenuTrigger
         class={cn(
           "group flex min-w-0 items-center rounded-md text-left outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 data-expanded:bg-hover",
@@ -189,7 +204,17 @@ function TenantSwitcher(props: {
         </Show>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent class="max-h-[min(32rem,calc(100dvh-7rem))] w-[272px]">
+      {/* The mobile switcher lives inside the navigation sheet. Rendering the
+          menu into the sheet keeps its items inside the modal: a menu portaled
+          to the body is treated as an outside press, so the sheet closed on
+          pointerdown and the item never received the click. */}
+      <DropdownMenuContent
+        class="max-h-[32rem] w-[272px]"
+        finalFocus={() => (navigating() ? "none" : undefined)}
+        container={() =>
+          document.querySelector<HTMLElement>('[data-slot="dialog-content"]') ?? undefined
+        }
+      >
         <DropdownMenuGroup>
           <Show
             when={tenants().length > 0}
@@ -203,6 +228,7 @@ function TenantSwitcher(props: {
               value={props.activeId}
               onValueChange={(id) => {
                 rememberTenant(id);
+                setNavigating(true);
                 const tenant = tenants().find((item) => item.id === id);
                 navigate(routes.tenant(tenant?.slug || id).overview());
               }}
@@ -948,7 +974,11 @@ export function AppShell(props: {
   const settingsActive = createMemo(() => settings()?.match(location.pathname) ?? false);
 
   const pageLabel = createMemo(() => {
-    const path = location.pathname;
+    // Track the router so client navigations recompute, but prefer the address
+    // bar: while an async route guard settles the router can still report the
+    // parent path, and a cold deep link would name the wrong settings section.
+    const routed = location.pathname;
+    const path = !isServer && window.location.pathname ? window.location.pathname : routed;
 
     if (path === "/account") return "Account";
 
@@ -1022,8 +1052,10 @@ export function AppShell(props: {
     if (!pendingFocusPath || pendingFocusPath !== location.pathname) return;
     if (typeof document === "undefined") return;
 
+    // Menus are non-modal and their exit transition must not hold focus on the
+    // page the operator just left. Only modals and the palette own focus.
     const overlayOpen = document.querySelector(
-      '[data-slot="dialog-content"], [data-slot="command-palette"], [data-slot="menu-content"]',
+      '[data-slot="dialog-content"], [data-slot="command-palette"]',
     );
 
     if (isRouting() || mobileNavOpen() || overlayOpen) {

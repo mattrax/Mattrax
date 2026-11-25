@@ -533,7 +533,10 @@ export const makeStripeBillingService = ({
     invoices: ({ organization }) =>
       asBillingError(
         Effect.gen(function* () {
-          if (!stripe) return yield* Effect.fail(notConfigured());
+          // Nothing can have been invoiced without Stripe. Return the empty
+          // collection the billing page already renders for this state instead
+          // of failing the whole settings page on an unconfigured deployment.
+          if (!stripe) return { invoices: [] };
 
           const [tenant] = yield* db
             .select({ stripeCustomerId: schema.tenant.stripeCustomerId })

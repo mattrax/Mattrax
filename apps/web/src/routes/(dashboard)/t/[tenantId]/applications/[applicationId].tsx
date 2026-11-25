@@ -315,17 +315,30 @@ export default function ApplicationDetailPage() {
     },
   );
 
+  /**
+   * Refetch the record and return the version the server just confirmed.
+   *
+   * Reading `row()` after this resolves is not enough: the query cache has the
+   * new body, but Solid's projection can still expose the previous value for a
+   * tick, which would arm the next save with the pre-refresh `updatedAt` and
+   * lose the precondition check. Returning the fetched timestamp gives callers
+   * a value that cannot lag behind the network.
+   */
   const invalidate = async () => {
-    // Refetch the record itself and wait for it: callers read `row()` straight
-    // after this returns (the stale-write guard takes the refreshed
-    // `updatedAt`), and an invalidation alone resolves before the data lands.
-    await qc.refetchQueries({
-      queryKey: enterpriseKeys.application(params.tenantId, params.applicationId),
-    });
+    const latest = await qc
+      .fetchQuery({
+        ...enterpriseQueries.application(params.tenantId, params.applicationId),
+        staleTime: 0,
+      })
+      // A refresh that cannot be fetched must not turn an already-successful
+      // save into an error; the guard falls back to the reactive row.
+      .catch(() => undefined);
     await qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
     await qc.invalidateQueries({
       queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, "application"),
     });
+
+    return Option.getOrUndefined(Schema.decodeUnknownOption(ApplicationNode)(latest))?.updatedAt;
   };
 
   /** Group relations for the checkboxes, named from the cached group list. */
@@ -567,8 +580,8 @@ export default function ApplicationDetailPage() {
           ? "Storefronts saved. No storefront carries this app, so it is marked unavailable."
           : "Storefront mapping saved.",
       );
-      await invalidate();
-      guard.markRefreshed();
+      const refreshedAt = await invalidate();
+      guard.markRefreshed(refreshedAt);
     },
   }));
 
@@ -590,8 +603,8 @@ export default function ApplicationDetailPage() {
           ? `Checked ${result.storefronts.length} storefront(s); the app was not found in any of them.${unlinked}${errors}`
           : `Checked ${result.storefronts.length} storefront(s); the app is available.${errors}`,
       );
-      await invalidate();
-      guard.markRefreshed();
+      const refreshedAt = await invalidate();
+      guard.markRefreshed(refreshedAt);
     },
   }));
 

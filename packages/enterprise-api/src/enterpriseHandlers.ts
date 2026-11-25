@@ -2477,7 +2477,10 @@ export const createEnterpriseService = ({
       ),
     portal: () => Effect.fail(notConfiguredBilling()),
     checkout: () => Effect.fail(notConfiguredBilling()),
-    invoices: () => Effect.fail(notConfiguredBilling()),
+    // The billing page renders "invoices appear once connected" for this
+    // deployment, so an empty page is the correct answer; failing here makes
+    // the page's data read throw into the error boundary.
+    invoices: () => Effect.succeed({ invoices: [] }),
     reportUsage: () => Effect.void,
     renameTenant: () => Effect.void,
     preflightTenantDeletion: () => Effect.void,

@@ -1347,6 +1347,13 @@ export default function DevicesPage() {
   const pageCount = () => Math.max(1, Math.ceil(total() / pageSize()));
 
   /**
+   * A brand-new tenant with no filters gets the empty state's call to action.
+   * The masthead repeats it, so showing both would put two identical
+   * "Enroll device" links on screen at once.
+   */
+  const emptyFleet = () => devices.isSuccess && !hasFilters() && total() === 0;
+
+  /**
    * Resolve every device the active filter matches. The table's "select all
    * matching" option hands the bulk bar this list; each id is still authorised
    * by the API when the action runs.
@@ -1466,7 +1473,7 @@ export default function DevicesPage() {
                 {exporting() ? "Exporting…" : "Export CSV"}
               </Button>
             </div>
-            <Show when={can("enrollment.write") && (devices.isSuccess || hasFilters())}>
+            <Show when={can("enrollment.write") && !emptyFleet() && (devices.isSuccess || hasFilters())}>
               <Button
                 as="a"
                 href={routes.tenant(params.tenantId).settingsTab("enrollment")}

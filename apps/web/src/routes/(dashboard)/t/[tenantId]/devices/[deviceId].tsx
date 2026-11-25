@@ -254,7 +254,11 @@ function DetailCard(props: {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{props.title}</CardTitle>
+        {/* The card title is the section heading on this page. The primitive
+            renders a div, so state the role without changing its layout. */}
+        <CardTitle role="heading" aria-level={2}>
+          {props.title}
+        </CardTitle>
         <Show when={props.description}>
           <CardDescription>{props.description}</CardDescription>
         </Show>
@@ -4590,33 +4594,10 @@ function DeviceDetailContent() {
                               Clear passcode
                             </Button>
                           </Show>
-                          <Show when={supports("start-lost-mode")}>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={command.isPending}
-                              onClick={() => {
-                                if (
-                                  window.confirm(
-                                    "Put this device into lost mode? It locks, and its screen shows a message asking for its return.",
-                                  )
-                                )
-                                  command.mutate({ action: "start-lost-mode" });
-                              }}
-                            >
-                              Start lost mode
-                            </Button>
-                          </Show>
-                          <Show when={supports("stop-lost-mode")}>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={command.isPending}
-                              onClick={() => command.mutate({ action: "stop-lost-mode" })}
-                            >
-                              End lost mode
-                            </Button>
-                          </Show>
+                          {/* Lost Mode has its own card for Apple platforms,
+                              including the return message. Repeating the same
+                              commands here puts two identical buttons on the
+                              page. */}
                           <Show when={supports("reset-password")}>
                             <Button
                               variant="outline"

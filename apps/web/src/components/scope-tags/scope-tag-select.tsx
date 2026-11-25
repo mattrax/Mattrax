@@ -162,9 +162,14 @@ export function ScopeTagAssignmentEditor(props: {
 }) {
   const qc = useQueryClient();
   const { can } = useCan();
-  const current = useQuery(() =>
-    enterpriseQueries.scopeTagAssignments(props.tenantId, props.resourceType, props.resourceIds),
-  );
+  // The assignment read needs scope_tags.read. A role without it still has to
+  // open the resource, so skip the request rather than failing the page with a
+  // forbidden error from a card the operator cannot use.
+  const readable = () => can("scope_tags.read");
+  const current = useQuery(() => ({
+    ...enterpriseQueries.scopeTagAssignments(props.tenantId, props.resourceType, props.resourceIds),
+    enabled: readable(),
+  }));
   const [selected, setSelected] = createSignal<Array<string> | null>(null);
   const [saveError, setSaveError] = createSignal<unknown>();
   const ids = createMemo(() => [...new Set(props.resourceIds)]);
@@ -195,6 +200,13 @@ export function ScopeTagAssignmentEditor(props: {
   });
 
   const noun = () => resourceNoun[props.resourceType];
+
+  if (!readable())
+    return (
+      <p class={cn("rounded-lg border border-border bg-surface p-3 text-xs text-muted-foreground", props.class)}>
+        Your role cannot view this resource's scope tags.
+      </p>
+    );
 
   return (
     <div class={cn("space-y-3", props.class)}>
