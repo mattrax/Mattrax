@@ -152,7 +152,7 @@ function TenantSwitcher(props: {
   userId: string | undefined;
   collapsed?: boolean;
   /** Navigation is owned by the persistent shell, not the disposable sheet. */
-  onSwitchTenant?: (id: string, slug: string | undefined) => void;
+  onSwitchTenant: (id: string, slug: string | undefined) => void;
 }) {
   const me = useQuery(() => meQueryOptions(props.userId));
   const active = () =>
@@ -160,23 +160,8 @@ function TenantSwitcher(props: {
   const tenants = () => settledQueryData(me)?.tenants ?? [];
   const loading = () => me.isPending && !settledQueryData(me);
 
-  /**
-   * Selecting a tenant leaves the menu for another page, so the default
-   * "return focus to the trigger" would fight the shell's focus management and
-   * leave keyboard users on the old sidebar. Send focus to the destination's
-   * main landmark instead; choosing a tenant is an explicit navigation, like
-   * following a link. Reset when the menu opens again so cancelling it still
-   * returns to the trigger.
-   */
-  const [navigating, setNavigating] = createSignal(false);
-
   return (
-    <DropdownMenu
-      placement="bottom-start"
-      onOpenChange={(open) => {
-        if (open) setNavigating(false);
-      }}
-    >
+    <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
         class={cn(
           "group flex min-w-0 items-center rounded-md text-left outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 data-expanded:bg-hover",
@@ -218,7 +203,6 @@ function TenantSwitcher(props: {
           pointerdown and the item never received the click. */}
       <DropdownMenuContent
         class="max-h-[32rem] w-[272px]"
-        finalFocus={() => (navigating() ? "none" : undefined)}
         container={
           typeof document === "undefined"
             ? undefined
@@ -238,20 +222,13 @@ function TenantSwitcher(props: {
               value={props.activeId}
               onValueChange={(id) => {
                 rememberTenant(id);
-                setNavigating(true);
                 const tenant = tenants().find((item) => item.id === id);
 
                 // The switcher lives inside the navigation sheet on mobile and
                 // is unmounted as soon as the sheet closes, which makes a
                 // navigation issued from here disappear with it. Hand the
                 // switch to the shell, which stays mounted across the close.
-                if (props.onSwitchTenant) {
-                  props.onSwitchTenant(id, tenant?.slug);
-
-                  return;
-                }
-
-                navigate(routes.tenant(tenant?.slug || id).overview());
+                props.onSwitchTenant(id, tenant?.slug);
               }}
             >
               <For each={tenants()}>
@@ -717,7 +694,7 @@ function SidebarPanel(props: {
   label: string;
   collapsed?: boolean;
   onNavigate?: () => void;
-  onSwitchTenant?: (id: string, slug: string | undefined) => void;
+  onSwitchTenant: (id: string, slug: string | undefined) => void;
 }) {
   return (
     <div class="flex h-full min-h-0 flex-col bg-shell">
