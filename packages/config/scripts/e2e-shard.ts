@@ -100,7 +100,11 @@ const count = (suite: Suite, file: string | undefined): void => {
 
   const tests = (suite.specs ?? []).reduce((sum, spec) => sum + (spec.tests?.length ?? 0), 0);
 
-  if (tests > 0) counts.set(owned, (counts.get(owned) ?? 0) + tests);
+  if (tests > 0) {
+    const key = path.relative(repository, path.join(listing.config.rootDir, owned));
+
+    counts.set(key, (counts.get(key) ?? 0) + tests);
+  }
 
   for (const child of suite.suites ?? []) count(child, owned);
 };
@@ -166,7 +170,7 @@ const assign = (count: number): Shard[] => {
 
     target.weight += spec.weight;
     target.tests += spec.tests;
-    target.files.push(path.relative(repository, path.join(listing.config.rootDir, spec.file)));
+    target.files.push(spec.file);
   }
 
   return shards;

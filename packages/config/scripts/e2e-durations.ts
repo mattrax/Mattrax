@@ -56,7 +56,12 @@ interface Report {
 /** Observed milliseconds per spec file; the largest report wins on overlap. */
 const durations = new Map<string, number>();
 
-const walk = (suite: Suite, report: Report, inherited: string | undefined): void => {
+const walk = (
+  suite: Suite,
+  report: Report,
+  inherited: string | undefined,
+  reportDurations: Map<string, number>,
+): void => {
   const file = suite.file ?? inherited;
 
   for (const spec of suite.specs ?? []) {
@@ -64,9 +69,14 @@ const walk = (suite: Suite, report: Report, inherited: string | undefined): void
 
     if (owned === undefined) continue;
 
-    const key = path.relative(repository, path.resolve(report.config.rootDir, owned));
+    // The report's rootDir is the `tests/e2e` directory on the machine that
+    // produced it (a CI workspace path). Spec files are relative to it, so map
+    // them onto this checkout's `tests/e2e` instead of leaking the CI prefix.
+    const relative = path.relative(report.config.rootDir, path.resolve(report.config.rootDir, owned));
 
-    let total = 0;
+    if (relative.startsWith("..")) continue;
+
+    const key = path.posix.join("tests/e2e", relative.split(path.sep).join("/"));
 
     for (const test of spec.tests ?? []) {
       // The first passing attempt is the cost of the test without a retry's
@@ -74,19 +84,26 @@ const walk = (suite: Suite, report: Report, inherited: string | undefined): void
       // count-based fallback.
       const passed = (test.results ?? []).find((result) => result.status === "passed");
 
-      if (passed?.duration !== undefined) total += passed.duration;
+      if (passed?.duration !== undefined) {
+        reportDurations.set(key, (reportDurations.get(key) ?? 0) + passed.duration);
+      }
     }
-
-    if (total > 0) durations.set(key, Math.max(durations.get(key) ?? 0, total));
   }
 
-  for (const child of suite.suites ?? []) walk(child, report, file);
+  for (const child of suite.suites ?? []) walk(child, report, file, reportDurations);
 };
 
 for (const file of reports) {
   const report = JSON.parse(readFileSync(file, "utf8")) as Report;
+  // Each shard owns a disjoint set of spec files, but a report can be passed
+  // twice (a rerun, a cancelled shard); keep the larger total per file.
+  const reportDurations = new Map<string, number>();
 
-  for (const suite of report.suites) walk(suite, report, suite.file);
+  for (const suite of report.suites) walk(suite, report, suite.file, reportDurations);
+
+  for (const [file, duration] of reportDurations) {
+    durations.set(file, Math.max(durations.get(file) ?? 0, duration));
+  }
 }
 
 if (durations.size === 0) {
