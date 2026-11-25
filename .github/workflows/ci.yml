@@ -337,9 +337,16 @@ jobs:
         run: test -z "$(git status --porcelain -- apps/cloud/migrations)"
 
   lighthouse:
-    name: Lighthouse budgets
+    name: Lighthouse budgets (${{ matrix.url }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      # One URL per runner: each job still takes three samples, so the median
+      # and the budget confidence match the single-job `main` run, while the
+      # wall clock is the slowest URL instead of all four in series.
+      fail-fast: false
+      matrix:
+        url: ["/", "/login", "/register", "/designer"]
     # Lighthouse needs no output from another job: it installs, builds the
     # self-host bundle and serves it itself. The budgets are a smoke test for
     # the public pages, not a gate on every commit. Measured over a week of
@@ -357,6 +364,8 @@ jobs:
     if: >-
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.perf == 'true')
+    env:
+      LHCI_URL: http://localhost:9050${{ matrix.url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
@@ -381,7 +390,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
-          name: lighthouse-report
+          name: lighthouse-report-${{ strategy.job-index }}
           path: .lighthouseci/
           include-hidden-files: true
           retention-days: 7
