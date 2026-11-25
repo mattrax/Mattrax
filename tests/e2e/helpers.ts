@@ -301,7 +301,21 @@ export function e2eSessionFile(): string {
 
 type CookieState = Parameters<BrowserContext["addCookies"]>[0][number];
 
-type SessionState = { readonly email: string; readonly cookies: readonly CookieState[] };
+/** The subset of CDP's WebAuthn credential this repo copies between contexts. */
+export type SessionCredential = {
+  readonly credentialId: string;
+  readonly isResidentCredential: boolean;
+  readonly rpId: string;
+  readonly privateKey: string;
+  readonly userHandle?: string;
+  readonly signCount: number;
+};
+
+type SessionState = {
+  readonly email: string;
+  readonly cookies: readonly CookieState[];
+  readonly credentials?: readonly SessionCredential[];
+};
 
 let sessionPromise: Promise<SessionState | undefined> | undefined;
 
@@ -325,8 +339,20 @@ export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
     // after a local database reset) from failing the test.
     await page.context().addCookies([...session.cookies]);
     // Registration used to install this as a side effect; a shared session
-    // skips registration, and step-up/passkey tests still need it.
-    await installVirtualAuthenticator(page);
+    // skips registration, and step-up/passkey tests still need it. The passkey
+    // created during that one registration is copied into this context's
+    // virtual authenticator, or `stepUpGrant` has no credential to assert.
+    const authenticator = await installVirtualAuthenticator(page);
+
+    for (const credential of session.credentials ?? []) {
+      await authenticator.client
+        .send("WebAuthn.addCredential", {
+          authenticatorId: authenticator.authenticatorId,
+          credential,
+        })
+        .catch(() => undefined);
+    }
+
     try {
       tenant = await createTenant(page, tenantName);
     } catch (error) {
