@@ -35,9 +35,12 @@ module.exports = {
       startServerCommand: "node packages/config/scripts/lighthouse-server.mjs",
       startServerReadyPattern: "Lighthouse server ready",
       startServerReadyTimeout: 120000,
-      // A single sample keeps the local loop fast; CI medians three runs to
-      // damp runner noise.
-      numberOfRuns: process.env.CI ? 3 : 1,
+      // A single sample keeps the local loop fast. CI keeps the median of
+      // three on main, where a budget regression should be confidently
+      // caught; pull requests take one sample per URL (~80s instead of ~190s)
+      // and accept that a budget sitting exactly on its threshold can flake.
+      // The workflow sets LIGHTHOUSE_RUNS: 1 for PRs, 3 for main.
+      numberOfRuns: Number(process.env.LIGHTHOUSE_RUNS) || (process.env.CI ? 3 : 1),
       settings: {
         // Lighthouse 13 adds the agentic-browsing category; request it
         // explicitly so the budget below is always collected.
