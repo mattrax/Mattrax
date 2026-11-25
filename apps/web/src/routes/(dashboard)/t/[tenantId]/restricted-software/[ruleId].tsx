@@ -61,7 +61,31 @@ const draftFrom = (detail: RestrictedSoftwareDetail): Draft => ({
 const selectClass =
   "h-9 w-full rounded-md border border-border bg-surface px-3 text-[12.5px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
+/**
+ * The editor creates queries and effects as soon as it mounts. A reader without
+ * `restricted_software.read` must be refused before any of that runs, otherwise
+ * a disabled (pending) query read replaces the access-denied page with a
+ * loading state.
+ */
+/** Read query data only after success so a pending query cannot suspend the page. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function RestrictedSoftwareEditorPage() {
+  const { can } = useCan();
+
+  return (
+    <Show when={can("restricted_software.read")} fallback={<AccessDenied />}>
+      <RestrictedSoftwareEditor />
+    </Show>
+  );
+}
+
+function RestrictedSoftwareEditor() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -103,7 +127,7 @@ export default function RestrictedSoftwareEditorPage() {
   const [targetMode, setTargetMode] = createSignal<"include" | "exclude">("include");
 
   createEffect(
-    () => detail.data,
+    () => settledQueryData(detail),
     (data) => {
       if (!data) return;
 
@@ -128,7 +152,7 @@ export default function RestrictedSoftwareEditorPage() {
   );
 
   const targetOptions = createMemo(() => {
-    const data = targets.data;
+    const data = settledQueryData(targets);
 
     if (!data) return [];
 
@@ -191,7 +215,7 @@ export default function RestrictedSoftwareEditorPage() {
         return created.id;
       }
 
-      const current = detail.data;
+      const current = settledQueryData(detail);
 
       if (!current) throw new Error("The rule could not be loaded.");
 
@@ -307,8 +331,8 @@ export default function RestrictedSoftwareEditorPage() {
           title={isNew() ? "New rule" : draft().name || "Restricted software rule"}
           description="Detect an application in the inventory and act on it where the platform supports enforcement."
           meta={
-            <Show when={!isNew() && detail.data}>
-              <span>{formatDate(detail.data!.rule.updatedAt)}</span>
+            <Show when={!isNew() && settledQueryData(detail)}>
+              <span>{formatDate(settledQueryData(detail)!.rule.updatedAt)}</span>
             </Show>
           }
           actions={
@@ -626,14 +650,14 @@ export default function RestrictedSoftwareEditorPage() {
               </Show>
             </Panel>
 
-            <Show when={detail.data && detail.data.rule.openViolationCount > 0}>
+            <Show when={(settledQueryData(detail)?.rule.openViolationCount ?? 0) > 0}>
               <Panel
                 title="Violations"
                 description="Open violations are listed on the fleet view and the device timeline."
               >
                 <p class="text-[12.5px] text-muted-foreground">
-                  {detail.data?.rule.openViolationCount} open violation
-                  {detail.data?.rule.openViolationCount === 1 ? "" : "s"}.
+                  {settledQueryData(detail)?.rule.openViolationCount} open violation
+                  {settledQueryData(detail)?.rule.openViolationCount === 1 ? "" : "s"}.
                 </p>
                 <a
                   href={`/t/${params.tenantId}/restricted-software?rule=${params.ruleId}`}

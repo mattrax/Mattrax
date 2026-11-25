@@ -23,7 +23,7 @@ import {
   restrictedSoftwareCapability,
 } from "@mattrax/enterprise-domain/client";
 import { AccessDenied, useCan } from "~/lib/permissions";
-import { restrictedSoftwareQueryAccess } from "./restricted-software/query-access";
+import { restrictedSoftwareQueryAccess } from "./query-access";
 
 type View = "rules" | "violations";
 
@@ -48,6 +48,14 @@ const stateLabel = (state: string) =>
       : state === "failed"
         ? "Failed"
         : "Pending";
+
+/** Read query data only after success so a pending query cannot suspend the page. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
 
 export default function RestrictedSoftwarePage() {
   const params = useParams();
@@ -79,8 +87,8 @@ export default function RestrictedSoftwarePage() {
     return { ...options, enabled: options.enabled && queryAccess().violations };
   });
 
-  const ruleRows = () => [...(rules.data?.rules ?? [])];
-  const violationRows = () => [...(violations.data?.violations ?? [])];
+  const ruleRows = () => [...(settledQueryData(rules)?.rules ?? [])];
+  const violationRows = () => [...(settledQueryData(violations)?.violations ?? [])];
 
   const ruleColumns = [
     {
@@ -239,7 +247,7 @@ export default function RestrictedSoftwarePage() {
           title="Restricted software"
           description="Deny-list applications, record violations and enforce removal where a platform supports it."
           meta={
-            <Show when={rules.data}>
+            <Show when={settledQueryData(rules)}>
               <span class="tabular-nums">
                 {ruleRows().length} rule{ruleRows().length === 1 ? "" : "s"}
               </span>
@@ -268,9 +276,9 @@ export default function RestrictedSoftwarePage() {
             onClick={() => setView("violations")}
           >
             Violations
-            <Show when={(violations.data?.summary.open ?? 0) > 0}>
+            <Show when={(settledQueryData(violations)?.summary.open ?? 0) > 0}>
               <span class="ml-1 rounded-full bg-destructive/10 px-1.5 text-[10px] text-destructive">
-                {violations.data?.summary.open}
+                {settledQueryData(violations)?.summary.open}
               </span>
             </Show>
           </Button>
@@ -358,22 +366,22 @@ export default function RestrictedSoftwarePage() {
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Panel title="Open" description="Violations currently present.">
                 <p class="text-2xl font-semibold tabular-nums">
-                  {violations.data?.summary.open ?? 0}
+                  {settledQueryData(violations)?.summary.open ?? 0}
                 </p>
               </Panel>
               <Panel title="Enforced" description="Agent or policy action recorded.">
                 <p class="text-2xl font-semibold tabular-nums">
-                  {violations.data?.summary.enforced ?? 0}
+                  {settledQueryData(violations)?.summary.enforced ?? 0}
                 </p>
               </Panel>
               <Panel title="Detection only" description="No enforcement path on this platform.">
                 <p class="text-2xl font-semibold tabular-nums">
-                  {violations.data?.summary.detectionOnly ?? 0}
+                  {settledQueryData(violations)?.summary.detectionOnly ?? 0}
                 </p>
               </Panel>
               <Panel title="Failed" description="Enforcement reported an error.">
                 <p class="text-2xl font-semibold tabular-nums">
-                  {violations.data?.summary.failed ?? 0}
+                  {settledQueryData(violations)?.summary.failed ?? 0}
                 </p>
               </Panel>
             </div>
