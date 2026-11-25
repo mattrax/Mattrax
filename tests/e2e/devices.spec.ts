@@ -298,6 +298,21 @@ test.describe("device fleet management", () => {
   });
 
   test("drives the table from the keyboard and advertises the shortcuts", async ({ page }) => {
+    // The table's shortcuts register from `onSettled`, which can run after the
+    // hydration flag; press until the shortcut lands instead of racing it.
+    const focusSearch = async (search: Locator) => {
+      await expect
+        .poll(
+          async () => {
+            await page.keyboard.press("/");
+
+            return search.evaluate((element) => element === document.activeElement);
+          },
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+    };
+
     const tenant = await bootstrapTenant(page, "Keyboard Tenant");
 
     const alpha = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
@@ -313,7 +328,7 @@ test.describe("device fleet management", () => {
     await gotoHydrated(page, `/t/${tenant.slug}/groups`);
     const search = page.getByLabel("Search table");
 
-    await page.keyboard.press("/");
+    await focusSearch(search);
     await expect(search).toBeFocused();
     await search.fill("Keyboard");
     await page.keyboard.press("Escape");

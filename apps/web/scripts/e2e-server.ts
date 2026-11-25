@@ -1,13 +1,55 @@
 import { execFileSync, spawn } from "node:child_process";
+import path from "node:path";
 import process from "node:process";
 
 /**
- * Start the Vite dev server for browser tests and give its dependency optimizer
- * time to finish. On a cold CI checkout the optimizer writes its manifest and
- * chunks after the first request; killing it mid-write leaves stale chunk URLs
- * and every page load fails. One warm process avoids that race entirely.
+ * Serve the dashboard for browser tests.
+ *
+ * Every test pays for document loads, and the dev server makes each one
+ * expensive: Vite transforms modules per request and the browser hydrates an
+ * unbundled client. On the same machine a dashboard page hydrates in ~650ms in
+ * dev mode and ~70ms from the built bundles, and the suite navigates thousands
+ * of times. CI therefore serves the production build through `vite preview`
+ * (`E2E_SERVER=built`); `E2E_SERVER=dev` (the default) keeps the hot-reloading
+ * dev server for working on specs and product code locally.
+ *
+ * Both modes listen on 9050 so the suite's baseURL and the API's `ORIGIN` are
+ * the same in each.
  */
-const child = spawn("pnpm", ["web", "dev"], {
+const mode = process.env.E2E_SERVER?.trim().toLowerCase() === "built" ? "built" : "dev";
+
+const repository = path.resolve(import.meta.dirname, "../../..");
+
+if (mode === "built" && process.env.E2E_SKIP_BUILD !== "1") {
+  console.error("[e2e-server] building the production bundles");
+  execFileSync("pnpm", ["--filter", "@mattrax/web", "build"], {
+    cwd: repository,
+    stdio: "inherit",
+    env: { ...process.env, NO_COLOR: "1" },
+  });
+}
+
+const [command, args, cwd] =
+  mode === "built"
+    ? // `--host ::` is the dual-stack wildcard. `vite preview` otherwise binds
+      // only whichever address `localhost` resolves to first (::1 on macOS),
+      // and Playwright's readiness probe then spends minutes retrying
+      // 127.0.0.1 before the server is considered available.
+      ([
+        "pnpm",
+        ["exec", "vp", "preview", "--port", "9050", "--strictPort", "--host", "::"],
+        path.join(repository, "apps/web"),
+      ] as const)
+    : (["pnpm", ["web", "dev"], repository] as const);
+
+/**
+ * Start the server and, in dev mode, give its dependency optimizer time to
+ * finish. On a cold CI checkout the optimizer writes its manifest and chunks
+ * after the first request; killing it mid-write leaves stale chunk URLs and
+ * every page load fails. One warm process avoids that race entirely.
+ */
+const child = spawn(command, args, {
+  cwd,
   stdio: "inherit",
   env: { ...process.env, NO_COLOR: "1" },
   // A process group lets teardown stop Vite and its workers, not just the
@@ -102,8 +144,8 @@ const killPort = (): void => {
       if (pid === process.pid || !command.includes(repository)) continue;
 
       if (
-        /vite\.js\s+dev/.test(command) ||
-        /vite-plus[^ ]*\bdev\b/.test(command) ||
+        /vite\.js\s+(dev|preview)/.test(command) ||
+        /vite-plus[^ ]*\b(dev|preview)\b/.test(command) ||
         /pnpm[^ ]*\s+web\s+dev/.test(command) ||
         command.includes("scripts/generate-licences")
       ) {
@@ -172,8 +214,9 @@ const waitForServer = async (timeoutMs = 90_000): Promise<void> => {
 await waitForServer();
 
 // Let the client and SSR optimizers finish writing their caches before
-// Playwright starts driving the browser.
-await new Promise((resolve) => setTimeout(resolve, 10_000));
+// Playwright starts driving the browser. A built server has no optimizer to
+// wait for.
+if (mode === "dev") await new Promise((resolve) => setTimeout(resolve, 10_000));
 
 // Keep the wrapper alive while the dev server runs; Playwright stops it.
 process.stdin.resume();

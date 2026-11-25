@@ -54,6 +54,10 @@ export async function register(page: Page, options: { name?: string; email?: str
     if (message.type() === "error") errors.push(`console: ${message.text()}`);
   });
   await installVirtualAuthenticator(page);
+  // Stays on `networkidle`: the passkey ceremony that follows submits as soon
+  // as the code arrives, and starting it before the register page's own
+  // requests settle sends some sessions through the post-registration
+  // sign-in fallback, which then races the session it just created.
   await page.goto("/register", { waitUntil: "networkidle" });
 
   try {
@@ -269,7 +273,10 @@ export async function createTenant(page: Page, name: string) {
 }
 
 export async function gotoHydrated(page: Page, path: string) {
-  await page.goto(path, { waitUntil: "networkidle" });
+  // The hydration flag is the real readiness signal: it is only set once the
+  // client bundle has run and the router settled. `networkidle` would add a
+  // fixed 500ms of idle on top, on every navigation.
+  await page.goto(path, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     () => document.documentElement.dataset.hydrated === "true",
     undefined,
