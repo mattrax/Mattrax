@@ -144,22 +144,15 @@ describe("MdmTable cleanup ownership", () => {
     const removedRow = container.querySelector<HTMLTableRowElement>(
       'tbody tr[data-row-id="row-6"]',
     )!;
-    const removedColumn = container.querySelector<HTMLTableCellElement>(
-      'th[data-column-id="column-2"]',
-    )!;
     const viewport = container.querySelector<HTMLDivElement>('div[role="region"][tabindex="0"]')!;
     const rowObserver = ResizeObserverMock.instances.find((observer) =>
       observer.observe.mock.calls.some(([element]) => element === firstRow),
-    )!;
-    const columnObserver = ResizeObserverMock.instances.find((observer) =>
-      observer.observe.mock.calls.some(([element]) => element === removedColumn),
     )!;
     const viewportObserver = ResizeObserverMock.instances.find((observer) =>
       observer.observe.mock.calls.some(([element]) => element === viewport),
     )!;
 
     expect(rowObserver).toBeDefined();
-    expect(columnObserver).toBeDefined();
     expect(viewportObserver).toBeDefined();
 
     const checkbox = firstRow.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
@@ -185,8 +178,9 @@ describe("MdmTable cleanup ownership", () => {
     setColumns(makeColumns(1));
     flush();
 
-    expect(columnObserver.disconnect).toHaveBeenCalled();
-    expect(columnObserver.unobserve).toHaveBeenCalledWith(removedColumn);
+    // Columns use a fixed width and are not observed; shrinking to one column
+    // turns the virtualised column model off instead.
+    expect(container.querySelector('[data-columns-virtualized="true"]')).toBeNull();
     expect(checkbox.checked).toBe(true);
     expect(document.activeElement).toBe(firstRow);
 
@@ -264,11 +258,11 @@ describe("MdmTable cleanup ownership", () => {
     expect(container.querySelector('[data-virtualized="true"]')).not.toBeNull();
     expect(container.querySelector('[data-columns-virtualized="true"]')).not.toBeNull();
 
-    // The viewport, row and column observers are all live on this first render;
-    // none has been disconnected by a rerender, so the counts below belong to
-    // the dispose call alone.
+    // Virtualised columns use a fixed width, so only the viewport and row
+    // observers exist; both are live on this first render and none has been
+    // disconnected by a rerender, so the counts below belong to dispose alone.
     const observers = [...ResizeObserverMock.instances];
-    expect(observers.length).toBeGreaterThanOrEqual(3);
+    expect(observers.length).toBeGreaterThanOrEqual(2);
 
     for (const observer of observers) expect(observer.disconnect).not.toHaveBeenCalled();
 

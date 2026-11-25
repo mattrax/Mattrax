@@ -272,7 +272,7 @@ describe("mail relay SMTP client", () => {
 
     try {
       await expect(
-        Effect.runPromise(sendSmtpMail(transportOptions(smtp), message)),
+        Effect.runPromise(sendSmtpMail(transportOptions(smtp, { timeoutMs: 200 }), message)),
       ).rejects.toMatchObject({ _tag: "EmailFailure" });
       expect(smtp.captured.auth).toEqual([]);
       expect(smtp.captured.commands.some((line) => line.startsWith("AUTH"))).toBe(false);

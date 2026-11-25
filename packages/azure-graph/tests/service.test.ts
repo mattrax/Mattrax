@@ -654,7 +654,7 @@ describe("AzureGraph outbound timeouts", () => {
 
         return domainsResponse([contosoDomain]);
       },
-      { timeoutMs: 1_000 },
+      { timeoutMs: 1_000, retryDelayMs: 1 },
     );
 
     expect(graphCalls).toBe(2);
@@ -1072,7 +1072,7 @@ describe("AzureGraph delegated consent revocation", () => {
   it("reports how many grants were removed before a delete failed", async () => {
     let deletes = 0;
 
-    const error = await run(
+    const error = await runWithConfig(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
 
@@ -1100,6 +1100,7 @@ describe("AzureGraph delegated consent revocation", () => {
           ? new Response(null, { status: 204 })
           : json({ error: "server error" }, 500);
       },
+      { retryDelayMs: 1 },
     ).catch((error_: unknown) => error_);
 
     expect(error).toBeInstanceOf(AzureGraphConsentRevocationFailed);

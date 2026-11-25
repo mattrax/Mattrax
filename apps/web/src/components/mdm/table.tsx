@@ -1389,7 +1389,6 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                 });
               }}
             >
-              {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Rows carry the roving tabindex; the table delegates their arrow/Enter keys. */}
               {/* The spacer cells carry the virtual width. A `w-full` table
                   stretches to its container and stops the scroll range at the
                   rendered columns, so a virtualised table sizes to its content
