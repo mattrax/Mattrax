@@ -11,6 +11,9 @@ import config from "./packages/config/oxlint.config.ts";
  */
 export default {
   ...config,
+  // Registers @shadcn/lint so its rules are available. No shadcn rules are
+  // enabled yet; add them to `rules:` here once the policies are chosen.
+  jsPlugins: ["@shadcn/lint"],
   options: {
     reportUnusedDisableDirectives: "error",
     typeAware: true,
