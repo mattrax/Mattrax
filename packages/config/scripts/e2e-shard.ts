@@ -66,10 +66,18 @@ interface Listing {
 }
 
 // `--list` loads the suite without starting a server or running a test, and
-// the JSON reporter is the only listing format stable enough to parse.
+// the JSON reporter is the only listing format stable enough to parse. The
+// CI step that calls this script also sets `PLAYWRIGHT_JSON_OUTPUT_FILE` for
+// the run's own report; the reporter would then write the listing to that
+// file and leave "Listing tests:" on stdout, so drop both output variables
+// for this child process.
+const { PLAYWRIGHT_JSON_OUTPUT_FILE: _jsonFile, PLAYWRIGHT_JSON_OUTPUT_NAME: _jsonName, ...listEnvironment } =
+  process.env;
+
 const listed = execFileSync("pnpm", ["exec", "playwright", "test", "--list", "--reporter=json"], {
   cwd: repository,
   encoding: "utf8",
+  env: listEnvironment,
   maxBuffer: 64 * 1024 * 1024,
   stdio: ["ignore", "pipe", "inherit"],
 });
@@ -167,13 +175,14 @@ const assign = (count: number): Shard[] => {
 const shards = assign(total);
 
 if (summary) {
+  const weighted = durations.size > 0;
   const weights = shards.map((shard) => shard.weight).sort((a, b) => a - b);
   const median = weights[Math.floor(weights.length / 2)] ?? 0;
 
   for (const [index, shard] of shards.entries()) {
-    const label = shard.weight === 0 ? "0s" : `${Math.round(shard.weight / 1000)}s`;
+    const timing = weighted ? `${Math.round(shard.weight / 1000)}s (model)` : "no duration map";
     console.log(
-      `shard ${index + 1}/${total}: ${shard.tests} tests, ${label} (model) over ${shard.files.length} files`,
+      `shard ${index + 1}/${total}: ${shard.tests} tests, ${timing} over ${shard.files.length} files`,
     );
   }
 
@@ -182,7 +191,9 @@ if (summary) {
   const spread = median > 0 ? ((slowest / median - 1) * 100).toFixed(0) : "0";
 
   console.log(
-    `total: ${totalTests} tests; slowest ${(slowest / 1000).toFixed(0)}s vs median ${(median / 1000).toFixed(0)}s (+${spread}%)`,
+    weighted
+      ? `total: ${totalTests} tests; slowest ${(slowest / 1000).toFixed(0)}s vs median ${(median / 1000).toFixed(0)}s (+${spread}%)`
+      : `total: ${totalTests} tests; no duration map, weights are test counts`,
   );
   process.exit(0);
 }
