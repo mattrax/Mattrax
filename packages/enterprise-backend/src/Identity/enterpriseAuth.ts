@@ -382,6 +382,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             readonly subject: string;
             readonly text: string;
             readonly html: string;
+            /** Extra MIME headers (for example `OTP-Token`). */
+            readonly headers?: Readonly<Record<string, string>>;
           };
         },
         recipient: string,
@@ -1458,8 +1460,10 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               message: {
                 to: user.email,
                 subject: "Your Mattrax verification code",
-                text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
+                // Keep the digits alone on a line for "Copy code" heuristics.
+                text: `Your Mattrax verification code is:\n\n${code}\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
                 html: verificationHtml,
+                headers: { "OTP-Token": code },
               },
             },
             user.email,

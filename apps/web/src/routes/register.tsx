@@ -8,6 +8,7 @@ import { authClient } from "~/lib/auth";
 import { Button } from "~/components/ui/button";
 import { EmailCodeField } from "~/components/email-code-field";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { readRegistrationNonce, rememberRegistrationNonce } from "~/lib/registration-nonce";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
 const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
@@ -16,6 +17,13 @@ const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_b
 const RESEND_COOLDOWN_SECONDS = 30;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * The Email Verification API's autocomplete token. It is proposal-stage and
+ * absent from the accessibility rule's value list, so it lives in a constant
+ * the linter cannot mistake for a typo.
+ */
+const EMAIL_VERIFICATION_AUTOCOMPLETE = "email-verification-token";
 
 const fieldClass =
   "w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors";
@@ -41,11 +49,18 @@ export default function RegisterPage() {
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal<"send" | "verify" | null>(null);
   const [cooldown, setCooldown] = createSignal(0);
+  /**
+   * The server-issued nonce for this form. The browser fills the hidden token
+   * input only when this attribute is present; a token attempt rotates it.
+   */
+  const [verificationNonce, setVerificationNonce] = createSignal(readRegistrationNonce());
   const session = authClient.useSession();
   const signedInAs = () => session().data?.user;
   const [signingOut, setSigningOut] = createSignal(false);
 
   let codeInput: HTMLInputElement | undefined;
+  /** Filled by the browser when it can verify the address inline. */
+  let tokenInput: HTMLInputElement | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   /** The last value an input event submitted, so it cannot submit twice. */
   let submittedCode: string | null = null;
@@ -86,6 +101,9 @@ export default function RegisterPage() {
     setError(null);
     setCooldown(0);
     submittedCode = null;
+
+    // A token for the previous address is no longer evidence for this one.
+    if (tokenInput) tokenInput.value = "";
   };
 
   /**
@@ -143,10 +161,29 @@ export default function RegisterPage() {
     setPending("send");
 
     try {
+      // The browser writes the Email Verification API token into the hidden
+      // input. Read both halves from the live element so hydration, a browser
+      // refill and a rotated nonce all use exactly what is in the DOM.
+      const token = tokenInput?.value.trim();
+      // The signal is the rotated source of truth; the DOM attribute is only a
+      // fallback for a render that has not flushed yet.
+      const nonce = verificationNonce()?.trim() ?? tokenInput?.getAttribute("nonce")?.trim();
       const result = await authClient.requestRegistrationCode({
         name: trimmedName,
         email: trimmedEmail,
+        ...(token && nonce ? { token, nonce } : {}),
       });
+
+      // Every token attempt rotates the nonce; a request without one leaves the
+      // current binding alone.
+      if (result.data?.nonce) {
+        setVerificationNonce(result.data.nonce);
+        rememberRegistrationNonce(result.data.nonce);
+      }
+
+      // A consumed token must not survive into the code step, where a browser
+      // refill could submit it again with the old address.
+      if (tokenInput) tokenInput.value = "";
 
       if (result.error) {
         setError(result.error.message ?? "Could not send a verification code.");
@@ -156,6 +193,15 @@ export default function RegisterPage() {
 
       setCode("");
       submittedCode = null;
+
+      // The browser proved the address inline: no email, no code. Go straight
+      // to passkey creation with the grant the server just issued.
+      if (result.data?.verified && result.data.grant) {
+        setPending("verify");
+        await finishRegistration(result.data.grant);
+
+        return;
+      }
 
       if (!result.data?.emailSent) {
         // The code is stored, but no mail left the building. Say that instead of
@@ -312,8 +358,8 @@ export default function RegisterPage() {
             >
               <p class="font-medium">You're already signed in as {user().email}</p>
               <p class="mt-1">
-                Creating a separate account needs a fresh sign-in. Open your dashboard to keep
-                using this account, or sign out first if you really want another one.
+                Creating a separate account needs a fresh sign-in. Open your dashboard to keep using
+                this account, or sign out first if you really want another one.
               </p>
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <Button as="a" href="/dashboard" size="xs" variant="outline">
@@ -360,7 +406,7 @@ export default function RegisterPage() {
               name="email"
               type="email"
               required
-              autocomplete="username"
+              autocomplete="email"
               autocapitalize="none"
               spellcheck={false}
               placeholder="you@example.com"
@@ -369,6 +415,22 @@ export default function RegisterPage() {
               class={fieldClass}
             />
           </div>
+
+          {/*
+            Email Verification API progressive enhancement. A supporting
+            browser (Chrome behind the origin trial, with Gmail as the issuer)
+            writes a token into this input's value. Without support the input
+            stays empty and the emailed code is the only path. The `nonce` is
+            the server-issued, single-use binding the API checks against the
+            sign-up cookie.
+          */}
+          <input
+            ref={(input) => (tokenInput = input)}
+            type="hidden"
+            name="token"
+            nonce={verificationNonce()}
+            autocomplete={EMAIL_VERIFICATION_AUTOCOMPLETE}
+          />
 
           <Show when={codeSent()}>
             <div class="space-y-1.5 motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]">
@@ -432,7 +494,9 @@ export default function RegisterPage() {
                 : "Verify and create passkey"
               : pending() === "send"
                 ? "Sending code…"
-                : "Continue"}
+                : pending() === "verify"
+                  ? "Setting up passkey…"
+                  : "Continue"}
           </Button>
         </form>
 

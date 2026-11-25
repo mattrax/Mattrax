@@ -880,8 +880,17 @@ export const authClient = {
   /**
    * Guest sign-up verification. Public endpoints on the auth surface, so they
    * use the same transport and error envelope as registration itself.
+   *
+   * `token`/`nonce` are present only when the browser filled the Email
+   * Verification API hidden input. The server falls back to the emailed code
+   * whenever they are absent or fail to verify.
    */
-  requestRegistrationCode: (payload: { name: string; email: string }) =>
+  requestRegistrationCode: (payload: {
+    name: string;
+    email: string;
+    token?: string;
+    nonce?: string;
+  }) =>
     result(async () =>
       request("/register/verification", BeginRegistrationVerificationResponse, {
         method: "POST",
