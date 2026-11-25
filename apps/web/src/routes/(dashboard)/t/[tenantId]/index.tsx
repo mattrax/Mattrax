@@ -238,7 +238,7 @@ function LoadedOverview(props: {
   const { can } = useCan();
 
   return (
-    <Page class="gap-5">
+    <Page class="dashboard-reveal gap-5">
       <OverviewHeader
         name={dashboard.data?.name ?? props.summary.name}
         description={dashboard.data?.description ?? props.summary.description}
@@ -292,7 +292,7 @@ function PreviewOverview(props: {
   const { can } = useCan();
 
   return (
-    <Page class="gap-5">
+    <Page class="dashboard-reveal gap-5">
       <OverviewHeader
         name="Fleet overview"
         preview

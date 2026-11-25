@@ -253,7 +253,7 @@ export default function DashboardsPage() {
     });
 
   return (
-    <Page>
+    <Page class="dashboard-reveal">
       <PageHeader
         eyebrow="Shared views"
         title="Dashboards"
@@ -409,7 +409,7 @@ export default function DashboardsPage() {
               <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 <For each={visible()}>
                   {(dashboard) => (
-                    <article class="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift hover:border-border-strong hover:shadow-card">
+                    <article class="pressable group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card hover:border-border-strong hover:shadow-card">
                       <a
                         href={routes.tenant(params.tenantId).dashboard(dashboard.id)}
                         class="block outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
