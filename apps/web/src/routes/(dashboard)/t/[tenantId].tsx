@@ -23,6 +23,12 @@ import { LoadingState } from "@mattrax/ui";
  * an empty shell full of failed requests. Wait for `me` and send the browser
  * back to `/dashboard` (which picks a membership it can actually show).
  */
+/** Read account data only after success so a held /me cannot suspend the guard. */
+const settledQueryData = <T,>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined => (query.isSuccess ? query.data : undefined);
+
 export default function TenantLayout(props: ParentProps) {
   const params = useParams();
   const navigate = useNavigate();
@@ -37,7 +43,7 @@ export default function TenantLayout(props: ParentProps) {
   // fresh read before it is treated as unknown.
   let rechecked: string | undefined;
 
-  const tenant = () => resolveActiveTenant(me.data, params.tenantId);
+  const tenant = () => resolveActiveTenant(settledQueryData(me), params.tenantId);
 
   /**
    * Slugs are the shareable, human-readable form of a tenant URL. An id still
@@ -69,7 +75,7 @@ export default function TenantLayout(props: ParentProps) {
 
       return {
         tenantId: params.tenantId,
-        loaded: me.data !== undefined,
+        loaded: settledQueryData(me) !== undefined,
         found: tenant() !== undefined,
         tenantRowId: tenant()?.id,
         canonical: canonicalParam(),

@@ -193,17 +193,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   let tableRef: HTMLTableElement | undefined;
   let viewportRef: HTMLDivElement | undefined;
   const rowRefs = new Map<string, HTMLTableRowElement>();
-  const columnRefs = new Map<string, HTMLTableCellElement>();
   const captionId = createUniqueId();
   const [viewportHeight, setViewportHeight] = createSignal(TABLE_INITIAL_VIEWPORT_HEIGHT);
   const [viewportWidth, setViewportWidth] = createSignal(TABLE_INITIAL_VIEWPORT_WIDTH);
   const [scrollTop, setScrollTop] = createSignal(0);
   const [scrollLeft, setScrollLeft] = createSignal(0);
   const [rowHeights, setRowHeights] = createSignal<Record<string, number>>({});
-  const [columnWidths, setColumnWidths] = createSignal<Record<string, number>>({});
   let viewportResizeObserver: ResizeObserver | undefined;
   let rowResizeObserver: ResizeObserver | undefined;
-  let columnResizeObserver: ResizeObserver | undefined;
   let scrollFrame: number | undefined;
   let latestScrollTop = 0;
   let latestScrollLeft = 0;
@@ -335,15 +332,23 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
     return active >= window.start && active < window.end ? active : window.start;
   });
+  /**
+   * Every virtualised column uses the same nominal width.
+   *
+   * Measuring the rendered columns makes the offset model depend on the table
+   * width, and the spacer cells derived from those offsets change that width:
+   * the loop never settles and rows are recreated continuously. A fixed width
+   * also lets the matching `table-layout: fixed` keep the rendered cells in
+   * step with the model instead of sizing to whatever content happens to be
+   * mounted.
+   */
   const columnOffsets = createMemo(() => {
-    const columns = visibleColumns();
-    const widths = columnWidths();
-    const offsets = new Array<number>(columns.length + 1);
+    const count = visibleColumns().length;
+    const offsets = new Array<number>(count + 1);
     offsets[0] = 0;
 
-    for (let index = 0; index < columns.length; index++) {
-      offsets[index + 1] = offsets[index] + (widths[columns[index]!.id] ?? TABLE_COLUMN_WIDTH);
-    }
+    for (let index = 0; index < count; index++)
+      offsets[index + 1] = offsets[index] + TABLE_COLUMN_WIDTH;
 
     return offsets;
   });
@@ -412,40 +417,6 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     rowResizeObserver.observe(element);
   };
 
-  const observeColumn = (element: HTMLTableCellElement) => {
-    if (columnMode() === "off" || typeof ResizeObserver === "undefined") return;
-
-    columnResizeObserver ??= new ResizeObserver((entries) => {
-      if (columnMode() === "off") return;
-
-      const updates: Record<string, number> = {};
-
-      for (const entry of entries) {
-        const id = (entry.target as HTMLElement).dataset.columnId;
-        const size = Array.isArray(entry.borderBoxSize)
-          ? entry.borderBoxSize[0]?.inlineSize
-          : undefined;
-        const width = Math.max(1, Math.ceil(size ?? entry.contentRect.width));
-
-        if (id && width > 0) updates[id] = width;
-      }
-
-      setColumnWidths((previous) => {
-        let changed = false;
-        const next = { ...previous };
-
-        for (const [id, width] of Object.entries(updates)) {
-          if (next[id] === width) continue;
-          next[id] = width;
-          changed = true;
-        }
-
-        return changed ? next : previous;
-      });
-    });
-    columnResizeObserver.observe(element);
-  };
-
   const createRowRef = (id: string) => {
     let element: HTMLTableRowElement | undefined;
 
@@ -463,23 +434,6 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     };
   };
 
-  const createColumnRef = (id: string) => {
-    let element: HTMLTableCellElement | undefined;
-
-    onCleanup(() => {
-      if (!element) return;
-
-      columnResizeObserver?.unobserve(element);
-      if (columnRefs.get(id) === element) columnRefs.delete(id);
-    });
-
-    return (next: HTMLTableCellElement) => {
-      element = next;
-      columnRefs.set(id, next);
-      observeColumn(next);
-    };
-  };
-
   createEffect(
     () => virtualized(),
     (isVirtualized) => {
@@ -493,22 +447,6 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
       rowResizeObserver?.disconnect();
       setRowHeights({});
-    },
-  );
-
-  createEffect(
-    () => columnMode(),
-    (mode) => {
-      if (mode !== "off") {
-        if (typeof ResizeObserver !== "undefined") {
-          for (const element of columnRefs.values()) observeColumn(element);
-        }
-
-        return;
-      }
-
-      columnResizeObserver?.disconnect();
-      setColumnWidths({});
     },
   );
 
@@ -667,10 +605,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
     viewportResizeObserver?.disconnect();
     rowResizeObserver?.disconnect();
-    columnResizeObserver?.disconnect();
     viewportRef = undefined;
     rowRefs.clear();
-    columnRefs.clear();
   });
 
   const selectedRows = createMemo(() => rows().filter((row) => isSelected(row.id)));
@@ -1454,11 +1390,20 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
               }}
             >
               {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Rows carry the roving tabindex; the table delegates their arrow/Enter keys. */}
+              {/* The spacer cells carry the virtual width. A `w-full` table
+                  stretches to its container and stops the scroll range at the
+                  rendered columns, so a virtualised table sizes to its content
+                  instead. Stretching it back to the pane would make the
+                  measured column widths depend on the table width, and the
+                  spacer/model feedback never settles. */}
               <table
                 ref={(element) => {
                   tableRef = element;
                 }}
-                class="w-full caption-bottom border-separate border-spacing-0 text-[12.5px]"
+                class={cn(
+                  "caption-bottom border-separate border-spacing-0 text-[12.5px]",
+                  columnsVirtualized() ? "w-max table-fixed" : "w-full",
+                )}
                 aria-rowcount={rows().length + 1}
                 aria-colcount={columnCount()}
                 onKeyDown={onTableKeyDown}
@@ -1528,7 +1473,6 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
                         return (
                           <th
-                            ref={createColumnRef(col.id)}
                             data-column-id={col.id}
                             scope="col"
                             aria-colindex={leadingColumnCount() + columnIndex() + 1}
@@ -1539,8 +1483,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                                   : "descending"
                                 : undefined
                             }
+                            style={
+                              columnsVirtualized()
+                                ? { width: `${TABLE_COLUMN_WIDTH}px` }
+                                : undefined
+                            }
                             class={cn(
                               "label-caps h-8 whitespace-nowrap border-b border-border px-3 text-left align-middle",
+                              columnsVirtualized() && "overflow-hidden text-ellipsis",
                               col.class,
                             )}
                           >
@@ -1679,8 +1629,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                                 aria-colindex={
                                   leadingColumnCount() + columnWindow().start + index() + 1
                                 }
+                                style={
+                                  columnsVirtualized()
+                                    ? { width: `${TABLE_COLUMN_WIDTH}px` }
+                                    : undefined
+                                }
                                 class={cn(
                                   "h-9 whitespace-nowrap px-3 align-middle",
+                                  columnsVirtualized() && "overflow-hidden text-ellipsis",
                                   rowSeparator(),
                                   col.class,
                                 )}

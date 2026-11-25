@@ -91,11 +91,17 @@ export type TenantPermissionsApi = {
  * Permissions for the tenant in the current URL. Every tenant page and the
  * dashboard shell read the same `me` query, so this adds no extra request.
  */
+/** Read account data only after success so a held /me cannot suspend callers. */
+const settledQueryData = <T,>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined => (query.isSuccess ? query.data : undefined);
+
 export function useTenantPermissions(): TenantPermissionsApi {
   const params = useParams();
   const session = authClient.useSession();
   const me = useQuery(() => meQueryOptions(session().data?.user?.id));
-  const tenant = createMemo(() => resolveActiveTenant(me.data, params.tenantId));
+  const tenant = createMemo(() => resolveActiveTenant(settledQueryData(me), params.tenantId));
   const permissions = createMemo(() => tenantPermissions(tenant()));
 
   return {

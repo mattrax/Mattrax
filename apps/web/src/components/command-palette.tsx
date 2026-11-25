@@ -623,10 +623,13 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
   });
 
   const allCommands = createMemo<Command[]>(() => [
+    // The device query mirrors the typed phrase exactly, so it leads: pressing
+    // Enter runs what the operator asked for rather than the closest static
+    // preset. Group ordering still files it under Queries when rendered.
+    ...(deviceQuery() ? [deviceQuery()!] : []),
     ...registeredCommands(),
     ...builtIn(),
     ...serverItems(),
-    ...(deviceQuery() ? [deviceQuery()!] : []),
   ]);
 
   const items = createMemo<Command[]>(() => {
@@ -671,6 +674,14 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
 
     return [...map.entries()].sort(([left], [right]) => groupRank(left) - groupRank(right));
   });
+
+  /**
+   * The rows in the order they are rendered. Grouping reorders `items()`, so
+   * selection, `aria-activedescendant` and Enter must all index this list
+   * rather than the pre-group order, or the highlighted row and the announced
+   * one disagree.
+   */
+  const visible = createMemo(() => grouped().flatMap(([, groupItems]) => groupItems));
 
   const remember = (item: Command) => {
     if (!item.href || item.group === "Actions") return;
@@ -1008,7 +1019,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
 
     if (event.key === "Enter") {
       event.preventDefault();
-      run(items()[active()]);
+      run(visible()[active()]);
     }
   };
 
@@ -1060,7 +1071,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                   aria-autocomplete="list"
                   aria-label="Search settings, devices, applications, software, policies, people or commands"
                   aria-activedescendant={
-                    items()[active()] ? `command-palette-option-${active()}` : undefined
+                    visible()[active()] ? `command-palette-option-${active()}` : undefined
                   }
                   value={query()}
                   onInput={(event) => updateQuery(event.currentTarget.value)}
@@ -1085,7 +1096,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                     // Some primitives stop Enter before it bubbles to the dialog,
                     // so run the active item directly from the combobox.
                     event.preventDefault();
-                    run(items()[active()]);
+                    run(visible()[active()]);
                   }}
                   placeholder="Search or run a command…"
                   class="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[14px]"
@@ -1139,7 +1150,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                         </p>
                         <For each={groupItems}>
                           {(item) => {
-                            const index = () => items().indexOf(item);
+                            const index = () => visible().indexOf(item);
 
                             return (
                               <a

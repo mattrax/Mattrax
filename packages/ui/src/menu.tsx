@@ -71,16 +71,28 @@ function DropdownMenuContent(
     sideOffset?: number;
     class?: string;
     children?: JSX.Element;
+    /** Where focus goes when the menu closes; "none" leaves it in place. */
+    finalFocus?: Parameters<typeof MenuContent>[0]["finalFocus"];
+    /** Portal target; a menu opened inside a modal must stay inside it. */
+    container?: Parameters<typeof MenuContent>[0]["container"];
   },
 ) {
   const placement = useContext(AlignmentContext);
-  const [local, others] = splitProps(props, ["class", "children", "sideOffset"]);
+  const [local, others] = splitProps(props, [
+    "class",
+    "children",
+    "sideOffset",
+    "finalFocus",
+    "container",
+  ]);
 
   return (
     <MenuContent
       side={placement.side}
       align={placement.align}
       sideOffset={local.sideOffset ?? 6}
+      finalFocus={local.finalFocus}
+      container={local.container}
       class={cn(
         menuSurface,
         "data-[side=bottom]:origin-top data-[side=top]:origin-bottom data-[side=left]:origin-right data-[side=right]:origin-left transition-[opacity,transform] duration-[var(--duration-popover)] ease-swift",

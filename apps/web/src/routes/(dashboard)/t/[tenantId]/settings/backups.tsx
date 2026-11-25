@@ -95,16 +95,25 @@ export default function BackupsSettingsPage() {
     startedAt: string;
   } | null>(null);
 
+  /**
+   * Solid Query v6 calls `onMutate` without forwarding its return value to
+   * `onError`, so a rollback closure has to live beside the mutation.
+   * Keeping the promise preserves the helper's cancel-then-snapshot order.
+   */
+  let pendingPinRestore: Promise<() => void> | undefined;
+
   const pinBackup = useMutation(() => ({
+    // The failure renders inline beside the table, so the global toast would
+    // repeat the same message.
+    meta: { inlineError: true },
     mutationFn: (run: { id: string; retention: string }) =>
       run.retention === "pinned"
         ? enterprise.unpinTenantBackup(params.tenantId, run.id)
         : enterprise.pinTenantBackup(params.tenantId, run.id),
-    onMutate: async (run) => {
+    onMutate: (run) => {
       const pinned = run.retention !== "pinned";
       setBackupActionError(null);
-
-      return optimisticallyUpdateCollection(
+      pendingPinRestore = optimisticallyUpdateCollection(
         qc,
         enterpriseKeys.backups(params.tenantId),
         "backups",
@@ -114,14 +123,20 @@ export default function BackupsSettingsPage() {
           ),
       );
     },
-    onSuccess: () => void refetchBackups(),
-    onError: (error, _variables, restore) => {
-      restore?.();
+    onSuccess: () => {
+      pendingPinRestore = undefined;
+      void refetchBackups();
+    },
+    onError: (error) => {
+      const restore = pendingPinRestore;
+      pendingPinRestore = undefined;
+      void restore?.then((revert) => revert());
       setBackupActionError(error);
     },
   }));
 
   const removeBackup = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (id: string) => enterprise.deleteTenantBackup(params.tenantId, id),
     onMutate: async (id) => {
       setBackupActionError(null);
@@ -144,6 +159,7 @@ export default function BackupsSettingsPage() {
   }));
 
   const restoreBackup = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (input: { id: string; confirm: string }) =>
       enterprise.restoreTenantBackup(params.tenantId, input.id, input.confirm),
     onMutate: () => setBackupActionError(null),

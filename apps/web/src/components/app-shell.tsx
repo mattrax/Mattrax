@@ -73,7 +73,7 @@ import { settingsTabById } from "~/components/settings/settings-tabs";
 import { cn } from "~/lib/utils";
 import { isHydrated } from "~/lib/query-client";
 import { pendingDeployment, reloadForDeployment } from "~/lib/skew-protection";
-import { isServer } from "@solidjs/web";
+import { getRequestEvent, isServer } from "@solidjs/web";
 import { installTheme } from "~/lib/theme";
 import { setCrossTabTenant } from "~/lib/cross-tab-sync";
 import { BrandLogo } from "~/components/brand-logo";
@@ -97,6 +97,12 @@ const NAV_GROUPS: ReadonlyArray<{ id: NavGroup; label: string }> = [
   { id: "tenant", label: "Tenant" },
   { id: "pinned", label: "Pinned" },
 ];
+
+/** Read account data only after success so a held /me cannot suspend the shell. */
+const settledQueryData = <T,>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined => (query.isSuccess ? query.data : undefined);
 
 const LAST_TENANT_KEY = "mattrax:last-tenant";
 const SIDEBAR_COLLAPSED_KEY = "mattrax:sidebar-collapsed";
@@ -145,15 +151,32 @@ function TenantSwitcher(props: {
   activeId: string | undefined;
   userId: string | undefined;
   collapsed?: boolean;
+  /** Navigation is owned by the persistent shell, not the disposable sheet. */
+  onSwitchTenant?: (id: string, slug: string | undefined) => void;
 }) {
   const me = useQuery(() => meQueryOptions(props.userId));
-  const navigate = useNavigate();
-  const active = () => me.data?.tenants.find((tenant) => tenant.id === props.activeId);
-  const tenants = () => me.data?.tenants ?? [];
-  const loading = () => me.isPending && !me.data;
+  const active = () =>
+    settledQueryData(me)?.tenants.find((tenant) => tenant.id === props.activeId);
+  const tenants = () => settledQueryData(me)?.tenants ?? [];
+  const loading = () => me.isPending && !settledQueryData(me);
+
+  /**
+   * Selecting a tenant leaves the menu for another page, so the default
+   * "return focus to the trigger" would fight the shell's focus management and
+   * leave keyboard users on the old sidebar. Send focus to the destination's
+   * main landmark instead; choosing a tenant is an explicit navigation, like
+   * following a link. Reset when the menu opens again so cancelling it still
+   * returns to the trigger.
+   */
+  const [navigating, setNavigating] = createSignal(false);
 
   return (
-    <DropdownMenu placement="bottom-start">
+    <DropdownMenu
+      placement="bottom-start"
+      onOpenChange={(open) => {
+        if (open) setNavigating(false);
+      }}
+    >
       <DropdownMenuTrigger
         class={cn(
           "group flex min-w-0 items-center rounded-md text-left outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 data-expanded:bg-hover",
@@ -189,7 +212,19 @@ function TenantSwitcher(props: {
         </Show>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent class="max-h-[min(32rem,calc(100dvh-7rem))] w-[272px]">
+      {/* The mobile switcher lives inside the navigation sheet. Rendering the
+          menu into the sheet keeps its items inside the modal: a menu portaled
+          to the body is treated as an outside press, so the sheet closed on
+          pointerdown and the item never received the click. */}
+      <DropdownMenuContent
+        class="max-h-[32rem] w-[272px]"
+        finalFocus={() => (navigating() ? "none" : undefined)}
+        container={
+          typeof document === "undefined"
+            ? undefined
+            : (document.querySelector<HTMLElement>('[data-slot="dialog-content"]') ?? undefined)
+        }
+      >
         <DropdownMenuGroup>
           <Show
             when={tenants().length > 0}
@@ -203,7 +238,19 @@ function TenantSwitcher(props: {
               value={props.activeId}
               onValueChange={(id) => {
                 rememberTenant(id);
+                setNavigating(true);
                 const tenant = tenants().find((item) => item.id === id);
+
+                // The switcher lives inside the navigation sheet on mobile and
+                // is unmounted as soon as the sheet closes, which makes a
+                // navigation issued from here disappear with it. Hand the
+                // switch to the shell, which stays mounted across the close.
+                if (props.onSwitchTenant) {
+                  props.onSwitchTenant(id, tenant?.slug);
+
+                  return;
+                }
+
                 navigate(routes.tenant(tenant?.slug || id).overview());
               }}
             >
@@ -215,17 +262,19 @@ function TenantSwitcher(props: {
                     aria-current={props.activeId === tenant.id ? "true" : undefined}
                     class="h-10 cursor-pointer gap-2.5 pl-2 pr-8"
                   >
-                    <span class="flex size-6 shrink-0 items-center justify-center rounded-[5px] bg-surface text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
-                      {tenantInitials(tenant.name)}
-                    </span>
-                    <span class="min-w-0 flex-1 leading-none">
-                      <span class="block truncate text-[12.5px] font-[500] text-foreground">
-                        {tenant.name}
+                    <span class="flex w-full min-w-0 items-center gap-2.5">
+                      <span class="flex size-6 shrink-0 items-center justify-center rounded-[5px] bg-surface text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
+                        {tenantInitials(tenant.name)}
                       </span>
-                      <span class="mt-1 block truncate text-[10.5px] leading-none text-muted-foreground">
-                        <span class="capitalize">{tenantRoleName(tenant) ?? tenant.role}</span>
-                        <span class="px-1 text-subtle-foreground/40">·</span>
-                        <span class="normal-case">{tenant.slug}</span>
+                      <span class="min-w-0 flex-1 leading-none">
+                        <span class="block truncate text-[12.5px] font-[500] text-foreground">
+                          {tenant.name}
+                        </span>
+                        <span class="mt-1 block truncate text-[10.5px] leading-none text-muted-foreground">
+                          <span class="capitalize">{tenantRoleName(tenant) ?? tenant.role}</span>
+                          <span class="px-1 text-subtle-foreground/40">·</span>
+                          <span class="normal-case">{tenant.slug}</span>
+                        </span>
                       </span>
                     </span>
                   </DropdownMenuRadioItem>
@@ -235,7 +284,7 @@ function TenantSwitcher(props: {
           </Show>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => navigate("/tenants/new")} class="h-9 gap-2.5">
+        <DropdownMenuItem as="a" href="/tenants/new" class="h-9 gap-2.5">
           <span class="flex size-6 items-center justify-center rounded-[5px] border border-dashed border-border text-muted-foreground">
             <Plus class="size-3.5" />
           </span>
@@ -668,6 +717,7 @@ function SidebarPanel(props: {
   label: string;
   collapsed?: boolean;
   onNavigate?: () => void;
+  onSwitchTenant?: (id: string, slug: string | undefined) => void;
 }) {
   return (
     <div class="flex h-full min-h-0 flex-col bg-shell">
@@ -689,6 +739,7 @@ function SidebarPanel(props: {
           activeId={props.activeId}
           userId={props.user?.id}
           collapsed={props.collapsed}
+          onSwitchTenant={props.onSwitchTenant}
         />
       </div>
 
@@ -782,9 +833,19 @@ export function AppShell(props: {
   const isRouting = useIsRouting();
   const routeTenantId = createMemo(() => location.pathname.match(/^\/t\/([^/]+)/)?.[1]);
   const me = useQuery(() => meQueryOptions(props.user?.id));
-  const superadmin = () => me.data?.account.superadmin === true;
+  const superadmin = () => settledQueryData(me)?.account.superadmin === true;
   const [lastTenant, setLastTenant] = createSignal<string | undefined>();
   const [mobileNavOpen, setMobileNavOpen] = createSignal(false);
+
+  /**
+   * Switch tenants from the shell, which outlives the mobile navigation sheet.
+   * The switcher lives inside that sheet; navigating from the sheet's own
+   * component is lost when the sheet unmounts on close.
+   */
+  const switchTenant = (id: string, slug: string | undefined) => {
+    setMobileNavOpen(false);
+    navigate(routes.tenant(slug || id).overview());
+  };
   const [sidebarCollapsed, setSidebarCollapsed] = createSignal(false);
 
   onSettled(() => {
@@ -833,17 +894,17 @@ export function AppShell(props: {
     const routeKey = routeTenantId();
 
     if (routeKey) {
-      const tenant = (me.data?.tenants ?? []).find(
+      const tenant = (settledQueryData(me)?.tenants ?? []).find(
         (entry) => entry.id === routeKey || entry.slug === routeKey,
       );
 
       return tenant?.id ?? routeKey;
     }
 
-    const known = me.data?.tenants ?? [];
+    const known = settledQueryData(me)?.tenants ?? [];
 
     return resolveLandingTenant(known, {
-      defaultTenantId: me.data?.account.defaultTenantId,
+      defaultTenantId: settledQueryData(me)?.account.defaultTenantId,
       lastTenantId: lastTenant(),
     })?.id;
   });
@@ -862,7 +923,9 @@ export function AppShell(props: {
     const key = routeTenantId();
 
     if (!key) return undefined;
-    const tenant = (me.data?.tenants ?? []).find((entry) => entry.id === key || entry.slug === key);
+    const tenant = (settledQueryData(me)?.tenants ?? []).find(
+      (entry) => entry.id === key || entry.slug === key,
+    );
 
     return tenant?.slug ?? key;
   });
@@ -879,7 +942,7 @@ export function AppShell(props: {
 
     if (!id) return undefined;
 
-    return me.data?.tenants.find((tenant) => tenant.id === id)?.slug ?? id;
+    return settledQueryData(me)?.tenants.find((tenant) => tenant.id === id)?.slug ?? id;
   });
 
   const { can } = useCan();
@@ -947,8 +1010,23 @@ export function AppShell(props: {
 
   const settingsActive = createMemo(() => settings()?.match(location.pathname) ?? false);
 
-  const pageLabel = createMemo(() => {
-    const path = location.pathname;
+  // A plain function, not a memo: during hydration a memo can keep the
+  // server's value, and on a cold deep link that value can name the wrong
+  // settings section until the route changes again.
+  const pageLabel = () => {
+    // Track the router so client navigations recompute, but prefer the address
+    // bar: while an async route guard settles the router can still report the
+    // parent path, and a cold deep link would name the wrong settings section.
+    const routed = location.pathname;
+    // On the server the router location can still be the parent layout while
+    // the deep-link route resolves, so name the section from the actual
+    // request URL. On the client prefer the address bar once hydrated.
+    const requestUrl = isServer ? getRequestEvent()?.request.url : undefined;
+    const path = requestUrl
+      ? new URL(requestUrl).pathname
+      : !isServer && isHydrated() && window.location.pathname
+        ? window.location.pathname
+        : routed;
 
     if (path === "/account") return "Account";
 
@@ -971,23 +1049,23 @@ export function AppShell(props: {
     }
 
     return navItems().find((item) => item.match(path))?.label ?? "Tenant";
-  });
+  };
 
   const tenantName = createMemo(() => {
     const id = scopedTenant();
 
     if (!id) return undefined;
 
-    return me.data?.tenants.find((tenant) => tenant.id === id)?.name;
+    return settledQueryData(me)?.tenants.find((tenant) => tenant.id === id)?.name;
   });
 
   /** Section plus tenant, so tabs and bookmarks distinguish their origin. */
-  const pageTitle = createMemo(() => {
+  const pageTitle = () => {
     const label = pageLabel();
     const tenant = tenantName();
 
     return tenant ? `${label} · ${tenant}` : label;
-  });
+  };
 
   createEffect(
     () => pageTitle(),
@@ -1022,8 +1100,10 @@ export function AppShell(props: {
     if (!pendingFocusPath || pendingFocusPath !== location.pathname) return;
     if (typeof document === "undefined") return;
 
+    // Menus are non-modal and their exit transition must not hold focus on the
+    // page the operator just left. Only modals and the palette own focus.
     const overlayOpen = document.querySelector(
-      '[data-slot="dialog-content"], [data-slot="command-palette"], [data-slot="menu-content"]',
+      '[data-slot="dialog-content"], [data-slot="command-palette"]',
     );
 
     if (isRouting() || mobileNavOpen() || overlayOpen) {
@@ -1104,6 +1184,7 @@ export function AppShell(props: {
             path={location.pathname}
             label="Primary"
             collapsed={sidebarCollapsed()}
+            onSwitchTenant={switchTenant}
           />
         </aside>
 
@@ -1227,6 +1308,7 @@ export function AppShell(props: {
             path={location.pathname}
             label="Primary"
             onNavigate={() => setMobileNavOpen(false)}
+            onSwitchTenant={switchTenant}
           />
         </SheetContent>
       </Sheet>

@@ -45,8 +45,20 @@ import { cn } from "~/lib/utils";
 import { StatusChip as Chip } from "~/components/settings/status-chip";
 
 /**
+ * Read query data only after success so a pending or disabled query cannot
+ * suspend the settings pane. The deliveries query is disabled until an
+ * endpoint is selected, and a disabled query's `data` never settles.
+ */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
+/**
  * Settings → Integrations: outbound event webhooks.
- *
+
  * The signing secret is only in the browser for the moment it is created or
  * rotated; every later list only shows its last four characters.
  */
@@ -186,15 +198,30 @@ export default function IntegrationsSettingsPage() {
       tab() === "deliveries" && canReadDeliveries() && Boolean(params.tenantId && endpointId()),
   }));
 
-  const deliveries = () => [...(deliveriesQuery.data?.deliveries ?? []), ...extraDeliveries()];
+  const deliveries = () => [
+    ...(settledQueryData(deliveriesQuery)?.deliveries ?? []),
+    ...extraDeliveries(),
+  ];
+
+  /**
+   * The deliveries query is disabled until an endpoint is selected. Its
+   * `isFetching` and `isLoading` helpers read the data node, which parks on a
+   * promise that never settles while the query is disabled; short-circuit on
+   * an endpoint so the panel renders without waiting for one.
+   */
+  const deliveriesLive = () => Boolean(endpointId()) && canReadDeliveries();
+  const deliveriesFetching = () => deliveriesLive() && deliveriesQuery.isFetching;
+  const deliveriesLoading = () => deliveriesLive() && deliveriesQuery.isLoading;
 
   const moreCursor = () =>
-    nextCursor() === undefined ? (deliveriesQuery.data?.nextCursor ?? null) : nextCursor();
+    nextCursor() === undefined
+      ? (settledQueryData(deliveriesQuery)?.nextCursor ?? null)
+      : nextCursor();
 
   // The first endpoint is selected by default so the deliveries tab is useful
   // without an extra click; a filter change starts the history over.
   createEffect(
-    () => webhooks.data?.endpoints[0]?.id,
+    () => settledQueryData(webhooks)?.endpoints[0]?.id,
     (first) => {
       if (!endpointId() && first) setEndpointId(first);
     },
@@ -442,14 +469,14 @@ export default function IntegrationsSettingsPage() {
               </Show>
             }
           >
-            <Show when={!canManage() && tenant.data}>
+            <Show when={!canManage() && settledQueryData(tenant)}>
               <p class="mb-4 rounded-lg border border-border bg-surface p-3 text-xs text-muted-foreground">
                 Only a tenant owner or admin can manage webhook endpoints.
               </p>
             </Show>
 
             <Show
-              when={(webhooks.data?.endpoints.length ?? 0) > 0}
+              when={(settledQueryData(webhooks)?.endpoints.length ?? 0) > 0}
               fallback={
                 <div class="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center">
                   <p class="text-[13px] font-medium text-foreground">No webhook endpoints yet</p>
@@ -460,7 +487,7 @@ export default function IntegrationsSettingsPage() {
               }
             >
               <div class="space-y-3">
-                <For each={webhooks.data?.endpoints ?? []}>
+                <For each={settledQueryData(webhooks)?.endpoints ?? []}>
                   {(endpoint) => (
                     <div class="rounded-lg border border-border bg-surface p-4">
                       <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -598,10 +625,10 @@ export default function IntegrationsSettingsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={deliveriesQuery.isFetching}
+                disabled={deliveriesFetching()}
                 onClick={() => void deliveriesQuery.refetch()}
               >
-                {deliveriesQuery.isFetching ? "Refreshing…" : "Refresh"}
+                {deliveriesFetching() ? "Refreshing…" : "Refresh"}
               </Button>
             }
           >
@@ -614,7 +641,7 @@ export default function IntegrationsSettingsPage() {
               }
             >
               <Show
-                when={(webhooks.data?.endpoints.length ?? 0) > 0}
+                when={(settledQueryData(webhooks)?.endpoints.length ?? 0) > 0}
                 fallback={
                   <div class="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center">
                     <p class="text-[13px] font-medium text-foreground">
@@ -636,7 +663,7 @@ export default function IntegrationsSettingsPage() {
                       value={endpointId()}
                       onChange={(event) => setEndpointId(event.currentTarget.value)}
                     >
-                      <For each={webhooks.data?.endpoints ?? []}>
+                      <For each={settledQueryData(webhooks)?.endpoints ?? []}>
                         {(endpoint) => <option value={endpoint.id}>{endpoint.url}</option>}
                       </For>
                     </select>
@@ -656,7 +683,7 @@ export default function IntegrationsSettingsPage() {
                   when={deliveries().length > 0}
                   fallback={
                     <p class="mt-4 rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center text-xs text-muted-foreground">
-                      {deliveriesQuery.isLoading
+                      {deliveriesLoading()
                         ? "Loading deliveries…"
                         : "No deliveries match these filters in the last 30 days."}
                     </p>
