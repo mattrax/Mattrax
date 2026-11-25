@@ -1,6 +1,9 @@
 import { expect } from "@playwright/test";
-import type { Page } from "@playwright/test";
+import type { BrowserContext, Page } from "@playwright/test";
 import { createHmac } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 type DebugEmail = { readonly to: string; readonly text: string };
 
@@ -251,25 +254,29 @@ export async function createTenant(page: Page, name: string) {
     .replaceAll(/^-|-$/g, "");
 
   const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 8)}`;
-
-  const id = await page.evaluate(
-    async ({ name, slug }) => {
-      const response = await fetch("/api/v1/tenants", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
-        body: JSON.stringify({ name, slug }),
-      });
-
-      if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
-
-      const created: { id: string } = await response.json();
-
-      return created.id;
+  // `page.request` shares the context's cookie jar but does not need a loaded
+  // document, so this works immediately after applying a stored session and
+  // avoids paying for a navigation before the tenant API call.
+  const response = await page.request.post("/api/v1/tenants", {
+    data: { name, slug },
+    headers: {
+      "x-effect-auth-csrf": "1",
+      origin: process.env.E2E_BASE_URL?.trim() || "http://localhost:9050",
     },
-    { name, slug },
-  );
+  });
 
-  return { id, slug };
+  if (!response.ok()) {
+    const error = new Error(`${response.status()}: ${(await response.text()).slice(0, 500)}`);
+
+    // The caller uses the status to tell a stale shared session (401/403)
+    // apart from a real tenant-creation failure.
+    (error as Error & { status?: number }).status = response.status();
+    throw error;
+  }
+
+  const created: { id: string } = await response.json();
+
+  return { id: created.id, slug };
 }
 
 export async function gotoHydrated(page: Page, path: string) {
@@ -284,9 +291,57 @@ export async function gotoHydrated(page: Page, path: string) {
   );
 }
 
+/** Where `session-setup.ts` leaves the run's one registered account. */
+export function e2eSessionFile(): string {
+  const target = process.env.E2E_BASE_URL?.trim() || "http://localhost:9050";
+  const port = new URL(target).port || "80";
+
+  return path.join(os.tmpdir(), `mattrax-e2e-session-${port}.json`);
+}
+
+type CookieState = Parameters<BrowserContext["addCookies"]>[0][number];
+
+type SessionState = { readonly email: string; readonly cookies: readonly CookieState[] };
+
+let sessionPromise: Promise<SessionState | undefined> | undefined;
+
+/** The run's shared session, or undefined when this run has no local setup. */
+function e2eSession(): Promise<SessionState | undefined> {
+  sessionPromise ??= readFile(e2eSessionFile(), "utf8")
+    .then((contents) => JSON.parse(contents) as SessionState)
+    .catch(() => undefined);
+
+  return sessionPromise;
+}
+
 export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
-  await register(page);
-  const tenant = await createTenant(page, `${name} ${Math.random().toString(36).slice(2, 6)}`);
+  const session = await e2eSession();
+  const tenantName = `${name} ${Math.random().toString(36).slice(2, 6)}`;
+  let tenant;
+
+  if (session) {
+    // One account owns every test's tenant; the tenant id remains the
+    // isolation boundary. The fallback keeps a stale session (for example
+    // after a local database reset) from failing the test.
+    await page.context().addCookies([...session.cookies]);
+    try {
+      tenant = await createTenant(page, tenantName);
+    } catch (error) {
+      const status = (error as Error & { status?: number }).status;
+
+      // Only a missing/expired session is recoverable here; a validation or
+      // server error must fail the test, not silently switch accounts.
+      if (status !== 401 && status !== 403) throw error;
+
+      await page.context().clearCookies();
+      await register(page);
+      tenant = await createTenant(page, tenantName);
+    }
+  } else {
+    await register(page);
+    tenant = await createTenant(page, tenantName);
+  }
+
   await gotoHydrated(page, `/t/${tenant.slug}/devices`);
   await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
 
