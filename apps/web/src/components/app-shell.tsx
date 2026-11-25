@@ -211,8 +211,10 @@ function TenantSwitcher(props: {
       <DropdownMenuContent
         class="max-h-[32rem] w-[272px]"
         finalFocus={() => (navigating() ? "none" : undefined)}
-        container={() =>
-          document.querySelector<HTMLElement>('[data-slot="dialog-content"]') ?? undefined
+        container={
+          typeof document === "undefined"
+            ? undefined
+            : (document.querySelector<HTMLElement>('[data-slot="dialog-content"]') ?? undefined)
         }
       >
         <DropdownMenuGroup>
