@@ -329,7 +329,9 @@ function e2eSession(): Promise<SessionState | undefined> {
 }
 
 export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
-  const session = await e2eSession();
+  // A/B switch for measuring the shared session; CI never sets it.
+  const session =
+    process.env.E2E_PER_TEST_REGISTRATION === "1" ? undefined : await e2eSession();
   const tenantName = `${name} ${Math.random().toString(36).slice(2, 6)}`;
   let tenant;
 
