@@ -112,7 +112,10 @@ device assignment.
 | ----------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------- |
 | `mttx.apple.device`           | Legacy profile via DDM                                            | Currently only `{ "camera": boolean }`                  |
 | `mttx.apple.custom.<id>`      | Legacy profile via DDM                                            | Your uploaded `.mobileconfig`, served verbatim          |
-| `mttx.apple.certificate.<id>` | `com.apple.configuration.security.certificate` + credential asset | Certificate is a PEM asset with SHA-256 and size        |
+| `mttx.apple.certificate.<id>` | `com.apple.configuration.security.certificate` + credential asset | Trusted root; PEM asset with SHA-256 and size            |
+| `mttx.apple.pkcs.<id>`        | `com.apple.configuration.security.identity` + identity asset      | Sealed PKCS#12 issued by an enterprise CA               |
+| `mttx.apple.pfx.<id>`         | `com.apple.configuration.security.identity` + identity asset      | Imported PKCS#12; device or user channel                |
+| `mttx.apple.mail.<id>`        | `com.apple.configuration.account.mail`                            | Mail account with S/MIME identity references            |
 | `mttx.apple.declaration.<id>` | Raw Apple declaration                                             | You supply `kind` and `configuration`                   |
 | `mttx.apple.application.<id>` | Imperative install command                                        | Catalogue reference or inline manifest/store/upload app |
 

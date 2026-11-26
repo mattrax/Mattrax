@@ -420,17 +420,19 @@
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  /*
+   * The words slide into place but stay opaque. Fading them from `opacity: 0`
+   * made below-the-fold headings invisible to a contrast audit (axe blends the
+   * opacity into the computed colours and reports 1.25:1), and a heading should
+   * not depend on a scroll observer to become readable.
+   */
   html.js .lx-manifesto[data-reveal="pending"] .lx-w {
-    opacity: 0;
     transform: translateY(0.28em);
   }
 
   html.js .lx-manifesto[data-reveal="in"] .lx-w {
-    opacity: 1;
     transform: none;
-    transition:
-      opacity 200ms var(--ease-swift),
-      transform 440ms var(--ease-glide);
+    transition: transform 440ms var(--ease-glide);
     transition-delay: calc(var(--i) * var(--lx-stagger));
   }
 
@@ -1756,6 +1758,15 @@ html.js .lx-deploy__panel[data-on] {
   .lx-demo__head {
     padding-block: 14px;
   }
+}
+
+/** Pending CTA skeletons are for JS clients; no-JS gets the real fallback link. */
+html:not(.js) [data-js-pending] {
+  display: none !important;
+}
+
+html.js [data-no-js-only] {
+  display: none !important;
 }
 
 @media (pointer: coarse) {

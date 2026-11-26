@@ -1,8 +1,10 @@
 import { ArrowRight } from "@mattrax/ui";
-import { For } from "solid-js";
+import { For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
+import { authClient } from "~/lib/auth";
 import { installHeroProgress } from "~/lib/landing-motion";
-import { Eyebrow } from "./primitives";
+import { publicPrimaryCta } from "~/lib/public-auth-cta";
+import { Eyebrow, NoJsStartFree } from "./primitives";
 
 type Platform = "apple" | "windows" | "android";
 
@@ -66,13 +68,16 @@ const proofPoints = [
   "Android Enterprise",
 ];
 
-export function Hero() {
+export default function Hero() {
   installHeroProgress();
+  const session = authClient.useSession();
+  const signedIn = () => Boolean(session().data?.user);
+  const cta = () => publicPrimaryCta(session().isPending, signedIn());
 
   return (
     <section class="lx-hero" aria-labelledby="hero-title">
       <div class="lx-shell">
-        <div class="lx-hero__track">
+        <div>
           <div class="lx-hero__pin">
             <div class="lx-hero__copy">
               <Eyebrow>MDM for Apple, Windows and Android</Eyebrow>
@@ -89,16 +94,30 @@ export function Hero() {
               </p>
 
               <div class="lx-hero__actions">
-                <Button as="a" href="/register" size="lg" class="h-10 px-5">
-                  Start free
-                  <ArrowRight class="size-3.5" />
-                </Button>
+                <Show
+                  when={cta()}
+                  fallback={
+                    <div
+                      data-js-pending
+                      class="h-10 w-32 animate-pulse rounded-lg bg-secondary"
+                      aria-hidden="true"
+                    />
+                  }
+                >
+                  {(action) => (
+                    <Button as="a" href={action().href} size="lg" class="h-10">
+                      {action().label}
+                      <ArrowRight class="size-3.5" />
+                    </Button>
+                  )}
+                </Show>
+                <NoJsStartFree />
                 <Button
                   as="a"
                   href="mailto:hello@mattrax.app?subject=Mattrax%20for%20our%20fleet"
                   variant="outline"
                   size="lg"
-                  class="h-10 px-5"
+                  class="h-10"
                 >
                   Talk to us
                 </Button>

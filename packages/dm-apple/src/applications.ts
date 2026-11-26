@@ -233,6 +233,25 @@ export const appleUploadSupportsDevice = (input: {
 };
 
 /**
+ * Whether a manifest URL is really a vendor PKG.
+ *
+ * `InstallApplication` expects an OTA plist at `ManifestURL`, so a vendor PKG
+ * URL must go through `InstallEnterpriseApplication` with an inline manifest
+ * instead. The path is the only signal Apple gives before download; a query
+ * string or redirect can hide the extension, in which case the caller keeps
+ * the existing manifest behaviour rather than guessing.
+ */
+export const isApplePackageUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+
+    return url.protocol === "https:" && url.pathname.toLowerCase().endsWith(".pkg");
+  } catch {
+    return false;
+  }
+};
+
+/**
  * `RemoveApplication` asks the device to delete a managed app.
  *
  * Apple only removes apps installed by MDM, and the bundle id is the only

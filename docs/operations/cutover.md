@@ -96,8 +96,8 @@ instead of being dropped silently.
 
 ### 1. Preflight
 
-Settings → General → **Export / move deployment** → **Run preflight**, with the
-origin you intend to serve. It reports:
+Settings → Migration → Export / import → **Export / move deployment** → **Run
+preflight**, with the origin you intend to serve. It reports:
 
 - whether the hostname changes (a **blocker** for a zero-touch move)
 - how many installed Apple profiles point at the old SCEP endpoint
@@ -131,8 +131,8 @@ new profile.
 
 ### 5. Import
 
-On the target: Settings → General → **Import archive**. Add the file and
-passphrase, then **Preview archive**. Review:
+On the target: Settings → Migration → Export / import → **Import archive**. Add
+the file and passphrase, then **Preview archive**. Review:
 
 - counts and source origin/deployment
 - conflicts

@@ -1,18 +1,25 @@
+import { DEFAULT_SUPPORT_EMAIL } from "@mattrax/enterprise-domain";
+import { escapeHtml, formatExpiry, headerValue, trimOrNull } from "./emailTemplate.ts";
 import {
-  DEFAULT_BRAND_COLOR,
-  DEFAULT_SUPPORT_EMAIL,
-  normalizeBrandColor,
-} from "@mattrax/enterprise-domain";
-import {
-  buttonTextColor,
-  escapeHtml,
-  formatExpiry,
-  headerValue,
-  safeLogoUrl,
-  trimOrNull,
-} from "./emailTemplate.ts";
+  emailButton,
+  emailDocument,
+  emailFootnote,
+  emailHeading,
+  emailIsolate,
+  emailParagraph,
+  emailTextLink,
+  resolveEmailBrand,
+} from "./emailLayout.ts";
 
 const SUPPORT_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const originOf = (value: string): string | null => {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+};
 
 export type OwnershipTransferEmailInput = {
   readonly tenantName: string;
@@ -50,11 +57,16 @@ export const ownershipTransferEmail = (
   const support =
     supportEmail && SUPPORT_EMAIL.test(supportEmail) ? supportEmail : DEFAULT_SUPPORT_EMAIL;
 
-  const accent = normalizeBrandColor(input.brandColor ?? "") ?? DEFAULT_BRAND_COLOR;
-  const buttonText = buttonTextColor(accent);
-  const logoUrl = safeLogoUrl(input.logoUrl);
+  const brand = resolveEmailBrand({
+    name: tenant,
+    logoUrl: input.logoUrl,
+    brandColor: input.brandColor,
+    origin: originOf(acceptUrl),
+    fallbackName: "Mattrax",
+  });
 
   const subject = `Take over ${tenant} on Mattrax`;
+  const preheader = `${requester} wants to transfer ownership of ${tenant} to you.`;
 
   const text = [
     "Hello,",
@@ -73,50 +85,37 @@ export const ownershipTransferEmail = (
     "— Mattrax",
   ].join("\n");
 
-  const html = [
-    "<!doctype html>",
-    '<html lang="en">',
-    "<head>",
-    '<meta charset="utf-8" />',
-    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
-    `<title>${escapeHtml(subject)}</title>`,
-    "</head>",
-    "<body style=\"margin:0;padding:0;background:#f5f5f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1c1917;\">",
-    '<div style="max-width:480px;margin:0 auto;padding:32px 20px;">',
-    '<div style="background:#ffffff;border:1px solid #e7e5e4;border-radius:12px;padding:32px;">',
-    ...(logoUrl
-      ? [
-          `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(
-            tenant,
-          )}" style="display:block;max-width:160px;max-height:56px;width:auto;height:auto;margin:0 0 24px;" />`,
-        ]
-      : []),
-    `<h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;">Take over ${escapeHtml(
-      tenant,
-    )}</h1>`,
-    `<p style="margin:0 0 8px;font-size:16px;line-height:1.5;">${escapeHtml(
-      requester,
-    )} wants to transfer ownership of <strong>${escapeHtml(
-      tenant,
-    )}</strong> on Mattrax to you.</p>`,
-    '<p style="margin:0 0 24px;font-size:16px;line-height:1.5;">Accepting makes you an owner of the tenant and changes the requester\'s role to administrator.</p>',
-    `<p style="margin:0 0 12px;"><a href="${escapeHtml(
-      acceptUrl,
-    )}" style="display:inline-block;background:${accent};color:${buttonText};padding:12px 22px;border-radius:8px;font-size:16px;font-weight:600;text-decoration:none;">Accept ownership</a></p>`,
-    `<p style="margin:0 0 24px;font-size:13px;line-height:1.5;color:#57534e;">Or paste this link into your browser:<br /><span style="word-break:break-all;">${escapeHtml(
-      acceptUrl,
-    )}</span></p>`,
-    `<p style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#57534e;">This link was sent to ${escapeHtml(
-      targetEmail,
-    )} and expires: ${escapeHtml(expiry)}</p>`,
-    `<p style="margin:0;font-size:14px;line-height:1.5;color:#57534e;">If you weren't expecting this, ignore this email and the tenant stays as it is. Need help? Contact <a href="mailto:${escapeHtml(
-      support,
-    )}" style="color:#57534e;">${escapeHtml(support)}</a>.</p>`,
-    "</div>",
-    "</div>",
-    "</body>",
-    "</html>",
+  const content = [
+    emailHeading(`Take over ${emailIsolate(tenant)}`),
+    emailParagraph(
+      `${emailIsolate(requester)} wants to transfer ownership of <strong>${emailIsolate(
+        tenant,
+      )}</strong> on Mattrax to you.`,
+    ),
+    emailParagraph(
+      "Accepting makes you an owner of the tenant and changes the requester's role to administrator.",
+    ),
+    emailParagraph(`This link was sent to ${emailIsolate(targetEmail)}.`),
+    emailButton(acceptUrl, "Accept ownership", brand),
+    emailFootnote(
+      `Or paste this link into your browser:<br /><span style="word-break:break-all;">${escapeHtml(
+        acceptUrl,
+      )}</span>`,
+      16,
+    ),
   ].join("\n");
+
+  const footer = [
+    emailFootnote(`Expires: ${escapeHtml(expiry)}.`),
+    emailFootnote(
+      `If you weren't expecting this, ignore this email and the tenant stays as it is. Need help? Contact ${emailTextLink(
+        `mailto:${support}`,
+        support,
+      )}.`,
+    ),
+  ].join("\n");
+
+  const html = emailDocument({ subject, preheader, brand, content, footer });
 
   return { subject, text, html };
 };

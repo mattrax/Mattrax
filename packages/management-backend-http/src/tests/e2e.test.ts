@@ -9,7 +9,9 @@ import {
   MdmOrigin,
   UnknownDevice,
   InternalServerError,
+  WindowsEnrollmentPolicy,
 } from "@mattrax/management-backend";
+import type { WindowsEnrollmentContext } from "@mattrax/management-backend";
 import { ManagementBackendHttp, managementApi, managementWebhookHandlers } from "../index.js";
 import { mockManagementBackend } from "./helpers.js";
 
@@ -494,6 +496,92 @@ describe("Management Backend HTTP E2E", () => {
 
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ commands: [] });
+    await dispose();
+  });
+
+  it("propagates signed Windows enrollment audit context through the HTTP adapter", async () => {
+    const context: WindowsEnrollmentContext = {
+      tenantToken: "tenant-token",
+      clientIp: "203.0.113.10",
+      userAgent: "Windows Enrollment Client",
+    };
+    let received: WindowsEnrollmentContext | undefined;
+
+    const backend = mockManagementBackend({
+      getWindowsEnrollmentPolicy: (
+        _authToken: string,
+        receivedContext?: WindowsEnrollmentContext,
+      ) =>
+        Effect.sync(() => {
+          received = receivedContext;
+        }).pipe(
+          Effect.as({
+            minimalKeyLength: "2048",
+            certificateValidityPeriodSeconds: "31536000",
+            renewalPeriodSeconds: "31536000",
+            authToken: "enrollment-token",
+          }),
+        ),
+    });
+
+    const { handler, dispose } = await makeHandler(backend);
+    const fetchImpl: typeof globalThis.fetch = (input, init) => handler(new Request(input, init));
+    const httpClientLayer = FetchHttpClient.layer.pipe(
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)),
+    );
+    const clientLayer = ManagementBackendHttp({
+      baseUrl: "http://localhost",
+      secret: TEST_WEBHOOK_SECRET,
+    }).pipe(Layer.provide(httpClientLayer));
+
+    const policy = await Effect.runPromise(
+      Effect.gen(function* () {
+        const service = yield* ManagementBackend;
+
+        return yield* service.getWindowsEnrollmentPolicy("auth-token", context);
+      }).pipe(Effect.provide(clientLayer)),
+    );
+
+    expect(policy.authToken).toBe("enrollment-token");
+    expect(received).toEqual(context);
+    await dispose();
+  });
+
+  it("does not forward Windows enrollment context from an unsigned request", async () => {
+    let received: WindowsEnrollmentContext | undefined;
+    const backend = mockManagementBackend({
+      getWindowsEnrollmentPolicy: (_authToken: string, context?: WindowsEnrollmentContext) =>
+        Effect.sync(() => {
+          received = context;
+        }).pipe(
+          Effect.as({
+            minimalKeyLength: "2048",
+            certificateValidityPeriodSeconds: "31536000",
+            renewalPeriodSeconds: "31536000",
+            authToken: "enrollment-token",
+          } satisfies WindowsEnrollmentPolicy),
+        ),
+    });
+
+    const { handler, dispose } = await makeHandler(backend);
+    const response = await handler(
+      new Request("http://localhost/webhook/windows/policy", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-mattrax-test-passthrough": "1",
+        },
+        body: JSON.stringify({
+          authToken: "auth-token",
+          tenantToken: "tenant-token",
+          clientIp: "203.0.113.10",
+          userAgent: "spoofed-client",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(received).toBeUndefined();
     await dispose();
   });
 

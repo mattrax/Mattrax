@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./smtp": "./src/smtp.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {

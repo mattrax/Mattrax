@@ -1,4 +1,6 @@
-import mysql from "mysql2/promise";
+import mysql, { type RowDataPacket } from "mysql2/promise";
+import { Effect } from "effect";
+import { databaseConfigFromUrl, mysqlConnectionOptions } from "@mattrax/cloud-services";
 
 /**
  * Copy legacy billing rows from a pre-split application database into the
@@ -21,21 +23,36 @@ if (!sourceUrl || !targetUrl) {
   process.exit(1);
 }
 
-const source = await mysql.createConnection({ uri: sourceUrl, timezone: "Z" });
-const target = await mysql.createConnection({ uri: targetUrl, timezone: "Z" });
+const sourceConfig = databaseConfigFromUrl(sourceUrl);
+const targetConfig = databaseConfigFromUrl(targetUrl);
 
-const hasTable = async (name: string) => {
-  const [rows] = await source.query<Array<{ n: number }>>(
-    "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
-    [name],
+const acquire = (config: typeof sourceConfig) =>
+  Effect.tryPromise(() =>
+    mysql.createConnection({
+      ...mysqlConnectionOptions(config),
+      multipleStatements: false,
+      timezone: "Z",
+    }),
   );
 
-  return Number(rows[0]?.n ?? 0) > 0;
-};
+const release = (connection: Awaited<ReturnType<typeof mysql.createConnection>>) =>
+  Effect.tryPromise(() => connection.end()).pipe(Effect.orDie);
 
-try {
+const importRows = async (
+  source: Awaited<ReturnType<typeof mysql.createConnection>>,
+  target: Awaited<ReturnType<typeof mysql.createConnection>>,
+) => {
+  const hasTable = async (name: string) => {
+    const [rows] = await source.query<Array<RowDataPacket & { n: number }>>(
+      "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+      [name],
+    );
+
+    return Number(rows[0]?.n ?? 0) > 0;
+  };
+
   if (await hasTable("deployment_license")) {
-    const [rows] = await source.query<Array<Record<string, unknown>>>(
+    const [rows] = await source.query<Array<RowDataPacket & Record<string, unknown>>>(
       "SELECT * FROM deployment_license",
     );
 
@@ -79,7 +96,7 @@ try {
   }
 
   if (await hasTable("organization")) {
-    const [rows] = await source.query<Array<Record<string, unknown>>>(
+    const [rows] = await source.query<Array<RowDataPacket & Record<string, unknown>>>(
       "SELECT id, name, stripe_customer_id, created_at, updated_at FROM organization WHERE stripe_customer_id IS NOT NULL",
     );
 
@@ -97,7 +114,9 @@ try {
   }
 
   if (await hasTable("subscription")) {
-    const [rows] = await source.query<Array<Record<string, unknown>>>("SELECT * FROM subscription");
+    const [rows] = await source.query<Array<RowDataPacket & Record<string, unknown>>>(
+      "SELECT * FROM subscription",
+    );
 
     for (const row of rows)
       await target.query(
@@ -128,7 +147,17 @@ try {
 
     console.log(`Copied ${rows.length} hosted subscriptions.`);
   }
-} finally {
-  await source.end();
-  await target.end();
-}
+};
+
+await Effect.runPromise(
+  Effect.acquireUseRelease(
+    acquire(sourceConfig),
+    (source) =>
+      Effect.acquireUseRelease(
+        acquire(targetConfig),
+        (target) => Effect.tryPromise(() => importRows(source, target)),
+        release,
+      ),
+    release,
+  ),
+);

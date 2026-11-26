@@ -17,6 +17,28 @@ const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt
 
 const PlistDictionary = Schema.Record(Schema.String, PlistValue);
 
+const DeclarationTokens = Schema.Struct({
+  SyncTokens: Schema.Struct({
+    DeclarationsToken: Schema.String,
+    Timestamp: Schema.String,
+  }),
+});
+
+const DeclarationItem = Schema.Struct({
+  Identifier: Schema.String,
+  ServerToken: Schema.String,
+});
+
+const DeclarationItems = Schema.Struct({
+  DeclarationsToken: Schema.String,
+  Declarations: Schema.Struct({
+    Activations: Schema.Array(DeclarationItem),
+    Configurations: Schema.Array(DeclarationItem),
+    Assets: Schema.Array(DeclarationItem),
+    Management: Schema.Array(DeclarationItem),
+  }),
+});
+
 async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
   const serviceLayer = AppleMdmServiceLive.pipe(
     Layer.provideMerge(backendLayer),
@@ -257,7 +279,7 @@ describe("Apple MDM E2E", () => {
     );
 
     expect(tokensRes.status).toBe(200);
-    const tokensData = await tokensRes.json();
+    const tokensData = Schema.decodeUnknownSync(DeclarationTokens)(await tokensRes.json());
     expect(tokensData.SyncTokens.DeclarationsToken).toMatch(/^[A-F0-9]{64}$/);
     expect(tokensData.SyncTokens.Timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
@@ -282,7 +304,7 @@ describe("Apple MDM E2E", () => {
     );
 
     expect(itemsRes.status).toBe(200);
-    const itemsData = await itemsRes.json();
+    const itemsData = Schema.decodeUnknownSync(DeclarationItems)(await itemsRes.json());
     expect(itemsData.Declarations.Activations).toHaveLength(1);
     expect(itemsData.Declarations.Configurations).toHaveLength(1);
     expect(itemsData.Declarations.Assets).toHaveLength(1);

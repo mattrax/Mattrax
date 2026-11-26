@@ -73,6 +73,21 @@ export function fromManagementResponse(
       get: response.commands
         .filter((c) => c.kind === "Get")
         .map((c) => ({ cmdID: c.cmdID, items: [{ target: { locURI: c.locURI ?? "" } }] })),
+      // OMA-DM `Add` creates a node that must not already exist. Certificates
+      // use it for the first PFX blob; the same item shape as Replace carries
+      // the target, format and base64 data.
+      add: response.commands
+        .filter((c) => c.kind === "Add")
+        .map((c) => ({
+          cmdID: c.cmdID,
+          items: [
+            {
+              target: { locURI: c.locURI ?? "" },
+              meta: c.format ? { format: c.format, type: "text/plain" } : undefined,
+              data: c.data,
+            },
+          ],
+        })),
       replace: response.commands
         .filter((c) => c.kind === "Replace")
         .map((c) => ({

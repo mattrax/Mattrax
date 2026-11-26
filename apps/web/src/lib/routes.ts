@@ -317,6 +317,7 @@ export const routes = {
   login: (returnTo?: string) =>
     returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : "/login",
   account: () => "/account",
+  accountDelete: () => "/account/delete",
   adminAccounts: () => "/admin/accounts",
   settings: () => "/settings",
   tenants: () => "/tenants",
@@ -332,6 +333,8 @@ export const routes = {
       dashboards: () => `${base}/dashboards`,
       dashboard: (dashboardId: string, search: DashboardSearchParams = {}) =>
         `${base}/dashboards/${segment(dashboardId)}${dashboardSearch(search)}`,
+      dashboardReports: (dashboardId: string) =>
+        `${base}/dashboards/${segment(dashboardId)}/reports`,
       devices: (search: DeviceSearchParams = {}) => {
         const query = new URLSearchParams();
 
@@ -361,7 +364,12 @@ export const routes = {
       applications: () => `${base}/applications`,
       newApplication: () => `${base}/applications/new`,
       application: (applicationId: string) => `${base}/applications/${segment(applicationId)}`,
+      softwareCatalogue: () => `${base}/applications/catalogue`,
+      softwareCatalogueTitle: (titleId: string) =>
+        `${base}/applications/catalogue/${segment(titleId)}`,
       scripts: () => `${base}/scripts`,
+      restrictedSoftware: () => `${base}/restricted-software`,
+      restrictedSoftwareRule: (ruleId: string) => `${base}/restricted-software/${segment(ruleId)}`,
       migrations: () => `${base}/migration`,
       migration: (migrationId: string) => `${base}/migration/${segment(migrationId)}`,
       newScript: () => `${base}/scripts/new`,
@@ -377,8 +385,10 @@ export const routes = {
           | ""
           | "administrators"
           | "approvals"
+          | "backups"
           | "identity"
           | "attributes"
+          | "tags"
           | "enrollment"
           | "management"
           | "migration"

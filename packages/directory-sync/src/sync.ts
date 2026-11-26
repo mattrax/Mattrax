@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
@@ -15,10 +15,22 @@ const newId = () => crypto.randomUUID();
 /** Guards a runaway provider that never clears its next cursor. */
 export const DIRECTORY_SYNC_MAX_PAGES = 1000;
 
-type DirectorySyncDatabase = Pick<
+export type DirectorySyncDatabase = Pick<
   EnterpriseDb,
   "query" | "select" | "insert" | "update" | "delete"
 >;
+
+export class DirectorySyncError extends Data.TaggedError("DirectorySyncError")<{
+  readonly message: string;
+  readonly phase: "users" | "groups";
+}> {}
+
+export class DirectorySyncTransactionError extends Data.TaggedError(
+  "DirectorySyncTransactionError",
+)<{
+  readonly phase: "users" | "groups";
+  readonly cause: unknown;
+}> {}
 
 const now = () => new Date();
 
@@ -87,13 +99,19 @@ export const applyUserPage = (
       if (ownedByOtherProvider) continue;
 
       if (user.removed || user.disabled) {
+        // Disabled/deleted records still belong to this authoritative listing.
+        // Seeing them prevents the final reconciliation pass from treating
+        // them as missing on every full sync.
+        seenExternalIds.add(user.externalId);
+
         if (existing) {
           const alreadyDisabled = existing.disabled;
 
-          yield* database
-            .update(schema.user)
-            .set({ disabled: true, updatedAt: timestamp })
-            .where(eq(schema.user.id, existing.id));
+          if (!alreadyDisabled)
+            yield* database
+              .update(schema.user)
+              .set({ disabled: true, updatedAt: timestamp })
+              .where(eq(schema.user.id, existing.id));
 
           // The person's directory grants go with them. Accounts, memberships
           // and SSO identity links are not directory state and are untouched.
@@ -102,7 +120,23 @@ export const applyUserPage = (
             .from(schema.userGroup)
             .where(eq(schema.userGroup.organizationId, organizationId));
 
-          if (orgGroups.length)
+          const memberships = orgGroups.length
+            ? yield* database
+                .select({ userId: schema.userGroupMember.userId })
+                .from(schema.userGroupMember)
+                .where(
+                  and(
+                    eq(schema.userGroupMember.userId, existing.id),
+                    inArray(
+                      schema.userGroupMember.groupId,
+                      orgGroups.map((group: { id: string }) => group.id),
+                    ),
+                  ),
+                )
+                .limit(1)
+            : [];
+
+          if (memberships.length)
             yield* database.delete(schema.userGroupMember).where(
               and(
                 eq(schema.userGroupMember.userId, existing.id),
@@ -113,9 +147,9 @@ export const applyUserPage = (
               ),
             );
 
-          // Repeating a disabled record on every full sync must not wake
-          // devices that already converged.
-          if (!alreadyDisabled) context.changedUserIds.add(existing.id);
+          // Wake devices only for an actual enabled-state or membership
+          // transition, not because the same disabled record appeared again.
+          if (!alreadyDisabled || memberships.length > 0) context.changedUserIds.add(existing.id);
         }
 
         continue;
@@ -124,6 +158,8 @@ export const applyUserPage = (
       // A directory person needs an object id and an address; without either
       // there is nothing stable to upsert.
       if (!email || !user.externalId) continue;
+
+      seenExternalIds.add(user.externalId);
 
       const name = user.name?.trim() || email;
 
@@ -168,7 +204,6 @@ export const applyUserPage = (
         if (existing.disabled) context.changedUserIds.add(existing.id);
       }
 
-      seenExternalIds.add(user.externalId);
       context.onUser?.();
     }
   });
@@ -180,6 +215,8 @@ export type DirectoryGroupPageContext = {
   readonly changedUserIds: Set<string>;
   readonly onGroup?: () => void;
   readonly at?: Date;
+  /** Complete provider membership listing for each group on this page. */
+  readonly authoritative?: boolean;
 };
 
 /** Apply one page of groups (and membership deltas) inside a transaction. */
@@ -244,6 +281,8 @@ export const applyGroupPage = (
           .where(eq(schema.userGroup.id, groupId));
       }
 
+      const desiredUserIds = new Set<string>();
+
       for (const member of group.members) {
         // Members are matched by provider object id inside this tenant's
         // directory. There is no account/member join: users are directory
@@ -255,16 +294,36 @@ export const applyGroupPage = (
         if (!directoryUser) continue;
 
         if (member.removed) {
-          yield* database
-            .delete(schema.userGroupMember)
+          const linked = yield* database
+            .select({ userId: schema.userGroupMember.userId })
+            .from(schema.userGroupMember)
             .where(
               and(
                 eq(schema.userGroupMember.groupId, groupId),
                 eq(schema.userGroupMember.userId, directoryUser.id),
               ),
-            );
-          context.changedUserIds.add(directoryUser.id);
+            )
+            .limit(1);
+
+          if (linked.length) {
+            yield* database
+              .delete(schema.userGroupMember)
+              .where(
+                and(
+                  eq(schema.userGroupMember.groupId, groupId),
+                  eq(schema.userGroupMember.userId, directoryUser.id),
+                ),
+              );
+            context.changedUserIds.add(directoryUser.id);
+          }
         } else {
+          // A suspended/deleted person may still appear in an upstream group
+          // listing. They must not regain directory grants after the user
+          // phase disabled them.
+          if (directoryUser.disabled) continue;
+
+          desiredUserIds.add(directoryUser.id);
+
           const alreadyLinked = yield* database
             .select({ userId: schema.userGroupMember.userId })
             .from(schema.userGroupMember)
@@ -286,6 +345,30 @@ export const applyGroupPage = (
         }
       }
 
+      if (context.authoritative) {
+        const existingMembers = yield* database
+          .select({ userId: schema.userGroupMember.userId })
+          .from(schema.userGroupMember)
+          .where(eq(schema.userGroupMember.groupId, groupId));
+        const removedMembers = existingMembers.filter(
+          (member) => !desiredUserIds.has(member.userId),
+        );
+
+        if (removedMembers.length) {
+          yield* database.delete(schema.userGroupMember).where(
+            and(
+              eq(schema.userGroupMember.groupId, groupId),
+              inArray(
+                schema.userGroupMember.userId,
+                removedMembers.map((member) => member.userId),
+              ),
+            ),
+          );
+
+          for (const member of removedMembers) context.changedUserIds.add(member.userId);
+        }
+      }
+
       seenExternalIds.add(group.externalId);
       context.onGroup?.();
     }
@@ -299,28 +382,34 @@ export type DirectorySyncProgress = {
   readonly groupsDelta?: string;
 };
 
-export type DirectorySyncOptions = {
+export type DirectorySyncOptions<E = unknown> = {
   readonly db: EnterpriseDb;
   readonly organizationId: string;
-  readonly directory: DirectoryUserDirectory;
+  readonly directory: DirectoryUserDirectory<E>;
   readonly usersCursor?: string | null;
   readonly groupsCursor?: string | null;
   readonly syncUsersAndGroups?: boolean;
   readonly at?: Date;
   /**
-   * Fired as soon as the users phase ends, before reconciliation. Callers use
-   * it to persist the cursor even when a later page fails.
+   * Runs in the same transaction as final authoritative reconciliation, so a
+   * cursor can never be persisted past work that rolled back.
    */
-  readonly onUsersComplete?: (progress: {
-    readonly users: number;
-    readonly groups: number;
-    readonly cursor?: string;
-  }) => Effect.Effect<void, unknown>;
-  readonly onGroupsComplete?: (progress: {
-    readonly users: number;
-    readonly groups: number;
-    readonly cursor?: string;
-  }) => Effect.Effect<void, unknown>;
+  readonly onUsersComplete?: (
+    progress: {
+      readonly users: number;
+      readonly groups: number;
+      readonly cursor?: string;
+    },
+    database: DirectorySyncDatabase,
+  ) => Effect.Effect<void, unknown>;
+  readonly onGroupsComplete?: (
+    progress: {
+      readonly users: number;
+      readonly groups: number;
+      readonly cursor?: string;
+    },
+    database: DirectorySyncDatabase,
+  ) => Effect.Effect<void, unknown>;
 };
 
 export type DirectorySyncResult = {
@@ -333,17 +422,33 @@ export type DirectorySyncResult = {
 };
 
 const dropMembershipsOutsideDirectory = (
-  database: EnterpriseDb,
+  database: DirectorySyncDatabase,
   organizationId: string,
   userId: string,
-): Effect.Effect<void, unknown> =>
+): Effect.Effect<boolean, unknown> =>
   Effect.gen(function* () {
     const orgGroups = yield* database
       .select({ id: schema.userGroup.id })
       .from(schema.userGroup)
       .where(eq(schema.userGroup.organizationId, organizationId));
 
-    if (!orgGroups.length) return;
+    if (!orgGroups.length) return false;
+
+    const memberships = yield* database
+      .select({ userId: schema.userGroupMember.userId })
+      .from(schema.userGroupMember)
+      .where(
+        and(
+          eq(schema.userGroupMember.userId, userId),
+          inArray(
+            schema.userGroupMember.groupId,
+            orgGroups.map((group: { id: string }) => group.id),
+          ),
+        ),
+      )
+      .limit(1);
+
+    if (!memberships.length) return false;
 
     yield* database.delete(schema.userGroupMember).where(
       and(
@@ -354,19 +459,21 @@ const dropMembershipsOutsideDirectory = (
         ),
       ),
     );
+
+    return true;
   });
 
 /**
  * Run a provider's discovery into the tenant directory.
  *
  * The same pipeline serves every provider: each page is applied in its own
- * transaction, the cursor is reported as soon as a resource class completes,
+ * transaction, final reconciliation and its cursor checkpoint commit together,
  * and an authoritative listing disables people the provider no longer returns
  * (without deleting them or their device links).
  */
-export const syncDirectory = (
-  options: DirectorySyncOptions,
-): Effect.Effect<DirectorySyncResult, unknown> =>
+export const syncDirectory = <E = unknown>(
+  options: DirectorySyncOptions<E>,
+): Effect.Effect<DirectorySyncResult, E | DirectorySyncError | DirectorySyncTransactionError> =>
   Effect.gen(function* () {
     const { db, organizationId, directory } = options;
     const { provider } = directory;
@@ -387,18 +494,24 @@ export const syncDirectory = (
       for (let page = 0; page < DIRECTORY_SYNC_MAX_PAGES; page++) {
         const result = yield* directory.discoverUsers(cursor);
 
-        yield* db.transaction((tx) =>
-          applyUserPage(tx, result.users, {
-            organizationId,
-            source: provider.userSource,
-            seenExternalIds,
-            changedUserIds,
-            at: timestamp,
-            onUser: () => {
-              users++;
-            },
-          }),
-        );
+        yield* db
+          .transaction((tx) =>
+            applyUserPage(tx, result.users, {
+              organizationId,
+              source: provider.userSource,
+              seenExternalIds,
+              changedUserIds,
+              at: timestamp,
+              onUser: () => {
+                users++;
+              },
+            }),
+          )
+          .pipe(
+            Effect.mapError(
+              (cause) => new DirectorySyncTransactionError({ phase: "users", cause }),
+            ),
+          );
 
         authoritative ||= result.authoritative;
 
@@ -413,40 +526,59 @@ export const syncDirectory = (
 
       if (!complete)
         return yield* Effect.fail(
-          new Error(`Directory sync exceeded ${DIRECTORY_SYNC_MAX_PAGES} user pages`),
+          new DirectorySyncError({
+            phase: "users",
+            message: `Directory sync exceeded ${DIRECTORY_SYNC_MAX_PAGES} user pages`,
+          }),
         );
 
-      if (options.onUsersComplete)
-        yield* options.onUsersComplete({ users, groups: 0, cursor: usersDelta });
+      if (authoritative || options.onUsersComplete)
+        yield* db
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              if (authoritative) {
+                // A full listing is authoritative: every tenant directory person
+                // sourced from this provider that was not seen is disabled.
+                // Accounts and device links are a separate identity and are never
+                // reconciled here.
+                const directoryUsers = yield* tx
+                  .select()
+                  .from(schema.user)
+                  .where(
+                    and(
+                      eq(schema.user.organizationId, organizationId),
+                      eq(schema.user.source, provider.userSource),
+                    ),
+                  );
 
-      if (authoritative) {
-        // A full listing is authoritative: every tenant directory person
-        // sourced from this provider that was not seen is disabled. Accounts,
-        // memberships and device links are a separate identity and are never
-        // reconciled here.
-        const directoryUsers = yield* db
-          .select()
-          .from(schema.user)
-          .where(
-            and(
-              eq(schema.user.organizationId, organizationId),
-              eq(schema.user.source, provider.userSource),
+                for (const user of directoryUsers) {
+                  if (!user.externalId || seenExternalIds.has(user.externalId)) continue;
+
+                  if (!user.disabled)
+                    yield* tx
+                      .update(schema.user)
+                      .set({ disabled: true, updatedAt: timestamp })
+                      .where(eq(schema.user.id, user.id));
+
+                  const membershipsRemoved = yield* dropMembershipsOutsideDirectory(
+                    tx,
+                    organizationId,
+                    user.id,
+                  );
+
+                  if (!user.disabled || membershipsRemoved) changedUserIds.add(user.id);
+                }
+              }
+
+              if (options.onUsersComplete)
+                yield* options.onUsersComplete({ users, groups: 0, cursor: usersDelta }, tx);
+            }),
+          )
+          .pipe(
+            Effect.mapError(
+              (cause) => new DirectorySyncTransactionError({ phase: "users", cause }),
             ),
           );
-
-        for (const user of directoryUsers) {
-          if (!user.externalId || seenExternalIds.has(user.externalId)) continue;
-
-          if (!user.disabled)
-            yield* db
-              .update(schema.user)
-              .set({ disabled: true, updatedAt: timestamp })
-              .where(eq(schema.user.id, user.id));
-
-          yield* dropMembershipsOutsideDirectory(db, organizationId, user.id);
-          changedUserIds.add(user.id);
-        }
-      }
     }
 
     let groups = 0;
@@ -461,18 +593,25 @@ export const syncDirectory = (
       for (let page = 0; page < DIRECTORY_SYNC_MAX_PAGES; page++) {
         const result = yield* directory.discoverGroups(cursor);
 
-        yield* db.transaction((tx) =>
-          applyGroupPage(tx, result.groups, {
-            organizationId,
-            source: provider.groupSource,
-            seenExternalIds,
-            changedUserIds,
-            at: timestamp,
-            onGroup: () => {
-              groups++;
-            },
-          }),
-        );
+        yield* db
+          .transaction((tx) =>
+            applyGroupPage(tx, result.groups, {
+              organizationId,
+              source: provider.groupSource,
+              seenExternalIds,
+              changedUserIds,
+              at: timestamp,
+              authoritative: result.authoritative,
+              onGroup: () => {
+                groups++;
+              },
+            }),
+          )
+          .pipe(
+            Effect.mapError(
+              (cause) => new DirectorySyncTransactionError({ phase: "groups", cause }),
+            ),
+          );
 
         authoritative ||= result.authoritative;
 
@@ -487,42 +626,57 @@ export const syncDirectory = (
 
       if (!complete)
         return yield* Effect.fail(
-          new Error(`Directory sync exceeded ${DIRECTORY_SYNC_MAX_PAGES} group pages`),
+          new DirectorySyncError({
+            phase: "groups",
+            message: `Directory sync exceeded ${DIRECTORY_SYNC_MAX_PAGES} group pages`,
+          }),
         );
 
-      if (options.onGroupsComplete)
-        yield* options.onGroupsComplete({ users, groups, cursor: groupsDelta });
+      if (authoritative || options.onGroupsComplete)
+        yield* db
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              if (authoritative) {
+                const providerGroups = yield* tx
+                  .select()
+                  .from(schema.userGroup)
+                  .where(
+                    and(
+                      eq(schema.userGroup.organizationId, organizationId),
+                      eq(schema.userGroup.source, provider.groupSource),
+                    ),
+                  );
 
-      if (authoritative) {
-        const providerGroups = yield* db
-          .select()
-          .from(schema.userGroup)
-          .where(
-            and(
-              eq(schema.userGroup.organizationId, organizationId),
-              eq(schema.userGroup.source, provider.groupSource),
+                const staleGroups = providerGroups
+                  .filter((group) => group.externalId && !seenExternalIds.has(group.externalId))
+                  .map((group) => group.id);
+
+                if (staleGroups.length) {
+                  // Removing a directory group cascades its memberships and
+                  // unlinks any device group it drove. Those members are the
+                  // people whose devices must be recomputed and woken.
+                  const removedMembers = yield* tx
+                    .select({ userId: schema.userGroupMember.userId })
+                    .from(schema.userGroupMember)
+                    .where(inArray(schema.userGroupMember.groupId, staleGroups));
+
+                  for (const member of removedMembers) changedUserIds.add(member.userId);
+
+                  yield* tx
+                    .delete(schema.userGroup)
+                    .where(inArray(schema.userGroup.id, staleGroups));
+                }
+              }
+
+              if (options.onGroupsComplete)
+                yield* options.onGroupsComplete({ users, groups, cursor: groupsDelta }, tx);
+            }),
+          )
+          .pipe(
+            Effect.mapError(
+              (cause) => new DirectorySyncTransactionError({ phase: "groups", cause }),
             ),
           );
-
-        const staleGroups = providerGroups
-          .filter((group) => group.externalId && !seenExternalIds.has(group.externalId))
-          .map((group) => group.id);
-
-        if (staleGroups.length) {
-          // Removing a directory group cascades its memberships and unlinks any
-          // device group it drove. Those members are the people whose devices
-          // must be recomputed and woken, even though their own rows did not
-          // change.
-          const removedMembers = yield* db
-            .select({ userId: schema.userGroupMember.userId })
-            .from(schema.userGroupMember)
-            .where(inArray(schema.userGroupMember.groupId, staleGroups));
-
-          for (const member of removedMembers) changedUserIds.add(member.userId);
-
-          yield* db.delete(schema.userGroup).where(inArray(schema.userGroup.id, staleGroups));
-        }
-      }
     }
 
     return {

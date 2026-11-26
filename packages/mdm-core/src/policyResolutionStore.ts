@@ -4,7 +4,7 @@ import { schema as s } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { containsPolicyVariables, substitutePolicyVariables } from "@mattrax/enterprise-domain";
 import type { PolicyVariableContext } from "@mattrax/enterprise-domain";
-import { policyDataHash } from "./policy.ts";
+import { policyDataHashEffect } from "./policyHash.ts";
 import { resolveEffectivePolicy } from "./policyResolution.ts";
 import type {
   EffectivePolicy,
@@ -244,7 +244,7 @@ export const loadPolicyResolutionInput = (
 
       // The resolved text is what the device receives, so the declaration
       // server token must change when an attribute value changes.
-      return Effect.promise(() => policyDataHash(data)).pipe(
+      return policyDataHashEffect(data).pipe(
         Effect.map((hash) => ({ ...configuration, data, hash })),
       );
     });

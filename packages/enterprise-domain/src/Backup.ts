@@ -145,6 +145,11 @@ export const TenantExportApplication = Schema.Struct({
   /** Hint only. Object bytes are never part of a bundle. */
   r2Key: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  /** Curated catalogue provenance; absent on manual entries and older bundles. */
+  catalogueTitleId: Schema.optional(NullableString),
+  catalogueMethodId: Schema.optional(NullableString),
+  catalogueTarget: Schema.optional(NullableString),
+  catalogueKind: Schema.optional(NullableString),
   /** Remove the app from devices that lose their assignment. */
   removeOnUnassign: Schema.optional(Schema.Boolean),
   /** Multi-installer catalogues; older bundles omit this and use the flat fields. */

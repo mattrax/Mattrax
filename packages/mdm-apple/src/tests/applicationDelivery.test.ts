@@ -9,7 +9,7 @@ import {
   CATALOGUE_APPLICATION_ASSET_KIND,
   catalogueApplicationAssetIdentifier,
 } from "@mattrax/mdm-core";
-import { makeDb, tableName } from "./fake-db.js";
+import { appleIdentityCertificate, makeDb, tableName } from "./fake-db.js";
 import type { Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
@@ -30,6 +30,8 @@ const scope = {
   _tag: "device" as const,
   udid: "udid-1",
   identityCertificate: "CN=Device,OU=org-1",
+  identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
 };
 
@@ -40,6 +42,7 @@ const device = (overrides: { osEdition?: string; osVersion?: string } = {}) => (
   status: "enrolled",
   name: "device-1",
   dmIdentifier: "udid-1",
+  dmIdentityFingerprint: "fingerprint-1",
   osEdition: overrides.osEdition ?? "macOS",
   osVersion: overrides.osVersion ?? "14.0",
   capabilities: null,
@@ -83,6 +86,7 @@ const setup = (
       },
     ],
     [tableName(schema.device)]: [options.device ?? device()],
+    [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
     [tableName(schema.deviceApple)]: [
       {
         deviceId: "device-1",
@@ -795,5 +799,51 @@ describe("Apple policy application delivery", () => {
     await expect(
       run(backend.getAppleAsset(undefined, catalogueApplicationAssetIdentifier("app-1"), token)),
     ).resolves.toMatchObject({ content: pkg });
+  });
+
+  it("refuses a catalogue object stored under another tenant prefix", async () => {
+    const token = await signAppleAssetToken(authSecret, {
+      policyId: "app-1",
+      kind: CATALOGUE_APPLICATION_ASSET_KIND,
+      deviceId: "device-1",
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+    });
+
+    let reads = 0;
+
+    const { backend } = setup({
+      applications: [
+        {
+          id: "app-1",
+          organizationId: "org-1",
+          name: "Imported",
+          platform: "apple",
+          bundleId: "com.example.imported",
+          version: "1.0",
+          source: "upload",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Imported.pkg",
+          contentType: "application/octet-stream",
+          size: pkg.byteLength,
+          sha256,
+          // A row written before key validation, or by a cutover import.
+          r2Key: "a/org-2/app-1/sha",
+          notes: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      readApplicationObject: async () => {
+        reads += 1;
+
+        return pkg;
+      },
+    });
+
+    await expect(
+      run(backend.getAppleAsset(undefined, catalogueApplicationAssetIdentifier("app-1"), token)),
+    ).resolves.toBeNull();
+    expect(reads).toBe(0);
   });
 });

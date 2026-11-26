@@ -16,9 +16,13 @@
     "@cloudflare/oxlint-config": "catalog:",
     "@effect/tsgo": "catalog:",
     "@playwright/test": "catalog:",
+    "@shadcn/lint": "catalog:",
     "@types/node": "catalog:",
     "oxlint": "catalog:",
     "typescript": "catalog:",
-    "vite-plus": "catalog:"
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
+    "vitest": "catalog:",
+    "yaml": "catalog:"
   }
 }

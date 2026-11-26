@@ -1,14 +1,19 @@
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from "@tanstack/solid-query";
-import type { InfiniteData } from "@tanstack/solid-query";
+import type { InfiniteData, QueryClient, QueryFunctionContext } from "@tanstack/solid-query";
 import type {
   AdminAccountsQuery,
   AppleUserActionName,
-  MeResponse,
   UpdateMeRequest,
   UpdateTenantOsPolicyRequest,
 } from "@mattrax/enterprise-domain/client";
 import { Effect, Option, Schema } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import {
+  HttpBody,
+  HttpClient,
+  HttpClientRequest,
+  HttpClientResponse,
+  HttpMethod,
+} from "effect/http";
 import { HttpApiClient } from "effect/http-api";
 import type { Accessor } from "solid-js";
 import { approvalFailure, errorTag, raisedFailure, stepUpFailure } from "~/lib/errors";
@@ -18,9 +23,11 @@ import {
   registerApprovalRetry,
 } from "~/lib/approval-retry";
 import type { ApprovalRetryInput } from "~/lib/approval-retry";
-import { readMeCache, writeMeCache } from "~/lib/me-cache";
-import { getPreloadedSession, readClientPreloadedMe } from "~/lib/session-store";
-import { rememberTenants, resolveTenant, resolveTenantId } from "~/lib/tenant";
+import { webHttpClientLayer } from "~/lib/web-http";
+import { enterpriseSecurityHeaders } from "~/lib/enterprise-headers";
+import { ME_QUERY_KEY } from "~/lib/me-keys";
+import { buildMeQueryOptions } from "~/lib/me-options";
+import { currentTenantDirectory, resolveTenant, resolveTenantId } from "~/lib/tenant";
 import {
   requestStepUp,
   stepUpGrant,
@@ -30,10 +37,16 @@ import {
 import type { StepUpAction } from "~/lib/step-up-bus";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import {
+  ApprovalRequired,
   EnterpriseBadRequest,
+  StepUpRequired,
   fleetMigrationHttpApi,
   makeEnterpriseClient,
+  restrictedSoftwareHttpApi,
   scriptHttpApi,
+  DeviceRow,
+  GroupRow,
+  PolicyRow,
   formatDeviceQueryText,
   parseDeviceQueryText,
 } from "@mattrax/enterprise-domain/client";
@@ -51,6 +64,9 @@ import type {
   ApplicationInventoryQuery,
   ApplicationSearchQuery,
   ApplicationSearchResponse,
+  AddCatalogueTitleRequest,
+  CatalogueSearchQuery,
+  CatalogueSearchResponse,
   AuditSearchQuery,
   AuditSearchResponse,
   AutopilotImportRequest,
@@ -67,7 +83,6 @@ import type {
   CreateAutopilotProfileRequest,
   DevicePreRegistrationImportRequest,
   DeviceHandoverRequest,
-  DeviceRow,
   DeviceSearchQuery,
   DeviceViewQuery,
   DashboardQueryRequest,
@@ -81,10 +96,8 @@ import type {
   DynamicGroupRules,
   Entity,
   GroupNode,
-  GroupRow,
   GroupSearchQuery,
   GroupSearchResponse,
-  PolicyRow,
   PolicySearchQuery,
   PolicySearchResponse,
   RowFor,
@@ -112,6 +125,9 @@ import type {
   PatchScriptAssignmentsRequest,
   RunScriptRequest,
   ScriptSettings,
+  CreateRestrictedSoftwareRequest,
+  PatchRestrictedSoftwareRequest,
+  PatchRestrictedSoftwareAssignmentsRequest,
 } from "@mattrax/enterprise-domain/client";
 
 export type {
@@ -122,6 +138,19 @@ export type {
   DashboardReportRun,
   DashboardReportRunListResponse,
   DashboardReportListResponse,
+} from "@mattrax/enterprise-domain/client";
+
+export type {
+  CreateRestrictedSoftwareRequest,
+  DeviceRestrictedSoftwareResponse,
+  PatchRestrictedSoftwareAssignmentsRequest,
+  PatchRestrictedSoftwareRequest,
+  RestrictedSoftwareAssignmentInfo,
+  RestrictedSoftwareDetail,
+  RestrictedSoftwareListResponse,
+  RestrictedSoftwareRuleInfo,
+  RestrictedSoftwareViolationInfo,
+  RestrictedSoftwareViolationsResponse,
 } from "@mattrax/enterprise-domain/client";
 
 export type {
@@ -146,6 +175,10 @@ export type {
   ApplicationRow,
   ApplicationSearchQuery,
   ApplicationSearchResponse,
+  CatalogueAddition,
+  CatalogueDeployment,
+  CatalogueTitle,
+  CatalogueTitleResponse,
   ApnsInfo,
   AcceptInvitationResponse,
   AccountAuditEntry,
@@ -320,11 +353,14 @@ type EndpointPromise<A, E> = Promise<A> & { readonly __error?: E };
 
 type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApi"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApplication"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseSoftwareCatalogue"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceView"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceHandover"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseOnboarding"] &
-  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApproval"];
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApproval"] &
+  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseScopeTag"];
 
 type EnterpriseAccountClient = Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseAccount"];
 
@@ -366,12 +402,20 @@ type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["Sc
  */
 const migrationClientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return HttpApiClient.make(fleetMigrationHttpApi, {
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
@@ -398,8 +442,97 @@ export type {
 const keyTenant = (tenantId: RouteParam) =>
   tenantId ? (resolveTenantId(tenantId) ?? tenantId) : "";
 
+/**
+ * A row normalised from a list or search response. Summaries live in their own
+ * cache entries so a partial or permission-filtered row can never be mistaken
+ * for the authoritative detail response.
+ */
+export type EntitySummary<E extends Entity = Entity> = {
+  readonly tenantId: string;
+  readonly entity: E;
+  readonly id: string;
+  readonly row: RowFor<E>;
+};
+
+type EntitySummaryQueryCache = Pick<QueryClient, "getQueryData" | "getQueryState" | "setQueryData">;
+
+const isEntityRow = <E extends Entity>(entity: E, value: unknown): value is RowFor<E> => {
+  // SAFETY: each branch validates against the schema selected by `entity`, so
+  // the predicate is exactly the conditional `RowFor<E>` mapping.
+  switch (entity) {
+    case "device":
+      return Schema.is(DeviceRow)(value);
+    case "group":
+      return Schema.is(GroupRow)(value);
+    case "policy":
+      return Schema.is(PolicyRow)(value);
+  }
+};
+
+/** Cache only complete row shapes, under an identity separate from detail data. */
+export const cacheEntityRows = <E extends Entity>(
+  queryClient: EntitySummaryQueryCache,
+  tenantId: RouteParam,
+  entity: E,
+  rows: readonly unknown[],
+): void => {
+  const tenant = keyTenant(tenantId);
+
+  if (!tenant) return;
+
+  for (const value of rows) {
+    if (!isEntityRow(entity, value) || value.id.length === 0) continue;
+
+    const summary: EntitySummary<E> = {
+      tenantId: tenant,
+      entity,
+      id: value.id,
+      // Detach the top-level row from the list response. Nested values are
+      // immutable domain data and are never written to by summary consumers.
+      row: { ...value },
+    };
+
+    queryClient.setQueryData(enterpriseKeys.entitySummary(tenant, entity, value.id), summary);
+  }
+};
+
+/**
+ * Read a summary for a detail query's `placeholderData`. Invalidated summaries
+ * are ignored until a fresh list/search response replaces them, and the stored
+ * identity is rechecked so a malformed or cross-tenant entry is never rendered.
+ */
+export const entitySummaryPlaceholder = <E extends Entity>(
+  queryClient: EntitySummaryQueryCache,
+  tenantId: RouteParam,
+  entity: E,
+  id: RouteParam,
+): RowFor<E> | undefined => {
+  const tenant = keyTenant(tenantId);
+
+  if (!tenant || !id) return undefined;
+
+  const queryKey = enterpriseKeys.entitySummary(tenant, entity, id);
+
+  if (queryClient.getQueryState(queryKey)?.isInvalidated) return undefined;
+
+  const summary = queryClient.getQueryData<EntitySummary<E>>(queryKey);
+
+  if (
+    !summary ||
+    summary.tenantId !== tenant ||
+    summary.entity !== entity ||
+    summary.id !== id ||
+    !isEntityRow(entity, summary.row) ||
+    summary.row.id !== id
+  )
+    return undefined;
+
+  return summary.row;
+};
+
 export const enterpriseKeys = {
-  me: () => ["enterprise", "me"] as const,
+  me: () => ME_QUERY_KEY,
+  accountDeletion: () => ["enterprise", "account-deletion"] as const,
   tenants: () => ["enterprise", "tenants"] as const,
   tenant: (tenantId: RouteParam) => ["enterprise", "tenant", keyTenant(tenantId)] as const,
   backups: (tenantId: RouteParam) => ["enterprise", "backups", keyTenant(tenantId)] as const,
@@ -408,6 +541,12 @@ export const enterpriseKeys = {
     ["enterprise", "list", keyTenant(tenantId), entity] as const,
   list: (tenantId: RouteParam, entity: Entity, group?: string) =>
     ["enterprise", "list", keyTenant(tenantId), entity, group ?? ""] as const,
+  summaryPrefix: (tenantId: RouteParam) =>
+    ["enterprise", "entity-summary", keyTenant(tenantId)] as const,
+  entitySummaryPrefix: (tenantId: RouteParam, entity: Entity) =>
+    [...enterpriseKeys.summaryPrefix(tenantId), entity] as const,
+  entitySummary: (tenantId: RouteParam, entity: Entity, id: RouteParam) =>
+    [...enterpriseKeys.entitySummaryPrefix(tenantId, entity), id ?? ""] as const,
   /** Every cached page of one entity's server-paginated list. */
   entitySearchPrefix: (tenantId: RouteParam, entity: Entity | "application") =>
     ["enterprise", "entity-search", keyTenant(tenantId), entity] as const,
@@ -444,6 +583,17 @@ export const enterpriseKeys = {
   accounts: (tenantId: RouteParam) =>
     ["enterprise", "tenant-accounts", keyTenant(tenantId)] as const,
   roles: (tenantId: RouteParam) => ["enterprise", "tenant-roles", keyTenant(tenantId)] as const,
+  scopeTags: (tenantId: RouteParam) => ["enterprise", "scope-tags", keyTenant(tenantId)] as const,
+  scopeTagAssignmentsPrefix: (tenantId: RouteParam) =>
+    ["enterprise", "scope-tag-assignments", keyTenant(tenantId)] as const,
+  scopeTagAssignments: (tenantId: RouteParam, resourceType: string, resourceIds?: string) =>
+    [
+      "enterprise",
+      "scope-tag-assignments",
+      keyTenant(tenantId),
+      resourceType,
+      resourceIds ?? "",
+    ] as const,
   approvalPolicies: (tenantId: RouteParam) =>
     ["enterprise", "approval-policies", keyTenant(tenantId)] as const,
   approvalRequests: (tenantId: RouteParam, query: ApprovalRequestQuery = {}) =>
@@ -470,6 +620,7 @@ export const enterpriseKeys = {
   billingInvoices: (tenantId: RouteParam) =>
     ["enterprise", "billing-invoices", keyTenant(tenantId)] as const,
   enrollment: (tenantId: RouteParam) => ["enterprise", "enrollment", keyTenant(tenantId)] as const,
+  appleByod: (tenantId: RouteParam) => ["enterprise", "apple-byod", keyTenant(tenantId)] as const,
   scepCa: (tenantId: RouteParam) => ["enterprise", "scep-ca", keyTenant(tenantId)] as const,
   enrollmentAttempts: (tenantId: RouteParam, limit = 50) =>
     ["enterprise", "enrollment-attempts", keyTenant(tenantId), limit] as const,
@@ -530,6 +681,12 @@ export const enterpriseKeys = {
   sso: (tenantId: RouteParam) => ["enterprise", "sso", keyTenant(tenantId)] as const,
   applications: (tenantId: RouteParam) =>
     ["enterprise", "applications", keyTenant(tenantId)] as const,
+  softwareCatalogue: (tenantId: RouteParam, query: CatalogueSearchQuery = {}) =>
+    ["enterprise", "software-catalogue", keyTenant(tenantId), query] as const,
+  softwareCatalogueTitle: (tenantId: RouteParam, titleId: RouteParam) =>
+    ["enterprise", "software-catalogue", keyTenant(tenantId), "title", titleId ?? ""] as const,
+  softwareCataloguePrefix: (tenantId: RouteParam) =>
+    ["enterprise", "software-catalogue", keyTenant(tenantId)] as const,
   applicationInventory: (tenantId: RouteParam, query: ApplicationInventoryQuery = {}) =>
     ["enterprise", "application-inventory", keyTenant(tenantId), query] as const,
   deviceApplications: (tenantId: RouteParam, id: RouteParam) =>
@@ -539,6 +696,26 @@ export const enterpriseKeys = {
   application: (tenantId: RouteParam, id: RouteParam) =>
     ["enterprise", "application", keyTenant(tenantId), id ?? ""] as const,
   scripts: (tenantId: RouteParam) => ["enterprise", "scripts", keyTenant(tenantId)] as const,
+  restrictedSoftware: (tenantId: RouteParam) =>
+    ["enterprise", "restricted-software", keyTenant(tenantId)] as const,
+  restrictedSoftwareRule: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "restricted-software-rule", keyTenant(tenantId), id ?? ""] as const,
+  restrictedSoftwareViolations: (
+    tenantId: RouteParam,
+    query: { status?: string; platform?: string; ruleId?: string } = {},
+  ) =>
+    [
+      "enterprise",
+      "restricted-software-violations",
+      keyTenant(tenantId),
+      query.status ?? "",
+      query.platform ?? "",
+      query.ruleId ?? "",
+    ] as const,
+  deviceRestrictedSoftware: (tenantId: RouteParam, id: RouteParam) =>
+    ["enterprise", "device-restricted-software", keyTenant(tenantId), id ?? ""] as const,
+  restrictedSoftwareTargets: (tenantId: RouteParam) =>
+    ["enterprise", "restricted-software-targets", keyTenant(tenantId)] as const,
   fleetMigrations: (tenantId: RouteParam) =>
     ["enterprise", "fleet-migrations", keyTenant(tenantId)] as const,
   fleetMigration: (tenantId: RouteParam, migrationId: RouteParam) =>
@@ -612,14 +789,28 @@ const required = (value: RouteParam, name: string) => {
   return name === "tenantId" ? (resolveTenantId(value) ?? value) : value;
 };
 
+const enterpriseRequestOrigin = () => {
+  const event = isServer ? getRequestEvent() : undefined;
+
+  return event ? new URL(event.request.url).origin : undefined;
+};
+
 const clientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return makeEnterpriseClient({
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
@@ -629,54 +820,69 @@ const clientEffect = (headers: Readonly<Record<string, string>>) => {
  */
 const scriptClientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return HttpApiClient.make(scriptHttpApi, {
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
-type EndpointStepUp =
-  | {
-      /** The action this endpoint requires a recent step-up for. */
-      readonly stepUp: StepUpAction;
-    }
-  | {
-      /** Step-up endpoints must not recurse into the prompt. */
-      readonly stepUp: false;
-    };
+/** Restricted software is its own contract for the same declaration-size reason. */
+const restrictedSoftwareClientEffect = (headers: Readonly<Record<string, string>>) => {
+  const event = isServer ? getRequestEvent() : undefined;
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
-function endpointWith<Client, A, E>(
-  makeClient: (
-    headers: Readonly<Record<string, string>>,
-  ) => Effect.Effect<Client, never, HttpClient.HttpClient>,
-  call: (api: Client) => Effect.Effect<A, E, never>,
+  return HttpApiClient.make(restrictedSoftwareHttpApi, {
+    baseUrl,
+    transformClient: (client) =>
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
+  });
+};
+
+type EndpointStepUp = {
+  /** The action this endpoint requires a recent step-up for. */
+  readonly stepUp: StepUpAction | false;
+  /** Approval-page action name when it differs from the step-up action. */
+  readonly approvalAction?: string;
+};
+
+const enterpriseRequestHeaders = (grant?: string, approval?: ApprovalRetryInput) => {
+  const event = isServer ? getRequestEvent() : undefined;
+  const cookie = event?.request.headers.get("cookie");
+  return {
+    ...approvalHeaders(approval),
+    ...(grant ? { "x-mattrax-step-up": grant } : {}),
+    ...(cookie ? { cookie } : {}),
+  };
+};
+
+const decodeAction = Schema.decodeUnknownOption(StepUpActionSchema);
+const decodeMethods = Schema.decodeUnknownOption(Schema.Array(StepUpMethodSchema));
+
+/** One step-up/approval state machine for JSON and header-preserving downloads. */
+const runEndpoint = <A>(
+  attempt: (grant?: string, approval?: ApprovalRetryInput) => Promise<A>,
   options: EndpointStepUp = { stepUp: false },
-): EndpointPromise<A, E | EnterpriseBadRequest> {
-  const action = options.stepUp === false ? undefined : options.stepUp;
-
-  const requestHeaders = (grant?: string, approval?: ApprovalRetryInput) => {
-    const event = isServer ? getRequestEvent() : undefined;
-    const cookie = event?.request.headers.get("cookie");
-    return {
-      ...approvalHeaders(approval),
-      ...(grant ? { "x-mattrax-step-up": grant } : {}),
-      ...(cookie ? { cookie } : {}),
-    };
-  };
-
-  const attempt = (grant?: string, approval?: ApprovalRetryInput) => {
-    const effect = makeClient(requestHeaders(grant, approval)).pipe(Effect.flatMap(call));
-
-    // SAFETY: Effect.runPromise resolves with the effect success value A; the
-    // assertion restores the generic success type the client erases.
-    return Effect.runPromise(effect.pipe(Effect.provide(FetchHttpClient.layer))) as Promise<A>;
-  };
-
-  const decodeAction = Schema.decodeUnknownOption(StepUpActionSchema);
-  const decodeMethods = Schema.decodeUnknownOption(Schema.Array(StepUpMethodSchema));
+): Promise<A> => {
+  const action = options.stepUp || undefined;
 
   const run = async (approval?: ApprovalRetryInput): Promise<A> => {
     try {
@@ -691,11 +897,9 @@ function endpointWith<Client, A, E>(
         if (requestId) {
           const status = fields.status === "approved" ? "approved" : "pending";
 
-          // Keep the exact call that was blocked so the approvals page can
-          // replay it with the decision, without reconstructing the payload.
           registerApprovalRetry({
             requestId,
-            action: action ?? "approval",
+            action: options.approvalAction ?? action ?? "approval",
             retry: async (input) => {
               await run(input);
             },
@@ -728,10 +932,95 @@ function endpointWith<Client, A, E>(
     }
   };
 
-  // SAFETY: `EndpointPromise` only adds the phantom `__error` field that carries
-  // the endpoint error type; the runtime value is the plain promise from `run`.
   return run();
+};
+
+function endpointWith<Client, A, E>(
+  makeClient: (
+    headers: Readonly<Record<string, string>>,
+  ) => Effect.Effect<Client, never, HttpClient.HttpClient>,
+  call: (api: Client) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  const attempt = (grant?: string, approval?: ApprovalRetryInput) => {
+    const effect = makeClient(enterpriseRequestHeaders(grant, approval)).pipe(
+      Effect.flatMap((api) =>
+        Effect.try({
+          try: () => call(api),
+          catch: (cause) =>
+            cause instanceof EnterpriseBadRequest
+              ? cause
+              : new EnterpriseBadRequest({ message: "Invalid endpoint parameters" }),
+        }).pipe(Effect.flatten),
+      ),
+    );
+
+    // SAFETY: the assertion restores the generic success type the client erases.
+    return Effect.runPromise(effect.pipe(Effect.provide(webHttpClientLayer))) as Promise<A>;
+  };
+
+  return runEndpoint(attempt, options) as EndpointPromise<A, E | EnterpriseBadRequest>;
 }
+
+const GuardedDownloadFailure = Schema.Union([StepUpRequired, ApprovalRequired]);
+const decodeGuardedDownloadFailure = Schema.decodeUnknownOption(GuardedDownloadFailure);
+
+export type EnterpriseDownloadOptions = EndpointStepUp & {
+  readonly method?: HttpMethod.HttpMethod;
+  readonly body?: Schema.Json;
+  readonly headers?: Readonly<Record<string, string>>;
+};
+
+const download = (
+  path: string | (() => string),
+  options: EnterpriseDownloadOptions = { stepUp: false },
+): Promise<Response> =>
+  runEndpoint((grant, approval) => {
+    const effect = Effect.gen(function* () {
+      const client = yield* HttpClient.HttpClient;
+      const requestPath = yield* Effect.try({
+        try: () => (typeof path === "function" ? path() : path),
+        catch: (cause) =>
+          cause instanceof EnterpriseBadRequest
+            ? cause
+            : new EnterpriseBadRequest({ message: "Invalid download parameters" }),
+      });
+      const method = options.method ?? "GET";
+      const response = yield* client.execute(
+        HttpClientRequest.make(method)(requestPath, {
+          headers: {
+            ...enterpriseRequestHeaders(grant, approval),
+            ...options.headers,
+            ...enterpriseSecurityHeaders(method, enterpriseRequestOrigin()),
+          },
+          ...(options.body === undefined ? {} : { body: HttpBody.jsonUnsafe(options.body) }),
+        }),
+      );
+
+      if (response.status === 403) {
+        const body = yield* response.json;
+        const failure = Option.getOrUndefined(decodeGuardedDownloadFailure(body));
+
+        if (failure) return yield* Effect.fail(failure);
+
+        return Response.json(body, {
+          status: response.status,
+          headers: { ...response.headers },
+        });
+      }
+
+      const web = Option.getOrUndefined(HttpClientResponse.toWeb(response));
+
+      if (!web)
+        return yield* Effect.fail(
+          new EnterpriseBadRequest({ message: "The download transport returned no Web response" }),
+        );
+
+      return web;
+    });
+
+    return Effect.runPromise(effect.pipe(Effect.provide(webHttpClientLayer)));
+  }, options);
 
 function endpoint<A, E>(
   call: (api: EnterpriseApiClient) => Effect.Effect<A, E, never>,
@@ -742,11 +1031,14 @@ function endpoint<A, E>(
       Effect.map(clientEffect(headers), (client) => ({
         ...client.EnterpriseApi,
         ...client.EnterpriseApplication,
+        ...client.EnterpriseSoftwareCatalogue,
         ...client.EnterpriseGroup,
         ...client.EnterpriseDeviceView,
         ...client.EnterpriseDeviceHandover,
+        ...client.EnterpriseWindows,
         ...client.EnterpriseOnboarding,
         ...client.EnterpriseApproval,
+        ...client.EnterpriseScopeTag,
       })),
     call,
     options,
@@ -875,6 +1167,22 @@ function migrationEndpoint<A, E>(
   );
 }
 
+type RestrictedSoftwareApiClient = Effect.Success<
+  ReturnType<typeof restrictedSoftwareClientEffect>
+>["RestrictedSoftwareApi"];
+
+function restrictedSoftwareEndpoint<A, E>(
+  call: (api: RestrictedSoftwareApiClient) => Effect.Effect<A, E, never>,
+  options: EndpointStepUp = { stepUp: false },
+): EndpointPromise<A, E | EnterpriseBadRequest> {
+  return endpointWith(
+    (headers) =>
+      Effect.map(restrictedSoftwareClientEffect(headers), (client) => client.RestrictedSoftwareApi),
+    call,
+    options,
+  );
+}
+
 function scriptEndpoint<A, E>(
   call: (api: ScriptApiClient) => Effect.Effect<A, E, never>,
   options: EndpointStepUp = { stepUp: false },
@@ -897,7 +1205,9 @@ const enterpriseQueryOptions = <
   TQueryKey extends readonly unknown[],
 >(options: {
   queryKey: TQueryKey;
-  queryFn: () => T;
+  queryFn: (context: QueryFunctionContext<TQueryKey>) => T;
+  /** Best-effort cache hydration from a successful endpoint response. */
+  onData?: (data: EndpointData<T>, client: QueryClient) => void;
   enabled?: boolean;
   /** Leave endpoint failures in state instead of throwing to the error boundary. */
   throwOnError?: boolean;
@@ -907,17 +1217,19 @@ const enterpriseQueryOptions = <
   refetchOnMount?: boolean | "always";
 }) =>
   queryOptions<EndpointData<T>, EndpointError<T>, EndpointData<T>, TQueryKey>({
-    // SAFETY: `T` is the endpoint promise for this key; its resolved value is
-    // `EndpointData<T>` and the phantom `__error` field never exists at runtime.
-    ...(options as {
-      queryKey: TQueryKey;
-      queryFn: () => Promise<EndpointData<T>>;
-      enabled?: boolean;
-      throwOnError?: boolean;
-      suspense?: boolean;
-      staleTime?: number;
-      refetchOnMount?: boolean | "always";
-    }),
+    queryKey: options.queryKey,
+    queryFn: async (context) => {
+      // SAFETY: awaiting the endpoint promise removes its phantom error field;
+      // its resolved value is exactly `EndpointData<T>`.
+      const data = (await options.queryFn(context)) as EndpointData<T>;
+      options.onData?.(data, context.client);
+
+      return data;
+    },
+    throwOnError: options.throwOnError,
+    ...(options.suspense === undefined ? {} : { suspense: options.suspense }),
+    staleTime: options.staleTime,
+    refetchOnMount: options.refetchOnMount,
     // The API Worker authenticates with the browser's cookie; a server render
     // has no reliable way to forward it through every endpoint. Keep all
     // endpoint queries idle during SSR and let hydration fetch them.
@@ -938,7 +1250,21 @@ export type ApplicationInstallerPayload = {
 };
 
 export const enterprise = {
+  /** Header/body-preserving application request for thin browser adapters. */
+  request: (
+    path: string,
+    options: Omit<EnterpriseDownloadOptions, "stepUp" | "approvalAction"> = {},
+  ) => download(path, { ...options, stepUp: false }),
   me: () => accountEndpoint((api) => api.me({})),
+  /** Whether this account can be deleted, and the tenant the cascade would remove. */
+  getAccountDeletion: () => accountEndpoint((api) => api.getAccountDeletion({})),
+  /**
+   * Delete the account and the solo tenant it owns. The server re-checks the
+   * typed address and the ownership/membership rules, so the result is not
+   * trusted from the preview alone.
+   */
+  deleteAccount: (payload: { confirmEmail: string }) =>
+    accountEndpoint((api) => api.deleteMe({ payload })),
   /** Account-level profile fields, including the default landing tenant. */
   updateMe: (payload: UpdateMeRequest) => accountEndpoint((api) => api.updateMe({ payload })),
   /** Platform operator catalogue; the API rejects non-superadmins. */
@@ -970,6 +1296,13 @@ export const enterprise = {
         params: { tenantId: required(tenantId, "tenantId") },
         query: query.includeAudit ? { includeAudit: "true" } : {},
       }),
+    ),
+  /** Header-preserving export; only the browser adapter turns it into a file. */
+  exportTenantDownload: (tenantId: RouteParam, includeAudit = false) =>
+    download(
+      () =>
+        `/api/v1/tenants/${encodeURIComponent(required(tenantId, "tenantId"))}/export${includeAudit ? "?includeAudit=true" : ""}`,
+      { stepUp: false, approvalAction: "tenant.export" },
     ),
   /** Creates a new tenant owned by the caller from an exported bundle. */
   importTenant: (payload: TenantImportRequest) => endpoint((api) => api.importTenant({ payload })),
@@ -1009,6 +1342,13 @@ export const enterprise = {
   listTenantBackups: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listTenantBackups({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  /** Header-preserving backup download with shared step-up/approval retries. */
+  downloadTenantBackup: (tenantId: RouteParam, id: RouteParam) =>
+    download(
+      () =>
+        `/api/v1/tenants/${encodeURIComponent(required(tenantId, "tenantId"))}/backups/${encodeURIComponent(required(id, "id"))}/download`,
+      { stepUp: "backup-download", approvalAction: "backup.download" },
     ),
   /** Exempt a run from age-based pruning. Requires step-up. */
   pinTenantBackup: (tenantId: RouteParam, id: RouteParam) =>
@@ -1188,6 +1528,29 @@ export const enterprise = {
   searchApplications: (tenantId: RouteParam, query: ApplicationSearchQuery = {}) =>
     listEndpoint((api) =>
       api.searchApplications({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  /** Server-paginated curated software catalogue. */
+  searchSoftwareCatalogue: (tenantId: RouteParam, query: CatalogueSearchQuery = {}) =>
+    endpoint((api) =>
+      api.searchSoftwareCatalogue({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+    ),
+  getSoftwareCatalogueTitle: (tenantId: RouteParam, titleId: RouteParam) =>
+    endpoint((api) =>
+      api.getSoftwareCatalogueTitle({
+        params: { tenantId: required(tenantId, "tenantId"), titleId: required(titleId, "titleId") },
+      }),
+    ),
+  /** Create one tenant application per selected catalogue deployment method. */
+  addSoftwareCatalogueTitle: (
+    tenantId: RouteParam,
+    titleId: RouteParam,
+    payload: AddCatalogueTitleRequest,
+  ) =>
+    endpoint((api) =>
+      api.addSoftwareCatalogueTitle({
+        params: { tenantId: required(tenantId, "tenantId"), titleId: required(titleId, "titleId") },
+        payload,
+      }),
     ),
   listMcpConnections: () => accountEndpoint((api) => api.listMcpConnections({})),
   revokeMcpConnection: (connectionId: RouteParam) =>
@@ -1631,7 +1994,10 @@ export const enterprise = {
         | "relinquish-ownership"
         | "schedule-os-update"
         | "set-device-name"
-        | "set-lock-screen-message";
+        | "set-lock-screen-message"
+        | "fresh-start"
+        | "collect-diagnostics"
+        | "rotate-bitlocker-key";
       deviceName?: string;
       lockScreenMessage?: string;
       lockScreenIncludeAssetTag?: boolean;
@@ -1649,6 +2015,7 @@ export const enterprise = {
       osUpdateProductKey?: string;
       osUpdateDeadline?: string;
       osUpdateMechanism?: "ddm-software-update";
+      freshStartRetainUserData?: boolean;
     } = { action: "sync" },
   ) =>
     endpoint((api) =>
@@ -1684,6 +2051,36 @@ export const enterprise = {
           params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         }),
       { stepUp: "recovery-key-reveal" },
+    ),
+  getDeviceWindowsSecurity: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.getDeviceWindowsSecurity({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  getDeviceLapsPassword: (tenantId: RouteParam, id: RouteParam, reason: string) =>
+    endpoint(
+      (api) =>
+        api.getDeviceLapsPassword({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          query: { reason },
+        }),
+      { stepUp: "recovery-key-reveal" },
+    ),
+  revealDeviceBitlockerKey: (tenantId: RouteParam, id: RouteParam, keyId: string, reason: string) =>
+    endpoint(
+      (api) =>
+        api.revealDeviceBitlockerKey({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id"), keyId },
+          query: { reason },
+        }),
+      { stepUp: "recovery-key-reveal" },
+    ),
+  listDeviceDiagnostics: (tenantId: RouteParam, id: RouteParam) =>
+    endpoint((api) =>
+      api.listDeviceDiagnostics({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
     ),
   getDeviceActivationLockBypassCode: (tenantId: RouteParam, id: RouteParam) =>
     endpoint(
@@ -1939,6 +2336,80 @@ export const enterprise = {
       api.patchPolicyAssignments({
         params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
         payload,
+      }),
+    ),
+  listRestrictedSoftware: (tenantId: RouteParam) =>
+    restrictedSoftwareEndpoint((api) =>
+      api.listRestrictedSoftware({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  getRestrictedSoftware: (tenantId: RouteParam, id: RouteParam) =>
+    restrictedSoftwareEndpoint((api) =>
+      api.getRestrictedSoftware({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+      }),
+    ),
+  createRestrictedSoftware: (tenantId: RouteParam, payload: CreateRestrictedSoftwareRequest) =>
+    restrictedSoftwareEndpoint(
+      (api) =>
+        api.createRestrictedSoftware({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload,
+        }),
+      { stepUp: "restricted-software-change" },
+    ),
+  patchRestrictedSoftware: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: PatchRestrictedSoftwareRequest,
+  ) =>
+    restrictedSoftwareEndpoint(
+      (api) =>
+        api.patchRestrictedSoftware({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          payload,
+        }),
+      { stepUp: "restricted-software-change" },
+    ),
+  deleteRestrictedSoftware: (tenantId: RouteParam, id: RouteParam) =>
+    restrictedSoftwareEndpoint(
+      (api) =>
+        api.deleteRestrictedSoftware({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+        }),
+      { stepUp: "restricted-software-change" },
+    ),
+  patchRestrictedSoftwareAssignments: (
+    tenantId: RouteParam,
+    id: RouteParam,
+    payload: PatchRestrictedSoftwareAssignmentsRequest,
+  ) =>
+    restrictedSoftwareEndpoint(
+      (api) =>
+        api.patchRestrictedSoftwareAssignments({
+          params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
+          payload,
+        }),
+      { stepUp: "restricted-software-change" },
+    ),
+  listRestrictedSoftwareViolations: (
+    tenantId: RouteParam,
+    query: {
+      status?: "open" | "resolved";
+      platform?: "apple" | "win" | "android";
+      ruleId?: string;
+      limit?: number;
+    } = {},
+  ) =>
+    restrictedSoftwareEndpoint((api) =>
+      api.listRestrictedSoftwareViolations({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query,
+      }),
+    ),
+  getDeviceRestrictedSoftware: (tenantId: RouteParam, id: RouteParam) =>
+    restrictedSoftwareEndpoint((api) =>
+      api.getDeviceRestrictedSoftware({
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id") },
       }),
     ),
   listScripts: (tenantId: RouteParam) =>
@@ -2738,6 +3209,34 @@ export const enterprise = {
     endpoint((api) =>
       api.patchTenantEnrollment({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
+  getAppleByodConfig: (tenantId: RouteParam) =>
+    endpoint((api) =>
+      api.getAppleByodConfig({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  patchAppleByodConfig: (
+    tenantId: RouteParam,
+    payload: { enabled?: boolean; domain?: string | null; hardwareValidationRequired?: boolean },
+  ) =>
+    endpoint((api) =>
+      api.patchAppleByodConfig({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  testAppleByodConfig: (tenantId: RouteParam, domain: string | null) =>
+    endpoint((api) =>
+      api.testAppleByodConfig({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { domain },
+      }),
+    ),
+  confirmAppleByodHardware: (tenantId: RouteParam, validated: boolean) =>
+    endpoint((api) =>
+      api.confirmAppleByodHardware({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload: { validated },
+      }),
+    ),
   resetTenantEnrollment: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.resetTenantEnrollment({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -2771,6 +3270,17 @@ export const enterprise = {
     endpoint((api) =>
       api.uploadApns({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
     ),
+  getApnsCsr: (tenantId: RouteParam) =>
+    endpoint((api) => api.getApnsCsr({ params: { tenantId: required(tenantId, "tenantId") } })),
+  exportAuditLogDownload: (tenantId: RouteParam, query: Record<string, string> = {}) => {
+    const suffix = new URLSearchParams(query).toString();
+
+    return download(
+      () =>
+        `/api/v1/tenants/${encodeURIComponent(required(tenantId, "tenantId"))}/audit/export${suffix ? "?" + suffix : ""}`,
+      { stepUp: false },
+    );
+  },
   getTenantSecurity: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.getTenantSecurity({ params: { tenantId: required(tenantId, "tenantId") } }),
@@ -2799,6 +3309,11 @@ export const enterprise = {
     accountEndpoint((api) => api.requestAccountRecovery({ payload: { email } })),
   verifyAccountRecovery: (token: string) =>
     accountEndpoint((api) => api.verifyAccountRecovery({ payload: { token } })),
+  listAccountSessions: () => accountEndpoint((api) => api.listAccountSessions()),
+  revokeAccountSession: (sessionId: RouteParam) =>
+    accountEndpoint((api) =>
+      api.revokeAccountSession({ params: { sessionId: required(sessionId, "sessionId") } }),
+    ),
   revokeAllAccountSessions: () =>
     accountEndpoint((api) => api.revokeAllAccountSessions(), { stepUp: "sessions-revoke-all" }),
   listLoginAttempts: () => accountEndpoint((api) => api.listLoginAttempts()),
@@ -2958,7 +3473,12 @@ export const enterprise = {
     ),
   inviteAccount: (
     tenantId: RouteParam,
-    payload: { email: string; role?: string; roleId?: string | null },
+    payload: {
+      email: string;
+      role?: string;
+      roleId?: string | null;
+      scopeTagIds?: ReadonlyArray<string>;
+    },
   ) =>
     endpoint((api) =>
       api.inviteTenantAccount({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
@@ -3047,6 +3567,80 @@ export const enterprise = {
   listRoles: (tenantId: RouteParam) =>
     endpoint((api) =>
       api.listTenantRoles({ params: { tenantId: required(tenantId, "tenantId") } }),
+    ),
+  listScopeTags: (tenantId: RouteParam) =>
+    endpoint((api) => api.listScopeTags({ params: { tenantId: required(tenantId, "tenantId") } })),
+  createScopeTag: (tenantId: RouteParam, payload: { name: string; description?: string | null }) =>
+    endpoint((api) =>
+      api.createScopeTag({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  patchScopeTag: (
+    tenantId: RouteParam,
+    tagId: RouteParam,
+    payload: { name?: string; description?: string | null },
+  ) =>
+    endpoint((api) =>
+      api.patchScopeTag({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          tagId: required(tagId, "tagId"),
+        },
+        payload,
+      }),
+    ),
+  deleteScopeTag: (tenantId: RouteParam, tagId: RouteParam) =>
+    endpoint((api) =>
+      api.deleteScopeTag({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          tagId: required(tagId, "tagId"),
+        },
+      }),
+    ),
+  listScopeTagAssignments: (
+    tenantId: RouteParam,
+    resourceType: "device" | "group" | "policy" | "application" | "script" | "dashboard",
+    resourceIds?: ReadonlyArray<string>,
+  ) =>
+    endpoint((api) =>
+      api.listScopeTagAssignments({
+        params: { tenantId: required(tenantId, "tenantId") },
+        query: {
+          resourceType,
+          ...(resourceIds && resourceIds.length > 0 ? { resourceIds: resourceIds.join(",") } : {}),
+        },
+      }),
+    ),
+  setScopeTagAssignments: (
+    tenantId: RouteParam,
+    payload: {
+      resourceType: "device" | "group" | "policy" | "application" | "script" | "dashboard";
+      resourceIds: ReadonlyArray<string>;
+      tagIds: ReadonlyArray<string>;
+    },
+  ) =>
+    endpoint((api) =>
+      api.setScopeTagAssignments({
+        params: { tenantId: required(tenantId, "tenantId") },
+        payload,
+      }),
+    ),
+  setMemberScopeTags: (
+    tenantId: RouteParam,
+    accountId: RouteParam,
+    tagIds: ReadonlyArray<string>,
+  ) =>
+    endpoint((api) =>
+      api.setMemberScopeTags({
+        params: {
+          tenantId: required(tenantId, "tenantId"),
+          accountId: required(accountId, "accountId"),
+        },
+        payload: { tagIds: [...tagIds] },
+      }),
     ),
   listApprovalPolicies: (tenantId: RouteParam) =>
     endpoint((api) =>
@@ -3185,57 +3779,20 @@ export const enterprise = {
     accountEndpoint((api) => api.completeStepUpPasskey({ payload })),
 };
 
-export const meQueryOptions = (userId?: string, enabled = true) => {
-  const cached = readMeCache(userId);
-
-  // The SSR preload carries the same `/me` payload, so the first paint can
-  // render the tenant shell, guard and permission-aware navigation without a
-  // second request. Only data for the signed-in account is accepted.
-  const event = isServer ? getRequestEvent() : undefined;
-  const preloaded = event ? getPreloadedSession(event.request)?.me : readClientPreloadedMe();
-
-  const initialData: MeResponse | undefined =
-    preloaded && (!userId || preloaded.account.id === userId) ? preloaded : undefined;
-
-  // The router addresses tenants by slug while every API call needs the id;
-  // keep the membership list available to that translation after SSR.
-  rememberTenants(initialData?.tenants ?? cached?.data.tenants);
-
-  // The SSR preload skips the queryFn, which is normally what refreshes the
-  // local cache. Persist it here so the next cold load still paints instantly.
-  if (!isServer && initialData) writeMeCache(initialData);
-
-  const options = {
-    queryKey: enterpriseKeys.me(),
-    queryFn: async () => {
-      const data = await enterprise.me();
-      rememberTenants(data.tenants);
-      writeMeCache(data);
-
-      return data;
-    },
-    enabled: !isServer && enabled,
-    // A cold load paints the last known shell immediately; the query still
-    // refreshes in the background.
-    placeholderData: initialData ?? cached?.data,
-    // Paint from the SSR/cached shell immediately, but always revalidate on
-    // mount: tenant creation, invitations and role changes must show up without
-    // waiting for the five-minute SSR token to expire.
-    staleTime: 0,
-  };
-
-  // TanStack renders this observer snapshot immediately without writing it into
-  // the shared cache. On the server that is essential: the module-level query
-  // client outlives a request, so `initialData` there could show one account's
-  // shell to the next visitor. In the browser the client is per-tab and we also
-  // seed the cache so the query is considered fresh.
-  if (!isServer && initialData !== undefined) Object.assign(options, { initialData });
-
-  return queryOptions(options);
-};
+export const meQueryOptions = (userId?: string, enabled = true) =>
+  buildMeQueryOptions({
+    userId,
+    enabled,
+    fetchMe: () => enterprise.me(),
+  });
 
 export const enterpriseQueries = {
   me: (userId?: string) => meQueryOptions(userId),
+  accountDeletion: () =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.accountDeletion(),
+      queryFn: () => enterprise.getAccountDeletion(),
+    }),
   adminAccounts: (query: AdminAccountsQuery = {}) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.adminAccounts(query),
@@ -3289,6 +3846,14 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.list(tenantId, entity, group),
       queryFn: () => enterprise.list(tenantId, entity, group),
+      onData: (data, client) => cacheEntityRows(client, tenantId, entity, data.rows),
+      enabled: Boolean(tenantId),
+    }),
+  deviceSearch: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.deviceSearch(tenantId, query),
+      queryFn: () => enterprise.searchDevices(tenantId, query),
+      onData: (data, client) => cacheEntityRows(client, tenantId, "device", data.devices),
       enabled: Boolean(tenantId),
     }),
   mcpConnections: () =>
@@ -3362,6 +3927,53 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.scripts(tenantId),
       queryFn: () => enterprise.listScripts(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  restrictedSoftware: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.restrictedSoftware(tenantId),
+      queryFn: () => enterprise.listRestrictedSoftware(tenantId),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  restrictedSoftwareRule: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.restrictedSoftwareRule(tenantId, id),
+      queryFn: () => enterprise.getRestrictedSoftware(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  restrictedSoftwareViolations: (
+    tenantId: RouteParam,
+    query: {
+      status?: "open" | "resolved";
+      platform?: "apple" | "win" | "android";
+      ruleId?: string;
+    } = {},
+  ) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.restrictedSoftwareViolations(tenantId, query),
+      queryFn: () => enterprise.listRestrictedSoftwareViolations(tenantId, query),
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  deviceRestrictedSoftware: (tenantId: RouteParam, id: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.deviceRestrictedSoftware(tenantId, id),
+      queryFn: () => enterprise.getDeviceRestrictedSoftware(tenantId, id),
+      enabled: Boolean(tenantId && id) && !isServer,
+    }),
+  restrictedSoftwareTargets: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.restrictedSoftwareTargets(tenantId),
+      queryFn: async () => {
+        const [devices, groups] = await Promise.all([
+          enterprise.list(tenantId, "device"),
+          enterprise.list(tenantId, "group"),
+        ]);
+
+        return {
+          devices: devices.rows.map((row) => ({ id: row.id, name: row.name })),
+          groups: groups.rows.map((row) => ({ id: row.id, name: row.name })),
+        };
+      },
       enabled: Boolean(tenantId) && !isServer,
     }),
   script: (tenantId: RouteParam, id: RouteParam) =>
@@ -3570,8 +4182,12 @@ export const enterpriseQueries = {
       number
     >({
       queryKey: enterpriseKeys.entitySearch(tenantId, "group", filters),
-      queryFn: ({ pageParam }) =>
-        enterprise.searchGroups(tenantId, { ...filters, offset: pageParam }),
+      queryFn: async ({ client, pageParam }) => {
+        const page = await enterprise.searchGroups(tenantId, { ...filters, offset: pageParam });
+        cacheEntityRows(client, tenantId, "group", page.groups);
+
+        return page;
+      },
       initialPageParam: 0,
       getNextPageParam: (_last, pages) => {
         const loaded = pages.reduce((count, page) => count + page.groups.length, 0);
@@ -3592,8 +4208,12 @@ export const enterpriseQueries = {
       number
     >({
       queryKey: enterpriseKeys.entitySearch(tenantId, "policy", filters),
-      queryFn: ({ pageParam }) =>
-        enterprise.searchPolicies(tenantId, { ...filters, offset: pageParam }),
+      queryFn: async ({ client, pageParam }) => {
+        const page = await enterprise.searchPolicies(tenantId, { ...filters, offset: pageParam });
+        cacheEntityRows(client, tenantId, "policy", page.policies);
+
+        return page;
+      },
       initialPageParam: 0,
       getNextPageParam: (_last, pages) => {
         const loaded = pages.reduce((count, page) => count + page.policies.length, 0);
@@ -3628,10 +4248,85 @@ export const enterpriseQueries = {
       placeholderData: keepPreviousData,
       enabled: Boolean(tenantId) && !isServer,
     }),
+  /** Server-paginated curated software catalogue; see `searchGroups`. */
+  searchSoftwareCatalogue: (tenantId: RouteParam, filters: CatalogueSearchQuery = {}) =>
+    infiniteQueryOptions<
+      CatalogueSearchResponse,
+      Error,
+      InfiniteData<CatalogueSearchResponse>,
+      readonly unknown[],
+      number
+    >({
+      queryKey: enterpriseKeys.softwareCatalogue(tenantId, filters),
+      queryFn: ({ pageParam }) =>
+        enterprise.searchSoftwareCatalogue(tenantId, { ...filters, offset: pageParam }),
+      initialPageParam: 0,
+      getNextPageParam: (_last, pages) => {
+        const loaded = pages.reduce((count, page) => count + page.items.length, 0);
+        const total = pages.at(-1)?.total ?? 0;
+
+        return loaded < total ? loaded : undefined;
+      },
+      placeholderData: keepPreviousData,
+      enabled: Boolean(tenantId) && !isServer,
+    }),
+  softwareCatalogueTitle: (tenantId: RouteParam, titleId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.softwareCatalogueTitle(tenantId, titleId),
+      queryFn: () => enterprise.getSoftwareCatalogueTitle(tenantId, titleId),
+      enabled: Boolean(tenantId && titleId) && !isServer,
+    }),
   roles: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.roles(tenantId),
       queryFn: () => enterprise.listRoles(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  scopeTags: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.scopeTags(tenantId),
+      queryFn: () => enterprise.listScopeTags(tenantId),
+      enabled: Boolean(tenantId),
+    }),
+  scopeTagAssignments: (
+    tenantId: RouteParam,
+    resourceType: "device" | "group" | "policy" | "application" | "script" | "dashboard",
+    resourceIds?: ReadonlyArray<string>,
+  ) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.scopeTagAssignments(tenantId, resourceType, resourceIds?.join(",")),
+      queryFn: async () => {
+        if (!resourceIds || resourceIds.length === 0)
+          return enterprise.listScopeTagAssignments(tenantId, resourceType);
+
+        // The endpoint bounds one query at 200 ids. Merge the chunks so a
+        // select-all-matching editor sees every resource, not just the first
+        // page.
+        const byResource = new Map<string, Array<string>>();
+
+        for (let index = 0; index < resourceIds.length; index += 200) {
+          const page = await enterprise.listScopeTagAssignments(
+            tenantId,
+            resourceType,
+            resourceIds.slice(index, index + 200),
+          );
+
+          for (const assignment of page.assignments) {
+            const tags = byResource.get(assignment.resourceId) ?? [];
+
+            for (const tagId of assignment.tagIds) if (!tags.includes(tagId)) tags.push(tagId);
+            byResource.set(assignment.resourceId, tags);
+          }
+        }
+
+        return {
+          assignments: [...byResource.entries()].map(([resourceId, tagIds]) => ({
+            resourceType,
+            resourceId,
+            tagIds,
+          })),
+        };
+      },
       enabled: Boolean(tenantId),
     }),
   accounts: (tenantId: RouteParam) =>
@@ -3734,6 +4429,12 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.getTenantEnrollment(tenantId),
       enabled: Boolean(tenantId),
     }),
+  appleByod: (tenantId: RouteParam) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.appleByod(tenantId),
+      queryFn: () => enterprise.getAppleByodConfig(tenantId),
+      enabled: Boolean(tenantId),
+    }),
   enrollmentAttempts: (tenantId: RouteParam, limit = 20) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.enrollmentAttempts(tenantId, limit),
@@ -3834,7 +4535,5 @@ export function resolveActiveTenant(
 ) {
   if (!me) return undefined;
 
-  rememberTenants(me.tenants);
-
-  return resolveTenant(me.tenants, tenantKey);
+  return resolveTenant(me.tenants, tenantKey, currentTenantDirectory());
 }

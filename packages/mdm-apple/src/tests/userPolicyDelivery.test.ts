@@ -2,11 +2,9 @@ import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
-import {
-  ManagementBackendEnterpriseLive,
-  configurationDeclarationIdentifier,
-} from "@mattrax/mdm-apple";
-import { makeDb, tableName } from "./fake-db.js";
+import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
+import { configurationDeclarationIdentifier } from "@mattrax/mdm-core";
+import { dbRows, makeDb, tableName } from "./fake-db.js";
 import type { Row } from "./fake-db.js";
 
 const origin = "https://user-policies.test";
@@ -83,11 +81,33 @@ const userConfiguration = (scope: "device" | "user") => ({
   hash: "hash-user",
 });
 
-const setup = (options: { bound: boolean; scope?: "device" | "user" }) => {
+const setup = (options: {
+  bound: boolean;
+  scope?: "device" | "user";
+  sharedIpad?: boolean;
+  identitySource?: "manual" | "managed-apple-account";
+  seedUserChannel?: boolean;
+  channelUserId?: string;
+}) => {
   const db = makeDb({
     [tableName(schema.organization)]: [organization("org-1")],
-    [tableName(schema.device)]: [device("device-1", "udid-1")],
+    [tableName(schema.device)]: [
+      {
+        ...device("device-1", "udid-1"),
+        ...(options.sharedIpad ? { osEdition: "iPadOS 18.4" } : {}),
+      },
+    ],
     [tableName(schema.deviceApple)]: [appleState("device-1")],
+    [tableName(schema.scepIssuedCertificate)]: [
+      {
+        serial: "a1b2c3",
+        organizationId: "org-1",
+        deviceId: "device-1",
+        notAfter: new Date("2099-01-01T00:00:00.000Z"),
+        revokedAt: null,
+        createdAt: now,
+      },
+    ],
     [tableName(schema.policy)]: [policy],
     [tableName(schema.configuration)]: [userConfiguration(options.scope ?? "user")],
     [tableName(schema.devicePolicy)]: [
@@ -106,24 +126,29 @@ const setup = (options: { bound: boolean; scope?: "device" | "user" }) => {
         updatedAt: now,
       },
     ],
-    [tableName(schema.deviceAppleUser)]: [
-      appleUser(
-        options.bound
-          ? {
-              directoryUserId: "dir-1",
-              identitySource: "manual",
-              identityUpn: "person@example.test",
-              identityVerifiedAt: now,
-            }
-          : {},
-      ),
-    ],
+    ...(options.seedUserChannel === false
+      ? {}
+      : {
+          [tableName(schema.deviceAppleUser)]: [
+            appleUser({
+              userId: options.channelUserId ?? "user-1",
+              ...(options.bound
+                ? {
+                    directoryUserId: "dir-1",
+                    identitySource: options.identitySource ?? "manual",
+                    identityUpn: "person@example.test",
+                    identityVerifiedAt: now,
+                  }
+                : {}),
+            }),
+          ],
+        }),
   });
 
   // SAFETY: The fake store implements the query chains these tests exercise.
   const backend = ManagementBackendEnterpriseLive.make({ db: db as any, origin, authSecret });
 
-  return { backend };
+  return { db, backend };
 };
 
 const deviceScope = {
@@ -131,6 +156,7 @@ const deviceScope = {
   udid: "udid-1",
   identityCertificate: "CN=Device,OU=org-1",
   identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
 };
 
@@ -141,6 +167,7 @@ const userScope = {
   source: "user-channel" as const,
   identityCertificate: "CN=Device,OU=org-1",
   identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
 };
 
@@ -170,6 +197,90 @@ describe("user-scoped Apple policy delivery", () => {
 
     expect(items.configurations).toEqual([]);
     expect(items.activations).toEqual([]);
+  });
+
+  it("does not bind or serve declarations to an attacker-chosen Shared iPad account", async () => {
+    const account = "person@example.test";
+    const { db, backend } = setup({
+      bound: false,
+      sharedIpad: true,
+      seedUserChannel: false,
+    });
+    const sharedScope = { ...userScope, userId: account, userShortName: account };
+
+    await run(
+      backend.appleDeviceEvent(sharedScope, {
+        _tag: "TokenUpdate" as const,
+        pushToken: "736861726564",
+        pushMagic: "shared-magic",
+        topic: "com.apple.mgmt.External.org-1",
+        channel: "user" as const,
+        userId: account,
+        userShortName: account,
+      }),
+    );
+
+    const [channel] = dbRows(db, tableName(schema.deviceAppleUser));
+    expect(channel).toMatchObject({ userId: account });
+    expect(channel?.directoryUserId ?? null).toBeNull();
+    expect(channel?.identitySource ?? null).toBeNull();
+    expect(channel?.identityVerifiedAt ?? null).toBeNull();
+
+    const items = await run(backend.getAppleDeclarationItems(sharedScope));
+    expect(items.configurations).toEqual([]);
+
+    const declaration = await run(
+      backend.getAppleDeclaration(sharedScope, "configuration", identifier),
+    );
+    expect(declaration).toBeNull();
+  });
+
+  it("serves declarations to a pre-provisioned Shared iPad binding", async () => {
+    const account = "person@example.test";
+    const { backend } = setup({
+      bound: true,
+      sharedIpad: true,
+      identitySource: "manual",
+      channelUserId: account,
+    });
+    const sharedScope = { ...userScope, userId: account, userShortName: account };
+
+    await run(
+      backend.appleDeviceEvent(sharedScope, {
+        _tag: "TokenUpdate" as const,
+        pushToken: "736861726564",
+        pushMagic: "shared-magic",
+        topic: "com.apple.mgmt.External.org-1",
+        channel: "user" as const,
+        userId: account,
+        userShortName: account,
+      }),
+    );
+
+    const items = await run(backend.getAppleDeclarationItems(sharedScope));
+    expect(items.configurations.map((item) => item.identifier)).toContain(identifier);
+  });
+
+  it("ignores legacy email-correlated Shared iPad bindings", async () => {
+    const account = "person@example.test";
+    const { backend } = setup({
+      bound: true,
+      sharedIpad: true,
+      identitySource: "managed-apple-account",
+      channelUserId: account,
+    });
+    const sharedScope = { ...userScope, userId: account, userShortName: account };
+
+    const items = await run(backend.getAppleDeclarationItems(sharedScope));
+    expect(items.configurations).toEqual([]);
+
+    const declaration = await run(
+      backend.getAppleDeclaration(sharedScope, "configuration", identifier),
+    );
+    expect(declaration).toBeNull();
+
+    const manifest = await run(backend.appleManagementCheckin(sharedScope));
+    expect(manifest._tag).toBe("Idle");
   });
 
   it("keeps device-scoped configurations off the user channel", async () => {

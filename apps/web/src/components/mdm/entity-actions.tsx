@@ -28,6 +28,7 @@ import {
 } from "~/lib/bulk-members";
 import type { BulkFailure, BulkOutcome } from "~/lib/bulk-members";
 import { optimisticallyRemoveRows, optimisticallyUpdateDeviceSearch } from "~/lib/optimistic";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 
 type Named = { id: string; name: string };
 
@@ -133,7 +134,7 @@ function ConfirmAction(props: {
           setOpen(next);
         }}
       >
-        <DialogContent class="max-w-md rounded-lg border border-border bg-popover p-6">
+        <DialogContent class="max-w-md">
           <DialogHeader>
             <DialogTitle>{props.title}</DialogTitle>
             <DialogDescription>{props.description}</DialogDescription>
@@ -249,19 +250,20 @@ function ScopeGroupsAction(props: {
         Scope
       </Button>
       <Show when={open()}>
-        <div class="fixed bottom-24 left-1/2 z-50 max-h-[60vh] w-[min(20rem,calc(100vw-2rem))] -translate-x-1/2 overflow-y-auto rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl">
+        <div class="fixed bottom-24 left-1/2 z-50 max-h-3/5 w-80 max-w-svw -translate-x-1/2 overflow-y-auto rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-2xl">
           <For each={groupRows()}>
             {(group) => (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                class="w-full justify-between"
                 onClick={() =>
                   setChanges((value) => ({
                     ...value,
                     [group.id]: value[group.id] === "all" ? "none" : "all",
                   }))
                 }
-                class="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-[12.5px] outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:bg-hover"
-              >
+                >
                 <span>{group.name}</span>
                 <span class="text-muted-foreground">
                   {Match.value(changes()[group.id]).pipe(
@@ -270,7 +272,7 @@ function ScopeGroupsAction(props: {
                     Match.orElse(() => ""),
                   )}
                 </span>
-              </button>
+              </Button>
             )}
           </For>
           <ErrorText error={patch.error ?? groups.error} />
@@ -289,7 +291,7 @@ function ScopeGroupsAction(props: {
   );
 }
 
-export function EntityActions(props: {
+export default function EntityActions(props: {
   entity: Entity;
   selected: Array<DeviceRow | GroupRow | PolicyRow>;
   clear: () => void;
@@ -310,6 +312,8 @@ export function EntityActions(props: {
   const [handoverOpen, setHandoverOpen] = createSignal(false);
   const [handoverTargets, setHandoverTargets] = createSignal<Named[]>([]);
   const [handoverPending, setHandoverPending] = createSignal(false);
+  const [tagOpen, setTagOpen] = createSignal(false);
+  const [tagTargets, setTagTargets] = createSignal<Named[]>([]);
 
   /**
    * The rows the action should touch. An "all matching" selection asks the
@@ -412,11 +416,55 @@ export function EntityActions(props: {
     },
   }));
 
+  /**
+   * Diagnostics are one command per device. A selection spanning non-Windows
+   * rows reports those rows as failures instead of hiding them; each device's
+   * own capability check decides whether the command is legal.
+   */
+  const diagnostics = useMutation(() => ({
+    mutationFn: async (): Promise<BulkOutcome> => {
+      const selected = await targets();
+
+      return settleRows(selected, (id) =>
+        enterprise.deviceAction(params.tenantId, id, { action: "collect-diagnostics" }),
+      );
+    },
+    onSuccess: async (outcome) => {
+      await invalidate(outcome.failed.map((row) => row.id));
+      reportBulk(
+        props.entity,
+        { ok: "diagnostics requested for", fail: "could not request diagnostics for" },
+        outcome,
+      );
+    },
+  }));
+
   return (
     <>
       <Show when={props.entity === "device" && can("devices.handover")}>
         <Button variant="outline" disabled={handoverPending()} onClick={() => void startHandover()}>
           Hand over
+        </Button>
+      </Show>
+      <Show when={can("scope_tags.write")}>
+        <Button
+          variant="outline"
+          onClick={async () => {
+            try {
+              const selected = await targets();
+
+              if (selected.length === 0) return;
+
+              setTagTargets(selected);
+              setTagOpen(true);
+            } catch (error) {
+              toast.error("Could not prepare the tags", {
+                description: errorMessage(raisedFailure(error), "Try again in a moment."),
+              });
+            }
+          }}
+        >
+          Scope tags
         </Button>
       </Show>
       <Show when={props.entity !== "group" && can("groups.write")}>
@@ -430,8 +478,20 @@ export function EntityActions(props: {
           Sync
         </Button>
       </Show>
+      <Show when={props.entity === "device" && can("devices.command")}>
+        <Button
+          variant="outline"
+          disabled={diagnostics.isPending}
+          onClick={() => diagnostics.mutate()}
+        >
+          {diagnostics.isPending ? "Requesting…" : "Collect diagnostics"}
+        </Button>
+      </Show>
       <Show when={sync.error}>
         <ErrorText error={sync.error} />
+      </Show>
+      <Show when={diagnostics.error}>
+        <ErrorText error={diagnostics.error} />
       </Show>
       <Show when={props.entity === "device" && can("devices.write")}>
         <ConfirmAction
@@ -485,6 +545,30 @@ export function EntityActions(props: {
           }}
         />
       </Show>
+      <Dialog open={tagOpen()} onOpenChange={setTagOpen}>
+        <DialogContent class="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Scope tags</DialogTitle>
+            <DialogDescription>
+              Replace the tags on {tagTargets().length} selected{" "}
+              {bulkEntityNoun(props.entity, tagTargets().length)}. Saving refreshes the visible
+              list.
+            </DialogDescription>
+          </DialogHeader>
+          <Show when={tagTargets().length > 0}>
+            <ScopeTagAssignmentEditor
+              tenantId={params.tenantId!}
+              resourceType={props.entity}
+              resourceIds={tagTargets().map((row) => row.id)}
+              onSaved={() => {
+                setTagOpen(false);
+                void invalidate();
+              }}
+            />
+          </Show>
+        </DialogContent>
+      </Dialog>
+
       <Show when={props.entity !== "device" && canDelete()}>
         <ConfirmAction
           title={`Delete ${bulkEntityNoun(props.entity, count())}?`}

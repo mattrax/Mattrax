@@ -1,13 +1,15 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import type { Schema } from "effect";
-import { Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
+import * as SqlError from "effect/sql/SqlError";
 import { HttpRouter } from "effect/http";
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import { ServicesDbService, servicesSchema } from "@mattrax/enterprise-billing";
 import {
   BillingWebhookError,
   billingWebhookRoutes,
   processStripeWebhook,
+  tenantEntitlement,
 } from "@mattrax/enterprise-billing";
 import { makeServicesDb as makeDb, runEffect } from "./helpers.js";
 
@@ -20,6 +22,32 @@ const now = new Date("2026-01-01T00:00:00.000Z");
 const periodStart = 1_767_225_600;
 
 const periodEnd = 1_769_817_600;
+
+const ledgerQuery = "insert into services_stripe_event (id, type) values (?, ?)";
+
+const mysqlDriverError = (errno: number, code: string, message: string) =>
+  Object.assign(new Error(message), { code, errno, sqlMessage: message });
+
+const drizzleSqlError = (reason: SqlError.SqlErrorReason, query = ledgerQuery) =>
+  new EffectDrizzleQueryError({
+    query,
+    params: undefined,
+    cause: new SqlError.SqlError({ reason }),
+  });
+
+const duplicateEventError = (eventId: string) =>
+  drizzleSqlError(
+    new SqlError.UniqueViolation({
+      cause: mysqlDriverError(
+        1062,
+        "ER_DUP_ENTRY",
+        `Duplicate entry '${eventId}' for key 'services_stripe_event.PRIMARY'`,
+      ),
+      message: `Duplicate entry '${eventId}' for key 'services_stripe_event.PRIMARY'`,
+      operation: "insert",
+      constraint: "services_stripe_event.PRIMARY",
+    }),
+  );
 
 const seedOrganization = (
   db: ReturnType<typeof makeDb>,
@@ -81,14 +109,15 @@ const signed = (payload: string, secret = webhookSecret) => ({
 /**
  * The fake database does not enforce primary keys, so this wrapper adds the one
  * constraint the Stripe ledger relies on: a second insert with the same event id
- * fails with MySQL's `ER_DUP_ENTRY`, exactly as production does.
+ * fails through Drizzle and Effect's structured unique-violation error, as in
+ * production.
  */
 const makeLedgerDb = () => {
   const db = makeDb();
   const insert = db.insert.bind(db);
 
-  db.insert = (table: any) => {
-    const builder = insert(table);
+  db.insert = ((table: any) => {
+    const builder: any = insert(table);
 
     if (table !== servicesSchema.stripeEvent) return builder;
 
@@ -98,16 +127,25 @@ const makeLedgerDb = () => {
       const row = Array.isArray(rows) ? rows[0] : rows;
 
       if (db.store.services_stripe_event.some((existing: any) => existing.id === row.id))
-        throw Object.assign(
-          new Error(`Duplicate entry '${row.id}' for key 'stripe_event.PRIMARY'`),
-          { code: "ER_DUP_ENTRY", errno: 1062 },
-        );
+        return Effect.fail(duplicateEventError(row.id));
 
       return values(rows);
     };
 
     return builder;
-  };
+  }) as typeof db.insert;
+
+  return db;
+};
+
+const makeFailingLedgerDb = (error: unknown) => {
+  const db = makeDb();
+  const insert = db.insert.bind(db);
+
+  db.insert = ((table: any) =>
+    table === servicesSchema.stripeEvent
+      ? { values: () => Effect.fail(error) }
+      : insert(table)) as typeof db.insert;
 
   return db;
 };
@@ -307,6 +345,7 @@ describe("Stripe subscription lifecycle", () => {
         cancelAtPeriodEnd: false,
         createdAt: now,
         updatedAt: now,
+        entitlementRevision: 1,
       },
     ]);
   });
@@ -371,6 +410,7 @@ describe("Stripe subscription lifecycle", () => {
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "past_due",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -385,10 +425,16 @@ describe("Stripe subscription lifecycle", () => {
     };
 
     await deliverEvent(db, "invoice.paid", invoice);
-    expect(db.store.services_subscription[0]).toMatchObject({ status: "active" });
+    expect(db.store.services_subscription[0]).toMatchObject({
+      status: "active",
+      entitlementRevision: 1,
+    });
 
     await deliverEvent(db, "invoice.payment_failed", { ...invoice, status: "open" });
-    expect(db.store.services_subscription[0]).toMatchObject({ status: "past_due" });
+    expect(db.store.services_subscription[0]).toMatchObject({
+      status: "past_due",
+      entitlementRevision: 2,
+    });
     expect(db.store.services_subscription).toHaveLength(1);
   });
 
@@ -402,6 +448,7 @@ describe("Stripe subscription lifecycle", () => {
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "canceled",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -425,6 +472,62 @@ describe("Stripe subscription lifecycle", () => {
     await expect(
       deliverEvent(db, "customer.created", { id: "cus_1", object: "customer" }),
     ).resolves.toEqual({ ignored: true });
+  });
+
+  it("increments the entitlement revision for each committed subscription mutation", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+
+    await deliverEvent(db, "customer.subscription.created", subscription());
+    expect(db.store.services_subscription[0]).toMatchObject({ entitlementRevision: 1 });
+
+    await deliverEvent(db, "customer.subscription.updated", subscription({ status: "past_due" }));
+    expect(db.store.services_subscription[0]).toMatchObject({
+      status: "past_due",
+      entitlementRevision: 2,
+    });
+  });
+
+  it("reloads the committed revision for the post-commit entitlement push", async () => {
+    const db = makeDb();
+    const pushed: Array<{ revision: number; status: string }> = [];
+    seedOrganization(db, "org-1", "cus_1");
+
+    await deliverEvent(db, "customer.subscription.created", subscription(), {
+      onApplied: (result, servicesDb) =>
+        Effect.gen(function* () {
+          if (!result.tenantId) return;
+          const entitlement = yield* tenantEntitlement(servicesDb, result.tenantId);
+          if (entitlement)
+            pushed.push({ revision: entitlement.revision, status: entitlement.status });
+        }),
+    });
+
+    expect(pushed).toEqual([{ revision: 1, status: "active" }]);
+  });
+
+  it("locks the exact subscription row before mutating its revision", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+    const select = db.select.bind(db);
+    const locks: string[] = [];
+
+    db.select = ((fields?: any) => {
+      const builder: any = select(fields);
+      const lock = builder.for.bind(builder);
+
+      builder.for = (strength: string) => {
+        locks.push(strength);
+        return lock(strength);
+      };
+
+      return builder;
+    }) as typeof db.select;
+
+    await deliverEvent(db, "customer.subscription.updated", subscription());
+
+    expect(locks).toEqual(["update", "update"]);
+    expect(db.store.services_subscription[0]).toMatchObject({ entitlementRevision: 1 });
   });
 });
 
@@ -518,6 +621,74 @@ describe("Stripe Checkout completion", () => {
     expect(db.store.services_stripe_event).toHaveLength(1);
     expect(db.store.services_subscription).toHaveLength(1);
   });
+
+  it("allows replacement only through a validated Checkout completion", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+    db.store.services_subscription.push({
+      id: "local-sub",
+      plan: "device",
+      tenantId: "org-1",
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_old",
+      status: "canceled",
+      entitlementRevision: 4,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expect(
+      deliverEvent(
+        db,
+        "checkout.session.completed",
+        checkoutSession({ subscription: "sub_new", metadata: { organizationId: "org-1" } }),
+      ),
+    ).resolves.toMatchObject({ tenantId: "org-1" });
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_new",
+      status: "active",
+      entitlementRevision: 5,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(
+        db,
+        "customer.subscription.updated",
+        subscription({ id: "sub_old", status: "active" }),
+      ),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_new",
+      status: "active",
+      entitlementRevision: 5,
+    });
+  });
+
+  it("rejects Checkout that names another tenant's recorded subscription", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+    seedOrganization(db, "org-2", "cus_2");
+    db.store.services_subscription.push({
+      id: "local-sub-2",
+      plan: "device",
+      tenantId: "org-2",
+      stripeCustomerId: "cus_2",
+      stripeSubscriptionId: "sub_2",
+      status: "active",
+      entitlementRevision: 1,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(db, "checkout.session.completed", checkoutSession({ subscription: "sub_2" })),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({ tenantId: "org-2" });
+  });
 });
 
 describe("Stripe webhook tenant resolution", () => {
@@ -576,6 +747,7 @@ describe("Stripe webhook tenant resolution", () => {
       stripeCustomerId: "cus_2",
       stripeSubscriptionId: "sub_2",
       status: "active",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -611,6 +783,7 @@ describe("Stripe webhook tenant resolution", () => {
       stripeCustomerId: "cus_2",
       stripeSubscriptionId: "sub_2",
       status: "active",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -635,6 +808,70 @@ describe("Stripe webhook tenant resolution", () => {
     });
   });
 
+  it("rejects a stale invoice subscription id instead of falling back to the tenant row", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+    db.store.services_subscription.push({
+      id: "local-sub",
+      plan: "device",
+      tenantId: "org-1",
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(db, "invoice.paid", {
+        id: "in_stale",
+        object: "invoice",
+        customer: "cus_1",
+        subscription: "sub_replaced",
+        status: "paid",
+      }),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+    });
+  });
+
+  it("rejects a stale subscription id instead of replacing the tenant's current pointer", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+    db.store.services_subscription.push({
+      id: "local-sub",
+      plan: "device",
+      tenantId: "org-1",
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(
+        db,
+        "customer.subscription.updated",
+        subscription({ id: "sub_replaced", status: "active" }),
+      ),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+    });
+  });
+
   it("keeps tenants isolated when two organizations both have subscriptions", async () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
@@ -646,6 +883,7 @@ describe("Stripe webhook tenant resolution", () => {
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "active",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -777,6 +1015,143 @@ describe("POST /api/v1/billing/webhook", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ received: true });
     expect(db.store.services_subscription).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      name: "connection",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.ConnectionError({
+            cause: mysqlDriverError(2003, "ECONNREFUSED", "connect ECONNREFUSED"),
+            message: "connect ECONNREFUSED",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "deadlock",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.DeadlockError({
+            cause: mysqlDriverError(1213, "ER_LOCK_DEADLOCK", "Deadlock found"),
+            message: "Deadlock found",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "lock timeout",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.LockTimeoutError({
+            cause: mysqlDriverError(1205, "ER_LOCK_WAIT_TIMEOUT", "Lock wait timeout"),
+            message: "Lock wait timeout",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "non-unique constraint",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.ConstraintError({
+            cause: mysqlDriverError(1452, "ER_NO_REFERENCED_ROW_2", "Constraint failed"),
+            message: "Constraint failed",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unique constraint on another table",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.UniqueViolation({
+            cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+            constraint: "services_subscription.PRIMARY",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unstructured driver duplicate",
+      error: () =>
+        new EffectDrizzleQueryError({
+          query: ledgerQuery,
+          params: undefined,
+          cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+        }),
+    },
+  ])("returns 500 for a Drizzle-wrapped $name failure", async ({ error }) => {
+    const db = makeFailingLedgerDb(error());
+    seedOrganization(db, "org-1", "cus_1");
+    const payload = JSON.stringify(event("customer.subscription.created", subscription()));
+
+    const response = await makeHandler(db)(
+      new Request("http://localhost/api/v1/billing/webhook", {
+        method: "POST",
+        headers: {
+          "stripe-signature": signed(payload).signature,
+          "content-type": "application/json",
+        },
+        body: payload,
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: "Webhook processing failed" });
+    expect(db.store.services_stripe_event).toEqual([]);
+    expect(db.store.services_subscription).toEqual([]);
+  });
+
+  it("returns 500 when a later stripe_event update fails", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+    const update = db.update.bind(db);
+
+    db.update = ((table: any) => {
+      const builder: any = update(table);
+
+      if (table !== servicesSchema.stripeEvent) return builder;
+
+      const set = builder.set.bind(builder);
+
+      builder.set = (patch: any) => {
+        const next: any = set(patch);
+
+        next.where = (_condition: any) =>
+          Effect.fail(
+            drizzleSqlError(
+              new SqlError.ConnectionError({
+                cause: mysqlDriverError(2013, "CR_SERVER_LOST", "Lost connection"),
+                message: "Lost connection",
+                operation: "update",
+              }),
+              "update services_stripe_event set tenant_id = ? where id = ?",
+            ),
+          );
+
+        return next;
+      };
+
+      return builder;
+    }) as typeof db.update;
+
+    const payload = JSON.stringify(event("customer.subscription.created", subscription()));
+    const response = await makeHandler(db)(
+      new Request("http://localhost/api/v1/billing/webhook", {
+        method: "POST",
+        headers: {
+          "stripe-signature": signed(payload).signature,
+          "content-type": "application/json",
+        },
+        body: payload,
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(db.store.services_stripe_event).toEqual([]);
+    expect(db.store.services_subscription).toEqual([]);
   });
 
   it("returns 400 for a missing signature", async () => {

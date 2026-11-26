@@ -3,6 +3,7 @@ import { Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 import { AzureOidc } from "@mattrax/azure-oidc";
 import { Db, schema } from "@mattrax/enterprise-core";
+import { appleRemotemanagementRedirect } from "./appleByod.js";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 import { ssoRoutes } from "./sso.js";
 import type { SsoRoutesOptions } from "./sso.js";
@@ -30,6 +31,9 @@ type Table =
   | "ssoConfig"
   | "ssoDomain"
   | "ssoIdentity"
+  | "appleByodEnrollment"
+  | "appleByodConfig"
+  | "user"
   | "organization"
   | "loginAttempt"
   | "authCredentials";
@@ -50,6 +54,9 @@ const tableNames: Table[] = [
   "ssoConfig",
   "ssoDomain",
   "ssoIdentity",
+  "appleByodEnrollment",
+  "appleByodConfig",
+  "user",
   "organization",
   "loginAttempt",
   "authCredentials",
@@ -77,6 +84,9 @@ const makeDb = (initial: Partial<Store> = {}) => {
     ssoConfig: [...(initial.ssoConfig ?? [])],
     ssoDomain: [...(initial.ssoDomain ?? [])],
     ssoIdentity: [...(initial.ssoIdentity ?? [])],
+    appleByodEnrollment: [...(initial.appleByodEnrollment ?? [])],
+    appleByodConfig: [...(initial.appleByodConfig ?? [])],
+    user: [...(initial.user ?? [])],
     organization: [...(initial.organization ?? [])],
     loginAttempt: [...(initial.loginAttempt ?? [])],
     authCredentials: [...(initial.authCredentials ?? [])],
@@ -110,9 +120,29 @@ const makeDb = (initial: Partial<Store> = {}) => {
 
       return builder;
     },
-    update: () => ({
-      set: () => ({
-        where: () => Effect.void,
+    update: (table: any) => ({
+      set: (value: Row | Row[]) => ({
+        where: () =>
+          Effect.sync(() => {
+            // Only the BYOD callback claims an enrollment. Mirror its exact
+            // predicate so the regression test exercises the guarded claim.
+            const key = storeKey(table);
+            const matched =
+              key === "appleByodEnrollment"
+                ? store[key].filter(
+                    (row) =>
+                      row.id === "challenge-1" &&
+                      row.organizationId === tenantId &&
+                      row.authorizedAt == null &&
+                      row.tokenHash == null &&
+                      row.challengeExpiresAt instanceof Date &&
+                      row.challengeExpiresAt.getTime() > Date.now(),
+                  )
+                : [];
+            for (const row of matched) Object.assign(row, value);
+
+            return { affectedRows: matched.length };
+          }),
       }),
     }),
     delete: () => ({
@@ -120,10 +150,8 @@ const makeDb = (initial: Partial<Store> = {}) => {
     }),
     select: () => ({
       from: (table: any) => ({
-        // `ensureCredential` is the only select the callback makes. The tests
-        // seed or inspect the credential table directly.
-        where: () => ({
-          limit: () => Effect.succeed(store[storeKey(table)]),
+        where: (where: any) => ({
+          limit: () => Effect.succeed(store[storeKey(table)].filter((row) => matches(row, where))),
         }),
       }),
     }),
@@ -340,6 +368,24 @@ describe("Entra SSO callback failures", () => {
     });
 
     expectFailure(response, "state_mismatch", [state], { clearsCookie: false });
+  });
+
+  it("rejects a foreign signed BYOD state without clearing the victim BYOD cookie", async () => {
+    const state = await stateToken({
+      purpose: "apple-byod-sso-state",
+      tenantId,
+      challengeId: "challenge-1",
+    });
+    const victimCookie = `__Host-byod_sso_state=${encodeURIComponent("victim-state")}`;
+
+    const response = await serve({
+      db: makeDb(),
+      request: callbackRequest(`state=${state}`, victimCookie),
+      routeOptions: { ...options, origin: "https://verified.example" },
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
 
   it("redirects a forged state without trusting its payload", async () => {
@@ -691,6 +737,167 @@ describe("Entra SSO callback failures", () => {
     });
 
     expectFailure(response, "sign_in_failed", ["database offline", "secret-detail"]);
+  });
+});
+
+describe("No-code Apple BYOD callback", () => {
+  const byodOptions = { ...options, origin: "https://verified.example" };
+
+  const byodState = (overrides: Row = {}) =>
+    Effect.runPromise(
+      signToken(secret, {
+        sub: tenantId,
+        email: "student@verified.example",
+        exp: Date.now() + 10 * 60 * 1000,
+        purpose: "apple-byod-sso-state",
+        tenantId,
+        nonce: "nonce-1",
+        challengeId: "challenge-1",
+        ...overrides,
+      }),
+    );
+
+  const byodCookie = (state: string) => `__Host-byod_sso_state=${encodeURIComponent(state)}`;
+
+  const byodRows = () => ({
+    appleByodEnrollment: [
+      {
+        id: "challenge-1",
+        organizationId: tenantId,
+        accountId: undefined,
+        directoryUserId: undefined,
+        requestHash: "request-hash",
+        challengeExpiresAt: new Date(Date.now() + 60_000),
+        authorizedAt: null,
+        tokenHash: null,
+      },
+    ],
+    appleByodConfig: [
+      {
+        organizationId: tenantId,
+        enabled: true,
+        domain: "verified.example",
+        hardwareValidationRequired: false,
+        hardwareValidatedAt: null,
+      },
+    ],
+    user: [
+      {
+        id: "directory-1",
+        organizationId: tenantId,
+        name: "Student",
+        email: "student@verified.example",
+        externalId: "entra-object",
+        source: "entra",
+        disabled: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ],
+    account: [account({ email: "student@verified.example" })],
+    member: [{ id: "member-1", organizationId: tenantId, accountId: "account-1" }],
+    ssoIdentity: [identity()],
+    ssoConfig: [config()],
+    authCredentials: [
+      {
+        credentialId: "credential-1",
+        subjectId: "account-1",
+        revision: "revision-1",
+        active: true,
+      },
+    ],
+  });
+
+  const oidcClaims = () => ({
+    iss: "https://login.microsoftonline.com/entra-tenant/v2.0",
+    aud: "client-id",
+    sub: "subject",
+    oid: "entra-object",
+    email: "student@verified.example",
+    nonce: "nonce-1",
+    name: "Student",
+  });
+
+  it("leaves the victim cookies intact so the victim flow still completes", async () => {
+    const attackerState = await byodState({ nonce: "attacker-nonce" });
+    const victimState = await byodState();
+    const dashboardState = await stateToken({ nonce: "dashboard-nonce" });
+    const victimCookies = `${byodCookie(victimState)}; ${cookie(dashboardState)}`;
+    const db = makeDb(byodRows());
+
+    const attack = await serve({
+      db,
+      request: callbackRequest(`state=${attackerState}`, victimCookies),
+      routeOptions: byodOptions,
+    });
+
+    expect(attack.status).toBe(400);
+    expect(attack.headers.get("set-cookie")).toBeNull();
+    expect(db.store.appleByodEnrollment[0]).toMatchObject({
+      accountId: undefined,
+      directoryUserId: undefined,
+      tokenHash: null,
+      authorizedAt: null,
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
+    );
+
+    const completed = await serve({
+      db,
+      request: callbackRequest(`code=code&state=${victimState}`, victimCookies),
+      routeOptions: byodOptions,
+      oidc: oidc({ validateJwt: () => Effect.succeed(oidcClaims()) }),
+    });
+
+    expect(completed.status).toBe(308);
+    expect(completed.headers.get("location")).toContain(
+      appleRemotemanagementRedirect("").split("?")[0]!,
+    );
+    expect(new URL(completed.headers.get("location")!).searchParams.get("access-token")).toEqual(
+      expect.any(String),
+    );
+    expect(completed.headers.get("set-cookie")).toContain("__Host-byod_sso_state=;");
+    expect(completed.headers.get("set-cookie")).not.toContain("__Host-sso_state=");
+    expect(db.store.appleByodEnrollment[0]).toMatchObject({
+      accountId: "account-1",
+      directoryUserId: "directory-1",
+      authorizedAt: expect.any(Date),
+    });
+  });
+
+  it("rejects an expired matching no-code state and clears only the BYOD cookie", async () => {
+    const state = await byodState({ exp: Date.now() - 1 });
+    const response = await serve({
+      db: makeDb(),
+      request: callbackRequest(`state=${state}`, byodCookie(state)),
+      routeOptions: byodOptions,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain("took too long");
+    expect(response.headers.get("set-cookie")).toContain("__Host-byod_sso_state=;");
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(response.headers.get("set-cookie")).not.toContain("__Host-sso_state=");
+  });
+
+  it("returns a cancelled flow to Apple without clearing the dashboard cookie", async () => {
+    const state = await byodState();
+    const response = await serve({
+      db: makeDb(),
+      request: callbackRequest(
+        `state=${state}`,
+        `${byodCookie(state)}; ${cookie("dashboard-state")}`,
+      ),
+      routeOptions: byodOptions,
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(response.headers.get("set-cookie")).toContain("__Host-byod_sso_state=;");
+    expect(response.headers.get("set-cookie")).not.toContain("__Host-sso_state=");
   });
 });
 

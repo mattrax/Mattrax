@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import type { CutoverImportResponse, CutoverPreview } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
+import { Checkbox } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -29,7 +30,7 @@ const origin = () => (typeof window === "undefined" ? "" : window.location.origi
 const bytes = (value: number) => (value < 1024 ? `${value} B` : `${(value / 1024).toFixed(1)} KB`);
 
 const severityClass = {
-  ok: "border-success/25 bg-success/[0.06] text-success-foreground",
+  ok: "border-success/25 bg-success/[0.06] text-success",
   info: "border-border bg-surface text-muted-foreground",
   warning: "border-warning/25 bg-warning/[0.07] text-warning-foreground",
   blocker: "border-destructive/25 bg-destructive/[0.07] text-destructive",
@@ -43,15 +44,14 @@ const Toggle = (props: {
   disabled?: boolean;
 }) => (
   <label class="flex items-start gap-2.5 py-2">
-    <input
-      type="checkbox"
-      class="mt-0.5 size-3.5 shrink-0 accent-brand"
+    <Checkbox
+      class="mt-0.5"
       checked={props.checked}
       disabled={props.disabled}
-      onChange={(event) => props.onChange(event.currentTarget.checked)}
+      onCheckedChange={(checked) => props.onChange(checked === true)}
     />
     <span class="min-w-0">
-      <span class="block text-[13px] font-medium text-foreground">{props.label}</span>
+      <span class="block text-xs font-medium text-foreground">{props.label}</span>
       <span class="block text-xs leading-relaxed text-muted-foreground">{props.hint}</span>
     </span>
   </label>
@@ -66,7 +66,7 @@ const Toggle = (props: {
  * permission-gated; the passphrase never leaves this component except in the
  * request body.
  */
-export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
+export default function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -279,7 +279,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
     >
       <div class="divide-y divide-border">
         <section class="pb-5">
-          <h3 class="text-[13px] font-semibold text-foreground">Preflight</h3>
+          <h3 class="text-xs font-semibold text-foreground">Preflight</h3>
           <p class="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
             Reports what a change of ORIGIN breaks before DNS is touched: installed profiles, SCEP
             renewal URLs, APNs, platform integrations, WebAuthn relying party and pending email
@@ -315,8 +315,8 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                       {(item) => (
                         <li class={cn("rounded-lg border px-3 py-2", severityClass[item.severity])}>
                           <div class="flex flex-wrap items-center justify-between gap-2">
-                            <span class="text-[13px] font-medium">{item.title}</span>
-                            <span class="text-[10px] uppercase tracking-[0.12em]">
+                            <span class="text-xs font-medium">{item.title}</span>
+                            <span class="text-xs uppercase tracking-widest">
                               {item.severity}
                               <Show when={item.affected !== undefined}>
                                 {" · "}
@@ -330,7 +330,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                     </For>
                   </ul>
                   <details class="rounded-lg border border-border bg-surface p-3">
-                    <summary class="cursor-pointer text-[13px] font-medium text-foreground">
+                    <summary class="cursor-pointer text-xs font-medium text-foreground">
                       Cutover sequence
                     </summary>
                     <ol class="mt-2 list-decimal space-y-2 pl-5 text-xs leading-relaxed text-muted-foreground">
@@ -351,7 +351,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
         </section>
 
         <section class="py-5">
-          <h3 class="text-[13px] font-semibold text-foreground">Encrypted cutover archive</h3>
+          <h3 class="text-xs font-semibold text-foreground">Encrypted cutover archive</h3>
           <p class="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
             The archive includes private keys and device credentials, so it is encrypted with your
             passphrase (PBKDF2-SHA256, AES-256-GCM) and never uploaded anywhere. Store it like a
@@ -359,7 +359,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
           </p>
           <div class="mt-3 grid gap-4 lg:grid-cols-2">
             <div class="rounded-lg border border-border bg-surface p-3">
-              <p class="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+              <p class="text-xs font-medium uppercase tracking-widest text-muted-foreground">
                 Included
               </p>
               <Toggle
@@ -434,7 +434,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
               </Show>
               <Show when={exported()}>
                 {(value) => (
-                  <p role="status" class="flex items-start gap-2 text-xs text-success-foreground">
+                  <p role="status" class="flex items-start gap-2 text-xs text-success">
                     <CheckCircle2 class="mt-0.5 size-3.5 shrink-0" />
                     Archive downloaded ({bytes(value().bytes)}). Delete it once every device has
                     checked in.
@@ -447,7 +447,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
         </section>
 
         <section class="pt-5">
-          <h3 class="text-[13px] font-semibold text-foreground">Import a cutover archive</h3>
+          <h3 class="text-xs font-semibold text-foreground">Import a cutover archive</h3>
           <p class="mt-1 max-w-3xl text-xs leading-relaxed text-muted-foreground">
             Creates a new tenant, or replaces this tenant's configuration and device data if you
             choose that explicitly. Nothing is written until you preview the archive, review every
@@ -514,12 +514,11 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                 />
               </label>
               <label class="flex items-start gap-2 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                <Checkbox
+                  class="mt-0.5"
                   checked={targetExisting()}
-                  onChange={(event) => {
-                    setTargetExisting(event.currentTarget.checked);
+                  onCheckedChange={(checked) => {
+                    setTargetExisting(checked === true);
                     setPreview(null);
                   }}
                 />
@@ -539,7 +538,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                 {(value) => (
                   <div class="space-y-3">
                     <div class="rounded-lg border border-border bg-surface p-3">
-                      <p class="text-[13px] font-medium text-foreground">
+                      <p class="text-xs font-medium text-foreground">
                         {value().source.name}
                         <span class="font-normal text-muted-foreground">
                           {" "}
@@ -565,7 +564,9 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                         <For each={value().warnings}>
                           {(warning) => (
                             <li class="flex items-start gap-2 text-xs text-muted-foreground">
-                              <CircleAlert class="mt-0.5 size-3.5 shrink-0 text-warning" />
+                              <span class="mt-0.5 inline-flex shrink-0 text-warning">
+                                <CircleAlert class="size-3.5" />
+                              </span>
                               {warning}
                             </li>
                           )}
@@ -612,12 +613,11 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                     <div class="space-y-2 rounded-lg border border-border p-3">
                       <Show when={value().requirements.allowCrossDeployment}>
                         <label class="flex items-start gap-2 text-xs text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                          <Checkbox
+                            class="mt-0.5"
                             checked={allowCrossDeployment()}
-                            onChange={(event) =>
-                              setAllowCrossDeployment(event.currentTarget.checked)
+                            onCheckedChange={(checked) =>
+                              setAllowCrossDeployment(checked === true)
                             }
                           />
                           I confirm this archive comes from a different deployment.
@@ -625,12 +625,11 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                       </Show>
                       <Show when={value().requirements.replaceConfiguration}>
                         <label class="flex items-start gap-2 text-xs text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                          <Checkbox
+                            class="mt-0.5"
                             checked={replaceConfiguration()}
-                            onChange={(event) =>
-                              setReplaceConfiguration(event.currentTarget.checked)
+                            onCheckedChange={(checked) =>
+                              setReplaceConfiguration(checked === true)
                             }
                           />
                           Replace this tenant's existing groups, policies and applications.
@@ -640,11 +639,10 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                         when={value().conflicts.some((conflict) => conflict.kind === "scep_ca")}
                       >
                         <label class="flex items-start gap-2 text-xs text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                          <Checkbox
+                            class="mt-0.5"
                             checked={replaceScepCa()}
-                            onChange={(event) => setReplaceScepCa(event.currentTarget.checked)}
+                            onCheckedChange={(checked) => setReplaceScepCa(checked === true)}
                           />
                           Make the source SCEP CA the signing CA (the target CA stays trusted).
                         </label>
@@ -653,11 +651,10 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                         when={value().conflicts.some((conflict) => conflict.kind === "escrow_key")}
                       >
                         <label class="flex items-start gap-2 text-xs text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                          <Checkbox
+                            class="mt-0.5"
                             checked={replaceEscrowKey()}
-                            onChange={(event) => setReplaceEscrowKey(event.currentTarget.checked)}
+                            onCheckedChange={(checked) => setReplaceEscrowKey(checked === true)}
                           />
                           Replace this tenant's FileVault escrow key with the archive's key.
                         </label>
@@ -668,12 +665,10 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
                         )}
                       >
                         <label class="flex items-center gap-2 text-xs text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            class="size-3.5 shrink-0 accent-brand"
+                          <Checkbox
                             checked={deviceConflicts() === "skip"}
-                            onChange={(event) =>
-                              setDeviceConflicts(event.currentTarget.checked ? "skip" : "fail")
+                            onCheckedChange={(checked) =>
+                              setDeviceConflicts(checked === true ? "skip" : "fail")
                             }
                           />
                           Skip devices whose serial already exists in this tenant.
@@ -702,7 +697,7 @@ export function CutoverPanel(props: { tenant: TenantDetail | undefined }) {
             {(value) => (
               <div class="space-y-3">
                 <div class="rounded-lg border border-success/25 bg-success/[0.07] p-3 text-sm">
-                  <p class="font-medium text-success-foreground">
+                  <p class="font-medium text-success">
                     Imported {value().mode === "new" ? "as a new tenant" : "into this tenant"}
                   </p>
                   <p class="mt-1 text-xs text-muted-foreground">

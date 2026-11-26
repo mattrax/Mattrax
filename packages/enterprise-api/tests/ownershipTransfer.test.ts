@@ -9,7 +9,8 @@ import {
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import type { OutboundEmailMessage } from "@mattrax/email";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -23,15 +24,6 @@ type TestUser = {
   updatedAt: Date;
   totpEnabled?: boolean;
   passkeyEnabled?: boolean;
-};
-
-type SentEmail = {
-  to: string;
-  from: { name: string; email: string };
-  replyTo?: { name: string; email: string };
-  subject: string;
-  text?: string;
-  html?: string;
 };
 
 const userRow = (overrides: Partial<TestUser> = {}): TestUser => {
@@ -52,11 +44,11 @@ const userRow = (overrides: Partial<TestUser> = {}): TestUser => {
 const makeContext = (options: { db?: any; user?: Partial<TestUser> } = {}) => {
   const db = options.db ?? makeDb();
   const user = userRow(options.user);
-  const sent: SentEmail[] = [];
+  const sent: OutboundEmailMessage[] = [];
 
   if (!db.store.account.some((row: any) => row.id === user.id)) db.store.account.push(user);
 
-  const email = makeEmailTransport(async (message: SentEmail) => {
+  const email = makeEmailTransport(async (message: OutboundEmailMessage) => {
     sent.push(message);
   });
 
@@ -78,7 +70,6 @@ const makeContext = (options: { db?: any; user?: Partial<TestUser> } = {}) => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods these tests exercise.

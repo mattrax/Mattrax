@@ -1,9 +1,11 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { Context, Effect, Layer, Option, Schema } from "effect";
+import { Context, DateTime, Effect, Layer, Option, Schema } from "effect";
 import type { HttpServerRequest } from "effect/http";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { Db, schema } from "@mattrax/enterprise-core";
-import { syncDirectoryGroupsForTenant } from "@mattrax/mdm-apple";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { syncDirectoryGroupsForTenant } from "@mattrax/mdm-core";
+import { catchCausePreservingInterrupts } from "./errorBoundary.js";
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
@@ -48,7 +50,9 @@ const scimError = (status: number, detail: string, scimType?: string) => {
 const readJson = (request: HttpServerRequest.HttpServerRequest) =>
   request.json.pipe(
     Effect.map((body) => ({ valid: true as const, body })),
-    Effect.catchCause(() => Effect.succeed({ valid: false as const, body: undefined })),
+    catchCausePreservingInterrupts(() =>
+      Effect.succeed({ valid: false as const, body: undefined }),
+    ),
   );
 
 const sha256 = (value: string) =>
@@ -62,7 +66,7 @@ const sha256 = (value: string) =>
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
-const now = () => new Date();
+const now = () => DateTime.now.pipe(Effect.map(DateTime.toDate));
 
 const iso = (value: Date | null | undefined) =>
   (value instanceof Date ? value : new Date(value ?? 0)).toISOString();
@@ -70,6 +74,14 @@ const iso = (value: Date | null | undefined) =>
 type UserRow = typeof schema.user.$inferSelect;
 
 type GroupRow = typeof schema.userGroup.$inferSelect;
+
+type ScimDb = Pick<EnterpriseDb, "select" | "insert" | "update" | "delete" | "query">;
+
+type ScimMutation<A> = {
+  readonly response: A;
+  readonly changedUserIds: ReadonlySet<string>;
+  readonly changedDeviceIds: ReadonlySet<string>;
+};
 
 const ScimGroupMemberRef = Schema.Struct({ value: Schema.String });
 
@@ -139,7 +151,7 @@ const authenticate = (request: HttpServerRequest.HttpServerRequest, tenantId: st
 
     // An expired token is reported exactly like an unknown or revoked one so a
     // caller cannot distinguish "expired" from "wrong token".
-    const timestamp = now();
+    const timestamp = yield* now();
 
     if (token.expiresAt && new Date(token.expiresAt).getTime() <= timestamp.getTime())
       return yield* Effect.fail(scimError(401, "Invalid SCIM token"));
@@ -158,12 +170,24 @@ const authenticate = (request: HttpServerRequest.HttpServerRequest, tenantId: st
   });
 
 const parsePath = (request: HttpServerRequest.HttpServerRequest) => {
-  const path = new URL(request.url, "http://localhost").pathname;
-  const match = /^\/scim\/v2\/([^/]+)(?:\/(Users|Groups)(?:\/([^/]+))?)?$/.exec(path);
+  try {
+    const path = new URL(request.url, "http://localhost").pathname;
+    const match = /^\/scim\/v2\/([^/]+)(?:\/(Users|Groups)(?:\/([^/]+))?)?$/.exec(path);
 
-  return match
-    ? { tenantId: decodeURIComponent(match[1]), resource: match[2], id: match[3] }
-    : null;
+    if (!match) return { kind: "not_found" } as const;
+
+    return {
+      kind: "ok",
+      tenantId: decodeURIComponent(match[1]),
+      resource: match[2],
+      id: match[3] === undefined ? undefined : decodeURIComponent(match[3]),
+    } as const;
+  } catch {
+    return {
+      kind: "invalid",
+      response: scimError(400, "Malformed SCIM path", "invalidSyntax"),
+    } as const;
+  }
 };
 
 /**
@@ -204,6 +228,18 @@ const groupResource = (
   },
 });
 
+const mutation = <A>(
+  response: A,
+  changedUserIds: ReadonlySet<string> = new Set(),
+  changedDeviceIds: ReadonlySet<string> = new Set(),
+): ScimMutation<A> => ({ response, changedUserIds, changedDeviceIds });
+
+const commitChanges = (ctx: ScimContext, result: ScimMutation<unknown>) =>
+  Effect.sync(() => {
+    for (const userId of result.changedUserIds) ctx.changedUserIds.add(userId);
+    for (const deviceId of result.changedDeviceIds) ctx.changedDeviceIds.add(deviceId);
+  });
+
 const listUsers = (ctx: ScimContext) =>
   Effect.gen(function* () {
     const db = yield* Db;
@@ -220,15 +256,9 @@ const listUsers = (ctx: ScimContext) =>
     });
   });
 
-const findUser = (ctx: ScimContext, userId: string) =>
-  Effect.gen(function* () {
-    const db = yield* Db;
-
-    const user = yield* db.query.user.findFirst({
-      where: { id: userId, organizationId: ctx.organizationId },
-    });
-
-    return user ?? null;
+const findUser = (db: ScimDb, ctx: ScimContext, userId: string) =>
+  db.query.user.findFirst({
+    where: { id: userId, organizationId: ctx.organizationId },
   });
 
 const createUser = (ctx: ScimContext, body: typeof ScimUserPayload.Type) =>
@@ -249,167 +279,204 @@ const createUser = (ctx: ScimContext, body: typeof ScimUserPayload.Type) =>
 
     const name = suppliedName || email;
 
-    const timestamp = now();
+    const result = yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const timestamp = yield* now();
 
-    // Reuse the tenant's existing row for this address (or provider object) so
-    // a retried create cannot duplicate the directory person. Both lookups are
-    // scoped to this organization; accounts are never consulted.
-    let user = yield* db.query.user.findFirst({
-      where: { organizationId: ctx.organizationId, email },
-    });
+        // Reuse the tenant's existing row for this address (or provider object)
+        // so a retried create cannot duplicate the directory person.
+        let user = yield* tx.query.user.findFirst({
+          where: { organizationId: ctx.organizationId, email },
+        });
 
-    if (!user && externalId)
-      user = yield* db.query.user.findFirst({
-        where: { organizationId: ctx.organizationId, externalId },
-      });
+        if (!user && externalId)
+          user = yield* tx.query.user.findFirst({
+            where: { organizationId: ctx.organizationId, externalId },
+          });
 
-    if (user) {
-      yield* db
-        .update(schema.user)
-        .set({
-          // Only overwrite what the IdP actually supplied; a retry that omits
-          // the name must not discard the value stored earlier.
-          ...(suppliedName ? { name: suppliedName } : {}),
-          ...(externalId ? { externalId } : {}),
+        if (user) {
+          yield* tx
+            .update(schema.user)
+            .set({
+              // Only overwrite what the IdP actually supplied.
+              ...(suppliedName ? { name: suppliedName } : {}),
+              ...(externalId ? { externalId } : {}),
+              updatedAt: timestamp,
+            })
+            .where(eq(schema.user.id, user.id));
+
+          const existing = yield* findUser(tx, ctx, user.id);
+
+          return mutation(
+            existing ? json(userResource(existing)) : scimError(500, "Could not resolve the user"),
+          );
+        }
+
+        const userId = id();
+
+        yield* tx.insert(schema.user).values({
+          id: userId,
+          organizationId: ctx.organizationId,
+          name,
+          email,
+          externalId: externalId ?? null,
+          source: "scim",
+          disabled: false,
+          createdAt: timestamp,
           updatedAt: timestamp,
-        })
-        .where(eq(schema.user.id, user.id));
+        });
 
-      const existing = yield* findUser(ctx, user.id);
+        const created = yield* findUser(tx, ctx, userId);
 
-      return existing ? json(userResource(existing)) : scimError(500, "Could not resolve the user");
-    }
+        return mutation(
+          created ? json(userResource(created), 201) : scimError(500, "Could not create the user"),
+        );
+      }),
+    );
 
-    const userId = id();
-
-    yield* db.insert(schema.user).values({
-      id: userId,
-      organizationId: ctx.organizationId,
-      name,
-      email,
-      externalId: externalId ?? null,
-      source: "scim",
-      disabled: false,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-
-    const created = yield* findUser(ctx, userId);
-
-    return created ? json(userResource(created), 201) : scimError(500, "Could not create the user");
+    return result.response;
   });
 
 const patchUser = (ctx: ScimContext, userId: string, body: typeof ScimPatch.Type) =>
   Effect.gen(function* () {
     const db = yield* Db;
-    const current = yield* findUser(ctx, userId);
 
-    if (!current) return scimError(404, "User not found");
+    const result = yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const current = yield* findUser(tx, ctx, userId);
 
-    const operations = Array.isArray(body.Operations) ? body.Operations : [];
+        if (!current) return mutation(scimError(404, "User not found"));
 
-    let name = current.name;
-    let email = current.email;
-    let disabled = current.disabled;
+        const operations = Array.isArray(body.Operations) ? body.Operations : [];
 
-    for (const operation of operations) {
-      const path = String(operation.path ?? "").toLowerCase();
-      const value = operation.value;
+        let name = current.name;
+        let email = current.email;
+        let disabled = current.disabled;
 
-      if (path === "active") disabled = !value;
+        // Validate every operation before the first write.
+        for (const operation of operations) {
+          const path = String(operation.path ?? "").toLowerCase();
+          const value = operation.value;
 
-      if (path === "name.givenname" || path === "name.formatted" || path === "displayname") {
-        const next = String(value ?? "").trim();
+          if (path === "active") disabled = !value;
 
-        if (next) name = next;
-      }
+          if (path === "name.givenname" || path === "name.formatted" || path === "displayname") {
+            const next = String(value ?? "").trim();
 
-      if (path === "username") {
-        const nextEmail = String(value ?? "")
-          .trim()
-          .toLowerCase();
+            if (next) name = next;
+          }
 
-        if (!nextEmail.includes("@") || nextEmail === current.email) continue;
+          if (path === "username") {
+            const nextEmail = String(value ?? "")
+              .trim()
+              .toLowerCase();
 
-        // Directory addresses are unique per tenant, not deployment-wide. An
-        // account elsewhere may share the address without owning this person.
-        const conflict = yield* db.query.user.findFirst({
-          where: { organizationId: ctx.organizationId, email: nextEmail },
-        });
+            if (!nextEmail.includes("@") || nextEmail === current.email) continue;
 
-        if (conflict && conflict.id !== userId)
-          return scimError(409, "userName is already in use", "uniqueness");
+            const conflict = yield* tx.query.user.findFirst({
+              where: { organizationId: ctx.organizationId, email: nextEmail },
+            });
 
-        email = nextEmail;
-      }
-    }
+            if (conflict && conflict.id !== userId)
+              return mutation(scimError(409, "userName is already in use", "uniqueness"));
 
-    const changed =
-      name !== current.name || email !== current.email || disabled !== current.disabled;
+            email = nextEmail;
+          }
+        }
 
-    if (changed) {
-      yield* db
-        .update(schema.user)
-        .set({ name, email, disabled, updatedAt: now() })
-        .where(and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)));
+        const timestamp = yield* now();
+        const fieldsChanged =
+          name !== current.name || email !== current.email || disabled !== current.disabled;
+        const memberships = disabled
+          ? yield* tx
+              .select({ userId: schema.userGroupMember.userId })
+              .from(schema.userGroupMember)
+              .where(eq(schema.userGroupMember.userId, userId))
+          : [];
 
-      // Match Entra removal semantics: a disabled directory person must not
-      // stay in directory groups, where a later re-enable would silently
-      // restore old group-derived policies.
-      if (disabled)
-        yield* db.delete(schema.userGroupMember).where(eq(schema.userGroupMember.userId, userId));
+        if (fieldsChanged)
+          yield* tx
+            .update(schema.user)
+            .set({ name, email, disabled, updatedAt: timestamp })
+            .where(
+              and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)),
+            );
+        else if (memberships.length > 0)
+          yield* tx
+            .update(schema.user)
+            .set({ updatedAt: timestamp })
+            .where(
+              and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)),
+            );
 
-      ctx.changedUserIds.add(userId);
-    }
+        // A disabled directory person must not retain group-derived access.
+        if (memberships.length > 0)
+          yield* tx.delete(schema.userGroupMember).where(eq(schema.userGroupMember.userId, userId));
 
-    const updated = yield* findUser(ctx, userId);
+        const updated = yield* findUser(tx, ctx, userId);
+        const changedUserIds = new Set<string>();
 
-    return updated ? json(userResource(updated)) : scimError(404, "User not found");
+        if (fieldsChanged || memberships.length > 0) changedUserIds.add(userId);
+
+        return mutation(
+          updated ? json(userResource(updated)) : scimError(404, "User not found"),
+          changedUserIds,
+        );
+      }),
+    );
+
+    yield* commitChanges(ctx, result);
+
+    return result.response;
   });
 
 const deleteUser = (ctx: ScimContext, userId: string) =>
   Effect.gen(function* () {
     const db = yield* Db;
-    const current = yield* findUser(ctx, userId);
 
-    if (!current) return scimError(404, "User not found");
+    const result = yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const current = yield* findUser(tx, ctx, userId);
 
-    // Capture linked devices before the cascade removes `device_user`, so the
-    // post-request notifier can still wake them. Removing the directory person
-    // cascades group memberships, device links and direct policy assignments.
-    // Dashboard accounts, memberships and invitations are a different identity
-    // and are untouched.
-    const linkedDevices = yield* db
-      .select({ deviceId: schema.deviceUser.deviceId })
-      .from(schema.deviceUser)
-      .where(
-        and(
-          eq(schema.deviceUser.organizationId, ctx.organizationId),
-          eq(schema.deviceUser.userId, userId),
-        ),
-      );
+        if (!current) return mutation(scimError(404, "User not found"));
 
-    for (const device of linkedDevices) ctx.changedDeviceIds.add(device.deviceId);
+        // Capture linked devices before the cascade removes device_user.
+        const linkedDevices = yield* tx
+          .select({ deviceId: schema.deviceUser.deviceId })
+          .from(schema.deviceUser)
+          .where(
+            and(
+              eq(schema.deviceUser.organizationId, ctx.organizationId),
+              eq(schema.deviceUser.userId, userId),
+            ),
+          );
 
-    yield* db
-      .delete(schema.user)
-      .where(and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)));
-    ctx.changedUserIds.add(userId);
+        yield* tx
+          .delete(schema.user)
+          .where(
+            and(eq(schema.user.id, userId), eq(schema.user.organizationId, ctx.organizationId)),
+          );
 
-    return HttpServerResponse.empty({ status: 204 });
+        return mutation(
+          HttpServerResponse.empty({ status: 204 }),
+          new Set([userId]),
+          new Set(linkedDevices.map((device) => device.deviceId)),
+        );
+      }),
+    );
+
+    yield* commitChanges(ctx, result);
+
+    return result.response;
   });
 
 /**
- * Directory members of one or more tenant groups, resolved from `user` rows.
- * Group membership rows carry no organisation, so the user join pins the
- * tenant: a stale link to another tenant's person can never be rendered.
+ * Directory members resolved from tenant-scoped user rows. Membership rows
+ * themselves carry no organisation, so the user join is the isolation boundary.
  */
-const groupMemberRows = (organizationId: string, groupIds?: ReadonlyArray<string>) =>
+const groupMemberRows = (db: ScimDb, organizationId: string, groupIds?: ReadonlyArray<string>) =>
   Effect.gen(function* () {
-    // An empty set means no groups, so do not ask the database for `in ()`.
     if (groupIds && groupIds.length === 0) return [];
-
-    const db = yield* Db;
 
     const scope = groupIds
       ? and(
@@ -439,6 +506,7 @@ const listGroups = (ctx: ScimContext) =>
       .where(eq(schema.userGroup.organizationId, ctx.organizationId));
 
     const members = yield* groupMemberRows(
+      db,
       ctx.organizationId,
       groups.map((group) => group.id),
     );
@@ -455,19 +523,37 @@ const listGroups = (ctx: ScimContext) =>
     });
   });
 
-const findGroup = (ctx: ScimContext, groupId: string) =>
+const findGroup = (db: ScimDb, ctx: ScimContext, groupId: string) =>
   Effect.gen(function* () {
-    const db = yield* Db;
-
     const group = yield* db.query.userGroup.findFirst({
       where: { id: groupId, organizationId: ctx.organizationId },
     });
 
     if (!group) return null;
 
-    const members = yield* groupMemberRows(ctx.organizationId, [groupId]);
+    const members = yield* groupMemberRows(db, ctx.organizationId, [groupId]);
 
     return { group, members };
+  });
+
+const validMemberIds = (
+  db: ScimDb,
+  organizationId: string,
+  members: ReadonlyArray<{ value: string }>,
+) =>
+  Effect.gen(function* () {
+    const ids = [...new Set(members.map((member) => member.value))];
+
+    if (ids.length === 0) return [];
+
+    const valid = yield* db
+      .select({ userId: schema.user.id })
+      .from(schema.user)
+      .where(and(eq(schema.user.organizationId, organizationId), inArray(schema.user.id, ids)));
+
+    const allowed = new Set(valid.map((row) => row.userId));
+
+    return ids.filter((userId) => allowed.has(userId));
   });
 
 const createGroup = (ctx: ScimContext, body: typeof ScimGroupPayload.Type) =>
@@ -476,146 +562,125 @@ const createGroup = (ctx: ScimContext, body: typeof ScimGroupPayload.Type) =>
     const name = String(body.displayName ?? "").trim();
 
     if (!name) return scimError(400, "displayName is required");
-    const groupId = id();
-    const timestamp = now();
-    yield* db.insert(schema.userGroup).values({
-      id: groupId,
-      organizationId: ctx.organizationId,
-      name,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
+
     const members = Array.isArray(body.members) ? body.members : [];
+    const groupId = id();
 
-    if (members.length > 0) yield* replaceGroupMembers(ctx, groupId, members);
-    const created = yield* findGroup(ctx, groupId);
+    const result = yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const timestamp = yield* now();
+        const memberIds = yield* validMemberIds(tx, ctx.organizationId, members);
 
-    return created
-      ? json(groupResource(created.group, created.members), 201)
-      : scimError(500, "Could not create group");
+        yield* tx.insert(schema.userGroup).values({
+          id: groupId,
+          organizationId: ctx.organizationId,
+          name,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+
+        if (memberIds.length > 0)
+          yield* tx
+            .insert(schema.userGroupMember)
+            .ignore()
+            .values(memberIds.map((userId) => ({ groupId, userId })));
+
+        const created = yield* findGroup(tx, ctx, groupId);
+
+        return mutation(
+          created
+            ? json(groupResource(created.group, created.members), 201)
+            : scimError(500, "Could not create group"),
+          new Set(memberIds),
+        );
+      }),
+    );
+
+    yield* commitChanges(ctx, result);
+
+    return result.response;
   });
 
-const replaceGroupMembers = (
+const replaceGroupMembersIn = (
+  db: ScimDb,
   ctx: ScimContext,
   groupId: string,
   members: ReadonlyArray<{ value: string }>,
 ) =>
   Effect.gen(function* () {
-    const db = yield* Db;
-
-    // Resolve the group inside this tenant before touching membership: the
-    // group id is caller-supplied, and membership rows carry no organisation.
     const group = yield* db.query.userGroup.findFirst({
       where: { id: groupId, organizationId: ctx.organizationId },
     });
 
-    if (!group) return scimError(404, "Group not found");
+    if (!group) return mutation(scimError(404, "Group not found"));
 
     const previous = yield* db
       .select({ userId: schema.userGroupMember.userId })
       .from(schema.userGroupMember)
       .where(eq(schema.userGroupMember.groupId, groupId));
+    const memberIds = yield* validMemberIds(db, ctx.organizationId, members);
 
-    for (const row of previous) ctx.changedUserIds.add(row.userId);
+    // All member validation happens before the old collection is removed.
     yield* db.delete(schema.userGroupMember).where(eq(schema.userGroupMember.groupId, groupId));
-    const ids = [...new Set(members.map((member) => member.value))];
 
-    if (ids.length > 0) {
-      const valid = yield* db
-        .select({ userId: schema.user.id })
-        .from(schema.user)
-        .where(
-          and(eq(schema.user.organizationId, ctx.organizationId), inArray(schema.user.id, ids)),
-        );
-
-      const allowed = new Set(valid.map((row) => row.userId));
-      const rows = ids.filter((userId) => allowed.has(userId));
-
-      if (rows.length > 0) {
-        yield* db
-          .insert(schema.userGroupMember)
-          .ignore()
-          .values(rows.map((userId) => ({ groupId, userId })));
-
-        for (const userId of rows) ctx.changedUserIds.add(userId);
-      }
-    }
+    if (memberIds.length > 0)
+      yield* db
+        .insert(schema.userGroupMember)
+        .ignore()
+        .values(memberIds.map((userId) => ({ groupId, userId })));
 
     yield* db
       .update(schema.userGroup)
-      .set({ updatedAt: now() })
+      .set({ updatedAt: yield* now() })
       .where(eq(schema.userGroup.id, groupId));
-    const updated = yield* findGroup(ctx, groupId);
 
-    return updated
-      ? json(groupResource(updated.group, updated.members))
-      : scimError(404, "Group not found");
+    const updated = yield* findGroup(db, ctx, groupId);
+
+    return mutation(
+      updated
+        ? json(groupResource(updated.group, updated.members))
+        : scimError(404, "Group not found"),
+      new Set([...previous.map((row) => row.userId), ...memberIds]),
+    );
   });
 
-/**
- * Apply one SCIM group membership operation.
- *
- * `add` and `remove` touch only the listed users; `replace` is the only verb
- * that rewrites the whole collection. Treating every operation as a replace is
- * what previously made a standard IdP `add` drop the rest of the group.
- */
-const applyGroupMembershipOperation = (
+type DecodedGroupMembershipOperation = {
+  readonly op: "add" | "remove" | "replace";
+  readonly refs: ReadonlyArray<{ value: string }>;
+};
+
+const applyGroupMembershipOperationIn = (
+  db: ScimDb,
   ctx: ScimContext,
   groupId: string,
-  operation: { readonly op?: string; readonly value?: Schema.Json },
+  operation: DecodedGroupMembershipOperation,
 ) =>
   Effect.gen(function* () {
-    const db = yield* Db;
-    const op = operation.op?.trim().toLowerCase() ?? "replace";
+    if (operation.op === "replace")
+      return yield* replaceGroupMembersIn(db, ctx, groupId, operation.refs);
 
-    const refs = Option.getOrUndefined(
-      Schema.decodeUnknownOption(Schema.Array(ScimGroupMemberRef))(operation.value),
-    );
-
-    if (!refs) return scimError(400, "A members operation needs an array value", "invalidValue");
-
-    if (op === "replace") return yield* replaceGroupMembers(ctx, groupId, refs);
-
-    if (op !== "add" && op !== "remove")
-      return scimError(400, `Unsupported group patch operation "${operation.op}"`, "invalidValue");
-
-    // Resolve the group inside this tenant before touching membership.
     const group = yield* db.query.userGroup.findFirst({
       where: { id: groupId, organizationId: ctx.organizationId },
     });
 
-    if (!group) return scimError(404, "Group not found");
+    if (!group) return mutation(scimError(404, "Group not found"));
 
-    const ids = [...new Set(refs.map((member) => member.value))];
+    const ids =
+      operation.op === "remove"
+        ? [...new Set(operation.refs.map((member) => member.value))]
+        : yield* validMemberIds(db, ctx.organizationId, operation.refs);
+    const changedUserIds = new Set<string>();
 
-    if (ids.length === 0) {
-      const unchanged = yield* findGroup(ctx, groupId);
-
-      return unchanged
-        ? json(groupResource(unchanged.group, unchanged.members))
-        : scimError(404, "Group not found");
-    }
-
-    if (op === "add") {
-      const valid = yield* db
-        .select({ userId: schema.user.id })
-        .from(schema.user)
-        .where(
-          and(eq(schema.user.organizationId, ctx.organizationId), inArray(schema.user.id, ids)),
-        );
-
-      const allowed = new Set(valid.map((row) => row.userId));
-      const rows = ids.filter((userId) => allowed.has(userId));
-
-      if (rows.length > 0) {
+    if (operation.op === "add") {
+      if (ids.length > 0) {
         yield* db
           .insert(schema.userGroupMember)
           .ignore()
-          .values(rows.map((userId) => ({ groupId, userId })));
+          .values(ids.map((userId) => ({ groupId, userId })));
 
-        for (const userId of rows) ctx.changedUserIds.add(userId);
+        for (const userId of ids) changedUserIds.add(userId);
       }
-    } else {
+    } else if (ids.length > 0) {
       const removed = yield* db
         .select({ userId: schema.userGroupMember.userId })
         .from(schema.userGroupMember)
@@ -637,49 +702,127 @@ const applyGroupMembershipOperation = (
           ),
         );
 
-        for (const row of removed) ctx.changedUserIds.add(row.userId);
+        for (const row of removed) changedUserIds.add(row.userId);
       }
     }
 
     yield* db
       .update(schema.userGroup)
-      .set({ updatedAt: now() })
+      .set({ updatedAt: yield* now() })
       .where(eq(schema.userGroup.id, groupId));
 
-    const updated = yield* findGroup(ctx, groupId);
+    const updated = yield* findGroup(db, ctx, groupId);
 
-    return updated
-      ? json(groupResource(updated.group, updated.members))
-      : scimError(404, "Group not found");
+    return mutation(
+      updated
+        ? json(groupResource(updated.group, updated.members))
+        : scimError(404, "Group not found"),
+      changedUserIds,
+    );
+  });
+
+const patchGroup = (ctx: ScimContext, groupId: string, body: typeof ScimPatch.Type) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+    const operations = Array.isArray(body.Operations) ? body.Operations : [];
+    const decoded: Array<DecodedGroupMembershipOperation> = [];
+
+    // Decode every operation before opening the write transaction.
+    for (const operation of operations) {
+      const op = operation.op?.trim().toLowerCase() ?? "replace";
+
+      if (op !== "add" && op !== "remove" && op !== "replace")
+        return scimError(
+          400,
+          `Unsupported group patch operation "${operation.op}"`,
+          "invalidValue",
+        );
+
+      const refs = Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.Array(ScimGroupMemberRef))(operation.value),
+      );
+
+      if (!refs) return scimError(400, "A members operation needs an array value", "invalidValue");
+
+      decoded.push({ op, refs });
+    }
+
+    const result = yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const group = yield* tx.query.userGroup.findFirst({
+          where: { id: groupId, organizationId: ctx.organizationId },
+        });
+
+        if (!group) return mutation(scimError(404, "Group not found"));
+
+        const changedUserIds = new Set<string>();
+
+        for (const operation of decoded) {
+          const applied = yield* applyGroupMembershipOperationIn(tx, ctx, groupId, operation);
+
+          for (const userId of applied.changedUserIds) changedUserIds.add(userId);
+        }
+
+        const updated = yield* findGroup(tx, ctx, groupId);
+
+        return mutation(
+          updated
+            ? json(groupResource(updated.group, updated.members))
+            : scimError(404, "Group not found"),
+          changedUserIds,
+        );
+      }),
+    );
+
+    yield* commitChanges(ctx, result);
+
+    return result.response;
   });
 
 const deleteGroup = (ctx: ScimContext, groupId: string) =>
   Effect.gen(function* () {
     const db = yield* Db;
 
-    const members = yield* db
-      .select({ userId: schema.userGroupMember.userId })
-      .from(schema.userGroupMember)
-      .where(eq(schema.userGroupMember.groupId, groupId));
+    const result = yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const group = yield* tx.query.userGroup.findFirst({
+          where: { id: groupId, organizationId: ctx.organizationId },
+        });
 
-    for (const row of members) ctx.changedUserIds.add(row.userId);
-    yield* db
-      .delete(schema.userGroup)
-      .where(
-        and(
-          eq(schema.userGroup.id, groupId),
-          eq(schema.userGroup.organizationId, ctx.organizationId),
-        ),
-      );
+        if (!group) return mutation(HttpServerResponse.empty({ status: 204 }));
 
-    return HttpServerResponse.empty({ status: 204 });
+        const members = yield* tx
+          .select({ userId: schema.userGroupMember.userId })
+          .from(schema.userGroupMember)
+          .where(eq(schema.userGroupMember.groupId, groupId));
+
+        yield* tx
+          .delete(schema.userGroup)
+          .where(
+            and(
+              eq(schema.userGroup.id, groupId),
+              eq(schema.userGroup.organizationId, ctx.organizationId),
+            ),
+          );
+
+        return mutation(
+          HttpServerResponse.empty({ status: 204 }),
+          new Set(members.map((row) => row.userId)),
+        );
+      }),
+    );
+
+    yield* commitChanges(ctx, result);
+
+    return result.response;
   });
 
 const handler = (request: HttpServerRequest.HttpServerRequest) =>
   Effect.gen(function* () {
     const parsed = parsePath(request);
 
-    if (!parsed) return scimError(404, "Unknown SCIM endpoint");
+    if (parsed.kind === "invalid") return parsed.response;
+    if (parsed.kind === "not_found") return scimError(404, "Unknown SCIM endpoint");
 
     const ctx = yield* authenticate(request, parsed.tenantId).pipe(
       Effect.catch((error) =>
@@ -692,6 +835,7 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
 
     if (HttpServerResponse.isHttpServerResponse(ctx)) return ctx;
 
+    const db = yield* Db;
     const response = yield* Effect.gen(function* () {
       if (!parsed.resource) {
         return json({
@@ -733,7 +877,7 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
 
       if (parsed.resource === "Users" && parsed.id) {
         if (method === "GET") {
-          const found = yield* findUser(ctx, parsed.id);
+          const found = yield* findUser(db, ctx, parsed.id);
 
           return found ? json(userResource(found)) : scimError(404, "User not found");
         }
@@ -779,7 +923,7 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
 
       if (parsed.resource === "Groups" && parsed.id) {
         if (method === "GET") {
-          const found = yield* findGroup(ctx, parsed.id);
+          const found = yield* findGroup(db, ctx, parsed.id);
 
           return found
             ? json(groupResource(found.group, found.members))
@@ -796,12 +940,12 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
             Schema.decodeUnknownOption(ScimPatch)(parsedBody.body),
           );
 
-          const operations = (patch?.Operations ?? []).filter((operation) => {
+          if (!patch) return scimError(400, "Invalid SCIM patch", "invalidValue");
+
+          const operations = (patch.Operations ?? []).filter((operation) => {
             if (operation.path?.toLowerCase() === "members") return true;
 
-            // Some IdPs omit `path` for a members update. Only treat a value
-            // that actually decodes as a membership list that way, so an
-            // unrelated valueless operation is not rejected.
+            // Some IdPs omit `path` for a members update.
             if (operation.path !== undefined && operation.path !== null) return false;
 
             return Option.isSome(
@@ -809,18 +953,7 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
             );
           });
 
-          for (const operation of operations) {
-            const result = yield* applyGroupMembershipOperation(ctx, parsed.id, operation);
-
-            // Apply every operation, then answer with the final state.
-            if (result instanceof Response && result.status >= 400) return result;
-          }
-
-          const found = yield* findGroup(ctx, parsed.id);
-
-          if (!found) return scimError(404, "Group not found");
-
-          return json(groupResource(found.group, found.members));
+          return yield* patchGroup(ctx, parsed.id, { Operations: operations });
         }
 
         if (method === "DELETE") return yield* deleteGroup(ctx, parsed.id);
@@ -835,8 +968,6 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
       // Directory membership drives linked device groups. Re-materialise before
       // waking devices so group-targeted policies are already correct when they
       // check in; a failure is logged rather than failing the IdP's request.
-      const db = yield* Db;
-
       yield* syncDirectoryGroupsForTenant(db, ctx.organizationId).pipe(
         Effect.catch((error) => Effect.logWarning("SCIM directory group refresh failed", error)),
       );
@@ -854,7 +985,7 @@ const handler = (request: HttpServerRequest.HttpServerRequest) =>
 
     return response;
   }).pipe(
-    Effect.catchCause((cause) =>
+    catchCausePreservingInterrupts((cause) =>
       Effect.logError("SCIM request failed", cause).pipe(
         Effect.as(scimError(500, "SCIM request failed")),
       ),
