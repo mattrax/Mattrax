@@ -138,22 +138,22 @@ function ToastCard(props: { toast: Toast }) {
     <li
       data-leaving={props.toast.leaving ? "" : undefined}
       class={cn(
-        "pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg border bg-popover/95 shadow-[var(--shadow-dialog)] backdrop-blur-xl sm:w-[22rem]",
-        "animate-[mt-toast-in_180ms_var(--ease-swift)_both] data-leaving:animate-[mt-toast-out_140ms_var(--ease-swift)_both]",
+        "pointer-events-auto w-full max-w-sm overflow-hidden rounded-lg border bg-popover/95 shadow-panel backdrop-blur-xl sm:w-88",
+        "animate-in fade-in-0 slide-in-from-top-2 duration-150 ease-swift data-leaving:animate-out data-leaving:fade-out-0 data-leaving:slide-out-to-top-1 data-leaving:duration-150",
         tone.class,
       )}
     >
       <div class="flex items-start gap-2.5 px-3.5 py-3">
         <Icon class="mt-px size-4 shrink-0" aria-hidden="true" />
         <div class="min-w-0 flex-1">
-          <p class="text-[12.5px] font-medium leading-snug text-foreground">{props.toast.title}</p>
+          <p class="text-xs font-medium leading-snug text-foreground">{props.toast.title}</p>
           <Show when={props.toast.description}>
-            <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+            <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               {props.toast.description}
             </p>
           </Show>
           <Show when={(props.toast.details?.length ?? 0) > 0}>
-            <ul class="mt-1.5 max-h-28 space-y-0.5 overflow-y-auto text-[11px] leading-relaxed text-muted-foreground">
+            <ul class="mt-1.5 max-h-28 space-y-0.5 overflow-y-auto text-xs leading-relaxed text-muted-foreground">
               <For each={props.toast.details}>
                 {(detail) => <li class="break-words">{detail}</li>}
               </For>
@@ -185,7 +185,7 @@ export function Toaster() {
       <div
         role="region"
         aria-label="Notifications"
-        class="pointer-events-none fixed inset-x-0 top-3 z-[70] flex flex-col items-center gap-2 px-3 sm:inset-x-auto sm:right-4 sm:items-end"
+        class="pointer-events-none fixed inset-x-0 top-3 z-50 flex flex-col items-center gap-2 px-3 sm:inset-x-auto sm:right-4 sm:items-end"
       >
         <ol class="flex w-full max-w-sm flex-col gap-2">
           <For each={toasts()}>{(item) => <ToastCard toast={item} />}</For>

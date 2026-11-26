@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { DiscoverNs, PolicyNs, EnrollmentNs } from "@mattrax/soap";
+import { DiscoverNs, PolicyNs, EnrollmentNs, SoapEnvelopeNs } from "@mattrax/soap";
 
 // ---------------------------------------------------------------------------
 // Discovery Service
@@ -496,18 +496,39 @@ export type SyncML = typeof SyncML.Type;
 
 export const SoapFaultCode = Schema.Struct({
   value: Schema.String.pipe(
-    Schema.annotateKey({ soapElementName: "Value", soapNamespacePrefix: "s" }),
+    Schema.annotateKey({
+      soapElementName: "Value",
+      soapNamespace: SoapEnvelopeNs,
+      soapNamespacePrefix: "s",
+    }),
   ),
   subcode: Schema.optional(
     Schema.Struct({
       value: Schema.String.pipe(
-        Schema.annotateKey({ soapElementName: "Value", soapNamespacePrefix: "s" }),
+        Schema.annotateKey({
+          soapElementName: "Value",
+          soapNamespace: SoapEnvelopeNs,
+          soapNamespacePrefix: "s",
+        }),
       ),
-    }).pipe(Schema.annotate({ identifier: "Subcode", soapNamespacePrefix: "s" })),
-  ).pipe(Schema.annotateKey({ soapElementName: "Subcode", soapNamespacePrefix: "s" })),
+    }).pipe(
+      Schema.annotate({
+        identifier: "Subcode",
+        soapNamespace: SoapEnvelopeNs,
+        soapNamespacePrefix: "s",
+      }),
+    ),
+  ).pipe(
+    Schema.annotateKey({
+      soapElementName: "Subcode",
+      soapNamespace: SoapEnvelopeNs,
+      soapNamespacePrefix: "s",
+    }),
+  ),
 }).pipe(
   Schema.annotate({
     identifier: "Code",
+    soapNamespace: SoapEnvelopeNs,
     soapNamespacePrefix: "s",
   }),
 );
@@ -521,11 +542,17 @@ export const SoapFaultReason = Schema.Struct({
     ),
     content: Schema.String.pipe(Schema.annotateKey({ soapTextContent: true })),
   }).pipe(
-    Schema.annotate({ identifier: "Text", soapElementName: "Text", soapNamespacePrefix: "s" }),
+    Schema.annotate({
+      identifier: "Text",
+      soapElementName: "Text",
+      soapNamespace: SoapEnvelopeNs,
+      soapNamespacePrefix: "s",
+    }),
   ),
 }).pipe(
   Schema.annotate({
     identifier: "Reason",
+    soapNamespace: SoapEnvelopeNs,
     soapNamespacePrefix: "s",
   }),
 );
@@ -534,16 +561,21 @@ export type SoapFaultReason = typeof SoapFaultReason.Type;
 
 export const SoapFault = Schema.Struct({
   code: SoapFaultCode.pipe(
-    Schema.annotateKey({ soapElementName: "Code", soapNamespacePrefix: "s" }),
+    Schema.annotateKey({
+      soapElementName: "Code",
+      soapNamespace: SoapEnvelopeNs,
+      soapNamespacePrefix: "s",
+    }),
   ),
   reason: SoapFaultReason.pipe(
-    Schema.annotateKey({ soapElementName: "Reason", soapNamespacePrefix: "s" }),
+    Schema.annotateKey({
+      soapElementName: "Reason",
+      soapNamespace: SoapEnvelopeNs,
+      soapNamespacePrefix: "s",
+    }),
   ),
 }).pipe(
-  Schema.annotate({
-    identifier: "Fault",
-    soapNamespacePrefix: "s",
-  }),
+  Schema.annotate({ identifier: "Fault", soapNamespace: SoapEnvelopeNs, soapNamespacePrefix: "s" }),
 );
 
 export type SoapFault = typeof SoapFault.Type;

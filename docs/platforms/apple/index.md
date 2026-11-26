@@ -195,7 +195,7 @@ first use, and resetting or reconfiguring the enrollment invalidates it.
 | `UserAuthenticate`      | Validates the user against the authenticated device and answers with an empty `DigestChallenge` (no password); `410` for a user it will not manage                                                                                                                                          |
 | `TokenUpdate`           | Stores push token, push magic and topic; moves `enrolling → enrolled`; writes `device.enrolled`. A user channel is stored per user                                                                                                                                                          |
 | `CheckOut`              | Marks the device `unenrolled`, clears push credentials, revokes device certificates; a user channel removes only that user                                                                                                                                                                  |
-| `DeclarativeManagement` | Serves DDM tokens, declaration items, declarations and status. A user channel gets an empty declaration set                                                                                                                                                                                 |
+| `DeclarativeManagement` | Requires an enrolled/enrolling device and its active, device-bound SCEP certificate. Serves DDM tokens, declaration items, declarations and status; an unbound user channel gets an empty declaration set                                                                                   |
 | `GetToken`              | Rejected with `400`: the Managed Apple Account and watch-pairing token services are not implemented, and the profile does not advertise `com.apple.mdm.token`                                                                                                                               |
 | Command result          | Updates the command row, parses `SecurityInfo` and `InstalledApplicationList`; a user result only touches that user's rows                                                                                                                                                                  |
 
@@ -203,6 +203,13 @@ A new identity cannot take over an already-enrolled UDID with a different certif
 fingerprint. Reclaiming a row by serial requires a pre-registration or a row that is already
 unenrolled/stale. An ABM assignment alone is **not** intra-tenant proof: any enrolled device
 in the tenant can assert a serial, so ABM-only reclaim is refused.
+
+Enrolled legacy rows created before identity-fingerprint verification have a null
+`dm_identity_fingerprint` and fail closed: they cannot be rebound, check in, or read escrow and
+DDM data until their identity is established. During rollout, backfill a fingerprint only from
+independently verified enrollment records, or securely re-enroll/reclaim the device through the
+existing proof-gated pre-registration, unenrolled, or stale-row paths. Never backfill by trusting
+a device-asserted UDID alone.
 
 ### User channel
 
@@ -221,8 +228,11 @@ iPad open a second, per-user channel alongside the device channel:
    device cannot register an arbitrary user. Shared iPad never authenticates and reports
    Apple's `FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF` sentinel as `UserID` for every login, so its
    channels are keyed by the Managed Apple Account identifier Apple sends as `UserShortName`.
-   That account is matched to a directory person by exact email and bound as
-   `managed-apple-account`. See [User-scoped policies](/reference/user-scoped-policies/).
+   That device-asserted account is a routing key, not proof of the person: Mattrax no longer
+   matches it to a directory email or marks it verified. User-scoped declarations require an
+   existing certificate, BYOD, or manual/operator-provisioned binding. Legacy
+   `managed-apple-account` email correlations are treated as unbound and receive no user policy.
+   See [User-scoped policies](/reference/user-scoped-policies/).
 3. Commands queued for a user (`ProfileList` from **Refresh profiles**) are delivered only
    on that user's check-in. A user result is only accepted from the same user, and it never
    writes device inventory. `CheckOut` from a user removes just that channel and cancels its
@@ -248,20 +258,86 @@ per-user channel above:
   `{"Servers":[{"Version":"mdm-byod","BaseURL":"..."}]}`), completes the web sign-in, and only
   then receives the profile.
 
-Mattrax does not host that service-discovery or sign-in flow. It requires:
+Mattrax hosts the account-driven flow:
+
+1. The device fetches
+   `https://<managed-apple-account-domain>/.well-known/com.apple.remotemanagement` from a
+   hostname the tenant has pointed at this deployment. Mattrax answers from the tenant's BYOD
+   configuration, resolved by that exact hostname; there is no shared document on
+   `mattrax.app`.
+2. The device POSTs its signed enrollment request to the `BaseURL` from that document.
+   Mattrax returns `401` with
+   `WWW-Authenticate: Bearer method="apple-as-web", url="<tenant-domain>/mdm/apple/byod/authorize"`,
+   which makes Apple open the tenant's browser sign-in.
+3. The tenant-host authorize request bounces to the deployment `ORIGIN` before any state is
+   written, so the `__Host-byod_sso_state` cookie and the registered Entra callback share a
+   host. The sign-in then redirects through the tenant's existing Microsoft Entra SSO. The IdP
+   identity must be the same address as the Managed Apple Account (federated accounts). The
+   callback resolves the Mattrax account and the directory person, then returns `308` to
+   `apple-remotemanagement-user-login://authentication-results?access-token=...`.
+4. The access token is short-lived, single-use and bound to the tenant, the authenticated
+   account, the Managed Apple Account and a SHA-256 of the device request body. The device
+   repeats its POST with `Authorization: Bearer`; Mattrax consumes the token and returns the
+   signed profile with `EnrollmentMode: BYOD`, `AssignedManagedAppleID` and no
+   `AccessRights`.
+5. The SCEP challenge minted for that profile carries the BYOD request id into the issued
+   identity certificate. When the `EnrollmentUserID` user channel checks in, the channel is
+   bound to the directory person from the sign-in (source `byod-sign-in`), so user-scoped
+   policies apply without an operator doing it manually.
+
+#### Prerequisites
 
 1. A **Managed Apple Account** per user, created in Apple Business Manager or Apple School
    Manager. There is no API to create them.
-2. A `.well-known/com.apple.remotemanagement` document on the domain of those accounts. In a
-   hosted deployment that is the tenant's own domain, not Mattrax's.
-3. A browser sign-in page that proves the user's identity, followed by a
-   `apple-remotemanagement-user-login://authentication-results?access-token=...` redirect.
-   Mattrax has no endpoint for this, so account-driven enrollment cannot complete against
-   Mattrax today.
+2. Microsoft Entra single sign-on enabled for the tenant, with a verified domain and directory
+   sync. The BYOD domain must be a verified Entra domain, and the Managed Apple Account must
+   match the IdP address. Directory sync must already have imported that person; the callback
+   refuses to bind an unknown account rather than creating an orphan member.
+3. DNS control of that FQDN. The apex of the Managed Apple Account domain must answer the
+   discovery document, so point it at this deployment (CNAME/ALIAS or A/AAAA) and serve it over
+   HTTPS with a valid certificate. Without a verified domain the setup page refuses to enable
+   the feature and says which prerequisite is missing.
+4. A tenant Apple push certificate. The BYOD profile needs the tenant's APNs topic.
 
-What a BYOD device that is enrolled by another path _does_ get from Mattrax is the full
-user-enrollment check-in: `Authenticate`, `TokenUpdate` (device and `EnrollmentUserID` user
-channel), `CheckOut`, per-user push, per-user commands and a user row on the device page.
+#### Admin setup and validation
+
+**Settings → Enrollment → Apple account-driven enrollment** shows the verified domains, the
+copyable discovery URL and the exact JSON, and a **Test discovery document** action that
+fetches the public URL (following only same-domain HTTPS redirects) exactly as a device would. A
+successful test of the saved domain stamps the configuration; testing a different selected
+domain before saving leaves the stamp alone, and changing the domain clears it.
+
+The feature is a **preview**. Apple's flow cannot be proven by fixtures alone: a real iPhone or
+iPad with a Managed Apple Account must complete the enrollment against the tenant before it is
+relied on. The "Require real-device validation" flag is on by default and withholds the
+discovery document (`403`) until an administrator records that validation. Turn it off only
+for a controlled test, then back on. This repository's tests cover the document, host
+resolution (including a Host different from `ORIGIN`), authorize/callback cookie binding,
+token single-use/expiry/tenant/body binding, challenge replay, SSO nonce/issuer/email failures,
+directory-person refusal, redirect encoding, profile fields and user-channel binding. They
+cannot prove Apple's client behaviour or a real custom-hostname/DNS/TLS setup.
+
+#### Limits
+
+- Only Microsoft Entra SSO sign-in is implemented. Google Workspace directory sync exists, but
+  Google OIDC sign-in does not, so a Google-only tenant cannot complete the flow.
+- Non-federated Managed Apple Accounts (where the Apple ID differs from the IdP address) are
+  rejected rather than guessed. There is no mapping surface.
+- The tenant must own the discovery hostname. Mattrax has no custom-hostname/whitelabel
+  automation yet (#460/#526). A self-hosted deployment can use its own domain; Mattrax Cloud
+  blocks enabling a tenant-hosted domain until custom hostnames exist.
+- The discovery document is `Cache-Control: no-store` so disabling the feature takes effect on
+  the next request; Apple fetches it once per enrollment flow.
+- The access token is consumed when the profile is downloaded. Ongoing check-ins authenticate
+  with the SCEP identity certificate installed from that profile, not with the bearer token,
+  so a later user-channel request that still carries `Authorization` is authorised by mTLS.
+- The device POST is bound to the token by a SHA-256 of its body; Apple's CMS signature on that
+  first request is not verified. The control is the one-time token delivered through Apple's
+  authentication session and the five-minute lifetime, not the device signature.
+
+What a BYOD device gets after enrollment is the full user-enrollment check-in:
+`Authenticate`, `TokenUpdate` (device and `EnrollmentUserID` user channel), `CheckOut`,
+per-user push, per-user commands and a user row on the device page.
 `GetToken` (`com.apple.maid` access management and Apple Watch pairing) is not implemented,
 so the enrollment profile no longer advertises `com.apple.mdm.token`; Apple requires a `400`
 for a token service the server does not support.
@@ -287,6 +363,46 @@ for a token service the server does not support.
   Renewal rejects revoked identities.
 - There is no published CRL or OCSP endpoint. Revocation is enforced at renewal and on
   mTLS check-in.
+
+### Certificate profiles (trusted root, PKCS, imported PFX)
+
+SCEP issues the device identity. Other certificates — Wi-Fi/VPN client identities and
+S/MIME — are separate policy profiles:
+
+| Kind                          | Delivery                                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mttx.apple.certificate.<id>` | `com.apple.asset.credential.certificate` + `security.certificate` declaration (macOS 14/iOS 17+), or `com.apple.security.pkcs1` on legacy devices |
+| `mttx.apple.pkcs.<id>`        | `com.apple.asset.credential.identity` + `security.identity` declaration, or `com.apple.security.pkcs12` on legacy devices                         |
+| `mttx.apple.pfx.<id>`         | Same identity path as PKCS, without CA/template metadata                                                                                          |
+| `mttx.apple.mail.<id>`        | `account.mail` declaration with S/MIME identity references, or `com.apple.mail.managed`                                                           |
+
+The trusted root must be delivered before the issued certificate is useful. Apple has no
+on-device PKCS/NDES client: a PKCS profile records how the CA issued the certificate
+(CA, template, subject format, key usage, validity, renewal threshold) and delivers the
+PKCS#12 that the operator's enterprise connector produced. Mattrax does not call the CA
+or issue per-device certificates. Imported PFX is for an existing PKCS#12, including a
+shared S/MIME decryption identity.
+
+The PFX and password are sealed with `AUTH_SECRET` and never appear in policy JSON, API
+responses, deployment snapshots or tenant exports. Legacy delivery embeds them in a
+`com.apple.security.pkcs12` profile, so the `InstallProfile` command payload is sealed in
+`device_command` as well and only opened when the command is handed to the device or when
+installed-profile reconciliation reads command history. Upload
+the leaf certificate alongside the PFX; Mattrax parses the PKCS#12, verifies the password
+and requires the leaf's fingerprint to match, and metadata always comes from the PFX. The
+same PKCS#12 is delivered to every device/user in scope.
+
+User-scoped identities use the DDM user channel. Legacy delivery has no user channel, so a
+user-scoped identity is not installed on a pre-DDM device. S/MIME on a DDM mail account
+with password authentication needs a credentials asset Mattrax does not create; that
+combination is reported as unsupported. Apple defines `account.mail` S/MIME only on iOS 17+,
+so a macOS declaration omits the `SMIME` dictionary.
+
+Identity assets are private keys, not public roots. The asset endpoint requires the signed
+per-device token and re-resolves the device's effective policy before serving the JSON
+credential; a tenant mTLS certificate alone is accepted only for non-secret certificate
+assets. A token for an unassigned or unenrolled device, another tenant's device, or an
+expired link is refused.
 
 ## APNs
 
@@ -385,9 +501,9 @@ pending actions, and a reported inventory reconciles installs that already lande
 - `mttx.apple.application.<id>` installs a catalogue, manifest, store or uploaded app on
   the policy's devices. An uploaded catalogue `.pkg` targets macOS and an uploaded `.ipa`
   targets iOS/iPadOS; a package uploaded against the policy itself is `.pkg`-only.
-- Apple User Enrollment (BYOD) check-in is supported, but account-driven enrollment is not:
-  it needs a Managed Apple Account, a `.well-known/com.apple.remotemanagement` document on the
-  tenant's own domain, and a browser sign-in flow that Mattrax does not host. See
+- Apple User Enrollment (BYOD) account-driven enrollment is a preview: Mattrax hosts the
+  discovery document, tenant SSO sign-in, one-time token and BYOD profile, but real-device
+  validation and a tenant-controlled discovery domain are required before it is supported. See
   [User channel and BYOD](/platforms/apple/#apple-user-enrollment-byod).
 - `GetToken` is not implemented: the Managed Apple Account access token needs the
   ABM-assigned server UUID, and Apple Watch pairing is not managed. The enrollment profile

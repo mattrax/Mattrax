@@ -23,7 +23,7 @@ function yieldedProfile() {
     profileId: "default",
     rpId: derived.id,
     rpName: derived.name,
-    origins: [...derived.origins],
+    origins: [origin] as const,
     developmentLocalhost: derived.developmentLocalhost,
     residentKey: "required" as const,
     userVerification: "required" as const,
@@ -69,7 +69,7 @@ const u32 = (value: number) =>
     value & 0xff,
   ]);
 
-const sha256 = (bytes: Uint8Array) => crypto.subtle.digest("SHA-256", bytes);
+const sha256 = (bytes: Uint8Array) => crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
 
 const flags = { up: 0x01, uv: 0x04, at: 0x40, be: 0x08, bs: 0x10 };
 
@@ -114,7 +114,7 @@ const cosePublicKey = async (key: CryptoKey) => {
 
   return new Uint8Array(
     isoCBOR.encode(
-      new Map<number, unknown>([
+      new Map<number, any>([
         [1, 2],
         [3, -7],
         [-1, 1],
@@ -157,7 +157,7 @@ const stepUpCeremony = (challenge: string, credentialId: string) => ({
   requestBindingExpiresAtMillis: Date.now() + 60_000,
   issuedAtMillis: Date.now(),
   expiresAtMillis: Date.now() + 60_000,
-  allowedCredentials: [{ type: "public-key" as const, id: credentialId }],
+  allowedCredentials: [{ type: "public-key" as const, id: credentialId as never }],
   context: {
     _tag: "StepUp" as const,
     target: {
@@ -214,7 +214,7 @@ describe("WebAuthn ceremonies", () => {
 
     const attestationObject = new Uint8Array(
       isoCBOR.encode(
-        new Map<string, unknown>([
+        new Map<string, any>([
           ["fmt", "none"],
           ["attStmt", new Map()],
           ["authData", authData],

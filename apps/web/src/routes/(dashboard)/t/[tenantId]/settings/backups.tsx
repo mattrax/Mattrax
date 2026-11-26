@@ -2,10 +2,11 @@ import { useParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Schema } from "effect";
+import { TenantExportEnvelope } from "@mattrax/enterprise-domain/client";
 import { createSignal, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -16,7 +17,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { useTenantProfileDraft } from "~/components/settings/tenant-profile-draft";
-import { StatusChip } from "~/components/settings/status-chip";
+import StatusChip from "~/components/settings/status-chip";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { BackupRunInfo } from "~/lib/enterprise";
 import {
@@ -26,17 +27,8 @@ import {
 import { preloadSettingsPage } from "~/components/settings/preload";
 import { queryClient } from "~/lib/query-client";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
-import { withStepUp } from "~/lib/step-up";
-import { approvalFailure, raisedFailure } from "~/lib/errors";
-import {
-  ApprovalRequiredError,
-  approvalHeaders,
-  registerApprovalRetry,
-} from "~/lib/approval-retry";
-import type { ApprovalRetryInput } from "~/lib/approval-retry";
 import { downloadBlob } from "~/lib/download";
 import { responseFailure } from "~/components/settings/http-failure";
-import { resolveTenantId } from "~/lib/tenant";
 
 export const route = {
   preload: (args: RoutePreloadFuncArgs) =>
@@ -49,14 +41,6 @@ export const route = {
       },
     ]),
 };
-
-const StepUpFailure = Schema.Struct({
-  _tag: Schema.Literal("StepUpRequired"),
-  action: Schema.optional(Schema.String),
-  methods: Schema.optional(Schema.Array(Schema.String)),
-});
-
-const isStepUpFailure = Schema.is(StepUpFailure);
 
 export default function BackupsSettingsPage() {
   const params = useParams();
@@ -111,16 +95,25 @@ export default function BackupsSettingsPage() {
     startedAt: string;
   } | null>(null);
 
+  /**
+   * Solid Query v6 calls `onMutate` without forwarding its return value to
+   * `onError`, so a rollback closure has to live beside the mutation.
+   * Keeping the promise preserves the helper's cancel-then-snapshot order.
+   */
+  let pendingPinRestore: Promise<() => void> | undefined;
+
   const pinBackup = useMutation(() => ({
+    // The failure renders inline beside the table, so the global toast would
+    // repeat the same message.
+    meta: { inlineError: true },
     mutationFn: (run: { id: string; retention: string }) =>
       run.retention === "pinned"
         ? enterprise.unpinTenantBackup(params.tenantId, run.id)
         : enterprise.pinTenantBackup(params.tenantId, run.id),
-    onMutate: async (run) => {
+    onMutate: (run) => {
       const pinned = run.retention !== "pinned";
       setBackupActionError(null);
-
-      return optimisticallyUpdateCollection(
+      pendingPinRestore = optimisticallyUpdateCollection(
         qc,
         enterpriseKeys.backups(params.tenantId),
         "backups",
@@ -130,14 +123,20 @@ export default function BackupsSettingsPage() {
           ),
       );
     },
-    onSuccess: () => void refetchBackups(),
-    onError: (error, _variables, restore) => {
-      restore?.();
+    onSuccess: () => {
+      pendingPinRestore = undefined;
+      void refetchBackups();
+    },
+    onError: (error) => {
+      const restore = pendingPinRestore;
+      pendingPinRestore = undefined;
+      void restore?.then((revert) => revert());
       setBackupActionError(error);
     },
   }));
 
   const removeBackup = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (id: string) => enterprise.deleteTenantBackup(params.tenantId, id),
     onMutate: async (id) => {
       setBackupActionError(null);
@@ -160,6 +159,7 @@ export default function BackupsSettingsPage() {
   }));
 
   const restoreBackup = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (input: { id: string; confirm: string }) =>
       enterprise.restoreTenantBackup(params.tenantId, input.id, input.confirm),
     onMutate: () => setBackupActionError(null),
@@ -208,71 +208,22 @@ export default function BackupsSettingsPage() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const downloadBackup = async (id: string, approval?: ApprovalRetryInput) => {
+  const downloadBackup = async (id: string) => {
     setBackupDownloadError(null);
 
     try {
-      const response = await withStepUp("backup-download", async (grant) => {
-        const result = await fetch(
-          `/api/v1/tenants/${encodeURIComponent(resolveTenantId(params.tenantId) ?? "")}/backups/${encodeURIComponent(
-            id,
-          )}/download`,
-          {
-            credentials: "include",
-            headers: {
-              ...(grant ? { "x-mattrax-step-up": grant } : {}),
-              ...approvalHeaders(approval),
-            },
-          },
-        );
-
-        if (result.status === 403) {
-          const body = await result
-            .clone()
-            .json()
-            .catch(() => null);
-          const fields = approvalFailure(raisedFailure(body));
-
-          if (fields.requestId) {
-            registerApprovalRetry({
-              requestId: fields.requestId,
-              action: "backup.download",
-              retry: async (next) => {
-                await downloadBackup(id, next);
-              },
-            });
-
-            throw new ApprovalRequiredError({
-              message:
-                fields.status === "approved"
-                  ? "This download is approved. Retry with this approval."
-                  : "This download needs approval from another administrator.",
-              requestId: fields.requestId,
-              status: fields.status === "approved" ? "approved" : "pending",
-            });
-          }
-
-          // The body is a schema-validated step-up failure, not an Error; the
-          // caller matches it structurally.
-          // oxlint-disable-next-line typescript/only-throw-error -- typed error body, matched by the caller.
-          if (isStepUpFailure(body)) throw body;
-        }
-
-        return result;
-      });
+      const response = await enterprise.downloadTenantBackup(params.tenantId, id);
 
       if (!response.ok)
-        throw await responseFailure(response, `Download failed (${response.status})`);
+        throw await responseFailure(response, "Download failed (" + response.status + ")");
       const disposition = response.headers.get("Content-Disposition") ?? "";
-
       const filename =
         /filename="([^"]+)"/.exec(disposition)?.[1] ??
-        `tenant-${tenant.data?.slug ?? params.tenantId ?? "backup"}-backup.json`;
+        "tenant-" + (tenant.data?.slug ?? params.tenantId ?? "backup") + "-backup.json";
 
-      downloadBlob(
-        new Blob([await response.text()], { type: "application/json" }),
-        filename,
-      );
+      const body = await response.text();
+      Schema.decodeUnknownSync(TenantExportEnvelope)(JSON.parse(body));
+      downloadBlob(new Blob([body], { type: "application/json" }), filename);
     } catch (error) {
       setBackupDownloadError(error);
     }
@@ -302,8 +253,8 @@ export default function BackupsSettingsPage() {
               <p class="text-xs leading-relaxed text-muted-foreground">
                 Downloads are authenticated and go through the API; the object store is never
                 public. Restore replaces this tenant's groups, policies, applications and
-                pre-registrations in place, keeps its members, devices and certificates, and takes
-                a pinned snapshot first.
+                pre-registrations in place, keeps its members, devices and certificates, and takes a
+                pinned snapshot first.
               </p>
             </div>
             <Button
@@ -328,7 +279,7 @@ export default function BackupsSettingsPage() {
 
           <Show when={latestBackup()}>
             {(latest) => (
-              <div class="mt-4 rounded-lg border border-border bg-surface p-3 text-[13px]">
+              <div class="mt-4 rounded-lg border border-border bg-surface p-3 text-xs">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                   <span class="text-muted-foreground">
                     Last backup:{" "}
@@ -371,8 +322,8 @@ export default function BackupsSettingsPage() {
 
           <Show when={(backups.data?.backups ?? []).length > 0}>
             <div class="mt-4 overflow-x-auto rounded-lg border border-border">
-              <table class="w-full min-w-[34rem] text-left text-xs">
-                <thead class="border-b border-border bg-surface text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              <table class="w-full min-w-136 text-left text-xs">
+                <thead class="border-b border-border bg-surface text-xs uppercase tracking-widest text-muted-foreground">
                   <tr>
                     <th class="px-3 py-2 font-medium">Started</th>
                     <th class="px-3 py-2 font-medium">Trigger</th>
@@ -383,7 +334,7 @@ export default function BackupsSettingsPage() {
                 </thead>
                 <tbody class="divide-y divide-border">
                   {(backups.data?.backups ?? []).slice(0, 8).map((run) => (
-                    <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-surface">
+                    <tr class="transition-colors duration-150 ease-swift hover:bg-surface">
                       <td class="whitespace-nowrap px-3 py-2 text-muted-foreground">
                         {new Date(run.startedAt).toLocaleString()}
                       </td>
@@ -402,7 +353,7 @@ export default function BackupsSettingsPage() {
                           {run.status}
                         </StatusChip>
                         <Show when={run.retention === "pinned"}>
-                          <span class="ml-1 text-[11px] font-medium text-warning-foreground">
+                          <span class="ml-1 text-xs font-medium text-warning-foreground">
                             pinned
                           </span>
                         </Show>
@@ -418,16 +369,18 @@ export default function BackupsSettingsPage() {
                       <td class="px-3 py-2 text-right">
                         <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
                           <Show when={run.status === "succeeded"}>
-                            <button
+                            <Button
                               type="button"
-                              class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
+                              variant="link"
+                              size="xs"
                               onClick={() => void downloadBackup(run.id)}
                             >
                               Download
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="button"
-                              class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
+                              variant="link"
+                              size="xs"
                               disabled={!canWrite()}
                               onClick={() => {
                                 setBackupActionError(null);
@@ -437,27 +390,29 @@ export default function BackupsSettingsPage() {
                               }}
                             >
                               Restore
-                            </button>
+                            </Button>
                           </Show>
                           <Show when={run.status !== "running"}>
-                            <button
+                            <Button
                               type="button"
-                              class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
+                              variant="link"
+                              size="xs"
                               disabled={!canWrite()}
                               onClick={() => pinBackup.mutate(run)}
                             >
                               {run.retention === "pinned" ? "Unpin" : "Pin"}
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="button"
-                              class="text-xs font-medium text-destructive underline decoration-destructive/30 underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-destructive"
+                              variant="link"
+                              size="xs"
                               disabled={!canWrite()}
                               onClick={() =>
                                 setDeleteBackupTarget({ id: run.id, startedAt: run.startedAt })
                               }
                             >
-                              Delete
-                            </button>
+                              <span class="text-destructive">Delete</span>
+                            </Button>
                           </Show>
                         </div>
                       </td>
@@ -474,7 +429,7 @@ export default function BackupsSettingsPage() {
             Runs older than the configured retention window are deleted automatically. Pin a run to
             keep it until you unpin it. To restore into a separate tenant instead,{" "}
             <a
-              class="text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
+              class="text-foreground underline decoration-border underline-offset-2 transition-colors duration-150 ease-swift hover:decoration-foreground"
               href={`${exportBase()}#restore`}
             >
               import a bundle from Migration
@@ -509,7 +464,9 @@ export default function BackupsSettingsPage() {
                 <>
                   <p class="text-xs leading-relaxed text-muted-foreground">
                     Type the tenant slug{" "}
-                    <span class="font-mono font-medium">{tenant.data?.slug ?? params.tenantId}</span>{" "}
+                    <span class="font-mono font-medium">
+                      {tenant.data?.slug ?? params.tenantId}
+                    </span>{" "}
                     to confirm.
                   </p>
                   <Input

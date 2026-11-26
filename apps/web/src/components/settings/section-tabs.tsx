@@ -1,6 +1,7 @@
-import { createEffect, createSignal, For, onSettled, Show } from "solid-js";
+import { createEffect, createSignal, flush, For, onSettled, Show } from "solid-js";
 import { cn } from "~/lib/utils";
-import { sectionTabTarget } from "./section-tabs-nav";
+import { activateSectionTabAnchor, sectionTabTarget } from "./section-tabs-nav";
+import { Button } from "~/components/ui/button";
 
 export type SectionTab = {
   readonly id: string;
@@ -21,20 +22,27 @@ export type SectionTab = {
  * underline is measured from the active label instead of animating a border on
  * each tab, so it slides between options and keeps the bar's edge straight.
  */
-export function SectionTabs(props: {
+export default function SectionTabs(props: {
   label: string;
   tabs: ReadonlyArray<SectionTab>;
   active: string;
   onSelect?: (id: string) => void;
+  /**
+   * Address for a tab that navigates instead of calling `onSelect`.
+   *
+   * Keyboard activation clicks the anchor, so the router's document-level
+   * handler performs the navigation. That keeps tab activation working when
+   * the tablist was adopted across hydration, where a closure captured by
+   * the pre-hydration instance can write to a signal nobody observes.
+   */
+  hrefFor?: (id: string) => string;
   /** Panels are mounted on demand; only link aria-controls when one exists. */
   panelMounted?: (id: string) => boolean;
   class?: string;
 }) {
-  const isTablist = () => props.onSelect !== undefined;
+  const isTablist = () => props.onSelect !== undefined || props.hrefFor !== undefined;
   const activeId = () =>
-    props.tabs.some((tab) => tab.id === props.active)
-      ? props.active
-      : (props.tabs[0]?.id ?? "");
+    props.tabs.some((tab) => tab.id === props.active) ? props.active : (props.tabs[0]?.id ?? "");
   const anchors = new Map<string, HTMLElement>();
   const [indicator, setIndicator] = createSignal({ left: 0, width: 0 });
   const [measured, setMeasured] = createSignal(false);
@@ -72,7 +80,7 @@ export function SectionTabs(props: {
 
   const itemClass = (id: string) =>
     cn(
-      "inline-flex h-10 shrink-0 items-center px-0.5 text-[12.5px] font-[500] whitespace-nowrap outline-none transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:ring-ring/40",
+      "inline-flex h-10 shrink-0 items-center px-0.5 text-xs font-medium whitespace-nowrap outline-none transition-colors duration-150 ease-swift focus-visible:ring-2 focus-visible:ring-ring/40",
       activeId() === id ? "text-foreground" : "text-muted-foreground hover:text-foreground",
     );
 
@@ -89,8 +97,28 @@ export function SectionTabs(props: {
     if (!next) return;
 
     event.preventDefault();
+    // Solid 2 batches writes and normally commits them when the event
+    // finishes. This handler is attached directly to the tab button, so the
+    // write (a signal in the parent or a router search-param navigation) can
+    // still be pending when the browser moves focus; without an explicit
+    // flush the keyboard selection only reached the focused button and never
+    // the active state. The browser suite caught that as a selected tab with
+    // aria-selected="false".
+    const anchor = anchors.get(next);
+
+    // Selection follows focus for navigation tabs too. Click the real anchor
+    // on the next macrotask so the router's document-level handler performs
+    // the navigation without racing the transition that hydrated this tree.
+    if (props.hrefFor) {
+      queueMicrotask(() => anchor?.focus());
+      activateSectionTabAnchor(anchor);
+
+      return;
+    }
+
     props.onSelect?.(next);
-    queueMicrotask(() => anchors.get(next)?.focus());
+    flush();
+    queueMicrotask(() => anchor?.focus());
   };
 
   return (
@@ -106,11 +134,11 @@ export function SectionTabs(props: {
       <For each={props.tabs}>
         {(tab) => (
           <Show
-            when={tab.href}
+            when={tab.href ?? props.hrefFor?.(tab.id)}
             fallback={
-              <button
+              <Button
                 type="button"
-                ref={(element) => {
+                ref={(element: HTMLElement) => {
                   anchors.set(tab.id, element);
                 }}
                 id={tab.elementId}
@@ -122,20 +150,32 @@ export function SectionTabs(props: {
                   tab.panelId && props.panelMounted?.(tab.id) ? tab.panelId : undefined
                 }
                 onClick={() => props.onSelect?.(tab.id)}
-                class={itemClass(tab.id)}
+                variant={activeId() === tab.id ? "secondary" : "ghost"}
+                class="h-10"
               >
                 {tab.label}
-              </button>
+              </Button>
             }
           >
             {(href) => (
               <a
-                ref={(element) => {
+                ref={(element: HTMLElement) => {
                   anchors.set(tab.id, element);
                 }}
                 href={href()}
                 class={itemClass(tab.id)}
-                aria-current={activeId() === tab.id ? "page" : undefined}
+                role={props.hrefFor ? "tab" : undefined}
+                tabindex={props.hrefFor ? (activeId() === tab.id ? 0 : -1) : undefined}
+                aria-selected={
+                  props.hrefFor ? (activeId() === tab.id ? "true" : "false") : undefined
+                }
+                aria-controls={
+                  props.hrefFor && tab.panelId && props.panelMounted?.(tab.id)
+                    ? tab.panelId
+                    : undefined
+                }
+                onKeyDown={props.hrefFor ? onKeyDown : undefined}
+                aria-current={!props.hrefFor && activeId() === tab.id ? "page" : undefined}
               >
                 {tab.label}
               </a>
@@ -146,8 +186,8 @@ export function SectionTabs(props: {
       <span
         aria-hidden="true"
         data-measured={measured() ? "true" : "false"}
-        class="pointer-events-none absolute -bottom-px left-0 h-0.5 bg-foreground transition-[left,width] duration-[var(--duration-popover)] ease-swift data-[measured=false]:transition-none motion-reduce:transition-none"
-        style={{ left: `${indicator().left}px`, width: `${indicator().width}px` }}
+        class="pointer-events-none absolute -bottom-px left-(--tab-left) h-0.5 w-(--tab-width) bg-foreground transition-all duration-150 ease-swift data-[measured=false]:transition-none motion-reduce:transition-none"
+        style={{ "--tab-left": `${indicator().left}px`, "--tab-width": `${indicator().width}px` }}
       />
     </nav>
   );

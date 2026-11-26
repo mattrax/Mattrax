@@ -12,7 +12,7 @@ function Breadcrumb(props: BreadcrumbProps) {
     <nav
       aria-label="breadcrumb"
       data-slot="breadcrumb"
-      class={cn("min-w-0 text-[11.5px] text-muted-foreground", local.class)}
+      class={cn("min-w-0 text-xs text-muted-foreground", local.class)}
       {...others}
     />
   );

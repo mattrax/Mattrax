@@ -7,7 +7,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -45,7 +45,6 @@ const makeContext = (options: { role?: string } = {}) => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods these paths exercise.

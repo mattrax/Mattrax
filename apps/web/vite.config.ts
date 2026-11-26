@@ -56,7 +56,8 @@ const docsBuildDirectory = fileURLToPath(new URL("../../doc_build/", import.meta
  */
 const clientOnlyPreloadRoutes = [
   "routes/(dashboard)/t/[tenantId]/applications/[applicationId].tsx",
-  "routes/(dashboard)/t/[tenantId]/dashboards/[dashboardId].tsx",
+  "routes/(dashboard)/t/[tenantId]/dashboards/[dashboardId]/index.tsx",
+  "routes/(dashboard)/t/[tenantId]/dashboards/[dashboardId]/reports.tsx",
   "routes/(dashboard)/t/[tenantId]/devices/[deviceId].tsx",
   "routes/(dashboard)/t/[tenantId]/groups/[groupId].tsx",
   "routes/(dashboard)/t/[tenantId]/groups/new.tsx",

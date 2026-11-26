@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node", "vite/client"],
+    "jsx": "preserve",
+    "jsxImportSource": "@solidjs/web",
+    "allowSyntheticDefaultImports": true,
+    "paths": {
+      "~/*": ["../../apps/web/src/*"]
+    },
+    "noEmit": true,
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "composite": false
+  },
+  "include": [
+    "../*/src/**/*.d.ts",
+    "../*/src/**/*.test.ts",
+    "../*/src/**/*.test.tsx",
+    "../*/tests/**/*.ts",
+    "../*/tests/**/*.tsx",
+    "../../apps/*/src/**/*.test.ts",
+    "../../apps/*/src/**/*.test.tsx",
+    "../../apps/*/tests/**/*.ts",
+    "../../apps/*/tests/**/*.tsx",
+    "../../apps/web/src/global.d.ts"
+  ],
+  "exclude": ["**/node_modules/**", "**/dist/**"]
+}

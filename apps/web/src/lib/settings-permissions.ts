@@ -1,4 +1,5 @@
 import type { Permission } from "@mattrax/enterprise-domain/client";
+import { routes } from "~/lib/routes";
 
 /**
  * Permission maps for tenant sections and settings tabs.
@@ -33,6 +34,8 @@ export function settingsTabPermission(tab: string): Permission {
   switch (tab) {
     case "administrators":
       return "members.read";
+    case "tags":
+      return "scope_tags.read";
     case "backups":
       return "backups.read";
     case "approvals":
@@ -107,6 +110,106 @@ export function tenantSectionPermission(section: string): Permission | undefined
  * accepts tenant.export or tenant.import). Unknown paths also fall through
  * instead of becoming accidentally locked.
  */
+
+const SETTINGS_TABS = [
+  "",
+  "administrators",
+  "approvals",
+  "backups",
+  "identity",
+  "enrollment",
+  "attributes",
+  "tags",
+  "management",
+  "migration",
+  "delivery",
+  "integrations",
+  "audit",
+  "os-updates",
+  "billing",
+  "storage",
+  "legal",
+] as const;
+
+const SECTIONS = [
+  "overview",
+  "dashboards",
+  "devices",
+  "users",
+  "groups",
+  "policies",
+  "applications",
+  "scripts",
+  "settings",
+] as const;
+
+/** The canonical path of one top-level dashboard section. */
+function sectionPath(tenantId: string, section: (typeof SECTIONS)[number]): string {
+  const tenant = routes.tenant(tenantId);
+
+  switch (section) {
+    case "overview":
+      return tenant.overview();
+    case "dashboards":
+      return tenant.dashboards();
+    case "devices":
+      return tenant.devices();
+    case "users":
+      return tenant.users();
+    case "groups":
+      return tenant.groups();
+    case "policies":
+      return tenant.policies();
+    case "applications":
+      return tenant.applications();
+    case "scripts":
+      return tenant.scripts();
+    case "settings":
+      return tenant.settings();
+  }
+}
+
+/** The first settings tab the current membership can read, if any. */
+export function firstReadableSettingsTab(
+  can: (permission: Permission) => boolean,
+  tenantId: string,
+): string | undefined {
+  for (const tab of SETTINGS_TABS) {
+    if (!settingsTabPermissions(tab).some((permission) => can(permission))) continue;
+
+    const path = routes.tenant(tenantId).settingsTab(tab);
+
+    // A role that can move a tenant but not browse devices has no cohort
+    // tracker, so send it straight to the deployment tools.
+    if (
+      tab === "migration" &&
+      !can("devices.read") &&
+      MIGRATION_MOVE_PERMISSIONS.some((permission) => can(permission))
+    )
+      return `${path}/export`;
+
+    return path;
+  }
+
+  return undefined;
+}
+
+/** The first tenant section the current membership can read, if any. */
+export function firstReadableTenantSection(
+  can: (permission: Permission) => boolean,
+  tenantId: string,
+): string | undefined {
+  for (const section of SECTIONS) {
+    const permission = tenantSectionPermission(section);
+
+    if (!permission || !can(permission)) continue;
+
+    return sectionPath(tenantId, section);
+  }
+
+  return firstReadableSettingsTab(can, tenantId);
+}
+
 export function permissionForTenantPath(path: string, tenantId: string): Permission | undefined {
   const base = `/t/${tenantId}`;
 

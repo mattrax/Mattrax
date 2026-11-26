@@ -9,7 +9,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import type { DeviceViewQuery } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -58,7 +58,6 @@ const makeContext = () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods these tests exercise.
@@ -297,7 +296,7 @@ describe("device views", () => {
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     await expect(
-      createView(context, tenant.id, { name: "Bad sort", query: query({ sort: "nope" }) }),
+      createView(context, tenant.id, { name: "Bad sort", query: query({ sort: "nope" as never }) }),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 

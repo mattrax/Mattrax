@@ -1,5 +1,4 @@
 import { useParams } from "@solidjs/router";
-import { routes } from "~/lib/routes";
 import { useQuery } from "@tanstack/solid-query";
 import {
   BUILT_IN_ROLE_LABELS,
@@ -12,11 +11,6 @@ import type { JSX } from "@solidjs/web";
 import { authClient } from "~/lib/auth";
 import { meQueryOptions, resolveActiveTenant } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
-import {
-  MIGRATION_MOVE_PERMISSIONS,
-  settingsTabPermissions,
-  tenantSectionPermission,
-} from "~/lib/settings-permissions";
 
 /**
  * A membership with the optional RBAC fields. Fields are optional in the type
@@ -97,11 +91,17 @@ export type TenantPermissionsApi = {
  * Permissions for the tenant in the current URL. Every tenant page and the
  * dashboard shell read the same `me` query, so this adds no extra request.
  */
+/** Read account data only after success so a held /me cannot suspend callers. */
+const settledQueryData = <T,>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined => (query.isSuccess ? query.data : undefined);
+
 export function useTenantPermissions(): TenantPermissionsApi {
   const params = useParams();
   const session = authClient.useSession();
   const me = useQuery(() => meQueryOptions(session().data?.user?.id));
-  const tenant = createMemo(() => resolveActiveTenant(me.data, params.tenantId));
+  const tenant = createMemo(() => resolveActiveTenant(settledQueryData(me), params.tenantId));
   const permissions = createMemo(() => tenantPermissions(tenant()));
 
   return {
@@ -148,7 +148,7 @@ export function ReadOnlyNotice(props: { class?: string; children?: JSX.Element }
     <div
       role="status"
       class={cn(
-        "flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-[12px] leading-relaxed text-muted-foreground",
+        "flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted-foreground",
         props.class,
       )}
     >
@@ -166,10 +166,10 @@ export function AccessDenied(props: { title?: string; message?: string; action?:
   return (
     <div class="flex flex-1 items-center justify-center px-4 py-16">
       <div class="w-full max-w-md rounded-xl border border-border bg-surface p-6 text-center">
-        <h1 class="text-[15px] font-semibold text-foreground">
+        <h1 class="text-sm font-semibold text-foreground">
           {props.title ?? "You don't have access"}
         </h1>
-        <p class="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
+        <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
           {props.message ??
             "Your role does not include permission for this area. Ask a tenant owner if you need access."}
         </p>
@@ -184,6 +184,8 @@ export function AccessDenied(props: { title?: string; message?: string; action?:
 export {
   MIGRATION_ACCESS_PERMISSIONS,
   MIGRATION_MOVE_PERMISSIONS,
+  firstReadableSettingsTab,
+  firstReadableTenantSection,
   permissionForTenantPath,
   settingsTabPermission,
   settingsTabPermissions,
@@ -194,8 +196,14 @@ export {
 export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
   "tenant.read",
   "members.read",
+  // OS updates and Migration are settings tabs gated by devices.read.
+  "devices.read",
   "identity.read",
   "enrollment.read",
+  // Scope tags are a settings surface even for a role that only reads them.
+  "scope_tags.read",
+  // OS updates and Migration are settings tabs gated by devices.read.
+  "devices.read",
   "management.read",
   "webhooks.read",
   "audit.read",
@@ -206,101 +214,3 @@ export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
   "tenant.export",
   "tenant.import",
 ];
-
-const SETTINGS_TABS = [
-  "",
-  "administrators",
-  "approvals",
-  "backups",
-  "identity",
-  "enrollment",
-  "attributes",
-  "management",
-  "migration",
-  "delivery",
-  "integrations",
-  "audit",
-  "os-updates",
-  "billing",
-  "storage",
-  "legal",
-] as const;
-
-const SECTIONS = [
-  "overview",
-  "dashboards",
-  "devices",
-  "users",
-  "groups",
-  "policies",
-  "applications",
-  "scripts",
-  "settings",
-] as const;
-
-/** The canonical path of one top-level dashboard section. */
-function sectionPath(tenantId: string, section: (typeof SECTIONS)[number]): string {
-  const tenant = routes.tenant(tenantId);
-
-  switch (section) {
-    case "overview":
-      return tenant.overview();
-    case "dashboards":
-      return tenant.dashboards();
-    case "devices":
-      return tenant.devices();
-    case "users":
-      return tenant.users();
-    case "groups":
-      return tenant.groups();
-    case "policies":
-      return tenant.policies();
-    case "applications":
-      return tenant.applications();
-    case "scripts":
-      return tenant.scripts();
-    case "settings":
-      return tenant.settings();
-  }
-}
-
-/** The first settings tab the current membership can read, if any. */
-export function firstReadableSettingsTab(
-  can: (permission: Permission) => boolean,
-  tenantId: string,
-): string | undefined {
-  for (const tab of SETTINGS_TABS) {
-    if (!settingsTabPermissions(tab).some((permission) => can(permission))) continue;
-
-    const path = routes.tenant(tenantId).settingsTab(tab);
-
-    // A role that can move a tenant but not browse devices has no cohort
-    // tracker, so send it straight to the deployment tools.
-    if (
-      tab === "migration" &&
-      !can("devices.read") &&
-      MIGRATION_MOVE_PERMISSIONS.some((permission) => can(permission))
-    )
-      return `${path}/export`;
-
-    return path;
-  }
-
-  return undefined;
-}
-
-/** The first tenant section the current membership can read, if any. */
-export function firstReadableTenantSection(
-  can: (permission: Permission) => boolean,
-  tenantId: string,
-): string | undefined {
-  for (const section of SECTIONS) {
-    const permission = tenantSectionPermission(section);
-
-    if (!permission || !can(permission)) continue;
-
-    return sectionPath(tenantId, section);
-  }
-
-  return firstReadableSettingsTab(can, tenantId);
-}

@@ -213,9 +213,9 @@ export const normalizeAuditSearchQuery = (query: AuditSearchQuery): AuditSearchF
 };
 
 /**
- * Tenant-scoped WHERE clause. Action and target columns compare exactly so the
- * `(organizationId, action)` index can be used; actor and free-text target ids
- * use an escaped LIKE on indexed-prefix columns.
+ * Tenant-scoped WHERE clause. Category, action and protocol compare exactly
+ * so their ordered tenant composites can serve newest-first keyset pages;
+ * actor and free-text target ids use an escaped LIKE on indexed-prefix columns.
  *
  * Category, actor type, protocol and device are equality filters. Free text is
  * the only operator that fans out across columns; it stays inside the tenant

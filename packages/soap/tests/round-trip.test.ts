@@ -82,6 +82,75 @@ describe("Round-trip tests", () => {
     expect(result.request.requestVersion).toBe("5.0");
     expect(result.request.authPolicies).toEqual(["OnPremise"]);
   });
+
+  it("round-trips records without losing namespaces", async () => {
+    const RecordValue = Schema.Record(Schema.String, Schema.String).pipe(
+      Schema.annotate({ identifier: "RecordValue" }),
+    );
+    const original = {
+      alpha: "a",
+      "{urn:beta}beta": "b",
+      "{urn:left}item": "left",
+      "{urn:right}item": "right",
+    };
+    const xml = await runPromise(serializeSoapElement(RecordValue, original));
+
+    expect(xml).toContain('<beta xmlns="urn:beta">b</beta>');
+    await expect(runPromise(deserializeSoapElement(xml, RecordValue))).resolves.toEqual(original);
+  });
+
+  it("round-trips array-valued records whose key matches the item name", async () => {
+    const RecordValue = Schema.Record(Schema.String, Schema.Array(Schema.String)).pipe(
+      Schema.annotate({ identifier: "RecordValue" }),
+    );
+    const original = { item: ["a", "b"] };
+    const xml = await runPromise(serializeSoapElement(RecordValue, original));
+
+    await expect(runPromise(deserializeSoapElement(xml, RecordValue))).resolves.toEqual(original);
+  });
+
+  it("round-trips namespaced attributes with unambiguous prefixes", async () => {
+    const Item = Schema.Struct({
+      left: Schema.String.pipe(
+        Schema.annotateKey({ soapAttribute: true, soapAttributeName: "{urn:left}value" }),
+      ),
+      right: Schema.String.pipe(
+        Schema.annotateKey({ soapAttribute: true, soapAttributeName: "{urn:right}value" }),
+      ),
+      otherLeft: Schema.String.pipe(
+        Schema.annotateKey({ soapAttribute: true, soapAttributeName: "{urn:left}other" }),
+      ),
+    }).pipe(Schema.annotate({ identifier: "Item" }));
+    const original = { left: "a", right: "b", otherLeft: "c" };
+    const xml = await runPromise(serializeSoapElement(Item, original));
+
+    await expect(runPromise(deserializeSoapElement(xml, Item))).resolves.toEqual(original);
+  });
+
+  it("round-trips a discriminated object union", async () => {
+    const Choice = Schema.Union([
+      Schema.Struct({ kind: Schema.Literal("text"), value: Schema.String }).pipe(
+        Schema.annotate({ identifier: "TextChoice" }),
+      ),
+      Schema.Struct({ kind: Schema.Literal("count"), value: Schema.Number }).pipe(
+        Schema.annotate({ identifier: "CountChoice" }),
+      ),
+    ]);
+    const original = { kind: "count" as const, value: 2 };
+    const xml = await runPromise(serializeSoapElement(Choice, original));
+
+    await expect(runPromise(deserializeSoapElement(xml, Choice))).resolves.toEqual(original);
+  });
+
+  it("round-trips primitive unions without coercing the selected branch", async () => {
+    const Scalar = Schema.Union([Schema.Boolean, Schema.String]);
+
+    for (const original of [true, false, "hello"] as const) {
+      const xml = await runPromise(serializeSoapElement(Scalar, original));
+
+      await expect(runPromise(deserializeSoapElement(xml, Scalar))).resolves.toBe(original);
+    }
+  });
 });
 
 describe("Error handling", () => {

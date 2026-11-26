@@ -33,26 +33,33 @@ pub struct InstalledScript {
     pub device_token: String,
 }
 
-/// Installed scripts from every installed profile. Repeated profiles yield
-/// repeated scripts, which the result endpoint deduplicates on run id.
-pub fn installed_scripts() -> Vec<InstalledScript> {
+/// Every installed configuration profile. Shared by the script and restricted
+/// software readers so both see the same profile snapshot in one tick.
+pub(crate) fn installed_profile_values() -> Vec<Value> {
     #[cfg(target_os = "macos")]
     {
-        let mut scripts = Vec::new();
+        let Some(listing) = run_profiles(&["-P", "-o", "stdout-xml"]) else {
+            return Vec::new();
+        };
 
-        for identifier in installed_profile_identifiers() {
-            if let Some(profile) = profile_contents(&identifier) {
-                scripts.extend(scripts_from_profile(&profile));
-            }
-        }
-
-        scripts
+        profile_values_from_listing(&listing, profile_contents)
     }
 
     #[cfg(not(target_os = "macos"))]
     {
         Vec::new()
     }
+}
+
+/// Installed scripts from every installed profile. Repeated profiles yield
+/// repeated scripts, which the result endpoint deduplicates on run id.
+pub fn installed_scripts() -> Vec<InstalledScript> {
+    installed_scripts_from_profiles(&installed_profile_values())
+}
+
+/// Parse scripts from a profile snapshot already collected for this tick.
+pub(crate) fn installed_scripts_from_profiles(profiles: &[Value]) -> Vec<InstalledScript> {
+    profiles.iter().flat_map(scripts_from_profile).collect()
 }
 
 /// Parse one installed profile (the `profiles -P -p <id>` output).
@@ -169,12 +176,9 @@ fn integer(value: &Value, key: &str) -> Option<i64> {
         })
 }
 
-#[cfg(target_os = "macos")]
-fn installed_profile_identifiers() -> Vec<String> {
-    let Some(output) = run_profiles(&["-P", "-o", "stdout-xml"]) else {
-        return Vec::new();
-    };
-    let Ok(plist) = plist::from_bytes::<Value>(&output) else {
+#[cfg(any(target_os = "macos", test))]
+fn profile_identifiers_from_listing(output: &[u8]) -> Vec<String> {
+    let Ok(plist) = plist::from_bytes::<Value>(output) else {
         return Vec::new();
     };
 
@@ -189,6 +193,17 @@ fn installed_profile_identifiers() -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn profile_values_from_listing(
+    listing: &[u8],
+    mut contents: impl FnMut(&str) -> Option<Value>,
+) -> Vec<Value> {
+    profile_identifiers_from_listing(listing)
+        .iter()
+        .filter_map(|identifier| contents(identifier))
+        .collect()
 }
 
 #[cfg(target_os = "macos")]
@@ -253,6 +268,41 @@ mod tests {
 
     fn profile() -> Value {
         plist::from_bytes(PROFILE.as_bytes()).expect("profile parses")
+    }
+
+    #[test]
+    fn a_profile_snapshot_reads_each_identifier_once() {
+        let listing = br#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>_computerlevel</key><array>
+  <dict><key>ProfileIdentifier</key><string>profile-1</string></dict>
+  <dict><key>ProfileIdentifier</key><string>profile-2</string></dict>
+</array></dict></plist>"#;
+        let mut reads = Vec::new();
+
+        let snapshot = profile_values_from_listing(listing, |identifier| {
+            reads.push(identifier.to_owned());
+            Some(profile())
+        });
+
+        assert_eq!(reads, vec!["profile-1", "profile-2"]);
+        assert_eq!(snapshot.len(), 2);
+        assert_eq!(installed_scripts_from_profiles(&snapshot).len(), 2);
+    }
+
+    #[test]
+    fn a_bad_listing_or_profile_does_not_hide_the_other_profiles() {
+        let snapshot = profile_values_from_listing(b"not a plist", |_| Some(profile()));
+        assert!(snapshot.is_empty());
+
+        let listing = br#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>_computerlevel</key><array>
+  <dict><key>ProfileIdentifier</key><string>bad</string></dict>
+  <dict><key>ProfileIdentifier</key><string>good</string></dict>
+</array></dict></plist>"#;
+        let snapshot =
+            profile_values_from_listing(listing, |identifier| (identifier == "good").then(profile));
+
+        assert_eq!(snapshot, vec![profile()]);
     }
 
     #[test]

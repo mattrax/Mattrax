@@ -69,22 +69,44 @@ export const windowsInventoryCommandRowId = (deviceId: string, cmdID: string): P
 export const windowsPolicyNodeHash = (data: string, format: string | undefined): Promise<string> =>
   sha256(`${format ?? ""}\u0000${data}`);
 
+/**
+ * `DM_S_ACCEPTED_FOR_PROCESSING` is documented as 0x4000000. The asynchronous
+ * BitLocker and LAPS rotation Execs treat it as an acknowledgement because both
+ * have a status node; other commands keep the normal SyncML status handling.
+ *
+ * OMA-DM `Status` values are SyncML codes, not HTTP codes: `202 Accepted` is
+ * not a rotation acknowledgement and remains a failure. The pre-existing
+ * `418` handling is unchanged and still marks a command queued for delivery.
+ */
+export const WINDOWS_ACCEPTED_FOR_PROCESSING_STATUS = "0x4000000";
+
 export type WindowsCommandOutcome = {
-  readonly status: "succeeded" | "queued" | "failed";
+  readonly status: "succeeded" | "queued" | "accepted" | "failed";
   readonly resultStatus: string;
 };
 
 /**
  * Map a SyncML status code onto the shared command lifecycle. `200` is the
  * only success; `418` means the client queued the work and will report again.
- * Everything else is a rejection and must be visible as one.
+ * Everything else is a rejection unless the caller explicitly accepts
+ * `DM_S_ACCEPTED_FOR_PROCESSING` for an asynchronous command.
  */
-export const windowsCommandOutcome = (data: string): WindowsCommandOutcome => {
+export const windowsCommandOutcome = (
+  data: string,
+  options: { readonly acceptedForProcessing?: boolean } = {},
+): WindowsCommandOutcome => {
   const resultStatus = data.trim() || "unknown";
 
   if (resultStatus === "200") return { status: "succeeded", resultStatus };
 
   if (resultStatus === "418") return { status: "queued", resultStatus };
+
+  if (
+    options.acceptedForProcessing === true &&
+    (resultStatus.toLowerCase() === WINDOWS_ACCEPTED_FOR_PROCESSING_STATUS ||
+      resultStatus === String(0x4000000))
+  )
+    return { status: "accepted", resultStatus };
 
   return { status: "failed", resultStatus };
 };

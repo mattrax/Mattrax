@@ -1,6 +1,7 @@
-import { Effect, Option } from "effect";
-import { describe, expect, it } from "vitest";
-import { mkdtemp, stat } from "node:fs/promises";
+import { ConfigProvider, Effect, Layer, Option } from "effect";
+import { NodeServices } from "@effect/platform-node";
+import { afterEach, describe, expect, it } from "vitest";
+import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -12,6 +13,16 @@ import {
   resolveSettings,
   writeStoredSettings,
 } from "./settings.ts";
+import { CliSecureFileStore } from "./secureFileStore.ts";
+
+const directories: Array<string> = [];
+const runtimeLayer = CliSecureFileStore.layer.pipe(Layer.provideMerge(NodeServices.layer));
+
+afterEach(async () => {
+  await Promise.all(
+    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+  );
+});
 
 const flags = (overrides: Partial<Parameters<typeof resolveSettings>[0]> = {}) => ({
   url: Option.none<string>(),
@@ -137,15 +148,39 @@ describe("token redaction", () => {
 describe("config file", () => {
   it("honours MATTRAX_CONFIG and writes mode 0600", async () => {
     const directory = await mkdtemp(join(tmpdir(), "mattrax-cli-"));
+    directories.push(directory);
     const path = join(directory, "nested", "config.json");
     const env = { MATTRAX_CONFIG: path };
 
-    expect(configPath(env)).toBe(path);
+    expect(
+      await Effect.runPromise(
+        configPath.pipe(
+          Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(env)),
+          Effect.provide(NodeServices.layer),
+        ),
+      ),
+    ).toBe(path);
 
-    await Effect.runPromise(writeStoredSettings(path, stored));
+    await Effect.runPromise(writeStoredSettings(path, stored).pipe(Effect.provide(runtimeLayer)));
 
     const mode = (await stat(path)).mode & 0o777;
     expect(mode).toBe(0o600);
-    expect(await Effect.runPromise(readStoredSettings(path))).toEqual(stored);
+    expect(
+      await Effect.runPromise(readStoredSettings(path).pipe(Effect.provide(runtimeLayer))),
+    ).toEqual(stored);
+  });
+
+  it("overwrites a permissive settings file without exposing secrets or temp files", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mattrax-cli-"));
+    directories.push(directory);
+    const path = join(directory, "config.json");
+    await writeFile(path, "old", { mode: 0o644 });
+    await chmod(path, 0o644);
+
+    await Effect.runPromise(writeStoredSettings(path, stored).pipe(Effect.provide(runtimeLayer)));
+
+    expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual(stored);
+    expect(await readdir(directory)).toEqual(["config.json"]);
   });
 });

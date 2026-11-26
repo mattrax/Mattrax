@@ -39,10 +39,10 @@ export default function NewTenantPage() {
   }));
 
   return (
-    <Page class="max-w-[640px]">
+    <Page class="max-w-160">
       <a
         href="/dashboard"
-        class="inline-flex w-fit items-center gap-1.5 text-[12px] font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
+        class="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
       >
         <ArrowLeft class="size-3.5" />
         Back to dashboard
@@ -92,12 +92,14 @@ export default function NewTenantPage() {
             label="Slug"
             hint="Used in URLs and API calls. Lowercase letters, numbers and dashes."
           >
-            <Input
-              class="h-9 font-mono text-[13px]"
-              value={slugDraft().slug}
-              onInput={(event) => setSlugDraft(updateTenantSlug(event.currentTarget.value))}
-              placeholder="acme-operations"
-            />
+            <div class="font-mono">
+              <Input
+                class="h-9"
+                value={slugDraft().slug}
+                onInput={(event) => setSlugDraft(updateTenantSlug(event.currentTarget.value))}
+                placeholder="acme-operations"
+              />
+            </div>
           </Field>
           <ErrorText error={error() ?? createTenant.error} />
           <div class="flex flex-wrap items-center gap-3 border-t border-border pt-4">

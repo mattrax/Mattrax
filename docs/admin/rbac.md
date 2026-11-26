@@ -111,3 +111,91 @@ Successful actions recorded in the audit log include the effective RBAC policy:
 
 Role creation, updates and deletion are audited separately, including the
 permission set that was granted.
+
+## Scope tags
+
+Scope tags carve one tenant into regions, teams or schools so a delegated
+administrator can be limited without a separate tenant.
+
+- **Settings → Scope tags** creates a named tag with an optional description.
+  A tenant can hold up to 100 tags. Deleting a tag requires removing it from
+  every administrator first; resources carrying it become untagged.
+- A tag can be attached to **devices, groups, policies, applications, scripts
+  and dashboards**. Enrollment links are tenant-level settings rather than
+  rows, so they cannot carry a tag yet; an enrollment administrator is
+  tenant-wide. Device views and dashboard reports inherit the visibility of
+  the data they query rather than carrying their own tag.
+- Attach tags when creating a group, policy, application, script or dashboard,
+  from a resource's **Scope tags** control, or in bulk from a list's selection
+  bar. Attaching tags needs `scope_tags.write` **and** the write permission for
+  that resource kind (`devices.write`, `groups.write`, and so on).
+- On **Settings → Administrators**, a member or invitation can be given a set
+  of allowed tags. A scoped member sees and changes only resources carrying at
+  least one allowed tag. The role's permissions still apply: a request needs the
+  permission *and* the tag.
+
+### Defaults and upgrade behaviour
+
+An administrator with **no allowed tags is unscoped** and sees the whole
+tenant. This is the upgrade default: existing members keep exactly the access
+they had, and no migration grants a scoped role access to anything. To scope an
+administrator, give them at least one tag; to unscope them, clear the list.
+
+A resource with **no tags is tenant-wide** and is visible only to unscoped
+members. Scoped members never see untagged resources, so creating a scope
+cannot silently widen a delegated team's reach. A scoped member creating a
+group, policy, application, script or dashboard automatically attaches their
+own tags to it; otherwise the new resource would disappear from their view.
+Removing every tag from a resource makes it tenant-wide, so the API refuses
+that for a scoped member.
+
+Built-in **owners are always unscoped**, whatever tags are stored against
+their membership. A tenant cannot lock itself out by tagging its owner. The
+owner role cannot be given tags in the dashboard.
+
+### Enforcement
+
+Every guarded endpoint runs the RBAC permission check first. A scoped request
+then also checks the resource's tags:
+
+| Surface                            | Behaviour                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------- |
+| Lists and search                   | Only tagged resources in scope are returned                               |
+| Read, update, delete               | Out-of-scope ids return 404/permission denied without changing anything    |
+| Device commands and handover       | Refused unless the device is in scope                                      |
+| Device export                      | CSV contains only in-scope devices                                         |
+| Bulk actions                       | A mixed batch is refused before any row is changed; out-of-scope ids are reported like missing ids |
+| Audit log and audit export         | Only entries about in-scope resources, plus device-linked activity         |
+| Member tag assignment              | A scoped administrator cannot grant a wider scope than their own, edit a member outside their scope, or change their own tags |
+| Assignment targets                 | Devices, groups, policies and child groups attached to a group, policy, script or application must be in scope |
+| Tag editing                        | A scoped editor only replaces tags it can see; unseen tags stay attached. Creating tags, editing another tag, or deleting a tag used by a pending invitation is refused |
+
+A denied cross-scope write/command is recorded as `scope_tag.access_denied`
+with the attempted resource, the caller's tags and their role. Tag lifecycle
+and assignment changes are recorded as `scope_tag.created`,
+`scope_tag.updated`, `scope_tag.deleted`,
+`scope_tag.assignments_changed` and `member.scope_tags_changed`.
+
+Surfaces that can only be computed tenant-wide **fail closed** for a scoped
+role with a clear permission error rather than exposing another region's
+fleet: dashboard queries, dashboard reports and report sending, fleet health,
+software-update, OS and push summaries, credential health, Windows failure
+history without a device, device pre-registrations and imports, fleet migration
+cohorts/exports, tenant export, backups and cutover, tenant onboarding counts,
+the directory user list and the VPP licence pool. `getApplication` filters its
+linked group/device names to the caller's scope. Tagged dashboards can still be
+opened and edited by an in-scope administrator, but a scheduled report whose
+creator is scoped is skipped. Device views remain tenant-wide query definitions,
+not fleet data.
+
+Device pre-registrations are not tagged because the device row does not exist
+until enrolment; the same is true of the tenant's enrollment link, which is a
+SCEP-signed setting rather than a resource row.
+
+### Migration notes
+
+The migration adds `scope_tag`, `scope_tag_assignment`,
+`member_scope_tag` and an invitation `scope_tag_ids` column. No existing row is
+tagged and no member is given a tag, so an upgrade preserves the previous
+access exactly. Tags are opt-in per resource and per administrator.
+

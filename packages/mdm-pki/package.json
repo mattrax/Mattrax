@@ -1,0 +1,15 @@
+{
+  "name": "@mattrax/mdm-pki",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Internal lazy PKI engine shared by MDM protocol packages",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "asn1js": "catalog:",
+    "pkijs": "catalog:"
+  }
+}

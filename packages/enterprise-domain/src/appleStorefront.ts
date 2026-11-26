@@ -17,7 +17,8 @@
  * which id a region should use. Network access lives in the API package.
  */
 
-import { Option, Schema } from "effect";
+import { Context, Option, Schema } from "effect";
+import type { Effect } from "effect";
 
 export const ApplicationAvailability = Schema.Literals(["unknown", "available", "unavailable"]);
 
@@ -173,6 +174,26 @@ export type AppleStoreLookup = {
   readonly version?: string;
   readonly reason?: string;
 };
+
+export type ApplicationStoreLookupInput = {
+  readonly region: string;
+  readonly storeId?: string | null;
+  readonly bundleId?: string | null;
+};
+
+export type ApplicationStoreLookupOutcome =
+  | { readonly ok: true; readonly lookup: AppleStoreLookup }
+  | { readonly ok: false; readonly error: string };
+
+/** Typed application-store port used by the catalogue vertical. */
+export class ApplicationStoreService extends Context.Service<
+  ApplicationStoreService,
+  {
+    readonly lookup: (
+      input: ApplicationStoreLookupInput,
+    ) => Effect.Effect<ApplicationStoreLookupOutcome>;
+  }
+>()("@mattrax/enterprise-domain/ApplicationStoreService") {}
 
 const text = (value: Schema.Json | undefined): string | undefined => {
   if (Schema.is(Schema.String)(value)) {

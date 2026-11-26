@@ -85,16 +85,18 @@ const externalIdentityLabel = (user: UserDetail): string =>
 
 function FactRow(props: { label: string; children: JSX.Element }) {
   return (
-    <div class="grid grid-cols-[minmax(0,9.5rem)_minmax(0,1fr)] gap-3 py-2.5 sm:grid-cols-[minmax(0,11rem)_minmax(0,1fr)]">
-      <dt class="text-[12px] font-medium text-muted-foreground">{props.label}</dt>
-      <dd class="min-w-0 break-words text-[12.5px] text-foreground">{props.children}</dd>
+    <div class="flex flex-col gap-1 py-2.5 sm:flex-row sm:gap-3">
+      <dt class="w-full shrink-0 text-xs font-medium text-muted-foreground sm:w-38 lg:w-44">
+        {props.label}
+      </dt>
+      <dd class="min-w-0 flex-1 break-words text-xs text-foreground">{props.children}</dd>
     </div>
   );
 }
 
 function SourceBadge(props: { source: UserGroupRef["source"] }) {
   return (
-    <span class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+    <span class="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-xs font-medium text-muted-foreground">
       <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
       {GROUP_SOURCE_LABELS[props.source]}
     </span>
@@ -114,19 +116,19 @@ function PolicyRow(props: {
           <Show
             when={props.canReadPolicies}
             fallback={
-              <span class="block truncate text-[12.5px] font-medium text-foreground">
+              <span class="block truncate text-xs font-medium text-foreground">
                 {props.policy.policyName}
               </span>
             }
           >
             <a
               href={routes.tenant(props.tenantId).policy(props.policy.policyId)}
-              class="block truncate text-[12.5px] font-medium text-foreground hover:underline"
+              class="block truncate text-xs font-medium text-foreground hover:underline"
             >
               {props.policy.policyName}
             </a>
           </Show>
-          <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
             <Show when={props.policy.direct}>Assigned directly</Show>
             <Show when={props.policy.direct && props.policy.groups.length > 0}> · </Show>
             <Show when={props.policy.groups.length > 0}>
@@ -145,7 +147,7 @@ function PolicyRow(props: {
             </Show>
           </p>
           <Show when={props.policy.overriddenExclusions.length > 0}>
-            <p class="mt-0.5 text-[11px] leading-relaxed text-warning-foreground">
+            <p class="mt-0.5 text-xs leading-relaxed text-warning-foreground">
               The direct assignment overrides an exclusion from{" "}
               <For each={props.policy.overriddenExclusions}>
                 {(group, index) => (
@@ -163,7 +165,7 @@ function PolicyRow(props: {
           <Show when={props.policy.direct}>
             <Badge variant="outline">Direct</Badge>
           </Show>
-          <span class="text-[11px] tabular-nums text-muted-foreground">
+          <span class="text-xs tabular-nums text-muted-foreground">
             priority {props.policy.priority}
           </span>
         </div>
@@ -203,13 +205,13 @@ export default function UserDetailPage() {
         fallback={
           <Show when={user.isError} fallback={<PageSkeleton rows={7} />}>
             <Card>
-              <CardContent class="py-4">
+              <CardContent>
                 <div class="flex flex-col items-start gap-3">
                   <div class="min-w-0">
-                    <p class="text-[13px] font-medium text-foreground">
+                    <p class="text-xs font-medium text-foreground">
                       This user could not be loaded
                     </p>
-                    <p class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+                    <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                       They may have been removed by directory sync, or you may not have access to
                       this tenant.
                     </p>
@@ -245,17 +247,17 @@ export default function UserDetailPage() {
               <div class="flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-start lg:justify-between">
                 <div class="flex min-w-0 items-start gap-4">
                   <span
-                    class="flex size-12 shrink-0 items-center justify-center rounded-full bg-hover text-[15px] font-[600] text-foreground"
+                    class="flex size-12 shrink-0 items-center justify-center rounded-full bg-hover text-sm font-semibold text-foreground"
                     aria-hidden="true"
                   >
                     {initials(value().name)}
                   </span>
                   <div class="min-w-0 pt-0.5">
                     <PageBreadcrumbs title={value().name} />
-                    <h1 class="truncate text-[21px] font-[580] leading-[1.15] tracking-[-0.028em] text-foreground sm:text-[24px]">
+                    <h1 class="truncate text-xl font-semibold leading-tight tracking-tight text-foreground sm:text-2xl">
                       {value().name}
                     </h1>
-                    <p class="mt-1 truncate text-[12.5px] leading-5 text-muted-foreground">
+                    <p class="mt-1 truncate text-xs leading-5 text-muted-foreground">
                       {value().email}
                     </p>
                     <div class="mt-3 flex flex-wrap items-center gap-1.5">
@@ -311,7 +313,7 @@ export default function UserDetailPage() {
             <Show when={value().disabled}>
               <div
                 role="status"
-                class="rounded-xl border border-warning/25 bg-warning/[0.07] px-4 py-3 text-[12px] leading-relaxed text-warning-foreground"
+                class="rounded-xl border border-warning/25 bg-warning/[0.07] px-4 py-3 text-xs leading-relaxed text-warning-foreground"
               >
                 This person is disabled. Directory sync disables a leaver instead of deleting them,
                 so their groups, device links and policy assignments stay visible for reference, but
@@ -326,8 +328,8 @@ export default function UserDetailPage() {
               />
             </Show>
 
-            <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
-              <div class="min-w-0 space-y-4">
+            <div class="flex flex-col items-start gap-4 lg:flex-row">
+              <div class="min-w-0 w-full flex-1 space-y-4">
                 <Panel
                   title="Identity"
                   description="The directory record this tenant imported. Sync owns these fields; Mattrax never edits them."
@@ -343,7 +345,7 @@ export default function UserDetailPage() {
                         }
                       >
                         {(externalId) => (
-                          <span class="font-mono text-[11.5px] break-all">{externalId()}</span>
+                          <span class="font-mono text-xs break-all">{externalId()}</span>
                         )}
                       </Show>
                     </FactRow>
@@ -360,7 +362,7 @@ export default function UserDetailPage() {
                         {(account) => (
                           <span class="flex flex-col">
                             <span class="font-medium">{account().name}</span>
-                            <span class="text-[11.5px] text-muted-foreground">
+                            <span class="text-xs text-muted-foreground">
                               {account().email}
                             </span>
                           </span>
@@ -397,16 +399,16 @@ export default function UserDetailPage() {
                               <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
                                 <a
                                   href={routes.tenant(params.tenantId).device(device.id)}
-                                  class="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground hover:underline"
+                                  class="min-w-0 flex-1 truncate text-xs font-medium text-foreground hover:underline"
                                 >
                                   {device.name}
                                 </a>
-                                <span class="text-[11px] text-muted-foreground">
+                                <span class="text-xs text-muted-foreground">
                                   {PLATFORM_LABELS[device.proto]}
                                 </span>
                                 <Badge variant="outline">{device.status}</Badge>
                                 <span
-                                  class="text-[11px] text-muted-foreground"
+                                  class="text-xs text-muted-foreground"
                                   title={`Linked ${formatDate(device.linkedAt)}`}
                                 >
                                   {device.source === "directory" ? "Directory link" : "Manual link"}
@@ -456,7 +458,7 @@ export default function UserDetailPage() {
                 </Show>
               </div>
 
-              <div class="min-w-0 space-y-4">
+              <div class="min-w-0 w-full shrink-0 space-y-4 lg:w-90">
                 <Panel
                   title="Directory groups"
                   description="Groups that scope policy for this person. Membership follows the directory; a manual group is maintained by an administrator."
@@ -464,7 +466,7 @@ export default function UserDetailPage() {
                     <Show when={can("identity.read")}>
                       <a
                         href={groupsHref()}
-                        class="text-[11.5px] font-medium text-brand underline underline-offset-2 hover:text-brand/80"
+                        class="text-xs font-medium text-brand underline underline-offset-2 hover:text-brand/80"
                       >
                         Manage
                       </a>
@@ -491,14 +493,14 @@ export default function UserDetailPage() {
                             <Show
                               when={can("identity.read")}
                               fallback={
-                                <span class="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground">
+                                <span class="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
                                   {group.name}
                                 </span>
                               }
                             >
                               <a
                                 href={groupsHref()}
-                                class="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground hover:underline"
+                                class="min-w-0 flex-1 truncate text-xs font-medium text-foreground hover:underline"
                                 title="Directory groups are listed in Settings, Identity, Directory"
                               >
                                 {group.name}
@@ -512,7 +514,7 @@ export default function UserDetailPage() {
                   </Show>
                 </Panel>
 
-                <div class="rounded-xl border border-border bg-surface px-4 py-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                <div class="rounded-xl border border-border bg-surface px-4 py-3 text-xs leading-relaxed text-muted-foreground">
                   <p class="flex items-start gap-2">
                     <UserIcon class="mt-px size-3.5 shrink-0" />
                     <span>

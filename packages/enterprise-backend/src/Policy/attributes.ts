@@ -19,7 +19,7 @@ import {
   validateAttributeValue,
 } from "@mattrax/enterprise-domain";
 import type { AttributeSource, AttributeType } from "@mattrax/enterprise-domain";
-import { writeSystemAudit } from "@mattrax/mdm-apple";
+import { writeSystemAudit } from "@mattrax/mdm-core";
 
 /**
  * Device attributes: registry validation, value canonicalisation, CSV
