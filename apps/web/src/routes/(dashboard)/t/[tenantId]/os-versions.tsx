@@ -3,6 +3,7 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show, createSignal } from "solid-js";
 import type {
+  OsBehindDevice,
   OsFleetPlatform,
   OsPolicyPlatform,
   TenantOsPolicyPlatform,
@@ -17,9 +18,9 @@ import {
   Panel,
   QueryError,
 } from "~/components/mdm/common";
-import { OsComplianceTag } from "~/components/os-compliance-badge";
+import OsComplianceTag from "~/components/os-compliance-badge";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { toast } from "~/components/toast";
 import { preloadPage } from "~/lib/page-data";
@@ -42,6 +43,10 @@ const platformLabel = (platform: OsPolicyPlatform) => {
   switch (platform) {
     case "macos":
       return "macOS";
+    case "ios":
+      return "iOS";
+    case "ipados":
+      return "iPadOS";
     case "windows":
       return "Windows";
     case "android":
@@ -52,6 +57,8 @@ const platformLabel = (platform: OsPolicyPlatform) => {
 const platformProto = (platform: OsPolicyPlatform) => {
   switch (platform) {
     case "macos":
+    case "ios":
+    case "ipados":
       return "apple" as const;
     case "windows":
       return "win" as const;
@@ -60,10 +67,13 @@ const platformProto = (platform: OsPolicyPlatform) => {
   }
 };
 
+const isApplePlatform = (platform: OsPolicyPlatform) =>
+  platform === "macos" || platform === "ios" || platform === "ipados";
+
 const Stat = (props: { label: string; value: number; tone?: string }) => (
   <div class="rounded-lg border border-border bg-card px-3 py-2.5">
     <p class="label-caps">{props.label}</p>
-    <p class={cn("mt-1 text-[20px] font-[560] leading-none tracking-[-0.02em]", props.tone)}>
+    <p class={cn("mt-1 text-xl font-semibold leading-none tracking-tight", props.tone)}>
       {props.value}
     </p>
   </div>
@@ -115,11 +125,33 @@ export default function OsVersionsPage() {
   const [confirmOpen, setConfirmOpen] = createSignal(false);
   const [applyError, setApplyError] = createSignal<unknown>();
 
-  const selectedRows = () => {
+  type SelectedRow = OsBehindDevice & { platform: OsPolicyPlatform };
+
+  const selectedRows = (): SelectedRow[] => {
     const ids = selected();
-    const rows = fleet.data?.platforms.flatMap((platform) => platform.behind) ?? [];
+    const rows =
+      fleet.data?.platforms.flatMap((platform) =>
+        platform.behind.map((row) => ({ ...row, platform: platform.platform })),
+      ) ?? [];
 
     return rows.filter((row) => ids.has(row.id));
+  };
+
+  /**
+   * Which delivery path Apply update uses for the current selection.
+   *
+   * A device with the DDM declaration receives an APNs wake-up and applies
+   * the tenant rule on check-in. Devices without DDM (below the declaration
+   * minimum or on legacy delivery) fall back to the explicit ScheduleOSUpdate
+   * command. Apple ignores that command while a DDM declaration manages the
+   * update, so the declaration wins whenever it is available.
+   */
+  const selectedMechanisms = () => {
+    const rows = selectedRows();
+    const declarations = rows.filter((row) => row.updateMechanism === "ddm-software-update").length;
+    const commands = rows.filter((row) => row.updateMechanism === "schedule-os-update").length;
+
+    return { total: rows.length, commands, declarations };
   };
 
   const toggle = (id: string, checked: boolean) =>
@@ -133,11 +165,11 @@ export default function OsVersionsPage() {
     });
 
   /**
-   * Apply updates to the selected Macs.
+   * Apply the OS update policy to the selected Apple devices.
    *
-   * Every row is one `ScheduleOSUpdate` command. Apple's command installs the
-   * latest available update, so no ProductKey is sent; the operator can pick a
-   * specific update from the device page when they know it.
+   * The DDM declaration installs the tenant minimum, so a capable device only
+   * needs an APNs wake-up to sync it. A device without DDM gets the explicit
+   * ScheduleOSUpdate command fallback. Every call is one audited device action.
    */
   const apply = useMutation(() => ({
     mutationFn: async () => {
@@ -145,17 +177,28 @@ export default function OsVersionsPage() {
       let failed = 0;
 
       for (const row of rows) {
+        if (row.updateMechanism === null) continue;
+
         try {
-          await enterprise.deviceAction(params.tenantId, row.id, {
-            action: "schedule-os-update",
-            osUpdateInstallAction: "InstallASAP",
-          });
+          if (row.updateMechanism === "ddm-software-update")
+            // Wakes the device; it fetches the tenant declaration on check-in.
+            await enterprise.deviceAction(params.tenantId, row.id, {
+              action: "sync",
+              osUpdateMechanism: "ddm-software-update",
+            });
+          else
+            await enterprise.deviceAction(params.tenantId, row.id, {
+              action: "schedule-os-update",
+              osUpdateInstallAction: "InstallASAP",
+            });
         } catch {
           failed += 1;
         }
       }
 
-      return { total: rows.length, failed };
+      const { commands, declarations } = selectedMechanisms();
+
+      return { total: rows.length, failed, commands, declarations };
     },
     onSuccess: async (result) => {
       setConfirmOpen(false);
@@ -240,18 +283,36 @@ export default function OsVersionsPage() {
             </div>
 
             <Show when={data().feed.stale || !data().feed.available}>
-              <div class="rounded-lg border border-warning/25 bg-warning/[0.06] px-3.5 py-2.5 text-[12px] leading-relaxed text-warning-foreground">
+              <div class="rounded-lg border border-warning/25 bg-warning/[0.06] px-3.5 py-2.5 text-xs leading-relaxed text-warning-foreground">
                 {data().feed.stale
                   ? "The macOS update feed is stale. macOS update availability may be out of date."
                   : "The macOS update feed is unavailable. macOS devices that meet their minimum are still reported as unknown rather than up to date."}
               </div>
             </Show>
 
+            <Show when={data().unsupported.total > 0}>
+              <div class="rounded-lg border border-border bg-surface px-3.5 py-2.5 text-xs leading-relaxed text-muted-foreground">
+                {data().unsupported.total}{" "}
+                {data().unsupported.total === 1 ? "Apple device runs" : "Apple devices run"}{" "}
+                {data()
+                  .unsupported.byFamily.map((entry) => entry.family)
+                  .join(", ")}
+                . Mattrax does not manage OS update policy for tvOS, watchOS or visionOS, so these
+                devices are excluded from compliance counts rather than reported as unknown.
+              </div>
+            </Show>
+
             <For each={data().platforms}>
               {(platform) => {
-                const isMac = () => platform.platform === "macos";
+                const isApple = () => isApplePlatform(platform.platform);
 
-                const selectable = () => isMac() && canCommand() && platform.behind.length > 0;
+                // A behind device with no mechanism has no safe action (for
+                // example a warn-only iPhone 17+): show it, never offer a
+                // button the API would reject.
+                const actionable = () =>
+                  platform.behind.filter((row) => row.updateMechanism !== null);
+
+                const selectable = () => isApple() && canCommand() && actionable().length > 0;
 
                 return (
                   <Panel
@@ -270,8 +331,8 @@ export default function OsVersionsPage() {
                       </div>
                     }
                   >
-                    <div class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-                      <div>
+                    <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
+                      <div class="min-w-0 lg:col-span-5">
                         <div class="flex flex-wrap gap-2">
                           <Badge variant="success" dot="success">
                             {platform.counts.compliant} compliant
@@ -294,10 +355,10 @@ export default function OsVersionsPage() {
                           </Show>
                         </div>
 
-                        <p class="mt-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                        <p class="mt-3 text-pretty text-xs leading-relaxed text-muted-foreground">
                           {platform.capability.description}
                         </p>
-                        <p class="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                        <p class="mt-1 text-pretty text-xs leading-relaxed text-muted-foreground">
                           <span class="font-medium text-foreground">Not enforced: </span>
                           {platform.capability.limitation}
                         </p>
@@ -307,30 +368,30 @@ export default function OsVersionsPage() {
                             {(bucket) => (
                               <div class="flex items-center justify-between gap-3 rounded-md border border-border/70 px-2.5 py-1.5">
                                 <div class="flex min-w-0 items-center gap-2">
-                                  <span class="font-mono text-[11.5px] text-foreground">
+                                  <span class="font-mono text-xs text-foreground">
                                     {bucket.version ?? "Not reported"}
                                   </span>
                                   <Badge variant={bucketVariant(bucket.status)}>
                                     {bucket.status}
                                   </Badge>
                                 </div>
-                                <span class="text-[11.5px] tabular-nums text-muted-foreground">
+                                <span class="text-xs tabular-nums text-muted-foreground">
                                   {bucket.count}
                                 </span>
                               </div>
                             )}
                           </For>
                           <Show when={platform.versions.length > 12}>
-                            <p class="text-[11px] text-muted-foreground">
+                            <p class="text-xs text-muted-foreground">
                               +{platform.versions.length - 12} more versions
                             </p>
                           </Show>
                         </div>
                       </div>
 
-                      <div>
+                      <div class="min-w-0 lg:col-span-7">
                         <div class="flex flex-wrap items-center justify-between gap-2">
-                          <p class="text-[12.5px] font-medium text-foreground">
+                          <p class="text-xs font-medium text-foreground">
                             {platform.behind.length === 0
                               ? "Nothing to remediate"
                               : "Devices needing attention"}
@@ -354,7 +415,7 @@ export default function OsVersionsPage() {
                                   setSelected((current) => {
                                     const next = new Set(current);
 
-                                    for (const row of platform.behind) next.add(row.id);
+                                    for (const row of actionable()) next.add(row.id);
 
                                     return next;
                                   })
@@ -376,7 +437,7 @@ export default function OsVersionsPage() {
                         <Show
                           when={platform.behind.length > 0}
                           fallback={
-                            <p class="mt-3 rounded-md border border-dashed border-border px-3 py-4 text-[12px] text-muted-foreground">
+                            <p class="mt-3 rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
                               {platform.counts.unknown > 0
                                 ? "Devices with unknown status are listed above; they cannot be called compliant."
                                 : "Every evaluated device meets the configured policy."}
@@ -384,14 +445,15 @@ export default function OsVersionsPage() {
                           }
                         >
                           <div class="mt-2 overflow-hidden rounded-lg border border-border">
-                            <table class="w-full text-left text-[12px]">
-                              <thead class="border-b border-border bg-surface-muted/50 text-[11px] text-muted-foreground">
+                            <table class="w-full text-left text-xs">
+                              <thead class="border-b border-border bg-surface text-xs text-muted-foreground">
                                 <tr>
                                   <th class="w-8 px-2 py-1.5">
                                     <span class="sr-only">Select</span>
                                   </th>
                                   <th class="px-2 py-1.5 font-medium">Device</th>
                                   <th class="px-2 py-1.5 font-medium">Version</th>
+                                  <th class="px-2 py-1.5 font-medium">Update</th>
                                   <th class="px-2 py-1.5 font-medium">Why</th>
                                   <th class="px-2 py-1.5 font-medium">Status</th>
                                 </tr>
@@ -401,7 +463,7 @@ export default function OsVersionsPage() {
                                   {(row) => (
                                     <tr class="border-t border-border/70">
                                       <td class="px-2 py-1.5">
-                                        <Show when={selectable()}>
+                                        <Show when={selectable() && row.updateMechanism !== null}>
                                           <Checkbox
                                             checked={selected().has(row.id)}
                                             aria-label={`Select ${row.name}`}
@@ -419,8 +481,31 @@ export default function OsVersionsPage() {
                                           {row.name}
                                         </a>
                                       </td>
-                                      <td class="px-2 py-1.5 font-mono text-[11.5px]">
+                                      <td class="px-2 py-1.5 font-mono text-xs">
                                         {row.currentVersion ?? "—"}
+                                      </td>
+                                      <td class="px-2 py-1.5 text-xs text-muted-foreground">
+                                        <Show when={row.pendingVersion || row.installState}>
+                                          <span class="flex flex-col">
+                                            <Show when={row.pendingVersion}>
+                                              {(version) => (
+                                                <span class="font-mono text-xs text-foreground">
+                                                  {version()} pending
+                                                </span>
+                                              )}
+                                            </Show>
+                                            <Show when={row.installState}>
+                                              {(state) => <span>{state()}</span>}
+                                            </Show>
+                                          </span>
+                                        </Show>
+                                        <Show when={!row.pendingVersion && !row.installState}>
+                                          {row.updateMechanism === "ddm-software-update"
+                                            ? "DDM on check-in"
+                                            : row.updateMechanism === "schedule-os-update"
+                                              ? "Command fallback"
+                                              : "—"}
+                                        </Show>
                                       </td>
                                       <td class="px-2 py-1.5 text-muted-foreground">
                                         {row.reason === "deferral_active" && row.deferralEndsAt
@@ -463,7 +548,7 @@ export default function OsVersionsPage() {
                             </table>
                           </div>
                           <Show when={platform.behindTruncated}>
-                            <p class="mt-2 text-[11px] text-muted-foreground">
+                            <p class="mt-2 text-xs text-muted-foreground">
                               Showing the first {platform.behind.length} devices. The counts above
                               cover the whole fleet; narrow the list from the devices page.
                             </p>
@@ -471,9 +556,9 @@ export default function OsVersionsPage() {
                         </Show>
 
                         <Show when={!selectable() && platform.behind.length > 0}>
-                          <p class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                            {isMac()
-                              ? "You need the device-command permission to apply macOS updates."
+                          <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+                            {isApple()
+                              ? "You need the device-command permission to apply Apple updates."
                               : "This platform has no per-device update command. Enforcement is applied through its update policy on the next check-in."}
                           </p>
                         </Show>
@@ -487,8 +572,20 @@ export default function OsVersionsPage() {
             <ConfirmDialog
               open={confirmOpen()}
               onOpenChange={setConfirmOpen}
-              title={`Apply macOS updates to ${selectedRows().length} ${selectedRows().length === 1 ? "device" : "devices"}?`}
-              description="Each Mac receives Apple's ScheduleOSUpdate command with InstallASAP. Apple installs the latest available update; the command runs on the device's next check-in and may restart it."
+              title={`Apply the OS update policy to ${selectedRows().length} ${selectedRows().length === 1 ? "device" : "devices"}?`}
+              description={(() => {
+                const { declarations, commands } = selectedMechanisms();
+                const parts = [
+                  declarations > 0
+                    ? `${declarations} ${declarations === 1 ? "device receives" : "devices receive"} Apple's DDM software-update enforcement declaration on its next check-in and installs at the declaration deadline (immediately when no deferral window is set).`
+                    : null,
+                  commands > 0
+                    ? `${commands} ${commands === 1 ? "device receives" : "devices receive"} Apple's ScheduleOSUpdate command with InstallASAP, which may restart the device.`
+                    : null,
+                ].filter((part): part is string => part !== null);
+
+                return parts.join(" ");
+              })()}
               confirmLabel="Apply updates"
               pending={apply.isPending}
               error={applyError()}

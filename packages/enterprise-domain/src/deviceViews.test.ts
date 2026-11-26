@@ -60,6 +60,24 @@ describe("reconcileDeviceViewQuery", () => {
     expect(result.droppedAttributes).toEqual(["gone"]);
   });
 
+  it("treats a successful empty list as authoritative", () => {
+    const result = reconcileDeviceViewQuery(
+      view({
+        groupId: "group-1",
+        attributes: '{"cost_centre":"EMEA"}',
+        columns: ["name", "attribute:cost_centre"],
+      }),
+      { groupIds: new Set(), attributeKeys: new Set() },
+    );
+
+    expect(result.query.groupId).toBeUndefined();
+    expect(result.query.attributes).toBeUndefined();
+    expect(result.query.columns).toEqual(["name"]);
+    expect(result.droppedGroup).toBe(true);
+    expect(result.droppedAttributes).toEqual(["cost_centre"]);
+    expect(result.droppedColumns).toEqual(["attribute:cost_centre"]);
+  });
+
   it("leaves references alone before the known lists have loaded", () => {
     const result = reconcileDeviceViewQuery(
       view({

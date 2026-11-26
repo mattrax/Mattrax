@@ -5,7 +5,11 @@ import type {
   DirectoryUserDirectory,
   DirectoryUserRecord,
 } from "@mattrax/directory-sync";
-import type { GoogleDirectoryUser, GoogleWorkspaceService } from "./service.js";
+import type {
+  GoogleDirectoryUser,
+  GoogleWorkspaceError,
+  GoogleWorkspaceService,
+} from "./service.js";
 
 /** Google Admin console: a user's detail card, by Workspace id or email. */
 export const GOOGLE_ADMIN_USERS_URL = "https://admin.google.com/ac/users";
@@ -63,7 +67,7 @@ export const googleWorkspaceDirectoryProvider = defineDirectoryProvider({
  */
 export const googleWorkspaceDirectoryUserDirectory = (options: {
   readonly service: GoogleWorkspaceService;
-}): DirectoryUserDirectory => {
+}): DirectoryUserDirectory<GoogleWorkspaceError> => {
   const { service } = options;
 
   return {

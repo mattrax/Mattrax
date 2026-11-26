@@ -265,6 +265,8 @@ export const WindowsManagementScope = Schema.Struct({
   identityCertificate: Schema.optional(Schema.String),
   /** Serial from the verified mTLS handshake, when the edge forwards it. */
   identityCertificateSerial: Schema.optional(Schema.String),
+  /** Verified client certificate DER, standard base64, from the trusted edge. */
+  identityCertificateDerBase64: Schema.optional(Schema.String),
   /** Tenant token preserved on the management URL, if the device kept it. */
   tenantToken: Schema.optional(Schema.String),
   /** Verified client address for the audit log (never sent to the device). */
@@ -308,6 +310,12 @@ export const WindowsEnrollmentRequest = Schema.Struct({
   clientIp: Schema.optional(Schema.String),
   /** Bounded request `User-Agent` (audit only). */
   userAgent: Schema.optional(Schema.String),
+  /** Subject from the edge-verified mTLS handshake, when presented. */
+  identityCertificate: Schema.optional(Schema.String),
+  /** Serial from the edge-verified mTLS handshake, when presented. */
+  identityCertificateSerial: Schema.optional(Schema.String),
+  /** Verified client certificate DER, standard base64, from the trusted edge. */
+  identityCertificateDerBase64: Schema.optional(Schema.String),
 });
 
 export type WindowsEnrollmentRequest = typeof WindowsEnrollmentRequest.Type;
@@ -488,6 +496,22 @@ export declare namespace ManagementBackend {
       ManagementNotSupported | UnknownDevice | InternalServerError
     >;
     readonly getAppleAsset: (
+      identityCertificate: string | undefined,
+      identifier: string,
+      token?: string,
+    ) => Effect.Effect<
+      { content: Uint8Array; contentType: string } | null,
+      ManagementNotSupported | UnknownDevice | InternalServerError
+    >;
+    /**
+     * Serve the OTA manifest an iPhone/iPad downloads for an uploaded `.ipa`.
+     *
+     * `InstallApplication` accepts a `ManifestURL`, not an inline manifest, so
+     * the catalogue has to host the plist itself. The URL is signed and bound
+     * to one enrolled device, exactly like the package asset it points at.
+     * Optional so protocol adapters without a database keep working.
+     */
+    readonly getAppleManifest?: (
       identityCertificate: string | undefined,
       identifier: string,
       token?: string,

@@ -12,10 +12,12 @@ export function mockManagementBackend(
     appleDeviceEvent: ManagementBackendType["appleDeviceEvent"];
     appleManagementCheckin: ManagementBackendType["appleManagementCheckin"];
     appleReturnToServiceConfiguration: ManagementBackendType["appleReturnToServiceConfiguration"];
+    getAppleBootstrapToken: ManagementBackendType["getAppleBootstrapToken"];
     getAppleDeclarationTokens: ManagementBackendType["getAppleDeclarationTokens"];
     getAppleDeclarationItems: ManagementBackendType["getAppleDeclarationItems"];
     getAppleDeclaration: ManagementBackendType["getAppleDeclaration"];
     getAppleAsset: ManagementBackendType["getAppleAsset"];
+    getAppleManifest: ManagementBackendType["getAppleManifest"];
     getAppleProfile: ManagementBackendType["getAppleProfile"];
     windowsDiscovery: ManagementBackendType["windowsDiscovery"];
     getWindowsEnrollmentPolicy: ManagementBackendType["getWindowsEnrollmentPolicy"];
@@ -27,7 +29,7 @@ export function mockManagementBackend(
   return Layer.succeed(
     ManagementBackend,
     ManagementBackend.of({
-      getAppleBootstrapToken: () => Effect.succeed(null),
+      getAppleBootstrapToken: overrides?.getAppleBootstrapToken ?? (() => Effect.succeed(null)),
       appleReturnToServiceConfiguration:
         overrides?.appleReturnToServiceConfiguration ?? (() => Effect.succeed({ enabled: false })),
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),
@@ -55,6 +57,7 @@ export function mockManagementBackend(
           })),
       getAppleDeclaration: overrides?.getAppleDeclaration ?? (() => Effect.succeed({})),
       getAppleAsset: overrides?.getAppleAsset ?? (() => Effect.succeed(null)),
+      getAppleManifest: overrides?.getAppleManifest ?? (() => Effect.succeed(null)),
       getAppleProfile: overrides?.getAppleProfile ?? (() => Effect.succeed(null)),
       windowsDiscovery:
         overrides?.windowsDiscovery ?? (() => Effect.fail(new ManagementNotSupported())),

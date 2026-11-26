@@ -40,6 +40,13 @@ Enrollment, checkout, unenrollment, compliance and declaration failures keep the
 `device.*` actions. Each state change is appended once per occurrence and is never folded
 into a check-in row.
 
+Windows secret and support actions are separate `device.*` rows: `device.fresh_start_requested`,
+`device.diagnostics_requested`, `device.diagnostics_uploaded`, `device.diagnostics_downloaded`,
+`device.windows_laps_password_viewed`, `device.windows_laps_rotated`,
+`device.bitlocker_keys_escrowed`, `device.bitlocker_key_viewed` and
+`device.bitlocker_keys_rotated`. Their metadata records the operator reason or request id,
+never a password or recovery key.
+
 `mdm.checkin` is coalesced because a fleet of devices polls continuously. The window is
 `MDM_AUDIT_CHECKIN_COALESCE_SECONDS` (default 15 minutes, `0` records every request) and
 the bucket is **fixed**, not sliding: `createdAt` is the bucket start, so a device that
@@ -110,7 +117,9 @@ Daily maintenance applies `MAINTENANCE_AUDIT_RETENTION_DAYS` (default 365) to **
 audit streams. Set it to `0` to keep audit entries indefinitely.
 
 Account deletion keeps a tombstone: `account_audit_log.subject_account_id` is nulled by the
-foreign key and the email snapshot stays until retention prunes the row.
+foreign key and the email snapshot stays until retention prunes the row. The entry records
+the deleted tenant ids and names, the account email and whether it was the deployment's
+last account, so the cascade is answerable after both rows are gone.
 
 ### Data retention
 
@@ -344,7 +353,7 @@ STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_DEVICE_MONTHLY_PRICE_ID=price_...
 STRIPE_LICENSE_PRICE_ID=price_...
-SERVICES_TOKEN=...          # shared with the application Worker
+SERVICES_TOKEN=...          # shared with the application Worker (billing + relay HMAC)
 MATTRAX_CLOUD_URL=https://mattrax.app
 ```
 
@@ -370,12 +379,12 @@ The command prints the only copy of the key and stores a SHA-256 hash in
 `services_deployment_license`. Give the operator:
 
 ```bash
-MATTRAX_BILLING_URL=https://services.mattrax.app
-APNS_RELAY_URL=https://services.mattrax.app/v1/apns/push
 MATTRAX_LICENSE_KEY=mtx_lic_...
 ```
 
-The deployment calls `POST /api/platform/billing/{summary,portal,checkout,invoices,usage}`
+The billing and push-relay endpoints are derived from the built-in services
+origin, so the key is the only value the operator sets. The deployment calls
+`POST /api/platform/billing/{summary,portal,checkout,invoices,usage}`
 with that key. The first authenticated call binds the licence to the
 deployment's public origin; later calls from another origin are rejected. The
 daily maintenance job reports enrolled-device and tenant counts, and the cloud
@@ -644,6 +653,15 @@ readiness → re-enable cron.
 A dashboard is the report definition. Widgets run live queries against the tenant; a
 scheduled report takes a snapshot of the same widgets, renders it, and emails it to the
 chosen recipients.
+
+The dashboard page itself is centred on the widgets the team added; report controls are not
+part of it. **Reports** is a subpage at
+`/t/:tenantId/dashboards/:dashboardId/reports`, reached from the compact **Reports**
+button in the dashboard header. It holds the schedules, run history and CSV/PDF downloads
+for that dashboard, so report controls do not push the live view down the page. In edit
+mode the dashboard name and description sit in one compact row above the grid. Nothing is
+removed from a dashboard when reports move: the same widget snapshot is downloaded or
+emailed.
 
 ### Schedules
 

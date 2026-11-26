@@ -47,6 +47,8 @@
     "@types/node": "catalog:",
     "cf": "catalog:",
     "filesystem-routing": "catalog:",
+    "happy-dom": "catalog:",
+    "jsqr": "catalog:",
     "shadcn": "catalog:",
     "vite": "catalog:"
   },

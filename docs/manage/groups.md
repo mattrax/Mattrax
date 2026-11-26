@@ -89,6 +89,11 @@ Missing device values never match.
 decodes exactly as before, so there is no migration and no re-interpretation of
 existing rules.
 
+**Rollback note.** A build that predates `group` decodes the condition but has
+no evaluator case for it, so it never matches and a rule that depends on it can
+empty the group. Before rolling back to such a build, remove group criteria
+from dynamic rules (or gate the rollback).
+
 ### Referencing other groups
 
 `group` matches another group's **materialised membership**: manual, dynamic,
@@ -116,12 +121,14 @@ before the group that names it. A dynamic recompute refreshes every group that
 references the changed group, transitively, so membership changes do not wait
 for the daily pass.
 
-A group cannot reference itself, directly or through a longer chain. The write
-path rejects a cycle, and a group whose stored rules do contain one (for example
-after a manual database edit) is **skipped**: its current members are left
-unchanged and the preview explains the circular path. The same applies when a
-referenced group was deleted; a skipped group is never silently treated as
-matching nothing.
+A group cannot reference itself, a group that contains it, or any longer cycle.
+Nesting counts as a dependency: a parent includes its children, so naming an
+ancestor in a rule would make the two groups depend on each other. The write
+path rejects such a reference, and a group whose stored rules do contain one
+(for example after a manual database edit) is **skipped**: its current members
+are left unchanged and the preview explains the circular path. The same applies
+when a referenced group was deleted; a skipped group is never silently treated
+as matching nothing.
 
 Exclusions keep their existing precedence. A device excluded from the
 referencing group never matches, even when it is a member of the referenced
@@ -269,8 +276,9 @@ Bulk delete returns `{ deleted, failed }`.
   through the API.
 - Boolean criteria cannot be nested (an `any` inside an `all`). Combine `group`
   criteria with the top-level lists instead.
-- Tenant export/import does not carry dynamic rules; an imported dynamic group becomes
-  manual.
+- Tenant export/import carries dynamic rules. Restore regenerates every group id and
+  rewrites `group` criteria to the new ids; a criterion that names a group outside the
+  backup fails the restore instead of leaving a dangling reference.
 - Group names are not unique. Prefer ids in automation.
 
 ## API endpoints

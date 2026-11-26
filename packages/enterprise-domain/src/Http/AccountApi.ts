@@ -6,6 +6,9 @@ import { StepUpGrantResponse } from "../stepUp.js";
 import { StepUpMethods } from "../stepUp.js";
 import { StepUpPasskeyStarted } from "../stepUp.js";
 import { AccountAuditSearchResponse } from "../Account.js";
+import { AccountDeletionPreview } from "../Account.js";
+import { AccountDeletionRequest } from "../Account.js";
+import { AccountDeletionResponse } from "../Account.js";
 import { AccountRecoveryResponse } from "../Account.js";
 import { AccountSessionsResponse } from "../Account.js";
 import { LoginAttemptsResponse } from "../Account.js";
@@ -15,6 +18,7 @@ import { AuditExportQuery } from "../Audit.js";
 import { AuditSearchQuery } from "../Audit.js";
 import { BeginRegistrationVerificationRequest } from "../Account.js";
 import { BeginRegistrationVerificationResponse } from "../Account.js";
+import { RegistrationNonceHeaders } from "../Account.js";
 import { BootstrapResponse } from "../Tenant.js";
 import { ChangeEmailRequest } from "../Account.js";
 import { CompleteRegistrationVerificationRequest } from "../Account.js";
@@ -32,7 +36,7 @@ import { EnterpriseNotFound } from "../Errors.js";
 import { EnterprisePublicEmailErrors } from "../Errors.js";
 import { EnterpriseStepUpErrors } from "../Errors.js";
 import { EnterpriseStepUpFactorErrors } from "../Errors.js";
-import { EnterpriseStepUpRequired } from "../Errors.js";
+import { EnterpriseApprovalRequired, EnterpriseStepUpRequired } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
 import { McpActivityRequest } from "../Account.js";
 import { McpConnectionParam } from "./Params.js";
@@ -59,7 +63,12 @@ export const enterpriseAccountApi = HttpApiGroup.make("EnterpriseAccount")
     HttpApiEndpoint.post("requestRegistrationCode", "/v1/register/verification", {
       error: EnterprisePublicEmailErrors,
       payload: BeginRegistrationVerificationRequest,
-      success: BeginRegistrationVerificationResponse,
+      // The success carries an optional Set-Cookie so a token attempt rotates
+      // (or clears) the sign-up nonce in the same round trip.
+      success: HttpApiSchema.WithHeaders(
+        BeginRegistrationVerificationResponse,
+        RegistrationNonceHeaders,
+      ),
     }),
   )
   .add(
@@ -166,7 +175,11 @@ export const enterpriseAccountApi = HttpApiGroup.make("EnterpriseAccount")
   )
   .add(
     HttpApiEndpoint.post("createApiToken", "/v1/account/api-tokens", {
-      error: EnterpriseStepUpErrors,
+      error: [
+        ...EnterpriseStepUpErrors,
+        ...EnterpriseApprovalRequired,
+        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+      ],
       payload: CreateApiTokenRequest,
       success: CreateApiTokenResponse,
     }),
@@ -270,9 +283,19 @@ export const enterpriseAccountApi = HttpApiGroup.make("EnterpriseAccount")
     }),
   )
   .add(
-    HttpApiEndpoint.delete("deleteMe", "/v1/me", {
+    HttpApiEndpoint.get("getAccountDeletion", "/v1/me/deletion", {
       error: EnterpriseAccountErrors,
-      success: Schema.Struct({ status: Schema.Literal("ok") }),
+      success: AccountDeletionPreview,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.delete("deleteMe", "/v1/me", {
+      error: [
+        ...EnterpriseAccountErrors,
+        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
+      ],
+      payload: AccountDeletionRequest,
+      success: AccountDeletionResponse,
     }),
   )
   .prefix("/api");

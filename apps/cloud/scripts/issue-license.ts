@@ -9,8 +9,8 @@ import mysql from "mysql2/promise";
  *   DATABASE_URL=mysql://… pnpm license:issue --name "Acme" --email ops@acme.test
  *
  * The printed key is the only copy: the database stores a SHA-256 hash. Give it
- * to the operator as `MATTRAX_LICENSE_KEY`, together with the services origin
- * as `MATTRAX_BILLING_URL`.
+ * to the operator as `MATTRAX_LICENSE_KEY`; the billing and APNs relay URLs
+ * are derived from the built-in services origin.
  */
 
 const argument = (name: string): string | undefined => {
@@ -70,6 +70,4 @@ console.log(`Deployment licence created.
   key:     ${licenseKey}
 
 Set on the self-hosted deployment:
-  MATTRAX_BILLING_URL=${process.env.MATTRAX_BILLING_URL ?? "https://services.mattrax.app"}
-  APNS_RELAY_URL=https://services.mattrax.app/v1/apns/push
   MATTRAX_LICENSE_KEY=${licenseKey}`);

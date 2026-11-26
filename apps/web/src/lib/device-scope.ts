@@ -1,3 +1,5 @@
+import { isDeclarableAppleConfigurationKind } from "@mattrax/enterprise-domain/client";
+
 /**
  * Device delivery state derived from the data the device page already has.
  *
@@ -47,7 +49,12 @@ export const policyDeliveryState = (input: {
 }): PolicyDeliveryState => {
   if (!input.tracked) return "not-tracked";
 
-  if (input.kinds.length === 0) return "pending";
+  // The lock screen default is an imperative profile, not a declaration.
+  // Counting it would leave a policy pending forever even after every
+  // declarative kind reached the device.
+  const kinds = input.kinds.filter(isDeclarableAppleConfigurationKind);
+
+  if (kinds.length === 0) return "not-tracked";
 
   if (input.declarations === undefined) return "pending";
 
@@ -56,7 +63,7 @@ export const policyDeliveryState = (input: {
   );
 
   const states = new Set(
-    input.kinds.map((kind) =>
+    kinds.map((kind) =>
       declarationState(byIdentifier.get(policyDeclarationIdentifier(input.policyId, kind))),
     ),
   );

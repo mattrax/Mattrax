@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { EnterpriseNotFound, EnterprisePreconditionFailed } from "@mattrax/enterprise-domain";
 import { EnterpriseUnauthorized } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -46,7 +46,6 @@ const makeContext = () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods these tests exercise.
@@ -67,18 +66,16 @@ const otherTenant = async (context: Context) =>
 
 const earlier = (iso: string) => new Date(Date.parse(iso) - 1).toISOString();
 
-const preconditionFailure = <A, E>(effect: Effect.Effect<A, E, never>) =>
-  runEffect(
-    effect.pipe(Effect.catchTag("EnterprisePreconditionFailed", (error) => Effect.succeed(error))),
-  );
+const preconditionFailure = <A, E>(effect: Effect.Effect<A, E, any>) =>
+  runEffect(effect.pipe(Effect.catch((error) => Effect.succeed(error))));
 
 const expectPreconditionFailure = async <A, E>(
-  effect: Effect.Effect<A, E, never>,
+  effect: Effect.Effect<A, E, any>,
   expected: { name: string; updatedAt: string },
 ) => {
   const failure = await preconditionFailure(effect);
 
-  // SAFETY: catchTag returns this failure when the effect fails; the guarded
+  // SAFETY: catch returns this failure when the effect fails; the guarded
   // endpoints only succeed with `{ status: "ok" }`, which has no `current`.
   const precondition = failure as EnterprisePreconditionFailed;
 
@@ -91,12 +88,10 @@ const expectPreconditionFailure = async <A, E>(
   return precondition;
 };
 
-const expectNotFound = async <A, E>(effect: Effect.Effect<A, E, never>) => {
-  const failure = await runEffect(
-    effect.pipe(Effect.catchTag("EnterpriseNotFound", (error) => Effect.succeed(error))),
-  );
+const expectNotFound = async <A, E>(effect: Effect.Effect<A, E, any>) => {
+  const failure = await runEffect(effect.pipe(Effect.catch((error) => Effect.succeed(error))));
 
-  // SAFETY: catchTag returns this failure when the effect fails; a success is
+  // SAFETY: catch returns this failure when the effect fails; a success is
   // an ok result, which the assertion below would reject as not tagged.
   const notFound = failure as EnterpriseNotFound;
 
@@ -403,7 +398,7 @@ describe("optimistic concurrency", () => {
           name: "Should not save",
           expectedUpdatedAt: "yesterday",
         })
-        .pipe(Effect.catchTag("EnterpriseBadRequest", (error) => Effect.succeed(error))),
+        .pipe(Effect.catch((error) => Effect.succeed(error))),
     );
 
     expect(failure).toMatchObject({ _tag: "EnterpriseBadRequest" });

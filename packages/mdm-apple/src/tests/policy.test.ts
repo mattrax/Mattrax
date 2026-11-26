@@ -6,16 +6,19 @@ import {
   buildConfigurationDeclaration,
   buildLegacyProfile,
   certificateAllowsOrganization,
-  configurationAssetIdentifier,
   configurationProfileUrl,
   configurationServerToken,
   parseAppleApplicationConfiguration,
+  validateConfiguration,
+} from "../policy.js";
+import {
+  configurationAssetIdentifier,
   splitConfigurationAssetIdentifier,
   splitConfigurationDeclarationIdentifier,
-  validateConfiguration,
   windowsPolicyNodes,
 } from "@mattrax/mdm-core";
-import type { DeclarationContext, PolicyConfigurationRow } from "@mattrax/mdm-core";
+import type { DeclarationContext } from "../policy.js";
+import type { PolicyConfigurationRow } from "@mattrax/mdm-core";
 
 const context: DeclarationContext = {
   origin: "https://mdm.example.com",
@@ -50,7 +53,24 @@ const mobileconfig = (payloadTypes: string[]) => {
   return btoa(xml);
 };
 
-const certificatePem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+const certificatePem = `-----BEGIN CERTIFICATE-----
+MIIC+jCCAeKgAwIBAgIUZIFrktN53/sGlu1PU9nXLViLn0AwDQYJKoZIhvcNAQEL
+BQAwHTEbMBkGA1UEAwwScGVyc29uQGV4YW1wbGUuY29tMB4XDTI2MTEyNDA0MDQz
+NVoXDTI3MTEyNDA0MDQzNVowHTEbMBkGA1UEAwwScGVyc29uQGV4YW1wbGUuY29t
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnDXYkjOGMN9sJEff90BO
+UQN1SmrV8eu/fLXpmzQLlQwAdguCqKcoqgwhhOcRN5jyqchhRh5nN15SPWCFrVXe
+kaggNLkl0+gAy1McjZJ9384YvnGFlw2scuGawz7Pi+frHv5zmmwqMbUjKmawtCtF
+EHoFEkLY/ZqjwNIWwd6V3k7AZ0xSgUvUOna12A+gPgDxxLinpxuEOicz/7iOLUIE
+NIYK2iiKgzCT1f2xbL2VVGN65tD/1sgMBlE92YxdvlFVSKeYzOMS0+TYEu1/Fd8m
++DE53vw6lu/TWyVck0xKGbOfiTyHD3MG5XAkwTfFyEo/g0qy+JbDGNAcbyLY324A
+MwIDAQABozIwMDAdBgNVHQ4EFgQUapFX+ZDioaMd1EQ9MqZFEvmiw7UwDwYDVR0T
+AQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAXmV+iuE9bDaqDXNU5BK77UTL
+GxqE2pkaTb7Q1wgiTgk76ysyY3UlpGKnR0OPNkFEhbg8fVF9VPXYzr56Pk5/4FZw
+vl70K3pbp5tQ1ULMmL8wcTmeWu5gkr0TsyaI11qk8uLbpCBTWoBmmMeviouWFL/+
+1G7I7qy35+WgWNam9GLvm2vne8/tw9Pi7zXTxOchjdFAjYSLeGjsUmi8fm/mdepB
++y9Ud7e3c2IVq4jqtxMljrhDvCXMj51V5k7B6YwXNMaswEpx8Rb8v6hxKyCX2w7N
+YcKfZfP10aOzLaYqgv2oh7TTG5J0V4D2yXMv3AeGnC+llFT+0fZK41lXDrmGIw==
+-----END CERTIFICATE-----`;
 
 describe("enterprise policy compiler", () => {
   it("maps device kinds to a legacy profile declaration", async () => {
@@ -293,6 +313,28 @@ describe("policy configuration validation", () => {
     );
   });
 
+  it("accepts and validates a lock screen message default", async () => {
+    await expect(
+      validateConfiguration("mttx.apple.lockScreenMessage", {
+        message: "If found, return to the IT desk",
+        includeAssetTag: true,
+      }).pipe(Effect.runPromise),
+    ).resolves.toBeUndefined();
+
+    await expect(validate("mttx.apple.lockScreenMessage", { message: "   " })).resolves.toContain(
+      "non-empty",
+    );
+    await expect(
+      validate("mttx.apple.lockScreenMessage", { message: "x".repeat(501) }),
+    ).resolves.toContain("at most 500");
+    await expect(
+      validate("mttx.apple.lockScreenMessage", {
+        message: "If found, return to the IT desk",
+        includeAssetTag: "yes",
+      }),
+    ).resolves.toContain("includeAssetTag");
+  });
+
   it("rejects an application kind that cannot be installed", async () => {
     await expect(
       validate("mttx.apple.application.office", { fileName: "Office.pkg" }),
@@ -364,14 +406,14 @@ describe("policy configuration validation", () => {
         ],
       }).pipe(Effect.runPromise),
     ).resolves.toBeUndefined();
-    expect(
+    await expect(
       windowsPolicyNodes({
         policyId: "policy-1",
         kind: "mttx.windows.custom.policy",
         data: { nodes: [{ omaUri: "./Vendor/MSFT/Reboot/1/RebootNow", value: "" }] },
         hash: "hash",
       }),
-    ).toEqual([{ omaUri: "./Vendor/MSFT/Reboot/1/RebootNow", value: "" }]);
+    ).resolves.toEqual([{ omaUri: "./Vendor/MSFT/Reboot/1/RebootNow", value: "" }]);
   });
 
   it("rejects malformed Windows OMA-URI nodes", async () => {

@@ -81,6 +81,10 @@ export const DEVICE_STALE_DAYS = ["7", "30", "90"] as const;
 
 export const DEVICE_PUSH_FILTERS = ["failing", "invalid"] as const;
 
+export const DEVICE_LOST_MODE_FILTERS = ["active", "inactive"] as const;
+
+export const DEVICE_LOCAL_ACCOUNT_FILTERS = ["without-secure-token", "not-seen-30-days"] as const;
+
 /** Windows activation states reported by mattraxd. */
 export const DEVICE_ACTIVATION_FILTERS = ["activated", "not-activated", "unknown"] as const;
 
@@ -103,9 +107,12 @@ export const SORT_DIRECTIONS = ["asc", "desc"] as const;
 export const DeviceSearchParams = Schema.Struct({
   status: Schema.optional(Schema.Literals(DEVICE_STATUSES)),
   proto: Schema.optional(Schema.Literals(DEVICE_PROTOCOLS)),
-  staleDays: Schema.optional(Schema.Literals(DEVICE_STALE_DAYS)),
+  /** Positive day count; the picker shows 7/30/90 but a view may store any. */
+  staleDays: Schema.optional(Schema.String),
   health: Schema.optional(Schema.Literals(DEVICE_HEALTH_FILTERS)),
   push: Schema.optional(Schema.Literals(DEVICE_PUSH_FILTERS)),
+  lostMode: Schema.optional(Schema.Literals(DEVICE_LOST_MODE_FILTERS)),
+  localAccount: Schema.optional(Schema.Literals(DEVICE_LOCAL_ACCOUNT_FILTERS)),
   setup: Schema.optional(Schema.Literals(["awaiting", "complete"])),
   notSeenSince: Schema.optional(Schema.String),
   activation: Schema.optional(Schema.Literals(DEVICE_ACTIVATION_FILTERS)),
@@ -185,9 +192,18 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
   const params: MutableDeviceSearchParams = {};
   const status = literalValue(DEVICE_STATUSES, values.status);
   const proto = literalValue(DEVICE_PROTOCOLS, values.proto);
-  const staleDays = literalValue(DEVICE_STALE_DAYS, values.staleDays);
+  const staleDaysValue = values.staleDays === undefined ? undefined : Number(values.staleDays);
+  const staleDays =
+    staleDaysValue !== undefined &&
+    Number.isInteger(staleDaysValue) &&
+    staleDaysValue >= 1 &&
+    staleDaysValue <= 3650
+      ? String(staleDaysValue)
+      : undefined;
   const health = literalValue(DEVICE_HEALTH_FILTERS, values.health);
   const push = literalValue(DEVICE_PUSH_FILTERS, values.push);
+  const lostMode = literalValue(DEVICE_LOST_MODE_FILTERS, values.lostMode);
+  const localAccount = literalValue(DEVICE_LOCAL_ACCOUNT_FILTERS, values.localAccount);
   const setup = literalValue(["awaiting", "complete"], values.setup);
   const activation = literalValue(DEVICE_ACTIVATION_FILTERS, values.activation);
   const sort = literalValue(DEVICE_SORT_FIELDS, values.sort);
@@ -217,6 +233,10 @@ export const decodeDeviceSearchParams = (search: RouteSearch): DeviceSearchParam
   if (health !== undefined) params.health = health;
 
   if (push !== undefined) params.push = push;
+
+  if (lostMode !== undefined) params.lostMode = lostMode;
+
+  if (localAccount !== undefined) params.localAccount = localAccount;
 
   if (setup !== undefined) params.setup = setup;
 
@@ -263,6 +283,8 @@ export const readDeviceSearchParams = (search: RouteSearch): DeviceSearchParams 
     staleDays: search.staleDays,
     health: search.health,
     push: search.push,
+    lostMode: search.lostMode,
+    localAccount: search.localAccount,
     setup: search.setup,
     notSeenSince: search.notSeenSince,
     sort: search.sort,
@@ -295,6 +317,7 @@ export const routes = {
   login: (returnTo?: string) =>
     returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : "/login",
   account: () => "/account",
+  accountDelete: () => "/account/delete",
   adminAccounts: () => "/admin/accounts",
   settings: () => "/settings",
   tenants: () => "/tenants",
@@ -310,6 +333,8 @@ export const routes = {
       dashboards: () => `${base}/dashboards`,
       dashboard: (dashboardId: string, search: DashboardSearchParams = {}) =>
         `${base}/dashboards/${segment(dashboardId)}${dashboardSearch(search)}`,
+      dashboardReports: (dashboardId: string) =>
+        `${base}/dashboards/${segment(dashboardId)}/reports`,
       devices: (search: DeviceSearchParams = {}) => {
         const query = new URLSearchParams();
 
@@ -339,7 +364,12 @@ export const routes = {
       applications: () => `${base}/applications`,
       newApplication: () => `${base}/applications/new`,
       application: (applicationId: string) => `${base}/applications/${segment(applicationId)}`,
+      softwareCatalogue: () => `${base}/applications/catalogue`,
+      softwareCatalogueTitle: (titleId: string) =>
+        `${base}/applications/catalogue/${segment(titleId)}`,
       scripts: () => `${base}/scripts`,
+      restrictedSoftware: () => `${base}/restricted-software`,
+      restrictedSoftwareRule: (ruleId: string) => `${base}/restricted-software/${segment(ruleId)}`,
       migrations: () => `${base}/migration`,
       migration: (migrationId: string) => `${base}/migration/${segment(migrationId)}`,
       newScript: () => `${base}/scripts/new`,
@@ -354,8 +384,11 @@ export const routes = {
         tab:
           | ""
           | "administrators"
+          | "approvals"
+          | "backups"
           | "identity"
           | "attributes"
+          | "tags"
           | "enrollment"
           | "management"
           | "migration"

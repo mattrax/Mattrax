@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@mattrax/crypto": "workspace:*",
-    "@mattrax/net": "workspace:*",
+    "@mattrax/mdm-pki": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "asn1js": "catalog:",
     "effect": "catalog:",

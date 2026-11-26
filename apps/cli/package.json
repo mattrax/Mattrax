@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
     "effect": "catalog:",
     "yaml": "catalog:"

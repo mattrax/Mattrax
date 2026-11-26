@@ -7,7 +7,7 @@ import {
   EnterprisePermissionDenied,
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -60,7 +60,6 @@ const makeContext = (options: { db?: any; user?: Partial<TestUser> } = {}) => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods these tests exercise.

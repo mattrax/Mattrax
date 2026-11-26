@@ -116,3 +116,29 @@ export const windowsMsiInstallPayload = (input: {
   data: buildMsiInstallJob(input),
   format: "xml",
 });
+
+export type WindowsMsiUninstallPayload = {
+  readonly kind: "Exec";
+  readonly locURI: string;
+  readonly data: string;
+  readonly format: "chr";
+};
+
+/**
+ * SyncML `Exec` payload for an MSI uninstall.
+ *
+ * The CSP `Uninstall` node runs msiexec with the supplied command line; there
+ * is no XML job. `/quiet /norestart` matches the install enforcement, but a
+ * package whose MSI lacks a silent uninstall sequence is still reported by the
+ * device as failed rather than assumed to work.
+ */
+export const windowsMsiUninstallPayload = (input: {
+  readonly productId: string;
+}): WindowsMsiUninstallPayload => ({
+  kind: "Exec",
+  locURI: `${MSI_INSTALL_LOCURI_PREFIX}/${encodeURIComponent(
+    normalizeMsiProductCode(input.productId),
+  )}/Uninstall`,
+  data: "/quiet /norestart",
+  format: "chr",
+});

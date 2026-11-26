@@ -40,6 +40,7 @@ describe("collectTenantStorageUsage", () => {
       object("a/org-1/app-1/aaa", 100, "2026-11-20T10:00:00Z", "App.pkg"),
       object("p/org-1/policy-1/bbb", 300, "2026-10-01T10:00:00Z", "Payload.pkg"),
       object("backups/org-1/2026-11-10.json", 200, "2026-11-10T10:00:00Z"),
+      object("handovers/org-1/archive-1.json", 50, "2026-11-21T10:00:00Z"),
       object("a/org-2/app-9/ccc", 999, "2026-11-20T10:00:00Z"),
       object("__readiness/probe", 50, "2026-11-20T10:00:00Z"),
     ]);
@@ -50,8 +51,8 @@ describe("collectTenantStorageUsage", () => {
       new Date("2026-11-22T00:00:00Z"),
     );
 
-    expect(usage.usedBytes).toBe(600);
-    expect(usage.objectCount).toBe(3);
+    expect(usage.usedBytes).toBe(650);
+    expect(usage.objectCount).toBe(4);
     expect(usage.truncated).toBe(false);
     expect(usage.categories).toEqual([
       {
@@ -78,11 +79,20 @@ describe("collectTenantStorageUsage", () => {
         growthBytes: 200,
         growthObjects: 1,
       },
+      {
+        id: "handovers",
+        label: "Handover archives",
+        bytes: 50,
+        objects: 1,
+        growthBytes: 50,
+        growthObjects: 1,
+      },
     ]);
     expect(usage.largest.map((entry) => entry.key)).toEqual([
       "p/org-1/policy-1/bbb",
       "backups/org-1/2026-11-10.json",
       "a/org-1/app-1/aaa",
+      "handovers/org-1/archive-1.json",
     ]);
     expect(usage.largest[0]?.fileName).toBe("Payload.pkg");
     expect(usage.largest[2]?.fileName).toBe("App.pkg");

@@ -78,6 +78,35 @@ describe("deviceNameDrift", () => {
       false,
     );
   });
+
+  it("uses an acknowledged name that is newer than a stale report", () => {
+    // Renamed A -> B, acknowledged, but the device has not sent a fresh
+    // DeviceInformation report, so physicalName is still A.
+    const reportedName = "Reception Mac";
+    const appliedName = "Front Desk";
+
+    expect(
+      deviceNameDrift({
+        name: "Reception Mac",
+        reportedName,
+        reportedNameAt: new Date("2026-11-23T00:00:00Z"),
+        appliedName,
+        appliedNameAt: new Date("2026-11-23T01:00:00Z"),
+      }),
+    ).toBe(true);
+  });
+
+  it("stops reporting drift once a report is newer than the acknowledgement", () => {
+    expect(
+      deviceNameDrift({
+        name: "Reception Mac",
+        reportedName: "Reception Mac",
+        reportedNameAt: new Date("2026-11-23T02:00:00Z"),
+        appliedName: "Front Desk",
+        appliedNameAt: new Date("2026-11-23T01:00:00Z"),
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("shouldPushDeviceName", () => {
@@ -118,15 +147,19 @@ describe("shouldPushDeviceName", () => {
     ).toBe(true);
   });
 
-  it("retries a successful push at most once a day", () => {
+  it("retries a successful push at most once a day when a newer report still differs", () => {
     const appliedAt = new Date("2026-11-23T00:00:00Z");
+    // The device reported the old name one hour after acknowledging, so the
+    // report is the newest evidence and the push clearly did not stick.
+    const reportedNameAt = new Date(appliedAt.getTime() + 60 * 60 * 1000);
 
     expect(
       shouldPushDeviceName({
         ...base,
         appliedName: "Reception Mac",
         appliedAt,
-        now: new Date(appliedAt.getTime() + 60 * 60 * 1000),
+        reportedNameAt,
+        now: new Date(appliedAt.getTime() + 2 * 60 * 60 * 1000),
       }),
     ).toBe(false);
 
@@ -135,6 +168,7 @@ describe("shouldPushDeviceName", () => {
         ...base,
         appliedName: "Reception Mac",
         appliedAt,
+        reportedNameAt,
         now: new Date(appliedAt.getTime() + DEVICE_NAME_PUSH_RETRY_MS),
       }),
     ).toBe(true);
@@ -149,6 +183,29 @@ describe("shouldPushDeviceName", () => {
         now: new Date("2026-11-23T01:00:00Z"),
       }),
     ).toBe(true);
+  });
+
+  it("renaming back before a fresh report still pushes (stale physicalName)", () => {
+    // A -> B acknowledged, physicalName still A, then renamed back to A.
+    expect(
+      shouldPushDeviceName({
+        ...base,
+        name: "Reception Mac",
+        reportedName: "Reception Mac",
+        reportedNameAt: new Date("2026-11-23T00:00:00Z"),
+        appliedName: "Front Desk",
+        appliedAt: new Date("2026-11-23T01:00:00Z"),
+        now: new Date("2026-11-23T02:00:00Z"),
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts 63 characters and skips 64", () => {
+    const name63 = "x".repeat(63);
+    const name64 = "x".repeat(64);
+
+    expect(shouldPushDeviceName({ ...base, name: name63 })).toBe(true);
+    expect(shouldPushDeviceName({ ...base, name: name64 })).toBe(false);
   });
 });
 

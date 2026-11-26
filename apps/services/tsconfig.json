@@ -9,6 +9,7 @@
   },
   "references": [
     { "path": "../../packages/apns" },
+    { "path": "../../packages/cloud-services" },
     { "path": "../../packages/effect-stripe" },
     { "path": "../../packages/enterprise-billing" },
     { "path": "../../packages/enterprise-core" }

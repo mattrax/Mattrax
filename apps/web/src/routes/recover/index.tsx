@@ -1,6 +1,7 @@
 import { Title } from "@solidjs/meta";
-import { BrandLogo } from "~/components/brand-logo";
+import BrandLogo from "~/components/brand-logo";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { Spinner } from "~/components/ui";
 import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
@@ -10,11 +11,8 @@ import { enterprise } from "~/lib/enterprise";
 import { authClient } from "~/lib/auth";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 
-const inputClass =
-  "h-9 w-full min-w-0 rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-[13px]";
-
 /** Inline alerts arrive with a short rise so the state change is legible. */
-const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
+const feedbackEnter = "page-enter";
 
 /**
  * Self-service break-glass entry point.
@@ -118,7 +116,7 @@ export default function RecoverPage() {
             <Show when={status() === "verifying" || status() === "signing_in"}>
               <p
                 role="status"
-                class="flex items-center justify-center gap-2 text-[13px] text-muted-foreground"
+                class="flex items-center justify-center gap-2 text-xs text-muted-foreground"
               >
                 <span aria-hidden="true">
                   <Spinner class="size-3.5" />
@@ -127,7 +125,7 @@ export default function RecoverPage() {
               </p>
             </Show>
             <Show when={status() === "pending_approval"}>
-              <div class="rounded-lg border border-border bg-surface px-3 py-3 text-left text-[13px] leading-relaxed text-muted-foreground">
+              <div class="rounded-lg border border-border bg-surface px-3 py-3 text-left text-xs leading-relaxed text-muted-foreground">
                 <p class="font-medium text-foreground">Another owner must approve this.</p>
                 <p class="mt-1">
                   Your account belongs to a tenant with more than one owner. The other owners have
@@ -137,12 +135,12 @@ export default function RecoverPage() {
               </div>
             </Show>
             <Show when={status() === "error"}>
-              <p role="alert" class={`text-[13px] text-destructive ${feedbackEnter}`}>
+              <p role="alert" class={`text-xs text-destructive ${feedbackEnter}`}>
                 {requestError() ?? "That recovery link is invalid or has expired."}
               </p>
               <a
                 href="/recover"
-                class="inline-flex text-[13px] font-medium text-brand underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-brand/80"
+                class="inline-flex text-xs font-medium text-brand underline underline-offset-2 transition-colors duration-(--duration-hover) ease-swift hover:text-brand/80"
               >
                 Start again
               </a>
@@ -154,7 +152,7 @@ export default function RecoverPage() {
           <div class="space-y-5">
             <div class="space-y-1.5 text-center">
               <h1 class="text-2xl font-semibold">Recover access</h1>
-              <p class="text-[13px] leading-relaxed text-muted-foreground">
+              <p class="text-xs leading-relaxed text-muted-foreground">
                 Lost every passkey? Enter the verified email address on the account. Mattrax will
                 email a single-use link that proves you control it.
               </p>
@@ -164,7 +162,7 @@ export default function RecoverPage() {
               when={!requested()}
               fallback={
                 <div
-                  class={`rounded-lg border border-success/25 bg-success/[0.08] px-3 py-3 text-[13px] leading-relaxed text-success ${feedbackEnter}`}
+                  class={`rounded-lg border border-success/25 bg-success/[0.08] px-3 py-3 text-xs leading-relaxed text-success ${feedbackEnter}`}
                 >
                   If an account with that address exists and its email is verified, a recovery link
                   is on its way. It works once and expires in 30 minutes.
@@ -173,14 +171,14 @@ export default function RecoverPage() {
             >
               <form onSubmit={submit} class="space-y-3">
                 <label class="block space-y-1.5">
-                  <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                  <span class="text-xs font-medium uppercase tracking-widest text-muted-foreground">
                     Verified email address
                   </span>
-                  <input
+                  <Input
                     type="email"
                     required
                     autocomplete="email"
-                    class={inputClass}
+                    class="h-9"
                     placeholder="you@example.com"
                     value={email()}
                     onInput={(event) => setEmail(event.currentTarget.value)}
@@ -199,17 +197,17 @@ export default function RecoverPage() {
 
             <Show when={requestError()}>
               {(message) => (
-                <p role="alert" class={`text-[13px] text-destructive ${feedbackEnter}`}>
+                <p role="alert" class={`text-xs text-destructive ${feedbackEnter}`}>
                   {message()}
                 </p>
               )}
             </Show>
 
-            <p class="text-center text-[12.5px] text-muted-foreground">
+            <p class="text-center text-xs text-muted-foreground">
               Remembered a device?{" "}
               <a
                 href="/login"
-                class="font-medium text-foreground underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-muted-foreground"
+                class="font-medium text-foreground underline underline-offset-2 transition-colors duration-(--duration-hover) ease-swift hover:text-muted-foreground"
               >
                 Sign in
               </a>

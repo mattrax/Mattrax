@@ -924,12 +924,22 @@ export const parseDeviceQueryText = (text: string | null | undefined): DeviceQue
   const conditions: DeviceCondition[] = [];
 
   for (const clause of splitAnd(trimmed)) {
-    const match = clause.match(
-      /^([A-Za-z][A-Za-z0-9]*)\s+(is not in|is in|is not|is|contains|starts with|has|lacks|older than|newer than|at most|at least|more than|less than|not in|in|>=|<=|>|<|=)\s+(.+)$/i,
-    );
+    // The field comes first, then the operator. Group list operators are only
+    // recognised for `group`; otherwise `name is in stock` would be read as a
+    // group-style `in` clause and dropped.
+    const fieldMatch = clause.match(/^([A-Za-z][A-Za-z0-9]*)\s+(.+)$/);
+
+    if (!fieldMatch) continue;
+    const field = fieldMatch[1];
+    const rest = fieldMatch[2];
+    const operatorPattern =
+      field.toLowerCase() === "group"
+        ? /^(is not in|is in|not in|in)\s+(.+)$/i
+        : /^(is not|is|contains|starts with|has|lacks|older than|newer than|at most|at least|more than|less than|>=|<=|>|<|=)\s+(.+)$/i;
+    const match = rest.match(operatorPattern);
 
     if (!match) continue;
-    const condition = parseOperator(match[1], match[2], unquoteValue(match[3].trim()));
+    const condition = parseOperator(field, match[1], unquoteValue(match[2].trim()));
 
     if (condition) conditions.push(condition);
   }

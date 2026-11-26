@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { GOOGLE_DIRECTORY_SCOPES, GOOGLE_TOKEN_URL, signServiceAccountAssertion } from "./jwt.js";
 
@@ -77,6 +78,24 @@ describe("Google service-account assertions", () => {
         }),
       ),
     ).rejects.toThrow(/between 1 and 3600/);
+  });
+
+  it("uses the Effect clock when issuance time is not supplied", async () => {
+    const { pem } = await makeKeyPair();
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(1_700_000_000_123);
+
+        return yield* signServiceAccountAssertion({
+          serviceAccount: { clientEmail: "sync@example.com", privateKeyPem: pem },
+          adminEmail: "admin@example.com",
+        });
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+
+    expect(result.issuedAt).toBe(1_700_000_000);
+    expect(result.expiresAt).toBe(1_700_003_600);
   });
 
   it("rejects a non-PKCS#8 key without echoing it", async () => {

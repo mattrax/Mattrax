@@ -1,12 +1,19 @@
-import { Effect } from "effect";
+import { Cause, Effect, Exit } from "effect";
+import { getTableName } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 import * as pkijs from "pkijs";
 import { Db } from "@mattrax/enterprise-core";
-import { sweepWindowsStateCommands } from "@mattrax/mdm-apple";
+import { TestConsole } from "effect/testing";
+import { pruneWebhookDeliveries } from "@mattrax/mdm-core";
+import { sweepWindowsStateCommands } from "@mattrax/mdm-windows";
 import { createApnsCsrDer, importApnsKeyJwk } from "@mattrax/apns";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 import { generateScepCa, sealCaPrivateKey } from "@mattrax/scep";
-import { runMaintenance } from "../src/Tenant/maintenance.ts";
+import {
+  MAINTENANCE_DELETE_BATCH_SIZE,
+  runMaintenance,
+  VPP_CLIENT_LOAD_FAILED,
+} from "../src/Tenant/maintenance.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -104,6 +111,331 @@ describe("maintenance login-attempt retention", () => {
 
     expect(result.purgedLoginAttempts).toBe(1);
     expect(db.store.login_attempt.map((row: { id: string }) => row.id)).toEqual(["fresh"]);
+  });
+});
+
+const observeMaintenanceQueries = (db: ReturnType<typeof makeDb>) => {
+  const selects: Array<{ table: string; fields: string; limit: number }> = [];
+  const deletes: Array<{ table: string; limit: number }> = [];
+  const select = db.select.bind(db);
+  const remove = db.delete.bind(db);
+
+  db.select = ((fields?: any) => {
+    const builder: any = select(fields);
+    let table = "";
+    const from = builder.from.bind(builder);
+    const limit = builder.limit.bind(builder);
+
+    builder.from = (value: any) => {
+      table = getTableName(value);
+      return from(value);
+    };
+    builder.limit = (count: number) => {
+      selects.push({ table, fields: Object.keys(fields ?? {}).join(","), limit: count });
+      return limit(count);
+    };
+
+    return builder;
+  }) as typeof db.select;
+
+  db.delete = ((table: any) => {
+    const builder: any = remove(table);
+    const limit = builder.limit.bind(builder);
+
+    builder.limit = (count: number) => {
+      deletes.push({ table: getTableName(table), limit: count });
+      return limit(count);
+    };
+
+    return builder;
+  }) as typeof db.delete;
+
+  return { selects, deletes };
+};
+
+const runRetention = (db: ReturnType<typeof makeDb>) =>
+  runEffect(
+    runMaintenance({
+      now,
+      staleDeviceDays: 0,
+      auditRetentionDays: 365,
+      approvalRetentionDays: 90,
+      enrollmentAttemptRetentionDays: 30,
+      androidPubSubRetentionDays: 30,
+      webhookDeliveryRetentionDays: 30,
+      webhookRetry: false,
+      credentialAlerts: false,
+      scepCaRotation: false,
+      credentialIssuance: false,
+      dynamicGroups: false,
+      directoryGroups: false,
+      applicationInventory: false,
+      vppSync: false,
+      fleetMigrations: false,
+      reports: false,
+      commandRetentionDays: 0,
+      windowsCommandRetentionDays: 0,
+      windowsFailureRetentionDays: 0,
+      scriptExecutionRetentionDays: 0,
+      tenantDeletionLogRetentionDays: 0,
+    }).pipe(Effect.provideService(Db, db)),
+  );
+
+describe("maintenance bounded retention", () => {
+  it("drains expired sessions, audit streams, approvals and webhook history in bounded batches", async () => {
+    const db = makeDb();
+    const queries = observeMaintenanceQueries(db);
+    const count = MAINTENANCE_DELETE_BATCH_SIZE + 1;
+    const old = new Date(now.getTime() - 400 * DAY);
+    const fresh = new Date(now.getTime() - 10 * DAY);
+
+    db.store.auth_sessions.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        sessionId: "session-" + String(index + 1).padStart(4, "0"),
+        expiresAt: now.getTime() - DAY,
+      })),
+      // Live sessions are excluded by the expiry-leading query and keep
+      // their descriptors.
+      { sessionId: "session-0000", expiresAt: now.getTime() + DAY },
+    );
+    db.store.account_session_context.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        sessionId: "session-" + String(index + 1).padStart(4, "0"),
+        accountId: "account-1",
+      })),
+      { sessionId: "session-0000", accountId: "account-1" },
+    );
+    db.store.audit_log.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        id: "audit-" + index,
+        organizationId: "org-1",
+        createdAt: old,
+      })),
+      { id: "audit-fresh", organizationId: "org-1", createdAt: fresh },
+    );
+    db.store.account_audit_log.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        id: "account-audit-" + index,
+        createdAt: old,
+      })),
+      { id: "account-audit-fresh", createdAt: fresh },
+    );
+    db.store.approval_request.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        id: "approval-" + index,
+        status: "approved",
+        updatedAt: old,
+      })),
+      { id: "approval-pending", status: "pending", updatedAt: old },
+      { id: "approval-fresh", status: "rejected", updatedAt: fresh },
+    );
+    db.store.webhook_delivery.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        id: "delivery-" + index,
+        createdAt: old,
+      })),
+      { id: "delivery-boundary", createdAt: new Date(now.getTime() - 30 * DAY) },
+      { id: "delivery-fresh", createdAt: fresh },
+    );
+
+    const result = await runRetention(db);
+
+    expect(result.expiredAuthSessions).toBe(count);
+    expect(result.purgedAuditEntries).toBe(count);
+    expect(result.purgedAccountAuditEntries).toBe(count);
+    expect(result.purgedApprovalRequests).toBe(count);
+    expect(result.purgedWebhookDeliveries).toBe(count);
+    expect(db.store.auth_sessions.map((row: { sessionId: string }) => row.sessionId)).toEqual([
+      "session-0000",
+    ]);
+    expect(db.store.account_session_context).toEqual([
+      { sessionId: "session-0000", accountId: "account-1" },
+    ]);
+    expect(db.store.audit_log.map((row: { id: string }) => row.id)).toEqual(["audit-fresh"]);
+    expect(db.store.account_audit_log.map((row: { id: string }) => row.id)).toEqual([
+      "account-audit-fresh",
+    ]);
+    expect(db.store.approval_request.map((row: { id: string }) => row.id).sort()).toEqual([
+      "approval-fresh",
+      "approval-pending",
+    ]);
+    expect(db.store.webhook_delivery.map((row: { id: string }) => row.id).sort()).toEqual([
+      "delivery-boundary",
+      "delivery-fresh",
+    ]);
+
+    const sessionSelects = queries.selects.filter((query) => query.table === "auth_sessions");
+    expect(sessionSelects).toHaveLength(2);
+    expect(sessionSelects.every((query) => query.limit === MAINTENANCE_DELETE_BATCH_SIZE)).toBe(
+      true,
+    );
+
+    for (const table of [
+      "audit_log",
+      "account_audit_log",
+      "approval_request",
+      "webhook_delivery",
+    ]) {
+      const deletes = queries.deletes.filter((query) => query.table === table);
+      expect(deletes, table).toHaveLength(2);
+      expect(
+        deletes.every((query) => query.limit === MAINTENANCE_DELETE_BATCH_SIZE),
+        table,
+      ).toBe(true);
+    }
+  });
+
+  it("keysets more than 500 expired sessions interspersed among live sessions", async () => {
+    const db = makeDb();
+    const queries = observeMaintenanceQueries(db);
+    const total = 1_501;
+    const expiredCount = Math.ceil(total / 2);
+    const sessionId = (index: number) =>
+      "session-" + String((index * 7919) % 100_000).padStart(6, "0");
+    const rows = Array.from({ length: total }, (_, index) => ({
+      sessionId: sessionId(index),
+      expiresAt: now.getTime() + (index % 2 === 0 ? -DAY - (index % 3) : DAY),
+    }));
+    const expiredIds = rows
+      .filter((_, index) => index % 2 === 0)
+      .map((row) => row.sessionId)
+      .sort();
+    const liveIds = rows
+      .filter((_, index) => index % 2 === 1)
+      .map((row) => row.sessionId)
+      .sort();
+
+    db.store.auth_sessions.push(...rows);
+    db.store.account_session_context.push(
+      ...expiredIds.map((id) => ({ sessionId: id, accountId: "account-1" })),
+    );
+
+    const result = await runRetention(db);
+
+    expect(result.expiredAuthSessions).toBe(expiredCount);
+    expect(
+      db.store.auth_sessions.map((row: { sessionId: string }) => row.sessionId).sort(),
+    ).toEqual(liveIds);
+    expect(db.store.account_session_context).toEqual([]);
+
+    const candidateSelects = queries.selects.filter(
+      (query) => query.table === "auth_sessions" && query.fields === "expiresAt,sessionId",
+    );
+    expect(candidateSelects).toHaveLength(2);
+    expect(candidateSelects.every((query) => query.limit === MAINTENANCE_DELETE_BATCH_SIZE)).toBe(
+      true,
+    );
+  });
+
+  it("batches realtime, enrollment-attempt and Android retention without id materialization", async () => {
+    const db = makeDb();
+    const queries = observeMaintenanceQueries(db);
+    const count = MAINTENANCE_DELETE_BATCH_SIZE + 1;
+    const old = new Date(now.getTime() - 40 * DAY);
+    const fresh = new Date(now.getTime() - 10 * DAY);
+
+    db.store.realtime_event.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        seq: index + 1,
+        organizationId: "org-1",
+        kind: "device.checkin",
+        createdAt: old,
+      })),
+      {
+        seq: count + 1,
+        organizationId: "org-1",
+        kind: "device.checkin",
+        createdAt: new Date(now.getTime() - 60 * 60 * 1000),
+      },
+    );
+    db.store.enrollment_attempt.push(
+      ...Array.from({ length: count }, (_, index) => ({ id: "attempt-" + index, createdAt: old })),
+      { id: "attempt-fresh", createdAt: fresh },
+    );
+    db.store.android_pubsub_message.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        messageId: "message-" + index,
+        receivedAt: old,
+      })),
+      { messageId: "message-fresh", receivedAt: fresh },
+    );
+
+    const result = await runRetention(db);
+
+    expect(result.purgedEnrollmentAttempts).toBe(count);
+    expect(result.purgedAndroidPubSubMessages).toBe(count);
+    expect(db.store.realtime_event).toHaveLength(1);
+    expect(db.store.enrollment_attempt.map((row: { id: string }) => row.id)).toEqual([
+      "attempt-fresh",
+    ]);
+    expect(
+      db.store.android_pubsub_message.map((row: { messageId: string }) => row.messageId),
+    ).toEqual(["message-fresh"]);
+
+    for (const table of ["realtime_event", "enrollment_attempt", "android_pubsub_message"]) {
+      const deletes = queries.deletes.filter((query) => query.table === table);
+      expect(deletes, table).toHaveLength(2);
+      expect(
+        deletes.every((query) => query.limit === MAINTENANCE_DELETE_BATCH_SIZE),
+        table,
+      ).toBe(true);
+    }
+    expect(
+      queries.selects.filter(
+        (query) => query.table === "enrollment_attempt" || query.table === "android_pubsub_message",
+      ),
+    ).toEqual([]);
+  });
+
+  it("claims stale devices in bounded ordered batches", async () => {
+    const db = makeDb();
+    const queries = observeMaintenanceQueries(db);
+    const count = MAINTENANCE_DELETE_BATCH_SIZE + 1;
+    const stale = new Date(now.getTime() - 40 * DAY);
+
+    db.store.device.push(
+      ...Array.from({ length: count }, (_, index) => ({
+        id: "stale-" + String(index).padStart(4, "0"),
+        organizationId: "org-1",
+        proto: "apple",
+        status: "enrolled",
+        name: "Stale " + index,
+        enrolledAt: stale,
+        lastSeenAt: stale,
+      })),
+      {
+        id: "fresh",
+        organizationId: "org-1",
+        proto: "apple",
+        status: "enrolled",
+        name: "Fresh",
+        enrolledAt: now,
+        lastSeenAt: now,
+      },
+      {
+        id: "already-unenrolled",
+        organizationId: "org-1",
+        proto: "apple",
+        status: "unenrolled",
+        name: "Gone",
+        enrolledAt: stale,
+        lastSeenAt: stale,
+      },
+    );
+
+    const result = await run(db);
+
+    expect(result.staleDevices).toBe(count);
+    expect(db.store.device.filter((row: { status: string }) => row.status === "enrolled")).toEqual([
+      expect.objectContaining({ id: "fresh" }),
+    ]);
+    const staleDeviceSelects = queries.selects.filter(
+      (query) =>
+        query.table === "device" &&
+        query.fields === "id,organizationId" &&
+        query.limit === MAINTENANCE_DELETE_BATCH_SIZE,
+    );
+    expect(staleDeviceSelects).toHaveLength(2);
   });
 });
 
@@ -361,6 +693,24 @@ describe("maintenance webhook deliveries", () => {
       "boundary",
       "fresh",
     ]);
+  });
+
+  it("propagates interruption while pruning webhook deliveries", async () => {
+    const db = makeDb();
+    const remove = db.delete.bind(db);
+    db.delete = (table) => {
+      const builder = remove(table);
+      builder[Symbol.iterator] = () => Effect.interrupt[Symbol.iterator]();
+
+      return builder;
+    };
+
+    const exit = await Effect.runPromiseExit(
+      pruneWebhookDeliveries(db, { now, retentionDays: 30 }),
+    );
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit)) expect(Cause.hasInterrupts(exit.cause)).toBe(true);
   });
 
   it("retries a recent failed delivery with the sealed secret", async () => {
@@ -1114,5 +1464,317 @@ describe("maintenance organisation event retention", () => {
 
     expect(result.purgedAuditEntries).toBe(2);
     expect(db.store.audit_log.map((row: { id: string }) => row.id)).toEqual(["fresh-mdm"]);
+  });
+});
+
+describe("maintenance Apps and Books client", () => {
+  it("logs and skips the sweep when the client chunk cannot be loaded", async () => {
+    // The Apps and Books client is imported lazily by the daily sweep. A
+    // rejected chunk must skip that step (and say so) instead of failing the
+    // rest of maintenance or surfacing as a defect.
+    vi.doMock("@mattrax/apple-business-manager", () => {
+      throw new Error("chunk load failed");
+    });
+
+    try {
+      const db = makeDb();
+
+      const outcome = await Effect.runPromise(
+        Effect.gen(function* () {
+          const result = yield* runMaintenance({
+            now,
+            auditRetentionDays: 0,
+            credentialAlerts: false,
+            vppSync: true,
+            authSecret: "maintenance-test-secret",
+          }).pipe(Effect.provideService(Db, db));
+
+          const logs = yield* TestConsole.logLines;
+          const errors = yield* TestConsole.errorLines;
+
+          return {
+            result,
+            lines: [...logs, ...errors].map((entry) =>
+              typeof entry === "string" ? entry : JSON.stringify(entry),
+            ),
+          };
+        }).pipe(Effect.provide(TestConsole.layer)),
+      );
+
+      // The sweep was skipped, the run still finished, and nothing died.
+      expect(outcome.result.vppSynced).toBe(0);
+      expect(outcome.result.vppFailed).toBe(0);
+      expect(outcome.lines.some((line) => line.includes(VPP_CLIENT_LOAD_FAILED))).toBe(true);
+    } finally {
+      vi.doUnmock("@mattrax/apple-business-manager");
+    }
+  });
+});
+
+describe("maintenance approval retention", () => {
+  it("deletes terminal approval requests older than 90 days and keeps pending ones", async () => {
+    const db = makeDb();
+
+    const approval = (id: string, status: string, ageDays: number) => ({
+      id,
+      organizationId: "org-1",
+      policyId: null,
+      action: "policy.delete",
+      status,
+      scopeType: "tenant",
+      scopeId: null,
+      requestedByAccountId: "account-1",
+      requestedByEmail: "owner@example.com",
+      requestedByCredential: "session",
+      payloadHash: "hash-" + id,
+      payloadSummary: {},
+      approverPermission: null,
+      approverRole: "admin",
+      approvalsRequired: 1,
+      breakGlass: false,
+      breakGlassReason: null,
+      consumedAt: status === "approved" ? new Date(now.getTime() - ageDays * DAY) : null,
+      expiresAt: new Date(now.getTime() - ageDays * DAY + DAY),
+      createdAt: new Date(now.getTime() - ageDays * DAY),
+      updatedAt: new Date(now.getTime() - ageDays * DAY),
+    });
+
+    db.store.approval_request.push(
+      approval("old-approved", "approved", 91),
+      approval("old-rejected", "rejected", 120),
+      approval("fresh-approved", "approved", 10),
+      approval("old-pending", "pending", 120),
+    );
+
+    const result = await run(db);
+
+    expect(result.purgedApprovalRequests).toBe(2);
+    expect(db.store.approval_request.map((row: { id: string }) => row.id).sort()).toEqual([
+      "fresh-approved",
+      "old-pending",
+    ]);
+  });
+
+  it("can be disabled with a retention of 0", async () => {
+    const db = makeDb();
+
+    db.store.approval_request.push({
+      id: "old",
+      organizationId: "org-1",
+      policyId: null,
+      action: "policy.delete",
+      status: "rejected",
+      scopeType: "tenant",
+      scopeId: null,
+      requestedByAccountId: null,
+      requestedByEmail: null,
+      requestedByCredential: "session",
+      payloadHash: "hash",
+      payloadSummary: {},
+      approverPermission: null,
+      approverRole: "admin",
+      approvalsRequired: 1,
+      breakGlass: false,
+      breakGlassReason: null,
+      consumedAt: null,
+      expiresAt: new Date(0),
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    });
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        approvalRetentionDays: 0,
+        credentialAlerts: false,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedApprovalRequests).toBe(0);
+    expect(db.store.approval_request).toHaveLength(1);
+  });
+});
+
+describe("maintenance handover archive retention", () => {
+  const archive = (id: string, ageDays: number) => ({
+    id,
+    organizationId: "org-1",
+    createdByAccountId: "user-1",
+    createdByEmail: "owner@example.com",
+    reason: "Lease returned",
+    deviceCount: 1,
+    devices: [],
+    secretKinds: [],
+    r2Key: `handovers/org-1/${id}.json`,
+    sizeBytes: 10,
+    sha256: "a".repeat(64),
+    envelopeVersion: 1,
+    createdAt: new Date(now.getTime() - ageDays * DAY),
+    expiresAt: new Date(now.getTime() - ageDays * DAY + 15 * 60 * 1000),
+    downloadedAt: null,
+  });
+
+  it("prunes expired rows without storage and keeps live ones", async () => {
+    const db = makeDb();
+
+    db.store.device_handover_archive.push(
+      archive("expired", 2),
+      { ...archive("downloaded", 0), downloadedAt: now },
+      archive("live", 0),
+    );
+
+    const result = await runEffect(
+      runMaintenance({ now, auditRetentionDays: 0, credentialAlerts: false }).pipe(
+        Effect.provideService(Db, db),
+      ),
+    );
+
+    expect(result.purgedHandoverArchives).toBe(2);
+    expect(db.store.device_handover_archive.map((row: any) => row.id)).toEqual(["live"]);
+  });
+
+  it("deletes the sealed object before the row when storage is available", async () => {
+    const db = makeDb();
+    const objects = new Set(["handovers/org-1/expired.json"]);
+    const deleted: string[] = [];
+    const storage = {
+      head: async () => null,
+      get: async () => null,
+      put: async () => {
+        throw new Error("not used");
+      },
+      delete: async (keys: string | ReadonlyArray<string>) => {
+        for (const key of Array.isArray(keys) ? keys : [keys]) {
+          deleted.push(key);
+          objects.delete(key);
+        }
+      },
+      list: async () => ({ objects: [], truncated: false, delimitedPrefixes: [] }),
+    };
+
+    db.store.device_handover_archive.push(archive("expired", 2));
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        // SAFETY: the fake implements the R2 operations this step uses.
+        storage: storage as any,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedHandoverArchives).toBe(1);
+    expect(deleted).toEqual(["handovers/org-1/expired.json"]);
+    expect(objects.size).toBe(0);
+    expect(db.store.device_handover_archive).toHaveLength(0);
+  });
+
+  it("keeps the row when the object delete fails so a retry can finish", async () => {
+    const db = makeDb();
+    const storage = {
+      head: async () => null,
+      get: async () => null,
+      put: async () => {
+        throw new Error("not used");
+      },
+      delete: async () => {
+        throw new Error("R2 outage");
+      },
+      list: async () => ({ objects: [], truncated: false, delimitedPrefixes: [] }),
+    };
+
+    db.store.device_handover_archive.push(archive("expired", 2));
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        // SAFETY: the fake implements the R2 operations this step uses.
+        storage: storage as any,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedHandoverArchives).toBe(0);
+    expect(db.store.device_handover_archive).toHaveLength(1);
+  });
+});
+
+describe("maintenance diagnostic archive retention", () => {
+  const archive = (id: string, ageDays: number, r2Key: string | null) => ({
+    id,
+    organizationId: "org-1",
+    deviceId: "device-1",
+    requestedByAccountId: "user-1",
+    requestedByEmail: "owner@example.com",
+    collectionId: id,
+    commandId: null,
+    status: r2Key ? "uploaded" : "pending",
+    r2Key,
+    sizeBytes: r2Key ? 10 : null,
+    sha256: r2Key ? "a".repeat(64) : null,
+    contentType: r2Key ? "application/zip" : null,
+    error: null,
+    requestedAt: new Date(now.getTime() - ageDays * DAY),
+    uploadedAt: r2Key ? new Date(now.getTime() - ageDays * DAY) : null,
+    expiresAt: new Date(now.getTime() - ageDays * DAY + 24 * 60 * 60 * 1000),
+    updatedAt: new Date(now.getTime() - ageDays * DAY),
+  });
+
+  it("prunes keyless expired rows without storage but keeps R2-backed rows", async () => {
+    const db = makeDb();
+
+    db.store.device_diagnostics_archive.push(
+      archive("pending", 2, null),
+      archive("uploaded", 2, "diagnostics/org-1/device-1/uploaded.zip"),
+      archive("live", 0, null),
+    );
+
+    const result = await runEffect(
+      runMaintenance({ now, auditRetentionDays: 0, credentialAlerts: false }).pipe(
+        Effect.provideService(Db, db),
+      ),
+    );
+
+    expect(result.purgedDiagnosticsArchives).toBe(1);
+    expect(db.store.device_diagnostics_archive.map((row: any) => row.id)).toEqual([
+      "uploaded",
+      "live",
+    ]);
+  });
+
+  it("deletes the object before the row when storage is available", async () => {
+    const db = makeDb();
+    const deleted: string[] = [];
+    const storage = {
+      head: async () => null,
+      get: async () => null,
+      put: async () => {
+        throw new Error("not used");
+      },
+      delete: async (keys: string | ReadonlyArray<string>) => {
+        for (const key of Array.isArray(keys) ? keys : [keys]) deleted.push(key);
+      },
+      list: async () => ({ objects: [], truncated: false, delimitedPrefixes: [] }),
+    };
+
+    db.store.device_diagnostics_archive.push(
+      archive("uploaded", 2, "diagnostics/org-1/device-1/uploaded.zip"),
+    );
+
+    const result = await runEffect(
+      runMaintenance({
+        now,
+        auditRetentionDays: 0,
+        credentialAlerts: false,
+        storage: storage as any,
+      }).pipe(Effect.provideService(Db, db)),
+    );
+
+    expect(result.purgedDiagnosticsArchives).toBe(1);
+    expect(deleted).toEqual(["diagnostics/org-1/device-1/uploaded.zip"]);
+    expect(db.store.device_diagnostics_archive).toHaveLength(0);
   });
 });

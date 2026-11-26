@@ -15,10 +15,13 @@ import type {
   DeviceQueryGroupMembership,
   DeviceQueryUser,
   DynamicGroupDependencyPlan,
-  DynamicGroupRules,
   DynamicGroupSkipReason,
 } from "@mattrax/enterprise-domain";
-import { groupIdsWithAncestors, syncGroupInheritance } from "./groupInheritance.ts";
+import {
+  groupIdsWithAncestors,
+  loadGroupHierarchyEdges,
+  syncGroupInheritance,
+} from "./groupInheritance.ts";
 
 /** The query surface these passes use; a transaction exposes the same methods. */
 export type DynamicGroupDb = Pick<EnterpriseDb, "select" | "insert" | "delete" | "update">;
@@ -293,12 +296,23 @@ const loadTenantGroupNodes = (db: DynamicGroupDb, organizationId: string) =>
     .from(s.enterpriseGroup)
     .where(eq(s.enterpriseGroup.organizationId, organizationId));
 
-const dependencyPlan = (
-  nodes: ReadonlyArray<{ id: string; kind: string; rules: DynamicGroupRules | null }>,
-) =>
-  planDynamicGroupDependencies(
-    nodes.map((node) => ({ id: node.id, rules: node.kind === "dynamic" ? node.rules : null })),
-  );
+/**
+ * Plan the tenant's dynamic groups from both rule references and nesting.
+ *
+ * Inheritance edges matter twice: a parent's membership includes its children
+ * (so a child must be computed first), and a rule naming an ancestor closes a
+ * loop across the two edge kinds.
+ */
+const loadDependencyPlan = (db: DynamicGroupDb, organizationId: string) =>
+  Effect.gen(function* () {
+    const nodes = yield* loadTenantGroupNodes(db, organizationId);
+    const edges = yield* loadGroupHierarchyEdges(db, organizationId);
+
+    return planDynamicGroupDependencies(
+      nodes.map((node) => ({ id: node.id, rules: node.kind === "dynamic" ? node.rules : null })),
+      edges,
+    );
+  });
 
 /**
  * Materialised membership of the referenced groups, keyed by id.
@@ -418,7 +432,7 @@ const syncDynamicGroupOnly = (
 
     const rules = group.rules;
 
-    const plan = options.plan ?? dependencyPlan(yield* loadTenantGroupNodes(db, organizationId));
+    const plan = options.plan ?? (yield* loadDependencyPlan(db, organizationId));
 
     // A circular or unresolved reference must skip the group, not clear it: an
     // empty referenced membership makes `notIn` match and would silently
@@ -607,7 +621,7 @@ export const syncDynamicGroupDependents = (
   options: DynamicGroupSyncOptions = {},
 ) =>
   Effect.gen(function* () {
-    const plan = options.plan ?? dependencyPlan(yield* loadTenantGroupNodes(db, organizationId));
+    const plan = options.plan ?? (yield* loadDependencyPlan(db, organizationId));
 
     // A parent's membership changes when one of its children does, even though
     // the parent's own rows were not written directly. Treat the whole ancestor
@@ -619,6 +633,8 @@ export const syncDynamicGroupDependents = (
       for (const dependent of dynamicGroupDependentsOf(plan, groupId)) dependents.add(dependent);
 
     const results: DynamicGroupSyncResult[] = [];
+    const scheduled = new Set(plan.order);
+    const now = options.now ?? new Date();
 
     for (const groupId of plan.order)
       if (dependents.has(groupId))
@@ -629,6 +645,25 @@ export const syncDynamicGroupDependents = (
             propagate: false,
           }),
         );
+
+    // A dependent that cannot run (a legacy cycle, or a deleted reference) is
+    // still reported. Dropping it from the result would hide the skip.
+    for (const groupId of dependents) {
+      if (scheduled.has(groupId)) continue;
+      const problem = plan.problems.get(groupId);
+
+      if (!problem) continue;
+
+      results.push({
+        groupId,
+        matched: 0,
+        added: 0,
+        removed: 0,
+        evaluatedAt: now,
+        skipped: problem.reason,
+        problem: problem.message,
+      });
+    }
 
     return results;
   });
@@ -647,7 +682,7 @@ export const syncDynamicGroup = (
   options: DynamicGroupSyncOptions = {},
 ) =>
   Effect.gen(function* () {
-    const plan = options.plan ?? dependencyPlan(yield* loadTenantGroupNodes(db, organizationId));
+    const plan = options.plan ?? (yield* loadDependencyPlan(db, organizationId));
 
     const result = yield* syncDynamicGroupOnly(db, organizationId, groupId, {
       ...options,
@@ -674,7 +709,11 @@ export const syncDynamicGroupsForTenant = (
 ) =>
   Effect.gen(function* () {
     const nodes = yield* loadTenantGroupNodes(db, organizationId);
-    const plan = dependencyPlan(nodes);
+    const edges = yield* loadGroupHierarchyEdges(db, organizationId);
+    const plan = planDynamicGroupDependencies(
+      nodes.map((node) => ({ id: node.id, rules: node.kind === "dynamic" ? node.rules : null })),
+      edges,
+    );
 
     const results: DynamicGroupSyncResult[] = [];
     const now = options.now ?? new Date();
@@ -744,7 +783,12 @@ export const syncDynamicGroupsForDevice = (
 
     if (groups.length === 0) return [];
 
-    const plan = dependencyPlan(yield* loadTenantGroupNodes(db, organizationId));
+    const nodes = yield* loadTenantGroupNodes(db, organizationId);
+    const edges = yield* loadGroupHierarchyEdges(db, organizationId);
+    const plan = planDynamicGroupDependencies(
+      nodes.map((node) => ({ id: node.id, rules: node.kind === "dynamic" ? node.rules : null })),
+      edges,
+    );
     const groupsById = new Map(groups.map((group) => [group.id, group]));
 
     // Skipped groups (a cycle or a missing reference) are deliberately absent:
@@ -837,15 +881,64 @@ export const syncDynamicGroupsForDevice = (
     const evaluated: string[] = [];
 
     // Only "is this device a member" matters for this pass, so the map holds a
-    // single id per referenced group instead of the whole membership.
+    // single id per group instead of the whole membership. Every tenant group
+    // is included because a referenced group may be a manual parent whose
+    // membership is derived from a dynamic child.
     const groupMembership = deviceGroupMemberships(
-      [
-        ...scheduled.map((group) => group.id),
-        ...groups.flatMap((group) => (group.rules ? dynamicGroupRuleGroupIds(group.rules) : [])),
-      ],
+      nodes.map((node) => node.id),
       device.id,
       new Set(links.map((link) => link.groupId)),
     );
+
+    // Nesting is materialised after the loop, but a group that watches a parent
+    // must see the parent's new union now. These maps let each decided row
+    // update its ancestors in memory.
+    const parents = new Map<string, Array<string>>();
+    const children = new Map<string, Array<string>>();
+
+    for (const edge of edges) {
+      const parentList = parents.get(edge.childId) ?? [];
+
+      parentList.push(edge.parentId);
+      parents.set(edge.childId, parentList);
+
+      const childList = children.get(edge.parentId) ?? [];
+
+      childList.push(edge.childId);
+      children.set(edge.parentId, childList);
+    }
+
+    // A non-nested row is the group's own membership; a nested row is derived
+    // from a child and is recomputed here.
+    const ownGroups = new Set(
+      links.filter((link) => link.source !== "nested").map((link) => link.groupId),
+    );
+
+    const setMembership = (groupId: string, member: boolean) => {
+      const membership = groupMembership.get(groupId);
+
+      if (!membership) return;
+
+      if (member) membership.members.add(device.id);
+      else membership.members.delete(device.id);
+    };
+
+    const refreshAncestors = (groupId: string, seen = new Set<string>()) => {
+      for (const parent of parents.get(groupId) ?? []) {
+        if (seen.has(parent)) continue;
+
+        seen.add(parent);
+
+        const member =
+          ownGroups.has(parent) ||
+          (children.get(parent) ?? []).some((child) =>
+            groupMembership.get(child)?.members.has(device.id),
+          );
+
+        setMembership(parent, member);
+        refreshAncestors(parent, seen);
+      }
+    };
 
     for (const group of scheduled) {
       const rules = group.rules;
@@ -876,12 +969,9 @@ export const syncDynamicGroupsForDevice = (
       const isNestedMember = nestedGroups.has(group.id);
       const remainsMember =
         manualGroups.has(group.id) || isNestedMember || (matches && !excludedGroups.has(group.id));
-      const membership = groupMembership.get(group.id);
 
-      if (membership) {
-        if (remainsMember) membership.members.add(device.id);
-        else membership.members.delete(device.id);
-      }
+      setMembership(group.id, remainsMember);
+      refreshAncestors(group.id);
 
       if (matches && !isDynamicMember) (isNestedMember ? toPromote : toAdd).push(group.id);
 
@@ -1041,7 +1131,7 @@ export const previewDynamicGroup = (
       };
 
     const referenceIds = dynamicGroupRuleGroupIds(rules);
-    const plan = options.plan ?? dependencyPlan(yield* loadTenantGroupNodes(db, organizationId));
+    const plan = options.plan ?? (yield* loadDependencyPlan(db, organizationId));
     const referenceGroups = referenceIds.length
       ? yield* db
           .select({ id: s.enterpriseGroup.id, name: s.enterpriseGroup.name })

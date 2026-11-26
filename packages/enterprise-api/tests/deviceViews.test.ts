@@ -9,7 +9,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import type { DeviceViewQuery } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -58,7 +58,6 @@ const makeContext = () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods these tests exercise.
@@ -148,6 +147,34 @@ describe("device views", () => {
       isDefault: false,
       query: query(),
     });
+  });
+
+  it("round-trips every stored device query field", async () => {
+    const context = makeContext();
+    const tenant = await createTenant(context, "acme");
+    const fullQuery = query({
+      q: "mac",
+      query: "platform is apple",
+      status: "enrolled",
+      proto: "apple",
+      groupId: "group-1",
+      notSeenSince: "2026-01-01T00:00:00.000Z",
+      staleDays: 13,
+      health: "missing",
+      push: "failing",
+      setup: "awaiting",
+      activation: "not-activated",
+      attributes: JSON.stringify({ cost_centre: "EMEA" }),
+      sort: "activation",
+      direction: "asc",
+      columns: ["name", "serial", "groups"],
+      pageSize: 77,
+    });
+
+    const created = await createView(context, tenant.id, { query: fullQuery });
+    const list = await listViews(context, tenant.id);
+
+    expect(list.views.find((view) => view.id === created.id)?.query).toEqual(fullQuery);
   });
 
   it("persists column changes independently of the filters", async () => {
@@ -269,8 +296,33 @@ describe("device views", () => {
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
 
     await expect(
-      createView(context, tenant.id, { name: "Bad sort", query: query({ sort: "nope" }) }),
+      createView(context, tenant.id, { name: "Bad sort", query: query({ sort: "nope" as never }) }),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("removes a departed member's private views and default but keeps tenant views", async () => {
+    const context = makeContext();
+    const tenant = await createTenant(context, "acme");
+    addMember(context, tenant.id);
+
+    context.as("member");
+    const privateView = await createView(context, tenant.id, { name: "Mine" });
+    await runEffect(
+      context.service.setDefaultDeviceView(request(headers), tenant.id, { viewId: privateView.id }),
+    );
+
+    context.as("owner");
+    const tenantView = await createView(context, tenant.id, {
+      name: "Team",
+      visibility: "tenant",
+    });
+
+    await runEffect(context.service.removeTenantAccount(request(headers), tenant.id, "user-2"));
+
+    const list = await listViews(context, tenant.id);
+
+    expect(list.views.map((view) => view.id)).toEqual([tenantView.id]);
+    expect(context.db.store.device_view_default).toEqual([]);
   });
 
   it("writes audit entries for create, update, delete and default changes", async () => {

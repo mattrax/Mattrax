@@ -3,11 +3,12 @@ import { useNavigate } from "~/lib/navigation";
 import { PolicyRow } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
-import { createSignal, Errored, onSettled, Show } from "solid-js";
+import { createSignal, Errored, lazy, Loading, onSettled, Show } from "solid-js";
 import { ErrorPanel } from "~/components/error-boundary";
-import { QueryError } from "~/components/mdm/common";
-import { PolicyDesigner } from "~/components/mdm/policy-designer";
-import { StaleWriteBanner } from "~/components/stale-write-banner";
+import { PageBreadcrumbs, QueryError } from "~/components/mdm/common";
+import PolicyViewTabs from "~/components/mdm/policy-view-tabs";
+import StaleWriteBanner from "~/components/stale-write-banner";
+import { Checkbox, LoadingState } from "~/components/ui";
 import { Button } from "~/components/ui/button";
 import { ArrowLeft } from "~/components/ui/icons";
 import { toast } from "~/components/toast";
@@ -26,6 +27,14 @@ import type { PolicyDraft } from "~/lib/policy-designer/build";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { enterpriseQueries } from "~/lib/enterprise";
+
+/**
+ * The designer carries the policy schema, ADMX import and preview engine. It
+ * is the only thing this route needs that is heavier than its shell, so load
+ * it beside the route; the permission notices render immediately and the
+ * designer itself gets a loading state.
+ */
+const LazyPolicyDesigner = lazy(() => import("~/components/mdm/policy-designer"));
 
 const CUSTOM_DESIGNER_KINDS = new Set([
   "mttx.apple.custom.designer",
@@ -65,6 +74,14 @@ export const route = {
   },
 };
 
+/** Read secondary query data only after success so pending async values never throw during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function PolicyDesignerPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -78,7 +95,7 @@ export default function PolicyDesignerPage() {
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
 
-  const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+  const row = () => Option.getOrUndefined(decodePolicyRow(settledQueryData(policy)));
   const guard = createStaleWriteGuard(() => row()?.updatedAt);
   /** Bumped by "Reload latest" to remount the designer from the saved draft. */
   const [draftEpoch, setDraftEpoch] = createSignal(0);
@@ -244,10 +261,10 @@ export default function PolicyDesignerPage() {
       size="sm"
       variant="ghost"
       href={`/t/${params.tenantId}/policies/${params.policyId}`}
-      class="-ml-2 gap-1.5 text-muted-foreground hover:text-foreground"
+      class="-ml-2"
     >
       <ArrowLeft class="size-3.5" />
-      Back to policy
+      Back to {row()?.name ?? "policy"}
     </Button>
   );
 
@@ -266,119 +283,139 @@ export default function PolicyDesignerPage() {
     >
       <div
         data-policy-designer
-        class="flex h-[calc(100svh-92px)] max-h-[calc(100svh-92px)] min-h-0 shrink-0 flex-col overflow-hidden bg-page"
+        class="flex h-(--designer-height) max-h-(--designer-height) min-h-0 shrink-0 flex-col overflow-hidden bg-page"
+        style={{ "--designer-height": "calc(100svh - 92px)" }}
       >
-        <Show
-          when={ready() && policy.data}
-          fallback={
-            <Show
-              when={policy.isError}
-              fallback={
-                <div class="m-6 rounded-lg border border-border bg-card p-6 text-[13px] text-muted-foreground">
-                  Loading the policy…
+        <div class="shrink-0 px-3 pt-2 sm:px-4">
+          <PageBreadcrumbs resourceName={row()?.name} class="mb-1" />
+          <PolicyViewTabs
+            base={`/t/${params.tenantId}/policies/${params.policyId}`}
+            active="designer"
+          />
+        </div>
+        <div class="flex min-h-0 flex-1 flex-col">
+          <Show
+            when={ready() && settledQueryData(policy)}
+            fallback={
+              <Show
+                when={policy.isError}
+                fallback={
+                  <div class="m-6 rounded-lg border border-border bg-card p-6 text-xs text-muted-foreground">
+                    Loading the policy…
+                  </div>
+                }
+              >
+                <div class="m-6">
+                  <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
                 </div>
-              }
-            >
-              <div class="m-6">
-                <QueryError error={policy.error} onRetry={() => void policy.refetch()} />
+              </Show>
+            }
+          >
+            <Show when={guard.conflict()}>
+              <div class="shrink-0 px-3 pt-2 sm:px-4">
+                <StaleWriteBanner
+                  reloading={policy.isFetching}
+                  onReload={() => void reloadLatest()}
+                  onKeepMine={() => guard.acceptLatest()}
+                />
               </div>
             </Show>
-          }
-        >
-          <Show when={guard.conflict()}>
-            <div class="shrink-0 px-3 pt-2 sm:px-4">
-              <StaleWriteBanner
-                reloading={policy.isFetching}
-                onReload={() => void reloadLatest()}
-                onKeepMine={() => guard.acceptLatest()}
-              />
-            </div>
-          </Show>
 
-          <Show when={row() && !enabled()}>
-            <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12px] text-foreground sm:px-4">
-              <div class="min-w-0 flex-1">
-                <p class="font-semibold">This policy is disabled</p>
-                <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                  Saving here is blocked because a disabled policy delivers nothing. Its
-                  configuration and assignments are kept; enable it to deploy designer changes.
-                </p>
+            <Show when={row() && !enabled()}>
+              <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-warning/25 bg-warning/[0.07] px-3 py-2 text-xs text-foreground sm:px-4">
+                <div class="min-w-0 flex-1">
+                  <p class="font-semibold">This policy is disabled</p>
+                  <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                    Saving here is blocked because a disabled policy delivers nothing. Its
+                    configuration and assignments are kept; enable it to deploy designer changes.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!writable() || enable.isPending}
+                  onClick={() => enable.mutate()}
+                >
+                  {enable.isPending ? "Enabling…" : "Enable policy"}
+                </Button>
               </div>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!writable() || enable.isPending}
-                onClick={() => enable.mutate()}
-              >
-                {enable.isPending ? "Enabling…" : "Enable policy"}
-              </Button>
-            </div>
-          </Show>
+            </Show>
 
-          <Show when={foreignConfigurations().length > 0}>
-            <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-surface px-3 py-2 text-[12px] text-foreground sm:px-4">
-              <div class="min-w-0 flex-1">
-                <p class="font-semibold">This policy also has settings from the policy editor</p>
-                <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                  Saving here updates the designer configurations and keeps them. Settings generated
-                  by the designer are device-scoped; add user-scoped settings in the policy editor.
-                </p>
+            <Show when={foreignConfigurations().length > 0}>
+              <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-surface px-3 py-2 text-xs text-foreground sm:px-4">
+                <div class="min-w-0 flex-1">
+                  <p class="font-semibold">This policy also has settings from the policy editor</p>
+                  <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                    Saving here updates the designer configurations and keeps them. Settings
+                    generated by the designer are device-scoped; add user-scoped settings in the
+                    policy editor.
+                  </p>
+                </div>
+                <label class="flex w-full cursor-pointer items-start gap-2 text-xs sm:w-auto sm:items-center">
+                  <Checkbox
+                    class="mt-0.5 size-3.5 shrink-0 sm:mt-0"
+                    checked={replaceExisting()}
+                    onCheckedChange={(checked) => setReplaceExisting(checked === true)}
+                  />
+                  Also replace the policy editor configurations
+                </label>
               </div>
-              <label class="flex w-full cursor-pointer items-start gap-2 text-[12px] sm:w-auto sm:items-center">
-                <input
-                  type="checkbox"
-                  class="mt-0.5 size-3.5 shrink-0 accent-[var(--warning)] sm:mt-0"
-                  checked={replaceExisting()}
-                  onChange={(event) => setReplaceExisting(event.currentTarget.checked)}
-                />
-                Also replace the policy editor configurations
-              </label>
-            </div>
-          </Show>
+            </Show>
 
-          <Show when={!writable()}>
-            <div class="shrink-0 border-b border-border px-3 py-2 sm:px-4">
-              <ReadOnlyNotice>
-                Your role can view this policy designer but not save changes.
-              </ReadOnlyNotice>
-            </div>
-          </Show>
+            <Show when={!writable()}>
+              <div class="shrink-0 border-b border-border px-3 py-2 sm:px-4">
+                <ReadOnlyNotice>
+                  Your role can view this policy designer but not save changes.
+                </ReadOnlyNotice>
+              </div>
+            </Show>
 
-          {/* Remount per policy: the designer holds its draft in local state,
+            {/* Remount per policy: the designer holds its draft in local state,
               so a reused route would otherwise keep the previous policy's
               selections when both policies are already cached. */}
-          <Show keyed when={`${params.policyId}:${draftEpoch()}`}>
-            {(_identity) => (
-              <PolicyDesigner
-                mode="dashboard"
-                pageActions={pageActions()}
-                initialDraft={designerDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")}
-                persistedDraft={
-                  configurationDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")
-                }
-                storageKey={storageKey()}
-                saving={save.isPending}
-                saveDisabled={!writable() || !enabled()}
-                disabledHint={
-                  !enabled()
-                    ? "Enable the policy to save designer changes."
-                    : !writable()
-                      ? "Your role cannot save policies."
-                      : undefined
-                }
-                canDeploy={writable() && enabled()}
-                error={save.error}
-                onSave={
-                  writable() && enabled()
-                    ? (draft) => {
-                        void save.mutate(draft);
-                      }
-                    : undefined
-                }
-              />
-            )}
+            <Show keyed when={`${params.policyId}:${draftEpoch()}`}>
+              {(_identity) => (
+                <Loading
+                  fallback={
+                    <div class="flex h-full items-center justify-center">
+                      <LoadingState label="Loading policy designer…" size={20} />
+                    </div>
+                  }
+                >
+                  <LazyPolicyDesigner
+                    mode="dashboard"
+                    pageActions={pageActions()}
+                    initialDraft={
+                      designerDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")
+                    }
+                    persistedDraft={
+                      configurationDraft() ?? emptyPolicyDraft(row()?.name ?? "My MDM policy")
+                    }
+                    storageKey={storageKey()}
+                    saving={save.isPending}
+                    saveDisabled={!writable() || !enabled()}
+                    disabledHint={
+                      !enabled()
+                        ? "Enable the policy to save designer changes."
+                        : !writable()
+                          ? "Your role cannot save policies."
+                          : undefined
+                    }
+                    canDeploy={writable() && enabled()}
+                    error={save.error}
+                    onSave={
+                      writable() && enabled()
+                        ? (draft) => {
+                            void save.mutate(draft);
+                          }
+                        : undefined
+                    }
+                  />
+                </Loading>
+              )}
+            </Show>
           </Show>
-        </Show>
+        </div>
       </div>
     </Errored>
   );

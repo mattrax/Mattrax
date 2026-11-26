@@ -52,7 +52,6 @@ export const loginAttemptObserver = HttpRouter.middleware(
       yield* recordObservedLoginAttempt(db.value, {
         path,
         headers: request.headers,
-        remoteAddress: Option.getOrUndefined(request.remoteAddress) ?? null,
         body,
       }).pipe(Effect.forkDetach({ uninterruptible: true }));
 

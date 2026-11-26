@@ -18,6 +18,17 @@ export type Row = { [key: string]: RowValue };
 
 export type Store = { [key: string]: Row[] };
 
+/** Active device-bound SCEP identity for Apple read-boundary fixtures. */
+export const appleIdentityCertificate = (overrides: Row = {}) => ({
+  serial: "a1b2c3",
+  organizationId: "org-1",
+  deviceId: "device-1",
+  notAfter: new Date("2099-01-01T00:00:00.000Z"),
+  revokedAt: null,
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  ...overrides,
+});
+
 /** Read a row value that the test seeded as a string. */
 export const stringValue = (value: RowValue): string =>
   Schema.decodeUnknownSync(Schema.String)(value);
@@ -30,9 +41,15 @@ export const jsonValue = (value: RowValue): Schema.Json =>
 export const dateValue = (value: RowValue): Date =>
   Schema.decodeUnknownSync(Schema.instanceOf(Date))(value);
 
-type QueryColumn = { readonly name?: string };
+type QueryColumn = { readonly name?: string; readonly table?: any };
 
 type Fields = { readonly [key: string]: QueryColumn };
+
+export type Query = {
+  operation: "select" | "insert" | "update" | "delete";
+  table: string;
+  joins?: string[];
+};
 
 // Test tables are arbitrary Drizzle mocks; the helper only reads their symbols.
 // oxlint-disable-next-line quality/no-object-parameters -- test helper receives arbitrary table mocks.
@@ -115,52 +132,68 @@ const matchesQuery = (condition: any, row: Row) => {
   const query = queryFor(condition);
 
   if (!query) return true;
-  let index = 0;
-  const regex = /"(?:(.*?)"\.)?"(.*?)"\s*(<=|>=|<|>|=|in|is null)(?:\s*\((.*?)\))?/gi;
+  const regex =
+    /"(?:(.*?)"\.)?"(.*?)"\s*(<=|>=|<|>|=|in|is null)(?:\s*\((.*?)\)|\s+(\$\d+|"[^"]+"\."[^"]+"))?/gi;
+  const valueFor = (table: string | undefined, name: string): RowValue => {
+    const column = camel(name);
+    const candidates = [...(table ? [`${table}.${column}`, `${table}.${name}`] : []), column, name];
+    const match = candidates.find((candidate) => candidate in row);
+
+    return match === undefined ? undefined : row[match];
+  };
 
   for (const match of query.sql.matchAll(regex)) {
-    const column = camel(match[2]);
-    const key = match[1] ? `${match[1]}.${column}` : column;
-    const actual = key in row ? row[key] : (row[column] ?? row[match[2]!]);
+    const actual = valueFor(match[1], match[2]!);
     const operator = match[3]!.toLowerCase();
 
     if (operator === "is null") {
       if (actual != null) return false;
-    } else if (operator === "in") {
-      const count = match[4]?.match(/\$\d+/g)?.length ?? 0;
-      const values = query.params.slice(index, index + count);
-      index += count;
+      continue;
+    }
+
+    if (operator === "in") {
+      const values = [...(match[4] ?? "").matchAll(/\$(\d+)/g)].map(
+        (placeholder) => query.params[Number(placeholder[1]) - 1],
+      );
 
       if (!values.includes(actual)) return false;
-    } else {
-      const expected = query.params[index++];
-
-      if (operator === "=") {
-        if (actual === expected) continue;
-
-        // Drizzle serialises datetime parameters, so a bucket lookup compares
-        // the stored Date with the formatted string for the same instant.
-        const dateLike = (value: RowValue) =>
-          value instanceof Date ||
-          (Schema.is(Schema.String)(value) && /^\d{4}-\d{2}-\d{2}/.test(value));
-
-        if (dateLike(actual) && dateLike(expected) && comparable(actual) === comparable(expected))
-          continue;
-
-        return false;
-      }
-
-      const left = comparable(actual);
-      const right = comparable(expected);
-
-      if (operator === "<" && !(left < right)) return false;
-
-      if (operator === "<=" && !(left <= right)) return false;
-
-      if (operator === ">" && !(left > right)) return false;
-
-      if (operator === ">=" && !(left >= right)) return false;
+      continue;
     }
+
+    const token = match[5];
+    const parameter = token?.match(/^\$(\d+)$/);
+    const joinedColumn = token?.match(/^"([^"]+)"\."([^"]+)"$/);
+    const expected = parameter
+      ? query.params[Number(parameter[1]) - 1]
+      : joinedColumn
+        ? valueFor(joinedColumn[1], joinedColumn[2]!)
+        : undefined;
+
+    if (operator === "=") {
+      if (actual === expected) continue;
+
+      // Drizzle serialises datetime parameters, so a bucket lookup compares
+      // the stored Date with the formatted string for the same instant.
+      const dateLike = (value: RowValue) =>
+        value instanceof Date ||
+        (Schema.is(Schema.String)(value) && /^\d{4}-\d{2}-\d{2}/.test(value));
+
+      if (dateLike(actual) && dateLike(expected) && comparable(actual) === comparable(expected))
+        continue;
+
+      return false;
+    }
+
+    const left = comparable(actual);
+    const right = comparable(expected ?? null);
+
+    if (operator === "<" && !(left < right)) return false;
+
+    if (operator === "<=" && !(left <= right)) return false;
+
+    if (operator === ">" && !(left > right)) return false;
+
+    if (operator === ">=" && !(left >= right)) return false;
   }
 
   return true;
@@ -174,17 +207,26 @@ const matches = (condition: any, row: Row) => {
   return collectPredicates(condition).every((predicate) => predicate(row));
 };
 
+const prefix = (table: string, row: Row): Row =>
+  Object.fromEntries(Object.entries(row).map(([key, value]) => [`${table}.${key}`, value]));
+
 class SelectBuilder {
+  private table = "";
+  private readonly joins: Array<{ table: string; condition: any; kind: "inner" | "left" }> = [];
+  private readonly query: Query;
+
   constructor(
     private readonly rows: () => Row[],
     private readonly fields?: Fields,
-  ) {}
-
-  private table = "";
-  private joined?: string;
+    record?: (query: Query) => void,
+  ) {
+    this.query = { operation: "select", table: "", joins: [] };
+    record?.(this.query);
+  }
 
   from(table: any) {
     this.table = tableName(table);
+    this.query.table = this.table;
 
     return this;
   }
@@ -195,15 +237,18 @@ class SelectBuilder {
     return this;
   }
 
-  /**
-   * Minimal join support for the two shapes the backend reads with a Drizzle
-   * join: `configuration → policy` and `device_apple → device`. The joined row
-   * is nested under its table name, matching Drizzle's unprojected result.
-   * When the joined table is empty the historical no-op is kept so unrelated
-   * tests are unaffected.
-   */
-  innerJoin(table: any, _condition?: any) {
-    this.joined = tableName(table);
+  innerJoin(table: any, condition?: any) {
+    const name = tableName(table);
+    this.joins.push({ table: name, condition, kind: "inner" });
+    this.query.joins?.push(name);
+
+    return this;
+  }
+
+  leftJoin(table: any, condition?: any) {
+    const name = tableName(table);
+    this.joins.push({ table: name, condition, kind: "left" });
+    this.query.joins?.push(name);
 
     return this;
   }
@@ -217,7 +262,15 @@ class SelectBuilder {
   }
 
   limit(count: number) {
-    return Effect.succeed(this.execute().slice(0, count));
+    const start = this.offsetCount;
+
+    return Effect.succeed(this.execute().slice(start, start + count));
+  }
+
+  offset(count: number) {
+    this.offsetCount = count;
+
+    return this;
   }
 
   [Symbol.iterator]() {
@@ -226,51 +279,100 @@ class SelectBuilder {
 
   private condition: any = undefined;
   private order: string[] = [];
+  private offsetCount = 0;
 
   private execute() {
-    const rows = this.rows().filter((row) => row.__table === this.table);
-    const matched = rows.filter((row) => matches(this.condition, row));
+    let rows: Row[] = this.rows()
+      .filter((row) => row.__table === this.table)
+      .map((row) => prefix(this.table, row));
+
+    for (const join of this.joins) {
+      const joinedRows = this.rows().filter((row) => row.__table === join.table);
+      const next: Row[] = [];
+
+      for (const left of rows) {
+        const matched = joinedRows.filter((right) =>
+          matches(join.condition, { ...left, ...prefix(join.table, right) }),
+        );
+
+        if (matched.length > 0) {
+          for (const right of matched) next.push({ ...left, ...prefix(join.table, right) });
+        } else if (join.kind === "left") next.push(left);
+      }
+
+      // Preserve the historical fake behavior for unrelated inner joins whose
+      // right-hand table is empty.
+      if (join.kind === "inner" && joinedRows.length === 0) next.push(...rows);
+      rows = next;
+    }
+
+    rows = rows.filter((row) => matches(this.condition, row));
 
     for (let index = this.order.length - 1; index >= 0; index--) {
-      const column = this.order[index];
-      matched.sort((left, right) => {
-        const a = comparable(left[column] ?? left[camel(column)] ?? null);
-        const b = comparable(right[column] ?? right[camel(column)] ?? null);
+      const column = this.order[index]!;
+      rows.sort((left, right) => {
+        const a = comparable(columnValue(left, column));
+        const b = comparable(columnValue(right, column));
 
         return a < b ? -1 : a > b ? 1 : 0;
       });
     }
 
-    if (this.joined) {
-      const joinedRows = this.rows().filter((row) => row.__table === this.joined);
+    if (this.joins.length > 0 && !this.fields)
+      return rows.map((row) =>
+        Object.fromEntries(
+          [this.table, ...this.joins.map((join) => join.table)].map((table) => [
+            table,
+            unprefix(
+              Object.fromEntries(
+                Object.entries(row)
+                  .filter(([key]) => key.startsWith(`${table}.`))
+                  .map(([key, value]) => [key.slice(table.length + 1), value]),
+              ),
+            ),
+          ]),
+        ),
+      );
 
-      if (joinedRows.length > 0) {
-        const localKey = `${camel(this.joined)}Id`;
-
-        return matched.flatMap((left) =>
-          joinedRows
-            .filter((right) => right.id === (left[localKey] ?? left[camel(localKey)]))
-            .map((right) => ({ [this.table]: unprefix(left), [this.joined!]: unprefix(right) })),
-        );
-      }
-    }
+    if (!this.fields)
+      return rows.map((row) =>
+        unprefix(
+          Object.fromEntries(
+            Object.entries(row)
+              .filter(([key]) => key.startsWith(`${this.table}.`))
+              .map(([key, value]) => [key.slice(this.table.length + 1), value]),
+          ),
+        ),
+      );
 
     const fields = this.fields;
 
-    if (!fields) return matched.map(unprefix);
-
-    return matched.map((row) =>
+    return rows.map((row) =>
       Object.fromEntries(
         Object.entries(fields).map(([key, field]) => {
+          const table = field?.table ? tableName(field.table) : undefined;
           const column = field?.name ?? key;
-          const value = row[column] ?? row[camel(column)];
+          const candidates = [
+            ...(table ? [`${table}.${column}`, `${table}.${camel(column)}`] : []),
+            `${this.table}.${column}`,
+            `${this.table}.${camel(column)}`,
+            column,
+            camel(column),
+          ];
+          const match = candidates.find((candidate) => candidate in row);
 
-          return [key, value];
+          return [key, match === undefined ? undefined : row[match]];
         }),
       ),
     );
   }
 }
+
+const columnValue = (row: Row, column: string): RowValue => {
+  const qualified = Object.keys(row).find((key) => key.endsWith(`.${column}`));
+
+  return qualified ? row[qualified]! : (row[column] ?? row[camel(column)] ?? null);
+};
 
 const unprefix = (row: Row) =>
   Object.fromEntries(
@@ -285,7 +387,10 @@ class InsertBuilder {
   constructor(
     private readonly rows: () => Row[],
     private readonly table: string,
-  ) {}
+    record?: (query: Query) => void,
+  ) {
+    record?.({ operation: "insert", table });
+  }
 
   values(value: Row | Row[]) {
     this.inserted = (Array.isArray(value) ? value : [value]).map((row) => ({
@@ -350,7 +455,10 @@ class UpdateBuilder {
   constructor(
     private readonly rows: () => Row[],
     private readonly table: string,
-  ) {}
+    record?: (query: Query) => void,
+  ) {
+    record?.({ operation: "update", table });
+  }
 
   set(value: Row) {
     this.patch = value;
@@ -381,7 +489,10 @@ class DeleteBuilder {
   constructor(
     private readonly rows: () => Row[],
     private readonly table: string,
-  ) {}
+    record?: (query: Query) => void,
+  ) {
+    record?.({ operation: "delete", table });
+  }
 
   where(condition: any) {
     const rows = this.rows();
@@ -413,12 +524,19 @@ export const makeDb = (initial: Partial<Store> = {}) => {
   ensure(tableName(schema.scepCa));
   ensure(tableName(schema.scepChallenge));
 
+  const queries: Query[] = [];
+  const record = (query: Query) => queries.push(query);
   const db = {
     store,
-    insert: (table: any) => new InsertBuilder(() => ensure(tableName(table)), tableName(table)),
-    update: (table: any) => new UpdateBuilder(() => ensure(tableName(table)), tableName(table)),
-    delete: (table: any) => new DeleteBuilder(() => ensure(tableName(table)), tableName(table)),
-    select: (fields?: Fields) => new SelectBuilder(() => Object.values(store).flat(), fields),
+    queries,
+    insert: (table: any) =>
+      new InsertBuilder(() => ensure(tableName(table)), tableName(table), record),
+    update: (table: any) =>
+      new UpdateBuilder(() => ensure(tableName(table)), tableName(table), record),
+    delete: (table: any) =>
+      new DeleteBuilder(() => ensure(tableName(table)), tableName(table), record),
+    select: (fields?: Fields) =>
+      new SelectBuilder(() => Object.values(store).flat(), fields, record),
     // The production Db exposes a transaction; the in-memory fake applies the
     // work directly so transactional code paths can be exercised.
     transaction: <Result>(work: (tx: any) => Result): Result => work(db),

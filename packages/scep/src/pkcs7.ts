@@ -1,19 +1,16 @@
 import { Effect, Schema } from "effect";
-import * as asn1js from "asn1js";
-import * as pkijs from "pkijs";
+import type * as asn1js from "asn1js";
+import type * as pkijs from "pkijs";
 import { privateDecrypt, publicEncrypt, constants, createDecipheriv } from "node:crypto";
 import { ScepError } from "./schema.js";
 import { pemEncode, pemDecode } from "./crypto.js";
+import { loadPkijs } from "@mattrax/mdm-pki";
+import type { Asn1jsModule, PkijsModule } from "@mattrax/mdm-pki";
 
-// ─── PKIjs Crypto Engine Setup ───────────────────────────────────
-
-if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
-  try {
-    pkijs.getEngine();
-  } catch {
-    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
-  }
-}
+// pkijs is loaded on first use (see `loadPkijs`) so it stays out of the
+// Worker's startup closure. Functions that construct or parse pkijs values are
+// async and await the module; helpers that only read a value that was already
+// parsed (serial numbers, PEM encoding) stay synchronous.
 
 // ─── OIDs ────────────────────────────────────────────────────────
 
@@ -78,7 +75,7 @@ function hasHexValue(
 }
 
 /** Narrow an ASN.1 node to an OCTET STRING. */
-function isOctetStringNode(node: unknown): node is asn1js.OctetString {
+function isOctetStringNode(asn1js: Asn1jsModule, node: unknown): node is asn1js.OctetString {
   return node instanceof asn1js.OctetString;
 }
 
@@ -163,6 +160,8 @@ async function decryptEnvelopedData(
 // Uses AES-128-CBC content encryption and PKCS#1 v1.5 RSA key transport —
 // the same pairing Apple uses in SCEP PKCSReq, so devices can decrypt it.
 async function encryptForDevice(
+  pkijs: PkijsModule,
+  asn1js: Asn1jsModule,
   plaintext: ArrayBuffer,
   recipientCert: pkijs.Certificate,
 ): Promise<ArrayBuffer> {
@@ -230,15 +229,19 @@ export function certToPem(cert: pkijs.Certificate): string {
   return pemEncode("CERTIFICATE", der);
 }
 
-export function pemToCert(pem: string): pkijs.Certificate {
+/** Parse a PEM certificate. Async because pkijs is loaded on first use. */
+export async function pemToCert(pem: string): Promise<pkijs.Certificate> {
   const der = pemDecode("CERTIFICATE", pem);
+  const { Certificate } = await loadPkijs();
 
-  return pkijs.Certificate.fromBER(der);
+  return Certificate.fromBER(der);
 }
 
 // ─── PKCS#7 Builders ─────────────────────────────────────────────
 
-export function buildPkcs7Degenerate(cert: pkijs.Certificate): ArrayBuffer {
+export async function buildPkcs7Degenerate(cert: pkijs.Certificate): Promise<ArrayBuffer> {
+  const pkijs = await loadPkijs();
+
   const signedData = new pkijs.SignedData({
     version: 1,
     digestAlgorithms: [],
@@ -277,6 +280,8 @@ export async function buildScepCertFailure(
   /** RFC 8894 failInfo: badAlg=0, badMessageCheck=1, badRequest=2, badTime=3, badCertId=4. */
   failInfo = "2",
 ): Promise<ArrayBuffer> {
+  const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
+
   const empty = new ArrayBuffer(0);
 
   const encapContentInfo = new pkijs.EncapsulatedContentInfo({
@@ -370,14 +375,16 @@ export async function buildScepCertRep(
   // The signer certificates embedded in the PKCSReq — used as EnvelopedData recipients
   pkcsReqSignerCerts: pkijs.Certificate[],
 ): Promise<ArrayBuffer> {
+  const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
+
   // 1. Build degenerate PKCS#7 containing only the newly-issued device cert
-  const degenerateDer = buildPkcs7Degenerate(deviceCert);
+  const degenerateDer = await buildPkcs7Degenerate(deviceCert);
 
   // 2. Encrypt the degenerate cert for the requesting device.
   //    Use the first signer cert from the PKCSReq as the EnvelopedData recipient.
   //    Fall back to the device cert itself if no signer certs are present.
   const recipientCert = pkcsReqSignerCerts[0] ?? deviceCert;
-  const envelopedDataDer = await encryptForDevice(degenerateDer, recipientCert);
+  const envelopedDataDer = await encryptForDevice(pkijs, asn1js, degenerateDer, recipientCert);
 
   // 3. Build outer SignedData — eContent is the EnvelopedData bytes
   const encapContentInfo = new pkijs.EncapsulatedContentInfo({
@@ -408,7 +415,8 @@ export async function buildScepCertRep(
   const cryptoEngine = pkijs.getCrypto(true);
   const eContent = signedData.encapContentInfo.eContent;
 
-  if (!isOctetStringNode(eContent)) throw new Error("CertRep eContent is not an OCTET STRING");
+  if (!isOctetStringNode(asn1js, eContent))
+    throw new Error("CertRep eContent is not an OCTET STRING");
 
   const eContentValue = eContent.getValue();
   const messageDigest = await cryptoEngine.digest({ name: "SHA-256" }, eContentValue);
@@ -738,7 +746,11 @@ function extractChallengePassword(csr: pkijs.CertificationRequest): string | und
   return undefined;
 }
 
-function parseCsr(bytes: ArrayBuffer): pkijs.CertificationRequest {
+function parseCsr(
+  pkijs: PkijsModule,
+  asn1js: Asn1jsModule,
+  bytes: ArrayBuffer,
+): pkijs.CertificationRequest {
   try {
     return pkijs.CertificationRequest.fromBER(bytes);
   } catch (error) {
@@ -746,7 +758,7 @@ function parseCsr(bytes: ArrayBuffer): pkijs.CertificationRequest {
     try {
       const parsed = asn1js.fromBER(bytes);
 
-      if (parsed.result && isOctetStringNode(parsed.result)) {
+      if (parsed.result && isOctetStringNode(asn1js, parsed.result)) {
         const octet = parsed.result;
 
         const inner = octet.valueBlock.valueHexView.slice().buffer;
@@ -768,6 +780,8 @@ export function parseScepPkcsReq(
 ): Effect.Effect<ScepRequest, ScepError> {
   return Effect.tryPromise({
     try: async () => {
+      const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
+
       // Parse outer ContentInfo → SignedData
       const contentInfo = pkijs.ContentInfo.fromBER(der);
 
@@ -872,7 +886,7 @@ export function parseScepPkcsReq(
       }
 
       try {
-        const csr = parseCsr(csrBytes);
+        const csr = parseCsr(pkijs, asn1js, csrBytes);
 
         return {
           csr,
@@ -907,6 +921,8 @@ export async function createCaCertificate(
     readonly notAfter?: Date;
   } = {},
 ): Promise<pkijs.Certificate> {
+  const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
+
   const cert = new pkijs.Certificate();
   cert.version = 2;
   cert.serialNumber = new asn1js.Integer({ value: 1 });
@@ -998,6 +1014,8 @@ export async function createDeviceCertificate(
   caPrivateKey: CryptoKey,
   validity: { notBefore: Date; notAfter: Date; extensions?: pkijs.Extension[] },
 ): Promise<pkijs.Certificate> {
+  const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
+
   const cert = new pkijs.Certificate();
   cert.version = 2;
   cert.serialNumber = Schema.is(Schema.Number)(serial)
@@ -1080,6 +1098,8 @@ export async function decryptCmsEnvelopedData(
   der: Uint8Array | ArrayBuffer,
   privateKeyJwk: JsonWebKey,
 ): Promise<Uint8Array> {
+  const pkijs = await loadPkijs();
+
   const bytes = der instanceof Uint8Array ? der.slice() : new Uint8Array(der);
   const contentInfo = pkijs.ContentInfo.fromBER(new Uint8Array(bytes).buffer);
 
@@ -1101,9 +1121,16 @@ export async function encryptCmsEnvelopedData(
   plaintext: Uint8Array,
   certificatePem: string,
 ): Promise<Uint8Array> {
-  const certificate = pemToCert(trimPem(certificatePem));
+  const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
 
-  const encrypted = await encryptForDevice(new Uint8Array(plaintext).buffer, certificate);
+  const certificate = await pemToCert(trimPem(certificatePem));
+
+  const encrypted = await encryptForDevice(
+    pkijs,
+    asn1js,
+    new Uint8Array(plaintext).buffer,
+    certificate,
+  );
 
   return new Uint8Array(encrypted);
 }
@@ -1114,6 +1141,8 @@ export async function encryptCmsEnvelopedData(
  * the original plist/JSON bytes, not the signature.
  */
 export async function extractCmsSignedContent(der: Uint8Array | ArrayBuffer): Promise<Uint8Array> {
+  const pkijs = await loadPkijs();
+
   const bytes = der instanceof Uint8Array ? der.slice() : new Uint8Array(der);
   const contentInfo = pkijs.ContentInfo.fromBER(new Uint8Array(bytes).buffer);
 
@@ -1142,6 +1171,8 @@ export async function createEscrowCertificate(
     readonly serial?: ArrayBuffer;
   } = {},
 ): Promise<pkijs.Certificate> {
+  const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
+
   const certificate = new pkijs.Certificate();
   certificate.version = 2;
   certificate.serialNumber = options.serial
@@ -1200,14 +1231,21 @@ export async function createEscrowCertificate(
   return certificate;
 }
 
-/** DER bytes of a PEM certificate, for hashing or embedding in a plist. */
+/**
+ * DER bytes of a PEM certificate, for hashing or embedding in a plist.
+ *
+ * The PEM body *is* the DER, so this decodes it directly instead of parsing the
+ * certificate with pkijs: the callers only need the bytes, and keeping the
+ * large PKI module out of this path means the escrow and policy delivery paths
+ * never load it.
+ */
 export function certificateDer(certificatePem: string): Uint8Array {
-  return new Uint8Array(pemToCert(trimPem(certificatePem)).toSchema().toBER(false));
+  return new Uint8Array(pemDecode("CERTIFICATE", trimPem(certificatePem)));
 }
 
 /** Common name of a PEM certificate, or null when it has none. */
-export function certificateCommonName(certificatePem: string): string | null {
-  const certificate = pemToCert(trimPem(certificatePem));
+export async function certificateCommonName(certificatePem: string): Promise<string | null> {
+  const certificate = await pemToCert(trimPem(certificatePem));
   const attribute = certificate.subject.typesAndValues.find((item) => item.type === "2.5.4.3");
   const value = attribute?.value;
 
@@ -1220,6 +1258,6 @@ export function certificateCommonName(certificatePem: string): string | null {
 }
 
 /** Validity end of a PEM certificate. */
-export function certificateNotAfter(certificatePem: string): Date {
-  return pemToCert(trimPem(certificatePem)).notAfter.value;
+export async function certificateNotAfter(certificatePem: string): Promise<Date> {
+  return (await pemToCert(trimPem(certificatePem))).notAfter.value;
 }

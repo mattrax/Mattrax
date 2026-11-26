@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { schema as s } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { SYSTEM_AUDIT_ACTIONS, writeSystemAudit } from "./audit.js";
+import type { SystemAuditOptions } from "./audit.js";
 
 /**
  * The device row and everything that hangs off it.
@@ -23,6 +24,10 @@ const deviceChildTables = [
   s.deviceAttribute,
   s.deviceSecret,
   s.deviceApplication,
+  s.applicationInstall,
+  s.applicationUninstall,
+  s.deviceLocalAccount,
+  s.attributeCollection,
   s.deviceVppAssignment,
   s.groupDevice,
   s.applicationDevice,
@@ -54,6 +59,7 @@ export const deleteDepartedTenantDevice = (input: {
   readonly reason?: string;
   /** Enables the `device.unenrolled` webhook for the losing tenant. */
   readonly authSecret?: string;
+  readonly webhookDispatch?: SystemAuditOptions["webhookDispatch"];
   readonly now?: Date;
 }): Effect.Effect<void, unknown> => {
   const { db, device } = input;
@@ -66,8 +72,19 @@ export const deleteDepartedTenantDevice = (input: {
   );
 
   return Effect.gen(function* () {
+    const destroyedSecretKinds = new Set<string>();
+
     yield* db.transaction((tx) =>
       Effect.gen(function* () {
+        // Capture what is about to be destroyed so the losing tenant's audit
+        // log explains the loss without storing any sealed value.
+        const secrets = yield* tx
+          .select({ kind: s.deviceSecret.kind })
+          .from(s.deviceSecret)
+          .where(eq(s.deviceSecret.deviceId, device.id));
+
+        for (const secret of secrets) destroyedSecretKinds.add(secret.kind);
+
         if (certificateDeviceIds.length > 0)
           yield* tx
             .update(s.scepIssuedCertificate)
@@ -115,9 +132,10 @@ export const deleteDepartedTenantDevice = (input: {
           previousTenantId: device.organizationId,
           deviceId: device.id,
           dmIdentifier: device.dmIdentifier ?? null,
+          destroyedSecretKinds: [...destroyedSecretKinds].sort(),
         },
       },
-      { authSecret: input.authSecret },
+      { authSecret: input.authSecret, webhookDispatch: input.webhookDispatch },
     );
   });
 };

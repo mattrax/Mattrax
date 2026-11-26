@@ -1,12 +1,13 @@
 import { and, eq } from "drizzle-orm";
-import { Data, Effect, Option, Predicate, Schema } from "effect";
-import { fetchWithTimeout } from "@mattrax/net";
+import { Effect, Layer, Option, Predicate, Schema } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { openSecret, sealSecret } from "@mattrax/crypto";
-import type { PlistValue } from "@mattrax/plist";
-import { parsePlist } from "@mattrax/plist";
+import { parsePlist, PlistValue } from "@mattrax/plist";
 import { schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
+import { AppleBusinessManagerError } from "./errors.js";
+import type { AppleBusinessManagerErrorKind } from "./errors.js";
 
 /**
  * Apple Business Manager (ABM/ADE) integration.
@@ -23,26 +24,13 @@ import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
  *    syncable through the current API. The UI and docs explain the migration;
  *    sync fails closed instead of pretending the legacy token still works.
  *
- * Every outbound request has an explicit deadline from `@mattrax/net`, and the
- * `fetch` implementation is injectable so tests never touch Apple.
+ * Every outbound request runs on an Effect `HttpClient` with an explicit
+ * deadline, and the `fetch` implementation is injectable so tests never touch
+ * Apple.
  */
 
-export type AppleBusinessManagerErrorKind =
-  | "not_configured"
-  | "invalid_token"
-  | "expired"
-  | "unauthorized"
-  | "forbidden"
-  | "not_found"
-  | "conflict"
-  | "invalid_response"
-  | "upstream";
-
-export class AppleBusinessManagerError extends Data.TaggedError("AppleBusinessManagerError")<{
-  message: string;
-  kind: AppleBusinessManagerErrorKind;
-  cause?: unknown;
-}> {}
+export { AppleBusinessManagerError };
+export type { AppleBusinessManagerErrorKind };
 
 const now = () => new Date();
 
@@ -63,6 +51,11 @@ export const describeAppleError = (cause: unknown): string => {
 
   return text
     .replaceAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replaceAll(
+      /\beyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?=$|[^A-Za-z0-9_-])/g,
+      "[client_assertion]",
+    )
+    .replaceAll(/(client_assertion(?:=|%3D))[^&\s]+/gi, "$1[client_assertion]")
     .replaceAll(/\s+/g, " ")
     .slice(0, 500);
 };
@@ -125,13 +118,28 @@ type CredentialValue = Schema.Json | PlistValue | undefined;
 
 type CredentialRecord = Record<string, CredentialValue>;
 
-const JsonObject = Schema.Record(Schema.String, Schema.Json);
+const CredentialValueSchema = Schema.Union([Schema.Json, PlistValue]);
+
+const CredentialRecordSchema = Schema.Record(Schema.String, CredentialValueSchema);
 
 const text = (value: CredentialValue): string | undefined =>
   Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value))?.trim() || undefined;
 
 const record = (value: CredentialValue): CredentialRecord | undefined =>
-  Schema.is(JsonObject)(value) ? value : undefined;
+  Schema.is(CredentialRecordSchema)(value) ? value : undefined;
+
+const firstValue = (value: CredentialRecord, keys: ReadonlyArray<string>): CredentialValue => {
+  for (const key of keys) {
+    const found = value[key];
+
+    if (found === undefined || found === null) continue;
+    if (typeof found === "string" && !found.trim()) continue;
+
+    return found;
+  }
+
+  return undefined;
+};
 
 const firstText = (value: CredentialRecord, keys: ReadonlyArray<string>) => {
   for (const key of keys) {
@@ -143,8 +151,12 @@ const firstText = (value: CredentialRecord, keys: ReadonlyArray<string>) => {
   return undefined;
 };
 
-/** Parse Apple's `YYYY-MM-DDTHH:MM:SS+0000` and ISO-8601 dates. */
+/** Parse plist dates, Apple's `YYYY-MM-DDTHH:MM:SS+0000`, and ISO-8601 dates. */
 export const parseAppleDate = (value: CredentialValue): Date | null => {
+  const date = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Date)(value));
+
+  if (date) return Number.isFinite(date.getTime()) ? date : null;
+
   const raw = text(value);
 
   if (!raw) return null;
@@ -294,7 +306,7 @@ const legacyCredentialFrom = (value: CredentialRecord): LegacyDepCredential => {
   const orgName = firstText(value, ["org_name", "orgName", "OrgName"]);
 
   const expiresAt = parseAppleDate(
-    firstText(value, [
+    firstValue(value, [
       "token_expiration_date",
       "tokenExpirationDate",
       "expiration_date",
@@ -350,7 +362,7 @@ const apiCredentialFrom = (
   const orgName = firstText(value, ["orgName", "org_name"]) ?? upload.orgName?.trim();
 
   const expiresAt = parseAppleDate(
-    firstText(value, ["expiresAt", "expires_at", "tokenExpirationDate", "expDate"]),
+    firstValue(value, ["expiresAt", "expires_at", "tokenExpirationDate", "expDate"]),
   );
 
   if (!clientId)
@@ -426,7 +438,10 @@ export const parseAbmTokenUpload = async (upload: AbmTokenUpload): Promise<AbmCr
     return credential;
   }
 
-  const privateKey = pemFrom(decoded, PRIVATE_KEY_PEM);
+  const privateKey =
+    decoded.startsWith("<?xml") || decoded.startsWith("<plist")
+      ? undefined
+      : pemFrom(decoded, PRIVATE_KEY_PEM);
 
   if (privateKey) {
     const credential = apiCredentialFrom({}, upload, privateKey);
@@ -435,7 +450,7 @@ export const parseAbmTokenUpload = async (upload: AbmTokenUpload): Promise<AbmCr
     return credential;
   }
 
-  // A `.p7m` may be raw DER, PEM-wrapped PKCS#7, or plist XML.
+  // A legacy `.p7m` may be raw DER, PEM-wrapped PKCS#7, or plist XML.
   let bytes: Uint8Array | undefined;
   const pkcs7Pem = pemFrom(decoded, PKCS7_PEM);
 
@@ -447,7 +462,20 @@ export const parseAbmTokenUpload = async (upload: AbmTokenUpload): Promise<AbmCr
     const parsed = await Effect.runPromise(parsePlist(decoded)).catch(() => undefined);
     const value = record(parsed);
 
-    if (value) return legacyCredentialFrom(value);
+    if (value) {
+      if (
+        "consumer_key" in value ||
+        "consumerKey" in value ||
+        "consumer_secret" in value ||
+        "consumerSecret" in value
+      )
+        return legacyCredentialFrom(value);
+
+      const credential = apiCredentialFrom(value, upload);
+      await validateAbmPrivateKey(credential.privateKeyPem);
+
+      return credential;
+    }
   } else if (upload.encoding === "base64") {
     bytes = base64ToBytes(upload.content);
   } else if (
@@ -555,6 +583,9 @@ export const ABM_DEFAULT_TOKEN_URL = "https://account.apple.com/auth/oauth2/toke
 
 export const ABM_DEFAULT_ASSERTION_AUDIENCE = "https://account.apple.com/auth/oauth2/v2/token";
 
+/** Apple answers fast or the credential is dead; never hold a sync open. */
+export const ABM_REQUEST_TIMEOUT_MS = 15_000;
+
 export const ABM_BUSINESS_BASE_URL = "https://api-business.apple.com/v1";
 
 export const ABM_SCHOOL_BASE_URL = "https://api-school.apple.com/v1";
@@ -661,23 +692,36 @@ export type AbmApp = {
 };
 
 export type AbmClient = {
-  readonly exchangeAccessToken: (credential: AbmApiCredential) => Promise<AbmAccessToken>;
+  readonly exchangeAccessToken: (
+    credential: AbmApiCredential,
+  ) => Effect.Effect<AbmAccessToken, AppleBusinessManagerError>;
   readonly listOrgDevices: (
     accessToken: string,
     options?: { readonly serial?: string; readonly status?: "ASSIGNED" | "UNASSIGNED" },
-  ) => Promise<AbmOrgDevice[]>;
-  readonly listMdmServers: (accessToken: string) => Promise<AbmMdmServer[]>;
+  ) => Effect.Effect<AbmOrgDevice[], AppleBusinessManagerError>;
+  readonly listMdmServers: (
+    accessToken: string,
+  ) => Effect.Effect<AbmMdmServer[], AppleBusinessManagerError>;
   readonly createMdmServer: (
     accessToken: string,
     input: { readonly serverName: string; readonly certificatePem: string },
-  ) => Promise<AbmMdmServer>;
+  ) => Effect.Effect<AbmMdmServer, AppleBusinessManagerError>;
   readonly assignDevices: (
     accessToken: string,
     input: { readonly mdmServerId: string; readonly deviceIds: ReadonlyArray<string> },
-  ) => Promise<{ readonly activityId?: string; readonly status?: string }>;
-  readonly getAssignedServerId: (accessToken: string, deviceId: string) => Promise<string | null>;
-  readonly listMdmServerDeviceIds: (accessToken: string, mdmServerId: string) => Promise<string[]>;
-  readonly listApps: (accessToken: string) => Promise<AbmApp[]>;
+  ) => Effect.Effect<
+    { readonly activityId?: string; readonly status?: string },
+    AppleBusinessManagerError
+  >;
+  readonly getAssignedServerId: (
+    accessToken: string,
+    deviceId: string,
+  ) => Effect.Effect<string | null, AppleBusinessManagerError>;
+  readonly listMdmServerDeviceIds: (
+    accessToken: string,
+    mdmServerId: string,
+  ) => Effect.Effect<string[], AppleBusinessManagerError>;
+  readonly listApps: (accessToken: string) => Effect.Effect<AbmApp[], AppleBusinessManagerError>;
 };
 
 type ClientAssertionInput = {
@@ -700,15 +744,72 @@ type AssignedAppleDevice = {
   activityId?: string;
 };
 
-type AppleErrorBody = {
-  errors?: Array<{ title?: string; detail?: string; status?: string; code?: string }>;
-};
+const AppleErrorBodySchema = Schema.Struct({
+  errors: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        title: Schema.optional(Schema.String),
+        detail: Schema.optional(Schema.String),
+        status: Schema.optional(Schema.String),
+        code: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
+});
+
+type AppleErrorBody = typeof AppleErrorBodySchema.Type;
 
 const appleErrorMessage = (body: AppleErrorBody | undefined, fallback: string): string => {
   const first = body?.errors?.[0];
   const detail = first?.detail ?? first?.title;
 
-  return detail ? `${fallback}: ${detail}` : fallback;
+  return detail ? `${fallback}: ${describeAppleError(detail)}` : fallback;
+};
+
+const AbmAttributesSchema = Schema.Record(Schema.String, Schema.Json);
+
+const AbmResourceSchema = Schema.Struct({
+  id: Schema.NonEmptyString,
+  attributes: Schema.optional(AbmAttributesSchema),
+});
+
+const AbmResourceResponseSchema = Schema.Struct({ data: AbmResourceSchema });
+
+const AssignedServerResponseSchema = Schema.Struct({
+  data: Schema.NullOr(AbmResourceSchema),
+});
+
+const AssignedDevicesResponseSchema = Schema.Struct({
+  data: Schema.Struct({
+    id: Schema.optional(Schema.NonEmptyString),
+    attributes: Schema.optional(
+      Schema.Struct({
+        status: Schema.optional(Schema.String),
+        subStatus: Schema.optional(Schema.String),
+      }),
+    ),
+  }),
+});
+
+const OAuthTokenResponseSchema = Schema.Struct({
+  access_token: Schema.NonEmptyString,
+  token_type: Schema.optional(Schema.String),
+  expires_in: Schema.optional(Schema.Number),
+  scope: Schema.optional(Schema.String),
+});
+
+const OAuthErrorResponseSchema = Schema.Struct({
+  error: Schema.optional(Schema.String),
+  error_description: Schema.optional(Schema.String),
+});
+
+/** Parse JSON without trusting its shape; callers validate it with a Schema. */
+const parseJson = (text: string): Schema.Json | undefined => {
+  try {
+    return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text));
+  } catch {
+    return undefined;
+  }
 };
 
 const apiErrorKind = (status: number): AppleBusinessManagerErrorKind => {
@@ -728,99 +829,188 @@ export const createAbmClient = (
   defaultScope: "business.api" | "school.api" = "business.api",
 ): AbmClient => {
   const doFetch = config.fetch ?? globalThis.fetch;
-  const timeoutMs = config.timeoutMs ?? 15_000;
+  const timeoutMs = config.timeoutMs ?? ABM_REQUEST_TIMEOUT_MS;
   const tokenUrl = config.tokenUrl ?? ABM_DEFAULT_TOKEN_URL;
+
+  // Every method below owns its client, so callers never thread a layer.
+  const clientLayer = FetchHttpClient.layer.pipe(
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, doFetch)),
+  );
 
   const baseUrl = () =>
     defaultScope === "school.api"
       ? (config.schoolBaseUrl ?? ABM_SCHOOL_BASE_URL)
       : (config.businessBaseUrl ?? ABM_BUSINESS_BASE_URL);
 
-  const request = async <T>(
+  /**
+   * One Apple API request. The deadline covers the response body as well as the
+   * headers, so a stalled page fails like a hung connect.
+   */
+  const request = <T>(
+    schema: Schema.Decoder<T>,
     url: string,
     accessToken: string,
-    init: RequestInit = {},
-  ): Promise<T | undefined> => {
-    let response: Response;
-    const headers = new Headers(init.headers);
-    headers.set("accept", "application/json");
-    headers.set("authorization", `Bearer ${accessToken}`);
+    init: { readonly method?: "POST"; readonly body?: string } = {},
+  ): Effect.Effect<T | undefined, AppleBusinessManagerError, HttpClient.HttpClient> =>
+    Effect.gen(function* () {
+      const client = yield* HttpClient.HttpClient;
 
-    if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
+      const base =
+        init.method === "POST"
+          ? HttpClientRequest.post(url).pipe(
+              HttpClientRequest.bodyText(init.body ?? "", "application/json"),
+            )
+          : HttpClientRequest.get(url);
 
-    try {
-      response = await fetchWithTimeout(url, { ...init, headers }, { fetch: doFetch, timeoutMs });
-    } catch (error) {
-      throw fail(
-        "upstream",
-        `Apple Business API request failed: ${describeAppleError(error)}`,
-        error,
+      const sent = yield* Effect.gen(function* () {
+        const response = yield* client.execute(
+          base.pipe(
+            HttpClientRequest.setHeaders({
+              accept: "application/json",
+              authorization: `Bearer ${accessToken}`,
+            }),
+          ),
+        );
+
+        return {
+          status: response.status,
+          text: yield* response.text.pipe(Effect.orElseSucceed(() => "")),
+        };
+      }).pipe(
+        Effect.mapError((cause) =>
+          fail(
+            "upstream",
+            `Apple Business API request failed: ${describeAppleError(cause)}`,
+            cause,
+          ),
+        ),
+        Effect.timeoutOrElse({
+          duration: timeoutMs,
+          orElse: () =>
+            Effect.fail(
+              fail("upstream", `Apple Business API request timed out after ${timeoutMs}ms`),
+            ),
+        }),
       );
-    }
 
-    if (!response.ok) {
-      const body: AppleErrorBody | undefined = await response.json().catch(() => undefined);
+      if (sent.status < 200 || sent.status > 299) {
+        const body = Option.getOrUndefined(
+          Schema.decodeUnknownOption(AppleErrorBodySchema)(parseJson(sent.text)),
+        );
 
-      throw fail(
-        apiErrorKind(response.status),
-        appleErrorMessage(body, `Apple Business API returned HTTP ${response.status}`),
-      );
-    }
-
-    if (response.status === 204) return undefined;
-
-    try {
-      return await response.json();
-    } catch (error) {
-      throw fail("invalid_response", "Apple Business API returned invalid JSON.", error);
-    }
-  };
-
-  const paged = async <T>(initialUrl: string, accessToken: string, base: string): Promise<T[]> => {
-    const items: T[] = [];
-    let url: string | undefined = initialUrl;
-    let pages = 0;
-
-    while (url) {
-      if (pages++ >= 100)
-        throw fail("invalid_response", "Apple Business API pagination exceeded 100 pages.");
-
-      const page = await request<{
-        data?: T[];
-        links?: { next?: string };
-      }>(url, accessToken);
-
-      if (!page) break;
-
-      if (Array.isArray(page.data)) items.push(...page.data);
-      const next = page.links?.next;
-
-      if (!next) break;
-      let nextUrl: URL;
-
-      try {
-        nextUrl = new URL(next);
-      } catch {
-        throw fail("invalid_response", "Apple Business API returned an invalid pagination link.");
+        return yield* Effect.fail(
+          fail(
+            apiErrorKind(sent.status),
+            appleErrorMessage(body, `Apple Business API returned HTTP ${sent.status}`),
+          ),
+        );
       }
 
-      if (nextUrl.origin !== new URL(base).origin)
-        throw fail("invalid_response", "Apple Business API pagination left the Apple origin.");
-      url = nextUrl.toString();
-    }
+      if (sent.status === 204) return undefined;
 
-    return items;
-  };
+      const json = parseJson(sent.text);
 
-  return {
-    exchangeAccessToken: async (credential) => {
+      if (json === undefined)
+        return yield* Effect.fail(
+          fail("invalid_response", "Apple Business API returned invalid JSON."),
+        );
+
+      const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(schema)(json));
+
+      if (decoded === undefined)
+        return yield* Effect.fail(
+          fail("invalid_response", "Apple Business API returned an invalid response shape."),
+        );
+
+      return decoded;
+    });
+
+  const paged = <T>(
+    valueSchema: Schema.Decoder<T>,
+    initialUrl: string,
+    accessToken: string,
+    base: string,
+    maxItems?: number,
+  ): Effect.Effect<T[], AppleBusinessManagerError, HttpClient.HttpClient> =>
+    Effect.gen(function* () {
+      const pageSchema = Schema.Struct({
+        data: Schema.Array(valueSchema),
+        links: Schema.optional(Schema.Struct({ next: Schema.optional(Schema.String) })),
+      });
+      const items: T[] = [];
+      let url: string | undefined = initialUrl;
+      let pages = 0;
+
+      while (url) {
+        if (pages >= 100)
+          return yield* Effect.fail(
+            fail("invalid_response", "Apple Business API pagination exceeded 100 pages."),
+          );
+        pages++;
+
+        const page = yield* request(pageSchema, url, accessToken);
+
+        if (!page)
+          return yield* Effect.fail(
+            fail("invalid_response", "Apple Business API page did not include a data array."),
+          );
+
+        if (maxItems !== undefined && items.length + page.data.length > maxItems)
+          return yield* Effect.fail(
+            fail(
+              "invalid_response",
+              `Apple returned more than ${maxItems} ABM items; sync is bounded.`,
+            ),
+          );
+
+        items.push(...page.data);
+
+        const next = page.links?.next;
+        if (!next) break;
+
+        let nextUrl: URL;
+
+        try {
+          nextUrl = new URL(next);
+        } catch {
+          return yield* Effect.fail(
+            fail("invalid_response", "Apple Business API returned an invalid pagination link."),
+          );
+        }
+
+        if (nextUrl.origin !== new URL(base).origin)
+          return yield* Effect.fail(
+            fail("invalid_response", "Apple Business API pagination left the Apple origin."),
+          );
+
+        if (maxItems !== undefined && items.length >= maxItems)
+          return yield* Effect.fail(
+            fail(
+              "invalid_response",
+              `Apple returned at least ${maxItems} ABM items with another page; sync is bounded.`,
+            ),
+          );
+
+        url = nextUrl.toString();
+      }
+
+      return items;
+    });
+
+  const exchangeAccessToken = (
+    credential: AbmApiCredential,
+  ): Effect.Effect<AbmAccessToken, AppleBusinessManagerError, HttpClient.HttpClient> =>
+    Effect.gen(function* () {
       const assertionInput: ClientAssertionInput = { credential };
 
       if (config.assertionAudience) assertionInput.audience = config.assertionAudience;
-
       if (config.now) assertionInput.now = config.now;
 
-      const assertion = await buildClientAssertion(assertionInput);
+      const assertion = yield* Effect.tryPromise({
+        try: () => buildClientAssertion(assertionInput),
+        catch: (cause) =>
+          fail("upstream", `Apple client assertion failed: ${describeAppleError(cause)}`, cause),
+      });
 
       const params = new URLSearchParams({
         grant_type: "client_credentials",
@@ -830,46 +1020,55 @@ export const createAbmClient = (
         scope: credential.scope,
       });
 
-      let response: Response;
+      const client = yield* HttpClient.HttpClient;
 
-      try {
-        response = await fetchWithTimeout(
-          `${tokenUrl}?${params.toString()}`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/x-www-form-urlencoded" },
-            body: params.toString(),
-          },
-          { fetch: doFetch, timeoutMs },
+      const sent = yield* Effect.gen(function* () {
+        const response = yield* client.execute(
+          HttpClientRequest.post(tokenUrl).pipe(
+            HttpClientRequest.bodyText(params.toString(), "application/x-www-form-urlencoded"),
+          ),
         );
-      } catch (error) {
-        throw fail("upstream", `Apple OAuth request failed: ${describeAppleError(error)}`, error);
+
+        return {
+          status: response.status,
+          text: yield* response.text.pipe(Effect.orElseSucceed(() => "")),
+        };
+      }).pipe(
+        Effect.mapError((cause) =>
+          fail("upstream", `Apple OAuth request failed: ${describeAppleError(cause)}`, cause),
+        ),
+        Effect.timeoutOrElse({
+          duration: timeoutMs,
+          orElse: () =>
+            Effect.fail(fail("upstream", `Apple OAuth request timed out after ${timeoutMs}ms`)),
+        }),
+      );
+
+      if (sent.status < 200 || sent.status > 299) {
+        const body = Option.getOrUndefined(
+          Schema.decodeUnknownOption(OAuthErrorResponseSchema)(parseJson(sent.text)),
+        );
+
+        return yield* Effect.fail(
+          fail(
+            sent.status === 400 || sent.status === 401 ? "unauthorized" : "upstream",
+            body?.error_description
+              ? `Apple rejected the ABM credential: ${describeAppleError(body.error_description)}`
+              : `Apple rejected the ABM credential (HTTP ${sent.status}).`,
+          ),
+        );
       }
 
-      if (!response.ok) {
-        const body: { error?: string; error_description?: string } | undefined = await response
-          .json()
-          .catch(() => undefined);
+      const body = Option.getOrUndefined(
+        Schema.decodeUnknownOption(OAuthTokenResponseSchema)(parseJson(sent.text)),
+      );
 
-        throw fail(
-          response.status === 400 || response.status === 401 ? "unauthorized" : "upstream",
-          body?.error_description
-            ? `Apple rejected the ABM credential: ${body.error_description}`
-            : `Apple rejected the ABM credential (HTTP ${response.status}).`,
+      if (!body)
+        return yield* Effect.fail(
+          fail("invalid_response", "Apple OAuth response did not include a valid access token."),
         );
-      }
 
-      const body: {
-        access_token?: string;
-        token_type?: string;
-        expires_in?: number;
-        scope?: string;
-      } = (await response.json().catch(() => ({}))) ?? {};
-
-      if (!body.access_token)
-        throw fail("invalid_response", "Apple OAuth response did not include an access token.");
-
-      const expiresIn = Number.isFinite(body.expires_in) ? Number(body.expires_in) : 3600;
+      const expiresIn = body.expires_in ?? 3600;
 
       const token: Mutable<AbmAccessToken> = {
         accessToken: body.access_token,
@@ -881,20 +1080,26 @@ export const createAbmClient = (
       if (body.scope) token.scope = body.scope;
 
       return token;
-    },
+    });
 
-    listOrgDevices: async (accessToken, options = {}) => {
+  const listOrgDevices = (
+    accessToken: string,
+    options: { readonly serial?: string; readonly status?: "ASSIGNED" | "UNASSIGNED" } = {},
+  ): Effect.Effect<AbmOrgDevice[], AppleBusinessManagerError> =>
+    Effect.gen(function* () {
       const base = baseUrl();
       const params = new URLSearchParams({ limit: "1000" });
 
       if (options.serial) params.set("filter[serialNumber]", options.serial);
-
       if (options.status) params.set("filter[status]", options.status);
 
-      const data = await paged<{
-        id: string;
-        attributes?: Record<string, Schema.Json>;
-      }>(`${base}/orgDevices?${params.toString()}`, accessToken, base);
+      const data = yield* paged(
+        AbmResourceSchema,
+        `${base}/orgDevices?${params.toString()}`,
+        accessToken,
+        base,
+        5000,
+      );
 
       return data.map((item) => {
         const attributes: Record<string, Schema.Json> = item.attributes ?? {};
@@ -913,23 +1118,23 @@ export const createAbmClient = (
         const addedToOrgDateTime = text(attributes.addedToOrgDateTime);
 
         if (model) device.model = model;
-
         if (productFamily) device.productFamily = productFamily;
-
         if (productType) device.productType = productType;
-
         if (updatedDateTime) device.updatedDateTime = updatedDateTime;
-
         if (addedToOrgDateTime) device.addedToOrgDateTime = addedToOrgDateTime;
 
         return device;
       });
-    },
+    }).pipe(Effect.provide(clientLayer));
 
-    listMdmServers: async (accessToken) => {
+  const listMdmServers = (
+    accessToken: string,
+  ): Effect.Effect<AbmMdmServer[], AppleBusinessManagerError> =>
+    Effect.gen(function* () {
       const base = baseUrl();
 
-      const data = await paged<{ id: string; attributes?: Record<string, Schema.Json> }>(
+      const data = yield* paged(
+        AbmResourceSchema,
         `${base}/mdmServers?limit=1000`,
         accessToken,
         base,
@@ -946,18 +1151,19 @@ export const createAbmClient = (
         );
 
         if (serverName) server.serverName = serverName;
-
         if (serverType) server.serverType = serverType;
-
         if (status) server.status = status;
-
         if (deviceCount !== undefined) server.deviceCount = deviceCount;
 
         return server;
       });
-    },
+    }).pipe(Effect.provide(clientLayer));
 
-    createMdmServer: async (accessToken, input) => {
+  const createMdmServer = (
+    accessToken: string,
+    input: { readonly serverName: string; readonly certificatePem: string },
+  ): Effect.Effect<AbmMdmServer, AppleBusinessManagerError> =>
+    Effect.gen(function* () {
       const base = baseUrl();
 
       const certificate = input.certificatePem
@@ -965,98 +1171,116 @@ export const createAbmClient = (
         .replace(/-----END CERTIFICATE-----/, "")
         .replaceAll(/\s/g, "");
 
-      const response = await request<{
-        data?: { id?: string; attributes?: Record<string, Schema.Json> };
-      }>(`${base}/mdmServers`, accessToken, {
-        method: "POST",
-        body: JSON.stringify({
-          data: {
-            type: "mdmServers",
-            attributes: {
-              serverName: input.serverName,
-              serverCertificate: { name: "mattrax-push.pem", data: certificate },
-              enableMdmDisownFlag: true,
+      const response = yield* request(
+        AbmResourceResponseSchema,
+        `${base}/mdmServers`,
+        accessToken,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            data: {
+              type: "mdmServers",
+              attributes: {
+                serverName: input.serverName,
+                serverCertificate: { name: "mattrax-push.pem", data: certificate },
+                enableMdmDisownFlag: true,
+              },
             },
-          },
-        }),
-      });
+          }),
+        },
+      );
 
       const id = response?.data?.id;
 
-      if (!id) throw fail("invalid_response", "Apple did not return an MDM server id.");
+      if (!id)
+        return yield* Effect.fail(
+          fail("invalid_response", "Apple did not return an MDM server id."),
+        );
 
       const server: Mutable<AbmMdmServer> = { id };
       const serverName = text(response?.data?.attributes?.serverName);
       const status = text(response?.data?.attributes?.status);
 
       if (serverName) server.serverName = serverName;
-
       if (status) server.status = status;
 
       return server;
-    },
+    }).pipe(Effect.provide(clientLayer));
 
-    assignDevices: async (accessToken, input) => {
+  const assignDevices = (
+    accessToken: string,
+    input: { readonly mdmServerId: string; readonly deviceIds: ReadonlyArray<string> },
+  ): Effect.Effect<AssignedDevicesActivity, AppleBusinessManagerError> =>
+    Effect.gen(function* () {
       const base = baseUrl();
 
-      const response = await request<{
-        data?: { id?: string; attributes?: { status?: string; subStatus?: string } };
-      }>(`${base}/orgDeviceActivities`, accessToken, {
-        method: "POST",
-        body: JSON.stringify({
-          data: {
-            type: "orgDeviceActivities",
-            attributes: { activityType: "ASSIGN_DEVICES" },
-            relationships: {
-              mdmServer: { data: { type: "mdmServers", id: input.mdmServerId } },
-              devices: {
-                data: input.deviceIds.map((id) => ({ type: "orgDevices", id })),
+      const response = yield* request(
+        AssignedDevicesResponseSchema,
+        `${base}/orgDeviceActivities`,
+        accessToken,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            data: {
+              type: "orgDeviceActivities",
+              attributes: { activityType: "ASSIGN_DEVICES" },
+              relationships: {
+                mdmServer: { data: { type: "mdmServers", id: input.mdmServerId } },
+                devices: {
+                  data: input.deviceIds.map((id) => ({ type: "orgDevices", id })),
+                },
               },
             },
-          },
-        }),
-      });
+          }),
+        },
+      );
 
       const result: AssignedDevicesActivity = {};
 
       if (response?.data?.id) result.activityId = response.data.id;
-
       if (response?.data?.attributes?.status) result.status = response.data.attributes.status;
 
       return result;
-    },
+    }).pipe(Effect.provide(clientLayer));
 
-    getAssignedServerId: async (accessToken, deviceId) => {
+  const getAssignedServerId = (
+    accessToken: string,
+    deviceId: string,
+  ): Effect.Effect<string | null, AppleBusinessManagerError> =>
+    Effect.gen(function* () {
       const base = baseUrl();
 
-      const response = await request<{ data?: { id?: string } | null }>(
+      const response = yield* request(
+        AssignedServerResponseSchema,
         `${base}/orgDevices/${encodeURIComponent(deviceId)}/relationships/assignedServer`,
         accessToken,
       );
 
       return response?.data?.id ?? null;
-    },
+    }).pipe(Effect.provide(clientLayer));
 
-    listMdmServerDeviceIds: async (accessToken, mdmServerId) => {
+  const listMdmServerDeviceIds = (
+    accessToken: string,
+    mdmServerId: string,
+  ): Effect.Effect<string[], AppleBusinessManagerError> =>
+    Effect.gen(function* () {
       const base = baseUrl();
 
-      const data = await paged<{ id?: string }>(
+      const data = yield* paged(
+        AbmResourceSchema,
         `${base}/mdmServers/${encodeURIComponent(mdmServerId)}/relationships/devices?limit=1000`,
         accessToken,
         base,
       );
 
-      return data.map((item) => item.id).filter((id): id is string => Boolean(id));
-    },
+      return data.map((item) => item.id);
+    }).pipe(Effect.provide(clientLayer));
 
-    listApps: async (accessToken) => {
+  const listApps = (accessToken: string): Effect.Effect<AbmApp[], AppleBusinessManagerError> =>
+    Effect.gen(function* () {
       const base = baseUrl();
 
-      const data = await paged<{ id: string; attributes?: Record<string, Schema.Json> }>(
-        `${base}/apps?limit=1000`,
-        accessToken,
-        base,
-      );
+      const data = yield* paged(AbmResourceSchema, `${base}/apps?limit=1000`, accessToken, base);
 
       return data.map((item) => {
         const app: Mutable<AbmApp> = { id: item.id };
@@ -1065,17 +1289,25 @@ export const createAbmClient = (
         const version = text(item.attributes?.version);
 
         if (name) app.name = name;
-
         if (bundleId) app.bundleId = bundleId;
-
         if (version) app.version = version;
 
         return app;
       });
-    },
+    }).pipe(Effect.provide(clientLayer));
+
+  return {
+    exchangeAccessToken: (credential) =>
+      exchangeAccessToken(credential).pipe(Effect.provide(clientLayer)),
+    listOrgDevices,
+    listMdmServers,
+    createMdmServer,
+    assignDevices,
+    getAssignedServerId,
+    listMdmServerDeviceIds,
+    listApps,
   };
 };
-
 export const makeAbmClient = createAbmClient;
 
 // ─── Persistence and tenant-scoped service operations ────────────
@@ -1245,13 +1477,7 @@ export const saveAppleBusinessManagerToken = (input: {
     if (credential.kind === "abm_api") {
       const client = makeAbmClient(input.config, credential.scope);
 
-      const validation = yield* Effect.tryPromise({
-        try: () => client.exchangeAccessToken(credential),
-        catch: (cause) =>
-          cause instanceof AppleBusinessManagerError
-            ? cause
-            : fail("upstream", describeAppleError(cause), cause),
-      }).pipe(Effect.result);
+      const validation = yield* client.exchangeAccessToken(credential).pipe(Effect.result);
 
       if (Predicate.isTagged(validation, "Failure")) {
         yield* upsertAbmRow(
@@ -1350,26 +1576,9 @@ export const syncAppleBusinessManagerDevices = (input: {
 
     const client = makeAbmClient(input.config, credential.scope);
 
-    const token = yield* Effect.tryPromise({
-      try: () => client.exchangeAccessToken(credential),
-      catch: (cause) =>
-        cause instanceof AppleBusinessManagerError
-          ? cause
-          : fail("upstream", describeAppleError(cause), cause),
-    });
+    const token = yield* client.exchangeAccessToken(credential);
 
-    const remote = yield* Effect.tryPromise({
-      try: () => client.listOrgDevices(token.accessToken),
-      catch: (cause) =>
-        cause instanceof AppleBusinessManagerError
-          ? cause
-          : fail("upstream", describeAppleError(cause), cause),
-    });
-
-    if (remote.length > 5000)
-      return yield* Effect.fail(
-        fail("invalid_response", "Apple returned more than 5000 ABM devices; sync is bounded."),
-      );
+    const remote = yield* client.listOrgDevices(token.accessToken);
 
     const local = yield* input.db
       .select()
@@ -1485,7 +1694,7 @@ export const syncAppleBusinessManagerDevices = (input: {
     mapAppleError,
   );
 
-const ensureMdmServer = async (
+const ensureMdmServer = (
   client: AbmClient,
   accessToken: string,
   input: {
@@ -1493,26 +1702,30 @@ const ensureMdmServer = async (
     readonly serverName: string;
     readonly certificatePem?: string;
   },
-): Promise<string> => {
-  if (input.existingId) return input.existingId;
-  const servers = await client.listMdmServers(accessToken);
-  const match = servers.find((server) => server.serverName === input.serverName);
+): Effect.Effect<string, AppleBusinessManagerError> =>
+  Effect.gen(function* () {
+    if (input.existingId) return input.existingId;
 
-  if (match) return match.id;
+    const servers = yield* client.listMdmServers(accessToken);
+    const match = servers.find((server) => server.serverName === input.serverName);
 
-  if (!input.certificatePem)
-    throw fail(
-      "not_configured",
-      "An Apple push certificate is required to create the ABM device management service. Upload APNs first.",
-    );
+    if (match) return match.id;
 
-  const created = await client.createMdmServer(accessToken, {
-    serverName: input.serverName,
-    certificatePem: input.certificatePem,
+    if (!input.certificatePem)
+      return yield* Effect.fail(
+        fail(
+          "not_configured",
+          "An Apple push certificate is required to create the ABM device management service. Upload APNs first.",
+        ),
+      );
+
+    const created = yield* client.createMdmServer(accessToken, {
+      serverName: input.serverName,
+      certificatePem: input.certificatePem,
+    });
+
+    return created.id;
   });
-
-  return created.id;
-};
 
 export const assignAppleBusinessManagerDevice = (input: {
   readonly db: EnterpriseDb;
@@ -1574,30 +1787,24 @@ export const assignAppleBusinessManagerDevice = (input: {
 
     const client = makeAbmClient(input.config, credential.scope);
 
-    const result = yield* Effect.tryPromise({
-      try: async () => {
-        const token = await client.exchangeAccessToken(credential);
+    const result = yield* Effect.gen(function* () {
+      const token = yield* client.exchangeAccessToken(credential);
 
-        const serverInput: EnsureMdmServerInput = {
-          existingId: row.mdmServerId,
-          serverName: input.serverName,
-        };
+      const serverInput: EnsureMdmServerInput = {
+        existingId: row.mdmServerId,
+        serverName: input.serverName,
+      };
 
-        if (input.certificatePem) serverInput.certificatePem = input.certificatePem;
+      if (input.certificatePem) serverInput.certificatePem = input.certificatePem;
 
-        const mdmServerId = await ensureMdmServer(client, token.accessToken, serverInput);
+      const mdmServerId = yield* ensureMdmServer(client, token.accessToken, serverInput);
 
-        const activity = await client.assignDevices(token.accessToken, {
-          mdmServerId,
-          deviceIds: [device.abmDeviceId ?? device.serial],
-        });
+      const activity = yield* client.assignDevices(token.accessToken, {
+        mdmServerId,
+        deviceIds: [device.abmDeviceId ?? device.serial],
+      });
 
-        return { mdmServerId, activity };
-      },
-      catch: (cause) =>
-        cause instanceof AppleBusinessManagerError
-          ? cause
-          : fail("upstream", describeAppleError(cause), cause),
+      return { mdmServerId, activity };
     });
 
     const profileUuid = row.profileUuid ?? crypto.randomUUID();
@@ -1653,21 +1860,22 @@ export const createAdeProfileToken = (input: {
   Effect.gen(function* () {
     const expiresAt = new Date(Date.now() + (input.ttlSeconds ?? 7 * 24 * 60 * 60) * 1000);
 
-    const token = yield* Effect.tryPromise({
-      try: () =>
-        Effect.runPromise(
-          signToken(input.authSecret, {
-            sub: input.organizationId,
-            email: "ade-profile",
-            exp: expiresAt.getTime(),
-            purpose: ADE_PROFILE_PURPOSE,
-            tenantId: input.organizationId,
-            serial: input.serial,
-            profileUuid: input.profileUuid,
-          }),
-        ),
-      catch: (cause) => fail("upstream", "Could not sign the ADE profile URL.", cause),
-    });
+    const token = yield* signToken(input.authSecret, {
+      sub: input.organizationId,
+      email: "ade-profile",
+      exp: expiresAt.getTime(),
+      purpose: ADE_PROFILE_PURPOSE,
+      tenantId: input.organizationId,
+      serial: input.serial,
+      profileUuid: input.profileUuid,
+    }).pipe(
+      Effect.catchTag("TokenError", (cause) =>
+        Effect.fail(fail("upstream", "Could not sign the ADE profile URL.", cause)),
+      ),
+      Effect.catchDefect((cause) =>
+        Effect.fail(fail("upstream", "Could not sign the ADE profile URL.", cause)),
+      ),
+    );
 
     return {
       token,
@@ -1683,11 +1891,20 @@ export const readAdeProfileToken = (input: {
   readonly token: string;
 }): Effect.Effect<AdeProfileToken, AppleBusinessManagerError> =>
   Effect.gen(function* () {
-    const payload = yield* Effect.tryPromise({
-      try: () => Effect.runPromise(verifyToken(input.authSecret, input.token)),
-      catch: (cause) =>
-        fail("invalid_token", "The ADE profile link is invalid or has expired.", cause),
-    });
+    const payload = yield* verifyToken(input.authSecret, input.token).pipe(
+      Effect.catchTag("TokenError", (cause) =>
+        Effect.fail(
+          cause.reason === "crypto"
+            ? fail("upstream", "The ADE profile link could not be verified.", cause)
+            : fail("invalid_token", "The ADE profile link is invalid or has expired.", cause),
+        ),
+      ),
+      Effect.catchDefect((cause) =>
+        Effect.fail(
+          fail("invalid_token", "The ADE profile link is invalid or has expired.", cause),
+        ),
+      ),
+    );
 
     const organizationId = payload.tenantId ?? payload.sub;
     const serial = payload.serial;

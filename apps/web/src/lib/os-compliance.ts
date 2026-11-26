@@ -44,6 +44,8 @@ export const osComplianceShortReason = (info: OsComplianceInfo): string => {
       return "Deferred";
     case "update_available":
       return info.targetVersion ? `${info.targetVersion} available` : "Update available";
+    case "ddm_update_pending":
+      return info.targetVersion ? `${info.targetVersion} pending` : "Update pending";
     case "up_to_date":
       return "Up to date";
     case "up_to_date_minimum_only":
@@ -59,6 +61,8 @@ export const osComplianceShortReason = (info: OsComplianceInfo): string => {
       return "Version not comparable";
     case "platform_not_covered":
       return "Platform not covered";
+    case "platform_unsupported":
+      return "Not supported";
     case "policy_off":
       return "Policy off";
     case "policy_not_configured":

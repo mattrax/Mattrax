@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": [],
+    "noEmit": true,
+    "declaration": false,
+    "emitDeclarationOnly": false,
+    "composite": false
+  },
+  "files": ["../email/src/index.ts", "../management-backend/src/index.ts", "../crypto/src/index.ts"]
+}

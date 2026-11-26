@@ -1,6 +1,6 @@
-import { Data, Effect, Match, Option, Schema } from "effect";
+import { Data, Effect, Match } from "effect";
 import { and, eq, lte, or } from "drizzle-orm";
-import { schema } from "@mattrax/enterprise-core";
+import { isUniqueViolationForConstraint, schema } from "@mattrax/enterprise-core";
 import type { R2Bucket, TenantDeletionStep } from "@mattrax/enterprise-core";
 import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
 
@@ -9,6 +9,7 @@ export const tenantObjectPrefixes = (organizationId: string): ReadonlyArray<stri
   `p/${organizationId}/`,
   `a/${organizationId}/`,
   `backups/${organizationId}/`,
+  `handovers/${organizationId}/`,
 ];
 
 /**
@@ -139,29 +140,14 @@ export type TenantTeardownOptions = {
 
 const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
-const ErrorDetails = Schema.Struct({
-  code: Schema.optional(Schema.String),
-  errno: Schema.optional(Schema.Number),
-  message: Schema.optional(Schema.String),
-  cause: Schema.optional(Schema.Unknown),
-});
-
 /**
- * MySQL reports the unique `tenant_deletion.organization_id` index as
- * `ER_DUP_ENTRY`/1062. Losing that insert race means another request claimed
- * the job first, so this attempt must not repeat its side effects.
+ * MySQL reports the unique organization index as `ER_DUP_ENTRY`/1062. Losing
+ * that insert race means another request claimed the job first, so this
+ * attempt must not repeat its side effects.
  */
-const isDuplicateJobError = (cause: unknown): boolean => {
-  const top = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorDetails)(cause));
-  const nested = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorDetails)(top?.cause));
-  const code = top?.code ?? nested?.code;
-  const errno = top?.errno ?? nested?.errno;
-  const message = top?.message ?? nested?.message ?? "";
-
-  if (code === "ER_DUP_ENTRY" || errno === 1062) return true;
-
-  return /tenant_deletion/i.test(message);
-};
+const isDuplicateJobError = (cause: unknown): boolean =>
+  isUniqueViolationForConstraint(cause, "tenant_deletion_organization_unique") ||
+  isUniqueViolationForConstraint(cause, "tenant_deletion.tenant_deletion_organization_unique");
 
 type MutableStep = { -readonly [Key in keyof TenantDeletionStep]: TenantDeletionStep[Key] };
 

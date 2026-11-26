@@ -25,7 +25,7 @@ import {
   supersededRequestTypes,
 } from "@mattrax/mdm-core";
 import type { CommandRow } from "@mattrax/mdm-core";
-import { makeDb, tableName, stringValue } from "./fake-db.js";
+import { appleIdentityCertificate, makeDb, tableName, stringValue } from "./fake-db.js";
 
 const origin = "https://policies.test";
 
@@ -485,12 +485,14 @@ describe("install retry budget", () => {
       storeId: undefined,
       bundleId: undefined,
       assetUrl: undefined,
+      assetIdentifier: undefined,
     });
     expect(installApplicationTarget({ iTunesStoreID: 42 })).toEqual({
       manifestUrl: undefined,
       storeId: "42",
       bundleId: undefined,
       assetUrl: undefined,
+      assetIdentifier: undefined,
     });
     expect(
       installApplicationTarget({
@@ -508,13 +510,41 @@ describe("install retry budget", () => {
       storeId: undefined,
       bundleId: "com.example.app",
       assetUrl: "https://mdm.test/asset",
+      assetIdentifier: undefined,
     });
     expect(installApplicationTarget(null)).toEqual({
       manifestUrl: undefined,
       storeId: undefined,
       bundleId: undefined,
       assetUrl: undefined,
+      assetIdentifier: undefined,
     });
+  });
+
+  it("reads Mattrax's catalogue identifier from a signed manifest or asset URL", () => {
+    expect(
+      installApplicationTarget({
+        ManifestURL: "https://mdm.test/mdm/apple/manifests/app.installer-1?token=abc",
+      }),
+    ).toMatchObject({ assetIdentifier: "app.installer-1" });
+
+    expect(
+      installApplicationTarget({
+        Manifest: {
+          items: [
+            {
+              assets: [
+                {
+                  kind: "software-package",
+                  url: "https://mdm.test/mdm/apple/assets/app.installer-1?token=abc",
+                },
+              ],
+              metadata: { "bundle-identifier": "com.example.app", "bundle-version": "1.0" },
+            },
+          ],
+        },
+      }),
+    ).toMatchObject({ assetIdentifier: "app.installer-1" });
   });
 
   it("treats both Apple install commands as application installs", () => {
@@ -676,6 +706,7 @@ const device = (id: string, organizationId: string) => ({
   status: "enrolled",
   name: id,
   dmIdentifier: "udid-1",
+  dmIdentityFingerprint: "fingerprint-1",
   enrolledAt: at("2026-01-01T00:00:00Z"),
   lastSeenAt: at("2026-01-01T00:00:00Z"),
 });
@@ -699,6 +730,8 @@ describe("Apple check-in delivery loop", () => {
     _tag: "device" as const,
     udid: "udid-1",
     identityCertificate: "CN=Device,OU=org-1",
+    identityCertificateFingerprintSha256: "fingerprint-1",
+    identityCertificateSerial: "A1:B2:C3",
     mdmOrigin,
   };
 
@@ -708,6 +741,7 @@ describe("Apple check-in delivery loop", () => {
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1")],
       [tableName(schema.device)]: [device("device-1", "org-1")],
+      [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
       [tableName(schema.deviceCommand)]: [
         command("stale-lock", {
           expiresAt: expiredAt,
@@ -734,6 +768,7 @@ describe("Apple check-in delivery loop", () => {
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1")],
       [tableName(schema.device)]: [device("device-1", "org-1")],
+      [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
       [tableName(schema.deviceCommand)]: [
         command("fresh-lock", {
           expiresAt: new Date(Date.now() + 10 * 60 * 1000),

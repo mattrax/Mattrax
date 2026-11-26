@@ -1,4 +1,5 @@
 import { createMemo, Show } from "solid-js";
+import { cn } from "@mattrax/ui";
 import { qrPath } from "~/lib/qr";
 
 /**
@@ -6,8 +7,11 @@ import { qrPath } from "~/lib/qr";
  * `<img>` data URI) so it prints and screenshots correctly and inherits the
  * surrounding card's sizing.
  */
-export function QrCode(props: { value: string; label?: string; class?: string; size?: number }) {
+export default function QrCode(props: { value: string; label?: string; class?: string; size?: number }) {
   const qr = createMemo(() => (props.value ? qrPath(props.value) : null));
+  // The SVG's own rect paints the fixed light background, so the root only
+  // needs layout classes; a caller can still style the frame via `cn`.
+  const classes = () => cn("block h-auto max-w-full", props.class);
 
   return (
     <Show when={qr()}>
@@ -20,12 +24,13 @@ export function QrCode(props: { value: string; label?: string; class?: string; s
           role="img"
           aria-label={props.label ?? "Enrollment QR code"}
           {...{ "shape-rendering": "crispEdges" }}
-          class={props.class ?? "rounded-lg bg-[var(--qr-background)] p-2"}
+          class={classes()}
         >
-          {/* QR codes need absolute contrast to scan, so these two tokens are
-              fixed white/black in every theme rather than theme surfaces. */}
-          <rect width={code().size} height={code().size} class="fill-[var(--qr-background)]" />
-          <path d={code().path} class="fill-[var(--qr-foreground)]" />
+          {/* QR codes need absolute contrast to scan. These colours stay fixed
+              in every theme; the quiet zone is part of the SVG viewBox, not CSS
+              padding, so screenshots and prints preserve it. */}
+          <rect width={code().size} height={code().size} fill="var(--qr-background)" />
+          <path d={code().path} fill="var(--qr-foreground)" />
         </svg>
       )}
     </Show>

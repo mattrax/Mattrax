@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  appleOsPolicyPlatform,
+  appleOsUpdateMechanism,
   appleScheduleOsUpdatePayload,
+  appleSoftwareUpdateEnforcementDeclaration,
+  appleSoftwareUpdateEnforcementSupported,
   androidSystemUpdatePolicy,
   completeOsPolicy,
   countOsCompliance,
   deriveOsCompliance,
+  formatAppleLocalDateTime,
   normalizeMinimumVersion,
   osPolicyDeferralEndsAt,
+  unsupportedAppleOsPolicyFamily,
   windowsOsUpdatePolicyNodes,
 } from "./index.js";
 import type { MacOsUpdateCatalog, OsPolicyRule } from "./index.js";
@@ -57,6 +63,20 @@ const mac = (osVersion: string) => ({
   osVersion,
   osEdition: "macOS",
   model: "Mac14,2",
+});
+
+const iphone = (osVersion: string) => ({
+  proto: "apple",
+  osVersion,
+  osEdition: "iOS",
+  model: "iPhone15,2",
+});
+
+const ipad = (osVersion: string) => ({
+  proto: "apple",
+  osVersion,
+  osEdition: "iPadOS",
+  model: "iPad14,1",
 });
 
 describe("normalizeMinimumVersion", () => {
@@ -188,15 +208,132 @@ describe("deriveOsCompliance", () => {
 
   it("does not apply a macOS minimum to iOS", () => {
     const info = deriveOsCompliance(
-      { proto: "apple", osEdition: "iOS", osVersion: "18.1", model: "iPhone15,2" },
+      iphone("18.1"),
       [rule({ platform: "macos", minimumVersion: "99.0", enforcement: "enforce" })],
       catalog,
       { now },
     );
 
+    // iOS is covered now, but it has its own rule; a macOS rule never leaks.
     expect(info.status).toBe("unknown");
-    expect(info.reason).toBe("platform_not_covered");
+    expect(info.reason).toBe("policy_not_configured");
+    expect(info.platform).toBe("ios");
     expect(info.minimumVersion).toBeNull();
+  });
+
+  it("compares iOS and iPadOS against their own minimums", () => {
+    const rules = [
+      rule({ platform: "ios", minimumVersion: "18.0", enforcement: "warn" }),
+      rule({ platform: "ipados", minimumVersion: "18.0", enforcement: "enforce" }),
+    ];
+
+    expect(deriveOsCompliance(iphone("17.6"), rules, catalog, { now })).toMatchObject({
+      status: "below-minimum",
+      reason: "below_minimum",
+      platform: "ios",
+      targetVersion: "18.0",
+      enforced: false,
+    });
+
+    expect(deriveOsCompliance(ipad("17.6"), rules, catalog, { now })).toMatchObject({
+      status: "below-minimum",
+      platform: "ipados",
+      enforced: true,
+    });
+
+    expect(deriveOsCompliance(ipad("18.1"), rules, catalog, { now })).toMatchObject({
+      status: "compliant",
+      reason: "up_to_date_minimum_only",
+      updateKnowledge: "unknown",
+    });
+  });
+
+  it("reports a DDM-pending iOS update even above the minimum", () => {
+    const info = deriveOsCompliance(
+      { ...iphone("18.0"), osUpdatePendingVersion: "18.2", osUpdateInstallState: "downloading" },
+      [rule({ platform: "ios", minimumVersion: "18.0", enforcement: "enforce" })],
+      catalog,
+      { now },
+    );
+
+    expect(info).toMatchObject({
+      status: "update-available",
+      reason: "ddm_update_pending",
+      currentVersion: "18.0",
+      targetVersion: "18.2",
+      latestVersion: "18.2",
+      updateKnowledge: "known",
+    });
+  });
+
+  it("reports an install in progress without a pending version", () => {
+    const info = deriveOsCompliance(
+      { ...ipad("18.1"), osUpdateInstallState: "installing" },
+      [rule({ platform: "ipados", minimumVersion: "18.0", enforcement: "warn" })],
+      catalog,
+      { now },
+    );
+
+    expect(info).toMatchObject({ status: "update-available", reason: "ddm_update_pending" });
+  });
+
+  it("does not let a pending DDM update bypass policy state", () => {
+    const device = {
+      ...iphone("18.0"),
+      osUpdatePendingVersion: "18.2",
+      osUpdateInstallState: "downloading",
+    };
+
+    expect(deriveOsCompliance(device, [], catalog, { now })).toMatchObject({
+      status: "unknown",
+      reason: "policy_not_configured",
+    });
+
+    expect(
+      deriveOsCompliance(
+        device,
+        [rule({ platform: "ios", minimumVersion: "18.0", enforcement: "off" })],
+        catalog,
+        { now },
+      ),
+    ).toMatchObject({ status: "unknown", reason: "policy_off" });
+
+    // A warning rule is still a configured policy, so the pending update is
+    // reported; it just does not change the device.
+    expect(
+      deriveOsCompliance(
+        device,
+        [rule({ platform: "ios", minimumVersion: "18.0", enforcement: "warn" })],
+        catalog,
+        { now },
+      ),
+    ).toMatchObject({ status: "update-available", reason: "ddm_update_pending" });
+  });
+
+  it("marks tvOS, watchOS and visionOS explicitly unsupported", () => {
+    for (const osEdition of ["tvOS", "watchOS", "visionOS"]) {
+      const info = deriveOsCompliance(
+        { proto: "apple", osEdition, osVersion: "26.0", model: "Unknown" },
+        [],
+        catalog,
+        { now },
+      );
+
+      expect(info.status).toBe("unknown");
+      expect(info.reason).toBe("platform_unsupported");
+      expect(info.platform).toBeNull();
+    }
+  });
+
+  it("detects Apple families from the edition and the model fallback", () => {
+    expect(appleOsPolicyPlatform(iphone("18.1"))).toBe("ios");
+    expect(appleOsPolicyPlatform(ipad("18.1"))).toBe("ipados");
+    expect(appleOsPolicyPlatform(mac("15.1"))).toBe("macos");
+    expect(appleOsPolicyPlatform({ proto: "apple", osVersion: "18.1", model: "iPhone15,2" })).toBe(
+      "ios",
+    );
+    expect(unsupportedAppleOsPolicyFamily({ osEdition: "visionOS" })).toBe("visionos");
+    expect(unsupportedAppleOsPolicyFamily({ osEdition: "iPadOS" })).toBeNull();
   });
 
   it("compares Windows only against the configured minimum", () => {
@@ -339,11 +476,132 @@ describe("policy remediation payloads", () => {
   });
 });
 
+describe("Apple DDM software-update enforcement", () => {
+  const enforced = rule({
+    platform: "ios",
+    minimumVersion: "18.1",
+    enforcement: "enforce",
+    deferralDays: 7,
+    updatedAt: new Date("2026-11-15T12:00:00.000Z"),
+  });
+
+  it("compiles the target version and deferral deadline", () => {
+    expect(appleSoftwareUpdateEnforcementDeclaration(enforced)).toEqual({
+      Type: "com.apple.configuration.softwareupdate.enforcement.specific",
+      Payload: {
+        TargetOSVersion: "18.1",
+        TargetLocalDateTime: "2026-11-22T12:00:00",
+      },
+    });
+  });
+
+  it("uses the save time when there is no deferral and omits warn/off", () => {
+    expect(
+      appleSoftwareUpdateEnforcementDeclaration({
+        ...enforced,
+        deferralDays: 0,
+      })?.Payload.TargetLocalDateTime,
+    ).toBe("2026-11-15T12:00:00");
+
+    expect(
+      appleSoftwareUpdateEnforcementDeclaration({ ...enforced, enforcement: "warn" }),
+    ).toBeNull();
+    expect(
+      appleSoftwareUpdateEnforcementDeclaration({ ...enforced, minimumVersion: null }),
+    ).toBeNull();
+    expect(appleSoftwareUpdateEnforcementDeclaration(null)).toBeNull();
+  });
+
+  it("carries an optional details URL and formats without a zone", () => {
+    expect(
+      appleSoftwareUpdateEnforcementDeclaration(enforced, {
+        detailsUrl: " https://example.test/it ",
+      })?.Payload.DetailsURL,
+    ).toBe("https://example.test/it");
+    expect(formatAppleLocalDateTime(new Date("2026-11-22T12:34:56.789Z"))).toBe(
+      "2026-11-22T12:34:56",
+    );
+  });
+
+  it("only considers the declaration available from the documented OS versions", () => {
+    expect(appleSoftwareUpdateEnforcementSupported(iphone("16.7"))).toBe(false);
+    expect(appleSoftwareUpdateEnforcementSupported(iphone("17.0"))).toBe(true);
+    expect(appleSoftwareUpdateEnforcementSupported(ipad("17.4"))).toBe(true);
+    expect(appleSoftwareUpdateEnforcementSupported({ proto: "apple", osEdition: "iOS" })).toBe(
+      false,
+    );
+  });
+
+  it("chooses DDM only for an enforcing rule and names every fallback", () => {
+    const enforcing = rule({ platform: "ios", minimumVersion: "18.0", enforcement: "enforce" });
+    const warning = rule({ platform: "ios", minimumVersion: "18.0", enforcement: "warn" });
+    const macEnforcing = rule({
+      platform: "macos",
+      minimumVersion: "15.0",
+      enforcement: "enforce",
+    });
+
+    expect(appleOsUpdateMechanism({ device: iphone("18.1"), rule: enforcing })).toBe(
+      "ddm-software-update",
+    );
+    // No declaration is compiled for warn/off/absent rules, so a 17+ phone has
+    // no command path and must not be offered Apply.
+    expect(appleOsUpdateMechanism({ device: iphone("18.1"), rule: warning })).toBeNull();
+    expect(appleOsUpdateMechanism({ device: iphone("18.1") })).toBeNull();
+    // Below 17 the declaration does not exist; the command is the only path.
+    expect(appleOsUpdateMechanism({ device: iphone("16.7"), rule: enforcing })).toBe(
+      "schedule-os-update",
+    );
+    expect(
+      appleOsUpdateMechanism({
+        device: iphone("18.1"),
+        rule: enforcing,
+        declarationMode: "legacy",
+      }),
+    ).toBe("schedule-os-update");
+    // BYOD is unsupervised and has neither path.
+    expect(
+      appleOsUpdateMechanism({
+        device: iphone("18.1"),
+        rule: enforcing,
+        enrollmentMode: "user",
+      }),
+    ).toBeNull();
+    // macOS keeps the manual command under warn, but Apple removed it in 27.
+    expect(appleOsUpdateMechanism({ device: mac("15.1"), rule: macEnforcing })).toBe(
+      "ddm-software-update",
+    );
+    expect(
+      appleOsUpdateMechanism({
+        device: mac("15.1"),
+        rule: rule({ platform: "macos", minimumVersion: "15.0", enforcement: "warn" }),
+      }),
+    ).toBe("schedule-os-update");
+    expect(appleOsUpdateMechanism({ device: mac("27.0"), rule: macEnforcing })).toBe(
+      "ddm-software-update",
+    );
+    expect(
+      appleOsUpdateMechanism({
+        device: mac("27.0"),
+        rule: rule({ platform: "macos", minimumVersion: "26.0", enforcement: "warn" }),
+      }),
+    ).toBeNull();
+    expect(appleOsUpdateMechanism({ device: { proto: "win" } })).toBeNull();
+  });
+});
+
 describe("completeOsPolicy", () => {
   it("fills every platform with an inert default", () => {
     const completed = completeOsPolicy([rule({ platform: "macos", minimumVersion: "14.6" })]);
 
-    expect(completed.map((entry) => entry.platform)).toEqual(["macos", "windows", "android"]);
+    expect(completed.map((entry) => entry.platform)).toEqual([
+      "macos",
+      "ios",
+      "ipados",
+      "windows",
+      "android",
+    ]);
+    expect(completed[0]?.minimumVersion).toBe("14.6");
     expect(completed[1]?.enforcement).toBe("off");
     expect(completed[2]?.minimumVersion).toBeNull();
   });

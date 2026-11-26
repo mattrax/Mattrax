@@ -36,7 +36,6 @@ Repository variables (Settings → Secrets and variables → Actions → Variabl
 | `PREVIEW_HYPERDRIVE_ID`  | Hyperdrive config for the preview database.                                            |
 | `PREVIEW_STORAGE_BUCKET` | R2 bucket for preview uploads and backups. Must exist before the first preview deploy. |
 | `PRODUCTION_ORIGIN`      | Optional. Defaults to `https://e.mattrax.app`.                                         |
-| `SERVICES_TOKEN`         | Shared token for the hosted services deployment (billing and entitlements).            |
 
 The Workers' own secrets are shared by production and every Preview of that
 Worker, so they only need to be set once (for example with `cf secrets put`):
@@ -47,10 +46,29 @@ Worker, so they only need to be set once (for example with `cf secrets put`):
   defaults to `http://localhost:9050`.
 - `AUTH_SECRET`, `TRUSTED_ORIGINS`, the Stripe keys, Apple/Android/Entra
   credentials and `POSTHOG_*` as used by production.
+- `SERVICES_TOKEN` on the API Worker, matching the services deployment. It
+  authorises hosted billing and signs APNs relay requests.
 - `DEV_MAILBOX_SECRET` on **both** Workers. Previews opt into
   `DEV_MAILBOX=true` + `DEV_MAILBOX_ALLOW_REMOTE=true`, which requires this
   secret; it lets a tester read sign-up codes from `/api/debug/emails` without
   sending real mail. Do not publish the secret with a preview link.
+
+### Services token rollout
+
+`SERVICES_TOKEN` must be byte-for-byte identical on the API Worker and the
+services deployment. It authenticates hosted billing and now also signs APNs
+relay requests, so the two releases must move together:
+
+1. Set `SERVICES_TOKEN` on both sides where only the former relay secret
+   existed.
+2. Deploy the services release and the Cloud release together. Alternatively,
+   stage a services release that accepts both credentials first, then deploy
+   Cloud, then remove the old secret.
+3. Remove the legacy standalone relay secret once Cloud is signing with
+   `SERVICES_TOKEN`. The unsupported `apps/apns-relay` host has been retired.
+
+A self-hosted deployment is unaffected: it authenticates the relay and billing
+with `MATTRAX_LICENSE_KEY` and needs no coordinated rollout.
 
 ## Cloudflare resources
 
@@ -142,6 +160,35 @@ Rolling an agent release back is a `mattraxd update --channel stable --force`
 after re-pointing `stable.json` at the older manifest (or restoring the previous
 release asset). Keep the per-release `mattraxd-manifest.json`: it records the
 exact artifact URLs and checksums that shipped.
+
+## Container image releases
+
+The self-hosted image is released by `.github/workflows/release.yml`, separately
+from the Workers and the agent:
+
+- Pushing a `v<version>` tag builds `apps/docker/Dockerfile`, pushes a
+  per-run staging tag, runs the documented compose stack against that exact
+  digest and only then publishes `ghcr.io/mattrax/mattrax:<version>`, plus
+  `latest` when the version is the newest stable release.
+- `workflow_dispatch` re-cuts an image from a branch by naming the version;
+  `publish=false` builds and smoke-tests without creating release tags.
+- A version tag is immutable: publishing fails if the tag already points at a
+  different digest. `latest` only moves forward to the newest stable release, so
+  re-cutting an older version cannot roll it back. Publishing is serialised
+  across runs, so a tag and a dispatch cannot race.
+- Pre-release versions publish only their own tag, so `latest` never moves to an
+  rc. Pull requests never publish.
+- Images are `linux/amd64` with BuildKit provenance and an SPDX SBOM;
+  `docker buildx imagetools inspect ghcr.io/mattrax/mattrax:<version>` shows
+  both.
+
+GHCR creates the package private. After the first release an organisation owner
+must set the `mattrax` package's visibility to public, or self-hosters cannot
+pull it anonymously.
+
+The image is released with the GitHub release for the tag: the workflow creates
+one (with the image digest) when the tag has no release yet, and leaves an
+existing release's notes untouched.
 
 ## Rolling back production
 

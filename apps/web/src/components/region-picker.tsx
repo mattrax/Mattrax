@@ -1,8 +1,9 @@
 import { geoCentroid, geoGraticule10, geoOrthographic, geoPath } from "d3-geo";
 import type { Feature, Geometry } from "geojson";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { CatalogueService, runCatalogue } from "~/lib/catalogue-service";
 import { Portal } from "@solidjs/web";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
 import { LoadingState } from "~/components/ui";
 import { Button } from "~/components/ui/button";
 import {
@@ -15,6 +16,9 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { ChevronDown, Globe, Plus, RotateCcw, Search } from "~/components/ui/icons";
+import { flagOf, regionName } from "~/components/region-label";
+import { clampZoom, rotateByDrag, rotateByKey } from "~/components/region-globe";
+import { isSubmitEnter } from "~/lib/ime";
 
 const GLOBE_SIZE = 480;
 const GLOBE_CENTER = GLOBE_SIZE / 2;
@@ -37,60 +41,12 @@ const WorldSchema = Schema.Struct({
 type Country = typeof CountrySchema.Type;
 type World = typeof WorldSchema.Type;
 
-const decodeWorld = Schema.decodeUnknownSync(WorldSchema);
-
-let cachedWorld: World | undefined;
-let worldPromise: Promise<World> | undefined;
-
-const fetchWorld = (): Promise<World> => {
-  if (cachedWorld) return Promise.resolve(cachedWorld);
-  worldPromise ??= fetch("/assets/world-countries.geojson")
-    .then(async (response) => {
-      if (!response.ok) throw new Error(`Map request failed (${response.status})`);
-
-      return decodeWorld(await response.json());
-    })
-    .then((world) => {
-      cachedWorld = world;
-
-      return world;
-    })
-    .catch((error: unknown) => {
-      worldPromise = undefined;
-      throw error;
-    });
-
-  return worldPromise;
-};
-
-let regionNames: Intl.DisplayNames | undefined;
-
-try {
-  regionNames = new Intl.DisplayNames(["en"], { type: "region" });
-} catch {
-  regionNames = undefined;
-}
-
-const regionName = (code: string): string => {
-  const normalized = code.trim().toUpperCase();
-
-  if (normalized.length !== 2) return normalized;
-
-  try {
-    return regionNames?.of(normalized) ?? normalized;
-  } catch {
-    return normalized;
-  }
-};
-
-const flagOf = (code: string): string =>
-  code
-    .trim()
-    .toUpperCase()
-    .replaceAll(/[A-Z]/g, (character) => String.fromCodePoint(127397 + character.charCodeAt(0)));
-
-const clamp = (value: number, minimum: number, maximum: number) =>
-  Math.min(maximum, Math.max(minimum, value));
+const fetchWorld = (): Promise<World> =>
+  runCatalogue(
+    CatalogueService.pipe(
+      Effect.flatMap((service) => service.get("/assets/world-countries.geojson", WorldSchema)),
+    ),
+  );
 
 const asFeature = (country: Country): Feature<Geometry> => ({
   type: "Feature",
@@ -127,13 +83,21 @@ const centerOn = (country: Country, projectionFactor = 1.55) => {
  * the wheel zooms, and a click resolves the country's ISO alpha-2 code, which is
  * exactly the value the tenant form saves.
  */
-export function RegionPicker(props: {
+export default function RegionPicker(props: {
   value: string;
   disabled?: boolean;
   onChange: (code: string) => void;
+  /** Open the globe on mount; used when a placeholder click wakes the picker. */
+  initialOpen?: boolean;
 }) {
-  const [open, setOpen] = createSignal(false);
+  const [open, setOpen] = createSignal(props.initialOpen ?? false);
   const [world, setWorld] = createSignal<World>();
+
+  // A click on the preload placeholder mounts this component with the dialog
+  // already open; run the normal open path so the map starts fetching.
+  onSettled(() => {
+    if (props.initialOpen) openPicker();
+  });
   const [mapState, setMapState] = createSignal<"idle" | "loading" | "ready" | "error">("idle");
   const [selected, setSelected] = createSignal((props.value || "US").toUpperCase());
   const [query, setQuery] = createSignal("");
@@ -151,7 +115,8 @@ export function RegionPicker(props: {
         readonly phi: number;
       }
     | undefined;
-  let globeSurface: HTMLDivElement | undefined;
+  let globeSurface: HTMLButtonElement | undefined;
+  let searchInput: HTMLInputElement | undefined;
 
   const countries = createMemo(() => {
     const entries = (world()?.features ?? []).map((country) => {
@@ -260,13 +225,17 @@ export function RegionPicker(props: {
     setPhi(-16);
   };
 
-  const zoomBy = (factor: number) => setZoom((current) => clamp(current * factor, 1, 3));
+  const zoomBy = (factor: number) => setZoom((current) => clampZoom(current * factor));
 
   const choose = (country: Country) => {
     setSelected(country.properties.iso.toUpperCase());
     setQuery("");
     setResultsOpen(false);
     focusCountry(country);
+
+    // Selecting a result removes the focused button. Return focus to the
+    // search field so keyboard users stay inside the dialog.
+    requestAnimationFrame(() => searchInput?.focus({ preventScroll: true }));
   };
 
   const startRotate = (event: PointerEvent) => {
@@ -288,8 +257,15 @@ export function RegionPicker(props: {
       const dy = moveEvent.clientY - dragging.startY;
 
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-      setLambda(dragging.lambda - dx * 0.3);
-      setPhi(clamp(dragging.phi + dy * 0.3, -80, 80));
+
+      const next = rotateByDrag(
+        { lambda: dragging.lambda, phi: dragging.phi, zoom: zoom() },
+        dx,
+        dy,
+      );
+
+      setLambda(next.lambda);
+      setPhi(next.phi);
     };
 
     const finish = () => {
@@ -309,6 +285,30 @@ export function RegionPicker(props: {
     zoomBy(Math.exp(-event.deltaY * 0.0015));
   };
 
+  /** Keep the globe usable without a pointer: arrows rotate, +/- zoom, 0 resets. */
+  const onKeyDown = (event: KeyboardEvent) => {
+    const next = rotateByKey({ lambda: lambda(), phi: phi(), zoom: zoom() }, event.key);
+
+    if (next) {
+      event.preventDefault();
+      setLambda(next.lambda);
+      setPhi(next.phi);
+
+      return;
+    }
+
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      zoomBy(1.25);
+    } else if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      zoomBy(0.8);
+    } else if (event.key === "0") {
+      event.preventDefault();
+      resetView();
+    }
+  };
+
   const apply = (code: string) => {
     props.onChange(code.toUpperCase());
     setOpen(false);
@@ -316,7 +316,7 @@ export function RegionPicker(props: {
 
   return (
     <>
-      <button
+      <Button
         type="button"
         aria-label={
           props.value
@@ -325,40 +325,43 @@ export function RegionPicker(props: {
         }
         disabled={props.disabled}
         onClick={openPicker}
-        class="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-card px-2.5 text-left text-[13px] text-foreground outline-none transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
+        class="flex h-9 w-full items-center text-left"
       >
         <Show
           when={props.value}
           fallback={
             <>
-              <Globe class="size-3.5 shrink-0 text-muted-foreground" />
+              <Globe class="size-3.5 shrink-0" />
               <span class="min-w-0 flex-1 truncate text-muted-foreground">Use default (US)</span>
             </>
           }
         >
-          <span class="shrink-0 text-[15px] leading-none">{flagOf(props.value)}</span>
+          <span class="shrink-0 text-sm leading-none">{flagOf(props.value)}</span>
           <span class="min-w-0 flex-1 truncate">{regionName(props.value)}</span>
-          <span class="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+          <span class="shrink-0 font-mono text-xs text-muted-foreground">
             {props.value.toUpperCase()}
           </span>
         </Show>
-        <ChevronDown class="ml-auto size-3.5 shrink-0 text-muted-foreground" />
-      </button>
+        <ChevronDown class="ml-auto size-3.5 shrink-0" />
+      </Button>
 
       <Portal>
         <Dialog open={open()} onOpenChange={setOpen}>
-          <DialogContent class="w-[min(calc(100vw-2rem),50rem)] max-h-[min(90vh,46rem)]">
+          <DialogContent class="w-full max-w-4xl max-h-full">
             <DialogHeader>
               <DialogTitle>Choose App Store region</DialogTitle>
               <DialogDescription>
-                Drag the globe to rotate it, scroll to zoom, or search for a country. Clicking a
-                country resolves its two-letter storefront code.
+                Drag the globe to rotate it, scroll or use plus and minus to zoom, or search for a
+                country. With the globe focused, the arrow keys rotate it and 0 resets the view.
               </DialogDescription>
             </DialogHeader>
 
             <div class="relative z-20">
-              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
               <Input
+                ref={(element) => {
+                  searchInput = element;
+                }}
                 value={query()}
                 onInput={(event) => {
                   setQuery(event.currentTarget.value);
@@ -366,7 +369,7 @@ export function RegionPicker(props: {
                 }}
                 onFocus={() => setResultsOpen(true)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") {
+                  if (isSubmitEnter(event)) {
                     const first = matches()[0];
 
                     if (first) {
@@ -385,24 +388,24 @@ export function RegionPicker(props: {
                   <Show
                     when={matches().length > 0}
                     fallback={
-                      <p class="px-2.5 py-2 text-[11.5px] text-muted-foreground">
+                      <p class="px-2.5 py-2 text-xs text-muted-foreground">
                         No countries match.
                       </p>
                     }
                   >
                     <For each={matches()}>
                       {(country) => (
-                        <button
+                        <Button
                           type="button"
                           onClick={() => choose(country.country)}
-                          class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] text-foreground transition-colors hover:bg-hover focus-visible:bg-hover focus-visible:outline-none"
+                          class="flex w-full items-center text-left"
                         >
-                          <span class="text-[14px] leading-none">{flagOf(country.code)}</span>
+                          <span class="text-sm leading-none">{flagOf(country.code)}</span>
                           <span class="min-w-0 flex-1 truncate">{country.name}</span>
-                          <span class="font-mono text-[10px] text-muted-foreground">
+                          <span class="font-mono text-xs text-muted-foreground">
                             {country.code}
                           </span>
-                        </button>
+                        </Button>
                       )}
                     </For>
                   </Show>
@@ -413,7 +416,7 @@ export function RegionPicker(props: {
             <Show
               when={mapState() === "ready" && world()}
               fallback={
-                <div class="flex h-[360px] flex-col items-center justify-center gap-2 text-[12px] text-muted-foreground">
+                <div class="flex h-90 flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
                   <Show
                     when={mapState() === "error"}
                     fallback={<LoadingState label="Loading globe…" size={18} pattern="spiral" />}
@@ -427,15 +430,18 @@ export function RegionPicker(props: {
               }
             >
               {(loadedWorld) => (
-                <div class="relative mx-auto mt-1 aspect-square w-full max-w-[480px]">
-                  <div
-                    ref={(element) => {
-                      globeSurface = element;
+                <div class="relative mx-auto mt-1 aspect-square w-full max-w-120">
+                  <Button
+                    type="button"
+                    ref={(element: HTMLButtonElement | HTMLAnchorElement) => {
+                      globeSurface = element as HTMLButtonElement;
                     }}
                     data-region-globe
-                    class="h-full w-full cursor-grab touch-none select-none active:cursor-grabbing"
+                    aria-label="Region globe. Drag or use the arrow keys to rotate, plus and minus to zoom, and 0 to reset."
+                    class="block h-full w-full cursor-grab touch-none select-none active:cursor-grabbing"
                     onWheel={onWheel}
-                    onPointerDown={(event) => {
+                    onKeyDown={onKeyDown}
+                    onPointerDown={(event: PointerEvent) => {
                       setResultsOpen(false);
                       startRotate(event);
                     }}
@@ -446,7 +452,7 @@ export function RegionPicker(props: {
                         <radialGradient id="globe-shade" cx="34%" cy="28%" r="78%">
                           <stop offset="0%" stop-color="var(--card)" stop-opacity="0" />
                           <stop offset="72%" stop-color="var(--foreground)" stop-opacity="0.02" />
-                          <stop offset="100%" stop-color="var(--foreground)" stop-opacity="0.14" />
+                          <stop offset="100%" stop-color="var(--foreground)" stop-opacity="0.08" />
                         </radialGradient>
                       </defs>
                       <path
@@ -471,15 +477,15 @@ export function RegionPicker(props: {
                             data-code={country.properties.iso.toLowerCase()}
                             fill={
                               selected() === country.properties.iso.toUpperCase()
-                                ? "var(--brand-solid)"
+                                ? "var(--globe-selected)"
                                 : hovered() === country.properties.iso
-                                  ? "var(--brand-muted)"
-                                  : "var(--card)"
+                                  ? "var(--globe-hover)"
+                                  : "var(--globe-land)"
                             }
-                            stroke="var(--border)"
+                            stroke="var(--globe-land-stroke)"
                             stroke-width="0.55"
                             vector-effect="non-scaling-stroke"
-                            class="cursor-pointer transition-[fill] duration-[var(--duration-press)] ease-swift"
+                            class="cursor-pointer transition-colors duration-100 ease-swift"
                             onPointerEnter={() => setHovered(country.properties.iso)}
                             onClick={(event) => {
                               event.stopPropagation();
@@ -491,41 +497,41 @@ export function RegionPicker(props: {
                       </For>
                       <path d={spherePath()} fill="url(#globe-shade)" pointer-events="none" />
                     </svg>
-                  </div>
+                  </Button>
 
                   <div
                     class="absolute right-2 top-2 flex flex-col overflow-hidden rounded-md border border-border bg-card/95 shadow-card"
                     onPointerDown={(event) => event.stopPropagation()}
                   >
-                    <button
+                    <Button
                       type="button"
                       aria-label="Zoom in"
-                      class="flex size-7 items-center justify-center text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                      class="flex size-7 items-center justify-center"
                       onClick={() => zoomBy(1.25)}
                     >
                       <Plus class="size-3.5" />
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
                       aria-label="Zoom out"
-                      class="flex size-7 items-center justify-center border-t border-border text-[15px] leading-none text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                      class="flex size-7 items-center justify-center"
                       onClick={() => zoomBy(0.8)}
                     >
                       −
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
                       aria-label="Reset globe view"
-                      class="flex size-7 items-center justify-center border-t border-border text-muted-foreground transition-colors hover:bg-hover hover:text-foreground"
+                      class="flex size-7 items-center justify-center"
                       onClick={resetView}
                     >
                       <RotateCcw class="size-3.5" />
-                    </button>
+                    </Button>
                   </div>
 
                   <Show when={hovered()}>
                     {(code) => (
-                      <div class="pointer-events-none absolute left-2 top-2 rounded-md bg-popover/95 px-2 py-1 text-[11px] font-medium text-foreground shadow-card ring-1 ring-border">
+                      <div class="pointer-events-none absolute left-2 top-2 rounded-md bg-popover/95 px-2 py-1 text-xs font-medium text-foreground shadow-card ring-1 ring-border">
                         {regionName(code())}
                       </div>
                     )}
@@ -534,14 +540,14 @@ export function RegionPicker(props: {
               )}
             </Show>
 
-            <DialogFooter class="items-center justify-between gap-3 sm:justify-between">
+            <DialogFooter class="items-center justify-between">
               <div class="flex min-w-0 items-center gap-2">
-                <span class="text-[17px] leading-none">{flagOf(selected())}</span>
+                <span class="text-base leading-none">{flagOf(selected())}</span>
                 <div class="min-w-0">
-                  <p class="truncate text-[12.5px] font-[550] text-foreground">
+                  <p class="truncate text-xs font-medium text-foreground">
                     {regionName(selected())}
                   </p>
-                  <p class="font-mono text-[10px] text-muted-foreground">{selected()}</p>
+                  <p class="font-mono text-xs text-muted-foreground">{selected()}</p>
                 </div>
               </div>
               <div class="flex flex-wrap items-center justify-end gap-2">
@@ -557,7 +563,7 @@ export function RegionPicker(props: {
               </div>
             </DialogFooter>
 
-            <p class="text-[10px] leading-relaxed text-muted-foreground">
+            <p class="text-xs leading-relaxed text-muted-foreground">
               Map data:{" "}
               <a
                 href="https://www.naturalearthdata.com/"

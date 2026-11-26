@@ -1,5 +1,22 @@
 import { Schema } from "effect";
 import { isMacOsDevice } from "./deviceHealth.js";
+import { normalizeAppleDeviceName } from "./deviceInventory.js";
+import {
+  APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR,
+  appleScheduleOsUpdateSupported,
+} from "./osPolicy.js";
+import {
+  WINDOWS_BITLOCKER_ROTATION_MIN_BUILD,
+  WINDOWS_DIAGNOSTICS_MIN_BUILD,
+  WINDOWS_FRESH_START_MIN_BUILD,
+  WINDOWS_LAPS_MIN_BUILD,
+  windowsBitlockerRotationSupported,
+  windowsBuildNumber,
+  windowsDiagnosticsSupported,
+  windowsFreshStartEditionSupported,
+  windowsFreshStartSupported,
+  windowsLapsSupported,
+} from "./windowsSecurity.js";
 
 /**
  * Remote actions a device can be asked to perform.
@@ -25,16 +42,26 @@ export const DeviceActionName = Schema.Literals([
   "verify-recovery-lock",
   "start-lost-mode",
   "stop-lost-mode",
+  "play-lost-mode-sound",
+  "refresh-local-accounts",
+  "rotate-local-admin-password",
   "reset-password",
   "clear-app-data",
   "request-device-info",
   "relinquish-ownership",
   "schedule-os-update",
   "set-device-name",
+  "set-lock-screen-message",
+  "fresh-start",
+  "collect-diagnostics",
+  "rotate-bitlocker-key",
   "unenroll",
 ]);
 
 export type DeviceActionName = typeof DeviceActionName.Type;
+
+/** Decode a stored `actions` array into the typed action union. */
+export const DeviceActionNameList = Schema.Array(DeviceActionName);
 
 /**
  * Actions that address one Apple user channel instead of the device.
@@ -88,6 +115,12 @@ const APPLE_ACTIONS: ReadonlyArray<DeviceActionName> = [
   "verify-recovery-lock",
   "schedule-os-update",
   "set-device-name",
+  "set-lock-screen-message",
+  "start-lost-mode",
+  "stop-lost-mode",
+  "play-lost-mode-sound",
+  "refresh-local-accounts",
+  "rotate-local-admin-password",
   "unenroll",
 ];
 
@@ -96,7 +129,15 @@ const APPLE_ACTIONS: ReadonlyArray<DeviceActionName> = [
  * so `sync` is deliberately absent. Wipe and restart are delivered as OMA-DM
  * `Exec` commands; unenroll uses `DMClient/Provider/{ProviderID}/Unenroll`.
  */
-const WINDOWS_ACTIONS: ReadonlyArray<DeviceActionName> = ["wipe", "restart", "unenroll"];
+const WINDOWS_ACTIONS: ReadonlyArray<DeviceActionName> = [
+  "wipe",
+  "restart",
+  "fresh-start",
+  "collect-diagnostics",
+  "rotate-bitlocker-key",
+  "rotate-local-admin-password",
+  "unenroll",
+];
 
 /**
  * Android Management API commands cover lock, wipe, reboot, lost mode,
@@ -154,6 +195,24 @@ const ACTION_CAPABILITIES: ReadonlyMap<string, DeviceActionName> = new Map([
   ["set-device-name", "set-device-name"],
   ["device-name", "set-device-name"],
   ["rename", "set-device-name"],
+  ["set-lock-screen-message", "set-lock-screen-message"],
+  ["lock-screen-message", "set-lock-screen-message"],
+  ["start-lost-mode", "start-lost-mode"],
+  ["enable-lost-mode", "start-lost-mode"],
+  ["stop-lost-mode", "stop-lost-mode"],
+  ["disable-lost-mode", "stop-lost-mode"],
+  ["play-lost-mode-sound", "play-lost-mode-sound"],
+  ["refresh-local-accounts", "refresh-local-accounts"],
+  ["user-list", "refresh-local-accounts"],
+  ["rotate-local-admin-password", "rotate-local-admin-password"],
+  ["set-auto-admin-password", "rotate-local-admin-password"],
+  ["fresh-start", "fresh-start"],
+  ["freshstart", "fresh-start"],
+  ["cleanpc", "fresh-start"],
+  ["collect-diagnostics", "collect-diagnostics"],
+  ["diagnostics", "collect-diagnostics"],
+  ["rotate-bitlocker-key", "rotate-bitlocker-key"],
+  ["bitlocker-rotation", "rotate-bitlocker-key"],
   ["unenroll", "unenroll"],
 ]);
 
@@ -214,7 +273,19 @@ export type DeviceActionInput = {
   /** OS edition/version narrow commands that only newer releases support. */
   readonly osEdition?: string | null;
   readonly osVersion?: string | null;
+  /** Windows build (for example `22631.3155`); falls back to `osVersion`. */
+  readonly osBuild?: string | null;
   readonly model?: string | null;
+  /** Windows security state used to advertise BitLocker actions. */
+  readonly bitLockerEnabled?: boolean | null;
+  readonly entraDeviceId?: string | null;
+  readonly domainName?: string | null;
+  /** True when an effective Windows LAPS policy applies to the device. */
+  readonly windowsLapsConfigured?: boolean | null;
+  /** Apple delivery path recorded on `device_apple`; legacy cannot use DDM. */
+  readonly declarationMode?: "ddm" | "legacy" | null;
+  /** Apple enrolment mode. User enrolment is BYOD and never supervised. */
+  readonly enrollmentMode?: "device" | "user" | null;
   /**
    * Android Management API management mode (`DEVICE_OWNER`, `PROFILE_OWNER`).
    * Unknown or omitted values leave the action available so a stale report
@@ -224,10 +295,13 @@ export type DeviceActionInput = {
   /** Android ownership (`COMPANY_OWNED` / `PERSONALLY_OWNED`). */
   readonly ownership?: string | null;
   /**
-   * Apple enrollment mode. `user` is an Apple User Enrollment (BYOD), which
-   * cannot receive supervised-only `Settings` commands.
+   * Apple Lost Mode state from `device_apple`. `play-lost-mode-sound` is only
+   * meaningful while the device is actually in Lost Mode; Apple rejects it
+   * otherwise.
    */
-  readonly enrollmentMode?: string | null;
+  readonly lostModeEnabled?: boolean | null;
+  /** GUID of the managed local administrator, reported by `UserList`. */
+  readonly localAdminGuid?: string | null;
 };
 
 const majorOsVersion = (value: string | null | undefined): number | null => {
@@ -237,6 +311,116 @@ const majorOsVersion = (value: string | null | undefined): number | null => {
   const major = Number(match[1]);
 
   return Number.isFinite(major) ? major : null;
+};
+
+/**
+ * Return to Service is an `EraseDevice` option on iOS/iPadOS 17+, tvOS 18+ and
+ * visionOS 26+. Apple does not support it on macOS at all. An unknown version
+ * stays advertised and the handler gives the precise error.
+ */
+/**
+ * Apple only implements the LockScreenMessage command on supervised
+ * iPhone/iPadOS devices. The command does not exist on macOS, tvOS or
+ * visionOS, and Apple User Enrollment (BYOD) devices are not supervised.
+ *
+ * Supervision is not reported by Apple, so an Apple device whose OS family is
+ * not identifiable (for example a fresh enrollment before its first inventory
+ * report) stays eligible: rejecting it would hide a valid control, and the
+ * device's command result is the authoritative confirmation.
+ */
+export const isAppleLockScreenMessageDevice = (input: DeviceActionInput): boolean => {
+  if (input.proto !== "apple") return false;
+  if (input.enrollmentMode === "user") return false;
+
+  const identity = `${input.osEdition ?? ""} ${input.model ?? ""}`;
+
+  if (/mac/i.test(identity)) return false;
+  if (/tvos|apple\s*tv/i.test(identity)) return false;
+  if (/visionos|apple\s*vision/i.test(identity)) return false;
+  if (/watchos|audioos/i.test(identity)) return false;
+
+  return true;
+};
+
+/**
+ * Apple implements `EnableLostMode`, `DisableLostMode`, `PlayLostModeSound`
+ * and `DeviceLocation` for supervised iPhone and iPadOS only. macOS, tvOS and
+ * visionOS have no such commands, and an Apple User Enrollment (BYOD) device is
+ * not supervised. Supervision itself is not reported by Apple, so an Apple
+ * device whose OS family is not identifiable stays eligible; the device's
+ * command result is the authoritative confirmation.
+ */
+export const isAppleLostModeDevice = (input: DeviceActionInput): boolean => {
+  if (input.proto !== "apple") return false;
+  if (input.enrollmentMode === "user") return false;
+
+  const identity = `${input.osEdition ?? ""} ${input.model ?? ""}`;
+
+  if (/mac/i.test(identity)) return false;
+  if (/tvos|apple\s*tv/i.test(identity)) return false;
+  if (/visionos|apple\s*vision|watchos|audioos/i.test(identity)) return false;
+
+  return true;
+};
+
+/** Longest Lost Mode message or footnote Mattrax sends. */
+export const APPLE_LOST_MODE_MESSAGE_MAX_LENGTH = 500;
+
+/** Longest phone number companion field; Apple does not document a limit. */
+export const APPLE_LOST_MODE_PHONE_MAX_LENGTH = 64;
+
+export type AppleLostModeDetails = {
+  readonly message?: string;
+  readonly phone?: string;
+  readonly footnote?: string;
+};
+
+const normalizeLostModeText = (value: string | null | undefined): string | undefined => {
+  const text = value?.replaceAll(/\r\n?/g, "\n").trim();
+
+  return text ? text : undefined;
+};
+
+/**
+ * Why a Lost Mode request cannot be sent, in operator-facing wording.
+ * Undefined means the request is valid.
+ */
+export const appleLostModeProblem = (input: AppleLostModeDetails): string | undefined => {
+  const message = normalizeLostModeText(input.message);
+  const phone = normalizeLostModeText(input.phone);
+  const footnote = normalizeLostModeText(input.footnote);
+
+  // Apple requires at least one of Message and PhoneNumber.
+  if (!message && !phone)
+    return "Enter a message or a phone number. Apple requires at least one of them for Lost Mode.";
+
+  if ((message?.length ?? 0) > APPLE_LOST_MODE_MESSAGE_MAX_LENGTH)
+    return `The Lost Mode message must be at most ${APPLE_LOST_MODE_MESSAGE_MAX_LENGTH} characters.`;
+
+  if ((footnote?.length ?? 0) > APPLE_LOST_MODE_MESSAGE_MAX_LENGTH)
+    return `The Lost Mode footnote must be at most ${APPLE_LOST_MODE_MESSAGE_MAX_LENGTH} characters.`;
+
+  if ((phone?.length ?? 0) > APPLE_LOST_MODE_PHONE_MAX_LENGTH)
+    return `The Lost Mode phone number must be at most ${APPLE_LOST_MODE_PHONE_MAX_LENGTH} characters.`;
+
+  return undefined;
+};
+
+/**
+ * Apple's `EnableLostMode` payload. Only the keys with a value are sent:
+ * `Footnote` is optional, and an empty string would be rendered on the lock
+ * screen.
+ */
+export const appleLostModePayload = (input: AppleLostModeDetails) => {
+  const message = normalizeLostModeText(input.message);
+  const phone = normalizeLostModeText(input.phone);
+  const footnote = normalizeLostModeText(input.footnote);
+
+  return {
+    ...(message ? { Message: message } : {}),
+    ...(phone ? { PhoneNumber: phone } : {}),
+    ...(footnote ? { Footnote: footnote } : {}),
+  };
 };
 
 /**
@@ -305,18 +489,57 @@ export const deviceAvailableActions = (
 
   const base = platformActions(input.proto)
     .filter((action) => action !== "return-to-service" || supportsReturnToService(input))
-    // `ScheduleOSUpdate` is a macOS command. Advertising it on iOS or tvOS
-    // would queue a command Apple rejects.
-    .filter(
-      (action) =>
-        action !== "schedule-os-update" || (input.proto === "apple" && isMacOsDevice(input)),
-    )
+    // `ScheduleOSUpdate` is the explicit fallback where the DDM declaration
+    // is unavailable; see `supportsScheduleOsUpdate`.
+    .filter((action) => action !== "schedule-os-update" || appleScheduleOsUpdateSupported(input))
     // Apple's `Settings` command is supervised-only. A User Enrollment is a
     // BYOD device we know is not supervised, so never advertise the rename.
     .filter(
       (action) =>
         action !== "set-device-name" ||
         (input.proto === "apple" && input.enrollmentMode !== "user"),
+    )
+    // Apple's LockScreenMessage exists only for supervised iPhone and iPadOS.
+    // macOS, tvOS and visionOS have no such command.
+    .filter(
+      (action) => action !== "set-lock-screen-message" || isAppleLockScreenMessageDevice(input),
+    )
+    // Lost Mode is supervised iPhone/iPadOS only; the sound is only valid
+    // while the device is actually in Lost Mode.
+    .filter(
+      (action) =>
+        input.proto !== "apple" ||
+        (action !== "start-lost-mode" && action !== "stop-lost-mode") ||
+        isAppleLostModeDevice(input),
+    )
+    .filter(
+      (action) =>
+        input.proto !== "apple" ||
+        action !== "play-lost-mode-sound" ||
+        (isAppleLostModeDevice(input) && input.lostModeEnabled === true),
+    )
+    // `UserList` is a macOS command.
+    .filter(
+      (action) =>
+        action !== "refresh-local-accounts" || (input.proto === "apple" && isMacOsDevice(input)),
+    )
+    // Apple rotation needs the managed account's GUID; Windows rotation is a
+    // LAPS CSP action and only exists once a LAPS policy applies to the device.
+    .filter(
+      (action) =>
+        action !== "rotate-local-admin-password" ||
+        (input.proto === "apple" && isMacOsDevice(input) && Boolean(input.localAdminGuid)) ||
+        (input.proto === "win" &&
+          windowsLapsSupported(input) &&
+          input.windowsLapsConfigured === true),
+    )
+    // CleanPC is Enterprise/Education only and destructive in both modes.
+    .filter((action) => action !== "fresh-start" || windowsFreshStartSupported(input))
+    // DiagnosticArchive exists on Windows 10 1903 and later.
+    .filter((action) => action !== "collect-diagnostics" || windowsDiagnosticsSupported(input))
+    // Rotation needs an encrypted, Entra- or hybrid-joined device.
+    .filter(
+      (action) => action !== "rotate-bitlocker-key" || windowsBitlockerRotationSupported(input),
     )
     .filter((action) => input.proto !== "android" || androidActionSupported(input, action));
 
@@ -375,11 +598,82 @@ export const deviceActionUnavailableReason = (
   if (input.proto === "android" && action === "relinquish-ownership")
     return "Relinquishing ownership is only available on company-owned work profiles, not on fully managed or personally-owned devices.";
 
+  if (action === "fresh-start" && input.proto !== "win")
+    return "Fresh Start is a Windows CleanPC action and is not available on this platform.";
+
+  if (action === "fresh-start" && !windowsFreshStartEditionSupported(input.osEdition))
+    return "Windows Fresh Start uses the CleanPC CSP, which is only available on Windows Enterprise and Education editions. This device reports " +
+      (input.osEdition?.trim() || "an unknown edition") +
+      ".";
+
+  if (action === "fresh-start") {
+    const build = windowsBuildNumber(input.osVersion, input.osBuild);
+
+    if (build !== null && build < WINDOWS_FRESH_START_MIN_BUILD)
+      return "Windows Fresh Start requires Windows 10 version 1703 (build 15063) or later.";
+  }
+
+  if (action === "collect-diagnostics" && input.proto !== "win")
+    return "Diagnostic collection uses the Windows DiagnosticLog CSP and is not available on this platform.";
+
+  if (action === "collect-diagnostics") {
+    const build = windowsBuildNumber(input.osVersion, input.osBuild);
+
+    if (build === null)
+      return "This Windows device has not reported its OS build yet, so Mattrax cannot confirm that the DiagnosticLog CSP is available. Collect inventory first.";
+
+    if (build < WINDOWS_DIAGNOSTICS_MIN_BUILD)
+      return "Diagnostic collection requires Windows 10 version 1903 (build 18362) or later.";
+  }
+
+  if (action === "rotate-bitlocker-key" && input.proto !== "win")
+    return "BitLocker key rotation is only available on Windows devices.";
+
+  if (action === "rotate-bitlocker-key" && input.bitLockerEnabled !== true)
+    return "BitLocker is not enabled on this device, so there is no recovery key to rotate.";
+
+  if (action === "rotate-bitlocker-key" && !input.entraDeviceId?.trim())
+    return "BitLocker recovery password rotation needs a Microsoft Entra device id: Entra joined or hybrid joined devices only. A plain AD-domain join has no Entra recovery-key store.";
+
+  if (action === "rotate-bitlocker-key") {
+    const build = windowsBuildNumber(input.osVersion, input.osBuild);
+
+    if (build !== null && build < WINDOWS_BITLOCKER_ROTATION_MIN_BUILD)
+      return "BitLocker recovery password rotation requires Windows 10 version 1909 (build 18363) or later.";
+  }
+
+  if (action === "rotate-local-admin-password" && input.proto === "win") {
+    if (!windowsLapsSupported(input)) {
+      const build = windowsBuildNumber(input.osVersion, input.osBuild);
+
+      return build === null
+        ? "This Windows device has not reported its OS build yet, so Mattrax cannot confirm Windows LAPS support. Collect inventory first."
+        : "Windows LAPS requires Windows 11 22H2 (build " +
+            WINDOWS_LAPS_MIN_BUILD +
+            ") or later, or Windows Server 2025.";
+    }
+
+    if (input.windowsLapsConfigured !== true)
+      return "No Windows LAPS policy applies to this device. Add a LAPS policy with a backup directory before rotating the local administrator password.";
+  }
+
   if (action === "return-to-service" && input.proto === "apple")
     return "Return to Service requires iOS/iPadOS 17 or later, tvOS 18 or later, or visionOS 26 or later. Apple does not support it on macOS.";
 
-  if (action === "schedule-os-update")
-    return "OS update scheduling is only available for macOS devices.";
+  if (action === "schedule-os-update") {
+    const major = majorOsVersion(input.osVersion);
+
+    if (major !== null && major >= APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR)
+      return `Apple removed the ScheduleOSUpdate command in ${isMacOsDevice(input) ? "macOS" : "iOS/iPadOS"} ${APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR}. Use the DDM software-update enforcement declaration instead.`;
+
+    if (input.enrollmentMode === "user")
+      return "ScheduleOSUpdate requires supervision. A user-enrolled (BYOD) device cannot run it.";
+
+    if (/ios|ipados/i.test(input.osEdition ?? ""))
+      return "iOS and iPadOS 17 or later use Apple's DDM declaration as the update path; ScheduleOSUpdate is only offered below 17 or on legacy delivery.";
+
+    return "ScheduleOSUpdate is only available for supervised Apple devices.";
+  }
 
   if (action === "set-device-name" && input.proto !== "apple")
     return "Applying a name to the device is only available for Apple devices. Windows and Android name delivery is not implemented yet.";
@@ -387,22 +681,86 @@ export const deviceActionUnavailableReason = (
   if (action === "set-device-name" && input.enrollmentMode === "user")
     return "Apple User Enrollment (BYOD) devices cannot be renamed by the server. Only supervised devices accept the Settings command.";
 
+  if (action === "set-lock-screen-message" && input.proto !== "apple")
+    return "Lock screen messages are only available on supervised iPhone and iPad devices. macOS, tvOS, Windows and Android do not accept Apple's LockScreenMessage command.";
+
+  if (action === "set-lock-screen-message" && input.enrollmentMode === "user")
+    return "Apple User Enrollment (BYOD) devices are not supervised, so Apple does not accept a lock screen message on them.";
+
+  if (
+    action === "set-lock-screen-message" &&
+    /mac/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's LockScreenMessage command is not available on macOS.";
+
+  if (
+    action === "set-lock-screen-message" &&
+    /tvos|apple\s*tv/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's LockScreenMessage command is not available on tvOS.";
+
+  if (
+    action === "set-lock-screen-message" &&
+    /visionos|apple\s*vision|watchos|audioos/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's LockScreenMessage command is only available on iPhone and iPad, not visionOS, watchOS or audioOS.";
+
+  if ((action === "start-lost-mode" || action === "stop-lost-mode") && input.proto !== "apple")
+    return "Lost Mode is only available on Apple devices.";
+
+  if (
+    (action === "start-lost-mode" ||
+      action === "stop-lost-mode" ||
+      action === "play-lost-mode-sound") &&
+    input.enrollmentMode === "user"
+  )
+    return "Apple User Enrollment (BYOD) devices are not supervised, so Apple does not accept Lost Mode commands on them.";
+
+  if (
+    (action === "start-lost-mode" ||
+      action === "stop-lost-mode" ||
+      action === "play-lost-mode-sound") &&
+    /mac/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's Lost Mode commands are not available on macOS.";
+
+  if (
+    (action === "start-lost-mode" ||
+      action === "stop-lost-mode" ||
+      action === "play-lost-mode-sound") &&
+    /tvos|apple\s*tv/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's Lost Mode commands are not available on tvOS.";
+
+  if (
+    (action === "start-lost-mode" ||
+      action === "stop-lost-mode" ||
+      action === "play-lost-mode-sound") &&
+    /visionos|apple\s*vision|watchos|audioos/i.test(`${input.osEdition ?? ""} ${input.model ?? ""}`)
+  )
+    return "Apple's Lost Mode commands are only available on iPhone and iPad, not visionOS, watchOS or audioOS.";
+
+  if (action === "play-lost-mode-sound" && input.lostModeEnabled !== true)
+    return "Play Lost Mode Sound is only available while the device is in Lost Mode.";
+
+  if (action === "refresh-local-accounts" && (input.proto !== "apple" || !isMacOsDevice(input)))
+    return "Local accounts are only reported by macOS. Apple does not inventory local accounts on iOS, iPadOS, tvOS or visionOS.";
+
+  if (
+    action === "rotate-local-admin-password" &&
+    input.proto !== "win" &&
+    (input.proto !== "apple" || !isMacOsDevice(input))
+  )
+    return "Only macOS devices and Windows devices managed by Windows LAPS have a managed local administrator password.";
+
+  if (
+    action === "rotate-local-admin-password" &&
+    input.proto === "apple" &&
+    !input.localAdminGuid
+  )
+    return "This Mac has not reported the GUID of its managed local administrator yet. Rotate after its next local-account inventory.";
+
   return `This device does not support the ${action} action.`;
-};
-
-/**
- * Longest `DeviceName` Apple accepts in a `Settings` command.
- *
- * Apple documents 1-63 characters for the value; rejecting it here gives the
- * administrator a useful error instead of a failed command on the device.
- */
-export const APPLE_DEVICE_NAME_MAX_LENGTH = 63;
-
-/** Trim a name and reject the empty value Apple would refuse. */
-export const normalizeAppleDeviceName = (value: string | null | undefined): string | undefined => {
-  const name = value?.trim();
-
-  return name ? name : undefined;
 };
 
 /**
@@ -442,3 +800,136 @@ export const appleDeviceNameFromSettingsPayload = (
 
   return undefined;
 };
+
+/**
+ * Longest message Mattrax sends in Apple's LockScreenMessage command.
+ *
+ * Apple does not document a hard limit. 500 characters is long enough for a
+ * return address and instructions while keeping the dashboard preview legible;
+ * rejecting it here gives the administrator a useful error instead of a
+ * truncated message on the device.
+ */
+export const APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH = 500;
+
+/** Policy configuration kind holding a group's default lock screen message. */
+export const APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND = "mttx.apple.lockScreenMessage";
+
+/**
+ * Apple policy kinds delivered as DDM declarations (or their legacy profile
+ * equivalent). A kind outside this list, such as the lock screen default, is
+ * an imperative command and never has a declaration report.
+ */
+export const isDeclarableAppleConfigurationKind = (kind: string): boolean =>
+  kind === "mttx.apple.device" || /^mttx\.apple\.(custom|certificate|declaration)\..+/.test(kind);
+
+/** Normalise line endings, trim the message and reject an empty value. */
+export const normalizeAppleLockScreenMessage = (
+  value: string | null | undefined,
+): string | undefined => {
+  const message = value?.replaceAll(/\r\n?/g, "\n").trim();
+
+  return message ? message : undefined;
+};
+
+/** A policy's lock screen message default. */
+export type AppleLockScreenMessageConfiguration = {
+  readonly message: string;
+  readonly includeAssetTag: boolean;
+};
+
+/** Decode the policy configuration payload, tolerating older stored shapes. */
+export const parseAppleLockScreenMessageConfiguration = (
+  value: unknown,
+): AppleLockScreenMessageConfiguration | undefined => {
+  if (!Schema.is(Schema.JsonObject)(value)) return undefined;
+
+  const message = value["message"];
+
+  if (!Schema.is(Schema.String)(message)) return undefined;
+  const normalized = normalizeAppleLockScreenMessage(message);
+
+  if (!normalized) return undefined;
+  const includeAssetTag = value["includeAssetTag"];
+
+  return {
+    message: normalized,
+    includeAssetTag: Schema.is(Schema.Boolean)(includeAssetTag) ? includeAssetTag : false,
+  };
+};
+
+/**
+ * Why a lock screen message cannot be sent, in operator-facing wording.
+ * Undefined means the request is valid.
+ */
+export const lockScreenMessageProblem = (input: {
+  readonly message?: string | null;
+  readonly includeAssetTag?: boolean | null;
+  readonly assetTag?: string | null;
+}): string | undefined => {
+  const message = normalizeAppleLockScreenMessage(input.message);
+
+  if (!message) return "Enter a lock screen message.";
+
+  if (message.length > APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH)
+    return (
+      "The lock screen message must be at most " +
+      APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH +
+      " characters."
+    );
+
+  if (input.includeAssetTag === true && !input.assetTag?.trim())
+    return "This device has no asset tag. Add one in Edit details, or turn off Include asset tag.";
+
+  return undefined;
+};
+
+/** The message one device should show, after the per-device override wins. */
+export type AppleLockScreenMessageResolution = {
+  readonly message: string | undefined;
+  readonly includeAssetTag: boolean;
+  readonly source: "device" | "policy" | null;
+  /** The policy supplying the default, when the source is policy. */
+  readonly policyName?: string;
+  /** Why the resolved configuration cannot be delivered, if it cannot. */
+  readonly problem?: string;
+};
+
+/**
+ * Resolve a device's lock screen message.
+ *
+ * A per-device message wins. A per-device includeAssetTag choice can override
+ * the policy default on its own, so an operator can keep shared wording but
+ * stop appending the asset tag (or the reverse).
+ */
+export const resolveAppleLockScreenMessage = (input: {
+  readonly deviceMessage?: string | null;
+  readonly deviceIncludeAssetTag?: boolean | null;
+  readonly policy?: (AppleLockScreenMessageConfiguration & { readonly policyName?: string }) | null;
+  readonly assetTag?: string | null;
+}): AppleLockScreenMessageResolution => {
+  const deviceMessage = normalizeAppleLockScreenMessage(input.deviceMessage);
+  const policyMessage = normalizeAppleLockScreenMessage(input.policy?.message);
+  const message = deviceMessage ?? policyMessage;
+  const includeAssetTag = input.deviceIncludeAssetTag ?? input.policy?.includeAssetTag ?? false;
+  const source = deviceMessage ? ("device" as const) : policyMessage ? ("policy" as const) : null;
+  const problem = message
+    ? lockScreenMessageProblem({ message, includeAssetTag, assetTag: input.assetTag })
+    : undefined;
+
+  return {
+    message,
+    includeAssetTag,
+    source,
+    ...(source === "policy" && input.policy?.policyName
+      ? { policyName: input.policy.policyName }
+      : {}),
+    ...(problem ? { problem } : {}),
+  };
+};
+
+/**
+ * How long a failed profile install suppresses another automatic retry.
+ * Mirrors the device-name push: an OS that rejects the profile must not receive
+ * a fresh one on every check-in, while a genuine change is applied immediately.
+ */
+export const LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS = 24 * 60 * 60 * 1000;

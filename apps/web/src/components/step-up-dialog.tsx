@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog";
 import { errorMessage, raisedFailure } from "~/lib/errors";
-import { performStepUp } from "~/lib/step-up";
+import { isPasskeyCancellation, performStepUp } from "~/lib/step-up";
 import {
   cancelStepUp,
   completeStepUp,
@@ -10,18 +10,11 @@ import {
   stepUpActionLabel,
 } from "~/lib/step-up-bus";
 import type { StepUpMethod } from "~/lib/step-up-bus";
-
-const inputClass =
-  "h-9 w-full rounded-lg border border-input bg-background px-3 text-[13px] text-foreground placeholder:text-muted-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/25";
-
-const primaryButton =
-  "rounded-lg bg-primary px-3.5 py-2 text-[13px] font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90 disabled:opacity-50";
-
-const secondaryButton =
-  "rounded-lg border border-border px-3.5 py-2 text-[13px] font-medium text-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover disabled:opacity-50";
+import { Input } from "~/components/ui/input";
+import { Button } from "~/components/ui/button";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
-const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
+const feedbackEnter = "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-150";
 
 const labels: Record<StepUpMethod, string> = {
   totp: "Authenticator code",
@@ -36,7 +29,7 @@ const labels: Record<StepUpMethod, string> = {
  * It uses the shared dialog primitive so it portals above any other open modal
  * (for example the API-token dialog) and participates in focus management.
  */
-export function StepUpDialog() {
+export default function StepUpDialog() {
   const [method, setMethod] = createSignal<StepUpMethod>("passkey");
   const [code, setCode] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
@@ -60,11 +53,13 @@ export function StepUpDialog() {
     const current = request();
 
     if (!current) return;
+    const selectedMethod = activeMethod();
+
     setError(null);
     setPending(true);
 
     try {
-      const grant = await performStepUp(current.action, activeMethod(), {
+      const grant = await performStepUp(current.action, selectedMethod, {
         code: code(),
       });
 
@@ -72,7 +67,18 @@ export function StepUpDialog() {
       completeStepUp(grant.grant);
       setCode("");
     } catch (error_) {
-      setError(errorMessage(raisedFailure(error_), "We couldn't confirm that action. Try again."));
+      const message = errorMessage(
+        raisedFailure(error_),
+        "We couldn't confirm that action. Try again.",
+      );
+
+      if (selectedMethod === "passkey" && isPasskeyCancellation(error_)) {
+        cancelStepUp(error_ instanceof Error ? error_ : new Error(message));
+
+        return;
+      }
+
+      setError(message);
     } finally {
       setPending(false);
     }
@@ -92,36 +98,33 @@ export function StepUpDialog() {
           if (!open) close();
         }}
       >
-        <DialogContent showCloseButton={false} class="max-w-sm p-6">
+        <DialogContent showCloseButton={false} class="max-w-sm">
           <Show when={request()}>
             {(current) => (
-              <div>
-                <DialogTitle class="text-base font-semibold text-foreground">
+              <div class="p-6">
+                <DialogTitle>
                   Confirm it's you
                 </DialogTitle>
-                <DialogDescription class="mt-1 text-sm text-muted-foreground">
+                <DialogDescription class="mt-1">
                   For your security, confirm your identity to {stepUpActionLabel(current().action)}.
                 </DialogDescription>
 
                 <div
                   role="group"
                   aria-label="Confirmation method"
-                  class="mt-4 flex flex-wrap gap-2 text-xs"
+                  class="mt-4 inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-border bg-muted/40 p-1 text-xs"
                 >
                   <For each={available()}>
                     {(item) => (
-                      <button
+                      <Button
                         type="button"
                         aria-pressed={activeMethod() === item ? "true" : "false"}
-                        class={`rounded-md px-2.5 py-1.5 font-medium transition-colors duration-[var(--duration-hover)] ease-swift ${
-                          activeMethod() === item
-                            ? "bg-brand-solid text-brand-foreground"
-                            : "border border-stone-300 text-foreground/90 hover:bg-stone-100"
-                        }`}
+                        disabled={pending()}
+                        variant={activeMethod() === item ? "secondary" : "ghost"}
                         onClick={() => choose(item)}
                       >
                         {labels[item]}
-                      </button>
+                      </Button>
                     )}
                   </For>
                 </div>
@@ -136,7 +139,7 @@ export function StepUpDialog() {
                       <label for="step-up-code" class="text-xs font-medium text-foreground/90">
                         6-digit authenticator code
                       </label>
-                      <input
+                      <Input
                         id="step-up-code"
                         required
                         autocomplete="one-time-code"
@@ -146,7 +149,7 @@ export function StepUpDialog() {
                         aria-describedby={error() ? "step-up-error" : undefined}
                         value={code()}
                         onInput={(event) => setCode(event.currentTarget.value)}
-                        class={inputClass}
+                        class="h-9 w-full"
                       />
                     </div>
                   </Show>
@@ -170,9 +173,8 @@ export function StepUpDialog() {
                   </Show>
 
                   <div class="flex gap-2">
-                    <button
+                    <Button
                       type="submit"
-                      class={primaryButton}
                       disabled={pending()}
                       aria-busy={pending() ? "true" : "false"}
                     >
@@ -181,15 +183,15 @@ export function StepUpDialog() {
                         : activeMethod() === "passkey"
                           ? "Use passkey"
                           : "Confirm"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      class={secondaryButton}
+                      variant="outline"
                       disabled={pending()}
                       onClick={close}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </div>
                 </form>
               </div>

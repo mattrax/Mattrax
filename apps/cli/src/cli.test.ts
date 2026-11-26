@@ -1,13 +1,18 @@
-import { Effect, Layer, Option, Exit } from "effect";
+import { chmod, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ConfigProvider, Effect, Layer, Option, Exit } from "effect";
 import { Command } from "effect/cli";
 import { NodeServices } from "@effect/platform-node";
+import { FetchHttpClient } from "effect/http";
 import { describe, expect, it } from "vitest";
-import type { DeviceSearchQuery, TenantInfo } from "@mattrax/enterprise-domain/client";
+import type { DeviceSearchQuery, PolicyRow, TenantInfo } from "@mattrax/enterprise-domain/client";
 import { cli } from "./cli.ts";
 import type { MattraxApi } from "./client.ts";
 import { CliOutput } from "./output.ts";
 import { CliRuntime } from "./runtime.ts";
 import type { ResolvedSettings, SettingsFlags } from "./settings.ts";
+import { CliSecureFileStore } from "./secureFileStore.ts";
 
 const settings: ResolvedSettings = {
   url: "https://mattrax.test",
@@ -59,7 +64,9 @@ interface Capture {
 
 const runEffect = (args: ReadonlyArray<string>, api: MattraxApi, capture: Capture) => {
   const layer = Layer.mergeAll(
-    NodeServices.layer,
+    FetchHttpClient.layer,
+    ConfigProvider.layer(ConfigProvider.fromUnknown({})),
+    CliSecureFileStore.layer.pipe(Layer.provideMerge(NodeServices.layer)),
     Layer.succeed(
       CliRuntime,
       CliRuntime.of({
@@ -125,6 +132,61 @@ describe("CLI argument parsing", () => {
     });
   });
 
+  it("decrypts a handover archive through the nested devices command", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mattrax-cli-handover-"));
+    const file = join(directory, "handover.json");
+    const output = join(directory, "decrypted.json");
+    const capture: Capture = { lines: [], err: [] };
+
+    try {
+      await writeFile(output, "old", { mode: 0o644 });
+      await chmod(output, 0o644);
+      await writeFile(
+        file,
+        JSON.stringify({
+          version: 1,
+          kdf: {
+            name: "PBKDF2",
+            hash: "SHA-256",
+            iterations: 600000,
+            salt: "FDBLTH8GFKKKV96LErlAxA==",
+          },
+          cipher: { name: "AES-GCM", iv: "TmbgporKfT9oXc4x" },
+          ciphertext:
+            "eLaH9yyGPJizYHlwXgvEa2I8Jx6pKlsUe2aMopY/8FCKwwepgplhFqDswBpysIFvHEcc0P56R5YgHyVTX/hI0++4yvIVOuGI4z8LeVc=",
+        }),
+      );
+
+      await run(
+        [
+          "devices",
+          "handover",
+          "decrypt",
+          file,
+          "--passphrase",
+          "mattrax-test-vector-passphrase",
+          "--output",
+          output,
+        ],
+        fakeApi(),
+        capture,
+      );
+
+      expect(capture.lines.join("\n")).toContain("mode 0600");
+      expect((await stat(output)).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(await readFile(output, "utf8"))).toEqual({
+        format: "mattrax.device-handover",
+        version: 1,
+        devices: [],
+      });
+      expect(
+        (await readdir(directory)).filter((name) => name.startsWith(".mattrax-secure-")),
+      ).toEqual([]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("accepts global flags before the subcommand", async () => {
     const capture: Capture = { lines: [], err: [] };
 
@@ -132,6 +194,38 @@ describe("CLI argument parsing", () => {
 
     expect(capture.flags?.json).toBe(true);
     expect(JSON.parse(capture.lines.join("\n")).total).toBe(0);
+  });
+
+  it("exports policies over a permissive file with private atomic publication", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "mattrax-cli-policy-"));
+    const output = join(directory, "policies.json");
+    const capture: Capture = { lines: [], err: [] };
+    const policy: PolicyRow = {
+      id: "p1",
+      name: "Credentials",
+      notes: null,
+      priority: 10,
+      configurations: { "mttx.apple.custom.wifi": { password: "secret" } },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+
+    try {
+      await writeFile(output, "old", { mode: 0o644 });
+      await chmod(output, 0o644);
+
+      await run(
+        ["policies", "export", "--id", "p1", "--format", "json", "--output", output],
+        fakeApi({ getPolicy: () => Effect.succeed(policy) }),
+        capture,
+      );
+
+      expect((await stat(output)).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(await readFile(output, "utf8")).policies[0].name).toBe("Credentials");
+      expect(await readdir(directory)).toEqual(["policies.json"]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("requires --yes for unenrollment", async () => {

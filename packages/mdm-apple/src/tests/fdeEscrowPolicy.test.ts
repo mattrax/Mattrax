@@ -7,7 +7,7 @@ import {
   inspectMobileconfig,
   validateConfiguration,
   validateEscrowConfiguration,
-} from "@mattrax/mdm-core";
+} from "../policy.js";
 
 const certificate = async (commonName: string) => {
   const keyPair = await crypto.subtle.generateKey(
@@ -33,7 +33,7 @@ const fingerprint = async (pem: string) =>
     (byte) => byte.toString(16).padStart(2, "0"),
   ).join("");
 
-const escrowProfile = (options: { certificatePem?: string } = {}) => {
+const escrowProfile = async (options: { certificatePem?: string } = {}) => {
   const certificatePayload = options.certificatePem
     ? certificatePemToBase64(options.certificatePem)
     : "";
@@ -88,7 +88,7 @@ describe("FileVault escrow profile validation", () => {
       Effect.runPromise(
         validateConfiguration(
           "mttx.apple.custom.escrow",
-          { content: escrowProfile() },
+          { content: await escrowProfile() },
           { escrowCertificateFingerprintSha256: null },
         ),
       ),
@@ -99,7 +99,7 @@ describe("FileVault escrow profile validation", () => {
     const tenant = await certificate("Tenant escrow");
     const foreign = await certificate("Foreign escrow");
 
-    const bytes = Uint8Array.from(atob(escrowProfile({ certificatePem: foreign })), (char) =>
+    const bytes = Uint8Array.from(atob(await escrowProfile({ certificatePem: foreign })), (char) =>
       char.charCodeAt(0),
     );
 
@@ -119,7 +119,7 @@ describe("FileVault escrow profile validation", () => {
       Effect.runPromise(
         validateConfiguration(
           "mttx.apple.custom.escrow",
-          { content: escrowProfile({ certificatePem: tenant }) },
+          { content: await escrowProfile({ certificatePem: tenant }) },
           { escrowCertificateFingerprintSha256: await fingerprint(tenant) },
         ),
       ),
@@ -133,7 +133,7 @@ describe("FileVault escrow profile validation", () => {
       Effect.runPromise(
         validateConfiguration(
           "mttx.apple.custom.escrow",
-          { content: escrowProfile() },
+          { content: await escrowProfile() },
           { escrowCertificateFingerprintSha256: await fingerprint(tenant) },
         ),
       ),
@@ -144,7 +144,7 @@ describe("FileVault escrow profile validation", () => {
 describe("applyEscrowCertificate", () => {
   it("injects the tenant certificate under the referenced payload UUID", async () => {
     const tenant = await certificate("Tenant escrow");
-    const bytes = Uint8Array.from(atob(escrowProfile()), (char) => char.charCodeAt(0));
+    const bytes = Uint8Array.from(atob(await escrowProfile()), (char) => char.charCodeAt(0));
 
     const rewritten = await applyEscrowCertificate(bytes, tenant);
     expect("content" in rewritten).toBe(true);

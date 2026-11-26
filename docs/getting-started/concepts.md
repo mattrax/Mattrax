@@ -23,6 +23,26 @@ signing out. Directory sync provisions users, not accounts: importing staff does
 dashboard access. See [Accounts and users](/reference/identity-model) for the full
 lifecycle, API and invariants.
 
+### Dashboard navigation
+
+The sidebar has one **Tenant** group with the daily sections (Overview, Dashboards,
+Devices, Users, Groups, Policies, Applications and Scripts), plus any pinned dashboards.
+**Settings** lives at the bottom of the sidebar, directly above the account row, because it
+is a configuration surface rather than daily work. Both areas are permission-aware: a
+section only appears when the tenant membership grants its read permission, and Settings
+only appears when at least one settings tab is readable. The Settings entry, the command
+palette's Settings command and its `g t` shortcut all link to the first readable tab, so a
+role that can read devices but not tenant settings lands on Migration or OS updates instead
+of a denied General page.
+
+The tenant switcher at the top of the sidebar changes the tenant without signing out. The
+account menu at the bottom opens **Account** (profile, security, API tokens and sessions)
+and **Support**. The help button in the header opens the same in-app documentation and the
+deployment's configured support destination.
+
+Tenant URLs use `/t/<slug>`. Visiting `/t` (or `/t/`) redirects to the account's default
+tenant — the same resolution `/dashboard` uses — and keeps the query string or anchor.
+
 | Role      | Read | Write | Delete | Typical use                              |
 | --------- | ---- | ----- | ------ | ---------------------------------------- |
 | `owner`   | Yes  | Yes   | Yes    | Tenant owner; billing, backups, deletion |
@@ -147,8 +167,9 @@ be assigned to groups or devices.
 - The MDM layer selects one installer per device from its platform, OS version and
   reported capabilities. `priority` breaks ties, then the highest version; `minOsVersion`
   and `requiredCapability` let a newer installer target only devices that support it.
-- Apple installs from an uploaded `.pkg` (macOS), an OTA manifest, or an iTunes Store
-  id. VPP/Apps & Books licences are assigned from the licence pool when configured.
+- Apple installs from an uploaded `.pkg` (macOS) or `.ipa` (iOS/iPadOS), an OTA
+  manifest, or an iTunes Store id; Mattrax hosts the OTA manifest for an uploaded `.ipa`.
+  VPP/Apps & Books licences are assigned from the licence pool when configured.
 - Windows installs an MSI through OMA-DM; Android pushes the selected Managed Google
   Play package in the device policy.
 - Installer uploads are stored in R2 per installer, so several versions can be uploaded
