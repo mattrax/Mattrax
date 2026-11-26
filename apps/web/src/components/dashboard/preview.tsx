@@ -52,7 +52,7 @@ const secondaryValue = (row: DashboardQueryResponse["rows"][number]): string =>
  * reduced to the one shape that identifies it: a count, a donut, a few rows or
  * a note.
  */
-export function DashboardPreview(props: {
+export default function DashboardPreview(props: {
   widgets: ReadonlyArray<DashboardWidget> | undefined;
   widgetCount: number;
   class?: string;
@@ -69,7 +69,7 @@ export function DashboardPreview(props: {
   return (
     <div
       class={cn(
-        "relative h-[168px] overflow-hidden border-b border-border bg-surface/50 p-3",
+        "relative h-42 overflow-hidden border-b border-border bg-surface/50 p-3",
         props.class,
       )}
     >
@@ -80,7 +80,7 @@ export function DashboardPreview(props: {
             <span class="flex size-7 items-center justify-center rounded-md bg-card text-muted-foreground ring-1 ring-inset ring-border">
               <LayoutDashboard class="size-3.5" />
             </span>
-            <span class="text-[10.5px] text-muted-foreground">
+            <span class="text-xs text-muted-foreground">
               {props.widgetCount > 0 ? "Preview unavailable" : "Empty dashboard"}
             </span>
           </div>
@@ -146,11 +146,11 @@ function StatPreview(props: { title: string; data: DashboardQueryResponse }) {
 
   return (
     <div class="flex h-full flex-col justify-between">
-      <span class="label-caps truncate text-[9px]">{props.title}</span>
+      <span class="label-caps truncate text-xs">{props.title}</span>
       <div class="flex items-end justify-between gap-2">
         <span
           data-numeric
-          class="text-[26px] font-[580] leading-none tracking-[-0.045em] text-foreground"
+          class="text-2xl font-semibold leading-none tracking-tighter text-foreground"
         >
           {props.data.total}
         </span>
@@ -166,7 +166,7 @@ function StatPreview(props: { title: string; data: DashboardQueryResponse }) {
           />
         </svg>
       </div>
-      <span class="truncate text-[9px] text-muted-foreground">matching the current query</span>
+      <span class="truncate text-xs text-muted-foreground">matching the current query</span>
     </div>
   );
 }
@@ -190,26 +190,26 @@ function PiePreview(props: { title: string; data: DashboardQueryResponse }) {
 
   return (
     <div class="flex h-full flex-col justify-between">
-      <span class="label-caps truncate text-[9px]">{props.title}</span>
+      <span class="label-caps truncate text-xs">{props.title}</span>
       <div class="flex min-h-0 items-center gap-2.5">
         <span
-          class="relative size-11 shrink-0 rounded-full"
-          style={{ background: background() }}
+          class="relative size-11 shrink-0 rounded-full bg-(--preview-bg)"
+          style={{ "--preview-bg": background() }}
           aria-hidden="true"
         >
-          <span class="absolute inset-[27%] rounded-full bg-card" />
+          <span class="absolute inset-1/4 rounded-full bg-card" />
         </span>
         <div class="min-w-0 flex-1 space-y-1">
           <Show
             when={buckets().length > 0}
-            fallback={<span class="text-[9px] text-muted-foreground">No data</span>}
+            fallback={<span class="text-xs text-muted-foreground">No data</span>}
           >
             <For each={buckets().slice(0, 3)}>
               {(bucket, index) => (
-                <div class="flex min-w-0 items-center gap-1.5 text-[9px] leading-none">
+                <div class="flex min-w-0 items-center gap-1.5 text-xs leading-none">
                   <span
-                    class="size-1.5 shrink-0 rounded-full"
-                    style={{ background: PREVIEW_COLORS[index() % PREVIEW_COLORS.length] }}
+                    class="size-1.5 shrink-0 rounded-full bg-(--preview-bg)"
+                    style={{ "--preview-bg": PREVIEW_COLORS[index() % PREVIEW_COLORS.length] }}
                   />
                   <span class="min-w-0 flex-1 truncate text-muted-foreground">{bucket.label}</span>
                   <span class="shrink-0 tabular-nums text-foreground">{bucket.value}</span>
@@ -226,17 +226,17 @@ function PiePreview(props: { title: string; data: DashboardQueryResponse }) {
 function TablePreview(props: { title: string; data: DashboardQueryResponse }) {
   return (
     <div class="flex h-full min-h-0 flex-col gap-1">
-      <span class="label-caps truncate text-[9px]">{props.title}</span>
+      <span class="label-caps truncate text-xs">{props.title}</span>
       <Show
         when={props.data.rows.length > 0}
-        fallback={<span class="text-[9px] text-muted-foreground">No rows match this query.</span>}
+        fallback={<span class="text-xs text-muted-foreground">No rows match this query.</span>}
       >
         <div class="flex min-h-0 flex-1 flex-col justify-between gap-0.5">
           <For each={props.data.rows.slice(0, 3)}>
             {(row) => (
-              <div class="flex min-w-0 items-center gap-2 text-[9px] leading-tight">
+              <div class="flex min-w-0 items-center gap-2 text-xs leading-tight">
                 <span class="min-w-0 flex-1 truncate font-medium text-foreground">{row.name}</span>
-                <span class="max-w-[42%] shrink-0 truncate text-muted-foreground">
+                <span class="max-w-2/5 shrink-0 truncate text-muted-foreground">
                   {secondaryValue(row)}
                 </span>
               </div>
@@ -259,13 +259,13 @@ function MarkdownPreview(props: { widget: DashboardWidget }) {
 
   return (
     <div class="flex h-full min-w-0 flex-col gap-1 overflow-hidden rounded-lg bg-card/80 p-2.5 ring-1 ring-border/60">
-      <span class="label-caps truncate text-[9px]">{props.widget.title}</span>
+      <span class="label-caps truncate text-xs">{props.widget.title}</span>
       <Show
         when={lines().length > 0}
-        fallback={<span class="text-[9px] text-muted-foreground">Empty note</span>}
+        fallback={<span class="text-xs text-muted-foreground">Empty note</span>}
       >
-        <p class="line-clamp-1 text-[10px] font-[550] leading-snug text-foreground">{lines()[0]}</p>
-        <p class="line-clamp-2 text-[9px] leading-relaxed text-muted-foreground">
+        <p class="line-clamp-1 text-xs font-medium leading-snug text-foreground">{lines()[0]}</p>
+        <p class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
           {lines().slice(1).join(" ")}
         </p>
       </Show>
@@ -276,7 +276,7 @@ function MarkdownPreview(props: { widget: DashboardWidget }) {
 function PreviewUnavailable() {
   return (
     <div class="flex h-full flex-col items-center justify-center gap-1 text-center">
-      <span class="text-[9px] text-muted-foreground">Preview unavailable</span>
+      <span class="text-xs text-muted-foreground">Preview unavailable</span>
     </div>
   );
 }

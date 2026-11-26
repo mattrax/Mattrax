@@ -26,7 +26,7 @@ function settledQueryData<T>(query: {
   return query.isSuccess ? query.data : undefined;
 }
 
-export function SoftwareUpdatesBanner(props: { tenantId: string }) {
+export default function SoftwareUpdatesBanner(props: { tenantId: string }) {
   const { can } = useCan();
 
   const summary = useQuery(() => ({
@@ -59,7 +59,7 @@ export function SoftwareUpdatesBanner(props: { tenantId: string }) {
       <div
         role="status"
         aria-live="polite"
-        class="flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/[0.06] px-3.5 py-3 text-[12.5px] leading-relaxed text-warning-foreground"
+        class="flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/[0.06] px-3.5 py-3 text-xs leading-relaxed text-warning-foreground"
       >
         <CircleAlert class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <div class="min-w-0 flex-1">
@@ -70,7 +70,7 @@ export function SoftwareUpdatesBanner(props: { tenantId: string }) {
             <p class="mt-0.5 text-muted-foreground">{breakdown()}</p>
           </Show>
           <Show when={settledQueryData(summary)?.feed.stale}>
-            <p class="mt-0.5 text-[11px] text-muted-foreground">
+            <p class="mt-0.5 text-xs text-muted-foreground">
               The update feed is stale; these statuses may be out of date.
             </p>
           </Show>

@@ -93,16 +93,26 @@ describe("success badge contrast", () => {
     const accountSecurity = source("apps/web/src/components/account-security.tsx");
     const accountLoginAttempts = source("apps/web/src/components/account-login-attempts.tsx");
     const statusChip = source("apps/web/src/components/settings/status-chip.tsx");
+    const badge = source("packages/ui/src/badge.tsx");
 
-    expect(users).toContain("bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success");
-    expect(users).not.toContain(
-      "bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success-foreground",
-    );
+    // The shared success variant maps to a tinted fill with the tone token; it
+    // must never use the solid-fill foreground token (which inverts in dark mode).
+    expect(badge).toContain('success: "border-transparent bg-success/10 text-success"');
+    expect(badge).not.toContain("text-success-foreground");
+
+    // The users table still paints its own tinted badge, so check its classes.
+    expect(users).toContain("bg-success/10 px-2 py-0.5 text-xs font-medium text-success");
+    expect(users).not.toContain("text-success-foreground");
+
+    // The account and login-attempt badges delegate the tint to that variant.
+    expect(account).toContain('variant="success"');
     expect(account).not.toContain("text-success-foreground");
+    expect(accountLoginAttempts).toContain('variant="success"');
+    expect(accountLoginAttempts).not.toContain("text-success-foreground");
+
+    // Hand-rolled tone maps must likewise pick the tone token, not the foreground.
     expect(accountSecurity).toContain('success: "border-success/25 bg-success/10 text-success"');
     expect(accountSecurity).not.toContain("text-success-foreground");
-    expect(accountLoginAttempts).toContain("border-success/25 bg-success/10 text-success");
-    expect(accountLoginAttempts).not.toContain("text-success-foreground");
     expect(statusChip).toContain('success: "border-success/25 bg-success/10 text-success"');
   });
 });

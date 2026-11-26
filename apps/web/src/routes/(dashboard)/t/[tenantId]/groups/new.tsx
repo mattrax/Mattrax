@@ -5,7 +5,7 @@ import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import { ErrorText, Field, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
-import { GroupRuleBuilder } from "~/components/mdm/group-rules";
+import GroupRuleBuilder from "~/components/mdm/group-rules";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -117,7 +117,7 @@ export default function NewGroupPage() {
           description="Create a reusable deployment target and optionally scope it now."
         />
         <form
-          class="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,330px)]"
+          class="flex flex-col items-start gap-5 lg:flex-row"
           onSubmit={(event) => {
             event.preventDefault();
             create.mutate();
@@ -126,7 +126,7 @@ export default function NewGroupPage() {
           <Panel
             title="Group details"
             description="Name the target, then choose how devices become members."
-            class="min-w-0"
+            class="min-w-0 flex-1"
           >
             <div class="space-y-4">
               <Field label="Name">
@@ -134,7 +134,7 @@ export default function NewGroupPage() {
               </Field>
               <Field label="Notes" hint="Optional context for other administrators.">
                 <textarea
-                  class="min-h-28 rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                  class="min-h-28 rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30"
                   value={notes()}
                   onInput={(e) => setNotes(e.currentTarget.value)}
                   placeholder="What is this group for?"
@@ -191,19 +191,19 @@ export default function NewGroupPage() {
                     </For>
                   </select>
                 </Field>
-                <p class="rounded-lg border border-border bg-surface px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                <p class="rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                   Membership is recomputed whenever the directory group's members or a member's
                   linked devices change. Add devices by linking them to directory users on the
                   device page; the group's device list is read-only.
                 </p>
                 <Show when={(directory.data?.groups.length ?? 0) === 0}>
-                  <p class="text-[11.5px] text-muted-foreground">
+                  <p class="text-xs text-muted-foreground">
                     No directory groups are synced yet. Connect Entra ID or SCIM in Settings first.
                   </p>
                 </Show>
               </Show>
               <Show when={kind() === "dynamic"}>
-                <div class="animate-in rounded-lg border border-border bg-surface p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
+                <div class="animate-in rounded-lg border border-border bg-surface p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-150 ease-swift">
                   <GroupRuleBuilder
                     rules={rules()}
                     onChange={setRules}
@@ -237,13 +237,13 @@ export default function NewGroupPage() {
             </div>
           </Panel>
 
-          <div class="min-w-0 space-y-5">
+          <div class="min-w-0 w-full shrink-0 space-y-5 lg:w-82">
             <Panel
               flush
               title="Devices"
               description={devicesDescription()}
               actions={
-                <Badge variant="secondary" class="tabular-nums">
+                <Badge variant="secondary" data-numeric>
                   {membershipMode() === "manual" ? devices().size : "derived"}
                 </Badge>
               }
@@ -251,7 +251,7 @@ export default function NewGroupPage() {
               <Show
                 when={membershipMode() === "manual"}
                 fallback={
-                  <p class="px-4 py-4 text-[12.5px] leading-relaxed text-muted-foreground sm:px-5">
+                  <p class="px-4 py-4 text-xs leading-relaxed text-muted-foreground sm:px-5">
                     {membershipMode() === "directory"
                       ? "Devices are added automatically from the linked directory group's members and their linked devices. You can review the derived membership after the group is created."
                       : "Membership is computed from the rules above. You can preview matches after the group is created."}
@@ -264,7 +264,7 @@ export default function NewGroupPage() {
                     <Show
                       when={deviceList.isError}
                       fallback={
-                        <p class="px-4 py-4 text-[12.5px] text-muted-foreground sm:px-5">
+                        <p class="px-4 py-4 text-xs text-muted-foreground sm:px-5">
                           No devices enrolled yet.
                         </p>
                       }
@@ -281,15 +281,15 @@ export default function NewGroupPage() {
                   <div class="max-h-64 divide-y divide-border overflow-auto">
                     <For each={deviceList.data?.rows ?? []}>
                       {(device) => (
-                        <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover sm:px-5">
-                          <input
+                        <label class="flex cursor-pointer items-center gap-2.5 accent-brand-solid px-4 py-2 text-xs transition-colors duration-150 ease-swift hover:bg-hover sm:px-5">
+                          <Input
                             type="checkbox"
-                            class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
+                            class="size-3.5 shrink-0"
                             checked={devices().has(device.id)}
                             onChange={() => toggle(devices, setDevices, device.id)}
                           />
                           <span class="min-w-0 flex-1 truncate">{device.name}</span>
-                          <span class="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+                          <span class="shrink-0 font-mono text-xs text-muted-foreground">
                             {device.serial ?? ""}
                           </span>
                         </label>
@@ -304,7 +304,7 @@ export default function NewGroupPage() {
               title="Policies"
               description="Attach policies to deploy to members."
               actions={
-                <Badge variant="secondary" class="tabular-nums">
+                <Badge variant="secondary" data-numeric>
                   {policies().size}
                 </Badge>
               }
@@ -315,7 +315,7 @@ export default function NewGroupPage() {
                   <Show
                     when={policyList.isError}
                     fallback={
-                      <p class="px-4 py-4 text-[12.5px] text-muted-foreground sm:px-5">
+                      <p class="px-4 py-4 text-xs text-muted-foreground sm:px-5">
                         No policies yet.
                       </p>
                     }
@@ -332,15 +332,15 @@ export default function NewGroupPage() {
                 <div class="max-h-64 divide-y divide-border overflow-auto">
                   <For each={policyList.data?.rows ?? []}>
                     {(policy) => (
-                      <label class="flex cursor-pointer items-center gap-2.5 px-4 py-2 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover sm:px-5">
-                        <input
+                      <label class="flex cursor-pointer items-center gap-2.5 accent-brand-solid px-4 py-2 text-xs transition-colors duration-150 ease-swift hover:bg-hover sm:px-5">
+                        <Input
                           type="checkbox"
-                          class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
+                          class="size-3.5 shrink-0"
                           checked={policies().has(policy.id)}
                           onChange={() => toggle(policies, setPolicies, policy.id)}
                         />
                         <span class="min-w-0 flex-1 truncate">{policy.name}</span>
-                        <span class="shrink-0 text-[10.5px] tabular-nums text-muted-foreground">
+                        <span class="shrink-0 text-xs tabular-nums text-muted-foreground">
                           priority {policy.priority}
                         </span>
                       </label>

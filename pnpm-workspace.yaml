@@ -74,6 +74,7 @@ catalog:
   "@mbakereth/ldapjs-dn": ^1.1.2
   jsqr: ^1.4.0
   email-verification-api: 0.2.0
+  "@shadcn/lint": ^0.2.5
 catalogMode: prefer
 
 overrides:

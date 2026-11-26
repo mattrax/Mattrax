@@ -6,7 +6,7 @@ import type { JSX } from "@solidjs/web";
 import { createSignal, Errored, flush, Show } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readOnboardingDismissal, writeOnboardingDismissal } from "~/lib/onboarding-query";
-import { OnboardingChecklist } from "./onboarding-checklist";
+import OnboardingChecklist from "./onboarding-checklist";
 
 const api = vi.hoisted(() => ({
   getTenantOnboarding: vi.fn(),

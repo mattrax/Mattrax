@@ -14,7 +14,7 @@ import {
  * unbranded, and suppressed in some embedded webviews, so every irreversible
  * action uses the same dialog and wording.
  */
-export function ConfirmDialog(props: {
+export default function ConfirmDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
@@ -29,7 +29,7 @@ export function ConfirmDialog(props: {
 }) {
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent class="max-w-md rounded-lg p-6">
+      <DialogContent class="max-w-md">
         <DialogHeader>
           <DialogTitle>{props.title}</DialogTitle>
           <DialogDescription>{props.description}</DialogDescription>

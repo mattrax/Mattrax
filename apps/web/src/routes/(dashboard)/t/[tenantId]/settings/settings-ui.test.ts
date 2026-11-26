@@ -56,14 +56,37 @@ describe("settings UI contracts", () => {
       layout.indexOf('data-slot="settings-masthead"'),
       layout.indexOf('data-slot="settings-navigation"'),
     );
+    const navigation = layout.slice(
+      layout.indexOf('data-slot="settings-navigation"'),
+      layout.indexOf('data-slot="settings-content"'),
+    );
     const content = layout.slice(layout.indexOf('data-slot="settings-content"'));
 
-    expect(layout).toContain("[grid-template-areas:'masthead'_'nav'_'content']");
-    expect(layout).toContain("xl:[grid-template-areas:'nav_masthead'_'nav_content']");
-    expect(layout).toContain("grid-rows-[auto_auto_minmax(0,1fr)]");
-    expect(layout).toContain("xl:grid-cols-[248px_minmax(0,1fr)]");
-    expect(layout).toContain("xl:grid-rows-[auto_minmax(0,1fr)]");
-    expect(masthead).toContain("[grid-area:masthead]");
-    expect(content).toContain("[grid-area:content]");
+    // Grid tracks are declared as custom properties and consumed through
+    // custom-property utilities, so they are no longer literal arbitrary
+    // values in the class list.
+    expect(layout).toContain('"--settings-cols": "minmax(0, 1fr)"');
+    expect(layout).toContain('"--settings-rows": "auto auto minmax(0, 1fr)"');
+    expect(layout).toContain('"--settings-xl-cols": "248px minmax(0, 1fr)"');
+    expect(layout).toContain('"--settings-xl-rows": "auto minmax(0, 1fr)"');
+    expect(layout).toContain("grid-cols-(--settings-cols)");
+    expect(layout).toContain("grid-rows-(--settings-rows)");
+    expect(layout).toContain("xl:grid-cols-(--settings-xl-cols)");
+    expect(layout).toContain("xl:grid-rows-(--settings-xl-rows)");
+
+    // Small screens stack masthead, nav and content in the single column.
+    expect(masthead).toContain("row-start-1");
+    expect(navigation).toContain("row-start-2");
+    expect(content).toContain("row-start-3");
+
+    // At xl the rail owns column 1 across both rows, while the masthead and
+    // content share column 2 — the same layout contract as the old grid areas.
+    expect(navigation).toContain("xl:col-start-1");
+    expect(navigation).toContain("xl:row-start-1");
+    expect(navigation).toContain("xl:row-span-2");
+    expect(masthead).toContain("xl:col-start-2");
+    expect(masthead).toContain("xl:row-start-1");
+    expect(content).toContain("xl:col-start-2");
+    expect(content).toContain("xl:row-start-2");
   });
 });

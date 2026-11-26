@@ -24,7 +24,7 @@ function settledQueryData<T>(query: {
   return query.isSuccess ? query.data : undefined;
 }
 
-export function OsComplianceSummary(props: { tenantId: string }) {
+export default function OsComplianceSummary(props: { tenantId: string }) {
   const { can } = useCan();
 
   const fleet = useQuery(() => ({
@@ -45,8 +45,8 @@ export function OsComplianceSummary(props: { tenantId: string }) {
       >
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
-            <p class="text-[12.5px] font-[560] text-foreground">OS version compliance</p>
-            <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+            <p class="text-xs font-semibold text-foreground">OS version compliance</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               <Show
                 when={configured()}
                 fallback="No minimum version is configured yet. Set one to see who is behind."
@@ -78,11 +78,11 @@ export function OsComplianceSummary(props: { tenantId: string }) {
             { label: "Unknown", value: totals()?.unknown ?? 0 },
           ].map((item) => (
             <div class="rounded-lg border border-border/70 px-2.5 py-1.5">
-              <p class="text-[10px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+              <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {item.label}
               </p>
               <p
-                class={`mt-0.5 text-[15px] font-[560] tabular-nums ${item.tone ?? "text-foreground"}`}
+                class={`mt-0.5 text-sm font-semibold tabular-nums ${item.tone ?? "text-foreground"}`}
               >
                 {item.value}
               </p>

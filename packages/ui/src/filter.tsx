@@ -146,10 +146,10 @@ export const filterValueLabel = (field: FilterField, condition: FilterCondition)
 };
 
 const surface =
-  "w-[264px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[10px] border border-border bg-popover p-1 text-popover-foreground shadow-popover outline-none data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0 data-[ending-style]:scale-[0.97] data-[ending-style]:opacity-0 transition-[opacity,transform] duration-[var(--duration-popover)] ease-swift";
+  "w-66 max-w-full overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover outline-none data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-95 data-[ending-style]:opacity-0 transition duration-150 ease-out";
 
 const optionClass =
-  "flex h-7 w-full cursor-default select-none items-center gap-2 rounded-[6px] px-2 text-left text-[12.5px] font-[450] text-foreground outline-none transition-colors duration-[var(--duration-press)] hover:bg-hover focus-visible:bg-hover [&_svg]:shrink-0";
+  "flex h-7 w-full cursor-default select-none items-center gap-2 rounded-md px-2 text-left text-xs font-normal text-foreground outline-none transition-colors duration-100 hover:bg-hover focus-visible:bg-hover [&_svg]:shrink-0";
 
 function FieldOptionRow(props: {
   id?: string;
@@ -286,8 +286,8 @@ function VirtualPickerList(props: VirtualPickerListProps) {
         positioned().byOption.has(activeIndex()) ? `${props.id}-option-${activeIndex()}` : undefined
       }
       tabindex={0}
-      class="overflow-y-auto overscroll-contain py-1 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
-      style={{ "max-height": `${props.maxHeight}px` }}
+      class="max-h-(--list-max-height) overflow-y-auto overscroll-contain py-1 outline-none focus-visible:ring-3 focus-visible:ring-ring/25"
+      style={{ "--list-max-height": `${props.maxHeight}px` }}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
       onKeyDown={(event) => {
         if (event.key === "ArrowDown") {
@@ -316,12 +316,12 @@ function VirtualPickerList(props: VirtualPickerListProps) {
         }
       }}
     >
-      <div class="relative" style={{ height: `${positioned().height}px` }}>
+      <div class="relative h-(--list-height)" style={{ "--list-height": `${positioned().height}px` }}>
         <For each={renderedRows()}>
           {(entry) => (
             <div
-              class="absolute inset-x-0"
-              style={{ top: `${entry.top}px`, height: `${entry.row.height}px` }}
+              class="absolute inset-x-0 top-(--row-top) h-(--row-height)"
+              style={{ "--row-top": `${entry.top}px`, "--row-height": `${entry.row.height}px` }}
             >
               {props.renderRow(entry.row, (optionIndex) => setActiveIndex(optionIndex))}
             </div>
@@ -417,7 +417,7 @@ function FieldPicker(props: {
           placeholder="Filter by…"
           aria-label="Search filters"
           aria-controls={listId}
-          class="h-7 min-w-0 flex-1 bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-subtle-foreground"
+          class="h-7 min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-subtle-foreground"
         />
         <Show when={search()}>
           <button
@@ -446,7 +446,7 @@ function FieldPicker(props: {
           renderRow={(row, trackOption) => {
             if (row.fieldId === undefined)
               return (
-                <p role="presentation" class="label-caps flex h-6 items-center px-2">
+                <p role="presentation" class="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex h-6 items-center px-2">
                   {row.group}
                 </p>
               );
@@ -470,7 +470,7 @@ function FieldPicker(props: {
         />
       </Show>
       <Show when={model().options.length === 0}>
-        <p class="px-2 py-6 text-center text-[12px] text-muted-foreground">No fields match.</p>
+        <p class="px-2 py-6 text-center text-xs text-muted-foreground">No fields match.</p>
       </Show>
     </div>
   );
@@ -538,7 +538,7 @@ function ValueEditor(props: {
             placeholder={`Search ${props.field.label.toLowerCase()}…`}
             aria-label={`Search ${props.field.label} values`}
             aria-controls={listId}
-            class="h-7 min-w-0 flex-1 bg-transparent text-[12.5px] text-foreground outline-none placeholder:text-subtle-foreground"
+            class="h-7 min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-subtle-foreground"
           />
         </div>
       </Show>
@@ -577,7 +577,7 @@ function ValueEditor(props: {
         />
       </Show>
       <Show when={options().length === 0}>
-        <p class="px-2 py-6 text-center text-[12px] text-muted-foreground">No values.</p>
+        <p class="px-2 py-6 text-center text-xs text-muted-foreground">No values.</p>
       </Show>
     </div>
   );
@@ -611,7 +611,7 @@ function TextValueEditor(props: {
             placeholder={props.field.placeholder ?? "Value"}
             aria-label={`${props.field.label} value`}
             onInput={(event) => props.onChange([event.currentTarget.value])}
-            class="h-8 w-full rounded-[6px] border border-input bg-background px-2 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20"
+            class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none transition placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
           />
         </div>
       }
@@ -678,9 +678,9 @@ function MultiTextValueEditor(props: {
             commit();
           }
         }}
-        class="h-8 w-full rounded-[6px] border border-input bg-background px-2 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20"
+        class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none transition placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20"
       />
-      <p class="px-1 pt-1 text-[10.5px] text-muted-foreground">
+      <p class="px-1 pt-1 text-xs text-muted-foreground">
         {rejected() ? "Only numbers are kept in this filter." : "Separate values with commas."}
       </p>
     </div>
@@ -697,7 +697,7 @@ function EditorHeader(props: {
     <div class="flex items-center gap-1 border-b border-border px-1 pb-1.5 pt-1">
       <button
         type="button"
-        class="flex h-7 min-w-0 items-center gap-1.5 rounded-[6px] px-1.5 text-[12.5px] font-[520] text-foreground outline-none hover:bg-hover focus-visible:bg-hover"
+        class="flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 text-xs font-medium text-foreground outline-none hover:bg-hover focus-visible:bg-hover"
         aria-label={`Change filter field: ${props.field.label}`}
         onClick={props.onField}
       >
@@ -718,7 +718,7 @@ function EditorHeader(props: {
           aria-label={`${props.field.label} operator`}
           value={props.condition.operator}
           onChange={(event) => props.onOperator(event.currentTarget.value)}
-          class="h-7 max-w-[8.5rem] appearance-none rounded-[6px] bg-transparent py-0 pl-1.5 pr-5 text-[12px] text-muted-foreground outline-none hover:bg-hover focus-visible:bg-hover"
+          class="h-7 max-w-34 appearance-none rounded-md bg-transparent py-0 pl-1.5 pr-5 text-xs text-muted-foreground outline-none hover:bg-hover focus-visible:bg-hover"
         >
           <For each={filterOperators(props.field)}>
             {(operator) => <option value={operator.value}>{operator.label}</option>}
@@ -782,12 +782,12 @@ function ConditionPanel(props: {
         <Show
           when={props.onRemove}
           fallback={
-            <span class="px-1 text-[10.5px] text-subtle-foreground">Changes apply as you pick</span>
+            <span class="px-1 text-xs text-subtle-foreground">Changes apply as you pick</span>
           }
         >
           <button
             type="button"
-            class="flex h-6 items-center gap-1 rounded-[6px] px-1.5 text-[11.5px] text-muted-foreground outline-none hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10"
+            class="flex h-6 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground outline-none hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10"
             onClick={props.onRemove}
           >
             <X class="size-3" />
@@ -798,7 +798,7 @@ function ConditionPanel(props: {
           <button
             type="button"
             disabled={!props.condition.values.some((value) => value.trim() !== "")}
-            class="h-6 rounded-[6px] bg-primary px-2 text-[11.5px] font-medium text-primary-foreground outline-none hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40"
+            class="h-6 rounded-md bg-primary px-2 text-xs font-medium text-primary-foreground outline-none hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40"
             onClick={done}
           >
             Apply
@@ -834,7 +834,7 @@ function FilterChip(props: {
   };
 
   return (
-    <div class="group inline-flex h-7 max-w-full items-center rounded-full border border-border bg-card pl-1.5 pr-0.5 transition-colors duration-[var(--duration-hover)] ease-swift hover:border-border-strong">
+    <div class="group inline-flex h-7 max-w-full items-center rounded-full border border-border bg-card pl-1.5 pr-0.5 transition-colors duration-150 ease-out hover:border-border-strong">
       <Popover
         open={open()}
         onOpenChange={(next) => {
@@ -845,7 +845,7 @@ function FilterChip(props: {
         modal={false}
       >
         <PopoverTrigger
-          class="flex h-full min-w-0 items-center gap-1 rounded-full pr-1 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
+          class="flex h-full min-w-0 items-center gap-1 rounded-full pr-1 text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/25"
           aria-label={`${field().label} ${filterOperatorLabel(field(), condition().operator)} ${filterValueLabel(field(), condition())}`}
         >
           <Show when={field().icon}>
@@ -859,7 +859,7 @@ function FilterChip(props: {
           <span class="shrink-0 text-subtle-foreground">
             {filterOperatorLabel(field(), condition().operator)}
           </span>{" "}
-          <span class="min-w-0 truncate font-[520] text-foreground">
+          <span class="min-w-0 truncate font-medium text-foreground">
             {filterValueLabel(field(), condition())}
           </span>
         </PopoverTrigger>
@@ -907,7 +907,7 @@ function AddFilter(props: {
   fields: ReadonlyArray<FilterField>;
   addLabel: string;
   onCreate: (condition: FilterCondition) => void;
-  compact: boolean;
+  variant: "default" | "compact";
 }) {
   const [open, setOpen] = createSignal(false);
 
@@ -932,17 +932,17 @@ function AddFilter(props: {
     >
       <PopoverTrigger
         class={cn(
-          "flex h-7 items-center gap-1.5 rounded-full border bg-card text-[12px] text-muted-foreground outline-none transition-[border-color,background-color,color] duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/25",
-          props.compact ? "w-6 justify-center p-0" : "px-2.5",
+          "flex h-7 items-center gap-1.5 rounded-full border bg-card text-xs text-muted-foreground outline-none transition duration-150 ease-out hover:bg-hover hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/25",
+          props.variant === "compact" ? "w-6 justify-center p-0" : "px-2.5",
           "border-border",
         )}
         aria-label={props.addLabel}
         title={props.addLabel}
       >
-        <Show when={props.compact} fallback={<FilterIcon class="size-3.5" />}>
+        <Show when={props.variant === "compact"} fallback={<FilterIcon class="size-3.5" />}>
           <Plus class="size-3.5" />
         </Show>
-        <Show when={!props.compact}>
+        <Show when={props.variant !== "compact"}>
           <span>{props.addLabel}</span>
         </Show>
       </PopoverTrigger>
@@ -965,7 +965,7 @@ function AddFilter(props: {
             <div>
               <button
                 type="button"
-                class="flex h-7 items-center gap-1 rounded-[6px] px-1.5 text-[11.5px] text-muted-foreground outline-none hover:bg-hover hover:text-foreground"
+                class="flex h-7 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground outline-none hover:bg-hover hover:text-foreground"
                 onClick={() => setDraft(null)}
               >
                 <ChevronDown class="size-3 rotate-90" />
@@ -1017,7 +1017,7 @@ export type FilterBarProps = {
 };
 
 function clearButtonClass() {
-  return "flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] text-muted-foreground outline-none transition-colors duration-[var(--duration-hover)] hover:bg-hover hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/25";
+  return "flex h-7 items-center gap-1 rounded-full px-2 text-[11.5px] text-muted-foreground outline-none transition-colors duration-150 hover:bg-hover hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/25";
 }
 
 export function FilterBar(props: FilterBarProps) {
@@ -1041,7 +1041,7 @@ export function FilterBar(props: FilterBarProps) {
       {(condition, index) => (
         <div class="flex min-w-0 items-center gap-1.5">
           <Show when={index > 0}>
-            <span class="shrink-0 text-[11px] text-subtle-foreground">
+            <span class="shrink-0 text-xs text-subtle-foreground">
               {props.conjunction ?? "and"}
             </span>
           </Show>
@@ -1061,11 +1061,11 @@ export function FilterBar(props: FilterBarProps) {
     </For>
   );
 
-  const addFilter = (compact: boolean) => (
+  const addFilter = (variant: "default" | "compact") => (
     <AddFilter
       fields={fields()}
       addLabel={props.conditions.length > 0 ? "Add filter" : (props.label ?? "Filter")}
-      compact={compact}
+      variant={variant}
       onCreate={(condition) => props.onChange([...props.conditions, condition])}
     />
   );
@@ -1095,7 +1095,7 @@ export function FilterBar(props: FilterBarProps) {
         )}
       >
         {chips()}
-        {addFilter(props.conditions.length > 0)}
+        {addFilter(props.conditions.length > 0 ? "compact" : "default")}
         {props.filterExtra}
         {clear()}
         {props.children}
@@ -1106,7 +1106,7 @@ export function FilterBar(props: FilterBarProps) {
   return (
     <div class={cn("flex min-w-0 flex-wrap items-center gap-1.5", props.class)}>
       {chips()}
-      {addFilter(props.conditions.length > 0)}
+      {addFilter(props.conditions.length > 0 ? "compact" : "default")}
       {props.filterExtra}
       {clear()}
       {props.children}
