@@ -2,10 +2,15 @@ import { expect, test } from "@playwright/test";
 import { api, bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("dashboards", () => {
-  test("builds a shared dashboard and uses it for Overview", async ({ page }) => {
+  test.setTimeout(180_000);
+
+  test("builds a shared dashboard, creates one from the gallery and filters by query", async ({
+    page,
+  }) => {
     const { tenant } = await bootstrapSession(page, "Dashboard Tenant");
     const base = `/t/${tenant.slug}`;
 
+    // Original case: "builds a shared dashboard and uses it for Overview".
     await gotoHydrated(page, base);
     await expect(page.getByRole("heading", { name: "Fleet overview" })).toBeVisible();
     await expect(page.getByText("Built-in preview")).toBeVisible();
@@ -35,14 +40,45 @@ test.describe("dashboards", () => {
     await gotoHydrated(page, base);
     await expect(page.getByText("Team runbook")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Runbook", exact: true })).toBeVisible();
+
+    // Original case: "filters the device table with a shareable query".
+    const query = "platform is apple and staleDays at least 14";
+    await gotoHydrated(page, `/t/${tenant.id}/devices?query=${encodeURIComponent(query)}`);
+    await expect(page.getByRole("button", { name: /Query 2 conditions/ })).toBeVisible();
+    await expect(page).toHaveURL(/query=platform/);
+    await page.getByRole("button", { name: /Query 2 conditions/ }).click();
+    await expect(page.getByRole("button", { name: /Platform is Apple/ })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Days since check-in at least 14/ }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Clear advanced query" }).click();
+    await expect(page).not.toHaveURL(/query=/);
+
+    // Original case: "creates a dashboard from the gallery dialog".
+    await gotoHydrated(page, `/t/${tenant.slug}/dashboards`);
+
+    await page.getByRole("button", { name: "New dashboard" }).click();
+    const createDialog = page.getByRole("dialog");
+    await expect(createDialog).toBeVisible();
+    await createDialog.getByLabel("Name").fill("Quarterly review");
+    await createDialog.getByRole("button", { name: "Create dashboard" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/dashboards/[^/?]+\\?edit=1`));
+    await expect(page.getByRole("heading", { name: "Quarterly review" })).toBeVisible();
   });
 
-  test("pins a dashboard to the sidebar and keeps it there", async ({ page }) => {
+  test("pins a dashboard, saves compact details and persists a drag layout", async ({ page }) => {
     const { tenant } = await bootstrapSession(page, "Pinned Tenant");
-    const dashboard = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/dashboards`, {
-      method: "POST",
-      body: JSON.stringify({ name: "Fleet ops" }),
-    });
+
+    // Original case: "pins a dashboard to the sidebar and keeps it there".
+    const pinnedDashboard = await api<{ id: string }>(
+      page,
+      `/api/v1/tenants/${tenant.id}/dashboards`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name: "Fleet ops" }),
+      },
+    );
 
     await gotoHydrated(page, `/t/${tenant.slug}/dashboards`);
     await expect(page.getByRole("heading", { name: "Fleet ops", exact: true })).toBeVisible();
@@ -59,34 +95,26 @@ test.describe("dashboards", () => {
     const pinnedLink = primary.getByRole("link", { name: "Fleet ops", exact: true });
     await expect(pinnedLink).toBeVisible();
     await pinnedLink.click();
-    await expect(page).toHaveURL(new RegExp(`/dashboards/${dashboard.id}$`));
+    await expect(page).toHaveURL(new RegExp(`/dashboards/${pinnedDashboard.id}$`));
 
     await page.getByRole("button", { name: "Unpin from sidebar: Fleet ops" }).click();
     await expect(primary.getByRole("link", { name: "Fleet ops", exact: true })).toHaveCount(0);
-  });
 
-  test("creates a dashboard from the gallery dialog", async ({ page }) => {
-    const { tenant } = await bootstrapSession(page, "Gallery Tenant");
-    await gotoHydrated(page, `/t/${tenant.slug}/dashboards`);
+    // Original case: "keeps reports on a subpage and saves compact dashboard
+    // details".
+    const reportDashboard = await api<{ id: string }>(
+      page,
+      `/api/v1/tenants/${tenant.id}/dashboards`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name: "Fleet ops" }),
+      },
+    );
 
-    await page.getByRole("button", { name: "New dashboard" }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
-    await dialog.getByLabel("Name").fill("Quarterly review");
-    await dialog.getByRole("button", { name: "Create dashboard" }).click();
-
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/dashboards/[^/?]+\\?edit=1`));
-    await expect(page.getByRole("heading", { name: "Quarterly review" })).toBeVisible();
-  });
-
-  test("keeps reports on a subpage and saves compact dashboard details", async ({ page }) => {
-    const { tenant } = await bootstrapSession(page, "Reports Tenant");
-    const dashboard = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/dashboards`, {
-      method: "POST",
-      body: JSON.stringify({ name: "Fleet ops" }),
-    });
-
-    await gotoHydrated(page, `/t/${tenant.slug}/dashboards/${dashboard.id}?edit=1`);
+    await gotoHydrated(
+      page,
+      `/t/${tenant.slug}/dashboards/${reportDashboard.id}?edit=1`,
+    );
 
     // The edit strip is one compact row: the name and description are directly
     // labelled inputs rather than a second panel of form fields.
@@ -103,7 +131,7 @@ test.describe("dashboards", () => {
     // Report controls are not on the dashboard page.
     await expect(page.getByText("No scheduled reports")).toHaveCount(0);
 
-    await gotoHydrated(page, `/t/${tenant.slug}/dashboards/${dashboard.id}`);
+    await gotoHydrated(page, `/t/${tenant.slug}/dashboards/${reportDashboard.id}`);
     await expect(
       page.getByRole("heading", { name: "Fleet operations", exact: true }),
     ).toBeVisible();
@@ -111,7 +139,7 @@ test.describe("dashboards", () => {
 
     await page.getByRole("link", { name: "Reports", exact: true }).click();
     await expect(page).toHaveURL(
-      new RegExp(`/t/${tenant.slug}/dashboards/${dashboard.id}/reports$`),
+      new RegExp(`/t/${tenant.slug}/dashboards/${reportDashboard.id}/reports$`),
     );
     await expect(
       page.getByRole("heading", { name: "Reports for Fleet operations", exact: true }),
@@ -119,16 +147,21 @@ test.describe("dashboards", () => {
     await expect(page.getByText("No scheduled reports")).toBeVisible();
 
     await page.getByRole("link", { name: /Fleet operations/ }).click();
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/dashboards/${dashboard.id}$`));
-  });
+    await expect(page).toHaveURL(
+      new RegExp(`/t/${tenant.slug}/dashboards/${reportDashboard.id}$`),
+    );
 
-  test("coalesces a drag and persists the same non-overlapping layout", async ({ page }) => {
-    const { tenant } = await bootstrapSession(page, "Drag Tenant");
-    const dashboard = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/dashboards`, {
-      method: "POST",
-      body: JSON.stringify({ name: "Drag layout", template: "overview" }),
-    });
-    await gotoHydrated(page, `/t/${tenant.id}/dashboards/${dashboard.id}?edit=1`);
+    // Original case: "coalesces a drag and persists the same non-overlapping
+    // layout".
+    const dragDashboard = await api<{ id: string }>(
+      page,
+      `/api/v1/tenants/${tenant.id}/dashboards`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name: "Drag layout", template: "overview" }),
+      },
+    );
+    await gotoHydrated(page, `/t/${tenant.id}/dashboards/${dragDashboard.id}?edit=1`);
 
     const grid = page.locator(".dashboard-grid");
     const handle = page.getByRole("button", { name: "Move Managed devices", exact: true });
@@ -144,7 +177,7 @@ test.describe("dashboards", () => {
     const saved = page.waitForResponse(
       (response) =>
         response.request().method() === "PATCH" &&
-        response.url().includes(`/dashboards/${dashboard.id}/layout`),
+        response.url().includes(`/dashboards/${dragDashboard.id}/layout`),
     );
 
     await page.mouse.move(startX, startY);
@@ -155,7 +188,7 @@ test.describe("dashboards", () => {
 
     const layout = await api<{
       widgets: Array<{ id: string; x: number; y: number; w: number; h: number }>;
-    }>(page, `/api/v1/tenants/${tenant.id}/dashboards/${dashboard.id}`);
+    }>(page, `/api/v1/tenants/${tenant.id}/dashboards/${dragDashboard.id}`);
     const moved = layout.widgets.find(
       (widget) => widget.x === 6 && widget.y === 0 && widget.w === 3,
     );
@@ -170,20 +203,5 @@ test.describe("dashboards", () => {
         expect(overlaps, `${a.id} overlaps ${b.id}`).toBe(false);
       }
     }
-  });
-
-  test("filters the device table with a shareable query", async ({ page }) => {
-    const { tenant } = await bootstrapSession(page, "Query Tenant");
-    const query = "platform is apple and staleDays at least 14";
-    await gotoHydrated(page, `/t/${tenant.id}/devices?query=${encodeURIComponent(query)}`);
-    await expect(page.getByRole("button", { name: /Query 2 conditions/ })).toBeVisible();
-    await expect(page).toHaveURL(/query=platform/);
-    await page.getByRole("button", { name: /Query 2 conditions/ }).click();
-    await expect(page.getByRole("button", { name: /Platform is Apple/ })).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /Days since check-in at least 14/ }),
-    ).toBeVisible();
-    await page.getByRole("button", { name: "Clear advanced query" }).click();
-    await expect(page).not.toHaveURL(/query=/);
   });
 });

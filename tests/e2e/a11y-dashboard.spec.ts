@@ -136,9 +136,9 @@ const openPalette = async (page: Page) => {
 };
 
 test.describe("dashboard accessibility", () => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
 
-  test("authenticated pages have no axe violations", async ({ page }) => {
+  test("authenticated pages, filters and overlay states have no axe violations", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Axe Tenant");
     const base = `/t/${tenant.slug}`;
 
@@ -152,7 +152,12 @@ test.describe("dashboard accessibility", () => {
       method: "POST",
       body: JSON.stringify({ name: "Accessible policy" }),
     });
+    const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Overlay group" }),
+    });
 
+    // Original case: "authenticated pages have no axe violations".
     for (const [path, label] of [
       [base, "overview"],
       [`${base}/devices`, "devices"],
@@ -183,11 +188,9 @@ test.describe("dashboard accessibility", () => {
         description: "device detail scan skipped: the E2E tenant has no enrolled device fixture",
       });
     }
-  });
 
-  test("filter surfaces have no axe violations", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Axe Filters");
-    await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+    // Original case: "filter surfaces have no axe violations".
+    await gotoHydrated(page, `${base}/devices`);
 
     await page.getByRole("button", { name: "Filter", exact: true }).click();
     await expectNoViolations(page, "filter field picker", {
@@ -210,17 +213,8 @@ test.describe("dashboard accessibility", () => {
 
     await page.getByRole("button", { name: "Remove Status filter" }).click();
     await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible();
-  });
 
-  test("overlay open states have no axe violations", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Axe Overlays");
-    const base = `/t/${tenant.slug}`;
-
-    const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
-      method: "POST",
-      body: JSON.stringify({ name: "Overlay group" }),
-    });
-
+    // Original case: "overlay open states have no axe violations".
     // Command palette.
     const paletteInput = await openPalette(page);
     await expectNoViolations(page, "command palette open", {
@@ -275,9 +269,14 @@ test.describe("dashboard accessibility", () => {
     expect(group.id).toBeTruthy();
   });
 
-  test("Escape closes overlays and restores focus", async ({ page }) => {
-    await bootstrapTenant(page, "Axe Keyboard");
+  test("keyboard focus, route announcements and palette announcements", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Axe Keyboard");
+    await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Announce group" }),
+    });
 
+    // Original case: "Escape closes overlays and restores focus".
     // Palette opened from the header search button.
     const search = page.getByRole("button", { name: /^Search/ });
     await search.click();
@@ -301,14 +300,8 @@ test.describe("dashboard accessibility", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="menu-content"]')).toHaveCount(0);
     await expect(columns).toBeFocused();
-  });
 
-  test("route changes focus main and selection is announced", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Axe Navigation");
-    await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
-      method: "POST",
-      body: JSON.stringify({ name: "Announce group" }),
-    });
+    // Original case: "route changes focus main and selection is announced".
     await gotoHydrated(page, `/t/${tenant.id}/groups`);
 
     // The skip link changes only the hash, so it focuses its target directly.
@@ -338,27 +331,24 @@ test.describe("dashboard accessibility", () => {
 
     // The document title names the page and the tenant.
     await expect(page).toHaveTitle(/Groups · .+ · Mattrax/);
-  });
 
-  test("palette navigation focuses main without stealing focus for query-only changes", async ({
-    page,
-  }) => {
-    const tenant = await bootstrapTenant(page, "Axe Palette Navigation");
+    // Original case: "palette navigation focuses main without stealing focus
+    // for query-only changes".
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
-    const input = await openPalette(page);
-    await input.fill("Applications");
+    const paletteInput = await openPalette(page);
+    await paletteInput.fill("Applications");
     await expect(page.getByRole("option", { name: /^Applications/ }).first()).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    await input.press("Enter");
+    await paletteInput.press("Enter");
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/applications$`));
     await expect(page.locator("#main")).toBeFocused();
 
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
-    const search = page.getByRole("button", { name: "Search", exact: true });
+    const buttonSearch = page.getByRole("button", { name: "Search", exact: true });
     const queryInput = page.locator('[data-slot="command-palette"] input[role="combobox"]');
 
     // The route's dismiss layer can swallow the first press after navigation;
@@ -368,7 +358,7 @@ test.describe("dashboard accessibility", () => {
         async () => {
           if ((await queryInput.count()) > 0) return 1;
 
-          await search.click();
+          await buttonSearch.click();
 
           return queryInput.count();
         },
@@ -383,15 +373,12 @@ test.describe("dashboard accessibility", () => {
     );
     await queryInput.press("Enter");
     await expect(page).toHaveURL(/\/devices\?health=critical$/);
-    await expect(search).toBeFocused();
+    await expect(buttonSearch).toBeFocused();
     await expect(page.locator("#main")).not.toBeFocused();
-  });
 
-  test("palette announcements describe result changes", async ({ page }) => {
-    await bootstrapTenant(page, "Axe Announce");
-
-    const input = await openPalette(page);
-    await input.fill("this-command-does-not-exist");
+    // Original case: "palette announcements describe result changes".
+    const announcementInput = await openPalette(page);
+    await announcementInput.fill("this-command-does-not-exist");
     const status = page.locator('[data-slot="command-palette"] [role="status"]');
 
     await expect(status).toHaveText(/No results/, { timeout: 10_000 });
@@ -403,7 +390,7 @@ test.describe("dashboard accessibility", () => {
         .first(),
     ).toBeVisible();
 
-    await input.fill("settings");
+    await announcementInput.fill("settings");
     await expect(status).toHaveText(/result/, { timeout: 10_000 });
     await expect(page.locator('input[role="combobox"]')).toHaveAttribute("aria-expanded", "true");
   });

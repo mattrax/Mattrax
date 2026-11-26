@@ -43,35 +43,11 @@ test.describe("policy designer", () => {
     expect(errors).toEqual([]);
   });
 
-  test("disables Clear Apple settings in empty public and dashboard designers", async ({
-    page,
-  }) => {
+  test("exports designer policies as SyncML and Android JSON", async ({ page }) => {
+    test.setTimeout(120_000);
     await gotoHydrated(page, "/designer");
-    await expect(page.getByText(/0 platforms\s*·\s*0 collections/).first()).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Clear Apple settings", exact: true }),
-    ).toBeDisabled();
 
-    const { tenant } = await bootstrapSession(page, "Empty Designer Tenant");
-    await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
-    const policyName = page.getByRole("textbox", { name: /^Name/ });
-    await policyName.fill("Empty designed policy");
-    await expect(policyName).toHaveValue("Empty designed policy");
-    await page.getByRole("button", { name: /^create policy$/i }).click();
-    await expect(page).toHaveURL(/\/editor$/);
-    const policyUrl = page.url().replace(/\/editor$/, "");
-
-    await gotoHydrated(page, `${policyUrl}/design`);
-    await expect(page.getByText(/0 platforms\s*·\s*0 collections/).first()).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Clear Apple settings", exact: true }),
-    ).toBeDisabled();
-  });
-
-  test("browses the catalogue, applies a template and exports a SyncML artifact", async ({
-    page,
-  }) => {
-    await gotoHydrated(page, "/designer");
+    // browses the catalogue, applies a template and exports a SyncML artifact
     await expect(page.getByText("Build a policy in minutes")).toBeVisible();
     await page.getByRole("button", { name: "Windows", exact: true }).click();
     await expect(page.getByText("BitLocker", { exact: true }).first()).toBeVisible({
@@ -79,7 +55,7 @@ test.describe("policy designer", () => {
     });
     await page.getByRole("button", { name: /security baseline/i }).click();
     await expect(page.getByRole("button", { name: "Remove Firewall from policy" })).toBeVisible();
-    await page.locator('input[placeholder="Policy name"]').fill("Windows baseline");
+    await page.locator(`input[placeholder="Policy name"]`).fill("Windows baseline");
     const download = page.waitForEvent("download");
     await page.getByRole("button", { name: /^Export$/ }).click();
     const file = await download;
@@ -87,8 +63,27 @@ test.describe("policy designer", () => {
     const contents = await readFile(await file.path(), "utf8");
     // Numeric and boolean settings keep their SyncML type instead of being
     // stringified by the catalogue's enum values.
-    expect(contents).toContain('<Format xmlns="syncml:metinf">int</Format>');
+    expect(contents).toContain(`<Format xmlns="syncml:metinf">int</Format>`);
     expect(contents).toContain("<Data>1</Data>");
+
+    await gotoHydrated(page, "/designer");
+
+    // exports Android array enums as arrays
+    await page.getByRole("button", { name: "Android", exact: true }).click();
+    await expect(
+      page.getByText("Android Management API policy", { exact: false }).first(),
+    ).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByRole("button", { name: /Android baseline/i }).click();
+    await page
+      .getByRole("checkbox", { name: /Disable the camera on secure keyguard screens/ })
+      .check();
+    const androidDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: /^Export$/ }).click();
+    const androidFile = await androidDownload;
+    const policy = JSON.parse(await readFile(await androidFile.path(), "utf8"));
+    expect(policy.keyguardDisabledFeatures).toContain("CAMERA");
   });
 
   test("hands a public draft to the dashboard", async ({ page }) => {
@@ -106,102 +101,8 @@ test.describe("policy designer", () => {
     expect(draft.platforms.apple.length).toBeGreaterThan(0);
   });
 
-  test("saves the same designer draft into a tenant policy", async ({ page }) => {
-    const { tenant } = await bootstrapSession(page, "Designer Tenant");
-    await page.goto(`/t/${tenant.id}/policies/new`);
-    await page.locator("form input").first().fill("Designed policy");
-    await page.getByRole("button", { name: /^create policy$/i }).click();
-    await expect(page).toHaveURL(/\/editor$/);
-    const policyUrl = page.url().replace(/\/editor$/, "");
-    await gotoHydrated(page, `${policyUrl}/design`);
-    await page.getByRole("button", { name: /security baseline/i }).click();
-    await page.getByRole("button", { name: /^Save policy$/ }).click();
-    await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
-    await expect(page.getByText("Deployment history")).toBeVisible();
-    await expect(page.getByText("Apple configuration").first()).toBeVisible();
-
-    // The draft is stored with the policy, so it survives clearing browser
-    // storage and opens in the same editor on another device.
-    await page.evaluate(() => localStorage.clear());
-    await gotoHydrated(page, `${policyUrl}/design`);
-    await expect(page.getByRole("button", { name: "Remove Firewall", exact: true })).toBeVisible();
-  });
-
-  test("deploys a public draft into a workspace in one flow", async ({ page }) => {
-    await bootstrapSession(page, "Handoff Tenant");
-    await gotoHydrated(page, "/designer");
-    await page.getByRole("button", { name: /security baseline/i }).click();
-    await page.getByRole("button", { name: /Deploy in Mattrax/ }).click();
-    await expect(page).toHaveURL(/\/dashboard\?designerDraft=1/);
-    await expect(page.getByText("Policy draft ready")).toBeVisible();
-    await page.getByRole("button", { name: /Create policy & continue/ }).click();
-    await expect(page).toHaveURL(/\/design$/, { timeout: 20_000 });
-    await expect(page.getByRole("button", { name: "Remove Firewall", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: /^Save policy$/ }).click();
-    await expect(page).not.toHaveURL(/\/design$/);
-    await expect(page.getByText("Deployment history")).toBeVisible();
-  });
-
-  test("saves an Android policy from the dashboard designer", async ({ page }) => {
-    const { tenant } = await bootstrapSession(page, "Android Designer Tenant");
-    await page.goto(`/t/${tenant.id}/policies/new`);
-    await page.locator("form input").first().fill("Android policy");
-    await page.getByRole("button", { name: /^create policy$/i }).click();
-    await expect(page).toHaveURL(/\/editor$/);
-    const policyUrl = page.url().replace(/\/editor$/, "");
-    await gotoHydrated(page, `${policyUrl}/design`);
-    await page.getByRole("button", { name: "Android", exact: true }).click();
-    await page.getByRole("button", { name: /Android baseline/i }).click();
-    await page.getByRole("button", { name: /^Save policy$/ }).click();
-    await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
-    await expect(page.getByRole("heading", { name: "Android policy", exact: true })).toBeVisible();
-  });
-
-  test("warns before replacing advanced-editor configurations", async ({ page }) => {
-    const { tenant } = await bootstrapSession(page, "Guard Tenant");
-    await page.goto(`/t/${tenant.id}/policies/new`);
-    await page.locator("form input").first().fill("Guarded policy");
-    await page.getByRole("button", { name: /^create policy$/i }).click();
-    await expect(page).toHaveURL(/\/editor$/);
-    await page.getByRole("button", { name: /^edit$/i }).click();
-    await page.getByRole("button", { name: /^restrictions$/i }).click();
-    await page.getByRole("checkbox").first().uncheck();
-    await page.getByRole("button", { name: /^save$/i }).click();
-    const policyUrl = page.url().replace(/\/editor$/, "");
-
-    await gotoHydrated(page, `${policyUrl}/design`);
-    await expect(
-      page.getByText("This policy also has settings from the policy editor"),
-    ).toBeVisible();
-    await page.getByRole("button", { name: /security baseline/i }).click();
-    await expect(page.getByRole("button", { name: /^Save policy$/ })).toBeEnabled();
-    await page.getByRole("button", { name: /^Save policy$/ }).click();
-    await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
-    await expect(page.getByText("Apple configuration").first()).toBeVisible();
-    // Designer saves leave configurations created in the policy editor alone.
-    await expect(page.getByText("Device restrictions")).toBeVisible();
-  });
-
-  test("exports Android array enums as arrays", async ({ page }) => {
-    await gotoHydrated(page, "/designer");
-    await page.getByRole("button", { name: "Android", exact: true }).click();
-    await expect(
-      page.getByText("Android Management API policy", { exact: false }).first(),
-    ).toBeVisible({
-      timeout: 15_000,
-    });
-    await page.getByRole("button", { name: /Android baseline/i }).click();
-    await page
-      .getByRole("checkbox", { name: /Disable the camera on secure keyguard screens/ })
-      .check();
-    const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: /^Export$/ }).click();
-    const file = await download;
-    const policy = JSON.parse(await readFile(await file.path(), "utf8"));
-    expect(policy.keyguardDisabledFeatures).toContain("CAMERA");
-  });
-
-  test("loads the Windows catalogue incrementally", async ({ page }) => {
+  test("loads the Windows catalogue incrementally and opens a search result", async ({ page }) => {
+    test.setTimeout(120_000);
     const requested: string[] = [];
     page.on("request", (request) => {
       const url = new URL(request.url());
@@ -210,6 +111,8 @@ test.describe("policy designer", () => {
     });
 
     await gotoHydrated(page, "/designer");
+
+    // loads the Windows catalogue incrementally
     await page.getByRole("button", { name: "Windows", exact: true }).click();
     await expect(page.getByText("BitLocker", { exact: true }).first()).toBeVisible({
       timeout: 30_000,
@@ -224,15 +127,11 @@ test.describe("policy designer", () => {
     await page.getByPlaceholder("Search settings…").fill("cortana");
     await expect(page.getByText(/matching setting/).first()).toBeVisible({ timeout: 20_000 });
     expect(requested).toContain("/catalog/windows/search.json");
-  });
 
-  test("opens a Windows collection from a property search result", async ({ page }) => {
-    await gotoHydrated(page, "/designer");
-    await page.getByRole("button", { name: "Windows", exact: true }).click();
+    // opens a Windows collection from a property search result
     await expect(page.getByText("BitLocker", { exact: true }).first()).toBeVisible({
       timeout: 30_000,
     });
-
     await page.getByPlaceholder("Search settings…").fill("AllowCortanaAboveLock");
     const result = page.getByRole("button", { name: /Above Lock/ }).first();
     await expect(result).toBeVisible({ timeout: 20_000 });
@@ -268,44 +167,139 @@ test.describe("policy designer", () => {
     await expect(page.getByText("No settings match this filter.")).toHaveCount(0);
   });
 
-  test("saves a Windows baseline with only applicable OMA-URIs", async ({ page }) => {
-    const { tenant } = await bootstrapSession(page, "Windows Tenant");
-    await page.goto(`/t/${tenant.id}/policies/new`);
-    await page.locator("form input").first().fill("Windows policy");
+  test("empty and persisted dashboard designer drafts", async ({ page }) => {
+    test.setTimeout(240_000);
+    const { tenant } = await bootstrapSession(page, "Empty Designer Tenant");
+
+    // disables Clear Apple settings in empty public and dashboard designers
+    await gotoHydrated(page, "/designer");
+    await expect(page.getByText(/0 platforms\s*·\s*0 collections/).first()).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Clear Apple settings", exact: true }),
+    ).toBeDisabled();
+
+    await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
+    const policyName = page.getByRole("textbox", { name: /^Name/ });
+    await policyName.fill("Empty designed policy");
+    await expect(policyName).toHaveValue("Empty designed policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();
     await expect(page).toHaveURL(/\/editor$/);
     const policyUrl = page.url().replace(/\/editor$/, "");
+
     await gotoHydrated(page, `${policyUrl}/design`);
+    await expect(page.getByText(/0 platforms\s*·\s*0 collections/).first()).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Clear Apple settings", exact: true }),
+    ).toBeDisabled();
+
+    // saves the same designer draft into a tenant policy
+    await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
+    await page.locator("form input").first().fill("Designed policy");
+    await page.getByRole("button", { name: /^create policy$/i }).click();
+    await expect(page).toHaveURL(/\/editor$/);
+    const savedUrl = page.url().replace(/\/editor$/, "");
+    await gotoHydrated(page, `${savedUrl}/design`);
+    await page.getByRole("button", { name: /security baseline/i }).click();
+    await page.getByRole("button", { name: /^Save policy$/ }).click();
+    await expect(page).toHaveURL(savedUrl, { timeout: 20_000 });
+    await expect(page.getByText("Deployment history")).toBeVisible();
+    await expect(page.getByText("Apple configuration").first()).toBeVisible();
+
+    // The draft is stored with the policy, so it survives clearing browser
+    // storage and opens in the same editor on another device.
+    await page.evaluate(() => localStorage.clear());
+    await gotoHydrated(page, `${savedUrl}/design`);
+    await expect(page.getByRole("button", { name: "Remove Firewall", exact: true })).toBeVisible();
+
+    // saves and rehydrates an Apple DDM declaration
+    await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
+    await page.locator("form input").first().fill("Declaration policy");
+    await page.getByRole("button", { name: /^create policy$/i }).click();
+    await expect(page).toHaveURL(/\/editor$/);
+    const declarationUrl = page.url().replace(/\/editor$/, "");
+    await gotoHydrated(page, `${declarationUrl}/design`);
+    await page.getByPlaceholder("Search settings…").fill("Activation:Simple");
+    await page.getByRole("button", { name: /Activation:Simple/ }).click();
+    await page.getByRole("button", { name: /^Add to policy$/ }).click();
+    await page.getByRole("button", { name: /^Save policy$/ }).click();
+    await expect(page).toHaveURL(declarationUrl, { timeout: 20_000 });
+    await expect(page.getByText("Declaration").first()).toBeVisible();
+
+    await page.evaluate(() => localStorage.clear());
+    await gotoHydrated(page, `${declarationUrl}/design`);
+    await expect(
+      page.getByRole("button", { name: "Remove Activation:Simple", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("This policy already has settings")).toHaveCount(0);
+  });
+
+  test("dashboard policy designer flows", async ({ page }) => {
+    test.setTimeout(300_000);
+    const { tenant } = await bootstrapSession(page, "Handoff Tenant");
+
+    // saves an Android policy from the dashboard designer
+    await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
+    await page.locator("form input").first().fill("Android policy");
+    await page.getByRole("button", { name: /^create policy$/i }).click();
+    await expect(page).toHaveURL(/\/editor$/);
+    const androidUrl = page.url().replace(/\/editor$/, "");
+    await gotoHydrated(page, `${androidUrl}/design`);
+    await page.getByRole("button", { name: "Android", exact: true }).click();
+    await page.getByRole("button", { name: /Android baseline/i }).click();
+    await page.getByRole("button", { name: /^Save policy$/ }).click();
+    await expect(page).toHaveURL(androidUrl, { timeout: 20_000 });
+    await expect(page.getByRole("heading", { name: "Android policy", exact: true })).toBeVisible();
+
+    // warns before replacing advanced-editor configurations
+    await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
+    await page.locator("form input").first().fill("Guarded policy");
+    await page.getByRole("button", { name: /^create policy$/i }).click();
+    await expect(page).toHaveURL(/\/editor$/);
+    await page.getByRole("button", { name: /^edit$/i }).click();
+    await page.getByRole("button", { name: /^restrictions$/i }).click();
+    await page.getByRole("checkbox").first().uncheck();
+    await page.getByRole("button", { name: /^save$/i }).click();
+    const guardedUrl = page.url().replace(/\/editor$/, "");
+
+    await gotoHydrated(page, `${guardedUrl}/design`);
+    await expect(
+      page.getByText("This policy also has settings from the policy editor"),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /security baseline/i }).click();
+    await expect(page.getByRole("button", { name: /^Save policy$/ })).toBeEnabled();
+    await page.getByRole("button", { name: /^Save policy$/ }).click();
+    await expect(page).toHaveURL(guardedUrl, { timeout: 20_000 });
+    await expect(page.getByText("Apple configuration").first()).toBeVisible();
+    // Designer saves leave configurations created in the policy editor alone.
+    await expect(page.getByText("Device restrictions")).toBeVisible();
+
+    // saves a Windows baseline with only applicable OMA-URIs
+    await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
+    await page.locator("form input").first().fill("Windows policy");
+    await page.getByRole("button", { name: /^create policy$/i }).click();
+    await expect(page).toHaveURL(/\/editor$/);
+    const windowsUrl = page.url().replace(/\/editor$/, "");
+    await gotoHydrated(page, `${windowsUrl}/design`);
     await page.getByRole("button", { name: "Windows", exact: true }).click();
     await expect(page.getByText("BitLocker", { exact: true }).first()).toBeVisible({
       timeout: 30_000,
     });
     await page.getByRole("button", { name: /security baseline/i }).click();
     await page.getByRole("button", { name: /^Save policy$/ }).click();
-    await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
+    await expect(page).toHaveURL(windowsUrl, { timeout: 20_000 });
     await expect(page.getByText("Windows configuration").first()).toBeVisible();
-  });
 
-  test("saves and rehydrates an Apple DDM declaration", async ({ page }) => {
-    const { tenant } = await bootstrapSession(page, "Declaration Tenant");
-    await page.goto(`/t/${tenant.id}/policies/new`);
-    await page.locator("form input").first().fill("Declaration policy");
-    await page.getByRole("button", { name: /^create policy$/i }).click();
-    await expect(page).toHaveURL(/\/editor$/);
-    const policyUrl = page.url().replace(/\/editor$/, "");
-    await gotoHydrated(page, `${policyUrl}/design`);
-    await page.getByPlaceholder("Search settings…").fill("Activation:Simple");
-    await page.getByRole("button", { name: /Activation:Simple/ }).click();
-    await page.getByRole("button", { name: /^Add to policy$/ }).click();
+    // deploys a public draft into a workspace in one flow
+    await gotoHydrated(page, "/designer");
+    await page.getByRole("button", { name: /security baseline/i }).click();
+    await page.getByRole("button", { name: /Deploy in Mattrax/ }).click();
+    await expect(page).toHaveURL(/\dashboard\?designerDraft=1/);
+    await expect(page.getByText("Policy draft ready")).toBeVisible();
+    await page.getByRole("button", { name: /Create policy & continue/ }).click();
+    await expect(page).toHaveURL(/\design$/, { timeout: 20_000 });
+    await expect(page.getByRole("button", { name: "Remove Firewall", exact: true })).toBeVisible();
     await page.getByRole("button", { name: /^Save policy$/ }).click();
-    await expect(page).toHaveURL(policyUrl, { timeout: 20_000 });
-    await expect(page.getByText("Declaration").first()).toBeVisible();
-
-    await page.evaluate(() => localStorage.clear());
-    await gotoHydrated(page, `${policyUrl}/design`);
-    await expect(
-      page.getByRole("button", { name: "Remove Activation:Simple", exact: true }),
-    ).toBeVisible();
-    await expect(page.getByText("This policy already has settings")).toHaveCount(0);
+    await expect(page).not.toHaveURL(/\design$/);
+    await expect(page.getByText("Deployment history")).toBeVisible();
   });
 });

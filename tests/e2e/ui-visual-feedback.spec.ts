@@ -51,11 +51,12 @@ const seedEnabledScript = async (page: Page, tenantId: string) => {
 };
 
 test.describe("UI visual feedback", () => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
 
-  test("success badges meet contrast in light and dark themes", async ({ page }) => {
+  test("success badges, account heading and group summaries", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Badge Contrast Tenant");
 
+    // Original case: "success badges meet contrast in light and dark themes".
     await page.route("**/api/v1/tenants/*/users", (route) =>
       route.fulfill({
         json: {
@@ -110,86 +111,22 @@ test.describe("UI visual feedback", () => {
       ).toBeVisible();
       await expectNoContrastViolations(page, '[data-status-tone="success"]');
     }
-  });
 
-  test("a handled Scripts settings failure announces once without a global banner", async ({
-    page,
-  }) => {
-    const tenant = await bootstrapTenant(page, "Script Error Tenant");
-    await seedEnabledScript(page, tenant.id);
+    // Original case: "Account keeps one semantic title and preserves breadcrumb
+    // context".
+    await gotoHydrated(page, "/account");
 
-    let patchCount = 0;
-    await page.route("**/api/v1/tenants/*/scripts/settings", (route) => {
-      if (route.request().method() !== "PATCH") return route.continue();
-
-      patchCount += 1;
-
-      return route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ message: "Script settings fixture failure" }),
-      });
-    });
-
-    await gotoHydrated(page, `/t/${tenant.id}/scripts`);
-    const failed = page.waitForResponse(
-      (response) =>
-        response.request().method() === "PATCH" &&
-        response.url().includes("/api/v1/tenants/") &&
-        response.url().endsWith("/scripts/settings"),
-    );
-
-    await page.getByRole("button", { name: "Disable scripts for this tenant" }).click();
-    await confirmStepUp(page);
-    expect((await failed).status()).toBe(500);
-
-    const notifications = page.getByRole("region", { name: "Notifications" });
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
     await expect(
-      notifications.getByText("Could not update script settings", { exact: true }),
+      page.getByRole("heading", { level: 1, name: "Account", exact: true }),
     ).toBeVisible();
-    await expect(notifications.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByText("Your account", { exact: true })).toHaveCount(0);
     await expect(
-      page.getByRole("status").filter({ hasText: "Could not update script settings" }),
-    ).toHaveCount(1);
-    await expect(page.getByRole("alert")).toHaveCount(0);
-    await expect(page.getByText("Something went wrong", { exact: true })).toHaveCount(0);
-    expect(patchCount).toBe(1);
-  });
+      page.getByRole("navigation", { name: "Breadcrumb" }).getByText("Account", { exact: true }),
+    ).toBeVisible();
 
-  test("Scripts keeps columns scrollable and shows the mobile swipe hint", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Script Layout Tenant");
-    await seedEnabledScript(page, tenant.id);
-    await page.setViewportSize({ width: 390, height: 844 });
-
-    await gotoHydrated(page, `/t/${tenant.id}/scripts`);
-    const hint = page.getByText("Swipe the table sideways to see more columns.", { exact: true });
-    await expect(hint).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: "Runs as" })).toBeAttached();
-
-    const table = page.getByRole("table", { name: "Scripts" });
-    const container = page.locator('[data-slot="table-container"]').filter({ has: table });
-    const dimensions = await container.evaluate((element) => ({
-      clientWidth: element.clientWidth,
-      scrollWidth: element.scrollWidth,
-      overflowX: getComputedStyle(element).overflowX,
-    }));
-
-    expect(dimensions.overflowX).toBe("auto");
-    expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.clientWidth);
-
-    await container.evaluate((element) => {
-      element.scrollLeft = element.scrollWidth;
-    });
-    expect(await container.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
-
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await expect(hint).toBeHidden();
-  });
-
-  test("group summaries use singular labels for one and plural labels otherwise", async ({
-    page,
-  }) => {
-    const tenant = await bootstrapTenant(page, "Group Count Tenant");
+    // Original case: "group summaries use singular labels for one and plural
+    // labels otherwise".
     const group = await api<{ id: string; name: string }>(
       page,
       `/api/v1/tenants/${tenant.id}/groups`,
@@ -235,17 +172,75 @@ test.describe("UI visual feedback", () => {
     }
   });
 
-  test("Account keeps one semantic title and preserves breadcrumb context", async ({ page }) => {
-    await bootstrapTenant(page, "Account Heading Tenant");
-    await gotoHydrated(page, "/account");
+  test("script settings failure feedback and the mobile table hint", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Script Error Tenant");
+    await seedEnabledScript(page, tenant.id);
 
-    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    // Original case: "a handled Scripts settings failure announces once
+    // without a global banner".
+    let patchCount = 0;
+    await page.route("**/api/v1/tenants/*/scripts/settings", (route) => {
+      if (route.request().method() !== "PATCH") return route.continue();
+
+      patchCount += 1;
+
+      return route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Script settings fixture failure" }),
+      });
+    });
+
+    await gotoHydrated(page, `/t/${tenant.id}/scripts`);
+    const failed = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        response.url().includes("/api/v1/tenants/") &&
+        response.url().endsWith("/scripts/settings"),
+    );
+
+    await page.getByRole("button", { name: "Disable scripts for this tenant" }).click();
+    await confirmStepUp(page);
+    expect((await failed).status()).toBe(500);
+
+    const notifications = page.getByRole("region", { name: "Notifications" });
     await expect(
-      page.getByRole("heading", { level: 1, name: "Account", exact: true }),
+      notifications.getByText("Could not update script settings", { exact: true }),
     ).toBeVisible();
-    await expect(page.getByText("Your account", { exact: true })).toHaveCount(0);
+    await expect(notifications.getByRole("listitem")).toHaveCount(1);
     await expect(
-      page.getByRole("navigation", { name: "Breadcrumb" }).getByText("Account", { exact: true }),
-    ).toBeVisible();
+      page.getByRole("status").filter({ hasText: "Could not update script settings" }),
+    ).toHaveCount(1);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByText("Something went wrong", { exact: true })).toHaveCount(0);
+    expect(patchCount).toBe(1);
+
+    // Original case: "Scripts keeps columns scrollable and shows the mobile
+    // swipe hint".
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    await gotoHydrated(page, `/t/${tenant.id}/scripts`);
+    const hint = page.getByText("Swipe the table sideways to see more columns.", { exact: true });
+    await expect(hint).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Runs as" })).toBeAttached();
+
+    const table = page.getByRole("table", { name: "Scripts" });
+    const container = page.locator('[data-slot="table-container"]').filter({ has: table });
+    const dimensions = await container.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+      overflowX: getComputedStyle(element).overflowX,
+    }));
+
+    expect(dimensions.overflowX).toBe("auto");
+    expect(dimensions.scrollWidth).toBeGreaterThan(dimensions.clientWidth);
+
+    await container.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    expect(await container.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(hint).toBeHidden();
   });
 });
