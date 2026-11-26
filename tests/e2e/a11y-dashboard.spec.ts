@@ -3,6 +3,12 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { api, bootstrapTenant, gotoHydrated } from "./helpers";
 
+declare global {
+  interface Window {
+    __statuses?: string[];
+  }
+}
+
 /**
  * Dashboard-wide accessibility checks.
  *
@@ -326,10 +332,24 @@ test.describe("dashboard accessibility", () => {
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/policies$`));
     await expect(page.locator("#main")).toBeFocused();
 
-    // Selection changes are announced from the bulk action bar.
+    // Selection changes are announced from the bulk action bar. A late row
+    // refresh can overwrite the live region, so capture every announcement
+    // rather than relying on whichever one is present at assertion time.
     await gotoHydrated(page, `/t/${tenant.id}/groups`);
+    await page.evaluate(() => {
+      const seen: string[] = [];
+      const status = document.querySelector('[role="status"]');
+      if (!status) throw new Error("missing live status region");
+      new MutationObserver(() => {
+        const text = status.textContent ?? "";
+        if (text) seen.push(text);
+      }).observe(status, { childList: true, characterData: true, subtree: true });
+      window.__statuses = seen;
+    });
     await page.getByLabel("Select Announce group").check();
-    await expect(page.getByRole("status").filter({ hasText: "1 selected" })).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__statuses ?? []))
+      .toContain("1 selected");
 
     // The document title names the page and the tenant.
     await expect(page).toHaveTitle(/Groups · .+ · Mattrax/);
