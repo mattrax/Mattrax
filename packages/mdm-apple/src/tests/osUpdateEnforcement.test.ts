@@ -8,7 +8,7 @@ import {
   OS_UPDATE_ENFORCEMENT_ACTIVATION_ID,
   OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID,
 } from "@mattrax/mdm-apple";
-import { makeDb, tableName } from "./fake-db.js";
+import { appleIdentityCertificate, makeDb, tableName } from "./fake-db.js";
 
 const origin = "https://policies.test";
 
@@ -36,6 +36,7 @@ const device = (overrides: { osEdition?: string; osVersion?: string } = {}) => (
   status: "enrolled",
   name: "device-1",
   dmIdentifier: "udid-1",
+  dmIdentityFingerprint: "fingerprint-1",
   osEdition: overrides.osEdition ?? "iOS",
   osVersion: overrides.osVersion ?? "18.1",
   enrolledAt: new Date("2026-01-01T00:00:00Z"),
@@ -72,6 +73,8 @@ const appleScope = {
   _tag: "device" as const,
   udid: "udid-1",
   identityCertificate: "CN=Device,OU=org-1",
+  identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
 };
 
@@ -85,6 +88,7 @@ const makeBackend = (
   const db = makeDb({
     [tableName(schema.organization)]: [organization("org-1")],
     [tableName(schema.device)]: [options.device ?? device()],
+    [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
     [tableName(schema.deviceApple)]: [options.apple ?? appleRow()],
     ...(options.policy === null
       ? {}

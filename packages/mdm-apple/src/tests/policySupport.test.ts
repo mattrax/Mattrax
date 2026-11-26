@@ -162,3 +162,74 @@ describe("describeSkippedConfigurations", () => {
     ).toContain("2 configurations are not delivered");
   });
 });
+
+describe("certificate and mail scoping", () => {
+  it("delivers a PKCS identity on the legacy path without requiring a material lookup", async () => {
+    const result = await scopeConfigurationsToDevice(
+      [
+        configuration("mttx.apple.pfx.smime", {
+          materialSha256: "a".repeat(64),
+          certificatePem: "pem",
+          subject: "person",
+          notAfter: "2027-01-01T00:00:00.000Z",
+          fingerprintSha256: "b".repeat(64),
+        }),
+      ],
+      mac,
+      "legacy",
+    );
+
+    expect(result.delivered).toHaveLength(1);
+  });
+
+  it("reports an identity with no uploaded material instead of sending it", async () => {
+    const result = await scopeConfigurationsToDevice(
+      [configuration("mttx.apple.pfx.smime", { certificatePem: "pem" })],
+      mac,
+      "legacy",
+    );
+
+    expect(result.delivered).toHaveLength(0);
+    expect(result.skipped[0]?.reason).toContain("PFX certificate material");
+  });
+
+  it("reports password authentication on either mail server", async () => {
+    const result = await scopeConfigurationsToDevice(
+      [
+        configuration("mttx.apple.mail.work", {
+          incoming: {
+            serverType: "IMAP",
+            hostName: "imap.example.com",
+            authenticationMethod: "None",
+          },
+          outgoing: { hostName: "smtp.example.com", authenticationMethod: "Password" },
+        }),
+      ],
+      mac,
+      "ddm",
+    );
+
+    expect(result.delivered).toHaveLength(0);
+    expect(result.skipped[0]?.reason).toContain("credentials asset");
+  });
+
+  it("reports password-based Apple mail on the declarative path", async () => {
+    const result = await scopeConfigurationsToDevice(
+      [
+        configuration("mttx.apple.mail.work", {
+          incoming: {
+            serverType: "IMAP",
+            hostName: "imap.example.com",
+            authenticationMethod: "Password",
+          },
+          outgoing: { hostName: "smtp.example.com", authenticationMethod: "Password" },
+        }),
+      ],
+      mac,
+      "ddm",
+    );
+
+    expect(result.delivered).toHaveLength(0);
+    expect(result.skipped[0]?.reason).toContain("credentials asset");
+  });
+});

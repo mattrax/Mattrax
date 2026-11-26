@@ -24,7 +24,14 @@ import { clientAddress as trustedClientAddress } from "./clientAddress.js";
 
 export { normalisePath };
 
-export type RateLimitBucket = "auth" | "enrollment" | "mdm" | "scep" | "scim" | "billing";
+export type RateLimitBucket =
+  | "auth"
+  | "enrollment"
+  | "mdm"
+  | "scep"
+  | "scim"
+  | "billing"
+  | "policy";
 
 export type RateLimitRule = {
   readonly bucket: RateLimitBucket;
@@ -54,6 +61,17 @@ const authRule = (): RateLimitRule => ({
   failClosedWhenUnavailable: true,
 });
 
+/**
+ * Stateless policy helpers that parse caller-supplied profiles. They are
+ * cheap for a normal editor session but expensive enough per request (base64
+ * decode, optional PKCS#7 unwrap, plist parse) to deserve their own bucket
+ * instead of the generous MDM/enrollment allowances.
+ */
+export const MOBILECONFIG_PATHS = new Set([
+  "/api/v1/policy/extract-mobileconfig",
+  "/api/v1/policy/preview-mobileconfig",
+]);
+
 /** POST endpoints that issue sessions or mutate authentication factors. */
 export const SENSITIVE_AUTH_PATHS = new Set([
   "/api/v1/beginpasskeysignin",
@@ -67,6 +85,8 @@ export const SENSITIVE_AUTH_PATHS = new Set([
   "/api/v1/account/email-change",
   "/api/v1/account/email-change/verify",
   "/api/v1/account/email-verification",
+  "/api/v1/account/recovery",
+  "/api/v1/account/recovery/verify",
   "/api/v1/register/verification",
   "/api/v1/register/verification/verify",
   "/api/v1/verifytotppending",
@@ -92,6 +112,13 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
   if (pathname === "/api/v1/bootstrap") return undefined;
 
   if (request.method === "POST" && SENSITIVE_AUTH_PATHS.has(pathname)) return authRule();
+
+  // Policy editors preview a profile as the user types, so this is a normal
+  // authenticated session workload, not a credential guess. The dedicated
+  // bucket keeps a runaway loop or an unauthenticated flood away from the
+  // MDM/enrollment counters while still allowing quick re-previews.
+  if (request.method === "POST" && MOBILECONFIG_PATHS.has(pathname))
+    return { bucket: "policy", limit: 120, windowSeconds: 60 };
 
   // SSO discovery is public and reveals whether an address belongs to a
   // tenant; keep it in the credential bucket so it cannot be enumerated. The
@@ -199,6 +226,7 @@ export type RateLimitEnv = {
   readonly RATE_LIMITER_SCIM?: RateLimitBindingLike;
   readonly RATE_LIMITER_BILLING?: RateLimitBindingLike;
   readonly RATE_LIMITER_SCEP?: RateLimitBindingLike;
+  readonly RATE_LIMITER_POLICY?: RateLimitBindingLike;
 };
 
 /**
@@ -214,6 +242,7 @@ export const rateLimitBindingsFromEnv = (env: RateLimitEnv): RateLimitBindings =
   scim: env.RATE_LIMITER_SCIM,
   billing: env.RATE_LIMITER_BILLING,
   scep: env.RATE_LIMITER_SCEP,
+  policy: env.RATE_LIMITER_POLICY,
 });
 
 export type RateLimitOutcome = {

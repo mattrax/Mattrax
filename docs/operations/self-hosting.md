@@ -113,51 +113,172 @@ volume. Check it with `curl http://127.0.0.1:8080/api/ready` or
 
 ## Reverse proxy
 
-TLS is terminated by a reverse proxy in front of port `8080`. The required
-configuration is:
+TLS is terminated by a reverse proxy in front of port `8080`. Compose publishes
+the backend on `127.0.0.1` by default, so a proxy on the same host can reach it
+without exposing it to other networks. If the proxy runs on another host, set
+`MATTRAX_BIND_ADDRESS` to a private host interface and restrict that interface
+with a firewall; do not publish it on a public address.
+
+The following Caddyfile configures Caddy v2 to terminate TLS, verify any
+presented device certificate, and forward the certificate's SHA-256
+fingerprint. It is highlighted as nginx because the docs bundle has no Caddy
+grammar:
 
 ```nginx
-server {
-  listen 443 ssl;
-  server_name mdm.example.com;
+mdm.example.com {
+	tls {
+		client_auth {
+			# Browsers may connect without a client certificate. Any certificate
+			# a device presents must verify against the device CA.
+			mode verify_if_given
+			trust_pool file /path/to/apple-ca-bundle.pem /path/to/tenant-scep-ca-bundle.pem
+		}
+	}
 
-  # Apple, Windows and Android clients talk to /mdm/* on the same host.
-  client_max_body_size 64m;
+	# Apple, Windows and Android clients talk to /mdm/* on the same host.
+	request_body {
+		max_size 64MB
+	}
 
-  location / {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_set_header Host $host;
-    # Overwrite rather than append: a caller-supplied chain would let the
-    # client choose its own rate-limit key.
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header Cf-Connecting-Ip "";
-    proxy_set_header X-Forwarded-Proto https;
+	reverse_proxy 127.0.0.1:8080 {
+		header_up Host {host}
+		# Overwrite rather than append: a caller-supplied chain would let the
+		# client choose its own rate-limit key.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+		header_up -Cf-Connecting-Ip
+		header_up X-Forwarded-Proto https
 
-    # Required for Apple MDM certificate authentication. Strip anything the
-    # client sent, then forward only what nginx verified.
-    proxy_set_header x-device-identity-certificate "";
-    proxy_set_header x-device-identity-certificate-serial "";
-    proxy_set_header x-device-identity-certificate-sha256 "";
-    proxy_set_header x-device-identity-certificate $ssl_client_s_dn;
-    proxy_set_header x-device-identity-certificate-serial $ssl_client_serial;
-
-    ssl_client_certificate /path/to/apple-device-ca.pem;
-    ssl_verify_client optional;
-  }
+		# header_up replaces caller values with fields from the verified TLS
+		# handshake. The fingerprint placeholder is SHA-256, not SHA-1.
+		header_up x-device-identity-certificate {tls_client_subject}
+		header_up x-device-identity-certificate-serial {tls_client_serial}
+		header_up x-device-identity-certificate-sha256 {tls_client_fingerprint}
+		header_up x-device-identity-certificate-der-base64 {tls_client_certificate_der_base64}
+	}
 }
 ```
 
+Stock nginx `$ssl_client_fingerprint` is SHA-1 and must not be sent as
+`x-device-identity-certificate-sha256`. Use Caddy as above, or configure another
+proxy to compute SHA-256 over the verified client certificate's DER encoding.
+
+### Device CA bundle
+
+`apple-ca-bundle.pem` contains the Apple trust roots. The second file must contain
+every tenant SCEP CA that signs Windows identities, plus retired anchors still
+inside their overlap window. Windows WSTEP enrollment uses the tenant's SCEP CA;
+Mattrax creates it on first use, rotates it automatically 400 days before expiry,
+and supports manual rotation and import. The current certificate is stored in
+`scep_ca`. Rotation writes the predecessor to `scep_ca_trust` with a
+`trust_until` deadline so existing devices can keep checking in until they renew.
+
+Regenerate `tenant-scep-ca-bundle.pem` after a tenant CA is created, rotated or
+imported, and on a schedule after daily maintenance. Add a new current CA before
+its first Windows management check-in, and retain retired anchors until
+`trust_until` passes. The following MySQL query produces the complete PEM bundle;
+run it on the database host, then validate the bundle, replace it atomically,
+and reload Caddy:
+
+```bash
+set -euo pipefail
+
+live=/path/to/tenant-scep-ca-bundle.pem
+bundle=$(mktemp /path/to/.tenant-scep-ca-bundle.pem.XXXXXX)
+previous=$(mktemp /path/to/.tenant-scep-ca-bundle.pem.previous.XXXXXX)
+trap 'rm -f "$bundle" "$previous"' EXIT
+had_previous=0
+if [[ -f "$live" ]]; then
+  cp -p "$live" "$previous"
+  had_previous=1
+fi
+
+docker compose -f apps/docker/docker-compose.yml exec -T mysql \
+  sh -c 'mysql --batch --raw --skip-column-names -umattrax -p"$MYSQL_PASSWORD" mattrax -e "
+    SELECT cert_pem FROM scep_ca
+    UNION
+    SELECT cert_pem FROM scep_ca_trust
+    WHERE trust_until > UTC_TIMESTAMP();
+  "' > "$bundle"
+
+openssl crl2pkcs7 -nocrl -certfile "$bundle" |
+  openssl pkcs7 -print_certs -noout >/dev/null
+chmod 0644 "$bundle"
+mv -f "$bundle" "$live"
+
+if ! caddy reload --config /etc/caddy/Caddyfile; then
+  if (( had_previous )); then
+    mv -f "$previous" "$live"
+    caddy reload --config /etc/caddy/Caddyfile || true
+  else
+    rm -f "$live"
+  fi
+  echo "Caddy reload failed; previous CA bundle restored." >&2
+  exit 1
+fi
+```
+
+The script exits on a failed query or certificate validation before replacing the
+live bundle. If Caddy rejects the new bundle, it restores the previous file and
+attempts to reload it before exiting nonzero.
+
+For an external MySQL database, replace the `docker compose exec` command with a
+mysql client invocation on the database host. Use a protected option file rather
+than a password on the command line:
+
+```bash
+mysql --defaults-extra-file=/secure/mattrax-ca-export.cnf \
+  --batch --raw --skip-column-names mattrax -e '
+    SELECT cert_pem FROM scep_ca
+    UNION
+    SELECT cert_pem FROM scep_ca_trust
+    WHERE trust_until > UTC_TIMESTAMP();
+  ' > "$bundle"
+```
+
+Keep the same validation, atomic replacement and rollback steps for either
+database. Caddy loads trust-pool files when the configuration is adapted, so a
+file change alone is not enough; reload after every update. An Apple-only pool
+rejects Windows client certificates. Android management requests do not present
+an mTLS client certificate and continue through `verify_if_given` without
+identity headers.
+
 Set `TRUST_DEVICE_IDENTITY_HEADERS=1` **only** when the proxy verifies device
-certificates and overwrites the headers as above. Exposing the container without
-that proxy would let a caller claim any tenant by setting the certificate OU.
+certificates and overwrites the headers as above. Also set
+`TRUSTED_DEVICE_IDENTITY_PEERS` to the comma-separated numeric IPv4/IPv6
+addresses of the proxy as seen by the container. For a host-side Caddy example,
+loopback is typical; some Docker bridge setups present the private gateway
+instead, so configure the address the container actually observes. For a proxy
+on another host, use its stable private address. Startup fails when
+trusted-header mode is enabled without this allowlist.
+
+The API compares the allowlist with the actual Node socket peer, not with
+`X-Forwarded-For` or any caller-supplied header. It strips all incoming identity
+headers, including `x-device-identity-certificate-der-base64`, and restores them
+only for an allowlisted peer. Caddy's `{tls_client_certificate_der_base64}`
+placeholder supplies the verified leaf certificate as plain base64 DER; the
+Cloudflare boundary converts its verified RFC 9440 leaf into the same header.
+The Windows request context exposes the rebuilt value as
+`identityCertificateDerBase64`. The verified certificate must include a CN and a
+serial; an incomplete bundle is discarded rather than allowing tenant routing by
+OU alone. For Apple MDM, forwarding the verified SHA-256 fingerprint is mandatory.
+Serial-only fallback is no longer valid. Exposing the container without a
+verifying, overwriting proxy would otherwise let a caller claim any tenant by
+setting the certificate OU.
+
+Global proxy trust is not tenant authorization. The Windows backend parses the
+forwarded DER certificate, derives its issuer fingerprint, and compares that
+fingerprint with the asserted tenant's current and still-trusted retired SCEP CAs
+before accepting the certificate identity or serial. A valid certificate issued
+by Tenant A therefore cannot authenticate a request that asserts Tenant B, even
+though both CAs are present in the proxy's global trust pool.
 
 Apple signs MDM check-ins with the SCEP identity certificate and sends its subject
-distinguished name in the TLS handshake. The tenant is the `OU` in that subject, so
-forwarding `$ssl_client_s_dn` is what routes a device to its tenant. If your proxy
-can also compute the certificate's SHA-256 fingerprint, send it as
-`x-device-identity-certificate-sha256`; otherwise identity binding falls back to
-the serial number.
+distinguished name in the TLS handshake. The tenant is the `OU` in that subject.
+Caddy's `{tls_client_subject}` placeholder supplies that DN, and
+`{tls_client_fingerprint}` supplies the mandatory SHA-256 fingerprint. A proxy
+that cannot forward the verified SHA-256 fingerprint cannot serve Apple MDM
+traffic.
 
 The container serves plain HTTP because TLS is the proxy's job. Set
 `TRUSTED_ORIGINS` when the dashboard and API are served from different origins.
@@ -226,19 +347,21 @@ would ship the files twice. Licences are kept.
 
 ## Configuration
 
-| Variable                        | Required  | Purpose                                                                                     |
-| ------------------------------- | --------- | ------------------------------------------------------------------------------------------- |
-| `ORIGIN`                        | yes       | Canonical public HTTPS URL. WebAuthn relying party and link generator.                      |
-| `AUTH_SECRET`                   | yes       | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets.                 |
-| `DATABASE_URL`                  | yes       | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.                       |
-| `TRUST_DEVICE_IDENTITY_HEADERS` | no        | Set to `1` when a TLS proxy forwards verified device certificates.                          |
-| `TRUST_PROXY_HEADERS`           | no        | Set to `1` when the proxy overwrites `X-Forwarded-For`; used for rate limits and audit IPs. |
-| `PORT`                          | no        | HTTP port inside the container. Defaults to `8080`.                                         |
-| `DATA_DIR`                      | no        | Object storage and runtime state. Defaults to `/data`.                                      |
-| `SKIP_MIGRATIONS`               | no        | Set to `1` to manage the schema from a separate job.                                        |
-| `MAIL_TRANSPORT`                | no        | `smtp`; unset disables outbound email.                                                      |
-| `MAIL_FROM`                     | with mail | Verified sender, e.g. `Mattrax <notifications@example.com>`.                                |
-| `MATTRAX_VERSION`               | no        | Compose image tag. Defaults to `latest`; set a release version to pin.                      |
+| Variable                        | Required   | Purpose                                                                                         |
+| ------------------------------- | ---------- | ----------------------------------------------------------------------------------------------- |
+| `ORIGIN`                        | yes        | Canonical public HTTPS URL. WebAuthn relying party and link generator.                          |
+| `AUTH_SECRET`                   | yes        | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets.                     |
+| `DATABASE_URL`                  | yes        | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.                           |
+| `TRUST_DEVICE_IDENTITY_HEADERS` | no         | Set to `1` when a TLS proxy forwards verified device certificates.                              |
+| `TRUSTED_DEVICE_IDENTITY_PEERS` | with trust | Comma-separated numeric proxy addresses allowed to supply device identity.                      |
+| `TRUST_PROXY_HEADERS`           | no         | Set to `1` when the proxy overwrites `X-Forwarded-For`; used for rate limits and audit IPs.     |
+| `MATTRAX_BIND_ADDRESS`          | no         | Compose host bind address; defaults to `127.0.0.1`. Use a private interface for a remote proxy. |
+| `PORT`                          | no         | HTTP port inside the container. Defaults to `8080`.                                             |
+| `DATA_DIR`                      | no         | Object storage and runtime state. Defaults to `/data`.                                          |
+| `SKIP_MIGRATIONS`               | no         | Set to `1` to manage the schema from a separate job.                                            |
+| `MAIL_TRANSPORT`                | no         | `smtp`; unset disables outbound email.                                                          |
+| `MAIL_FROM`                     | with mail  | Verified sender, e.g. `Mattrax <notifications@example.com>`.                                    |
+| `MATTRAX_VERSION`               | no         | Compose image tag. Defaults to `latest`; set a release version to pin.                          |
 
 Optional integrations use the same names as the hosted deployment. See
 [Configuration](/operations/configuration) for the full list. Anything unset is

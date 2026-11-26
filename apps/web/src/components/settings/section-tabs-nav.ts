@@ -44,3 +44,17 @@ export function sectionTabTarget(
       return undefined;
   }
 }
+
+/**
+ * Activate a navigation tab after the current key event has settled.
+ *
+ * Solid Router starts link navigation as a transition. A synthetic click in
+ * the keydown that first adopts a hydrated tablist can be dropped while that
+ * transition is still settling, so automatic keyboard activation waits one
+ * macrotask before clicking the real anchor.
+ */
+export function activateSectionTabAnchor(anchor: Pick<HTMLElement, "click"> | undefined): void {
+  if (!anchor) return;
+
+  setTimeout(() => anchor.click(), 0);
+}

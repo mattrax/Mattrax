@@ -72,6 +72,11 @@ export type IssueScepChallengeOptions = {
   readonly authSecret: string;
   /** Lifetime of the challenge in seconds. */
   readonly ttlSeconds: number;
+  /**
+   * Opaque per-enrollment reference (the Apple BYOD request id) that follows
+   * the challenge into the issued identity row.
+   */
+  readonly referenceId?: string;
   /** Injectable clock for tests. */
   readonly now?: number;
 };
@@ -122,6 +127,7 @@ export const issueScepChallenge = (
       id,
       organizationId: options.organizationId,
       enrollmentId: options.enrollmentId,
+      byodEnrollmentId: options.referenceId ?? null,
       expiresAt,
       consumedAt: null,
       createdAt: new Date(now),
@@ -181,9 +187,33 @@ export class ScepRepositoryLive extends ScepRepository {
           );
         }
 
+        const challengeId = yield* Effect.tryPromise({
+          try: () => scepChallengeId(challenge),
+          catch: (cause) =>
+            new ScepError({
+              message: "Failed to hash SCEP challenge",
+              reason: "internal",
+              cause,
+            }),
+        });
+
+        // Load the enrollment and challenge reference together, before the
+        // challenge is consumed. The conditional UPDATE below remains the
+        // single-use claim; this read must never be used to authorize issuance.
         const [enrollment] = yield* db
-          .select()
+          .select({
+            id: schema.enterpriseEnrollment.id,
+            organizationId: schema.enterpriseEnrollment.organizationId,
+            byodEnrollmentId: schema.scepChallenge.byodEnrollmentId,
+          })
           .from(schema.enterpriseEnrollment)
+          .leftJoin(
+            schema.scepChallenge,
+            and(
+              eq(schema.scepChallenge.id, challengeId),
+              eq(schema.scepChallenge.enrollmentId, schema.enterpriseEnrollment.id),
+            ),
+          )
           .where(eq(schema.enterpriseEnrollment.id, verification.enrollmentId))
           .limit(1)
           .pipe(
@@ -216,16 +246,6 @@ export class ScepRepositoryLive extends ScepRepository {
         // can observe `affectedRows === 1`. A missing, expired, already-used or
         // other-tenant row is reported exactly like an invalid challenge so the
         // response does not distinguish the failure modes.
-        const challengeId = yield* Effect.tryPromise({
-          try: () => scepChallengeId(challenge),
-          catch: (cause) =>
-            new ScepError({
-              message: "Failed to hash SCEP challenge",
-              reason: "internal",
-              cause,
-            }),
-        });
-
         const consumed = yield* db
           .update(schema.scepChallenge)
           .set({ consumedAt: new Date() })
@@ -250,6 +270,7 @@ export class ScepRepositoryLive extends ScepRepository {
         return {
           organizationalUnit: enrollment.organizationId,
           enrollmentId: enrollment.id,
+          referenceId: enrollment.byodEnrollmentId ?? undefined,
         };
       }).pipe(
         Effect.mapError((cause) =>
@@ -633,6 +654,7 @@ export class ScepRepositoryLive extends ScepRepository {
               organizationId: certificate.organizationId,
               enrollmentId: certificate.enrollmentId ?? null,
               deviceId: certificate.deviceId ?? null,
+              byodEnrollmentId: certificate.referenceId ?? null,
               caFingerprintSha256: certificate.caFingerprintSha256 ?? null,
               notAfter: certificate.notAfter,
               createdAt: new Date(),
@@ -661,6 +683,7 @@ export class ScepRepositoryLive extends ScepRepository {
             .update(schema.scepIssuedCertificate)
             .set({
               enrollmentId: certificate.enrollmentId ?? null,
+              byodEnrollmentId: certificate.referenceId ?? null,
               caFingerprintSha256: certificate.caFingerprintSha256 ?? null,
               notAfter: certificate.notAfter,
               // `revokedAt` is intentionally preserved. A duplicate serial is a
@@ -738,6 +761,7 @@ export class ScepRepositoryLive extends ScepRepository {
             organizationId: row.organizationId,
             enrollmentId: row.enrollmentId ?? undefined,
             deviceId: row.deviceId ?? undefined,
+            referenceId: row.byodEnrollmentId ?? undefined,
             caFingerprintSha256: row.caFingerprintSha256 ?? undefined,
             notAfter: row.notAfter,
           };

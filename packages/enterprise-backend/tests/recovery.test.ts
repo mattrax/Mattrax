@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import { RecoveryRejected } from "@mattrax/enterprise-domain";
 import type { OutboundEmailMessage } from "@mattrax/email";
@@ -14,7 +14,7 @@ import {
   verifyAccountRecoveryProof,
 } from "../src/Account/recovery.ts";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
-import { makeDb, runEffect } from "./helpers.js";
+import { makeDb, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -349,6 +349,214 @@ describe("break-glass recovery approval", () => {
     });
   });
 
+  it("does not approve a ceremony cancelled between the read and the update", async () => {
+    const { db, sent, deps } = makeDeps(shared());
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    await runEffect(
+      verifyAccountRecoveryProof(deps, { token: tokenFrom(sent, "owner@example.com") }),
+    );
+    const approval = tokenFrom(sent, "colleague@example.com", "recoveryToken");
+    const originalTransaction = db.transaction;
+
+    // Cancellation commits between the initial read and the approval write.
+    db.transaction = ((work: any) => {
+      const row = db.store.account_recovery[0]!;
+      row.status = "cancelled";
+      row.cancelledAt = new Date(start);
+
+      return originalTransaction(work);
+    }) as typeof db.transaction;
+
+    try {
+      await expect(
+        runEffect(
+          approveAccountRecovery(deps, {
+            token: approval,
+            organizationId: "tenant-1",
+            approverAccountId: "user-2",
+          }),
+        ),
+      ).rejects.toBeInstanceOf(RecoveryRejected);
+    } finally {
+      db.transaction = originalTransaction;
+    }
+
+    expect(db.store.account_recovery[0]).toMatchObject({
+      status: "cancelled",
+      approvedAt: null,
+    });
+    expect(db.store.account_audit_log.map((row: any) => row.action)).not.toContain(
+      "account.recovery_approved",
+    );
+  });
+
+  it("rolls back the approval when minting the completion token fails", async () => {
+    const { db, sent, deps } = makeDeps(shared());
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    await runEffect(
+      verifyAccountRecoveryProof(deps, { token: tokenFrom(sent, "owner@example.com") }),
+    );
+    const approval = tokenFrom(sent, "colleague@example.com", "recoveryToken");
+    const originalUpdate = db.update;
+    let updates = 0;
+
+    db.update = ((table: any) => {
+      if (table !== schema.accountRecovery) return originalUpdate(table);
+      updates += 1;
+
+      if (updates !== 2) return originalUpdate(table);
+
+      return {
+        set: () => ({ where: () => Effect.fail(new Error("mint unavailable")) }),
+      };
+    }) as typeof db.update;
+
+    try {
+      await expect(
+        runEffect(
+          approveAccountRecovery(deps, {
+            token: approval,
+            organizationId: "tenant-1",
+            approverAccountId: "user-2",
+          }),
+        ),
+      ).rejects.toBeInstanceOf(RecoveryRejected);
+    } finally {
+      db.update = originalUpdate;
+    }
+
+    expect(db.store.account_recovery[0]).toMatchObject({
+      status: "pending_approval",
+      approvedAt: null,
+      completionTokenHash: null,
+    });
+    expect(db.store.account_audit_log.map((row: any) => row.action)).not.toContain(
+      "account.recovery_approved",
+    );
+  });
+  it("mints a completion when approval commits while proof verification is in flight", async () => {
+    const { db, sent, deps } = makeDeps(shared());
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    const proof = tokenFrom(sent, "owner@example.com");
+    const approval = tokenFrom(sent, "colleague@example.com", "recoveryToken");
+    const originalTransaction = db.transaction;
+    let entered!: () => void;
+    let release!: () => void;
+    let paused = false;
+    const proofEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const resume = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    db.transaction = ((work: any) => {
+      if (paused) return originalTransaction(work);
+      paused = true;
+
+      return Effect.gen(function* () {
+        entered();
+        yield* Effect.promise(() => resume);
+
+        return yield* originalTransaction(work);
+      });
+    }) as typeof db.transaction;
+
+    try {
+      const proofRun = runEffect(verifyAccountRecoveryProof(deps, { token: proof }));
+      await proofEntered;
+
+      await expect(
+        runEffect(
+          approveAccountRecovery(deps, {
+            token: approval,
+            organizationId: "tenant-1",
+            approverAccountId: "user-2",
+          }),
+        ),
+      ).resolves.toEqual({ status: "ok" });
+
+      release();
+      const verified = await proofRun;
+
+      expect(verified.status).toBe("ready");
+
+      if (verified.status !== "ready") throw new Error("expected a completion token");
+
+      await expect(
+        runEffect(redeemRecoveryToken(db, verified.signInToken, new Date(start))),
+      ).resolves.toEqual({ accountId: "user-1" });
+      expect(db.store.account_recovery[0]!.status).toBe("completed");
+    } finally {
+      release();
+      db.transaction = originalTransaction;
+    }
+  });
+
+  it("mints a completion when proof commits while approval is in flight", async () => {
+    const { db, sent, deps } = makeDeps(shared());
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    const proof = tokenFrom(sent, "owner@example.com");
+    const approval = tokenFrom(sent, "colleague@example.com", "recoveryToken");
+    const originalTransaction = db.transaction;
+    let entered!: () => void;
+    let release!: () => void;
+    let paused = false;
+    const approvalEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const resume = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    db.transaction = ((work: any) => {
+      if (paused) return originalTransaction(work);
+      paused = true;
+
+      return Effect.gen(function* () {
+        entered();
+        yield* Effect.promise(() => resume);
+
+        return yield* originalTransaction(work);
+      });
+    }) as typeof db.transaction;
+
+    try {
+      const approvalRun = runEffect(
+        approveAccountRecovery(deps, {
+          token: approval,
+          organizationId: "tenant-1",
+          approverAccountId: "user-2",
+        }),
+      );
+      await approvalEntered;
+
+      await expect(runEffect(verifyAccountRecoveryProof(deps, { token: proof }))).resolves.toEqual({
+        status: "pending_approval",
+      });
+
+      release();
+      await expect(approvalRun).resolves.toEqual({ status: "ok" });
+
+      const message = sent.filter((item) => item.to === "owner@example.com").at(-1)!;
+      const completion = decodeURIComponent(
+        message.text.match(/recover\/complete\?token=([^\s]+)/)?.[1] ?? "",
+      );
+
+      expect(completion).not.toBe("");
+      await expect(
+        runEffect(redeemRecoveryToken(db, completion, new Date(start))),
+      ).resolves.toEqual({ accountId: "user-1" });
+      expect(db.store.account_recovery[0]!.status).toBe("completed");
+    } finally {
+      release();
+      db.transaction = originalTransaction;
+    }
+  });
   it("rejects an approval token for a different tenant", async () => {
     const initial = shared();
     initial.organization.push(organization("tenant-2"));

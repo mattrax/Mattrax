@@ -1,10 +1,16 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
+import { certificateDer } from "@mattrax/scep";
 import {
   APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
+  PkcsCertificateConfiguration,
+  PfxCertificateConfiguration,
   WINDOWS_LAPS_CONFIGURATION_KIND,
+  certificateKeyLocationValue,
+  parseCertificateConfigurationKind,
   parseWindowsLapsPolicy,
   windowsLapsPolicyNodes,
 } from "@mattrax/enterprise-domain";
+import type { PolicyCertificateMaterial } from "./certificateProfiles.js";
 
 export type PolicyConfigurationRow = {
   readonly policyId: string;
@@ -19,7 +25,21 @@ export type PolicyConfigurationRow = {
 export type ConfigurationKind =
   | { readonly type: "device" }
   | { readonly type: "custom"; readonly id: string }
+  /** Apple trusted root: the historical `mttx.apple.certificate.<id>` kind. */
   | { readonly type: "certificate"; readonly id: string }
+  | {
+      readonly type: "pkcs";
+      readonly platform: "apple" | "windows" | "android";
+      readonly id: string;
+    }
+  | {
+      readonly type: "pfx";
+      readonly platform: "apple" | "windows" | "android";
+      readonly id: string;
+    }
+  | { readonly type: "windowsCertificate"; readonly id: string }
+  | { readonly type: "androidCertificate"; readonly id: string }
+  | { readonly type: "appleMail"; readonly id: string }
   | { readonly type: "declaration"; readonly id: string }
   | { readonly type: "application"; readonly id: string }
   | { readonly type: "windows"; readonly id: string }
@@ -45,7 +65,33 @@ export const parseConfigurationKind = (kind: string): ConfigurationKind => {
     return { type: "windows", id: windows[1] };
   if (kind === WINDOWS_LAPS_CONFIGURATION_KIND) return { type: "windows-laps" };
 
-  const match = /^mttx\.apple\.(custom|certificate|declaration|application)\.(.+)$/.exec(kind);
+  // Certificate profiles share a parsed family across three platforms. Apple's
+  // historical trusted-root kind keeps its name for compatibility.
+  const certificate = parseCertificateConfigurationKind(kind);
+
+  if (certificate) {
+    if (certificate.type === "trusted-root")
+      switch (certificate.platform) {
+        case "apple":
+          return { type: "certificate", id: certificate.id };
+        case "windows":
+          return { type: "windowsCertificate", id: certificate.id };
+        case "android":
+          return { type: "androidCertificate", id: certificate.id };
+      }
+
+    return {
+      type: certificate.type === "pkcs" ? "pkcs" : "pfx",
+      platform: certificate.platform,
+      id: certificate.id,
+    };
+  }
+
+  const mail = /^mttx\.apple\.mail\.(.+)$/.exec(kind);
+
+  if (mail?.[1] && IDENTIFIER_PATTERN.test(mail[1]))
+    return { type: "appleMail", id: mail[1] };
+  const match = /^mttx\.apple\.(custom|declaration|application)\.(.+)$/.exec(kind);
 
   if (!match) return { type: "unknown" };
   const [, group, id] = match;
@@ -72,8 +118,59 @@ export const isLegacyKind = (kind: string): boolean => {
   return parsed.type === "device" || parsed.type === "custom";
 };
 
-export const isCertificateKind = (kind: string): boolean =>
-  parseConfigurationKind(kind).type === "certificate";
+export const isCertificateKind = (kind: string): boolean => {
+  const parsed = parseConfigurationKind(kind);
+
+  return (
+    parsed.type === "certificate" ||
+    parsed.type === "windowsCertificate" ||
+    parsed.type === "androidCertificate" ||
+    parsed.type === "pkcs" ||
+    parsed.type === "pfx"
+  );
+};
+
+/** An Apple PKCS/PFX identity (not a trusted root). */
+export const isAppleIdentityCertificateKind = (kind: string): boolean => {
+  const parsed = parseConfigurationKind(kind);
+
+  return parsed.type === "pkcs" || parsed.type === "pfx" ? parsed.platform === "apple" : false;
+};
+
+/** Certificate profiles that Apple delivers as a DDM identity or profile. */
+export const isAppleCertificateKind = (kind: string): boolean => {
+  const parsed = parseConfigurationKind(kind);
+
+  return (
+    parsed.type === "certificate" ||
+    (parsed.type === "pkcs" && parsed.platform === "apple") ||
+    (parsed.type === "pfx" && parsed.platform === "apple")
+  );
+};
+
+export const isAppleMailKind = (kind: string): boolean =>
+  parseConfigurationKind(kind).type === "appleMail";
+
+/** Whether a configuration kind is delivered by the Apple path. */
+export const isAppleConfigurationKind = (kind: string): boolean => {
+  const parsed = parseConfigurationKind(kind);
+
+  switch (parsed.type) {
+    case "device":
+    case "custom":
+    case "certificate":
+    case "declaration":
+    case "application":
+    case "lockScreenMessage":
+    case "appleMail":
+      return true;
+    case "pkcs":
+    case "pfx":
+      return parsed.platform === "apple";
+    default:
+      return false;
+  }
+};
 
 export const isApplicationKind = (kind: string): boolean =>
   parseConfigurationKind(kind).type === "application";
@@ -123,10 +220,144 @@ export type WindowsPolicyNode = {
   omaUri: string;
   value: Schema.Json;
   format?: string;
+  /** OMA-DM operation for this node (default `Replace`). */
+  operation?: "Add" | "Replace";
+};
+
+/**
+ * Parent `PFXCertInstall/{id}` URI for a certificate child node.
+ *
+ * Windows removes an installed identity by deleting this parent, not each leaf
+ * under it; deleting a leaf leaves the private key and certificate behind.
+ */
+export const windowsPfxCertInstallParent = (uri: string): string | null => {
+  const match = /^(\.\/(?:Device|User)\/Vendor\/MSFT\/ClientCertificateInstall\/PFXCertInstall\/[^/]+)(?:\/|$)/.exec(
+    uri,
+  );
+
+  return match?.[1] ?? null;
+};
+
+/**
+ * SHA-1, which the RootCATrustedCertificates CSP uses as its dynamic node
+ * name. A synchronous implementation keeps OMA-URI generation synchronous;
+ * SHA-1 here is an identifier, not a security decision.
+ */
+const sha1Hex = async (bytes: Uint8Array): Promise<string> =>
+  Array.from(
+    new Uint8Array(await crypto.subtle.digest("SHA-1", bytes as BufferSource)),
+    (byte) => byte.toString(16).padStart(2, "0"),
+  )
+    .join("")
+    .toUpperCase();
+
+const windowsCertificateUniqueId = (row: PolicyConfigurationRow): string =>
+  `${row.policyId}-${row.kind}`.replaceAll(/[^A-Za-z0-9]/g, "-").slice(0, 64);
+
+/**
+ * OMA-URI nodes for a Windows certificate profile.
+ *
+ * A trusted root goes to RootCATrustedCertificates. Windows has no native
+ * PKCS/NDES client in OMA-DM, so both PKCS and imported PFX are delivered
+ * through ClientCertificateInstall/PFXCertInstall; the PKCS profile's CA and
+ * template metadata documents how the externally issued PKCS#12 was produced.
+ */
+const windowsCertificateNodes = async (
+  row: PolicyConfigurationRow,
+  material: PolicyCertificateMaterial | null | undefined,
+): Promise<Array<WindowsPolicyNode>> => {
+  const parsed = parseConfigurationKind(row.kind);
+
+  if (parsed.type === "windowsCertificate") {
+    const pem = asRecord(row.data)?.pem;
+
+    if (!Schema.is(Schema.String)(pem)) return [];
+
+    let der: Uint8Array;
+
+    try {
+      der = certificateDer(pem);
+    } catch {
+      return [];
+    }
+
+    return [
+      {
+        omaUri: `./Device/Vendor/MSFT/RootCATrustedCertificates/Root/${await sha1Hex(der)}/EncodedCertificate`,
+        value: bytesToBase64(der),
+        format: "b64",
+      },
+    ];
+  }
+
+  if (parsed.type !== "pkcs" && parsed.type !== "pfx") return [];
+  if (parsed.platform !== "windows" || !material) return [];
+
+  const data = asRecord(row.data);
+
+  if (!data) return [];
+
+  const configuration = Option.getOrUndefined(
+    Schema.decodeUnknownOption(
+      parsed.type === "pkcs" ? PkcsCertificateConfiguration : PfxCertificateConfiguration,
+    )(data),
+  );
+
+  if (!configuration) return [];
+
+  const channel = configuration.channel === "user" ? "User" : "Device";
+  const prefix = `./${channel}/Vendor/MSFT/ClientCertificateInstall/PFXCertInstall/${windowsCertificateUniqueId(row)}`;
+
+  return [
+    {
+      omaUri: `${prefix}/KeyLocation`,
+      value: certificateKeyLocationValue(configuration.keyLocation ?? "tpm-preferred"),
+      format: "int",
+    },
+    {
+      omaUri: `${prefix}/PFXKeyExportable`,
+      value: configuration.keyLocation === "software" ? (configuration.exportable ?? false) : false,
+      format: "bool",
+    },
+    ...(configuration.keyLocation === "windows-hello"
+      ? [
+          {
+            omaUri: `${prefix}/ContainerName`,
+            value: `mattrax-${windowsCertificateUniqueId(row)}`,
+            format: "chr",
+          } satisfies WindowsPolicyNode,
+        ]
+      : []),
+    // The password is sealed among Mattrax's rows but the CSP needs it to
+    // import the blob; TLS protects the check-in. Type 0 is the CSP's
+    // "not encrypted" value, which is the only one that does not require a
+    // device-specific MDM certificate encryption key.
+    { omaUri: `${prefix}/PFXCertPasswordEncryptionType`, value: 0, format: "int" },
+    { omaUri: `${prefix}/PFXCertPassword`, value: material.password, format: "chr" },
+    {
+      omaUri: `${prefix}/PFXCertBlob`,
+      value: bytesToBase64(material.pfx),
+      format: "b64",
+      // The CSP requires Add for the first blob; the delivery path switches to
+      // Replace once the device has acknowledged a blob for this URI.
+      operation: "Add",
+    },
+  ];
+};
+
+const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+
+  return btoa(binary);
 };
 
 /** Extract OMA-URI nodes from a Windows custom or structured LAPS policy. */
-export const windowsPolicyNodes = (row: PolicyConfigurationRow): Array<WindowsPolicyNode> => {
+export const windowsPolicyNodes = async (
+  row: PolicyConfigurationRow,
+  material?: PolicyCertificateMaterial | null,
+): Promise<Array<WindowsPolicyNode>> => {
   const configuration = parseConfigurationKind(row.kind);
 
   if (configuration.type === "windows-laps") {
@@ -141,15 +372,25 @@ export const windowsPolicyNodes = (row: PolicyConfigurationRow): Array<WindowsPo
       : [];
   }
 
+  if (
+    configuration.type === "windowsCertificate" ||
+    configuration.type === "pkcs" ||
+    configuration.type === "pfx"
+  )
+    return windowsCertificateNodes(row, material);
+
   if (configuration.type !== "windows") return [];
+
   const data = asRecord(row.data);
   const nodes = data === undefined ? [] : Schema.is(JsonArray)(data.nodes) ? data.nodes : [data];
 
   return nodes.flatMap((node) => {
     if (!isJsonObject(node)) return [];
+
     const omaUri = node.omaUri;
 
     if (!Schema.is(Schema.String)(omaUri)) return [];
+
     const result: WindowsPolicyNode = { omaUri, value: node.value };
 
     if (Schema.is(Schema.String)(node.format)) result.format = node.format;

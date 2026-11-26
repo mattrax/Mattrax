@@ -72,6 +72,13 @@ const stableUuid = async (value: string): Promise<string> => {
 /** Profile identifier for a script; stable across edits so a reinstall replaces it. */
 export const scriptProfileIdentifier = (scriptId: string) => `com.mattrax.script.${scriptId}`;
 
+/**
+ * The outer `.mobileconfig` identifier the device reports. Delivery keys the
+ * installed map by this value, while the payload keeps the shorter identifier.
+ */
+export const scriptProfileDocumentIdentifier = (scriptId: string) =>
+  `${scriptProfileIdentifier(scriptId)}.profile`;
+
 /** Legacy trigger names the agent understands. */
 type ScriptTriggerPayload =
   | { readonly Type: "timer"; readonly TimerInterval: number }
@@ -146,12 +153,12 @@ export const scriptPayload = async (
  * across reinstalls.
  */
 export const buildScriptProfile = async (input: ScriptPayloadInput): Promise<Uint8Array> => {
-  const identifier = scriptProfileIdentifier(input.scriptId);
+  const documentIdentifier = scriptProfileDocumentIdentifier(input.scriptId);
 
   const profile: PlistValue = {
     PayloadContent: [await scriptPayload(input)],
     PayloadDisplayName: `Mattrax script: ${input.name}`.slice(0, 120),
-    PayloadIdentifier: `${identifier}.profile`,
+    PayloadIdentifier: documentIdentifier,
     PayloadOrganization: "Mattrax",
     PayloadType: "Configuration",
     PayloadUUID: await stableUuid(`mattrax:script-profile:${input.scriptId}`),

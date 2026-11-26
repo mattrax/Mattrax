@@ -74,6 +74,19 @@ export const normalizeWebhookDeliveryQuery = (
 const iso = (value: Date | string): string =>
   (value instanceof Date ? value : new Date(value)).toISOString();
 
+/** Only the columns the history response renders; payloads stay on detail/replay. */
+export const webhookDeliverySummaryColumns = {
+  id: schema.webhookDelivery.id,
+  endpointId: schema.webhookDelivery.endpointId,
+  event: schema.webhookDelivery.event,
+  eventId: schema.webhookDelivery.eventId,
+  status: schema.webhookDelivery.status,
+  attempt: schema.webhookDelivery.attempt,
+  responseStatus: schema.webhookDelivery.responseStatus,
+  error: schema.webhookDelivery.error,
+  createdAt: schema.webhookDelivery.createdAt,
+};
+
 export const webhookDeliveryInfo = (
   row: Pick<
     typeof schema.webhookDelivery.$inferSelect,
@@ -141,7 +154,7 @@ export const listWebhookDeliveries = (input: ListWebhookDeliveriesInput) =>
       : undefined;
 
     const rows = yield* input.db
-      .select()
+      .select(webhookDeliverySummaryColumns)
       .from(schema.webhookDelivery)
       .where(
         and(

@@ -1,6 +1,6 @@
 import { NodeHttpServer } from "@effect/platform-node";
-import { Effect, Scope } from "effect";
-import { HttpServerRequest, HttpServerResponse } from "effect/http";
+import { Effect, Option, Scope } from "effect";
+import { Headers, HttpServerRequest, HttpServerResponse } from "effect/http";
 
 export type RuntimeContext = {
   waitUntil: (promise: Promise<unknown>) => void;
@@ -31,7 +31,17 @@ export const makeApiHttpHandler = (api: ApiRuntime, context: RuntimeContext, sco
   NodeHttpServer.makeHandler(
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
-      const webRequest = yield* HttpServerRequest.toWeb(request);
+      const peerAddress = Option.getOrUndefined(request.peerAddress);
+
+      // The shared API uses this value to decide whether proxy-supplied device
+      // identity is trustworthy. Delete any caller value first, then write the
+      // address of the socket that actually connected to this Node process.
+      const withoutCallerPeer = Headers.remove(request.headers, "x-mattrax-peer-address");
+      const headers = peerAddress
+        ? Headers.set(withoutCallerPeer, "x-mattrax-peer-address", peerAddress)
+        : withoutCallerPeer;
+
+      const webRequest = yield* HttpServerRequest.toWeb(request.modify({ headers }));
       const response = yield* Effect.tryPromise({
         try: (signal) => api.fetch(webRequest, { ...context, signal }),
         catch: (error) => error,

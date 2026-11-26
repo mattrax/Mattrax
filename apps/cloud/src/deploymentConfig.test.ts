@@ -24,3 +24,26 @@ describe("deployment branding config", () => {
     for (const name of BRAND_VARIABLES) expect(declarations).toContain(`${name}: import`);
   });
 });
+
+describe("hosted device identity config", () => {
+  it("keeps Node-only proxy-header trust disabled regardless of the deploy environment", () => {
+    const config = read("cloudflare.config.ts");
+
+    expect(config).toContain('TRUST_DEVICE_IDENTITY_HEADERS: bindings.text("")');
+    expect(config).toContain('TRUSTED_DEVICE_IDENTITY_PEERS: bindings.text("")');
+    expect(config).not.toContain(
+      "TRUST_DEVICE_IDENTITY_HEADERS: bindings.text(process.env.TRUST_DEVICE_IDENTITY_HEADERS",
+    );
+  });
+
+  it("keeps the hosted binding declarations in sync", () => {
+    const declarations = read("cloudflare.config.d.ts");
+
+    expect(declarations).toContain(
+      'TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<"">',
+    );
+    expect(declarations).toContain(
+      'TRUSTED_DEVICE_IDENTITY_PEERS: import("cf/config").TextBinding<"">',
+    );
+  });
+});

@@ -214,11 +214,19 @@ const platformOf = (kind: ConfigurationKind): PolicyPlatform | null => {
       return "windows";
     case "application":
     case "certificate":
+    case "appleMail":
     case "custom":
     case "declaration":
     case "device":
     case "lockScreenMessage":
       return "apple";
+    case "windowsCertificate":
+      return "windows";
+    case "androidCertificate":
+      return "android";
+    case "pkcs":
+    case "pfx":
+      return kind.platform;
     default:
       return null;
   }

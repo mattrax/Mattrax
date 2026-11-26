@@ -61,12 +61,14 @@ export default defineConfig({
   /**
    * Shiki highlights fenced code blocks at build time. Rspress only ships the
    * TypeScript/JavaScript grammars by default; the SDK guide also uses shell,
-   * JSON, YAML and raw HTTP, so list them explicitly rather than letting an
-   * unknown language fall back to plain text.
+   * JSON, YAML and raw HTTP, and the self-hosting guide highlights its Caddyfile
+   * as nginx because Shiki has no Caddy grammar. List them explicitly; an
+   * unlisted language fails the lazy grammar load rather than falling back to
+   * plain text.
    */
   markdown: {
     shiki: {
-      langs: ["ts", "tsx", "js", "jsx", "bash", "json", "yaml", "http", "diff"],
+      langs: ["ts", "tsx", "js", "jsx", "bash", "json", "yaml", "http", "diff", "nginx"],
     },
   },
   themeConfig: {
@@ -150,6 +152,7 @@ export default defineConfig({
             { text: "Applications", link: "/manage/applications" },
             { text: "Software catalogue", link: "/manage/software-catalogue" },
             { text: "Scripts", link: "/manage/scripts" },
+            { text: "Restricted software", link: "/manage/restricted-software" },
             { text: "AI agents and MCP", link: "/manage/mcp" },
             { text: "Security", link: "/manage/security" },
           ],

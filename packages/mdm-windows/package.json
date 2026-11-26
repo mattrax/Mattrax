@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
@@ -22,7 +23,6 @@
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@mattrax/crypto": "workspace:*",
     "@types/node": "catalog:",
     "asn1js": "catalog:",
     "pkijs": "catalog:",

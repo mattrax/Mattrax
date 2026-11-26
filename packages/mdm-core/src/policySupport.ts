@@ -207,9 +207,55 @@ export const scopeConfigurationsToDevice = async <T extends ConfigurationDeliver
       continue;
     }
 
-    if (parsed.type === "certificate" && mode === "legacy") {
+    if (
+      (parsed.type === "certificate" ||
+        parsed.type === "pkcs" ||
+        parsed.type === "pfx" ||
+        parsed.type === "appleMail") &&
+      mode === "legacy"
+    ) {
+      // Identity configurations need the sealed material, whose availability
+      // is proven at save time; legacy delivery skips one it cannot open.
+      if (
+        (parsed.type === "pkcs" || parsed.type === "pfx") &&
+        !(Schema.is(Schema.JsonObject)(configuration.data) &&
+          Schema.is(Schema.String)(configuration.data["materialSha256"]))
+      ) {
+        skipped.push({
+          policyId: configuration.policyId,
+          kind: configuration.kind,
+          reason: "its PFX certificate material has not been uploaded",
+        });
+        continue;
+      }
+
       delivered.push(configuration);
       continue;
+    }
+
+    if (parsed.type === "appleMail") {
+      const data = Schema.is(Schema.JsonObject)(configuration.data)
+        ? configuration.data
+        : undefined;
+      const incoming = Schema.is(Schema.JsonObject)(data?.incoming) ? data.incoming : undefined;
+      const outgoing = Schema.is(Schema.JsonObject)(data?.outgoing) ? data.outgoing : undefined;
+      const authentication = (server: Schema.JsonObject | undefined) =>
+        server && Schema.is(Schema.String)(server["authenticationMethod"])
+          ? server["authenticationMethod"]
+          : "None";
+
+      if (
+        mode === "ddm" &&
+        (authentication(incoming) !== "None" || authentication(outgoing) !== "None")
+      ) {
+        skipped.push({
+          policyId: configuration.policyId,
+          kind: configuration.kind,
+          reason:
+            "Apple's declarative mail account needs a separate credentials asset for password-based authentication, which Mattrax does not create. Use device scope on a legacy device, or a custom mobileconfig.",
+        });
+        continue;
+      }
     }
 
     const payloadTypes = options.apple

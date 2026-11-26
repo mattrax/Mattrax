@@ -41,6 +41,8 @@ export interface ScepStoredCa {
 export interface ScepAuthentication {
   readonly organizationalUnit?: string;
   readonly enrollmentId?: string;
+  /** BYOD request the challenge was minted for, carried to the issued row. */
+  readonly referenceId?: string;
 }
 
 export type ScepIssuedCertificate = {
@@ -48,6 +50,8 @@ export type ScepIssuedCertificate = {
   readonly organizationId: string;
   readonly enrollmentId?: string;
   readonly deviceId?: string;
+  /** BYOD request this identity was issued for, when the challenge named one. */
+  readonly referenceId?: string;
   /** SHA-256 of the issuing CA certificate. Absent on legacy rows. */
   readonly caFingerprintSha256?: string;
   readonly notAfter: Date;

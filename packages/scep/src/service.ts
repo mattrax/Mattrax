@@ -126,7 +126,9 @@ export const ScepService = Layer.effect(
         // The tenant is authenticated before issuance and must match the tenant
         // in the SCEP URL. A challenge minted for tenant A can never issue an
         // identity from tenant B's CA, even if an attacker swaps the URL.
-        let authentication: { organizationalUnit?: string; enrollmentId?: string } | void;
+        let authentication:
+          | { organizationalUnit?: string; enrollmentId?: string; referenceId?: string }
+          | void;
 
         let issued: ScepIssuedCertificate | null = null;
 
@@ -185,7 +187,11 @@ export const ScepService = Layer.effect(
           const value = issued?.organizationId ?? (ou ? attributeValue(ou) : undefined);
 
           authentication = value
-            ? { organizationalUnit: value, enrollmentId: issued?.enrollmentId }
+            ? {
+                organizationalUnit: value,
+                enrollmentId: issued?.enrollmentId,
+                referenceId: issued?.referenceId,
+              }
             : undefined;
         } else {
           // Allow repository to authenticate/validate the incoming request before issuance.
@@ -291,6 +297,7 @@ export const ScepService = Layer.effect(
             serial: certificateSerialHex(deviceCert),
             organizationId: scope.organizationId,
             enrollmentId: authentication?.enrollmentId,
+            referenceId: authentication?.referenceId,
             // Renewals must stay linked to the device so revocation, health and
             // the next renewal keep working instead of orphaning the identity.
             deviceId: issued?.deviceId,

@@ -109,6 +109,7 @@ describe("realtimeKeysForEvents", () => {
     const keys = realtimeKeysForEvents(tenantId, [event()]);
 
     expect(keys).toContainEqual(enterpriseKeys.item(tenantId, "device", "device-a"));
+    expect(keys).toContainEqual(enterpriseKeys.entitySummary(tenantId, "device", "device-a"));
     expect(keys).toContainEqual(enterpriseKeys.deviceSearchPrefix(tenantId));
     expect(keys).toContainEqual(enterpriseKeys.deviceHealthSummary(tenantId));
     expect(keys).toContainEqual(enterpriseKeys.deviceActivity(tenantId, "device-a"));
@@ -123,6 +124,7 @@ describe("realtimeKeysForEvents", () => {
     const keys = realtimeKeysForEvents(tenantId, [event({ deviceId: null })]);
 
     expect(keys).toContainEqual(["enterprise", "item", tenantId, "device"]);
+    expect(keys).toContainEqual(enterpriseKeys.entitySummaryPrefix(tenantId, "device"));
     expect(keys).toContainEqual(["enterprise", "device-health", tenantId]);
     // No concrete device id is present because there is none to invalidate.
     expect(keys.some((key) => key.includes("device-a"))).toBe(false);

@@ -65,6 +65,7 @@ describe("shared outbound HttpClient composition", () => {
           organizationId: "tenant-1",
           plan: "device",
           status: "active",
+          revision: 1,
         });
         yield* relay.push({
           pushToken: "token",

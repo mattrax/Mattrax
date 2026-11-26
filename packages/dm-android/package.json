@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@mattrax/crypto": "workspace:*",
+    "@mattrax/enterprise-domain": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

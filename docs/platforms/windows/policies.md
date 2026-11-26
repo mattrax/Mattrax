@@ -47,6 +47,53 @@ or a group of nodes:
 
 The `<id>` suffix is up to 20 alphanumeric characters.
 
+## Certificate profiles
+
+Windows certificate deployment uses dedicated kinds rather than hand-written OMA-URI:
+
+| Kind                            | CSP                                                                 |
+| ------------------------------- | ------------------------------------------------------------------- |
+| `mttx.windows.certificate.<id>` | `RootCATrustedCertificates/Root/{sha1}/EncodedCertificate`          |
+| `mttx.windows.pfx.<id>`         | `ClientCertificateInstall/PFXCertInstall/{id}`                      |
+| `mttx.windows.pkcs.<id>`        | Same PFXCertInstall path; the PKCS#12 was issued by an enterprise CA |
+
+The trusted root takes a PEM. Mattrax decodes it, computes the SHA-1 node name and sends
+the base64 DER. It is always device-scoped: Windows does not support
+`./User/.../RootCATrustedCertificates/Root`.
+
+PFX and PKCS profiles store these nodes:
+
+```text
+./{Device|User}/Vendor/MSFT/ClientCertificateInstall/PFXCertInstall/{id}/KeyLocation
+./{Device|User}/Vendor/MSFT/ClientCertificateInstall/PFXCertInstall/{id}/PFXKeyExportable
+./{Device|User}/Vendor/MSFT/ClientCertificateInstall/PFXCertInstall/{id}/PFXCertPasswordEncryptionType
+./{Device|User}/Vendor/MSFT/ClientCertificateInstall/PFXCertInstall/{id}/PFXCertPassword
+./{Device|User}/Vendor/MSFT/ClientCertificateInstall/PFXCertInstall/{id}/PFXCertBlob
+```
+
+`KeyLocation` maps to the CSP's 1–4 values (TPM required, TPM preferred, software,
+Windows Hello). `PFXKeyExportable` defaults to false and is only true for software storage;
+`windows-hello` also gets the required `ContainerName`. The CSP requires `Add` for the first
+`PFXCertBlob` and `Replace` only when a blob was previously delivered, so the delivery path
+chooses the operation from acknowledged state. Removing a profile sends `Delete` on the
+parent `PFXCertInstall/{id}` node, which removes the certificate and private key together.
+
+The password is sealed at rest with `AUTH_SECRET`; `PFXCertPasswordEncryptionType` is 0
+because encrypting it for the device requires an MDM certificate encryption key Mattrax
+does not provision. The PFX itself still has its own password, and the whole exchange is
+inside the authenticated SyncML channel. The stored `device_command` payload for the
+password and blob nodes is sealed too, so command history and logical backups do not
+retain the private key in plaintext.
+
+Windows has no native PKCS/NDES client in OMA-DM, so `mttx.windows.pkcs` documents the
+enterprise CA, template, subject format, key usage and renewal, then delivers the PKCS#12
+that the operator issued externally. It is not automatic issuance. Use the user channel
+for a per-user certificate: the profile stores that choice and emits `./User/` paths.
+
+The PKCS#12 is the same for every device/user in scope. Per-device unique issuance
+requires an external CA connector. A PFX node set is not wrapped in an OMA-DM atomic
+command, so a device can observe a partial install and retry; the blob is sent last.
+
 ## Delivery
 
 On each SyncML management check-in, Mattrax resolves the device's effective policy and

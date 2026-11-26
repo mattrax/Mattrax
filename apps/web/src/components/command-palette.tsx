@@ -51,6 +51,7 @@ import {
 } from "~/components/settings/settings-tabs";
 import type { SettingsTabId } from "~/components/settings/settings-tabs";
 import { cn } from "~/lib/utils";
+import { Input } from "~/components/ui/input";
 
 const RECENTS_KEY = "mattrax:recents";
 
@@ -119,7 +120,7 @@ const iconForGroup = (group: string): Command["icon"] => {
   return LayoutDashboard;
 };
 
-export function CommandPalette(props: { initialOpen?: boolean } = {}) {
+export default function CommandPalette(props: { initialOpen?: boolean } = {}) {
   const navigate = useNavigate();
   const location = useLocation();
   const tenantParams = useTenantRouteParams();
@@ -369,6 +370,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
       identity: ["sso", "scim", "entra", "directory", "single sign-on"],
       enrollment: ["enroll", "onboarding", "link"],
       attributes: ["custom fields", "registry", "device attributes"],
+      tags: ["scope", "scope tags", "regions", "delegation", "sites"],
       management: ["apns", "apple push", "scep", "android", "certificate", "abm"],
       migration: ["migrate", "jamf", "intune", "kandji", "cutover", "export", "import"],
       delivery: ["apns", "push", "failing", "invalid token", "diagnostics"],
@@ -622,10 +624,13 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
   });
 
   const allCommands = createMemo<Command[]>(() => [
+    // The device query mirrors the typed phrase exactly, so it leads: pressing
+    // Enter runs what the operator asked for rather than the closest static
+    // preset. Group ordering still files it under Queries when rendered.
+    ...(deviceQuery() ? [deviceQuery()!] : []),
     ...registeredCommands(),
     ...builtIn(),
     ...serverItems(),
-    ...(deviceQuery() ? [deviceQuery()!] : []),
   ]);
 
   const items = createMemo<Command[]>(() => {
@@ -670,6 +675,14 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
 
     return [...map.entries()].sort(([left], [right]) => groupRank(left) - groupRank(right));
   });
+
+  /**
+   * The rows in the order they are rendered. Grouping reorders `items()`, so
+   * selection, `aria-activedescendant` and Enter must all index this list
+   * rather than the pre-group order, or the highlighted row and the announced
+   * one disagree.
+   */
+  const visible = createMemo(() => grouped().flatMap(([, groupItems]) => groupItems));
 
   const remember = (item: Command) => {
     if (!item.href || item.group === "Actions") return;
@@ -809,7 +822,12 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
     (next, previous) => {
       if (!previous || !open()) return;
 
-      if (next.path !== previous.path || next.search !== previous.search) close();
+      if (next.path !== previous.path || next.search !== previous.search) {
+        // A new page owns focus after navigation. A query-only change keeps the
+        // user's place in the current view and restores the palette opener.
+        focusMainOnClose = next.path !== previous.path;
+        close();
+      }
     },
   );
 
@@ -1002,7 +1020,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
 
     if (event.key === "Enter") {
       event.preventDefault();
-      run(items()[active()]);
+      run(visible()[active()]);
     }
   };
 
@@ -1025,7 +1043,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
         >
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay
-              class="palette-overlay fixed inset-0 z-[70] bg-scrim backdrop-blur-sm"
+              class="palette-overlay fixed inset-0 z-50 bg-scrim backdrop-blur-sm"
               onPointerDown={(event) => {
                 if (event.target === event.currentTarget) close();
               }}
@@ -1033,7 +1051,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
             <DialogPrimitive.Content
               data-slot="command-palette"
               aria-modal="true"
-              class="palette-card fixed inset-x-0 top-[10vh] z-[71] mx-auto w-[calc(100vw-2rem)] max-w-2xl overflow-hidden rounded-lg border border-border bg-popover text-foreground shadow-2xl outline-none"
+              class="palette-card fixed inset-x-0 top-1/10 z-50 mx-auto w-full max-w-2xl overflow-hidden rounded-lg border border-border bg-popover text-foreground shadow-2xl outline-none"
               onKeyDown={onContentKeyDown}
             >
               <DialogPrimitive.Title class="sr-only">Search Mattrax</DialogPrimitive.Title>
@@ -1043,8 +1061,8 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
               </DialogPrimitive.Description>
 
               <div class="flex items-center gap-2 border-b border-border px-4 py-3">
-                <Search class="size-4 text-muted-foreground" />
-                <input
+                <Search class="size-4" />
+                <Input
                   ref={(element) => {
                     input = element;
                   }}
@@ -1054,7 +1072,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                   aria-autocomplete="list"
                   aria-label="Search settings, devices, applications, software, policies, people or commands"
                   aria-activedescendant={
-                    items()[active()] ? `command-palette-option-${active()}` : undefined
+                    visible()[active()] ? `command-palette-option-${active()}` : undefined
                   }
                   value={query()}
                   onInput={(event) => updateQuery(event.currentTarget.value)}
@@ -1079,12 +1097,12 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                     // Some primitives stop Enter before it bubbles to the dialog,
                     // so run the active item directly from the combobox.
                     event.preventDefault();
-                    run(items()[active()]);
+                    run(visible()[active()]);
                   }}
                   placeholder="Search or run a command…"
-                  class="flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground sm:text-[14px]"
+                  class="flex-1"
                 />
-                <kbd class="hidden rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
+                <kbd class="hidden rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground sm:inline">
                   esc
                 </kbd>
               </div>
@@ -1097,8 +1115,8 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                   >
                     <div class="flex items-start justify-between gap-3">
                       <div class="min-w-0">
-                        <p class="text-[12.5px] font-medium text-foreground">Search failed</p>
-                        <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                        <p class="text-xs font-medium text-foreground">Search failed</p>
+                        <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                           {errorMessage(error(), "Search is unavailable right now.")}
                         </p>
                       </div>
@@ -1115,7 +1133,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                 )}
               </Show>
 
-              <div class="max-h-[calc(100dvh-10rem)] overflow-auto overscroll-contain p-2">
+              <div class="max-h-full overflow-auto overscroll-contain p-2">
                 <div
                   id="command-palette-list"
                   role="listbox"
@@ -1127,13 +1145,13 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                       <div role="group" aria-labelledby={groupDomId(group)} class="mb-1">
                         <p
                           id={groupDomId(group)}
-                          class="px-3 py-1.5 text-[11px] font-medium text-muted-foreground"
+                          class="px-3 py-1.5 text-xs font-medium text-muted-foreground"
                         >
                           {group}
                         </p>
                         <For each={groupItems}>
                           {(item) => {
-                            const index = () => items().indexOf(item);
+                            const index = () => visible().indexOf(item);
 
                             return (
                               <a
@@ -1169,7 +1187,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                                   runAction(item);
                                 }}
                                 class={cn(
-                                  "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-[13px]",
+                                  "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs",
                                   active() === index() ? "bg-hover" : "hover:bg-hover",
                                 )}
                               >
@@ -1181,18 +1199,18 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                                   }}
                                 </Show>
                                 <span class="min-w-0 flex-1">
-                                  <span class="block truncate font-[450] text-foreground">
+                                  <span class="block truncate font-medium text-foreground">
                                     {item.title}
                                   </span>
                                   <Show when={item.subtitle}>
-                                    <span class="mt-0.5 block truncate text-[11.5px] text-muted-foreground">
+                                    <span class="mt-0.5 block truncate text-xs text-muted-foreground">
                                       {item.subtitle}
                                     </span>
                                   </Show>
                                 </span>
                                 <Show when={item.shortcut}>
                                   {(shortcut) => (
-                                    <kbd class="hidden shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 font-sans text-[10px] text-foreground/75 sm:inline">
+                                    <kbd class="hidden shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 font-sans text-xs text-foreground/75 sm:inline">
                                       {shortcutLabel(shortcut())}
                                     </kbd>
                                   )}
@@ -1208,8 +1226,8 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
 
                 <Show when={items().length === 0 && !results.error}>
                   <div class="px-3 py-8 text-center">
-                    <p class="text-[13px] text-muted-foreground">No results.</p>
-                    <p class="mt-1 text-[11px] text-muted-foreground">
+                    <p class="text-xs text-muted-foreground">No results.</p>
+                    <p class="mt-1 text-xs text-muted-foreground">
                       Try a device, application, software title, policy, person, setting or a query
                       like “devices critical”.
                     </p>
@@ -1221,7 +1239,7 @@ export function CommandPalette(props: { initialOpen?: boolean } = {}) {
                 {statusText()}
               </div>
 
-              <div class="hidden flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2 text-[11px] text-muted-foreground sm:flex">
+              <div class="hidden flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2 text-xs text-muted-foreground sm:flex">
                 <span class="hidden sm:inline">↑↓ navigate · ↵ run · esc close</span>
                 <Show
                   when={truncated()}

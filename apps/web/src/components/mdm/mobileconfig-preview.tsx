@@ -3,7 +3,7 @@ import { Option, Schema } from "effect";
 import { createEffect, For, Show } from "solid-js";
 import { Badge } from "~/components/ui/badge";
 import { CircleAlert } from "~/components/ui/icons";
-import { DocumentationLink } from "~/components/mdm/documentation-link";
+import DocumentationLink from "~/components/mdm/documentation-link";
 import { enterprise } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { applePayloadDocumentationUrl } from "~/lib/policy-designer/documentation";
@@ -46,7 +46,7 @@ type Preview = typeof Preview.Type;
 
 const decodePreview = Schema.decodeUnknownOption(Preview);
 
-export function MobileconfigPreview(props: { content: string }) {
+export default function MobileconfigPreview(props: { content: string }) {
   const preview = useMutation(() => ({
     mutationFn: async () =>
       Option.getOrUndefined(decodePreview(await enterprise.previewMobileconfig(props.content))) ??
@@ -98,12 +98,12 @@ export function MobileconfigPreview(props: { content: string }) {
   return (
     <div class="space-y-4">
       <Show when={preview.isPending}>
-        <p class="text-[12.5px] text-muted-foreground">Analyzing configuration…</p>
+        <p class="text-xs text-muted-foreground">Analyzing configuration…</p>
       </Show>
       <Show when={preview.data}>
         <div class="space-y-4">
           <Show when={description() || organization()}>
-            <dl class="grid gap-1.5 rounded-lg border border-border bg-muted/20 px-3 py-2.5 text-[12px] sm:grid-cols-[auto_1fr] sm:gap-x-4 sm:gap-y-1">
+            <dl class="grid gap-1.5 rounded-lg border border-border bg-muted/20 px-3 py-2.5 text-xs sm:grid-cols-2 sm:gap-x-4 sm:gap-y-1">
               <Show when={description()}>
                 <div class="contents">
                   <dt class="font-medium text-muted-foreground">Description</dt>
@@ -119,22 +119,22 @@ export function MobileconfigPreview(props: { content: string }) {
             </dl>
           </Show>
           <div class="flex items-center justify-between gap-2">
-            <h4 class="text-[12.5px] font-semibold text-foreground">Payloads</h4>
-            <Badge variant="secondary" class="tabular-nums">
+            <h4 class="text-xs font-semibold text-foreground">Payloads</h4>
+            <Badge variant="secondary">
               {rows().length} payloads
             </Badge>
           </div>
           <Show
             when={rows().length > 0}
-            fallback={<p class="text-[12.5px] text-muted-foreground">No payloads found.</p>}
+            fallback={<p class="text-xs text-muted-foreground">No payloads found.</p>}
           >
             <div class="divide-y divide-border/60 overflow-hidden rounded-lg border border-border">
               <For each={rows()}>
                 {(item) => (
-                  <div class="space-y-1 bg-muted/10 px-3 py-2.5 text-[12.5px]">
+                  <div class="space-y-1 bg-muted/10 px-3 py-2.5 text-xs">
                     <div class="flex flex-wrap items-center gap-2">
                       <Show when={item.category}>
-                        <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                        <Badge variant="outline">
                           {item.category}
                         </Badge>
                       </Show>
@@ -155,7 +155,7 @@ export function MobileconfigPreview(props: { content: string }) {
                     <Show when={item.description}>
                       <p class="text-muted-foreground">{item.description}</p>
                     </Show>
-                    <p class="truncate font-mono text-[10.5px] text-muted-foreground">
+                    <p class="truncate font-mono text-xs text-muted-foreground">
                       {item.type} {item.identifier ? `· ${item.identifier}` : ""}
                     </p>
                   </div>
@@ -166,7 +166,7 @@ export function MobileconfigPreview(props: { content: string }) {
         </div>
       </Show>
       <Show when={preview.isError}>
-        <p class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-[12.5px] text-destructive">
+        <p class="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
           <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
           <span>
             {errorMessage(raisedFailure(preview.error), "Failed to parse configuration.")}
