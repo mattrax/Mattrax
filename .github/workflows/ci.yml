@@ -482,12 +482,10 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-  # One runner per shard with six Playwright workers. The failures seen on the
-  # first attempt were real defects rather than shared state: the skew spec
-  # waited for a pageerror that the error boundary converts to console.error,
-  # the invitation select lost a Solid signal update, and the editor nav had a
-  # real 390px overflow. All three are fixed, and specs use unique
-  # emails/tenants with recipient-scoped mailbox lookups.
+  # One runner per shard with a single Playwright worker. Two or more workers
+  # share the dev mailbox and rate-limit buckets through one server and made
+  # stateful specs (overlays, SCIM assignments, slug renames) flaky in CI. The
+  # speedups here are shared sessions, merged setup and cached builds instead.
   #
   # `packages/config/scripts/e2e-shard.ts` assigns the spec files instead of
   # Playwright's `--shard`: files are assigned largest-first to the emptiest
@@ -501,12 +499,13 @@ jobs:
   # the path once main has published it; the build job above is the real path.
   #
   # Two shards. Hydration-based navigation removes ~600ms per document load,
-  # the 86s MFA test is split into four tests (longest ~50-60s), six workers
-  # fan out each shard's files, and the production build comes from cache
-  # instead of being rebuilt on every runner. CI measures the resulting wall
-  # clock; adjust workers before adding shards. With vitest down to one, the
-  # job count is 11: changes + lint + 1 vitest + typecheck + build/migrations
-  # + 4 Lighthouse + 2 shards.
+  # the 86s MFA test is split into four tests, 64 repeated setups were merged
+  # away (246 -> 182 tests with every assertion kept), one authenticated
+  # session is reused by most specs, and the production build comes from
+  # cache. This trades the old nine runners for two at the cost of a longer
+  # per-shard wall clock. With vitest down to one, the job count is 11:
+  # changes + lint + 1 vitest + typecheck + build/migrations + 4 Lighthouse
+  # + 2 shards.
   #
   # Setup is ~25s: schema restore ~1s, browser cache ~2s, cached build ~5s
   # (MySQL and the schema load overlap it), plus the duration-weighted tests.
