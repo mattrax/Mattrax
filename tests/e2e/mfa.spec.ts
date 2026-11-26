@@ -146,7 +146,9 @@ test.describe("authenticator MFA", () => {
     ]);
 
     if (totpOutcome === "rejected") {
-      await page.locator("#mfa-code").fill(totpCode(manualKey, 1));
+      // The first code can land on a replay-protected boundary. Retry with the
+      // next step instead of submitting the same rejected code again.
+      await page.locator("#mfa-code").fill(totpCode(manualKey, 2));
       await page.getByRole("button", { name: /^continue$/i }).click();
     }
 
