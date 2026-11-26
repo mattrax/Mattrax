@@ -3,7 +3,7 @@ import { bootstrapTenant, gotoHydrated } from "./helpers";
 
 test.describe("tenant URL slugs", () => {
   test("opens a tenant by slug and rewrites an id URL to the canonical slug", async ({ page }) => {
-    const { tenant } = await bootstrapTenant(page, "Slug Tenant");
+    const tenant = await bootstrapTenant(page, "Slug Tenant");
 
     await gotoHydrated(page, `/t/${tenant.slug}/devices`);
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/devices$`));
@@ -17,7 +17,7 @@ test.describe("tenant URL slugs", () => {
   });
 
   test("does not resolve a slug that names no membership", async ({ page }) => {
-    const { tenant } = await bootstrapTenant(page, "Wrong Slug Tenant");
+    const tenant = await bootstrapTenant(page, "Wrong Slug Tenant");
 
     await gotoHydrated(page, "/t/not-this-tenant/devices");
 
@@ -27,7 +27,7 @@ test.describe("tenant URL slugs", () => {
   });
 
   test("moves the settings page to a newly saved slug", async ({ page }) => {
-    const { tenant } = await bootstrapTenant(page, "Settings Slug Tenant");
+    const tenant = await bootstrapTenant(page, "Settings Slug Tenant");
     const renamed = `${tenant.slug}-renamed`;
 
     await gotoHydrated(page, `/t/${tenant.slug}/settings`);
@@ -47,7 +47,7 @@ test.describe("tenant URL slugs", () => {
   });
 
   test("uses the new slug in links after a rename", async ({ page }) => {
-    const { tenant } = await bootstrapTenant(page, "Renamed Slug Tenant");
+    const tenant = await bootstrapTenant(page, "Renamed Slug Tenant");
     const renamed = `${tenant.slug}-renamed`;
 
     await page.evaluate(

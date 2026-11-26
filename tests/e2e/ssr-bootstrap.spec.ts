@@ -11,7 +11,7 @@ test.describe("SSR bootstrap token", () => {
     page,
     context,
   }) => {
-    const { tenant } = await bootstrapTenant(page, "SSR Boot");
+    const tenant = await bootstrapTenant(page, "SSR Boot");
     const path = `/t/${tenant.id}/devices`;
 
     // Drop only the bootstrap pair so this navigation re-mints them and the
