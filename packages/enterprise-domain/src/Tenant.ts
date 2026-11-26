@@ -222,6 +222,8 @@ export const TenantAccount = Schema.Struct({
   roleId: Schema.optional(NullableString),
   roleName: Schema.optional(Schema.String),
   roleKind: Schema.optional(Schema.Literals(["built-in", "custom"])),
+  /** Allowed scope tags. Empty means unscoped (tenant-wide). */
+  scopeTagIds: Schema.optional(Schema.Array(Schema.String)),
   createdAt: Schema.String,
 });
 
@@ -237,6 +239,8 @@ export const InviteTenantAccountRequest = Schema.Struct({
   email: InvitationEmail,
   role: Schema.optional(Schema.String),
   roleId: Schema.optional(NullableString),
+  /** Scope tags to apply on acceptance; omit for an unscoped membership. */
+  scopeTagIds: Schema.optional(Schema.Array(Schema.String)),
 });
 
 export const InvitationStatus = Schema.Literals([
@@ -265,6 +269,7 @@ export const TenantInvitation = Schema.Struct({
   roleId: Schema.optional(NullableString),
   customRoleId: Schema.optional(NullableString),
   roleName: Schema.String,
+  scopeTagIds: Schema.optional(Schema.Array(Schema.String)),
   status: InvitationStatus,
   /** True when a pending invitation is past its expiry. */
   isExpired: Schema.Boolean,

@@ -33,6 +33,7 @@ catalog:
   "@types/react": ^19.3.0
   "@xmldom/xmldom": ^0.9.12
   "@yielded/auth": 0.1.0-beta.47
+  "@yielded/auth-persistence": 0.1.0-beta.47
   "@yielded/auth-persistence-drizzle": 0.1.0-beta.47
   "@yielded/auth-platform-workerd": 0.1.0-beta.47
   "@yielded/auth-simplewebauthn": 0.1.0-beta.47
@@ -44,6 +45,7 @@ catalog:
   drizzle-kit: 1.0.0-rc.5
   drizzle-orm: 1.0.0-rc.5
   effect: ^4.1.5
+  happy-dom: ^21.0.4
   fast-plist: ^0.1.3
   filesystem-routing: ^0.5.0
   mysql2: ^3.24.6
@@ -69,12 +71,16 @@ catalog:
   vite-plus: ^1.7.0
   vitest: ^5.1.0
   yaml: ^2.9.1
+  "@mbakereth/ldapjs-dn": ^1.1.2
+  jsqr: ^1.4.0
+  email-verification-api: 0.2.0
+  "@shadcn/lint": ^0.2.5
 catalogMode: prefer
 
 overrides:
   vite: "catalog:"
 patchedDependencies:
-  '@tanstack/solid-query@6.0.0-rc.5': patches/@tanstack__solid-query@6.0.0-rc.5.patch
+  "@tanstack/solid-query@6.0.0-rc.5": patches/@tanstack__solid-query@6.0.0-rc.5.patch
   "@yielded/auth-persistence-drizzle@0.1.0-beta.47": patches/@yielded__auth-persistence-drizzle@0.1.0-beta.47.patch
   "@yielded/auth-persistence@0.1.0-beta.47": patches/@yielded__auth-persistence@0.1.0-beta.47.patch
 

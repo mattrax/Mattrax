@@ -19,5 +19,12 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "composite": true
-  }
+  },
+  "exclude": [
+    "../../**/node_modules/**",
+    "../../**/dist/**",
+    "../../**/*.test.ts",
+    "../../**/*.test.tsx",
+    "../../**/tests/**"
+  ]
 }

@@ -8,7 +8,7 @@ import {
   scepCaHealth,
 } from "@mattrax/scep";
 import type { ScepCaDescription, ScepCaHealth } from "@mattrax/scep";
-import { ScepRepositoryLive } from "@mattrax/mdm-apple";
+import { ScepRepositoryLive } from "@mattrax/mdm-core";
 import type { EnterpriseDb } from "../schema.ts";
 
 /**

@@ -11,6 +11,20 @@ export const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
 
 export const TenantHandoverParam = { tenantId: Schema.String, archiveId: Schema.String };
 
+/** One Windows diagnostic archive under a device. */
+export const TenantDiagnosticsParam = {
+  tenantId: Schema.String,
+  id: Schema.String,
+  archiveId: Schema.String,
+};
+
+/** One escrowed BitLocker key under a device. */
+export const TenantBitlockerKeyParam = {
+  tenantId: Schema.String,
+  id: Schema.String,
+  keyId: Schema.String,
+};
+
 export const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
 
 export const TenantAccountParam = { tenantId: Schema.String, accountId: Schema.String };

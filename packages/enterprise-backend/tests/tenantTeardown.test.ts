@@ -15,7 +15,8 @@ import type {
 } from "../src/Tenant/tenantTeardown.ts";
 import { makeDb, runEffect, schema } from "./helpers.js";
 
-const failureStep = (failure: TenantTeardownStepFailed | null) => failure?.step;
+const failureStep = (failure: TenantTeardownStepFailed | TenantTeardownInProgress | null) =>
+  failure && "step" in failure ? failure.step : undefined;
 
 const recordedSteps = (journal: { readonly steps: unknown }) => {
   // SAFETY: the teardown validates every journal entry it writes; the fake
@@ -534,11 +535,11 @@ describe("tenant teardown", () => {
     };
 
     const insert = db.insert;
-    db.insert = (table: any) => {
+    db.insert = ((table: any) => {
       if (table !== schema.tenantDeletion) return insert(table);
 
       return { values: () => Effect.fail(duplicate) };
-    };
+    }) as typeof db.insert;
 
     const failure = await runEffect(
       Effect.match(
@@ -623,11 +624,11 @@ describe("tenant teardown", () => {
 
     const calls: string[] = [];
     const insert = db.insert;
-    db.insert = (table: any) => {
+    db.insert = ((table: any) => {
       if (table !== schema.tenantDeletion) return insert(table);
 
       return { values: () => Effect.fail(error()) };
-    };
+    }) as typeof db.insert;
 
     const failure = await runEffect(
       Effect.match(

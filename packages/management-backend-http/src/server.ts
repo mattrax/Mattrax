@@ -221,8 +221,12 @@ export const managementWebhookHandlers = (
         yield* verifySignature(request, "getWindowsEnrollmentPolicy", payload, options.secret);
         const backend = yield* ManagementBackend;
 
+        // The signature authenticates the audit metadata supplied by the
+        // trusted Mattrax gateway after it verified the enrollment request.
         return yield* backend.getWindowsEnrollmentPolicy(payload.authToken, {
           tenantToken: payload.tenantToken,
+          clientIp: payload.clientIp,
+          userAgent: payload.userAgent,
         });
       }),
     )

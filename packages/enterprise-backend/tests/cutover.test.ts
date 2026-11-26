@@ -1,12 +1,13 @@
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { decodeCutoverArchive } from "@mattrax/enterprise-domain";
+import { decodeCutoverArchive, encodeCutoverArchive } from "@mattrax/enterprise-domain";
+import type { CutoverPayload } from "@mattrax/enterprise-domain";
 import { generateScepCa, openCaPrivateKey, sealCaPrivateKey } from "@mattrax/scep";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 import type { EnterpriseOrganization } from "../src/schema.ts";
 import { buildTenantCutover, preflightTenantOriginSwitch } from "../src/Tenant/cutover.ts";
 import { importTenantCutover, previewTenantCutover } from "../src/Tenant/cutoverImport.ts";
-import { makeDb, runEffect } from "./helpers.js";
+import { makeDb, makeOrganization, runEffect } from "./helpers.js";
 
 const passphrase = "correct horse battery staple";
 
@@ -27,21 +28,7 @@ const now = new Date("2026-11-20T00:00:00.000Z");
 type Db = ReturnType<typeof makeDb>;
 
 const organization = (input: { id: string; slug: string; name?: string }): EnterpriseOrganization =>
-  // SAFETY: the fake store only compares the fields below; every other column
-  // is optional at the type level and unused by the cutover code under test.
-  ({
-    id: input.id,
-    name: input.name ?? "Acme",
-    slug: input.slug,
-    logo: null,
-    displayName: null,
-    supportEmail: null,
-    brandColor: null,
-    metadata: null,
-    stripeCustomerId: null,
-    createdAt: at,
-    updatedAt: at,
-  }) as EnterpriseOrganization;
+  makeOrganization({ ...input, name: input.name ?? "Acme", createdAt: at, updatedAt: at });
 
 const addAccount = (db: Db, id: string, email: string) => {
   db.store.account.push({
@@ -454,6 +441,115 @@ describe("cutover import", () => {
     expect(result.needsReissue.map((item) => item.kind)).toEqual(
       expect.arrayContaining(["apns", "invitation"]),
     );
+  });
+
+  it("strips foreign application keys and redacts imported audit metadata", async () => {
+    const source = await buildSource();
+    const decoded = await decodeCutoverArchive({
+      archive: source.archive.body,
+      passphrase,
+    });
+
+    const foreignKey = "a/org-victim/app-1/sha";
+    const configuration = decoded.payload.configuration!;
+    const auditEntry = decoded.payload.audit![0]!;
+
+    const crafted: CutoverPayload = {
+      ...decoded.payload,
+      configuration: {
+        ...configuration,
+        applications: [
+          {
+            key: "app-foreign",
+            name: "Foreign",
+            platform: "apple",
+            source: "upload",
+            bundleId: null,
+            version: null,
+            manifestUrl: null,
+            storeId: null,
+            fileName: "Foreign.pkg",
+            contentType: "application/octet-stream",
+            size: 12,
+            sha256: "a".repeat(64),
+            r2Key: foreignKey,
+            notes: null,
+            groupKeys: [],
+            userGroupIds: [],
+            installers: [
+              {
+                platform: "apple",
+                source: "upload",
+                bundleId: null,
+                version: null,
+                manifestUrl: null,
+                storeId: null,
+                fileName: "Foreign.pkg",
+                contentType: "application/octet-stream",
+                size: 12,
+                sha256: "a".repeat(64),
+                r2Key: foreignKey,
+                minOsVersion: null,
+                requiredCapability: null,
+                priority: 0,
+              },
+            ],
+          },
+        ],
+      },
+      audit: [
+        {
+          ...auditEntry,
+          metadata: {
+            note: "first",
+            key: "backups/org-victim/run.json",
+            r2Key: foreignKey,
+          },
+        },
+      ],
+    };
+
+    const encoded = await encodeCutoverArchive({
+      payload: crafted,
+      passphrase,
+      iterations,
+    });
+
+    const target = makeTarget();
+    const result = await runEffect(
+      importTenantCutover(target, {
+        archive: encoded.archive,
+        passphrase,
+        confirm: "acme",
+        target: { kind: "new" },
+        actor,
+        targetDeploymentId: "dp_source",
+        targetOrigin: sourceOrigin,
+        authSecret: targetSecret,
+        now,
+      }),
+    );
+
+    const application = target.store.application.find(
+      (row) => row.organizationId === result.tenantId,
+    );
+    const installer = target.store.application_installer.find(
+      (row) => row.organizationId === result.tenantId,
+    );
+
+    expect(application?.r2Key ?? null).toBeNull();
+    expect(installer?.r2Key ?? null).toBeNull();
+    expect(result.needsReissue.map((item) => item.kind)).toContain("application_files");
+
+    const importedAudit = target.store.audit_log.find(
+      (row) => row.organizationId === result.tenantId && row.action === "device.enrolled",
+    );
+
+    expect(importedAudit?.metadata).toMatchObject({
+      key: "[redacted]",
+      r2Key: "[redacted]",
+    });
+    expect(JSON.stringify(importedAudit?.metadata)).not.toContain("org-victim");
   });
 
   it("requires an explicit cross-deployment acknowledgement", async () => {

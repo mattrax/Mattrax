@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, identity, Layer, Option } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 /**
@@ -13,26 +13,28 @@ export type EntitlementSyncOptions = {
   readonly url: string;
   /** Shared machine-to-machine token. */
   readonly token: string;
-  /** Override for tests or an egress proxy; defaults to the runtime `fetch`. */
+  /** Injected fetch seam for tests; production uses the shared HttpClient. */
   readonly fetch?: typeof globalThis.fetch;
+  /** Shared Effect transport supplied by the composition root. */
+  readonly httpClient?: HttpClient.HttpClient;
 };
 
 export type Entitlement = {
   readonly organizationId: string;
   readonly plan: string;
   readonly status: string | null;
+  /** Monotonic revision of the billing transaction that produced this snapshot. */
+  readonly revision: number;
 };
 
 /** An entitlement push is best-effort and must not pin the caller open. */
 export const ENTITLEMENT_SYNC_TIMEOUT_MS = 15_000;
 
-const httpClientLayer = (fetchImpl?: typeof globalThis.fetch) =>
-  fetchImpl === undefined
-    ? FetchHttpClient.layer
-    : FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
+const fetchClientLayer = (fetchImpl: typeof globalThis.fetch) =>
+  FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
 
 export const makeEntitlementSync =
-  ({ url, token, fetch }: EntitlementSyncOptions) =>
+  ({ url, token, fetch, httpClient }: EntitlementSyncOptions) =>
   (entitlement: Entitlement): Effect.Effect<void, Error> =>
     Effect.gen(function* () {
       const target = new URL(
@@ -43,7 +45,11 @@ export const makeEntitlementSync =
       if (target.protocol !== "https:" && target.protocol !== "http:")
         return yield* Effect.fail(new Error("CLOUD_URL must be an http(s) URL"));
 
-      const client = yield* HttpClient.HttpClient;
+      const client =
+        httpClient ?? Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient));
+
+      if (!client)
+        return yield* Effect.fail(new Error("The entitlement HTTP client is not configured."));
 
       const exchange = Effect.gen(function* () {
         const response = yield* client.execute(
@@ -73,4 +79,4 @@ export const makeEntitlementSync =
         return yield* Effect.fail(
           new Error(text || "The application deployment rejected the entitlement."),
         );
-    }).pipe(Effect.provide(httpClientLayer(fetch)));
+    }).pipe(fetch ? Effect.provide(fetchClientLayer(fetch)) : identity);

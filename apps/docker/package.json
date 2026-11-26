@@ -14,6 +14,9 @@
     "build:api": "vp build --config vite.config.ts"
   },
   "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@mattrax/cloud-services": "workspace:*",
+    "effect": "catalog:",
     "mysql2": "catalog:"
   },
   "devDependencies": {
@@ -22,7 +25,6 @@
     "@mattrax/enterprise-core": "workspace:*",
     "@types/node": "catalog:",
     "@yielded/auth": "catalog:",
-    "effect": "catalog:",
     "reflect-metadata": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:",

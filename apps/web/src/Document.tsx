@@ -3,6 +3,7 @@ import type { JSX } from "@solidjs/web";
 import { DEPLOYMENT_ID, DEPLOYMENT_META_NAME } from "~/lib/deployment";
 import { requiresJavaScript } from "~/lib/public-routes";
 import { getPreloadedSession } from "~/lib/session-store";
+import { clientRegistrationNonce, getRegistrationNonce } from "~/lib/registration-nonce";
 import { getPostHogConfig } from "~/lib/posthog-config-store";
 import { getSupportConfig } from "~/lib/support-config-store";
 import { SITE_DEFAULT_ORIGIN, organizationStructuredData } from "~/lib/site";
@@ -50,6 +51,18 @@ export default function Document(props: { children?: JSX.Element }) {
 
   const serializedSupport = support === undefined ? undefined : JSON.stringify(support);
 
+  // A sign-up page render minted this nonce and set the matching cookie. The
+  // client needs the same value after hydration to keep the hidden input's
+  // `nonce` attribute intact.
+  const registrationNonce = request
+    ? getRegistrationNonce(request)
+    : typeof window === "undefined"
+      ? undefined
+      : clientRegistrationNonce();
+
+  const serializedRegistrationNonce =
+    registrationNonce === undefined ? undefined : JSON.stringify(registrationNonce);
+
   return (
     <html lang="en">
       <head>
@@ -91,7 +104,6 @@ export default function Document(props: { children?: JSX.Element }) {
         <script>
           {`document.documentElement.classList.add("js");setTimeout(function(){if(!document.documentElement.dataset.hydrated)document.documentElement.classList.remove("js")},10000);`}
         </script>
-        <style>{`.js .no-js-notice{display:none!important}`}</style>
         {/* Resolve system/light/dark before the browser paints: the preference
             lives in localStorage, so this is the only flash-free point. It runs
             ahead of the hydration bundle and of the stylesheet-independent
@@ -112,31 +124,14 @@ export default function Document(props: { children?: JSX.Element }) {
             browser, so without JavaScript it has nothing to show. The notice is
             only emitted for those routes: the landing page, legal pages, 404
             page and docs are server-rendered and deliberately readable without
-            it. Inline styles keep it presentable even if a stylesheet fails;
-            `light-dark()` tracks the OS while the script above tracks the
-            stored preference. */}
+            it. Theme tokens and Tailwind classes keep it in the active theme;
+            the script above tracks the stored preference. */}
         {needsJavaScript && (
           <div
             id="no-js-notice"
-            class="no-js-notice"
-            style={{
-              position: "fixed",
-              inset: "0",
-              "z-index": "100",
-              display: "flex",
-              "align-items": "center",
-              "justify-content": "center",
-              overflow: "auto",
-              padding: "2rem 1.5rem",
-              "background-color": "light-dark(#e9e9e6,#10100f)",
-              color: "light-dark(#202020,#fafafa)",
-              "color-scheme": "light dark",
-              "font-family":
-                "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-              "line-height": "1.6",
-            }}
+            class="[.js_&]:hidden fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-background px-6 py-8 font-sans leading-relaxed text-foreground"
           >
-            <div style={{ width: "100%", "max-width": "26rem" }}>
+            <div class="w-full max-w-104">
               <picture>
                 <source
                   srcset="/assets/brand/mattrax.png"
@@ -150,64 +145,36 @@ export default function Document(props: { children?: JSX.Element }) {
                   width="208"
                   height="32"
                   decoding="async"
-                  style={{ height: "1rem", width: "auto" }}
+                  class="h-4 w-auto"
                 />
               </picture>
-              <h1
-                style={{
-                  margin: "2.5rem 0 0",
-                  "font-size": "1.375rem",
-                  "font-weight": "600",
-                  "letter-spacing": "-0.02em",
-                }}
-              >
+              <h1 class="mt-10 text-2xl font-semibold tracking-tight">
                 Mattrax needs JavaScript
               </h1>
-              <p
-                style={{
-                  margin: "0.75rem 0 0",
-                  color: "light-dark(#646464,#b4b4b4)",
-                  "font-size": "0.875rem",
-                }}
-              >
+              <p class="mt-3 text-sm text-muted-foreground">
                 The dashboard loads your devices, policies and enrollment data in the browser.
                 Enable JavaScript for this site, then reload the page.
               </p>
-              <ul
-                style={{
-                  margin: "1.5rem 0 0",
-                  padding: "0 0 0 1rem",
-                  color: "light-dark(#646464,#b4b4b4)",
-                  "font-size": "0.8125rem",
-                }}
-              >
-                <li style={{ "margin-bottom": "0.375rem" }}>
+              <ul class="mt-6 pl-4 text-muted-foreground">
+                <li class="mb-1.5">
                   Chrome: Settings → Privacy and security → Site settings → JavaScript.
                 </li>
-                <li style={{ "margin-bottom": "0.375rem" }}>
+                <li class="mb-1.5">
                   Safari: Settings → Security → Enable JavaScript.
                 </li>
                 <li>Firefox: Settings → Privacy &amp; Security → Permissions.</li>
               </ul>
-              <p
-                style={{
-                  margin: "2rem 0 0",
-                  "border-top": "1px solid light-dark(#e8e8e8,#2a2a2a)",
-                  padding: "1.25rem 0 0",
-                  color: "light-dark(#646464,#b4b4b4)",
-                  "font-size": "0.8125rem",
-                }}
-              >
+              <p class="mt-8 border-t border-border pt-5 text-muted-foreground">
                 You can still read the{" "}
-                <a href="/docs/" style={{ color: "light-dark(#202020,#fafafa)" }}>
+                <a href="/docs/" class="text-foreground">
                   documentation
                 </a>{" "}
                 or visit the{" "}
-                <a href="/" style={{ color: "light-dark(#202020,#fafafa)" }}>
+                <a href="/" class="text-foreground">
                   product site
                 </a>
                 . Support is{" "}
-                <a href="mailto:hello@mattrax.app" style={{ color: "light-dark(#202020,#fafafa)" }}>
+                <a href="mailto:hello@mattrax.app" class="text-foreground">
                   hello@mattrax.app
                 </a>
                 .
@@ -223,6 +190,9 @@ export default function Document(props: { children?: JSX.Element }) {
             that the Worker serves `private, no-store; vary: cookie`. */}
         {serialized !== undefined && (
           <script>{`window.__MATTRAX_SESSION__=${serialized.replaceAll("<", String.raw`\u003c`)};`}</script>
+        )}
+        {serializedRegistrationNonce !== undefined && (
+          <script>{`window.__MATTRAX_REGISTRATION_NONCE__=${serializedRegistrationNonce};`}</script>
         )}
       </body>
     </html>

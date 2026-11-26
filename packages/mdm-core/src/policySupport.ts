@@ -1,6 +1,34 @@
-import { appleOsFamily, applePayloadSupportForDevice, compareOsVersion } from "@mattrax/dm-apple";
 import { Option, Schema } from "effect";
-import { configurationPayloadTypes, parseConfigurationKind } from "./policy.ts";
+import { parseConfigurationKind } from "./configuration.ts";
+import { compareOsVersion } from "./version.ts";
+
+export type AppleOsFamily = "iOS" | "macOS" | "tvOS" | "visionOS" | "watchOS";
+
+export type ApplePayloadSupport =
+  | { readonly supported: true }
+  | {
+      readonly supported: false;
+      readonly reason: "os-version" | "os-family" | "removed";
+      readonly minimum?: string;
+      readonly removedIn?: string;
+    };
+
+/** Apple metadata port supplied by the Apple package, not by shared core. */
+export type ApplePolicySupport = {
+  readonly osFamily: (marketingName: string | null | undefined) => AppleOsFamily | null;
+  readonly payloadTypes: (kind: string, data: Schema.Json) => Promise<ReadonlyArray<string>>;
+  readonly payloadVersions: (payloadType: string) => ReadonlyArray<string>;
+  readonly payloadMinimum: (payloadType: string, family: AppleOsFamily) => string | null;
+  readonly payloadRemoved: (payloadType: string, family: AppleOsFamily) => string | null;
+  readonly payloadSupport: (
+    payloadType: string,
+    device: { readonly family: AppleOsFamily | null; readonly version: string | null },
+  ) => ApplePayloadSupport;
+};
+
+export type PolicySupportOptions = {
+  readonly apple?: ApplePolicySupport;
+};
 
 /**
  * OS scoping for policy delivery.
@@ -40,8 +68,8 @@ export type PolicyDeliveryDevice = {
   readonly osBuild?: string | null;
 };
 
-const appleDeviceOs = (device: PolicyDeliveryDevice) => ({
-  family: appleOsFamily(device.osEdition),
+const appleDeviceOs = (device: PolicyDeliveryDevice, support?: ApplePolicySupport) => ({
+  family: support?.osFamily(device.osEdition) ?? null,
   version: device.osVersion?.trim() || null,
 });
 
@@ -133,10 +161,11 @@ export const scopeConfigurationsToDevice = async <T extends ConfigurationDeliver
   configurations: ReadonlyArray<T>,
   device: PolicyDeliveryDevice,
   mode: "ddm" | "legacy" | "none",
+  options: PolicySupportOptions = {},
 ): Promise<OsScopedConfigurations<T>> => {
   const delivered: T[] = [];
   const skipped: SkippedConfiguration[] = [];
-  const apple = appleDeviceOs(device);
+  const apple = appleDeviceOs(device, options.apple);
 
   for (const configuration of configurations) {
     if (device.proto === "win") {
@@ -178,15 +207,60 @@ export const scopeConfigurationsToDevice = async <T extends ConfigurationDeliver
       continue;
     }
 
-    if (parsed.type === "certificate" && mode === "legacy") {
+    if (
+      (parsed.type === "certificate" ||
+        parsed.type === "pkcs" ||
+        parsed.type === "pfx" ||
+        parsed.type === "appleMail") &&
+      mode === "legacy"
+    ) {
+      // Identity configurations need the sealed material, whose availability
+      // is proven at save time; legacy delivery skips one it cannot open.
+      if (
+        (parsed.type === "pkcs" || parsed.type === "pfx") &&
+        !(Schema.is(Schema.JsonObject)(configuration.data) &&
+          Schema.is(Schema.String)(configuration.data["materialSha256"]))
+      ) {
+        skipped.push({
+          policyId: configuration.policyId,
+          kind: configuration.kind,
+          reason: "its PFX certificate material has not been uploaded",
+        });
+        continue;
+      }
+
       delivered.push(configuration);
       continue;
     }
 
-    const payloadTypes = await configurationPayloadTypes(
-      configuration.kind,
-      configuration.data ?? null,
-    );
+    if (parsed.type === "appleMail") {
+      const data = Schema.is(Schema.JsonObject)(configuration.data)
+        ? configuration.data
+        : undefined;
+      const incoming = Schema.is(Schema.JsonObject)(data?.incoming) ? data.incoming : undefined;
+      const outgoing = Schema.is(Schema.JsonObject)(data?.outgoing) ? data.outgoing : undefined;
+      const authentication = (server: Schema.JsonObject | undefined) =>
+        server && Schema.is(Schema.String)(server["authenticationMethod"])
+          ? server["authenticationMethod"]
+          : "None";
+
+      if (
+        mode === "ddm" &&
+        (authentication(incoming) !== "None" || authentication(outgoing) !== "None")
+      ) {
+        skipped.push({
+          policyId: configuration.policyId,
+          kind: configuration.kind,
+          reason:
+            "Apple's declarative mail account needs a separate credentials asset for password-based authentication, which Mattrax does not create. Use device scope on a legacy device, or a custom mobileconfig.",
+        });
+        continue;
+      }
+    }
+
+    const payloadTypes = options.apple
+      ? await options.apple.payloadTypes(configuration.kind, configuration.data ?? null)
+      : [];
 
     if (payloadTypes.length === 0) {
       delivered.push(configuration);
@@ -196,7 +270,7 @@ export const scopeConfigurationsToDevice = async <T extends ConfigurationDeliver
     let problem: SkippedConfiguration["reason"] | null = null;
 
     for (const payloadType of payloadTypes) {
-      const support = applePayloadSupportForDevice(payloadType, apple);
+      const support = options.apple!.payloadSupport(payloadType, apple);
 
       if (support.supported) continue;
 

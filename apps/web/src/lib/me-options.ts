@@ -4,10 +4,7 @@ import { getRequestEvent, isServer } from "@solidjs/web";
 import { readMeCache, writeMeCache } from "~/lib/me-cache";
 import type { MeCacheEntry } from "~/lib/me-cache";
 import { ME_QUERY_KEY } from "~/lib/me-keys";
-import {
-  persistBrowserPreloadedMe,
-  readBrowserPreloadedMe,
-} from "~/lib/me-preload";
+import { persistBrowserPreloadedMe, readBrowserPreloadedMe } from "~/lib/me-preload";
 import { meQueryCachePolicy } from "~/lib/me-query";
 import { getPreloadedSession } from "~/lib/session-store";
 import { rememberTenants } from "~/lib/tenant";
@@ -62,7 +59,10 @@ export const buildMeQueryOptions = (input: MeQueryOptionsInput) => {
 
   // The router addresses tenants by slug while every API call needs the id;
   // keep the membership list available to that translation after SSR.
-  rememberTenants(initialData?.tenants ?? cached?.data.tenants);
+  rememberTenants(
+    initialData?.tenants ?? cached?.data.tenants,
+    initialData?.account.id ?? cached?.data.account.id ?? input.userId,
+  );
 
   if (!isServer && initialData) persistBrowserPreloadedMe(initialData);
 
@@ -70,7 +70,7 @@ export const buildMeQueryOptions = (input: MeQueryOptionsInput) => {
     queryKey: ME_QUERY_KEY,
     queryFn: async () => {
       const data = await input.fetchMe();
-      rememberTenants(data.tenants);
+      rememberTenants(data.tenants, data.account.id);
       writeMeCache(data);
 
       return data;

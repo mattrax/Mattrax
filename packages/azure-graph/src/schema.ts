@@ -118,6 +118,57 @@ export function graphGroupFromWire(group: typeof GraphGroupWire.Type): GraphGrou
   };
 }
 
+/**
+ * Windows LAPS credential backed up to Microsoft Entra ID.
+ *
+ * `passwordBase64` decodes to UTF-16LE, which is what Windows returns for the
+ * local administrator password. The field is never logged.
+ */
+export const GraphDeviceLocalCredentialSchema = Schema.Struct({
+  accountName: Schema.optional(Schema.NullOr(Schema.String)),
+  accountSid: Schema.optional(Schema.NullOr(Schema.String)),
+  backupDateTime: Schema.optional(Schema.NullOr(Schema.String)),
+  passwordBase64: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export type GraphDeviceLocalCredential = typeof GraphDeviceLocalCredentialSchema.Type;
+
+export const GraphDeviceLocalCredentialInfoSchema = Schema.Struct({
+  id: Schema.String,
+  deviceName: Schema.optional(Schema.NullOr(Schema.String)),
+  lastBackupDateTime: Schema.optional(Schema.NullOr(Schema.String)),
+  refreshDateTime: Schema.optional(Schema.NullOr(Schema.String)),
+  credentials: Schema.optional(Schema.Array(GraphDeviceLocalCredentialSchema)),
+});
+
+export type GraphDeviceLocalCredentialInfo =
+  typeof GraphDeviceLocalCredentialInfoSchema.Type;
+
+/**
+ * A BitLocker recovery key backed up to Microsoft Entra ID. The list endpoint
+ * omits `key`; it is only returned by a `$select=key` get, which also writes
+ * an Entra audit record.
+ */
+export const GraphBitlockerRecoveryKeySchema = Schema.Struct({
+  id: Schema.String,
+  deviceId: Schema.optional(Schema.NullOr(Schema.String)),
+  createdDateTime: Schema.optional(Schema.NullOr(Schema.String)),
+  volumeType: Schema.optional(
+    Schema.NullOr(Schema.Union([Schema.String, Schema.Number])),
+  ),
+  key: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export type GraphBitlockerRecoveryKey = typeof GraphBitlockerRecoveryKeySchema.Type;
+
+export const GraphBitlockerRecoveryKeyListResponse = Schema.Struct({
+  value: Schema.optional(Schema.Array(GraphBitlockerRecoveryKeySchema)),
+  "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export type GraphBitlockerRecoveryKeyListResponse =
+  typeof GraphBitlockerRecoveryKeyListResponse.Type;
+
 /** A domain owned by the Entra tenant. */
 export const GraphDomainSchema = Schema.Struct({
   id: Schema.String,

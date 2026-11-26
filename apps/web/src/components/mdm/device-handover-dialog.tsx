@@ -29,6 +29,7 @@ export const DEVICE_HANDOVER_SECRET_LABELS: Record<DeviceHandoverSecretKind, str
   recovery_lock_password: "Recovery Lock password",
   local_admin_password: "Local administrator password",
   bootstrap_token: "Bootstrap token",
+  bitlocker_recovery_key: "BitLocker recovery keys",
 };
 
 export const deviceHandoverSecretLabel = (kind: DeviceHandoverSecretKind) =>
@@ -48,11 +49,10 @@ const downloadArchive = async (
   archive: { readonly id: string; readonly filename: string; readonly downloadToken: string },
 ) => {
   const query = new URLSearchParams({ token: archive.downloadToken });
-  const response = await fetch(
+  const response = await enterprise.request(
     `/api/v1/tenants/${encodeURIComponent(tenantId)}/devices/handover/${encodeURIComponent(
       archive.id,
     )}/download?${query.toString()}`,
-    { credentials: "include" },
   );
 
   if (!response.ok) {
@@ -144,7 +144,7 @@ export function DeviceHandoverDialog(props: {
         </DialogHeader>
         <div class="space-y-3">
           <label class="block space-y-1.5">
-            <span class="text-[12.5px] font-medium text-foreground">Passphrase</span>
+            <span class="text-xs font-medium text-foreground">Passphrase</span>
             <Input
               type="password"
               autocomplete="new-password"
@@ -154,7 +154,7 @@ export function DeviceHandoverDialog(props: {
             />
           </label>
           <label class="block space-y-1.5">
-            <span class="text-[12.5px] font-medium text-foreground">Reason</span>
+            <span class="text-xs font-medium text-foreground">Reason</span>
             <Textarea
               rows={2}
               value={reason()}
@@ -162,14 +162,14 @@ export function DeviceHandoverDialog(props: {
               placeholder="For example: lease returned to IT, device replaced"
             />
           </label>
-          <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+          <p class="text-xs leading-relaxed text-muted-foreground">
             The reason is recorded in the audit log. Secret values are not written to the audit log,
             the device list or any webhook.
           </p>
         </div>
         <ErrorText error={create.error} />
         <Show when={create.isPending}>
-          <p class="text-[11.5px] text-muted-foreground">Sealing the archive…</p>
+          <p class="text-xs text-muted-foreground">Sealing the archive…</p>
         </Show>
         <DialogFooter>
           <Button variant="outline" onClick={close}>

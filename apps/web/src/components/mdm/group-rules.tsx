@@ -20,7 +20,7 @@ import type { DeviceQuery, DynamicGroupRules } from "~/lib/enterprise";
  * edited, which would be a self-reference). Cycles are rejected when saving and
  * explained in the preview.
  */
-export function GroupRuleBuilder(props: {
+export default function GroupRuleBuilder(props: {
   rules: DynamicGroupRules | null | undefined;
   onChange: (rules: DynamicGroupRules) => void;
   disabled?: boolean;

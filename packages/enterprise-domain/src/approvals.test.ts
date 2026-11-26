@@ -35,6 +35,7 @@ describe("approval action catalogue", () => {
       [
         "api-token.create",
         "backup.download",
+        "device.fresh-start",
         "device.wipe",
         "policy.delete",
         "script.run",

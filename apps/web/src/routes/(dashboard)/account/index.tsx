@@ -6,12 +6,12 @@ import { isServer } from "@solidjs/web";
 import { Option, Schema } from "effect";
 import { PERMISSIONS } from "@mattrax/enterprise-domain/client";
 import type { Permission } from "@mattrax/enterprise-domain/client";
-import { AccountActivity } from "~/components/account-activity";
-import { AccountLoginAttempts } from "~/components/account-login-attempts";
-import { AccountSecurity } from "~/components/account-security";
+import AccountActivity from "~/components/account-activity";
+import AccountLoginAttempts from "~/components/account-login-attempts";
+import AccountSecurity from "~/components/account-security";
 import { Field, Page, PageHeader, Panel } from "~/components/mdm/common";
-import { ThemeSwitcher } from "~/components/theme-switcher";
-import { PermissionPicker } from "~/components/permission-picker";
+import ThemeSwitcher from "~/components/theme-switcher";
+import PermissionPicker from "~/components/permission-picker";
 import {
   Dialog,
   DialogContent,
@@ -21,10 +21,10 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Badge } from "~/components/ui/badge";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Skeleton } from "~/components/ui/skeleton";
+import Skeleton from "~/components/ui/skeleton";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseKeys, enterpriseQueries, meQueryOptions } from "~/lib/enterprise";
 import type { McpConnectionInfo } from "~/lib/enterprise";
@@ -241,21 +241,12 @@ export default function AccountPage() {
     setSessionsError(null);
 
     try {
-      const response = await fetch("/api/v1/account/sessions", { credentials: "include" });
+      const body = await enterprise.listAccountSessions();
+      const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(Sessions)(body));
 
-      if (!response.ok) {
-        setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
+      if (decoded === undefined) throw new Error("Unexpected sessions response");
 
-        return;
-      }
-
-      const body = Option.getOrUndefined(
-        Schema.decodeUnknownOption(Sessions)(await response.json()),
-      );
-
-      if (body === undefined) throw new Error("Unexpected sessions response");
-
-      setSessions(body);
+      setSessions(decoded);
     } catch (error) {
       setSessionsError(errorMessage(raisedFailure(error)));
     }
@@ -297,18 +288,7 @@ export default function AccountPage() {
     );
 
     try {
-      const response = await fetch(`/api/v1/account/sessions/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-        credentials: "include",
-        headers: { "x-effect-auth-csrf": "1" },
-      });
-
-      if (!response.ok) {
-        setSessions(previous);
-        setSessionsError(errorMessage({ message: `Request failed with ${response.status}` }));
-
-        return;
-      }
+      await enterprise.revokeAccountSession(id);
 
       // Already gone from the list above; the refetch confirms it.
       await refetchSessions();
@@ -550,12 +530,11 @@ export default function AccountPage() {
   };
 
   const selectClass =
-    "h-8 w-full rounded-lg bg-card px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30";
+    "h-8 w-full rounded-lg bg-card px-2.5 text-xs text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/30";
 
   return (
-    <Page class="max-w-[860px]">
+    <Page class="max-w-215">
       <PageHeader
-        eyebrow="Your account"
         title="Account"
         description="Manage your personal information and security settings."
         meta={
@@ -568,8 +547,8 @@ export default function AccountPage() {
                   fallback={<Badge variant="outline">Not verified</Badge>}
                 >
                   <Badge
-                    variant="outline"
-                    class="border-success/25 bg-success/10 text-success-foreground"
+                    variant="success"
+                    data-success-badge="verified"
                   >
                     Verified
                   </Badge>
@@ -604,13 +583,13 @@ export default function AccountPage() {
         </form>
         <Show when={nameError()}>
           {(msg) => (
-            <p role="alert" class="mt-2 text-[12.5px] text-destructive">
+            <p role="alert" class="mt-2 text-xs text-destructive">
               {msg()}
             </p>
           )}
         </Show>
         <Show when={nameSuccess()}>
-          <p class="mt-2 text-[12.5px] text-success-foreground">Name updated successfully.</p>
+          <p class="mt-2 text-xs text-success">Name updated successfully.</p>
         </Show>
       </Panel>
 
@@ -627,12 +606,12 @@ export default function AccountPage() {
       >
         <Show
           when={!(me.isPending && me.data === undefined)}
-          fallback={<Skeleton class="h-8 w-full max-w-sm rounded-lg" />}
+          fallback={<Skeleton class="h-8 w-full max-w-sm" />}
         >
           <Show
             when={tenants().length > 0}
             fallback={
-              <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+              <p class="text-xs leading-relaxed text-muted-foreground">
                 You don't belong to a tenant yet, so there is nothing to choose. Create or join a
                 tenant first.
               </p>
@@ -687,13 +666,13 @@ export default function AccountPage() {
         </Show>
         <Show when={defaultTenantError()}>
           {(msg) => (
-            <p role="alert" class="mt-2 text-[12.5px] text-destructive">
+            <p role="alert" class="mt-2 text-xs text-destructive">
               {msg()}
             </p>
           )}
         </Show>
         <Show when={defaultTenantSaved()}>
-          <p role="status" aria-live="polite" class="mt-2 text-[12.5px] text-success-foreground">
+          <p role="status" aria-live="polite" class="mt-2 text-xs text-success">
             Default tenant updated.
           </p>
         </Show>
@@ -703,20 +682,20 @@ export default function AccountPage() {
         title="Email address"
         description="A verification link will be sent to your new address. The change takes effect after you confirm it."
       >
-        <p class="mb-4 flex flex-wrap items-center gap-2 text-[12.5px] text-muted-foreground">
+        <p class="mb-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           Your current email is
           <span class="font-medium text-foreground">{email()}</span>
           <Show when={emailVerified()} fallback={<Badge variant="outline">Not verified</Badge>}>
             <Badge
-              variant="outline"
-              class="border-success/25 bg-success/10 text-success-foreground"
+              variant="success"
+              data-success-badge="verified"
             >
               Verified
             </Badge>
           </Show>
         </p>
         <Show when={emailCancelled()}>
-          <div class="mb-4 rounded-lg border border-warning/25 bg-warning/[0.08] px-4 py-3 text-[12.5px] leading-relaxed text-warning-foreground">
+          <div class="mb-4 rounded-lg border border-warning/25 bg-warning/[0.08] px-4 py-3 text-xs leading-relaxed text-warning-foreground">
             The pending address change was cancelled. No change was made. If you did not expect a
             change, review your active sessions below and add another passkey.
           </div>
@@ -724,7 +703,7 @@ export default function AccountPage() {
         <Show
           when={!emailSent()}
           fallback={
-            <div class="rounded-lg border border-success/25 bg-success/[0.08] px-4 py-3 text-[12.5px] leading-relaxed text-success-foreground">
+            <div class="rounded-lg border border-success/25 bg-success/[0.08] px-4 py-3 text-xs leading-relaxed text-success">
               Verification email sent. Please check your inbox and click the link to confirm the
               change.
             </div>
@@ -751,7 +730,7 @@ export default function AccountPage() {
         </Show>
         <Show when={emailError()}>
           {(msg) => (
-            <p role="alert" class="mt-2 text-[12.5px] text-destructive">
+            <p role="alert" class="mt-2 text-xs text-destructive">
               {msg()}
             </p>
           )}
@@ -771,7 +750,7 @@ export default function AccountPage() {
 
       <Show when={sessionsError()}>
         {(msg) => (
-          <p role="alert" class="text-[12.5px] text-destructive">
+          <p role="alert" class="text-xs text-destructive">
             {msg()}
           </p>
         )}
@@ -795,18 +774,18 @@ export default function AccountPage() {
             {(item) => (
               <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0">
-                  <p class="flex flex-wrap items-center gap-2 text-[12.5px] font-medium text-foreground">
+                  <p class="flex flex-wrap items-center gap-2 text-xs font-medium text-foreground">
                     <span>{sessionLabel(item)}</span>
                     <Show when={item.current}>
                       <Badge
-                        variant="outline"
-                        class="border-success/25 bg-success/10 text-success-foreground"
+                        variant="success"
+                        data-success-badge="current-session"
                       >
                         This session
                       </Badge>
                     </Show>
                   </p>
-                  <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                     {item.lastUsedAt
                       ? `Last used ${relativeTime(item.lastUsedAt)}`
                       : "Not used since sign-in"}
@@ -830,7 +809,7 @@ export default function AccountPage() {
             )}
           </For>
           <Show when={(sessions()?.sessions.length ?? 0) === 0}>
-            <p class="text-[12.5px] text-muted-foreground">
+            <p class="text-xs text-muted-foreground">
               No active sessions were found. Sign in again to start one.
             </p>
           </Show>
@@ -853,10 +832,10 @@ export default function AccountPage() {
         }
       >
         <Dialog open={tokenOpen()} onOpenChange={setTokenOpen}>
-          <DialogContent class="max-w-lg text-foreground">
+          <DialogContent class="max-w-lg">
             <DialogHeader>
               <DialogTitle>Create API token</DialogTitle>
-              <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
+              <DialogDescription>
                 Choose what the token may do. Its access is the intersection of this grant and your
                 role in each tenant; a tenant-bound token is rejected for every other tenant.
               </DialogDescription>
@@ -874,7 +853,7 @@ export default function AccountPage() {
               <Show
                 when={availablePermissions().length > 0}
                 fallback={
-                  <p class="text-[12px] text-muted-foreground">Loading your permissions…</p>
+                  <p class="text-xs text-muted-foreground">Loading your permissions…</p>
                 }
               >
                 <PermissionPicker
@@ -913,12 +892,12 @@ export default function AccountPage() {
               </Field>
               <Show when={tokenError()}>
                 {(msg) => (
-                  <p role="alert" class="text-[12.5px] text-destructive">
+                  <p role="alert" class="text-xs text-destructive">
                     {msg()}
                   </p>
                 )}
               </Show>
-              <DialogFooter class="border-t border-border pt-3">
+              <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setTokenOpen(false)}>
                   Cancel
                 </Button>
@@ -931,10 +910,10 @@ export default function AccountPage() {
         <Show when={newToken()}>
           {(token) => (
             <div class="mb-4 rounded-lg border border-warning/25 bg-warning/[0.07] p-3">
-              <p class="text-[12.5px] font-medium text-warning-foreground">
+              <p class="text-xs font-medium text-warning-foreground">
                 Copy this token now. It will not be shown again.
               </p>
-              <code class="mt-2 block break-all rounded border border-border bg-muted p-2 font-mono text-[11.5px] text-foreground">
+              <code class="mt-2 block break-all rounded border border-border bg-muted p-2 font-mono text-xs text-foreground">
                 {token()}
               </code>
             </div>
@@ -942,7 +921,7 @@ export default function AccountPage() {
         </Show>
         <Show when={tokenError()}>
           {(msg) => (
-            <p role="alert" class="mb-3 text-[12.5px] text-destructive">
+            <p role="alert" class="mb-3 text-xs text-destructive">
               {msg()}
             </p>
           )}
@@ -953,8 +932,8 @@ export default function AccountPage() {
             {(token) => (
               <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0">
-                  <p class="text-[12.5px] font-medium text-foreground">{token.name}</p>
-                  <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  <p class="text-xs font-medium text-foreground">{token.name}</p>
+                  <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                     {scopeLabel(token.permissions, token.scopes)} · {tenantLabel(token.tenantId)} ·{" "}
                     {token.tokenPrefix}
                     ... · Created {new Date(token.createdAt).toLocaleDateString()} · Last used{" "}
@@ -965,7 +944,7 @@ export default function AccountPage() {
                     </Show>
                   </p>
                   <Show when={token.revokedAt}>
-                    <p class="mt-1 text-[11px] font-medium text-destructive">Revoked</p>
+                    <p class="mt-1 text-xs font-medium text-destructive">Revoked</p>
                   </Show>
                 </div>
                 <Button
@@ -981,13 +960,13 @@ export default function AccountPage() {
           </For>
           <Show when={tokensError()}>
             {(msg) => (
-              <p role="alert" class="text-[12.5px] text-destructive">
+              <p role="alert" class="text-xs text-destructive">
                 {msg()}
               </p>
             )}
           </Show>
           <Show when={!tokensPending() && !tokensError() && (tokens()?.tokens.length ?? 0) === 0}>
-            <p class="text-[12.5px] text-muted-foreground">
+            <p class="text-xs text-muted-foreground">
               No API tokens yet. Create one for the CLI or API.
             </p>
           </Show>
@@ -999,8 +978,8 @@ export default function AccountPage() {
         description="OAuth clients you have authorised to manage Mattrax through the Model Context Protocol. API tokens above work with MCP too. Revoking a client ends its access and refresh tokens immediately."
       >
         <div class="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
-          <span class="text-[11.5px] text-muted-foreground">MCP endpoint</span>
-          <code class="min-w-0 flex-1 truncate font-mono text-[11.5px] text-foreground">/mcp</code>
+          <span class="text-xs text-muted-foreground">MCP endpoint</span>
+          <code class="min-w-0 flex-1 truncate font-mono text-xs text-foreground">/mcp</code>
           <Button
             size="xs"
             variant="outline"
@@ -1016,14 +995,14 @@ export default function AccountPage() {
         </div>
         <Show when={connections.error}>
           {(error) => (
-            <p role="alert" class="text-[12.5px] text-destructive">
+            <p role="alert" class="text-xs text-destructive">
               {errorMessage(raisedFailure(error()), "Could not load MCP connections")}
             </p>
           )}
         </Show>
         <Show when={connectionError()}>
           {(message) => (
-            <p role="alert" class="mb-2 text-[12.5px] text-destructive">
+            <p role="alert" class="mb-2 text-xs text-destructive">
               {message()}
             </p>
           )}
@@ -1034,12 +1013,12 @@ export default function AccountPage() {
               <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div class="min-w-0">
                   <div class="flex flex-wrap items-center gap-2">
-                    <p class="text-[12.5px] font-medium text-foreground">{connection.clientName}</p>
+                    <p class="text-xs font-medium text-foreground">{connection.clientName}</p>
                     <Show when={connection.revokedAt}>
                       <Badge variant="destructive">Revoked</Badge>
                     </Show>
                   </div>
-                  <p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                  <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                     {scopeLabel(connection.permissions, connection.scopes)} · Connected{" "}
                     {new Date(connection.createdAt).toLocaleDateString()} · Last used{" "}
                     {connection.lastUsedAt
@@ -1069,7 +1048,7 @@ export default function AccountPage() {
               (connections.data?.connections.length ?? 0) === 0
             }
           >
-            <p class="text-[12.5px] text-muted-foreground">
+            <p class="text-xs text-muted-foreground">
               No agent clients are connected. An OAuth-capable MCP client will appear here after you
               authorise it.
             </p>
@@ -1092,7 +1071,7 @@ export default function AccountPage() {
         class="border-destructive/25 bg-destructive/[0.025]"
         header={
           <div class="min-w-0">
-            <h2 class="text-[13px] font-semibold tracking-[-0.01em] text-destructive">
+            <h2 class="text-xs font-semibold tracking-tight text-destructive">
               Delete account
             </h2>
             <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
@@ -1108,10 +1087,10 @@ export default function AccountPage() {
         </Button>
 
         <Dialog open={deleteDialogOpen()} onOpenChange={setDeleteDialogOpen}>
-          <DialogContent class="max-w-md text-foreground">
+          <DialogContent class="max-w-md">
             <DialogHeader>
               <DialogTitle>Delete your account?</DialogTitle>
-              <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
+              <DialogDescription>
                 Your account and the tenant you own are deleted together. Devices are sent an
                 unenroll request, the subscription is cancelled, and policies, audit history and
                 stored files are removed. This cannot be undone.
@@ -1137,7 +1116,7 @@ export default function AccountPage() {
               </Field>
             </div>
 
-            <DialogFooter class="mt-4 border-t border-border pt-3">
+            <DialogFooter class="mt-4">
               <Button type="button" variant="outline" onClick={() => setDeleteDialogOpen(false)}>
                 Cancel
               </Button>

@@ -37,8 +37,14 @@ Grant application permissions and admin consent for the features you use:
 | `DeviceManagementServiceConfig.ReadWrite.All` | Autopilot profiles and imports                               |
 | `DeviceManagementManagedDevices.Read.All`     | Autopilot device sync                                        |
 | `DelegatedPermissionGrant.ReadWrite.All`      | Revoking admin consent when a tenant unlinks                 |
+| `DeviceLocalCredential.Read.All`              | Reading Windows LAPS local administrator passwords           |
+| `BitlockerKey.Read.All`                       | Listing and revealing BitLocker recovery keys                |
 
-A missing permission surfaces as `ConsentRequired` with the Graph error. An app that does
+`DeviceLocalCredential.Read.All` is only needed when Windows LAPS passwords are backed up
+to Microsoft Entra ID and an operator reveals one. `BitlockerKey.Read.All` is needed for
+the BitLocker key list and reveal; the list is metadata-only, while a reveal fetches the key
+with `$select=key` and is audited by Entra. Both are application permissions with admin
+consent. A missing permission surfaces as `ConsentRequired` with the Graph error. An app that does
 not use directory sync can grant `Application.Read.All` instead of `Directory.Read.All`;
 either one is enough for the service-principal lookup used by consent revocation.
 

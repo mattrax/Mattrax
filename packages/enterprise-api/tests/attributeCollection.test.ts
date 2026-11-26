@@ -5,7 +5,7 @@ import { StepUpRequired, substitutePolicyVariables } from "@mattrax/enterprise-d
 import { recordScriptAgentResult } from "@mattrax/enterprise-backend";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const now = new Date("2026-11-20T10:00:00.000Z");
 
@@ -204,7 +204,6 @@ const context = async (options: { stepUp?: boolean; extras?: SeedExtras } = {}) 
     db,
     schema,
     origin: "https://enterprise.test",
-    stripeClient: makeStripeClient(),
     // SAFETY: no attribute path touches R2; the service only stores the binding.
     storage: {} as never,
     // SAFETY: the fake implements only the auth methods these handlers use.
@@ -359,7 +358,7 @@ describe("script attribute collection", () => {
         .setDeviceAttributes(request(headers), orgId, device.id, {
           values: { antivirus: "Manual" },
         })
-        .pipe(Effect.catchTag("EnterpriseBadRequest", (error: any) => Effect.succeed(error))),
+        .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );
 
     expect(failure).toHaveProperty("message", expect.stringContaining("cannot be edited manually"));
@@ -454,7 +453,7 @@ describe("collect now", () => {
     const blocked = await runEffect(
       service
         .collectDeviceAttribute(request(headers), orgId, device.id, "attr-antivirus")
-        .pipe(Effect.catchTag("ApprovalRequired", (error: any) => Effect.succeed(error))),
+        .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );
 
     expect(blocked).toMatchObject({ code: "approval_required", requestId: expect.any(String) });
@@ -468,7 +467,7 @@ describe("collect now", () => {
     const notScripted = await runEffect(
       service
         .collectDeviceAttribute(request(headers), orgId, device.id, "attr-note")
-        .pipe(Effect.catchTag("EnterpriseBadRequest", (error: any) => Effect.succeed(error))),
+        .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );
 
     expect(notScripted).toHaveProperty(
@@ -480,7 +479,7 @@ describe("collect now", () => {
     const stepUpError = await runEffect(
       noStepUp.service
         .collectDeviceAttribute(request(headers), orgId, device.id, "attr-antivirus")
-        .pipe(Effect.catchTag("StepUpRequired", (error: any) => Effect.succeed(error))),
+        .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );
 
     expect(stepUpError).toBeInstanceOf(StepUpRequired);
@@ -491,7 +490,7 @@ describe("collect now", () => {
     const unsupported = await runEffect(
       windows.service
         .collectDeviceAttribute(request(headers), orgId, device.id, "attr-antivirus")
-        .pipe(Effect.catchTag("EnterpriseBadRequest", (error: any) => Effect.succeed(error))),
+        .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );
 
     expect(unsupported).toHaveProperty(
@@ -506,7 +505,7 @@ describe("collect now", () => {
     const notAssigned = await runEffect(
       unassigned.service
         .collectDeviceAttribute(request(headers), orgId, device.id, "attr-antivirus")
-        .pipe(Effect.catchTag("EnterpriseBadRequest", (error: any) => Effect.succeed(error))),
+        .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );
 
     expect(notAssigned).toHaveProperty("message", expect.stringContaining("not assigned"));
@@ -610,7 +609,7 @@ describe("attribute binding edits", () => {
           source: "script",
           scriptId: script.id,
         })
-        .pipe(Effect.catchTag("EnterpriseBadRequest", (error: any) => Effect.succeed(error))),
+        .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );
 
     expect(failure).toHaveProperty("message", expect.stringContaining("enrollment question"));
@@ -631,7 +630,7 @@ describe("attribute binding edits", () => {
           source: "script",
           scriptId: script.id,
         })
-        .pipe(Effect.catchTag("EnterpriseBadRequest", (error: any) => Effect.succeed(error))),
+        .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );
 
     expect(rejected).toHaveProperty("message", expect.stringContaining("disabled"));

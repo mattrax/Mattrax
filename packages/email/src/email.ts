@@ -1,6 +1,4 @@
 import { Effect, Schema } from "effect";
-import { sendSmtpMail } from "./smtp.ts";
-import type { SmtpTransportOptions } from "./smtp.ts";
 import { describeEmailFailure, EmailFailure } from "./failure.ts";
 
 export { describeEmailFailure, EmailFailure } from "./failure.ts";
@@ -34,6 +32,15 @@ export type OutboundEmailMessage = {
   readonly text?: string;
   readonly html?: string;
   readonly attachments?: ReadonlyArray<EmailAttachment>;
+  /**
+   * Extra MIME headers, used by transports that can express them (SMTP).
+   *
+   * The verification code email sets `OTP-Token`, Resend's parallel to
+   * WebOTP's origin-bound SMS format, so desktop and mobile mail clients can
+   * offer the code without the inbox being the only source. Provider bindings
+   * that cannot carry custom headers simply ignore this field.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
 };
 
 /**
@@ -135,11 +142,3 @@ export const replyToAddress = (replyTo: EmailReplyTo): EmailAddress =>
   Schema.is(Schema.String)(replyTo)
     ? { name: DEFAULT_EMAIL_FROM.name, email: replyTo }
     : { name: replyTo.name ?? replyTo.email, email: replyTo.email };
-
-/**
- * SMTP delivery. `node:net`/`node:tls` run in Node and in Workers with
- * `nodejs_compat`, so hosted and self-hosted deployments use one client.
- */
-export const smtpEmailTransport = (options: SmtpTransportOptions): EmailTransport => ({
-  send: (message) => sendSmtpMail(options, message).pipe(Effect.asVoid),
-});

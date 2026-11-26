@@ -43,6 +43,43 @@ describe("Windows SyncML policy encoding", () => {
     ]);
   });
 
+  it("encodes an Add PFX blob with target, format and data", async () => {
+    const response = fromManagementResponse(request, {
+      commands: [
+        {
+          kind: "Add",
+          cmdID: "pfx-1",
+          locURI:
+            "./Device/Vendor/MSFT/ClientCertificateInstall/PFXCertInstall/id-1/PFXCertBlob",
+          data: "MIIBAgM=",
+          format: "b64",
+        },
+      ],
+    });
+
+    expect(syncBody(response).add).toEqual([
+      {
+        cmdID: "pfx-1",
+        items: [
+          {
+            target: {
+              locURI:
+                "./Device/Vendor/MSFT/ClientCertificateInstall/PFXCertInstall/id-1/PFXCertBlob",
+            },
+            meta: { format: "b64", type: "text/plain" },
+            data: "MIIBAgM=",
+          },
+        ],
+      },
+    ]);
+
+    const xml = await Effect.runPromise(serializeSyncML(response));
+
+    expect(xml).toContain("<Add>");
+    expect(xml).toContain("<LocURI>./Device/Vendor/MSFT/ClientCertificateInstall/PFXCertInstall/id-1/PFXCertBlob</LocURI>");
+    expect(xml).toContain("MIIBAgM=");
+  });
+
   it("serialises Replace, Get, Exec and Delete together", async () => {
     const response = fromManagementResponse(request, {
       commands: [

@@ -1,10 +1,12 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { Crypto } from "@mattrax/crypto";
+import type { CryptoError } from "@mattrax/crypto";
 import {
   DEVICE_COMMAND_ACTIVE_STATUSES,
   DEVICE_COMMAND_RECONCILED_RESULT_STATUS,
   normalizeDeviceCommandStatus,
 } from "@mattrax/enterprise-domain";
-import { parseCatalogueApplicationAssetIdentifier } from "./policy.js";
+import { parseCatalogueApplicationAssetIdentifier } from "./configuration.js";
 import type { DeviceCommandStatus } from "@mattrax/enterprise-domain";
 
 const MINUTE = 60 * 1000;
@@ -57,6 +59,10 @@ const BUDGETS = new Map<string, number>([
   // OS update scheduling is only meaningful while the operator still expects
   // the Mac to act on it; a month-old request would install at a random time.
   ["ScheduleOSUpdate", 7 * DAY],
+  // Asynchronous Windows rotation Execs: the device acknowledges and then
+  // processes the work, so the parent needs a real active budget.
+  ["WindowsBitLockerRotate", 24 * HOUR],
+  ["WindowsLapsResetPassword", 24 * HOUR],
   // Destructive actions: a week is long enough for a travelling laptop.
   ["EraseDevice", 7 * DAY],
   ["WindowsWipe", 7 * DAY],
@@ -109,7 +115,12 @@ export const ACTIVE_COMMAND_STATUSES = DEVICE_COMMAND_ACTIVE_STATUSES;
 export const commandStatusIsActive = (status: string | null | undefined): boolean => {
   const normalized = normalizeDeviceCommandStatus(status);
 
-  return normalized === "queued" || normalized === "sent" || normalized === "deferred";
+  return (
+    normalized === "queued" ||
+    normalized === "sent" ||
+    normalized === "accepted" ||
+    normalized === "deferred"
+  );
 };
 
 /** Result status recorded when the server, not the device, resolved a command. */
@@ -155,6 +166,15 @@ export const canonicalCommandPayload = (payload: Schema.Json | null | undefined)
 /** Stable string hashed into `device_command.dedupe_key`. */
 export const commandDedupeSource = (requestType: string, payload: CommandPayload | undefined) =>
   `${requestType}\u0000${canonicalCommandPayload(payload)}`;
+
+/** Effect-native command hashing; digest failures stay in the error channel. */
+export const commandDedupeKeyEffect = (
+  requestType: string,
+  payload: CommandPayload | undefined,
+): Effect.Effect<string, CryptoError> =>
+  Crypto.sha256(new TextEncoder().encode(commandDedupeSource(requestType, payload)).buffer).pipe(
+    Effect.map((digest) => hex(new Uint8Array(digest))),
+  );
 
 const hex = (bytes: Uint8Array) =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -275,6 +295,10 @@ export const planCommandDeliveryBatch = (
       deliver.push(row);
       continue;
     }
+
+    // Accepted asynchronous work is already running on the device. It is
+    // polled through its result/status channel, never re-delivered.
+    if (status === "accepted") continue;
 
     const retryAfter =
       status === "deferred" ? DEVICE_COMMAND_DEFERRED_RETRY_MS : DEVICE_COMMAND_SENT_RETRY_MS;

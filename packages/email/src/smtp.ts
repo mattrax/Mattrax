@@ -5,7 +5,7 @@ import { connect as connectNet, isIP } from "node:net";
 import type { Socket } from "node:net";
 import { connect as connectTls } from "node:tls";
 
-import type { OutboundEmailMessage } from "./email.ts";
+import type { EmailTransport, OutboundEmailMessage } from "./email.ts";
 import { describeEmailFailure, EmailFailure } from "./failure.ts";
 
 /**
@@ -414,6 +414,35 @@ const sanitizeHeader = (value: string | null | undefined): string =>
     .replaceAll(/[\r\n]+/g, " ")
     .trim();
 
+/**
+ * Headers the MIME builder owns. A caller-supplied header may never replace
+ * them: a second `Subject` or an injected `Bcc` would change how the message
+ * is routed or displayed.
+ */
+const RESERVED_HEADERS = new Set([
+  "date",
+  "from",
+  "to",
+  "cc",
+  "bcc",
+  "subject",
+  "message-id",
+  "mime-version",
+  "reply-to",
+  "content-type",
+  "content-transfer-encoding",
+  "content-disposition",
+]);
+
+/** One extra header line. Names are restricted to RFC 5322 field characters. */
+const customHeader = (name: string, value: string): string | null => {
+  const field = sanitizeHeader(name);
+
+  if (!/^[!-9;-~]+$/.test(field) || RESERVED_HEADERS.has(field.toLowerCase())) return null;
+
+  return `${field}: ${sanitizeHeader(value)}`;
+};
+
 const formatAddress = (
   address: { readonly name?: string | undefined; readonly email: string } | null | undefined,
 ): string => {
@@ -484,6 +513,14 @@ export const buildMimeMessage = (message: OutboundEmailMessage, now: Date = new 
       : formatAddress(message.replyTo);
 
     headers.push(`Reply-To: ${replyTo}`);
+  }
+
+  // Extra headers (for example `OTP-Token`) come from the caller, so both the
+  // name and the value are flattened before they reach the wire.
+  for (const [name, value] of Object.entries(message.headers ?? {})) {
+    const header = customHeader(name, value);
+
+    if (header) headers.push(header);
   }
 
   const text = message.text?.trim() ? message.text : null;
@@ -648,3 +685,13 @@ export const sendSmtpMail = (
       return { recipients: recipientsOf(message.to).length };
     }),
   );
+
+/**
+ * SMTP delivery. `node:net`/`node:tls` run in Node and in Workers with
+ * `nodejs_compat`, so hosted and self-hosted deployments use one client.
+ * Import this adapter from `@mattrax/email/smtp`; the package root stays
+ * portable.
+ */
+export const smtpEmailTransport = (options: SmtpTransportOptions): EmailTransport => ({
+  send: (message) => sendSmtpMail(options, message).pipe(Effect.asVoid),
+});

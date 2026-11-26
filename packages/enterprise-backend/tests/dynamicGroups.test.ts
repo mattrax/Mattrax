@@ -12,7 +12,7 @@ import {
   syncDynamicGroupDependents,
   syncDynamicGroupsForDevice,
   syncDynamicGroupsForTenant,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 import { makeDb, runEffect } from "./helpers.js";
 
 const now = new Date("2026-11-10T12:00:00.000Z");
@@ -53,7 +53,7 @@ describe("dynamic group evaluator", () => {
     ).toBe(false);
     expect(
       evaluateDynamicGroupRules(
-        rules({ all: [{ field: "proto", op: "eq", value: "APPLE" }] }),
+        rules({ all: [{ field: "proto", op: "eq", value: "APPLE" as never }] }),
         device(),
         { now },
       ),
