@@ -572,7 +572,9 @@ jobs:
             apps/web/.cloudflare/output
           key: >-
             web-e2e-build-v1-${{ runner.os }}-${{ hashFiles(
-              'pnpm-lock.yaml', 'apps/**', 'packages/**', 'docs/**',
+              'pnpm-lock.yaml', 'apps/*/src/**', 'apps/*/scripts/**',
+              'apps/*/public/**', 'apps/*/migrations/**', 'apps/*/package.json',
+              'apps/*/*.config.ts', 'packages/**', 'docs/**',
               'vite.config.ts', 'package.json') }}
       - name: Fetch the base branch
         if: needs.changes.outputs.e2e_changed == 'true'
@@ -697,7 +699,9 @@ jobs:
             apps/web/.cloudflare/output
           key: >-
             web-e2e-build-v1-${{ runner.os }}-${{ hashFiles(
-              'pnpm-lock.yaml', 'apps/**', 'packages/**', 'docs/**',
+              'pnpm-lock.yaml', 'apps/*/src/**', 'apps/*/scripts/**',
+              'apps/*/public/**', 'apps/*/migrations/**', 'apps/*/package.json',
+              'apps/*/*.config.ts', 'packages/**', 'docs/**',
               'vite.config.ts', 'package.json') }}
       - name: Wait for MySQL and the schema
         run: |

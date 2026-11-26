@@ -7,7 +7,7 @@ import { createContext, useContext } from "solid-js";
  * screens rendered in isolation (tests, design previews) provide a navigator
  * here instead of replacing the module.
  */
-export const NavigateContext = createContext<Navigator>();
+export const NavigateContext = createContext<Navigator | null>(null);
 
 /**
  * Programmatic navigation that survives a same-tick state write.

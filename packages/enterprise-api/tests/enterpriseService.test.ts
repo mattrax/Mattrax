@@ -5106,13 +5106,14 @@ describe("device command lifecycle", () => {
 
     expect(second).toMatchObject({ deduplicated: true });
     expect(commands(db)).toHaveLength(1);
-    // A fresh 24-hour budget from the second click, not the old deadline.
-    // The handler captures its clock a moment before the row's createdAt, so
-    // prove the fresh 24-hour budget from that row within a millisecond.
+    // A fresh 24-hour budget from the second click, not the old 60s deadline.
+    // The handler reads its clock before the row's createdAt, and CI can pause
+    // between the two by more than a millisecond, so allow a small skew while
+    // still proving the budget is hours rather than the previous minute.
     const extendedBudget =
       commands(db)[0]!.expiresAt.getTime() - commands(db)[0]!.createdAt.getTime();
-    expect(extendedBudget).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 1);
-    expect(extendedBudget).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 1);
+    expect(extendedBudget).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 5_000);
+    expect(extendedBudget).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 5_000);
   });
 
   it("supersedes a pending lock when a wipe is queued", async () => {
