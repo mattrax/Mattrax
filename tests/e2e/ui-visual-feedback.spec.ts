@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { api, bootstrapTenant, confirmStepUp, gotoHydrated, stepUpGrant } from "./helpers";
+import { api, bootstrapFreshTenant, confirmStepUp, gotoHydrated, stepUpGrant } from "./helpers";
 
 const CONTRAST_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
 
@@ -14,6 +14,23 @@ type GroupDetailFixture = {
 };
 
 const expectNoContrastViolations = async (page: Page, selector: string) => {
+  // Entrance animations blend foreground and background colours mid-flight.
+  // Scan the settled state instead of racing the transition.
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation.playState === "running" &&
+                animation.effect?.getComputedTiming().iterations !== Infinity,
+            ).length,
+      ),
+    )
+    .toBe(0);
+
   const results = await new AxeBuilder({ page })
     .withTags(CONTRAST_TAGS)
     .include(selector)
@@ -54,7 +71,7 @@ test.describe("UI visual feedback", () => {
   test.setTimeout(240_000);
 
   test("success badges, account heading and group summaries", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Badge Contrast Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Badge Contrast Tenant");
 
     // Original case: "success badges meet contrast in light and dark themes".
     await page.route("**/api/v1/tenants/*/users", (route) =>
@@ -173,7 +190,7 @@ test.describe("UI visual feedback", () => {
   });
 
   test("script settings failure feedback and the mobile table hint", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Script Error Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Script Error Tenant");
     await seedEnabledScript(page, tenant.id);
 
     // Original case: "a handled Scripts settings failure announces once

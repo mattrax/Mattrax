@@ -1,10 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated, stepUpGrant } from "./helpers";
+import { bootstrapFreshTenant, bootstrapTenant, gotoHydrated, stepUpGrant } from "./helpers";
 
 test.describe("tenant export and import", () => {
   test("downloads a bundle and imports it as a new tenant", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Bundle Tenant");
+    const origin = new URL(page.url()).origin;
     await gotoHydrated(page, `/t/${tenant.id}/settings/migration/export`);
 
     const exported = await page.request.get(`/api/v1/tenants/${tenant.id}/export`);
@@ -40,7 +41,7 @@ test.describe("tenant export and import", () => {
     const rejected = await page.request.post("/api/v1/tenants/import", {
       data: { ...bundle, version: 2 },
       headers: {
-        origin: "http://localhost:9050",
+        origin,
         "x-effect-auth-csrf": "1",
       },
     });
@@ -93,7 +94,7 @@ test.describe("tenant export and import", () => {
 
 test.describe("tenant backups", () => {
   test("runs a manual backup, lists it and downloads an authenticated bundle", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Backup Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Backup Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/backups`);
     await expect(page.getByText("Automatic tenant backups")).toBeVisible();
 

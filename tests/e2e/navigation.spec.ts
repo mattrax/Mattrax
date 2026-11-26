@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import {
+  bootstrapFreshTenant,
   bootstrapTenant,
   createTenant,
   gotoHydrated,
@@ -18,7 +19,7 @@ test.describe("top navigation", () => {
     page,
   }) => {
     test.setTimeout(180_000);
-    const tenant = await bootstrapTenant(page, "Nav Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Nav Tenant");
     const base = `/t/${tenant.slug}`;
 
     // Original: "navigates between every tenant section"
@@ -197,12 +198,18 @@ test.describe("mobile navigation", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await bootstrapTenant(page, "Menu Tenant");
+    await bootstrapFreshTenant(page, "Menu Tenant");
 
     const tenants = [];
+    const targetName = `Tenant 23 ${randomUUID().slice(0, 8)}`;
 
     for (let index = 0; index < 24; index++) {
-      tenants.push(await createTenant(page, `Tenant ${String(index).padStart(2, "0")}`));
+      tenants.push(
+        await createTenant(
+          page,
+          index === 23 ? targetName : `Tenant ${String(index).padStart(2, "0")}`,
+        ),
+      );
     }
 
     // `createTenant` calls the API directly rather than going through the
@@ -210,8 +217,27 @@ test.describe("mobile navigation", () => {
     // only the first tenant. Reload to read the switcher from a fresh cache.
     await gotoHydrated(page, "/dashboard");
 
+    // The dashboard redirect can still be settling when the first press lands.
+    // Wait for the redirect to finish, then open the sheet exactly once.
+    await page.waitForLoadState("networkidle");
+    const switchTenant = page.getByRole("button", { name: /Switch tenant/ });
     await page.getByRole("button", { name: "Open navigation" }).click();
-    await page.getByRole("button", { name: /Switch tenant/ }).click();
+    await expect(switchTenant).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document
+              .getAnimations()
+              .filter(
+                (animation) =>
+                  animation.playState === "running" &&
+                  animation.effect?.getComputedTiming().iterations !== Infinity,
+              ).length,
+        ),
+      )
+      .toBe(0);
+    await switchTenant.click();
 
     const menu = page.locator('[data-slot="menu-content"]');
     await expect(menu).toBeVisible();
@@ -227,7 +253,7 @@ test.describe("mobile navigation", () => {
       .poll(() => menu.evaluate((element) => element.scrollHeight > element.clientHeight))
       .toBe(true);
 
-    const target = menu.getByRole("menuitemradio", { name: /Tenant 23/ });
+    const target = menu.getByRole("menuitemradio", { name: new RegExp(targetName) });
     await target.scrollIntoViewIfNeeded();
     await expect(target).toBeInViewport();
     await target.click();

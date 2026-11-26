@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { createHmac, randomUUID } from "node:crypto";
-import { readSharedSession } from "../../packages/config/e2e-shared-session.ts";
+import { e2eBaseURL, readSharedSession } from "../../packages/config/e2e-shared-session.ts";
 
 type DebugEmail = { readonly to: string; readonly text: string };
 
@@ -169,7 +169,7 @@ export async function verifyEmail(page: Page, email: string) {
 
   const response = await page.request.post("/api/v1/verify-email", {
     data: { token: decodeURIComponent(token) },
-    headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" },
+    headers: { origin: new URL(page.url()).origin, "x-effect-auth-csrf": "1" },
   });
 
   if (!response.ok())
@@ -236,24 +236,20 @@ export async function createTenant(page: Page, name: string) {
 
   const slug = `${baseSlug}-${randomUUID().slice(0, 8)}`;
 
-  const id = await page.evaluate(
-    async ({ name, slug }) => {
-      const response = await fetch("/api/v1/tenants", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
-        body: JSON.stringify({ name, slug }),
-      });
-
-      if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
-
-      const created: { id: string } = await response.json();
-
-      return created.id;
+  const response = await page.request.post("/api/v1/tenants", {
+    headers: {
+      "content-type": "application/json",
+      origin: e2eBaseURL(),
+      "x-effect-auth-csrf": "1",
     },
-    { name, slug },
-  );
+    data: { name, slug },
+  });
 
-  return { id, slug };
+  if (!response.ok()) throw new Error(`${response.status()}: ${await response.text()}`);
+
+  const created: { id: string } = await response.json();
+
+  return { id: created.id, slug };
 }
 
 export async function gotoHydrated(page: Page, path: string) {
@@ -270,7 +266,18 @@ export async function gotoHydrated(page: Page, path: string) {
   return response;
 }
 
+/** Create a tenant under the shared owner account. */
 export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
+  await sharedSession(page);
+  const tenant = await createTenant(page, `${name} ${randomUUID().slice(0, 4)}`);
+  await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+  await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+
+  return tenant;
+}
+
+/** Create a tenant under a new account that owns its passkey and security state. */
+export async function bootstrapFreshTenant(page: Page, name = "E2E Tenant") {
   await register(page);
   const tenant = await createTenant(page, `${name} ${randomUUID().slice(0, 4)}`);
   await gotoHydrated(page, `/t/${tenant.slug}/devices`);
@@ -298,10 +305,6 @@ export async function sharedSession(page: Page) {
 
       if (me.ok()) {
         const profile: { account?: { email?: string } } = await me.json();
-        // createTenant() and other helpers run fetch() from the page, so put
-        // it on our origin before the caller uses them. register() already
-        // navigates as part of its flow.
-        await gotoHydrated(page, "/dashboard");
 
         return { email: profile.account?.email ?? shared.email };
       }

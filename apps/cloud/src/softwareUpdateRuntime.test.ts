@@ -172,7 +172,7 @@ const makeHostedHandler = (
 };
 
 describe("hosted software update runtime", () => {
-  it("shares one I/O-free cache across rebuilt request Layers", async () => {
+  it("shares catalog entries without sharing request-scoped refresh state", async () => {
     const first = await Effect.runPromise(
       Effect.gen(function* () {
         return yield* SoftwareUpdateCache;
@@ -184,7 +184,8 @@ describe("hosted software update runtime", () => {
       }).pipe(Effect.provide(SoftwareUpdateCache.layer)),
     );
 
-    expect(second).toBe(first);
+    expect(second).not.toBe(first);
+    expect(second.entries).toBe(first.entries);
   });
 
   it("serves the second hosted request without another feed SELECT", async () => {

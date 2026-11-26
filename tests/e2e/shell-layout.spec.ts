@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapFreshTenant, bootstrapTenant, gotoHydrated } from "./helpers";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 const settingsNav = (page: Page) =>
@@ -295,7 +295,7 @@ test.describe("help and account menu", () => {
     page,
   }) => {
     test.setTimeout(120_000);
-    const tenant = await bootstrapTenant(page, "Help Menu Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Help Menu Tenant");
 
     // Original: "links help to documentation and the configured support destination"
     await page.getByRole("button", { name: "Help and documentation" }).click();

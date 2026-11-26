@@ -312,6 +312,7 @@ test.describe("dashboard accessibility", () => {
 
     // Column picker.
     const columns = page.getByRole("button", { name: "Choose visible columns" });
+    await expect(columns).toBeVisible();
     await openMenu(page, columns);
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="menu-content"]')).toHaveCount(0);

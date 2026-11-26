@@ -6,6 +6,7 @@ import {
   api,
   bootstrapSession,
   bootstrapTenant,
+  bootstrapFreshTenant,
   createTenant,
   gotoHydrated,
   stepUpGrant,
@@ -307,7 +308,7 @@ test.describe("device enrollment", () => {
 
   test("tenant-scoped Windows discovery and enrollment-linked deletion", async ({ page }) => {
     test.setTimeout(180_000);
-    const tenant = await bootstrapTenant(page, "Windows Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Windows Tenant");
 
     // shows a tenant-scoped Windows discovery URL and marks Android unavailable
     const other = await createTenant(page, `Windows Other ${randomUUID().slice(0, 8)}`);

@@ -511,7 +511,7 @@ test.describe("device fleet management", () => {
 
       const unknownRevoke = await page.request.post(
         `/api/v1/tenants/${tenant.id}/devices/not-a-device/revoke-identity`,
-        { headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" } },
+        { headers: { origin: new URL(page.url()).origin, "x-effect-auth-csrf": "1" } },
       );
 
       expect(unknownRevoke.status()).toBe(404);

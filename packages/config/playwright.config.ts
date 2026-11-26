@@ -23,11 +23,11 @@ export default defineConfig({
   globalSetup: fileURLToPath(new URL("./playwright-global-setup.ts", import.meta.url)),
   timeout: 60_000,
   expect: { timeout: 15_000 },
-  fullyParallel: false,
-  // The suite shares a dev mailbox and rate-limit buckets through one server.
-  // Two workers made stateful specs (overlays, SCIM assignments, slug renames)
-  // flaky in CI, so keep one worker and get parallelism from shards instead.
-  workers: 1,
+  // Every test owns a browser context and a uniquely named tenant. Identity
+  // and passkey journeys still register their own account, so tests can run in
+  // parallel without sharing page state or account security settings.
+  fullyParallel: true,
+  workers: Number(process.env.E2E_WORKERS ?? 4),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
@@ -39,7 +39,15 @@ export default defineConfig({
     headless: true,
     ignoreHTTPSErrors: true,
     viewport: { width: 1440, height: 900 },
-    trace: "retain-on-failure",
+    // CI traces the retry, not every passing first attempt. Retaining traces on
+    // all tests spends most of each worker's CPU snapshotted DOM that is then
+    // discarded. Locally keep the first failure for debugging.
+    trace:
+      process.env.E2E_TRACE === "off"
+        ? "off"
+        : process.env.CI
+          ? "on-first-retry"
+          : "retain-on-failure",
     screenshot: "only-on-failure",
   },
   webServer: e2eBaseUrl

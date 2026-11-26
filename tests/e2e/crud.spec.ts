@@ -17,10 +17,24 @@ test.describe("groups and policies", () => {
     // Edit mode renames through the shared save action.
     await page.getByRole("button", { name: /^edit$/i }).click();
     await page.locator("form input").first().fill("Field Operations");
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        response.url().includes(`/api/v1/tenants/${tenant.id}/groups/`) &&
+        response.ok(),
+    );
     await page.getByRole("button", { name: /^save$/i }).click();
+    await saved;
     await expect(page.getByRole("heading", { name: "Field Operations" })).toBeVisible();
 
+    const duplicated = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes(`/api/v1/tenants/${tenant.id}/groups`) &&
+        response.ok(),
+    );
     await page.getByRole("button", { name: /duplicate/i }).click();
+    await duplicated;
     await expect
       .poll(
         () => page.getByRole("heading", { name: /Field Operations \[duplicated\]/ }).count(),

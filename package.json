@@ -15,7 +15,6 @@
     "cis:check": "tsx apps/web/scripts/generate-cis-templates.ts --check",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "e2e:durations": "tsx packages/config/scripts/e2e-durations.ts",
     "bench:fleet": "tsx apps/cloud/scripts/fleet-bench.ts",
     "mdm:compliance": "pnpm --filter @mattrax/mdm-compliance start",
     "format": "vp fmt && vp lint",

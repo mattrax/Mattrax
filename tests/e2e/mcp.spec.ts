@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { createHash, randomBytes } from "node:crypto";
-import { api, bootstrapTenant, gotoHydrated, stepUpGrant } from "./helpers";
+import { api, bootstrapFreshTenant, bootstrapTenant, gotoHydrated, stepUpGrant } from "./helpers";
 
 const base64Url = (value: Buffer) => value.toString("base64url");
 
@@ -16,17 +16,18 @@ test.describe("MCP", () => {
     page,
   }) => {
     const tenant = await bootstrapTenant(page, "MCP Tenant");
+    const origin = new URL(page.url()).origin;
 
     const resourceMetadata = await page.request.get("/.well-known/oauth-protected-resource");
     expect(resourceMetadata.status()).toBe(200);
     expect(await resourceMetadata.json()).toMatchObject({
-      resource: "http://localhost:9050/mcp",
+      resource: `${origin}/mcp`,
     });
     const authorizationMetadata = await page.request.get("/.well-known/oauth-authorization-server");
     expect(authorizationMetadata.status()).toBe(200);
     expect(await authorizationMetadata.json()).toMatchObject({
-      authorization_endpoint: "http://localhost:9050/api/oauth/authorize",
-      token_endpoint: "http://localhost:9050/api/oauth/token",
+      authorization_endpoint: `${origin}/api/oauth/authorize`,
+      token_endpoint: `${origin}/api/oauth/token`,
     });
 
     const registration = await page.request.post("/api/oauth/register", {
@@ -278,13 +279,14 @@ test.describe("MCP", () => {
   });
 
   test("authenticates with an account API key and attributes actions to it", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "MCP Key Tenant");
+    const tenant = await bootstrapFreshTenant(page, "MCP Key Tenant");
     const grant = await stepUpGrant(page, "api-token-create");
+    const origin = new URL(page.url()).origin;
 
     const created = await page.request.post("/api/v1/account/api-tokens", {
       data: { name: "Agent key", scopes: ["read", "write"] },
       headers: {
-        origin: "http://localhost:9050",
+        origin,
         "x-effect-auth-csrf": "1",
         "x-mattrax-step-up": grant,
       },

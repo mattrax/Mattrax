@@ -97,9 +97,20 @@ type SoftwareUpdateCacheEntry = {
 };
 
 /**
+ * The positive catalog and failure memory are plain data, so they can survive a
+ * rebuilt request graph. Build them once at module load rather than in the
+ * first request, whose context they would otherwise retain.
+ */
+const sharedEntries = Ref.makeUnsafe(new Map<string, SoftwareUpdateCacheEntry>());
+
+/**
  * Catalog, refresh coalescing and failure memory live in the service Layer.
- * The default Layer shares one I/O-free instance across requests in an isolate;
- * callers can still use make to build an isolated cache for tests.
+ *
+ * The default Layer shares only the plain entry map across requests. The
+ * in-flight Deferreds stay request-scoped: completing one request's Deferred
+ * from another request resumes a fiber bound to the first request's workerd
+ * AsyncLocalStorage context, which throws "Cannot call this AsyncLocalStorage
+ * bound function outside of the request in which it was created".
  * Deferred shares the Effect result (including interruption) without leaving a
  * Promise behind or continuing an abandoned fetch for another waiter.
  */
@@ -154,12 +165,11 @@ export class SoftwareUpdateCache extends Context.Service<
     return SoftwareUpdateCache.of({ refresh, entries });
   });
 
-  // Ref and Deferred are I/O-free. Sharing this value keeps the positive cache
-  // alive when a host rebuilds Layers per request without retaining request DB
-  // or HTTP bindings across Worker invocation contexts.
-  static readonly layer = Layer.succeed(
+  static readonly layer = Layer.effect(
     SoftwareUpdateCache,
-    Effect.runSync(SoftwareUpdateCache.make),
+    Effect.map(SoftwareUpdateCache.make, (request) =>
+      SoftwareUpdateCache.of({ refresh: request.refresh, entries: sharedEntries }),
+    ),
   );
 }
 

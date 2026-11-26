@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import {
-  bootstrapTenant,
+  bootstrapFreshTenant,
   confirmStepUp,
   gotoHydrated,
   register,
@@ -41,7 +41,7 @@ test.describe("authenticator MFA", () => {
   test("rolls back an optimistic backup Pin when passkey confirmation is cancelled", async ({
     page,
   }) => {
-    const tenant = await bootstrapTenant(page, "Backup Pin Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Backup Pin Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/backups`);
     await page.getByRole("button", { name: "Back up now" }).click();
 
