@@ -4,7 +4,7 @@ import { createSignal, For, Show } from "solid-js";
 import { Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import { Skeleton } from "~/components/ui/skeleton";
+import Skeleton from "~/components/ui/skeleton";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseQueries, meQueryOptions } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
@@ -52,7 +52,7 @@ export default function DeleteAccountPage() {
   };
 
   return (
-    <Page class="max-w-[720px]">
+    <Page class="max-w-180">
       <Button as="a" variant="ghost" size="sm" class="-ml-2 self-start" href={routes.account()}>
         ← Back to account
       </Button>
@@ -70,7 +70,7 @@ export default function DeleteAccountPage() {
             when={!preview.error}
             fallback={
               <Panel title="Could not check this account">
-                <p role="alert" class="text-[12.5px] text-destructive">
+                <p role="alert" class="text-xs text-destructive">
                   {errorMessage(
                     raisedFailure(preview.error),
                     "The deletion check is unavailable right now.",
@@ -89,9 +89,9 @@ export default function DeleteAccountPage() {
           >
             <Panel title="Checking your account">
               <div class="space-y-2">
-                <Skeleton class="h-4 w-2/3 rounded" />
-                <Skeleton class="h-4 w-1/2 rounded" />
-                <Skeleton class="h-4 w-3/4 rounded" />
+                <Skeleton class="h-4 w-2/3" />
+                <Skeleton class="h-4 w-1/2" />
+                <Skeleton class="h-4 w-3/4" />
               </div>
             </Panel>
           </Show>
@@ -105,10 +105,10 @@ export default function DeleteAccountPage() {
             >
               <dl class="grid gap-2 sm:grid-cols-2">
                 <div class="rounded-lg border border-border bg-surface px-3 py-2">
-                  <dt class="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                  <dt class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Account
                   </dt>
-                  <dd class="mt-0.5 break-all text-[12.5px] text-foreground">
+                  <dd class="mt-0.5 break-all text-xs text-foreground">
                     {email() || "This account"}
                   </dd>
                 </div>
@@ -116,29 +116,29 @@ export default function DeleteAccountPage() {
                   {(tenant) => (
                     <>
                       <div class="rounded-lg border border-border bg-surface px-3 py-2">
-                        <dt class="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                        <dt class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Tenant
                         </dt>
-                        <dd class="mt-0.5 text-[12.5px] text-foreground">
+                        <dd class="mt-0.5 text-xs text-foreground">
                           {tenant().name}{" "}
-                          <span class="font-mono text-[10.5px] text-muted-foreground">
+                          <span class="font-mono text-xs text-muted-foreground">
                             {tenant().slug}
                           </span>
                         </dd>
                       </div>
                       <div class="rounded-lg border border-border bg-surface px-3 py-2">
-                        <dt class="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                        <dt class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Members
                         </dt>
-                        <dd class="mt-0.5 text-[12.5px] tabular-nums text-foreground">
+                        <dd class="mt-0.5 text-xs tabular-nums text-foreground">
                           {tenant().memberCount}
                         </dd>
                       </div>
                       <div class="rounded-lg border border-border bg-surface px-3 py-2">
-                        <dt class="text-[10.5px] font-medium uppercase tracking-[0.04em] text-muted-foreground">
+                        <dt class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                           Devices
                         </dt>
-                        <dd class="mt-0.5 text-[12.5px] tabular-nums text-foreground">
+                        <dd class="mt-0.5 text-xs tabular-nums text-foreground">
                           {tenant().deviceCount}
                         </dd>
                       </div>
@@ -147,7 +147,7 @@ export default function DeleteAccountPage() {
                 </Show>
               </dl>
 
-              <ul class="mt-3 space-y-1.5 text-[12px] leading-relaxed text-muted-foreground">
+              <ul class="mt-3 space-y-1.5 text-xs leading-relaxed text-muted-foreground">
                 <li>
                   The tenant is deleted with your account, including its policies, groups,
                   applications, scripts, audit history and stored files.
@@ -163,7 +163,7 @@ export default function DeleteAccountPage() {
               </ul>
 
               <Show when={check().lastAccount}>
-                <p class="mt-3 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12px] leading-relaxed text-warning-foreground">
+                <p class="mt-3 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-xs leading-relaxed text-warning-foreground">
                   This is the last account on this deployment. Sign-up stays open; a new account
                   can create a fresh tenant.
                 </p>
@@ -181,8 +181,8 @@ export default function DeleteAccountPage() {
                   <ul class="space-y-2">
                     <For each={check().blockers}>
                       {(blocker) => (
-                        <li class="flex gap-2 text-[12.5px] leading-relaxed text-warning-foreground">
-                          <span aria-hidden="true" class="mt-[3px] size-1.5 rounded-full bg-warning" />
+                        <li class="flex gap-2 text-xs leading-relaxed text-warning-foreground">
+                          <span aria-hidden="true" class="mt-0.75 size-1.5 rounded-full bg-warning" />
                           <span>{blocker.message}</span>
                         </li>
                       )}
@@ -240,7 +240,7 @@ export default function DeleteAccountPage() {
 
                 <Show when={error()}>
                   {(message) => (
-                    <p role="alert" class="mt-2 text-[12.5px] leading-relaxed text-destructive">
+                    <p role="alert" class="mt-2 text-xs leading-relaxed text-destructive">
                       {message()}
                     </p>
                   )}

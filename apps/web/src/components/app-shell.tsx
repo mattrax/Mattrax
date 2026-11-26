@@ -76,7 +76,7 @@ import { pendingDeployment, reloadForDeployment } from "~/lib/skew-protection";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import { installTheme } from "~/lib/theme";
 import { setCrossTabTenant } from "~/lib/cross-tab-sync";
-import { BrandLogo } from "~/components/brand-logo";
+import BrandLogo from "~/components/brand-logo";
 import { ErrorPanel } from "~/components/error-boundary";
 import { IndeterminateBar, LoadingState, Skeleton } from "@mattrax/ui";
 
@@ -173,8 +173,8 @@ function TenantSwitcher(props: {
     <DropdownMenu placement="bottom-start">
       <DropdownMenuTrigger
         class={cn(
-          "group flex min-w-0 items-center rounded-md text-left outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50 data-expanded:bg-hover",
-          props.collapsed ? "mx-auto h-9 w-10 justify-center px-0" : "h-8 w-full gap-2 px-2",
+          "group flex min-w-0 items-center text-left",
+          props.collapsed ? "mx-auto h-9 w-10 justify-center " : "h-8 w-full",
         )}
         title={active() ? `Switch tenant: ${active()!.name}` : "Select tenant"}
       >
@@ -184,8 +184,8 @@ function TenantSwitcher(props: {
         <span
           aria-hidden="true"
           class={cn(
-            "flex shrink-0 items-center justify-center rounded-[6px] bg-card font-[600] leading-none text-foreground/70 ring-1 ring-inset ring-border transition-colors group-hover:text-foreground",
-            props.collapsed ? "size-6 text-[9px]" : "size-5 text-[8.5px]",
+            "flex shrink-0 items-center justify-center rounded-sm bg-card font-semibold leading-none text-foreground/70 ring-1 ring-inset ring-border transition-colors group-hover:text-foreground",
+            props.collapsed ? "size-6 text-xs" : "size-5 text-xs",
           )}
         >
           <Show when={active()} fallback={<Building2 class="size-3.5" />}>
@@ -193,8 +193,8 @@ function TenantSwitcher(props: {
           </Show>
         </span>
         <span class={props.collapsed ? "sr-only" : "min-w-0 flex-1"}>
-          <Show when={!loading()} fallback={<Skeleton class="my-0.5 h-2.5 w-24 rounded-full" />}>
-            <span class="block truncate text-[12.5px] font-[500] leading-4 text-muted-foreground transition-colors group-hover:text-foreground group-data-[expanded]:text-foreground">
+          <Show when={!loading()} fallback={<Skeleton class="my-0.5 h-2.5 w-24" />}>
+            <span class="block truncate text-xs font-medium leading-4 text-muted-foreground transition-colors group-hover:text-foreground group-data-[expanded]:text-foreground">
               <Show when={active()} fallback="Select tenant">
                 {(tenant) => tenant().name}
               </Show>
@@ -202,7 +202,7 @@ function TenantSwitcher(props: {
           </Show>
         </span>
         <Show when={!props.collapsed}>
-          <ChevronsUpDown class="size-3.5 shrink-0 text-subtle-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
+          <ChevronsUpDown class="size-3.5 shrink-0" />
         </Show>
       </DropdownMenuTrigger>
 
@@ -211,7 +211,7 @@ function TenantSwitcher(props: {
           to the body is treated as an outside press, so the sheet closed on
           pointerdown and the item never received the click. */}
       <DropdownMenuContent
-        class="max-h-[32rem] w-[272px]"
+        class="max-h-128 w-68"
         container={
           typeof document === "undefined"
             ? undefined
@@ -222,7 +222,7 @@ function TenantSwitcher(props: {
           <Show
             when={tenants().length > 0}
             fallback={
-              <div class="px-2.5 py-3 text-[12px] text-muted-foreground">
+              <div class="px-2.5 py-3 text-xs text-muted-foreground">
                 You don't belong to a tenant yet.
               </div>
             }
@@ -252,17 +252,17 @@ function TenantSwitcher(props: {
                     value={tenant.id}
                     indicator="check"
                     aria-current={props.activeId === tenant.id ? "true" : undefined}
-                    class="h-10 cursor-pointer gap-2.5 pl-2 pr-8"
+                    class="h-10 cursor-pointer"
                   >
                     <span class="flex w-full min-w-0 items-center gap-2.5">
-                      <span class="flex size-6 shrink-0 items-center justify-center rounded-[5px] bg-surface text-[9px] font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
+                      <span class="flex size-6 shrink-0 items-center justify-center rounded-xs bg-surface text-xs font-semibold leading-none text-foreground/90 ring-1 ring-inset ring-border">
                         {tenantInitials(tenant.name)}
                       </span>
                       <span class="min-w-0 flex-1 leading-none">
-                        <span class="block truncate text-[12.5px] font-[500] text-foreground">
+                        <span class="block truncate text-xs font-medium text-foreground">
                           {tenant.name}
                         </span>
-                        <span class="mt-1 block truncate text-[10.5px] leading-none text-muted-foreground">
+                        <span class="mt-1 block truncate text-xs leading-none text-muted-foreground">
                           <span class="capitalize">{tenantRoleName(tenant) ?? tenant.role}</span>
                           <span class="px-1 text-subtle-foreground/40">·</span>
                           <span class="normal-case">{tenant.slug}</span>
@@ -276,8 +276,8 @@ function TenantSwitcher(props: {
           </Show>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem as="a" href="/tenants/new" class="h-9 gap-2.5">
-          <span class="flex size-6 items-center justify-center rounded-[5px] border border-dashed border-border text-muted-foreground">
+        <DropdownMenuItem as="a" href="/tenants/new" class="h-9">
+          <span class="flex size-6 items-center justify-center rounded-xs border border-dashed border-border text-muted-foreground">
             <Plus class="size-3.5" />
           </span>
           Create tenant
@@ -287,30 +287,25 @@ function TenantSwitcher(props: {
   );
 }
 
-function SearchButton(props: { compact?: boolean }) {
+function SearchButton() {
   const open = () => window.dispatchEvent(new Event("mattrax:open-command-palette"));
 
   return (
-    <button
+    <Button
       type="button"
       onClick={open}
       aria-keyshortcuts="Meta+K Control+K"
-      class={cn(
-        "group flex h-7 items-center gap-2 rounded-md text-muted-foreground outline-none transition-[color,background-color,border-color] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
-        props.compact
-          ? "w-7 justify-center border border-transparent hover:bg-hover hover:text-foreground sm:w-[196px] sm:justify-start sm:border-border sm:bg-card sm:px-2"
-          : "w-[196px] justify-start border border-border bg-card px-2 hover:border-border-strong hover:text-foreground",
-      )}
+      class="group flex h-7 w-49 items-center justify-start"
     >
       <SearchIcon class="size-3.5 shrink-0" aria-hidden="true" />
       <span class="sr-only">Search</span>
-      <span class="hidden text-[12px] sm:inline" aria-hidden="true">
+      <span class="hidden text-xs sm:inline" aria-hidden="true">
         Search
       </span>
       <Kbd class="ml-auto hidden sm:inline-flex" aria-hidden="true">
         ⌘K
       </Kbd>
-    </button>
+    </Button>
   );
 }
 
@@ -329,16 +324,16 @@ function HelpMenu() {
   return (
     <DropdownMenu placement="bottom-end">
       <DropdownMenuTrigger
-        class="inline-flex size-7 items-center justify-center rounded-[7px] border border-transparent text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+        class="inline-flex size-7 items-center justify-center"
         aria-label="Help and documentation"
         title="Help and documentation"
       >
         <HelpCircle class="size-4" aria-hidden="true" />
         <span class="sr-only">Help and documentation</span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent class="w-[232px]">
+      <DropdownMenuContent class="w-58">
         <DropdownMenuItem as="a" role="menuitem" href="/docs/" target="_self">
-          <BookOpen class="size-3.5 text-muted-foreground" aria-hidden="true" />
+          <BookOpen class="size-3.5" aria-hidden="true" />
           Documentation
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -348,7 +343,7 @@ function HelpMenu() {
           target={externalSupport() ? "_blank" : undefined}
           rel={externalSupport() ? "noopener" : undefined}
         >
-          <HelpCircle class="size-3.5 text-muted-foreground" aria-hidden="true" />
+          <HelpCircle class="size-3.5" aria-hidden="true" />
           Support
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -380,12 +375,12 @@ function UserMenu(props: {
     <DropdownMenu placement={sidebar() ? "top-start" : "bottom-end"}>
       <DropdownMenuTrigger
         class={cn(
-          "outline-none transition-[background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+          "",
           sidebar()
             ? collapsed()
-              ? "mx-auto flex size-9 items-center justify-center rounded-lg hover:bg-hover data-expanded:bg-hover"
-              : "group flex h-10 w-full items-center gap-2.5 rounded-lg px-1.5 text-left hover:bg-hover data-expanded:bg-hover"
-            : "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-foreground ring-1 ring-inset ring-border hover:ring-input",
+              ? "mx-auto flex size-9 items-center justify-center "
+              : "group flex h-10 w-full items-center text-left"
+            : "flex size-7 items-center justify-center overflow-hidden",
         )}
         title={user()?.name ?? "Account"}
       >
@@ -401,7 +396,7 @@ function UserMenu(props: {
             </Show>
           }
         >
-          <Avatar size="sm" class="size-6 text-[9px]">
+          <Avatar size="sm" class="size-6">
             <Show
               when={user()?.image}
               fallback={<span aria-hidden="true">{initials(user()?.name)}</span>}
@@ -411,41 +406,41 @@ function UserMenu(props: {
           </Avatar>
           <Show when={!collapsed()}>
             <span class="min-w-0 flex-1" aria-hidden="true">
-              <span class="block truncate text-[12.5px] font-[500] leading-4 text-foreground">
+              <span class="block truncate text-xs font-medium leading-4 text-foreground">
                 {user()?.name ?? "Account"}
               </span>
             </span>
-            <ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground" />
+            <ChevronsUpDown class="size-3.5 shrink-0" />
           </Show>
         </Show>
       </DropdownMenuTrigger>
-      <DropdownMenuContent class="w-[248px]">
+      <DropdownMenuContent class="w-62">
         <DropdownMenuGroup>
           <div class="flex items-center gap-2.5 px-2 py-2">
-            <Avatar size="sm" class="size-6 text-[9px]">
+            <Avatar size="sm" class="size-6">
               <span aria-hidden="true">{initials(user()?.name)}</span>
             </Avatar>
             <span class="min-w-0">
-              <DropdownMenuLabel class="block h-auto truncate py-0 text-[12.5px] font-[550] text-foreground normal-case tracking-normal">
+              <DropdownMenuLabel class="block h-auto">
                 {user()?.name}
               </DropdownMenuLabel>
-              <span class="block truncate text-[11px] text-muted-foreground">{user()?.email}</span>
+              <span class="block truncate text-xs text-muted-foreground">{user()?.email}</span>
             </span>
           </div>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => navigate("/account")}>
-          <User class="size-3.5 text-muted-foreground" />
+          <User class="size-3.5" />
           Account
         </DropdownMenuItem>
         <Show when={props.superadmin}>
           <DropdownMenuItem onSelect={() => navigate(routes.adminAccounts())}>
-            <ShieldCheck class="size-3.5 text-muted-foreground" />
+            <ShieldCheck class="size-3.5" />
             Platform accounts
           </DropdownMenuItem>
         </Show>
         <DropdownMenuItem as="a" role="menuitem" href="/docs/" target="_self">
-          <BookOpen class="size-3.5 text-muted-foreground" />
+          <BookOpen class="size-3.5" />
           Documentation
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -455,7 +450,7 @@ function UserMenu(props: {
           target={supportUrl().startsWith("http") ? "_blank" : undefined}
           rel={supportUrl().startsWith("http") ? "noopener" : undefined}
         >
-          <HelpCircle class="size-3.5 text-muted-foreground" />
+          <HelpCircle class="size-3.5" />
           Support
         </DropdownMenuItem>
         <DropdownMenuItem
@@ -465,7 +460,7 @@ function UserMenu(props: {
           target="_blank"
           rel="noopener"
         >
-          <Activity class="size-3.5 text-muted-foreground" />
+          <Activity class="size-3.5" />
           System status
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -570,17 +565,17 @@ function SidebarLink(props: {
       aria-current={props.active ? "page" : undefined}
       onClick={() => props.onNavigate?.()}
       class={cn(
-        "group flex items-center rounded-md border text-[12.5px] leading-none outline-none transition-[color,background-color,border-color,box-shadow] duration-[var(--duration-hover)] ease-swift focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30",
+        "group flex items-center rounded-md border text-xs leading-none outline-none transition-all duration-150 ease-swift focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30",
         props.collapsed ? "mx-auto h-8 w-10 justify-center px-0" : "h-7 gap-2 px-2",
         props.active
-          ? "border-border bg-card font-[500] text-foreground shadow-[0_1px_2px_rgb(24_24_22/0.05)]"
+          ? "border-border bg-card font-medium text-foreground shadow-card"
           : "border-transparent text-muted-foreground hover:bg-hover hover:text-foreground",
       )}
       title={props.collapsed ? props.item.label : undefined}
     >
       <props.item.icon
         class={cn(
-          "shrink-0 transition-colors duration-[var(--duration-hover)] ease-swift",
+          "shrink-0 transition-colors duration-150 ease-swift",
           props.collapsed ? "size-4" : "size-3.5",
           props.active ? "text-foreground" : "text-subtle-foreground group-hover:text-foreground",
         )}
@@ -658,16 +653,16 @@ function SidebarUpdate(props: { collapsed?: boolean }) {
     <Show when={pendingDeployment()}>
       <Tooltip>
         <TooltipTrigger as="span" class={props.collapsed ? "block" : "block w-full"}>
-          <button
+          <Button
             type="button"
             onClick={reloadForDeployment}
             aria-label="A new version is available. Reload to update."
             class={cn(
-              "group mb-1 flex items-center rounded-lg text-left outline-none transition-[background-color,color] duration-[var(--duration-hover)] ease-swift hover:bg-hover focus-visible:ring-[3px] focus-visible:ring-ring/30",
-              props.collapsed ? "mx-auto size-9 justify-center" : "h-10 w-full gap-2.5 px-1.5",
+              "group mb-1 flex items-center text-left ",
+              props.collapsed ? "mx-auto size-9 justify-center" : "h-10 w-full",
             )}
           >
-            <span class="relative flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground">
+            <span class="relative flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors duration-150 ease-swift group-hover:text-foreground">
               <RefreshCw class="size-3.5" aria-hidden="true" />
               <span
                 aria-hidden="true"
@@ -676,19 +671,19 @@ function SidebarUpdate(props: { collapsed?: boolean }) {
             </span>
             <Show when={!props.collapsed}>
               <span class="min-w-0 flex-1" aria-hidden="true">
-                <span class="block truncate text-[12px] font-[500] leading-4 text-foreground">
+                <span class="block truncate text-xs font-medium leading-4 text-foreground">
                   Update available
                 </span>
-                <span class="block truncate text-[11px] text-muted-foreground">
+                <span class="block truncate text-xs text-muted-foreground">
                   Reload to apply
                 </span>
               </span>
             </Show>
-          </button>
+          </Button>
         </TooltipTrigger>
         <TooltipContent side={props.collapsed ? "right" : "top"}>
-          <p class="text-[11px] font-medium">A new version is available</p>
-          <p class="mt-0.5 text-[11px]">
+          <p class="text-xs font-medium">A new version is available</p>
+          <p class="mt-0.5 text-xs">
             Reload to get the latest changes. This page keeps working until you do.
           </p>
         </TooltipContent>
@@ -716,11 +711,11 @@ function SidebarPanel(props: {
       <div class="flex h-14 shrink-0 items-center justify-center px-4">
         <a
           href="/dashboard"
-          class="flex items-center rounded-md outline-none transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/60"
+          class="flex items-center rounded-md outline-none transition-opacity duration-150 ease-swift hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/60"
           aria-label="Mattrax home"
           onClick={() => props.onNavigate?.()}
         >
-          <Show when={!props.collapsed} fallback={<BrandLogo mark class="text-[18px]" />}>
+          <Show when={!props.collapsed} fallback={<BrandLogo mark class="text-lg" />}>
             <BrandLogo class="h-3" />
           </Show>
         </a>
@@ -792,12 +787,12 @@ function ShellBreadcrumb(props: {
 }) {
   return (
     <nav aria-label="Breadcrumb" class="min-w-0">
-      <ol class="flex min-w-0 items-center gap-1.5 text-[12px]">
+      <ol class="flex min-w-0 items-center gap-1.5 text-xs">
         <Show when={props.tenantName && props.tenantHref}>
           <li class="hidden min-w-0 sm:block">
             <a
               href={props.tenantHref}
-              class="block max-w-[16ch] truncate text-muted-foreground outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:text-foreground"
+              class="block max-w-32 truncate text-muted-foreground outline-none transition-colors duration-150 ease-swift hover:text-foreground focus-visible:text-foreground"
             >
               {props.tenantName}
             </a>
@@ -807,7 +802,7 @@ function ShellBreadcrumb(props: {
           </li>
         </Show>
         <li class="min-w-0">
-          <span aria-current="page" class="block truncate font-[500] text-foreground">
+          <span aria-current="page" class="block truncate font-medium text-foreground">
             {props.label}
           </span>
         </li>
@@ -1151,7 +1146,7 @@ export function AppShell(props: {
       <a
         href="#main"
         onClick={() => document.getElementById("main")?.focus({ preventScroll: true })}
-        class="sr-only z-[100] rounded-lg bg-primary px-3 py-2 text-[13px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+        class="sr-only z-50 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
       >
         Skip to content
       </a>
@@ -1162,8 +1157,8 @@ export function AppShell(props: {
       >
         <aside
           class={cn(
-            "hidden h-full shrink-0 overflow-hidden border-r border-border transition-[width] duration-[180ms] ease-swift lg:block",
-            sidebarCollapsed() ? "w-16" : "w-[244px]",
+            "hidden h-full shrink-0 overflow-hidden border-r border-border transition-all duration-200 ease-swift lg:block",
+            sidebarCollapsed() ? "w-16" : "w-61"
           )}
         >
           <SidebarPanel
@@ -1198,7 +1193,7 @@ export function AppShell(props: {
               </Button>
               <a
                 href="/dashboard"
-                class="flex shrink-0 items-center rounded-md outline-none transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/60 lg:hidden"
+                class="flex shrink-0 items-center rounded-md outline-none transition-opacity duration-150 ease-swift hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring/60 lg:hidden"
                 aria-label="Mattrax home"
               >
                 <BrandLogo class="h-3" />
@@ -1227,7 +1222,7 @@ export function AppShell(props: {
                 />
               </div>
               <div class="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
-                <SearchButton compact />
+                <SearchButton />
                 <HelpMenu />
                 <span
                   class="mx-0.5 hidden h-4 w-px bg-border sm:block lg:hidden"
@@ -1249,7 +1244,7 @@ export function AppShell(props: {
               competes with the page's own entrance. */}
             <Show when={isRouting()}>
               <div class="pointer-events-none absolute inset-x-0 bottom-0">
-                <IndeterminateBar class="h-0.5 rounded-none bg-transparent" />
+                <IndeterminateBar class="h-0.5" />
               </div>
             </Show>
           </header>
@@ -1259,7 +1254,7 @@ export function AppShell(props: {
             tabindex="-1"
             aria-busy={isRouting() ? "true" : undefined}
             class={cn(
-              "relative z-10 flex min-h-0 w-full flex-1 flex-col overflow-y-auto bg-page transition-opacity duration-[140ms] ease-swift focus:outline-none",
+              "relative z-10 flex min-h-0 w-full flex-1 flex-col overflow-y-auto bg-page transition-opacity duration-150 ease-swift focus:outline-none",
               isRouting() && "opacity-70",
             )}
           >
@@ -1284,7 +1279,7 @@ export function AppShell(props: {
       <Sheet open={mobileNavOpen()} onOpenChange={setMobileNavOpen}>
         <SheetContent
           side="left"
-          class="left-0 right-auto w-[264px] max-w-[264px] border-l-0 border-r border-border bg-shell p-0 data-[starting-style]:-translate-x-full data-[ending-style]:-translate-x-full"
+          class="left-0 right-auto w-66 max-w-66 data-[starting-style]:-translate-x-full data-[ending-style]:-translate-x-full"
         >
           <SheetHeader class="sr-only">
             <SheetTitle>Navigation</SheetTitle>

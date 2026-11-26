@@ -6,7 +6,7 @@ import { DEFAULT_BRAND_COLOR, DEFAULT_SUPPORT_EMAIL } from "@mattrax/enterprise-
 import { createMemo, createSignal, Show } from "solid-js";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
-import { EnrollmentDetails } from "~/components/enrollment/enrollment-details";
+import EnrollmentDetails from "~/components/enrollment/enrollment-details";
 import {
   EnrollmentDeviceLimitNotice,
   EnrollmentLinkProblem,
@@ -14,11 +14,11 @@ import {
   EnrollmentQrPanel,
   EnrollmentSupport,
 } from "~/components/enrollment/enrollment-feedback";
-import { EnrollmentOptions } from "~/components/enrollment/enrollment-platforms";
-import { EnrollmentPasswordInput } from "~/components/enrollment/enrollment-password-input";
+import EnrollmentOptions from "~/components/enrollment/enrollment-platforms";
+import EnrollmentPasswordInput from "~/components/enrollment/enrollment-password-input";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Label } from "~/components/ui/label";
+import Label from "~/components/ui/label";
 import { ChevronRight, KeyRound, ShieldCheck } from "~/components/ui/icons";
 import type { EnrollmentResponse } from "~/lib/enterprise";
 import { lookupPublicEnrollment } from "~/lib/enrollment.server";
@@ -132,9 +132,10 @@ function EnrollPage(props: { id: string; code: string; codeProvided: boolean }) 
       <Meta name="robots" content="noindex" />
 
       <div class={"mx-auto flex w-full flex-col justify-center " + pageWidth()}>
-        <Card data-enrollment-card class="w-full overflow-hidden bg-card shadow-panel">
-          <div class="h-1 w-full" style={{ "background-color": brandColor() }} />
-          <CardHeader class="px-5 pb-6 pt-7 text-center sm:px-8 sm:pt-8">
+        <div class="w-full rounded-xl shadow-panel">
+          <Card data-enrollment-card class="w-full overflow-hidden">
+          <div class="h-1 w-full bg-(--enrollment-stripe)" style={{ "--enrollment-stripe": brandColor() } as JSX.CSSProperties} />
+          <CardHeader class="text-center">
             <Show when={branding()?.logo}>
               {(logo) => (
                 <img
@@ -142,23 +143,23 @@ function EnrollPage(props: { id: string; code: string; codeProvided: boolean }) 
                   alt=""
                   width="922"
                   height="142"
-                  class="mx-auto mb-4 h-11 w-auto max-w-[12rem] object-contain sm:h-12"
+                  class="mx-auto mb-4 h-11 w-auto max-w-48 object-contain sm:h-12"
                 />
               )}
             </Show>
             <p class="mb-2 inline-flex items-center justify-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <ShieldCheck class="size-4 text-brand" aria-hidden="true" />
+              <span class="text-brand"><ShieldCheck class="size-4" aria-hidden="true" /></span>
               Secure device enrollment
             </p>
-            <CardTitle class="break-words text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">
+            <CardTitle class="break-words">
               <h1 class="break-words">Enroll in {brandName()}</h1>
             </CardTitle>
-            <CardDescription class="mx-auto mt-2 max-w-xl text-sm leading-6">
+            <CardDescription class="mx-auto mt-2 max-w-xl">
               {cardDescription()}
             </CardDescription>
           </CardHeader>
 
-          <CardContent class="border-t border-border bg-surface/40 px-5 py-6 sm:px-8 sm:py-7">
+          <CardContent>
             <Show when={data().status === "expired"}>
               <EnrollmentLinkProblem
                 status="expired"
@@ -188,7 +189,7 @@ function EnrollPage(props: { id: string; code: string; codeProvided: boolean }) 
                 action={"/enroll/" + encodeURIComponent(props.id)}
               >
                 <div class="flex items-start gap-3 rounded-xl border border-border bg-card p-3">
-                  <KeyRound class="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
+                  <span class="mt-0.5 text-brand"><KeyRound class="size-4 shrink-0" aria-hidden="true" /></span>
                   <p class="text-sm leading-6 text-muted-foreground">
                     Your administrator has set an enrollment password.
                   </p>
@@ -271,7 +272,7 @@ function EnrollPage(props: { id: string; code: string; codeProvided: boolean }) 
                           />
                         </div>
                       </Show>
-                      <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_15rem]">
+                      <div class="grid items-start gap-6 lg:grid-cols-2">
                         <EnrollmentOptions
                           enrollment={authenticatedEnrollment()}
                           id={props.id}
@@ -290,7 +291,8 @@ function EnrollPage(props: { id: string; code: string; codeProvided: boolean }) 
               )}
             </Show>
           </CardContent>
-        </Card>
+          </Card>
+        </div>
 
         <EnrollmentSupport email={supportEmail()} brandName={brandName()} />
       </div>

@@ -41,7 +41,7 @@ vi.mock("~/components/mdm/common", () => ({
 }));
 
 vi.mock("~/components/dashboard/markdown", () => ({
-  Markdown: (props: { content: string }) => props.content,
+  default: (props: { content: string }) => props.content,
 }));
 
 vi.mock("~/lib/errors", () => ({

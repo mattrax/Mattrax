@@ -31,7 +31,7 @@ vi.mock("~/lib/auth", () => ({
     signOut: state.signOut,
   },
 }));
-vi.mock("~/components/brand-logo", () => ({ BrandLogo: () => null }));
+vi.mock("~/components/brand-logo", () => ({ default: () => null }));
 
 import RegisterPage from "./register";
 

@@ -15,7 +15,7 @@ const tones = {
 
 export type StatusTone = keyof typeof tones;
 
-export function StatusChip(props: {
+export default function StatusChip(props: {
   tone: StatusTone;
   children: JSX.Element;
   class?: string;
@@ -25,7 +25,7 @@ export function StatusChip(props: {
     <span
       data-status-tone={props.tone}
       class={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
         props.capitalize && "capitalize",
         tones[props.tone],
         props.class,

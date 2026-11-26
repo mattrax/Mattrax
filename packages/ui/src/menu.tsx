@@ -25,10 +25,10 @@ const AlignmentContext = createContext<{
 }>({ side: "bottom", align: "start" });
 
 const menuSurface =
-  "fixed z-[75] min-w-[11rem] overflow-y-auto overflow-x-hidden rounded-[10px] border border-border bg-popover p-1 text-popover-foreground shadow-popover outline-none";
+  "fixed z-50 min-w-44 overflow-y-auto overflow-x-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover outline-none";
 
 const itemBase =
-  "relative flex h-8 cursor-default select-none items-center gap-2 rounded-[6px] px-2 text-[12.5px] font-[450] outline-none data-highlighted:bg-hover data-disabled:pointer-events-none data-disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5";
+  "relative flex h-8 cursor-default select-none items-center gap-2 rounded-md px-2 text-xs font-normal outline-none data-highlighted:bg-hover data-disabled:pointer-events-none data-disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5";
 
 type DropdownMenuProps = {
   open?: boolean;
@@ -95,8 +95,8 @@ function DropdownMenuContent(
       container={local.container}
       class={cn(
         menuSurface,
-        "data-[side=bottom]:origin-top data-[side=top]:origin-bottom data-[side=left]:origin-right data-[side=right]:origin-left transition-[opacity,transform] duration-[var(--duration-popover)] ease-swift",
-        "data-[starting-style]:scale-[0.97] data-[starting-style]:opacity-0 data-[ending-style]:scale-[0.97] data-[ending-style]:opacity-0",
+        "data-[side=bottom]:origin-top data-[side=top]:origin-bottom data-[side=left]:origin-right data-[side=right]:origin-left transition duration-150 ease-out",
+        "data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-95 data-[ending-style]:opacity-0",
         local.class,
       )}
       {...others}
@@ -117,7 +117,7 @@ function DropdownMenuLabel(props: Omit<ComponentProps<"div">, "style"> & { inset
 
   return (
     <MenuGroupLabel
-      class={cn("label-caps flex h-7 items-center px-2", local.inset && "pl-7", local.class)}
+      class={cn("text-xs font-semibold uppercase tracking-wider text-muted-foreground flex h-7 items-center px-2", local.inset && "pl-7", local.class)}
       {...others}
     />
   );
@@ -280,7 +280,7 @@ function DropdownMenuShortcut(props: Omit<ComponentProps<"span">, "style">) {
 
   return (
     <MenuShortcut
-      class={cn("ml-auto text-[10.5px] tracking-[0.06em] text-subtle-foreground", local.class)}
+      class={cn("ml-auto text-xs tracking-wider text-subtle-foreground", local.class)}
       {...others}
     />
   );
