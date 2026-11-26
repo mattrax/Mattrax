@@ -15,7 +15,12 @@ import { Schema } from "effect";
 import { SetDeviceAttributesRequest } from "../attributes.js";
 import { SubmitEnrollmentAnswersRequest } from "../attributes.js";
 import { SubmitEnrollmentAnswersResponse } from "../attributes.js";
-import { EnterpriseBadRequest, EnterpriseNoDomainErrors } from "../Errors.js";
+import {
+  EnterpriseAuthRequiredErrors,
+  EnterpriseBadRequest,
+  EnterpriseDbErrors,
+  EnterpriseForbidden,
+} from "../Errors.js";
 import { EnterprisePublicEnrollmentProfileErrors } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
 import { EnterpriseApprovalRequired, EnterpriseStepUpRequired } from "../Errors.js";
@@ -33,7 +38,33 @@ import { BulkUpdateResult } from "../Common.js";
 import { AddUserGroupMembersRequest } from "../Directory.js";
 import { PatchTenantAccountRolesRequest } from "../Tenant.js";
 
-const MobileconfigRequest = Schema.Struct({ mobileconfig: Schema.String });
+/**
+ * Largest decoded mobileconfig the preview/extract helpers will process.
+ * Applied to the decoded string; the request cap below leaves room for base64.
+ */
+export const MOBILECONFIG_MAX_CHARS = 8 * 1024 * 1024;
+
+/**
+ * These helpers authenticate before parsing, so their contract must carry the
+ * auth failures: an undeclared error cannot be encoded and becomes a 500.
+ */
+const MobileconfigHelperErrors = [
+  ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
+
+/**
+ * Raw HTTP body cap for the stateless helpers. Base64 expands by 4/3, so this
+ * leaves room for the encoded limit and JSON framing while keeping the body
+ * bounded before it is materialised as a string.
+ */
+export const MOBILECONFIG_REQUEST_MAX_BYTES = 12 * 1024 * 1024;
+
+export const MobileconfigRequest = Schema.Struct({
+  mobileconfig: Schema.String.check(Schema.isMaxLength(MOBILECONFIG_MAX_CHARS)),
+});
 
 const MobileconfigExtractResponse = Schema.Struct({ plist: Schema.String });
 
@@ -131,14 +162,14 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
     // that group's generated declaration is already at the compiler's size
     // limit, and these endpoints are stateless policy helpers.
     HttpApiEndpoint.post("extractMobileconfig", "/v1/policy/extract-mobileconfig", {
-      error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
+      error: MobileconfigHelperErrors,
       payload: MobileconfigRequest,
       success: MobileconfigExtractResponse,
     }),
   )
   .add(
     HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", {
-      error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
+      error: MobileconfigHelperErrors,
       payload: MobileconfigRequest,
       success: MobileconfigPreview,
     }),

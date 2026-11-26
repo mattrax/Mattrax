@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   datetime,
   index,
@@ -95,6 +96,12 @@ export const subscription = mysqlTable(
     stripeCustomerId: shortText("stripe_customer_id"),
     stripeSubscriptionId: shortText("stripe_subscription_id"),
     status: varchar("status", { length: 32 }).notNull(),
+    /**
+     * Monotonic per-subscription entitlement version. Every billing mutation
+     * increments it in the same transaction as the plan/status change; the
+     * application only accepts a push whose revision is newer.
+     */
+    entitlementRevision: bigint("entitlement_revision", { mode: "number" }).notNull().default(0),
     periodStart: timestamp("period_start"),
     periodEnd: timestamp("period_end"),
     cancelAtPeriodEnd: boolean("cancel_at_period_end"),

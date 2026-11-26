@@ -362,6 +362,8 @@ describe("Entra consent revocation on unlink", () => {
               message: "Failed to remove delegated consent after 3 grants: HTTP 500",
               servicePrincipalId: "sp-1",
               grantsRemoved: 3,
+              phase: "delete",
+              resourceId: "grant-4",
               status: 500,
             }),
           ),

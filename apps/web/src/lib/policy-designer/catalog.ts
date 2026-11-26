@@ -1,4 +1,5 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { CatalogueError, CatalogueService, runCatalogue } from "~/lib/catalogue-service";
 
 export const PlatformId = Schema.Literals(["apple", "android", "windows"]);
 
@@ -193,17 +194,12 @@ export const SearchIndex = Schema.Struct({
 
 export type SearchIndex = typeof SearchIndex.Type;
 
-const fetchJson = async <S extends Schema.ConstraintDecoder<unknown>>(
+const fetchJsonEffect = <S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,
   url: string,
-  label: string,
-): Promise<S["Type"]> => {
-  const response = await fetch(url);
-
-  if (!response.ok) throw new Error(`Could not load ${label} (${response.status})`);
-
-  return Schema.decodeUnknownSync(schema)(await response.json());
-};
+  _label: string,
+): Effect.Effect<S["Type"], CatalogueError, CatalogueService> =>
+  CatalogueService.pipe(Effect.flatMap((service) => service.get(url, schema)));
 
 /**
  * Apple's published `supportedOS` data, keyed by payload/declaration type. The
@@ -225,20 +221,14 @@ export const AppleOsSupportManifest = Schema.Struct({
 
 export type AppleOsSupportManifest = typeof AppleOsSupportManifest.Type;
 
-let osSupportPromise: Promise<AppleOsSupportManifest> | undefined;
-
-export const loadAppleOsSupport = () => {
-  osSupportPromise ??= fetchJson(
+export const loadAppleOsSupportEffect = () =>
+  fetchJsonEffect(
     AppleOsSupportManifest,
     "/catalog/apple-supported-os.json",
     "Apple OS support metadata",
-  ).catch((error: unknown) => {
-    osSupportPromise = undefined;
-    throw error;
-  });
+  );
 
-  return osSupportPromise;
-};
+export const loadAppleOsSupport = () => runCatalogue(loadAppleOsSupportEffect());
 
 const OS_LABEL_ORDER = ["macOS", "iOS", "tvOS", "watchOS", "visionOS"] as const;
 
@@ -281,53 +271,29 @@ export const appleCollectionManaged = (osVersions: ReadonlyArray<string> | undef
   osVersions.length === 0 ||
   osVersions.some((family) => /^(macos|ios|ipados)$/i.test(family));
 
-let manifestPromise: Promise<CatalogManifest> | undefined;
+export const loadManifestEffect = () =>
+  fetchJsonEffect(CatalogManifest, "/catalog/manifest.json", "the settings catalogue");
 
-const platformPromises = new Map<PlatformId, Promise<PlatformData>>();
-
-const indexPromises = new Map<PlatformId, Promise<PlatformIndex>>();
-
-const searchIndexPromises = new Map<PlatformId, Promise<SearchIndex>>();
-
-const collectionPromises = new Map<string, Promise<Collection>>();
-
-export const loadManifest = () => {
-  manifestPromise ??= fetchJson(
-    CatalogManifest,
-    "/catalog/manifest.json",
-    "the settings catalogue",
-  ).catch((error: unknown) => {
-    manifestPromise = undefined;
-    throw error;
-  });
-
-  return manifestPromise;
-};
+export const loadManifest = () => runCatalogue(loadManifestEffect());
 
 /**
  * Load a whole platform catalogue. Apple and Android still ship one file; the
  * Windows catalogue is split, so callers there use `loadPlatformIndex` and
  * `loadCollection` instead.
  */
-export const loadPlatform = (platform: PlatformId) => {
+export const loadPlatformEffect = (platform: PlatformId) => {
   if (platform === "windows")
-    return Promise.reject(
-      new Error("Windows settings load incrementally; use loadPlatformIndex and loadCollection."),
+    return Effect.fail(
+      new CatalogueError({
+        message: "Windows settings load incrementally; use loadPlatformIndex and loadCollection.",
+        cause: new Error("Unsupported whole-platform Windows load"),
+      }),
     );
-  let promise = platformPromises.get(platform);
 
-  if (!promise) {
-    promise = fetchJson(PlatformData, `/catalog/${platform}.json`, `${platform} settings`).catch(
-      (error: unknown) => {
-        platformPromises.delete(platform);
-        throw error;
-      },
-    );
-    platformPromises.set(platform, promise);
-  }
-
-  return promise;
+  return fetchJsonEffect(PlatformData, "/catalog/" + platform + ".json", platform + " settings");
 };
+
+export const loadPlatform = (platform: PlatformId) => runCatalogue(loadPlatformEffect(platform));
 
 const summarizePlatform = (data: PlatformData): PlatformIndex => ({
   platform: data.id,
@@ -370,31 +336,23 @@ export const WindowsPlatformIndex = Schema.Struct({
   collections: Schema.Array(WindowsCollectionSummary),
 });
 
-export const loadPlatformIndex = (platform: PlatformId) => {
-  let promise = indexPromises.get(platform);
+export const loadPlatformIndexEffect = (platform: PlatformId) =>
+  platform === "windows"
+    ? fetchJsonEffect(
+        WindowsPlatformIndex,
+        "/catalog/windows/index.json",
+        "the Windows settings index",
+      ).pipe(
+        Effect.map((file) => ({
+          platform,
+          stats: file.stats,
+          collections: file.collections.map((collection) => ({ ...collection, platform })),
+        })),
+      )
+    : loadPlatformEffect(platform).pipe(Effect.map(summarizePlatform));
 
-  if (!promise) {
-    promise = (
-      platform === "windows"
-        ? fetchJson(
-            WindowsPlatformIndex,
-            "/catalog/windows/index.json",
-            "the Windows settings index",
-          ).then((file) => ({
-            platform,
-            stats: file.stats,
-            collections: file.collections.map((collection) => ({ ...collection, platform })),
-          }))
-        : loadPlatform(platform).then(summarizePlatform)
-    ).catch((error: unknown) => {
-      indexPromises.delete(platform);
-      throw error;
-    });
-    indexPromises.set(platform, promise);
-  }
-
-  return promise;
-};
+export const loadPlatformIndex = (platform: PlatformId) =>
+  runCatalogue(loadPlatformIndexEffect(platform));
 
 /** Stable file name used by the split Windows catalogue. Mirrors the build script. */
 export const collectionFileKey = (collectionId: string) => {
@@ -404,34 +362,30 @@ export const collectionFileKey = (collectionId: string) => {
   return collectionId.replaceAll("/", "--");
 };
 
-export const loadCollection = (platform: PlatformId, collectionId: string) => {
-  const cacheKey = `${platform}:${collectionId}`;
-  let promise = collectionPromises.get(cacheKey);
+export const loadCollectionEffect = (platform: PlatformId, collectionId: string) =>
+  platform === "windows"
+    ? fetchJsonEffect(
+        Collection,
+        "/catalog/windows/" + collectionFileKey(collectionId) + ".json",
+        collectionId + " settings",
+      )
+    : loadPlatformEffect(platform).pipe(
+        Effect.flatMap((data) => {
+          const collection = data.collections.find((item) => item.id === collectionId);
 
-  if (!promise) {
-    promise = (
-      platform === "windows"
-        ? fetchJson(
-            Collection,
-            `/catalog/windows/${collectionFileKey(collectionId)}.json`,
-            `${collectionId} settings`,
-          )
-        : loadPlatform(platform).then((data) => {
-            const collection = data.collections.find((item) => item.id === collectionId);
+          return collection
+            ? Effect.succeed(collection)
+            : Effect.fail(
+                new CatalogueError({
+                  message: "The catalogue does not include " + collectionId,
+                  cause: new Error("Missing collection"),
+                }),
+              );
+        }),
+      );
 
-            if (!collection) throw new Error(`The catalogue does not include ${collectionId}`);
-
-            return collection;
-          })
-    ).catch((error: unknown) => {
-      collectionPromises.delete(cacheKey);
-      throw error;
-    });
-    collectionPromises.set(cacheKey, promise);
-  }
-
-  return promise;
-};
+export const loadCollection = (platform: PlatformId, collectionId: string) =>
+  runCatalogue(loadCollectionEffect(platform, collectionId));
 
 /** The identity a selection stores for a property; mirrors `valueKey` in `build.ts`. */
 const searchValueKey = (property: Property, platform: PlatformId) =>
@@ -450,23 +404,13 @@ const buildSearchIndex = (data: PlatformData): SearchIndex => ({
   ),
 });
 
-export const loadSearchIndex = (platform: PlatformId) => {
-  let promise = searchIndexPromises.get(platform);
+export const loadSearchIndexEffect = (platform: PlatformId) =>
+  platform === "windows"
+    ? fetchJsonEffect(SearchIndex, "/catalog/windows/search.json", "the settings search index")
+    : loadPlatformEffect(platform).pipe(Effect.map(buildSearchIndex));
 
-  if (!promise) {
-    promise = (
-      platform === "windows"
-        ? fetchJson(SearchIndex, "/catalog/windows/search.json", "the settings search index")
-        : loadPlatform(platform).then(buildSearchIndex)
-    ).catch((error: unknown) => {
-      searchIndexPromises.delete(platform);
-      throw error;
-    });
-    searchIndexPromises.set(platform, promise);
-  }
-
-  return promise;
-};
+export const loadSearchIndex = (platform: PlatformId) =>
+  runCatalogue(loadSearchIndexEffect(platform));
 
 export const searchCollections = (
   collections: CollectionSummary[],
@@ -520,15 +464,6 @@ export const searchIndexProperties = (index: SearchIndex, query: string) => {
   }
 
   return results;
-};
-
-export const resetPlatformCache = (platform: PlatformId) => {
-  platformPromises.delete(platform);
-  indexPromises.delete(platform);
-  searchIndexPromises.delete(platform);
-
-  for (const key of collectionPromises.keys())
-    if (key.startsWith(`${platform}:`)) collectionPromises.delete(key);
 };
 
 /**

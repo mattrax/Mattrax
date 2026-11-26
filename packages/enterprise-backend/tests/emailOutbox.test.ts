@@ -249,6 +249,24 @@ describe("email outbox drain", () => {
     expect(db.store.email_outbox[0]!.sentAt).toEqual(new Date(now.getTime() + 1000));
   });
 
+  it("keeps verification headers when a queued row is retried", async () => {
+    const db = makeDb({
+      email_outbox: [record({ payload: { ...message, headers: { "OTP-Token": "123456" } } })],
+    });
+    const sent: OutboundEmailMessage[] = [];
+
+    await runEffect(
+      drainEmailOutbox({
+        db,
+        email: makeEmailTransport(async (item) => void sent.push(item)),
+        now: new Date(now.getTime() + 1000),
+      }),
+    );
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.headers).toEqual({ "OTP-Token": "123456" });
+  });
+
   it("reschedules a failed delivery with backoff and purges delivered rows later", async () => {
     const db = makeDb({ email_outbox: [record()] });
 

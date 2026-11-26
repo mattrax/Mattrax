@@ -11,6 +11,7 @@ pub mod exec;
 pub mod host;
 pub mod logging;
 pub mod profiles;
+pub mod restricted;
 pub mod result;
 pub mod state;
 pub mod trigger;
@@ -26,6 +27,7 @@ pub const VERSION: &str = env!("MATTRAXD_VERSION");
 pub const STATE_PATH: &str = "/var/lib/mattrax/mattraxd-state.json";
 pub const LOG_PATH: &str = "/var/log/mattraxd.log";
 pub const SCRIPT_PAYLOAD_TYPE: &str = "com.mattrax.script";
+pub const RESTRICTED_SOFTWARE_PAYLOAD_TYPE: &str = "com.mattrax.restricted-software";
 
 /// The server re-applies this cap; the device cap keeps a runaway script from
 /// filling memory or the result body.

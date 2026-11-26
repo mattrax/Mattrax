@@ -65,13 +65,15 @@ export const appleUserEnrollmentLabel = (mode: "device" | "user" | null | undefi
 
 /** How a user channel's directory identity was established. */
 export const appleUserIdentitySourceLabel = (
-  source: "certificate" | "managed-apple-account" | "manual",
+  source: "certificate" | "managed-apple-account" | "byod-sign-in" | "manual",
 ): string => {
   switch (source) {
     case "certificate":
       return "Certificate verified";
     case "managed-apple-account":
       return "Managed Apple Account";
+    case "byod-sign-in":
+      return "BYOD sign-in";
     default:
       return "Linked manually";
   }

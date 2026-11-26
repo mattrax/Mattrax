@@ -1,7 +1,8 @@
 import { For } from "solid-js";
 import { PERMISSIONS, PERMISSION_GROUPS } from "@mattrax/enterprise-domain/client";
 import type { Permission } from "@mattrax/enterprise-domain/client";
-import { cn } from "~/lib/utils";
+import { Input } from "~/components/ui/input";
+import { Button } from "~/components/ui/button";
 
 type Level = "none" | "read" | "write";
 
@@ -34,7 +35,7 @@ const groupLevel = (
  * (`credentialPermissions`) so a picker can never invent a grant the API would
  * interpret differently.
  */
-export function PermissionPicker(props: {
+export default function PermissionPicker(props: {
   available: ReadonlyArray<Permission>;
   selected: ReadonlyArray<Permission>;
   onChange: (permissions: ReadonlyArray<Permission>) => void;
@@ -89,42 +90,37 @@ export function PermissionPicker(props: {
     return items.length === 0 ? "none" : groupLevel(items, selected());
   };
 
-  const levelClass = (active: boolean) =>
-    cn(
-      "px-2 py-1 text-[11px] transition-colors first:rounded-l-md last:rounded-r-md",
-      active
-        ? "bg-foreground text-background font-medium"
-        : "text-muted-foreground hover:bg-hover hover:text-foreground",
-    );
-
   return (
     <div class="rounded-lg border border-border">
       <div class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-        <span class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+        <span class="text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Permissions
         </span>
         <div class="flex overflow-hidden rounded-md border border-border">
-          <button
+          <Button
             type="button"
-            class={levelClass(allState() === "none")}
+            variant={allState() === "none" ? "default" : "ghost"}
+            size="xs"
             onClick={() => setAll("none")}
           >
             No access
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            class={levelClass(allState() === "read")}
+            variant={allState() === "read" ? "default" : "ghost"}
+            size="xs"
             onClick={() => setAll("read")}
           >
             Read
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            class={levelClass(allState() === "write")}
+            variant={allState() === "write" ? "default" : "ghost"}
+            size="xs"
             onClick={() => setAll("write")}
           >
             All access
-          </button>
+          </Button>
         </div>
       </div>
       <div class="max-h-64 overflow-y-auto">
@@ -137,64 +133,67 @@ export function PermissionPicker(props: {
 
             return (
               <details class="group border-b border-border last:border-b-0">
-                <summary class="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[12px] hover:bg-hover [&::-webkit-details-marker]:hidden">
+                <summary class="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-xs hover:bg-hover [&::-webkit-details-marker]:hidden">
                   <span class="min-w-0">
                     <span class="font-medium text-foreground">{group.label}</span>
-                    <span class="ml-1.5 text-[10.5px] text-muted-foreground">
+                    <span class="ml-1.5 text-xs text-muted-foreground">
                       {group.permissions.length}
                     </span>
                   </span>
                   <span class="flex shrink-0 overflow-hidden rounded-md border border-border">
-                    <button
+                    <Button
                       type="button"
-                      class={levelClass(state() === "none")}
-                      onClick={(event) => {
+                      variant={state() === "none" ? "default" : "ghost"}
+                      size="xs"
+                      onClick={(event: MouseEvent) => {
                         event.preventDefault();
                         event.stopPropagation();
                         setGroup(group, "none");
                       }}
                     >
                       None
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
-                      class={levelClass(state() === "read")}
-                      onClick={(event) => {
+                      variant={state() === "read" ? "default" : "ghost"}
+                      size="xs"
+                      onClick={(event: MouseEvent) => {
                         event.preventDefault();
                         event.stopPropagation();
                         setGroup(group, "read");
                       }}
                     >
                       Read
-                    </button>
+                    </Button>
                     {hasWrite() ? (
-                      <button
+                      <Button
                         type="button"
-                        class={levelClass(state() === "write")}
-                        onClick={(event) => {
+                        variant={state() === "write" ? "default" : "ghost"}
+                        size="xs"
+                        onClick={(event: MouseEvent) => {
                           event.preventDefault();
                           event.stopPropagation();
                           setGroup(group, "write");
                         }}
                       >
                         Write
-                      </button>
+                      </Button>
                     ) : null}
                   </span>
                 </summary>
                 <div class="grid gap-1 px-3 pb-2">
                   <For each={group.permissions}>
                     {(permission) => (
-                      <label class="flex items-start gap-2 text-[11.5px] text-muted-foreground">
-                        <input
+                      <label class="flex items-start gap-2 text-xs text-muted-foreground">
+                        <Input
                           type="checkbox"
-                          class="mt-0.5 accent-foreground"
+                          class="mt-0.5"
                           checked={selected().has(permission.id)}
                           onChange={(event) => toggle(permission.id, event.currentTarget.checked)}
                         />
                         <span class="min-w-0">
                           <span class="block text-foreground">{permission.label}</span>
-                          <span class="block text-[10.5px] leading-snug">
+                          <span class="block text-xs leading-snug">
                             {permission.description}
                           </span>
                         </span>

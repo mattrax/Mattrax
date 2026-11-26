@@ -1,3 +1,6 @@
+import { Effect } from "effect";
+import { Crypto, CryptoError } from "@mattrax/crypto";
+
 /**
  * HMAC-signed URLs for DDM legacy profiles and certificate assets.
  *
@@ -77,6 +80,15 @@ const timingSafeEqual = (left: string, right: string): boolean => {
 const verify = async (secret: string, message: string, token: string): Promise<boolean> =>
   timingSafeEqual(await sign(secret, message), token);
 
+const signEffect = (secret: string, message: string): Effect.Effect<string, CryptoError> =>
+  Crypto.hmacSha256Hex(secret, message).pipe(
+    Effect.map((hex) => {
+      const bytes = Uint8Array.from(hex.match(/../g) ?? [], (byte) => Number.parseInt(byte, 16));
+
+      return toBase64Url(bytes);
+    }),
+  );
+
 const profileMessage = (context: AppleProfileTokenContext): string =>
   [
     "profile",
@@ -142,6 +154,15 @@ export const verifyAppleProfileToken = (
   context: AppleProfileTokenContext,
 ): Promise<boolean> => verify(secret, profileMessage(context), token);
 
+export const verifyAppleProfileTokenEffect = (
+  secret: string,
+  token: string,
+  context: AppleProfileTokenContext,
+): Effect.Effect<boolean, CryptoError> =>
+  signEffect(secret, profileMessage(context)).pipe(
+    Effect.map((expected) => timingSafeEqual(expected, token)),
+  );
+
 /**
  * Sign an expiring, device-bound asset URL token.
  *
@@ -159,6 +180,21 @@ export const signAppleAssetToken = (
   const payload = toBase64Url(encoder.encode(`${context.expiresAt}.${context.deviceId}`));
 
   return sign(secret, assetMessage(context)).then((signature) => `${payload}.${signature}`);
+};
+
+export const signAppleAssetTokenEffect = (
+  secret: string,
+  context: AppleAssetTokenContext,
+): Effect.Effect<string, CryptoError> => {
+  if (!Number.isSafeInteger(context.expiresAt) || context.expiresAt <= 0)
+    return Effect.fail(
+      new CryptoError({ message: "Asset token expiry must be a positive Unix timestamp" }),
+    );
+  const payload = toBase64Url(encoder.encode(`${context.expiresAt}.${context.deviceId}`));
+
+  return signEffect(secret, assetMessage(context)).pipe(
+    Effect.map((signature) => `${payload}.${signature}`),
+  );
 };
 
 /**
@@ -202,4 +238,39 @@ export const verifyAppleAssetToken = async (
   };
 
   return (await verify(secret, assetMessage(context), signature)) ? context : null;
+};
+
+export const verifyAppleAssetTokenEffect = (
+  secret: string,
+  token: string,
+  expected: Pick<AppleAssetTokenContext, "policyId" | "kind">,
+  now: number = Date.now(),
+): Effect.Effect<VerifiedAppleAssetToken | null, CryptoError> => {
+  const separator = token.indexOf(".");
+  const encodedPayload = separator === -1 ? token : token.slice(0, separator);
+  const signature = separator === -1 ? "" : token.slice(separator + 1);
+
+  if (encodedPayload.length === 0 || signature.length === 0 || signature.includes("."))
+    return Effect.succeed(null);
+  const payload = fromBase64Url(encodedPayload);
+
+  if (payload === null) return Effect.succeed(null);
+  const match = /^(\d{1,12})\.([A-Za-z0-9_-]{8,128})$/.exec(payload);
+
+  if (!match) return Effect.succeed(null);
+  const expiresAt = Number(match[1]);
+
+  if (!Number.isSafeInteger(expiresAt) || expiresAt * 1000 <= now) return Effect.succeed(null);
+  const context: AppleAssetTokenContext = {
+    policyId: expected.policyId,
+    kind: expected.kind,
+    deviceId: match[2],
+    expiresAt,
+  };
+
+  return signEffect(secret, assetMessage(context)).pipe(
+    Effect.map((expectedSignature) =>
+      timingSafeEqual(expectedSignature, signature) ? context : null,
+    ),
+  );
 };

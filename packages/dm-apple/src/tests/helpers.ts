@@ -12,6 +12,7 @@ export function mockManagementBackend(
     appleDeviceEvent: ManagementBackendType["appleDeviceEvent"];
     appleManagementCheckin: ManagementBackendType["appleManagementCheckin"];
     appleReturnToServiceConfiguration: ManagementBackendType["appleReturnToServiceConfiguration"];
+    getAppleBootstrapToken: ManagementBackendType["getAppleBootstrapToken"];
     getAppleDeclarationTokens: ManagementBackendType["getAppleDeclarationTokens"];
     getAppleDeclarationItems: ManagementBackendType["getAppleDeclarationItems"];
     getAppleDeclaration: ManagementBackendType["getAppleDeclaration"];
@@ -28,7 +29,7 @@ export function mockManagementBackend(
   return Layer.succeed(
     ManagementBackend,
     ManagementBackend.of({
-      getAppleBootstrapToken: () => Effect.succeed(null),
+      getAppleBootstrapToken: overrides?.getAppleBootstrapToken ?? (() => Effect.succeed(null)),
       appleReturnToServiceConfiguration:
         overrides?.appleReturnToServiceConfiguration ?? (() => Effect.succeed({ enabled: false })),
       appleDeviceEvent: overrides?.appleDeviceEvent ?? (() => Effect.void),

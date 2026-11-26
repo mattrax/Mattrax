@@ -61,11 +61,8 @@ export const scriptApi = HttpApiGroup.make("ScriptApi")
   )
   .add(
     HttpApiEndpoint.post("createScript", "/v1/tenants/:tenantId/scripts", {
-      error: [
-        ...EnterpriseTenantWriteErrors,
-        ...EnterpriseStepUpRequired,
-        ...EnterpriseApprovalRequired,
-      ],
+      // Creating a script is additive and needs no step-up.
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseApprovalRequired],
       params: TenantParam,
       payload: CreateScriptRequest,
       success: Schema.Struct({ id: Schema.String }),

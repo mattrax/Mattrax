@@ -4,7 +4,8 @@ use crate::exec;
 use crate::host::{self, HostContext};
 use crate::logging::Logger;
 use crate::profiles::{self, InstalledScript};
-use crate::result::{self, ScriptResult};
+use crate::restricted::{self, LiveRestrictedRunner};
+use crate::result::{self, RestrictedResultQueue, ScriptResult};
 use crate::state::{self, AgentState, ScriptState};
 use crate::trigger::{self, TriggerKind};
 use chrono::{DateTime, Local};
@@ -36,14 +37,19 @@ pub struct Agent {
     state_path: PathBuf,
     pub logger: Logger,
     runner: Box<dyn ScriptRunner>,
+    restricted_results: RestrictedResultQueue,
 }
 
 impl Agent {
     pub fn system() -> Self {
+        let state_path = PathBuf::from(crate::STATE_PATH);
+        let restricted_results = RestrictedResultQueue::system(&state_path);
+
         Self {
-            state_path: PathBuf::from(crate::STATE_PATH),
+            state_path,
             logger: Logger::system(),
             runner: Box::new(LiveRunner),
+            restricted_results,
         }
     }
 
@@ -52,10 +58,14 @@ impl Agent {
         logger: Logger,
         runner: Box<dyn ScriptRunner>,
     ) -> Self {
+        let state_path: PathBuf = state_path.into();
+        let restricted_results = RestrictedResultQueue::system(&state_path);
+
         Self {
-            state_path: state_path.into(),
+            state_path,
             logger,
             runner,
+            restricted_results,
         }
     }
 
@@ -63,18 +73,60 @@ impl Agent {
         &self.state_path
     }
 
-    /// Evaluate every installed script once and persist state.
+    /// Evaluate every installed script once, persist state, and attempt the
+    /// queued restricted-result deliveries before the one-shot process exits.
     pub fn run_once(&self) {
+        self.run_once_with(
+            profiles::installed_profile_values(),
+            host::collect(),
+            &LiveRestrictedRunner::new(self.restricted_results.clone()),
+        );
+    }
+
+    fn run_once_with(
+        &self,
+        profile_snapshot: Vec<plist::Value>,
+        host: HostContext,
+        restricted_runner: &dyn restricted::RestrictedRunner,
+    ) {
+        self.run_tick(profile_snapshot, host, restricted_runner);
+        self.restricted_results.drain_ready();
+    }
+
+    fn run_live_tick(&self) {
+        self.run_tick(
+            profiles::installed_profile_values(),
+            host::collect(),
+            &LiveRestrictedRunner::new(self.restricted_results.clone()),
+        );
+    }
+
+    fn run_tick(
+        &self,
+        profile_snapshot: Vec<plist::Value>,
+        host: HostContext,
+        restricted_runner: &dyn restricted::RestrictedRunner,
+    ) {
         let mut state = state::load(&self.state_path);
-        let scripts = profiles::installed_scripts();
-        let host = host::collect();
+        let scripts = profiles::installed_scripts_from_profiles(&profile_snapshot);
+        let restricted_rules =
+            restricted::installed_restricted_software_from_profiles(&profile_snapshot);
+        let now = Local::now();
 
         tick(
             &scripts,
             &mut state,
-            Local::now(),
+            now,
             &host,
             self.runner.as_ref(),
+            &self.logger,
+        );
+
+        restricted::tick(
+            &restricted_rules,
+            &mut state.restricted,
+            now,
+            restricted_runner,
             &self.logger,
         );
 
@@ -89,8 +141,10 @@ impl Agent {
         self.logger
             .log(format!("mattraxd {} starting", crate::VERSION));
 
+        let _restricted_result_worker = self.restricted_results.start_worker();
+
         loop {
-            self.run_once();
+            self.run_live_tick();
             std::thread::sleep(TICK_INTERVAL);
         }
     }
@@ -196,9 +250,11 @@ pub fn trigger_name(kind: TriggerKind) -> &'static str {
 mod tests {
     use super::*;
     use crate::profiles::{EnvironmentEntry, InstalledScript};
+    use crate::restricted::{EnforcementSnapshot, RestrictedResult};
+    use crate::result::RestrictedResultSender;
     use crate::trigger::Trigger;
     use chrono::TimeZone;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     #[derive(Default)]
     struct Recorder {
@@ -275,6 +331,137 @@ mod tests {
             .iter()
             .map(|(_, trigger)| trigger.clone())
             .collect()
+    }
+
+    #[test]
+    fn one_profile_snapshot_feeds_scripts_and_restricted_rules() {
+        let snapshot = vec![plist::from_bytes(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>PayloadContent</key><array>
+  <dict>
+    <key>PayloadType</key><string>com.mattrax.script</string>
+    <key>ScriptID</key><string>script-1</string>
+    <key>Content</key><string>true</string>
+    <key>ServerURL</key><string>https://mattrax.test</string>
+    <key>DeviceToken</key><string>token</string>
+  </dict>
+  <dict>
+    <key>PayloadType</key><string>com.mattrax.restricted-software</string>
+    <key>RestrictedSoftwareID</key><string>rule-1</string>
+    <key>MatchType</key><string>process-name</string>
+    <key>MatchValue</key><string>Banned</string>
+    <key>Action</key><string>kill-process</string>
+    <key>ServerURL</key><string>https://mattrax.test</string>
+    <key>DeviceToken</key><string>token</string>
+  </dict>
+</array></dict></plist>"#,
+        )
+        .expect("profile parses")];
+
+        let scripts = profiles::installed_scripts_from_profiles(&snapshot);
+        let rules = restricted::installed_restricted_software_from_profiles(&snapshot);
+
+        assert_eq!(scripts.len(), 1);
+        assert_eq!(rules.len(), 1);
+        assert_eq!(scripts[0].id, "script-1");
+        assert_eq!(rules[0].id, "rule-1");
+    }
+
+    #[derive(Clone, Default)]
+    struct ResultRecorder {
+        posted: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl RestrictedResultSender for ResultRecorder {
+        fn send(
+            &self,
+            result: &RestrictedResult,
+            _server_url: &str,
+            _device_token: &str,
+        ) -> Result<(), String> {
+            self.posted.lock().unwrap().push(result.rule_id.clone());
+            Ok(())
+        }
+    }
+
+    struct QueueingRestrictedRunner {
+        queue: RestrictedResultQueue,
+    }
+
+    impl restricted::RestrictedRunner for QueueingRestrictedRunner {
+        fn snapshot(&self, _include_bundles: bool) -> EnforcementSnapshot {
+            EnforcementSnapshot {
+                processes: Ok(Vec::new()),
+                bundles: Vec::new(),
+                allowed_roots: Vec::new(),
+            }
+        }
+
+        fn enforce(
+            &self,
+            rule: &restricted::InstalledRestrictedSoftware,
+            _snapshot: &EnforcementSnapshot,
+        ) -> RestrictedResult {
+            RestrictedResult {
+                rule_id: rule.id.clone(),
+                action: rule.action.clone(),
+                status: "succeeded".into(),
+                detail: Some("killed".into()),
+                killed_processes: 1,
+                removed_applications: 0,
+                occurred_at: "2026-11-20T12:00:00Z".into(),
+            }
+        }
+
+        fn post(
+            &self,
+            rule: &restricted::InstalledRestrictedSoftware,
+            result: &RestrictedResult,
+            _logger: &Logger,
+        ) {
+            self.queue.enqueue(rule, result);
+        }
+    }
+
+    #[test]
+    fn one_shot_runs_drain_queued_restricted_results() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let state_path = directory.path().join("mattraxd-state.json");
+        let recorder = ResultRecorder::default();
+        let queue = RestrictedResultQueue::new(
+            directory.path().join("restricted-results.json"),
+            Logger::stderr_only(),
+            Arc::new(recorder.clone()),
+        );
+        let agent = Agent {
+            state_path: state_path.clone(),
+            logger: Logger::stderr_only(),
+            runner: Box::new(Recorder::default()),
+            restricted_results: queue.clone(),
+        };
+        let runner = QueueingRestrictedRunner {
+            queue: queue.clone(),
+        };
+        let snapshot = vec![plist::from_bytes(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>PayloadContent</key><array><dict>
+  <key>PayloadType</key><string>com.mattrax.restricted-software</string>
+  <key>RestrictedSoftwareID</key><string>rule-1</string>
+  <key>MatchType</key><string>process-name</string>
+  <key>MatchValue</key><string>Banned</string>
+  <key>Action</key><string>kill-process</string>
+  <key>ServerURL</key><string>https://mattrax.test</string>
+  <key>DeviceToken</key><string>token</string>
+</dict></array></dict></plist>"#,
+        )
+        .expect("profile parses")];
+
+        agent.run_once_with(snapshot, host("", "net"), &runner);
+
+        assert_eq!(*recorder.posted.lock().unwrap(), vec!["rule-1"]);
+        assert_eq!(queue.pending_len(), 0);
+        let state = state::load(&state_path);
+        assert!(state.restricted.contains_key("rule-1"));
     }
 
     #[test]

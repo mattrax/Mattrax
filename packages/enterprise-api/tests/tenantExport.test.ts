@@ -8,7 +8,7 @@ import {
   TenantImportRequest,
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -51,7 +51,6 @@ const makeContext = () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake only implements the auth methods these tests exercise.
@@ -482,6 +481,44 @@ describe("tenant import", () => {
     ).toHaveLength(1);
   });
 
+  it("round-trips software catalogue provenance", async () => {
+    const context = makeContext();
+    const source = await seedTenant(context);
+
+    const sourceRow = context.db.store.application.find(
+      (row: any) => row.id === source.application.id,
+    )!;
+
+    Object.assign(sourceRow, {
+      catalogueTitleId: "slack",
+      catalogueMethodId: "macos-app-store",
+      catalogueTarget: "macos",
+      catalogueKind: "apple-app-store",
+    });
+
+    const { bundle } = await exportBundle(context, source.tenant.id);
+
+    expect(bundle.applications?.[0]).toMatchObject({
+      catalogueTitleId: "slack",
+      catalogueMethodId: "macos-app-store",
+      catalogueTarget: "macos",
+      catalogueKind: "apple-app-store",
+    });
+
+    const result = await runEffect(context.service.importTenant(request(headers), bundle));
+
+    const importedApplication = context.db.store.application.find(
+      (row: any) => row.organizationId === result.tenantId,
+    )!;
+
+    expect(importedApplication).toMatchObject({
+      catalogueTitleId: "slack",
+      catalogueMethodId: "macos-app-store",
+      catalogueTarget: "macos",
+      catalogueKind: "apple-app-store",
+    });
+  });
+
   it("round-trips a disabled policy", async () => {
     const context = makeContext();
     const source = await seedTenant(context);
@@ -494,7 +531,7 @@ describe("tenant import", () => {
 
     const { bundle } = await exportBundle(context, source.tenant.id);
 
-    expect(bundle.policies[0]).toMatchObject({ enabled: false });
+    expect(bundle.policies![0]).toMatchObject({ enabled: false });
 
     const result = await runEffect(context.service.importTenant(request(headers), bundle));
 

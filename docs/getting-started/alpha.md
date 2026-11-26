@@ -50,6 +50,15 @@ hardened from what still needs real-device or real-vendor validation. Check
 that page before you rely on a platform, especially Android and the Windows
 zero-touch flows.
 
+## Signed in on the public site
+
+The marketing pages and sign-up screen notice an existing session. Marketing calls to
+action become **Open dashboard**, and the sign-in/register cross-links are hidden so an
+already-signed-in visitor is not sent back through authentication. The login and
+registration forms remain for deliberately switching accounts; the sign-up warning
+explains that a second account needs a fresh sign-in and offers both **Open dashboard**
+and **Sign out**.
+
 ## How to give feedback
 
 - **Bugs and feature requests:** open an issue at

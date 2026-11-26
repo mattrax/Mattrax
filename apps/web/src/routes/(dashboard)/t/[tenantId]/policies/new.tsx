@@ -2,7 +2,7 @@ import { useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, Show } from "solid-js";
-import { CisTemplateDialog } from "~/components/mdm/cis-template-dialog";
+import CisTemplateDialog from "~/components/mdm/cis-template-dialog";
 import type { CisTemplateOutcome } from "~/components/mdm/cis-template-dialog";
 import { ErrorText, Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
@@ -10,11 +10,12 @@ import { Input } from "~/components/ui/input";
 import { ShieldCheck } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { AccessDenied, useCan } from "~/lib/permissions";
+import { ScopeTagSelect } from "~/components/scope-tags/scope-tag-select";
 import { policyToConfigurations } from "~/lib/policy-designer/build";
 import type { PolicyDraft } from "~/lib/policy-designer/build";
 
 const textareaClass =
-  "min-h-28 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "min-h-28 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 export default function NewPolicyPage() {
   const params = useParams();
@@ -22,7 +23,9 @@ export default function NewPolicyPage() {
   const qc = useQueryClient();
   const { can } = useCan();
   const [name, setName] = createSignal("");
+  const [nameInvalid, setNameInvalid] = createSignal(false);
   const [notes, setNotes] = createSignal("");
+  const [scopeTags, setScopeTags] = createSignal<Array<string>>([]);
   const [cisOpen, setCisOpen] = createSignal(false);
   const [cisTemplate, setCisTemplate] = createSignal<CisTemplateOutcome | null>(null);
 
@@ -49,6 +52,21 @@ export default function NewPolicyPage() {
       return { ...policy, fromTemplate: template !== null };
     },
     onSuccess: async ({ id, fromTemplate }) => {
+      // Tagging is a second request. If it fails, keep the created resource
+      // and let the detail page's tag editor retry rather than leaving the
+      // form ready to create a duplicate on the next click.
+      if (scopeTags().length > 0) {
+        try {
+          await enterprise.setScopeTagAssignments(params.tenantId, {
+            resourceType: "policy",
+            resourceIds: [id],
+            tagIds: scopeTags(),
+          });
+        } catch {
+          // The resource exists; its tag editor remains available.
+        }
+      }
+
       await qc.invalidateQueries({ queryKey: enterpriseKeys.list(params.tenantId, "policy") });
       await qc.invalidateQueries({
         queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, "policy"),
@@ -65,7 +83,10 @@ export default function NewPolicyPage() {
           title="Create policy"
           description="Create a policy, then configure payloads in the editor or start from a CIS benchmark."
         />
-        <div class="grid max-w-3xl gap-5 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-start">
+        <div
+      class="grid max-w-3xl gap-5 lg:grid-cols-(--policy-cols) lg:items-start"
+      style={{ "--policy-cols": "minmax(0,1fr) 260px" }}
+    >
           <Panel
             title="Policy details"
             description="Name and internal notes are required metadata."
@@ -81,7 +102,13 @@ export default function NewPolicyPage() {
                 <Input
                   required
                   value={name()}
-                  onInput={(e) => setName(e.currentTarget.value)}
+                  aria-invalid={nameInvalid() ? "true" : "false"}
+                  onInvalid={() => setNameInvalid(true)}
+                  onInput={(e) => {
+                    setName(e.currentTarget.value);
+
+                    if (nameInvalid() && e.currentTarget.value.trim()) setNameInvalid(false);
+                  }}
                   placeholder="e.g. Corporate Mac baseline"
                 />
               </Field>
@@ -109,10 +136,10 @@ export default function NewPolicyPage() {
                     <div class="rounded-lg border border-border bg-surface/60 p-3">
                       <div class="flex flex-wrap items-start justify-between gap-2">
                         <div class="min-w-0">
-                          <p class="text-[13px] font-semibold text-foreground">
+                          <p class="text-xs font-semibold text-foreground">
                             {template().template.benchmark.name}
                           </p>
-                          <p class="mt-0.5 text-[11px] text-muted-foreground">
+                          <p class="mt-0.5 text-xs text-muted-foreground">
                             Version {template().template.benchmark.version} ·{" "}
                             {template().appliedControls} control
                             {template().appliedControls === 1 ? "" : "s"} ·{" "}
@@ -143,6 +170,11 @@ export default function NewPolicyPage() {
                   )}
                 </Show>
               </Field>
+              <ScopeTagSelect
+                tenantId={params.tenantId!}
+                value={scopeTags()}
+                onChange={setScopeTags}
+              />
               <ErrorText error={create.error} />
               <div class="flex flex-wrap items-center gap-2 pt-1">
                 <Button type="submit" disabled={create.isPending}>
@@ -163,18 +195,18 @@ export default function NewPolicyPage() {
             <div class="flex size-8 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
               <ShieldCheck class="size-4" />
             </div>
-            <h2 class="mt-3 text-[13px] font-semibold text-foreground">What happens next</h2>
-            <ol class="mt-2 space-y-2 text-[12px] leading-relaxed text-muted-foreground">
+            <h2 class="mt-3 text-xs font-semibold text-foreground">What happens next</h2>
+            <ol class="mt-2 space-y-2 text-xs leading-relaxed text-muted-foreground">
               <li class="flex gap-2">
-                <span class="font-mono text-[10px] text-muted-foreground">01</span>
+                <span class="font-mono text-xs text-muted-foreground">01</span>
                 Add restrictions, certificates or a custom profile in the advanced editor.
               </li>
               <li class="flex gap-2">
-                <span class="font-mono text-[10px] text-muted-foreground">02</span>
+                <span class="font-mono text-xs text-muted-foreground">02</span>
                 Or open the designer to build the policy visually from the catalogue.
               </li>
               <li class="flex gap-2">
-                <span class="font-mono text-[10px] text-muted-foreground">03</span>
+                <span class="font-mono text-xs text-muted-foreground">03</span>
                 Assign the policy to groups or devices, then sync.
               </li>
             </ol>

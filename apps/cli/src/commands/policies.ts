@@ -1,4 +1,3 @@
-import { writeFile } from "node:fs/promises";
 import { Effect, Option } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 import { stringify as stringifyYaml } from "yaml";
@@ -14,6 +13,7 @@ import {
 } from "../policyDocument.ts";
 import type { PolicyApplyTarget } from "../policyDocument.ts";
 import { CliFailure } from "../settings.ts";
+import { CliSecureFileStore } from "../secureFileStore.ts";
 import { rootCommand } from "../global.ts";
 import { commandContext, resolveTenantId } from "./shared.ts";
 
@@ -130,13 +130,8 @@ const exportCommand = Command.make(
       return;
     }
 
-    yield* Effect.tryPromise({
-      try: () => writeFile(output, text, "utf8"),
-      catch: () =>
-        new CliFailure({
-          message: `Could not write ${output}.`,
-        }),
-    });
+    const store = yield* CliSecureFileStore;
+    yield* store.writePrivate(output, text);
 
     if (flags.json) {
       yield* line(
