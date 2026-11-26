@@ -46,7 +46,7 @@ const protocol = () =>
   );
 
 /** Every verifier reads the Effect clock, so pin it to the fixture factory's NOW. */
-const run = <A>(effect: Effect.Effect<A, any, any>): Promise<A> =>
+const run = <A, E>(effect: Effect.Effect<A, E, never>): Promise<A> =>
   Effect.runPromise(
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW);

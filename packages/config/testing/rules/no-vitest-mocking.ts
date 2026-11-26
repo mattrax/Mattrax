@@ -57,7 +57,7 @@ export const noVitestMocking = ratcheted<Options>(
             const local = nameOf(specifier.local);
             if (local) bindings.add(local);
           } else if (specifier.type === "ImportSpecifier") {
-            const imported = propertyName(specifier.imported);
+            const imported = propertyName((specifier as Node & { imported?: Node }).imported);
             const local = nameOf(specifier.local);
             if (imported === "vi" && local) bindings.add(local);
           }

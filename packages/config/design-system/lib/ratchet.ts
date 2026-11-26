@@ -5,14 +5,19 @@ import type { Node } from "./ast.ts";
 import { missingFolder } from "./paths.ts";
 
 export interface Report {
-  message: string;
-  node: Node;
+  message?: string;
+  messageId?: string;
+  node?: Node;
+  loc?: unknown;
+  data?: Record<string, string | number | boolean | bigint | null | undefined>;
+  fix?: unknown;
+  suggest?: unknown;
 }
 
 export interface Context {
   cwd: string;
   filename: string;
-  options: unknown[];
+  options: readonly unknown[];
   settings?: Record<string, unknown>;
   report: (descriptor: Report) => void;
 }
@@ -23,10 +28,7 @@ export function relativePath(context: Context) {
 
 export type Visitor = Record<string, (node: Node) => void>;
 
-function sharedPrimitives(
-  context: Context,
-  properties: Record<string, unknown>,
-) {
+function sharedPrimitives(context: Context, properties: Record<string, unknown>) {
   const shared = context.settings?.["design-system"] as
     | { primitives?: string | string[] }
     | undefined;
@@ -34,8 +36,7 @@ function sharedPrimitives(
     return {};
   }
   const folders = [shared.primitives].flat();
-  const takesOne =
-    (properties["primitives"] as { type?: string }).type === "string";
+  const takesOne = (properties["primitives"] as { type?: string }).type === "string";
   return { primitives: takesOne ? folders[0] : folders };
 }
 
@@ -131,7 +132,7 @@ export function ratcheted<Options>(
           type: "object",
         },
       ],
-      type: "problem",
+      type: "problem" as const,
     },
   };
 }

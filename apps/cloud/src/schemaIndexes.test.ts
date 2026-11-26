@@ -30,9 +30,14 @@ let cachedSnapshot: Snapshot | undefined;
 const latestSnapshot = (): Snapshot => {
   // The snapshot is read-only for this whole file. Parsing this JSON for every
   // assertion is the dominant cost of these otherwise pure checks.
-  cachedSnapshot ??= JSON.parse(
-    readFileSync(join(migrationsDir, cachedMigrationNames().at(-1)!, "snapshot.json"), "utf8"),
-  );
+  if (cachedSnapshot === undefined) {
+    // JSON.parse returns `any`; bind it to the required shape so the
+    // returned snapshot is never possibly undefined.
+    const parsed: Snapshot = JSON.parse(
+      readFileSync(join(migrationsDir, cachedMigrationNames().at(-1)!, "snapshot.json"), "utf8"),
+    );
+    cachedSnapshot = parsed;
+  }
 
   return cachedSnapshot;
 };

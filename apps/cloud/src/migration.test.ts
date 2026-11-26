@@ -52,8 +52,13 @@ const readSnapshot = (name: string): MigrationSnapshot => {
   let snapshot = snapshotCache.get(name);
 
   if (snapshot === undefined) {
-    snapshot = JSON.parse(readFileSync(join(migrationsDir, name, "snapshot.json"), "utf8"));
-    snapshotCache.set(name, snapshot);
+    // JSON.parse returns `any`, which drops narrowing of `snapshot` back
+    // to `MigrationSnapshot | undefined`. Bind it to the required shape.
+    const parsed: MigrationSnapshot = JSON.parse(
+      readFileSync(join(migrationsDir, name, "snapshot.json"), "utf8"),
+    );
+    snapshot = parsed;
+    snapshotCache.set(name, parsed);
   }
 
   return snapshot;

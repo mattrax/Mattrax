@@ -1,4 +1,5 @@
 import { Schema } from "effect";
+import type { Effect } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 import { decodeCutoverArchive, encodeCutoverArchive } from "@mattrax/enterprise-domain";
 import type { CutoverPayload } from "@mattrax/enterprise-domain";
@@ -246,10 +247,10 @@ const buildSourceFixture = async () => {
 // rows. Share the built fixture across the file and vary only the DB.
 let sourceFixture: Awaited<ReturnType<typeof buildSourceFixture>>;
 type TargetFixture = {
-  ca: Awaited<ReturnType<typeof generateScepCa>>;
-  sealed: string;
-  replacingCa: Awaited<ReturnType<typeof generateScepCa>>;
-  replacingSealed: string;
+  ca: Effect.Success<ReturnType<typeof generateScepCa>>;
+  sealed: Awaited<ReturnType<typeof sealCaPrivateKey>>;
+  replacingCa: Effect.Success<ReturnType<typeof generateScepCa>>;
+  replacingSealed: Awaited<ReturnType<typeof sealCaPrivateKey>>;
 };
 let targetFixture: TargetFixture;
 
@@ -292,8 +293,8 @@ const seedConflictingTarget = () => {
 const seedTargetCa = (
   db: Db,
   org: EnterpriseOrganization,
-  ca: typeof targetFixture.ca,
-  sealed: string,
+  ca: TargetFixture["ca"],
+  sealed: TargetFixture["sealed"],
 ) => {
   db.store.scep_ca.push({
     id: 1,

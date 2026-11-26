@@ -180,7 +180,9 @@ describe("plist", () => {
     });
   });
 
-  const serializerCases = (serialize: typeof serializePlist) => {
+  const serializerCases = (
+    serialize: (value: PlistValue) => Effect.Effect<string, PlistSerializeError>,
+  ) => {
     it("preserves exact XML for every supported value", async () => {
       const bytes = new Uint8Array([0, 1, 127, 128, 255]);
       const value: PlistValue = {

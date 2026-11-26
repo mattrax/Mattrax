@@ -459,7 +459,7 @@ const seedCmsSecret = async (
  * of these fixtures are read-only inputs.
  */
 const fixtureDb = () => makeDb();
-let escrowFixture: Awaited<ReturnType<typeof generateTenantEscrowKey>>;
+let escrowFixture: Effect.Success<ReturnType<typeof generateTenantEscrowKey>>;
 let wrappedForFixture: string;
 let wrappedForForeign: string;
 let uploadPair: Awaited<ReturnType<typeof escrowKeyPair>>;
