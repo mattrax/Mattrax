@@ -3,6 +3,7 @@ import { Context, DateTime, Effect, Exit, Layer, Predicate, Schema, Tracer } fro
 import { HttpApi, HttpApiBuilder, OpenApi } from "effect/http-api";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { version } from "../package.json" with { type: "json" };
+import { deviceViewSyncRoutes } from "./deviceViewRoutes.js";
 import { AuthContract, Http } from "@yielded/auth";
 import type { AuthLiveOptions } from "@mattrax/enterprise-backend";
 import {
@@ -16,7 +17,6 @@ import {
   enterpriseAdeApi,
   enterpriseAttributeApi,
   enterpriseDashboardApi,
-  enterpriseDeviceViewApi,
   enterpriseDeviceHandoverApi,
   enterpriseIdentityApi,
   enterpriseOnboardingApi,
@@ -49,7 +49,6 @@ import {
   enterpriseAdeHandlers,
   enterpriseAttributeHandlers,
   enterpriseDashboardHandlers,
-  enterpriseDeviceViewHandlers,
   enterpriseDeviceHandoverHandlers,
   enterpriseGroupHandlers,
   enterpriseHandlers,
@@ -165,6 +164,7 @@ import {
   logRequest,
   readErrorTag,
   resolveRequestId,
+  REQUEST_ID_HEADER,
   tenantIdFromPath,
   withDefaultNoStore,
   withRequestId,
@@ -337,7 +337,6 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
-  .add(enterpriseDeviceViewApi)
   .add(enterpriseDeviceHandoverApi)
   .add(enterpriseIdentityApi)
   .add(enterpriseOnboardingApi)
@@ -413,7 +412,6 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseAde", enterpriseAdeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseAttribute", enterpriseAttributeHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDashboard", enterpriseDashboardHandlers),
-  HttpApiBuilder.group(apiRoot, "EnterpriseDeviceView", enterpriseDeviceViewHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseDeviceHandover", enterpriseDeviceHandoverHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseIdentity", enterpriseIdentityHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseOnboarding", enterpriseOnboardingHandlers),
@@ -1238,6 +1236,9 @@ const makeAppLayer = (
     // Authenticated, tenant-scoped SSE invalidation. Mounted as a raw route so
     // it can return a bounded streaming body instead of an HttpApi JSON value.
     realtimeRoutes().pipe(Layer.provide(HttpServer.layerServices)),
+    ...deviceViewSyncRoutes(env).map((route) =>
+      route.pipe(Layer.provide(HttpServer.layerServices)),
+    ),
   );
 
   const scimNotifierLayer = Layer.succeed(
@@ -1669,6 +1670,27 @@ export const createApiRuntime = (
       }
 
       if (analytics.enabled) ctx.waitUntil(analytics.flush());
+
+      // A WebSocket upgrade carries its accepted socket on the native
+      // Response. The header helpers clone Responses, which would discard that
+      // socket, so copy the headers and explicitly carry `webSocket` across.
+      if (response.status === 101) {
+        const headers = new Headers(response.headers);
+        headers.set("cache-control", "no-store");
+        headers.set("x-content-type-options", "nosniff");
+        headers.set("x-frame-options", "DENY");
+        headers.set("referrer-policy", "strict-origin-when-cross-origin");
+        headers.set(REQUEST_ID_HEADER, requestId);
+        if (new URL(request.url).protocol === "https:")
+          headers.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+
+        return new Response(null, {
+          status: 101,
+          statusText: response.statusText,
+          headers,
+          webSocket: response.webSocket,
+        });
+      }
 
       response = withSessionPresence(response, {
         sessionCookieName: sessionCookie,

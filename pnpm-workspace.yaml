@@ -37,6 +37,8 @@ catalog:
   "@yielded/auth-persistence-drizzle": 0.1.0-beta.47
   "@yielded/auth-platform-workerd": 0.1.0-beta.47
   "@yielded/auth-simplewebauthn": 0.1.0-beta.47
+  "@yielded/sync": 0.1.0-beta.5
+  "@yielded/sync-platform-cloudflare": 0.1.0-beta.5
   asn1js: ^4.0.0
   cf: 1.0.0-rc.1
   class-variance-authority: ^0.7.1

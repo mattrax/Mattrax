@@ -75,6 +75,8 @@ export function tenantRoleName(tenant: TenantInfo | TenantDetail | undefined): s
 }
 
 export type TenantPermissionsApi = {
+  /** The signed-in account, once `me` has loaded. */
+  accountId: () => string | undefined;
   /** The active membership, once `me` has loaded. */
   tenant: () => TenantInfo | undefined;
   /** True when the membership is known; permission checks fail closed before then. */
@@ -105,6 +107,7 @@ export function useTenantPermissions(): TenantPermissionsApi {
   const permissions = createMemo(() => tenantPermissions(tenant()));
 
   return {
+    accountId: () => me.data?.account.id,
     tenant,
     known: () => tenant() !== undefined,
     permissions,
@@ -118,9 +121,9 @@ export function useTenantPermissions(): TenantPermissionsApi {
 
 /** Shorthand for components that only need the predicate. */
 export function useCan() {
-  const { can, canAny, canAll } = useTenantPermissions();
+  const { accountId, can, canAny, canAll } = useTenantPermissions();
 
-  return { can, canAny, canAll };
+  return { accountId, can, canAny, canAll };
 }
 
 /**

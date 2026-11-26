@@ -15,6 +15,7 @@
     "@mattrax/software": "workspace:*",
     "@xmldom/xmldom": "catalog:",
     "@yielded/auth": "catalog:",
+    "@yielded/sync": "catalog:",
     "effect": "catalog:"
   },
   "devDependencies": {

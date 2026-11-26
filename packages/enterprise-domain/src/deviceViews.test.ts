@@ -1,8 +1,13 @@
+import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
-import { reconcileDeviceViewQuery } from "./Search.ts";
-import type { DeviceViewQuery } from "./Search.ts";
+import {
+  deviceViewOwnerId,
+  deviceViewQueryWithinLimits,
+  deviceViewTenantId,
+} from "./deviceViewSync.js";
+import { DeviceViewQuery, reconcileDeviceViewQuery } from "./Search.ts";
 
-const view = (query: Partial<DeviceViewQuery> = {}): DeviceViewQuery => ({
+const view = (query: Partial<typeof DeviceViewQuery.Type> = {}): typeof DeviceViewQuery.Type => ({
   columns: ["name", "status"],
   ...query,
 });
@@ -90,5 +95,35 @@ describe("reconcileDeviceViewQuery", () => {
     expect(result.query.groupId).toBe("group-1");
     expect(result.query.attributes).toBe('{"cost_centre":"EMEA"}');
     expect(result.query.columns).toEqual(["name", "attribute:cost_centre"]);
+  });
+});
+
+describe("saved view identity", () => {
+  it("recovers the tenant id from a personal source address", () => {
+    expect(deviceViewTenantId(deviceViewOwnerId("tenant-a", "account-a"))).toBe("tenant-a");
+  });
+});
+
+describe("saved view limits", () => {
+  it("rejects oversized filter strings and too many columns", () => {
+    expect(
+      Schema.decodeUnknownOption(DeviceViewQuery)({ columns: [], q: "x".repeat(2_001) })._tag,
+    ).toBe("None");
+    expect(
+      Schema.decodeUnknownOption(DeviceViewQuery)({
+        columns: Array.from({ length: 51 }, () => "name"),
+      })._tag,
+    ).toBe("None");
+  });
+
+  it("caps the complete encoded query even when each field is valid", () => {
+    const query = Schema.decodeUnknownSync(DeviceViewQuery)({
+      q: "x".repeat(2_000),
+      query: "y".repeat(2_000),
+      attributes: "z".repeat(2_000),
+      columns: Array.from({ length: 50 }, () => "a".repeat(128)),
+    });
+
+    expect(deviceViewQueryWithinLimits(query)).toBe(false);
   });
 });

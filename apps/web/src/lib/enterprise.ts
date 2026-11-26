@@ -84,7 +84,6 @@ import type {
   DevicePreRegistrationImportRequest,
   DeviceHandoverRequest,
   DeviceSearchQuery,
-  DeviceViewQuery,
   DashboardQueryRequest,
   DashboardReportFormat,
   CreateDashboardReportRequest,
@@ -355,7 +354,6 @@ type EnterpriseApiClient = Effect.Success<ReturnType<typeof clientEffect>>["Ente
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseApplication"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseSoftwareCatalogue"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseGroup"] &
-  Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceView"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseDeviceHandover"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseWindows"] &
   Effect.Success<ReturnType<typeof clientEffect>>["EnterpriseOnboarding"] &
@@ -1033,7 +1031,6 @@ function endpoint<A, E>(
         ...client.EnterpriseApplication,
         ...client.EnterpriseSoftwareCatalogue,
         ...client.EnterpriseGroup,
-        ...client.EnterpriseDeviceView,
         ...client.EnterpriseDeviceHandover,
         ...client.EnterpriseWindows,
         ...client.EnterpriseOnboarding,
@@ -1461,58 +1458,6 @@ export const enterprise = {
   searchDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
     endpoint((api) =>
       api.searchDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
-    ),
-  /** Named device-list views visible to the caller, including their default. */
-  listDeviceViews: (tenantId: RouteParam) =>
-    endpoint((api) =>
-      api.listDeviceViews({ params: { tenantId: required(tenantId, "tenantId") } }),
-    ),
-  createDeviceView: (
-    tenantId: RouteParam,
-    payload: {
-      name: string;
-      description?: string | null;
-      visibility?: "private" | "tenant";
-      query: DeviceViewQuery;
-    },
-  ) =>
-    endpoint((api) =>
-      api.createDeviceView({ params: { tenantId: required(tenantId, "tenantId") }, payload }),
-    ),
-  patchDeviceView: (
-    tenantId: RouteParam,
-    viewId: RouteParam,
-    payload: {
-      name?: string;
-      description?: string | null;
-      visibility?: "private" | "tenant";
-      query?: DeviceViewQuery;
-    },
-  ) =>
-    endpoint((api) =>
-      api.patchDeviceView({
-        params: {
-          tenantId: required(tenantId, "tenantId"),
-          viewId: required(viewId, "viewId"),
-        },
-        payload,
-      }),
-    ),
-  deleteDeviceView: (tenantId: RouteParam, viewId: RouteParam) =>
-    endpoint((api) =>
-      api.deleteDeviceView({
-        params: {
-          tenantId: required(tenantId, "tenantId"),
-          viewId: required(viewId, "viewId"),
-        },
-      }),
-    ),
-  setDefaultDeviceView: (tenantId: RouteParam, viewId: string | null) =>
-    endpoint((api) =>
-      api.setDefaultDeviceView({
-        params: { tenantId: required(tenantId, "tenantId") },
-        payload: { viewId },
-      }),
     ),
   /** Server-paginated group list for the groups table. */
   searchGroups: (tenantId: RouteParam, query: GroupSearchQuery = {}) =>

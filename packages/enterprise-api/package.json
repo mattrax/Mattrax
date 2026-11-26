@@ -31,6 +31,7 @@
     "@mattrax/mdm-windows": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
+    "@yielded/sync": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
     "email-verification-api": "catalog:"

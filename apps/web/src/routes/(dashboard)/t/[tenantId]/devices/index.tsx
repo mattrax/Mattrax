@@ -29,8 +29,9 @@ import {
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import EntityHoverCard from "~/components/entity-hover-card";
 import EntityActions from "~/components/mdm/entity-actions";
-import { MdmTable } from "~/components/mdm/table";
+import { MdmTable, readTableColumnVisibility } from "~/components/mdm/table";
 import type { MdmColumn, MdmSortState } from "~/components/mdm/table";
+import DeviceViewsMenu from "~/components/mdm/device-views";
 import { Button } from "~/components/ui/button";
 import { Badge, EmptyState, FilterBar, Skeleton } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
@@ -69,7 +70,14 @@ import {
   formatDeviceQueryText,
   parseDeviceQueryText,
 } from "~/lib/enterprise";
-import type { DeviceHealthFilter, DeviceQuery, DeviceRow } from "~/lib/enterprise";
+import type {
+  DeviceHealthFilter,
+  DeviceQuery,
+  DeviceRow,
+  DeviceView,
+  DeviceViewQuery,
+} from "~/lib/enterprise";
+import { reconcileDeviceViewQuery } from "@mattrax/enterprise-domain/client";
 import {
   DEVICE_IMPORT_MAX_ROWS,
   parseDeviceImportCsv,
@@ -84,10 +92,18 @@ import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { collectAllMatching } from "~/lib/bulk-selection";
 import { useCan } from "~/lib/permissions";
 import { downloadBlob } from "~/lib/download";
-import { deviceFilterConditions, staleDaysValue } from "~/lib/device-view-query";
+import { toast } from "~/components/toast";
+import {
+  deviceFilterConditions,
+  hasExplicitDeviceSearch,
+  mergeActiveViewQuery,
+  resolveDeviceDefaultView,
+  staleDaysValue,
+} from "~/lib/device-view-query";
 import { resolveTenantId } from "~/lib/tenant";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
+import { deviceViewSync } from "~/lib/device-view-sync";
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -340,7 +356,7 @@ const rowGroups = (row: DeviceRow) => Option.getOrUndefined(decodeRowGroups(row)
 
 export default function DevicesPage() {
   const params = useParams();
-  const { can, canAny } = useCan();
+  const { accountId, can, canAny } = useCan();
   const [searchParams, setSearchParams] = useSearchParams();
   // One clock for every row; presence flips to offline with time, not only
   // when a new query arrives.
@@ -435,6 +451,7 @@ export default function DevicesPage() {
   const [viewColumns, setViewColumns] = createSignal<ReadonlyArray<string> | undefined>(
     initialVisibleColumns(),
   );
+  const [currentViewId, setCurrentViewId] = createSignal(search().view);
 
   // 1-based in the URL so a paged view is shareable; 0-based in state.
   const initialPage = () => {
@@ -601,6 +618,7 @@ export default function DevicesPage() {
       page: page(),
       columns: viewColumns()?.join(",") ?? "",
       pageSize: pageSize(),
+      view: currentViewId() ?? "",
     }),
     (state) => {
       if (!urlInitialised) {
@@ -653,6 +671,8 @@ export default function DevicesPage() {
 
       if (state.pageSize !== DEFAULT_PAGE_SIZE) next.pageSize = String(state.pageSize);
 
+      if (state.view) next.view = state.view;
+
       // Mirror the controls with `replaceState`, not a router navigation.
       // Search-param transitions can remount the route (resetting every
       // control, including text typed while the write was queued) and are
@@ -691,6 +711,7 @@ export default function DevicesPage() {
     page: initialPage(),
     columns: search().columns ?? "",
     pageSize: search().pageSize ?? "",
+    view: search().view ?? "",
   }));
 
   createEffect(
@@ -721,6 +742,7 @@ export default function DevicesPage() {
         page: page(),
         columns: viewColumns()?.join(",") ?? "",
         pageSize: pageSize() === DEFAULT_PAGE_SIZE ? "" : String(pageSize()),
+        view: currentViewId() ?? "",
       }));
 
       if (filters.q !== local.q) {
@@ -800,6 +822,8 @@ export default function DevicesPage() {
 
       if (filters.pageSize !== local.pageSize)
         setPageSize(filters.pageSize ? Number(filters.pageSize) : DEFAULT_PAGE_SIZE);
+
+      if (filters.view !== local.view) setCurrentViewId(filters.view || undefined);
     },
     { defer: true },
   );
@@ -864,6 +888,131 @@ export default function DevicesPage() {
     queryFn: () => enterprise.listAttributes(params.tenantId),
     placeholderData: { rows: [] },
   }));
+
+  const deviceViews = useQuery(() => ({
+    queryKey: enterpriseKeys.deviceViews(params.tenantId),
+    queryFn: () => {
+      const id = accountId();
+      const tenantId = params.tenantId;
+      if (!id || !tenantId) throw new Error("Your account is still loading.");
+      return deviceViewSync.list(tenantId, id);
+    },
+    placeholderData: { views: [] },
+    enabled: can("devices.read") && accountId() !== undefined,
+  }));
+
+  createEffect(
+    () => ({ id: accountId(), tenantId: params.tenantId, canRead: can("devices.read") }),
+    ({ id, tenantId, canRead }) => {
+      if (!id || !tenantId || !canRead) return;
+      void deviceViewSync.retain(tenantId, id).catch(() => undefined);
+      onCleanup(() => deviceViewSync.release(tenantId, id));
+    },
+  );
+
+  /** Attribute filters the URL can represent (one key/value pair). */
+  const viewAttribute = (query: DeviceViewQuery) => {
+    if (!query.attributes) return { key: "", value: "" };
+
+    try {
+      const [entry] = Object.entries(JSON.parse(query.attributes) as Record<string, string>);
+
+      return entry ? { key: entry[0], value: entry[1] } : { key: "", value: "" };
+    } catch {
+      return { key: "", value: "" };
+    }
+  };
+
+  /**
+   * Apply a saved view by writing its query into the table's controls. The URL
+   * mirror then makes the URL canonical, so a copied link reproduces the view.
+   *
+   * References to deleted groups and attributes are dropped first; the view
+   * stays applicable instead of opening an empty or failing table.
+   */
+  const applyView = (view: DeviceView) => {
+    // Placeholder rows are not evidence that a group or attribute was
+    // deleted. Only a successful read can authoritatively prune references.
+    const knownGroups = groups.isSuccess
+      ? new Set((groups.data?.rows ?? []).map((group) => group.id))
+      : undefined;
+    const knownAttributes = attributeDefinitions.isSuccess
+      ? new Set((attributeDefinitions.data?.rows ?? []).map((definition) => definition.key))
+      : undefined;
+    const reconciled = reconcileDeviceViewQuery(view.query, {
+      groupIds: knownGroups,
+      attributeKeys: knownAttributes,
+    });
+    const query = reconciled.query;
+    const attribute = viewAttribute(query);
+    const staleDays = staleDaysValue(
+      query.staleDays === undefined ? undefined : String(query.staleDays),
+    );
+
+    setQ(query.q ?? "");
+    setDebouncedQ(query.q ?? "");
+    setStatus(query.status ?? "");
+    setProto(query.proto ?? "");
+    setGroupId(query.groupId ?? "");
+    setStaleDays(staleDays ?? "");
+    setHealth(query.health ?? "");
+    setPush(query.push ?? "");
+    setLostMode(query.lostMode === "active" || query.lostMode === "inactive" ? query.lostMode : "");
+    setLocalAccount(
+      query.localAccount === "without-secure-token" || query.localAccount === "not-seen-30-days"
+        ? query.localAccount
+        : "",
+    );
+    setSetup(query.setup ?? "");
+    setNotSeenSince(query.notSeenSince ?? "");
+    setActivation(query.activation ?? "");
+    setAttributeKey(attribute.key);
+    setAttributeValue(attribute.value);
+    setDeviceQuery(parseDeviceQueryText(query.query));
+    setSort({ id: query.sort ?? "name", dir: query.direction ?? "asc" });
+    setPageSize(
+      query.pageSize && query.pageSize >= 1 && query.pageSize <= MAX_PAGE_SIZE
+        ? Math.trunc(query.pageSize)
+        : DEFAULT_PAGE_SIZE,
+    );
+    setViewColumns(query.columns.length ? query.columns : undefined);
+    setCurrentViewId(view.id);
+    setPage(0);
+
+    if (reconciled.droppedGroup)
+      toast.warning("View references a deleted group", {
+        description: "The group filter was removed; the rest of the view still applies.",
+      });
+
+    if (reconciled.droppedAttributes.length > 0 || reconciled.droppedColumns.length > 0)
+      toast.warning("View references deleted attributes", {
+        description: "Those attribute filters and columns were removed.",
+        details: [...reconciled.droppedAttributes, ...reconciled.droppedColumns],
+      });
+  };
+
+  // Restore the member's default view once, and only on a bare /devices visit.
+  // The URL at mount is latched: clearing a shared link later must not apply
+  // the default behind the operator's back. Group/attribute reads are not
+  // required — a role may hold devices.read without groups.read.
+  const explicitSearchAtMount = hasExplicitDeviceSearch(searchParams);
+  const defaultViewState = { resolved: false };
+  createEffect(
+    () => ({
+      views: deviceViews.data?.views,
+      ready: deviceViews.isSuccess,
+    }),
+    (state) => {
+      const view = state.views?.find((item) => item.isDefault);
+      const action = resolveDeviceDefaultView(defaultViewState, {
+        explicitAtMount: explicitSearchAtMount,
+        ready: state.ready,
+        hasDefault: Boolean(view),
+      });
+
+      if (action === "apply" && view) applyView(view);
+    },
+  );
 
   const filterFields = createMemo<FilterField[]>(() => {
     const attributes = (attributeDefinitions.data?.rows ?? []).filter(
@@ -1335,6 +1484,51 @@ export default function DevicesPage() {
     },
   ]);
 
+  /**
+   * Visible column ids for saving. A saved view owns the set; otherwise the
+   * table's persisted picker state is the source, so "save current view" keeps
+   * the columns the operator can actually see.
+   */
+  const currentVisibleColumns = () => {
+    const explicit = viewColumns();
+
+    if (explicit) return explicit;
+    const stored = readTableColumnVisibility("devices");
+
+    return deviceColumns()
+      .filter(
+        (column) => stored[column.id] === false || (!stored[column.id] && !column.defaultHidden),
+      )
+      .map((column) => column.id);
+  };
+
+  const currentViewQuery = (activeView?: DeviceView): DeviceViewQuery => {
+    const state = filters();
+    const current: DeviceViewQuery = {
+      q: state.q,
+      status: state.status,
+      proto: state.proto,
+      groupId: state.groupId,
+      staleDays: state.staleDays,
+      health: state.health,
+      push: state.push,
+      lostMode: state.lostMode,
+      localAccount: state.localAccount,
+      setup: state.setup,
+      notSeenSince: state.notSeenSince,
+      activation: state.activation,
+      attributes: state.attributes,
+      query: state.query,
+      sort: state.sort,
+      direction: state.direction,
+      columns: currentVisibleColumns(),
+      pageSize: pageSize(),
+    };
+
+    // Update merges the stored view so fields the table cannot edit survive.
+    return activeView ? mergeActiveViewQuery(activeView.query, current) : current;
+  };
+
   const total = () => devices.data?.total ?? 0;
   const pageCount = () => Math.max(1, Math.ceil(total() / pageSize()));
 
@@ -1398,6 +1592,7 @@ export default function DevicesPage() {
     setSort({ id: "name", dir: "asc" });
     setPageSize(DEFAULT_PAGE_SIZE);
     setViewColumns(undefined);
+    setCurrentViewId(undefined);
     setPage(0);
     // Write immediately as well as through the mirror effect so clearing is
     // reflected even if a signal happened to already hold an empty value.
@@ -1468,6 +1663,7 @@ export default function DevicesPage() {
       />
 
       <QueryError error={groups.error} onRetry={() => void groups.refetch()} />
+      <QueryError error={deviceViews.error} onRetry={() => void deviceViews.refetch()} />
 
       <Show when={exportError()}>
         <ErrorText error={exportError()} />
@@ -1530,6 +1726,17 @@ export default function DevicesPage() {
                   hideClear
                   filterExtra={
                     <>
+                      <DeviceViewsMenu
+                        tenantId={params.tenantId ?? ""}
+                        accountId={accountId() ?? ""}
+                        views={deviceViews.data?.views ?? []}
+                        currentViewId={currentViewId()}
+                        canSave={can("devices.read")}
+                        canPublish={can("devices.write")}
+                        currentQuery={currentViewQuery}
+                        onApply={applyView}
+                        onCurrentViewDeleted={() => setCurrentViewId(undefined)}
+                      />
                       <Show
                         when={deviceQuery()}
                         fallback={

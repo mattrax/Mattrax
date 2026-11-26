@@ -26,6 +26,7 @@
     "@tailwindcss/vite": "catalog:",
     "@tanstack/solid-query": "catalog:",
     "@yielded/auth": "catalog:",
+    "@yielded/sync": "catalog:",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
     "d3-geo": "catalog:",

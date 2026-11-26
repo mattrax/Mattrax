@@ -37,7 +37,6 @@ import type {
   enterpriseCutoverApi,
   enterpriseAdeApi,
   enterpriseDashboardApi,
-  enterpriseDeviceViewApi,
   enterpriseIdentityApi,
   enterpriseOnboardingApi,
   enterpriseUserApi,
@@ -163,7 +162,6 @@ import {
   compareVersionStrings,
   normalizeDeviceCommandStatus,
   DeviceActionName,
-  DeviceViewQuery,
   DashboardWidgetType,
   DashboardReportFrequency,
   WEBHOOK_EVENT_TYPES,
@@ -10145,81 +10143,6 @@ export const createEnterpriseService = ({
     });
 
   /**
-   * Validate the saved query with the same rules the search endpoint applies,
-   * so a view cannot be stored in a shape that later fails to open. Throws a
-   * tagged bad request rather than a schema error.
-   */
-  const normalizeDeviceViewQuery = (input: unknown) =>
-    Effect.gen(function* () {
-      const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(DeviceViewQuery)(input));
-
-      if (!decoded)
-        return yield* Effect.fail(
-          new EnterpriseBadRequest({ message: "The view query is not valid device filters." }),
-        );
-
-      const pageSize = decoded.pageSize === undefined ? undefined : Math.trunc(decoded.pageSize);
-
-      if (pageSize !== undefined && (pageSize < 1 || pageSize > 200))
-        return yield* Effect.fail(
-          new EnterpriseBadRequest({ message: "pageSize must be between 1 and 200" }),
-        );
-
-      yield* Effect.try({
-        try: () =>
-          normalizeDeviceSearchQuery({
-            ...decoded,
-            limit: pageSize ?? 50,
-            offset: 0,
-          }),
-        catch: (error) =>
-          Schema.is(EnterpriseBadRequest)(error)
-            ? error
-            : new EnterpriseBadRequest({ message: "The view query is not valid device filters." }),
-      });
-
-      return pageSize === undefined ? decoded : { ...decoded, pageSize };
-    });
-
-  const deviceViewName = (value: unknown) =>
-    Effect.gen(function* () {
-      const name = Schema.is(Schema.String)(value) ? value.trim() : "";
-
-      if (!name)
-        return yield* Effect.fail(new EnterpriseBadRequest({ message: "View name is required" }));
-
-      return name.slice(0, 120);
-    });
-
-  const deviceViewPublishDenied = (ctx: {
-    readonly role: { readonly roleName: string; readonly roleKind: "built-in" | "custom" };
-  }) =>
-    new EnterprisePermissionDenied({
-      message: "Your role cannot publish a view to this tenant.",
-      permission: "devices.write",
-      roleName: ctx.role.roleName,
-      roleKind: ctx.role.roleKind,
-    });
-
-  const requireDeviceView = (organizationId: string, viewId: string) =>
-    Effect.gen(function* () {
-      const [row] = yield* db
-        .select()
-        .from(schema.deviceView)
-        .where(
-          and(
-            eq(schema.deviceView.organizationId, organizationId),
-            eq(schema.deviceView.id, viewId),
-          ),
-        )
-        .limit(1);
-
-      if (!row) return yield* Effect.fail(new EnterpriseNotFound({ message: "View not found" }));
-
-      return row;
-    });
-
-  /**
    * Four-eyes approvals.
    *
    * A policy is optional. When none matches, `requireApproval` returns without
@@ -11394,6 +11317,18 @@ export const createEnterpriseService = ({
 
   const service = {
     /**
+     * Authenticate a long-lived Sync connection with the same tenant, MFA,
+     * credential-scope and role checks as an ordinary HTTP request. The
+     * source's authorize callback re-checks the operation on every action.
+     */
+    authorizeSync: (request, tenantId, permission) =>
+      requireTenant(request, tenantId, permission.endsWith(".write") ? "write" : "read").pipe(
+        Effect.provideService(RequiredPermission, {
+          permission,
+          method: "sync",
+        }),
+      ),
+    /**
      * The account and tenant shell. Kept as one helper so bootstrap reuses the
      * exact `me` payload (and its database work) instead of issuing a second
      * query set behind a `getSession` call.
@@ -11829,20 +11764,6 @@ export const createEnterpriseService = ({
                 .where(eq(schema.accountApiToken.accountId, user.id));
               yield* tx.delete(schema.invitation).where(eq(schema.invitation.inviterId, user.id));
               yield* tx.delete(schema.member).where(eq(schema.member.accountId, user.id));
-              // Private views and defaults belong to the account; tenant views
-              // are the tenant's and survive with their owner reference set null.
-              yield* tx
-                .delete(schema.deviceViewDefault)
-                .where(eq(schema.deviceViewDefault.accountId, user.id));
-              yield* tx
-                .delete(schema.deviceView)
-                .where(
-                  and(
-                    eq(schema.deviceView.createdByAccountId, user.id),
-                    eq(schema.deviceView.visibility, "private"),
-                  ),
-                );
-
               // Yielded Auth owns these tables; remove the subject's auth state.
               // In-flight passkey ceremonies carry no subject column and expire
               // on their own.
@@ -18210,25 +18131,6 @@ export const createEnterpriseService = ({
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
             yield* tx.delete(schema.member).where(eq(schema.member.id, member.id));
-            // A removed member cannot reach their private views any more; a
-            // tenant view stays for the team to manage.
-            yield* tx
-              .delete(schema.deviceViewDefault)
-              .where(
-                and(
-                  eq(schema.deviceViewDefault.organizationId, tenantId),
-                  eq(schema.deviceViewDefault.accountId, member.accountId),
-                ),
-              );
-            yield* tx
-              .delete(schema.deviceView)
-              .where(
-                and(
-                  eq(schema.deviceView.organizationId, tenantId),
-                  eq(schema.deviceView.createdByAccountId, member.accountId),
-                  eq(schema.deviceView.visibility, "private"),
-                ),
-              );
             yield* clearTenantAccountDirectoryState(tx, tenantId, member.accountId);
           }),
         );
@@ -31707,239 +31609,6 @@ export const createEnterpriseService = ({
           total: Number(total?.value ?? 0),
         };
       }),
-    listDeviceViews: (request, tenantId) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireTenant(request, tenantId);
-
-        const rows = yield* db
-          .select()
-          .from(schema.deviceView)
-          .where(
-            and(
-              eq(schema.deviceView.organizationId, ctx.organization.id),
-              or(
-                eq(schema.deviceView.visibility, "tenant"),
-                eq(schema.deviceView.createdByAccountId, ctx.account.id),
-              ),
-            ),
-          )
-          .orderBy(asc(schema.deviceView.name), asc(schema.deviceView.id));
-
-        const [defaultView] = yield* db
-          .select({ viewId: schema.deviceViewDefault.viewId })
-          .from(schema.deviceViewDefault)
-          .where(
-            and(
-              eq(schema.deviceViewDefault.organizationId, ctx.organization.id),
-              eq(schema.deviceViewDefault.accountId, ctx.account.id),
-            ),
-          )
-          .limit(1);
-
-        return {
-          views: rows.map((row) => ({
-            id: row.id,
-            name: row.name,
-            description: row.description,
-            visibility: row.visibility,
-            query: row.query,
-            createdByAccountId: row.createdByAccountId,
-            isOwner: row.createdByAccountId === ctx.account.id,
-            isDefault: defaultView?.viewId === row.id,
-            createdAt: row.createdAt.toISOString(),
-            updatedAt: row.updatedAt.toISOString(),
-          })),
-        };
-      }),
-    createDeviceView: (request, tenantId, payload) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireTenant(request, tenantId);
-        const body: {
-          name?: unknown;
-          description?: unknown;
-          visibility?: "private" | "tenant";
-          query?: unknown;
-        } = payload;
-
-        const name = yield* deviceViewName(body.name);
-        const visibility = body.visibility ?? "private";
-
-        if (visibility === "tenant" && !hasPermission(ctx.permissions, "devices.write"))
-          return yield* Effect.fail(deviceViewPublishDenied(ctx));
-
-        const query = yield* normalizeDeviceViewQuery(body.query);
-        const description =
-          Schema.is(Schema.String)(body.description) && body.description.trim()
-            ? body.description.trim().slice(0, 2000)
-            : null;
-
-        const [duplicate] = yield* db
-          .select({ id: schema.deviceView.id })
-          .from(schema.deviceView)
-          .where(
-            and(
-              eq(schema.deviceView.organizationId, ctx.organization.id),
-              eq(schema.deviceView.createdByAccountId, ctx.account.id),
-              eq(schema.deviceView.name, name),
-            ),
-          )
-          .limit(1);
-
-        if (duplicate)
-          return yield* Effect.fail(
-            new EnterpriseConflict({ message: "You already have a view with that name." }),
-          );
-
-        const viewId = id();
-        const timestamp = now();
-        yield* db.insert(schema.deviceView).values({
-          id: viewId,
-          organizationId: ctx.organization.id,
-          name,
-          description,
-          visibility,
-          query,
-          createdByAccountId: ctx.account.id,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        });
-
-        yield* audit(ctx, "device_view.created", "device_view", viewId, {
-          name,
-          visibility,
-        });
-
-        return { id: viewId };
-      }),
-    patchDeviceView: (request, tenantId, viewId, payload) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireTenant(request, tenantId);
-        const row = yield* requireDeviceView(ctx.organization.id, viewId);
-        const body: {
-          name?: unknown;
-          description?: unknown;
-          visibility?: "private" | "tenant";
-          query?: unknown;
-        } = payload;
-
-        const canManageTenant = hasPermission(ctx.permissions, "devices.write");
-
-        if (row.visibility === "tenant" && !canManageTenant)
-          return yield* Effect.fail(deviceViewPublishDenied(ctx));
-
-        if (row.visibility === "private" && row.createdByAccountId !== ctx.account.id)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "View not found" }));
-
-        if (body.visibility === "tenant" && !canManageTenant)
-          return yield* Effect.fail(deviceViewPublishDenied(ctx));
-
-        const name = body.name === undefined ? undefined : yield* deviceViewName(body.name);
-
-        if (name !== undefined && name !== row.name) {
-          const [duplicate] = yield* db
-            .select({ id: schema.deviceView.id })
-            .from(schema.deviceView)
-            .where(
-              and(
-                eq(schema.deviceView.organizationId, ctx.organization.id),
-                row.createdByAccountId
-                  ? eq(schema.deviceView.createdByAccountId, row.createdByAccountId)
-                  : isNull(schema.deviceView.createdByAccountId),
-                eq(schema.deviceView.name, name),
-              ),
-            )
-            .limit(1);
-
-          if (duplicate)
-            return yield* Effect.fail(
-              new EnterpriseConflict({ message: "You already have a view with that name." }),
-            );
-        }
-
-        const query =
-          body.query === undefined ? undefined : yield* normalizeDeviceViewQuery(body.query);
-
-        yield* db
-          .update(schema.deviceView)
-          .set({
-            name,
-            description:
-              body.description === undefined
-                ? undefined
-                : Schema.is(Schema.String)(body.description) && body.description.trim()
-                  ? body.description.trim().slice(0, 2000)
-                  : null,
-            visibility: body.visibility,
-            query,
-            updatedAt: now(),
-          })
-          .where(eq(schema.deviceView.id, row.id));
-
-        yield* audit(ctx, "device_view.updated", "device_view", row.id, {
-          fields: Object.keys(body),
-        });
-
-        return ok;
-      }),
-    deleteDeviceView: (request, tenantId, viewId) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireTenant(request, tenantId);
-        const row = yield* requireDeviceView(ctx.organization.id, viewId);
-
-        if (row.visibility === "tenant" && !hasPermission(ctx.permissions, "devices.write"))
-          return yield* Effect.fail(deviceViewPublishDenied(ctx));
-
-        if (row.visibility === "private" && row.createdByAccountId !== ctx.account.id)
-          return yield* Effect.fail(new EnterpriseNotFound({ message: "View not found" }));
-
-        yield* db.delete(schema.deviceView).where(eq(schema.deviceView.id, row.id));
-
-        yield* audit(ctx, "device_view.deleted", "device_view", row.id, {
-          name: row.name,
-          visibility: row.visibility,
-        });
-
-        return ok;
-      }),
-    setDefaultDeviceView: (request, tenantId, payload) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireTenant(request, tenantId);
-        const viewId: string | null = payload?.viewId ?? null;
-
-        if (viewId !== null) {
-          const row = yield* requireDeviceView(ctx.organization.id, viewId);
-
-          if (row.visibility === "private" && row.createdByAccountId !== ctx.account.id)
-            return yield* Effect.fail(new EnterpriseNotFound({ message: "View not found" }));
-        }
-
-        yield* db
-          .delete(schema.deviceViewDefault)
-          .where(
-            and(
-              eq(schema.deviceViewDefault.organizationId, ctx.organization.id),
-              eq(schema.deviceViewDefault.accountId, ctx.account.id),
-            ),
-          );
-
-        if (viewId !== null) {
-          const timestamp = now();
-          yield* db.insert(schema.deviceViewDefault).values({
-            id: id(),
-            organizationId: ctx.organization.id,
-            accountId: ctx.account.id,
-            viewId,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          });
-        }
-
-        yield* audit(ctx, "device_view.default_changed", "device_view", viewId, {
-          viewId,
-        });
-
-        return ok;
-      }),
     listDashboards: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
@@ -35975,36 +35644,6 @@ export const enterpriseOsPolicyHandlers = (
  * Saved device-list views. Registered against its own group so
  * `EnterpriseApi`'s generated type stays under the emitter's size limit.
  */
-export const enterpriseDeviceViewHandlers = (
-  handlers: HttpApiBuilder.Handlers.FromGroup<typeof enterpriseDeviceViewApi>,
-) =>
-  handlers
-    .handle("listDeviceViews", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.listDeviceViews(request, params.tenantId),
-      ),
-    )
-    .handle("createDeviceView", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.createDeviceView(request, params.tenantId, payload),
-      ),
-    )
-    .handle("patchDeviceView", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.patchDeviceView(request, params.tenantId, params.viewId, payload),
-      ),
-    )
-    .handle("deleteDeviceView", ({ request, params }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.deleteDeviceView(request, params.tenantId, params.viewId),
-      ),
-    )
-    .handle("setDefaultDeviceView", ({ request, params, payload }) =>
-      Effect.flatMap(EnterpriseService, (service) =>
-        service.setDefaultDeviceView(request, params.tenantId, payload),
-      ),
-    );
-
 /**
  * Paginated catalogue list handlers. Registered against `enterpriseListApi`, a
  * group separate from `EnterpriseApi` so the generated client types stay
