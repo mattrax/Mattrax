@@ -11,6 +11,7 @@
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/migrate-cli.ts",
+    "entitlements:reconcile": "tsx scripts/reconcile-entitlements.ts",
     "typecheck": "tsc --noEmit",
     "db:import-legacy": "tsx scripts/import-legacy.ts"
   },

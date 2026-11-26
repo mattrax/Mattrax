@@ -1,6 +1,6 @@
 import { ArrowRight, CircleCheck, TriangleAlert } from "@mattrax/ui";
 import { For, Show, createSignal } from "solid-js";
-import { BrandLogo } from "~/components/brand-logo";
+import BrandLogo from "~/components/brand-logo";
 import { Button } from "~/components/ui/button";
 import { authClient } from "~/lib/auth";
 import { publicPrimaryCta } from "~/lib/public-auth-cta";
@@ -101,7 +101,7 @@ function filterCount(filter: DeviceFilter): number {
   return devices.length;
 }
 
-export function Hero() {
+export default function Hero() {
   const session = authClient.useSession();
   const signedIn = () => Boolean(session().data?.user);
   const cta = () => publicPrimaryCta(session().isPending, signedIn());
@@ -117,21 +117,21 @@ export function Hero() {
     <section class="lr-hero" aria-labelledby="hero-title">
       <div class="lr-hero__glow" aria-hidden="true" />
       <div class="lr-shell lr-hero__copy">
-        <div class="lr-hero__eyebrow" style="--order:0">
+        <div class="lr-hero__eyebrow" style={{ "--order": 0 }}>
           <LandingEyebrow>MDM, without the black box</LandingEyebrow>
         </div>
 
-        <h1 id="hero-title" class="lr-hero__title" style="--order:1">
+        <h1 id="hero-title" class="lr-hero__title" style={{ "--order": 1 }}>
           <span class="lr-hero__title-muted">Every device.</span>
           <span>One clear story.</span>
         </h1>
 
-        <p class="lr-hero__lead" style="--order:2">
+        <p class="lr-hero__lead" style={{ "--order": 2 }}>
           Run Apple, Windows and Android from one control plane. See which policy won, what changed,
           and who changed it — on our cloud or yours.
         </p>
 
-        <div class="lr-hero__actions" style="--order:3">
+        <div class="lr-hero__actions" style={{ "--order": 3 }}>
           <Show
             when={cta()}
             fallback={
@@ -147,27 +147,25 @@ export function Hero() {
                 as="a"
                 href={action().href}
                 size="lg"
-                class="lr-button lr-button--primary h-auto min-h-12 rounded-full px-6"
               >
                 {action().label}
-                <ArrowRight class="lr-button__arrow" aria-hidden="true" />
+                <ArrowRight aria-hidden="true" />
               </Button>
             )}
           </Show>
-          <NoJsStartFree class="lr-button lr-button--primary h-auto min-h-12 rounded-full px-6" />
+          <NoJsStartFree />
           <Button
             as="a"
             href="mailto:hello@mattrax.app?subject=Mattrax%20for%20our%20fleet"
             variant="outline"
             size="lg"
-            class="lr-button lr-button--secondary h-auto min-h-12 rounded-full px-6"
           >
             Talk to us
           </Button>
           <LandingLink href="/docs/">Read the docs</LandingLink>
         </div>
 
-        <p class="lr-hero__note" style="--order:4">
+        <p class="lr-hero__note" style={{ "--order": 4 }}>
           Free during alpha. Apple, Windows and Android included.{" "}
           <a href="/docs/getting-started/alpha" target="_self">
             What alpha means
@@ -175,7 +173,7 @@ export function Hero() {
           .
         </p>
 
-        <ul class="lr-proof" aria-label="Supported device management protocols" style="--order:5">
+        <ul class="lr-proof" aria-label="Supported device management protocols" style={{ "--order": 5 }}>
           <For each={proofPoints}>
             {(point) => (
               <li>
@@ -284,20 +282,22 @@ export function Hero() {
                     <div class="lr-filters" role="group" aria-label="Filter sample devices">
                       <For each={filters}>
                         {(item) => (
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="sm"
                             aria-pressed={filter() === item.id ? "true" : "false"}
                             onClick={() => setFilter(item.id)}
                           >
                             {item.label}
                             <span>{filterCount(item.id)}</span>
-                          </button>
+                          </Button>
                         )}
                       </For>
                     </div>
                   </div>
 
-                  <div class="lr-device-table" aria-live="polite">
+                  <div aria-live="polite">
                     <div class="lr-device-table__header" aria-hidden="true">
                       <span>Device</span>
                       <span>Owner</span>
@@ -309,7 +309,7 @@ export function Hero() {
                       fallback={<p class="lr-device-empty">No devices in this view.</p>}
                     >
                       {(device, index) => (
-                        <div class="lr-device-row" style={`--i:${index()}`}>
+                        <div class="lr-device-row" style={{ "--i": index() }}>
                           <div class="lr-device__identity">
                             <span
                               class={`lr-device__platform lr-device__platform--${device.platform}`}

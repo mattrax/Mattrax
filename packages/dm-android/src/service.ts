@@ -11,7 +11,7 @@ import {
   SignupUrl,
 } from "./schema.js";
 import { GoogleAuth, GoogleAuthLive } from "./google.js";
-import type { GoogleError } from "./google.js";
+import type { GoogleAuthLiveOptions, GoogleError } from "./google.js";
 
 export const DEFAULT_ANDROID_MANAGEMENT_BASE_URL = "https://androidmanagement.googleapis.com/v1";
 
@@ -317,7 +317,12 @@ function policyBody(policy: Schema.JsonObject): Schema.JsonObject {
   );
 }
 
-export const AndroidManagementLive = (config: AndroidManagementConfig) => {
+export type AndroidManagementLiveOptions = GoogleAuthLiveOptions;
+
+export const AndroidManagementLive = (
+  config: AndroidManagementConfig,
+  options: AndroidManagementLiveOptions = {},
+) => {
   const baseUrl = (config.baseUrl ?? DEFAULT_ANDROID_MANAGEMENT_BASE_URL).replace(/\/+$/, "");
   const defaultProjectId = config.serviceAccount.projectId;
 
@@ -666,9 +671,11 @@ export const AndroidManagementLive = (config: AndroidManagementConfig) => {
         getOperation,
       });
     }),
-  ).pipe(Layer.provide(GoogleAuthLive(config.serviceAccount)));
+  ).pipe(Layer.provide(GoogleAuthLive(config.serviceAccount, options)));
 };
 
 /** `AndroidManagementLive` with the platform fetch client wired in. */
-export const AndroidManagementFetchLive = (config: AndroidManagementConfig) =>
-  AndroidManagementLive(config).pipe(Layer.provide(FetchHttpClient.layer));
+export const AndroidManagementFetchLive = (
+  config: AndroidManagementConfig,
+  options: AndroidManagementLiveOptions = {},
+) => AndroidManagementLive(config, options).pipe(Layer.provide(FetchHttpClient.layer));

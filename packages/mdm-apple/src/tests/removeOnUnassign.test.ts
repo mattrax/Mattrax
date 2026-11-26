@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { makeDb, tableName } from "./fake-db.js";
+import { appleIdentityCertificate, makeDb, tableName } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -15,6 +15,8 @@ const scope = {
   _tag: "device" as const,
   udid: "udid-1",
   identityCertificate: "CN=Device,OU=org-1",
+  identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
 };
 
@@ -31,12 +33,14 @@ const setup = (
         status: "enrolled",
         name: "iPhone",
         dmIdentifier: "udid-1",
+        dmIdentityFingerprint: "fingerprint-1",
         osEdition: "iOS",
         osVersion: "17.0",
         enrolledAt: at,
         lastSeenAt: at,
       },
     ],
+    [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
     [tableName(schema.deviceApple)]: [
       { deviceId: "device-1", deviceToken: "token-1", declarationMode: "legacy" },
     ],

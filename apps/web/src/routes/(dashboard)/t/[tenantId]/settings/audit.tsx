@@ -8,6 +8,7 @@ import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Badge, FilterBar, LoadingState } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { Search } from "~/components/ui/icons";
 import { enterprise, enterpriseQueries } from "~/lib/enterprise";
 import type { AuditLogEntry, AuditSearchQuery } from "~/lib/enterprise";
@@ -74,6 +75,7 @@ const KNOWN_ACTIONS = [
   "policy.deleted",
   "policy.assignments_changed",
   "application.created",
+  "application.catalogue_added",
   "group.created",
   "group.members_changed",
   "member.invited",
@@ -93,7 +95,7 @@ const KNOWN_ACTIONS = [
 ];
 
 const auditFieldClass =
-  "h-8 rounded-lg border border-input bg-surface px-2.5 text-[12.5px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  "h-8 rounded-lg border border-input bg-surface px-2.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
 const auditSelectClass = `${auditFieldClass} pr-7`;
 
@@ -553,31 +555,35 @@ export default function AuditSettingsPage() {
     <div class="grid gap-5">
       <QueryError error={log.error} onRetry={() => void log.refetch()} />
 
-      <Panel
-        title="Audit log"
-        description="Account changes and device (MDM) activity in one append-only log. Repeated device check-ins fold into a short window; enrollment, policy delivery, command results and failures are always recorded separately."
-      >
+      <Panel>
+        <p class="mb-3 text-xs leading-5 text-muted-foreground">
+          Account changes and device (MDM) activity in one append-only log. Repeated device
+          check-ins fold into a short window; enrollment, policy delivery, command results and
+          failures are always recorded separately.
+        </p>
         <div class="space-y-2.5">
           <div class="flex flex-col gap-2 xl:flex-row xl:items-center">
-            <label class="relative min-w-[18rem] flex-1">
-              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
+            <label class="relative min-w-72 flex-1">
+              <Input
                 type="search"
                 aria-label="Search audit events"
                 placeholder="Search actor, action, target or IP…"
                 value={query()}
                 onInput={(event) => setQuery(event.currentTarget.value)}
-                class={`${auditFieldClass} w-full pl-8`}
+                class="w-full"
               />
+              <span class="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 text-muted-foreground">
+                <Search class="size-3.5" />
+              </span>
             </label>
             <div class="flex flex-wrap items-center gap-1.5">
-              <input
+              <Input
                 type="search"
                 aria-label="Filter by actor"
                 placeholder="Actor email or id"
                 value={actor()}
                 onInput={(event) => setActor(event.currentTarget.value)}
-                class={`${auditFieldClass} w-[12.5rem]`}
+                class="w-50"
               />
               <select
                 aria-label="Filter by action"
@@ -615,7 +621,7 @@ export default function AuditSettingsPage() {
             <span
               role="status"
               aria-live="polite"
-              class="mr-auto text-[11px] text-muted-foreground"
+              class="mr-auto text-xs text-muted-foreground"
             >
               <Show
                 when={entries().length > 0}
@@ -678,7 +684,7 @@ export default function AuditSettingsPage() {
             <Show
               when={log.isPending}
               fallback={
-                <p class="mt-4 text-[13px] text-muted-foreground">
+                <p class="mt-4 text-xs text-muted-foreground">
                   No audit events match these filters.
                 </p>
               }
@@ -687,16 +693,16 @@ export default function AuditSettingsPage() {
             </Show>
           }
         >
-          <p class="mt-3 text-[11px] text-muted-foreground sm:hidden">
+          <p class="mt-3 text-xs text-muted-foreground sm:hidden">
             Swipe the table sideways to see action and target details.
           </p>
           <div
-            class="mt-4 max-h-[70vh] overflow-auto rounded-lg border border-border"
+            class="mt-4 max-h-96 overflow-auto rounded-lg border border-border"
             aria-busy={log.isFetching ? "true" : undefined}
           >
-            <table class="w-full min-w-[760px] text-left text-[12px]">
+            <table class="w-full min-w-76 text-left text-xs">
               <caption class="sr-only">Audit events, newest first</caption>
-              <thead class="border-b border-border bg-surface text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground">
+              <thead class="border-b border-border bg-surface text-xs uppercase tracking-widest text-muted-foreground">
                 <tr>
                   <th scope="col" class="sticky top-0 z-10 bg-popover px-2.5 py-1.5 font-medium">
                     When
@@ -733,22 +739,22 @@ export default function AuditSettingsPage() {
                     return (
                       <>
                         <tr class="transition-colors hover:bg-hover">
-                          <td class="whitespace-nowrap px-2.5 py-1.5 align-middle font-mono text-[10.5px] tabular-nums text-muted-foreground">
+                          <td class="whitespace-nowrap px-2.5 py-1.5 align-middle font-mono text-xs tabular-nums text-muted-foreground">
                             {formatDate(entry.createdAt)}
                           </td>
-                          <td class="max-w-[15rem] px-2.5 py-1.5 align-middle">
+                          <td class="max-w-60 px-2.5 py-1.5 align-middle">
                             <div class="flex min-w-0 items-center gap-1.5">
                               <Show when={entry.actorType === "system"}>
                                 <Badge variant="secondary">system</Badge>
                               </Show>
                               <span
-                                class="truncate text-[12px] font-[500] text-foreground"
+                                class="truncate text-xs font-medium text-foreground"
                                 title={auditActorLabel(entry)}
                               >
                                 {auditActorLabel(entry)}
                               </span>
                             </div>
-                            <div class="truncate text-[10px] leading-4 text-muted-foreground">
+                            <div class="truncate text-xs leading-4 text-muted-foreground">
                               {auditActorKind(entry)}
                               <Show when={entry.category}>
                                 {" · "}
@@ -779,22 +785,24 @@ export default function AuditSettingsPage() {
                               <Badge variant="secondary">{formatAuditAction(entry.action)}</Badge>
                             </span>
                           </td>
-                          <td class="max-w-[20rem] px-2.5 py-1.5 align-middle text-[11.5px] text-muted-foreground">
+                          <td class="max-w-80 px-2.5 py-1.5 align-middle text-xs text-muted-foreground">
                             <div class="flex min-w-0 items-center gap-1.5">
                               <span class="shrink-0">{entry.targetType}</span>
                               <Show when={entry.targetId}>
-                                <code class="truncate text-[11px]">{entry.targetId}</code>
+                                <code class="truncate text-xs">{entry.targetId}</code>
                               </Show>
                               <Show when={auditProtocolLabel(entry.protocol)}>
                                 {(label) => (
-                                  <span class="shrink-0 rounded border border-border px-1 py-px text-[9.5px] tracking-wide uppercase">
+                                  <span class="shrink-0 rounded border border-border px-1 py-px text-xs tracking-wide uppercase">
                                     {label()}
                                   </span>
                                 )}
                               </Show>
-                              <button
+                              <Button
                                 type="button"
-                                class="ml-auto shrink-0 rounded text-[10.5px] font-medium text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                                variant="link"
+                                size="xs"
+                                class="ml-auto shrink-0"
                                 aria-expanded={expandedEntry() === entry.id ? "true" : "false"}
                                 aria-controls={`audit-metadata-${entry.id}`}
                                 onClick={() =>
@@ -804,19 +812,19 @@ export default function AuditSettingsPage() {
                                 }
                               >
                                 {expandedEntry() === entry.id ? "Hide" : "Details"}
-                              </button>
+                              </Button>
                             </div>
                           </td>
-                          <td class="hidden px-2.5 py-1.5 align-middle font-mono text-[10.5px] text-muted-foreground md:table-cell">
+                          <td class="hidden px-2.5 py-1.5 align-middle font-mono text-xs text-muted-foreground md:table-cell">
                             {entry.ip ?? "—"}
                           </td>
-                          <td class="hidden max-w-[22rem] px-2.5 py-1.5 align-middle lg:table-cell">
+                          <td class="hidden max-w-88 px-2.5 py-1.5 align-middle lg:table-cell">
                             <Show
                               when={summary()}
-                              fallback={<span class="text-[11px] text-muted-foreground">—</span>}
+                              fallback={<span class="text-xs text-muted-foreground">—</span>}
                             >
                               <span
-                                class="block truncate text-[11px] text-muted-foreground"
+                                class="block truncate text-xs text-muted-foreground"
                                 title={summary()}
                               >
                                 {summary()}
@@ -827,7 +835,7 @@ export default function AuditSettingsPage() {
                         <Show when={expandedEntry() === entry.id}>
                           <tr id={`audit-metadata-${entry.id}`}>
                             <td colspan="6" class="bg-surface px-3 py-3">
-                              <dl class="mb-2 grid grid-cols-1 gap-x-6 gap-y-1 text-[11px] sm:grid-cols-2">
+                              <dl class="mb-2 grid grid-cols-1 gap-x-6 gap-y-1 text-xs sm:grid-cols-2">
                                 <div class="flex gap-2">
                                   <dt class="text-muted-foreground">Action</dt>
                                   <dd class="break-all font-mono">{entry.action}</dd>
@@ -867,7 +875,7 @@ export default function AuditSettingsPage() {
                                   </div>
                                 </Show>
                               </dl>
-                              <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted p-2.5 font-mono text-[11px] leading-5 text-muted-foreground">
+                              <pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border bg-muted p-2.5 font-mono text-xs leading-5 text-muted-foreground">
                                 {JSON.stringify(entry.metadata ?? {}, null, 2)}
                               </pre>
                             </td>

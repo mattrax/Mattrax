@@ -257,7 +257,7 @@ const index = [
   "",
 ];
 
-const output = new URL("../../../docs/api/reference/", import.meta.url);
+const output = new URL("../../docs/api/reference/", import.meta.url);
 
 await rm(output, { recursive: true, force: true });
 

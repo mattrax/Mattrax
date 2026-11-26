@@ -7,10 +7,16 @@
     "jsx": "preserve",
     "jsxImportSource": "@solidjs/web",
     "allowSyntheticDefaultImports": true,
+    "paths": {
+      "~/*": ["../../apps/web/src/*"]
+    },
     "noEmit": true,
     "declaration": false,
     "emitDeclarationOnly": false,
-    "composite": false
+    "composite": false,
+    "paths": {
+      "~/*": ["../../apps/web/src/*"]
+    }
   },
   "include": [
     "*.ts",

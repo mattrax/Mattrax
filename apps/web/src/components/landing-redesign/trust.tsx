@@ -14,7 +14,7 @@ const proofPoints = [
 
 type Deployment = "cloud" | "self";
 
-export function Trust() {
+export default function Trust() {
   const [deployment, setDeployment] = createSignal<Deployment>("cloud");
 
   return (
@@ -33,17 +33,16 @@ export function Trust() {
               href="mailto:hello@mattrax.app?subject=Mattrax%20security%20review"
               variant="outline"
               size="lg"
-              class="lr-button lr-button--dark h-auto min-h-11 rounded-full px-5"
             >
               Talk to us about your review
-              <ArrowRight class="lr-button__arrow" aria-hidden="true" />
+              <ArrowRight aria-hidden="true" />
             </Button>
           </div>
 
           <ul class="lr-trust__list lr-reveal" data-reveal="pending">
             <For each={proofPoints}>
               {(point, index) => (
-                <li class="lr-stagger" style={`--i:${index()}`}>
+                <li class="lr-stagger" style={{ "--i": index() }}>
                   <span aria-hidden="true">
                     <Check />
                   </span>
@@ -61,20 +60,24 @@ export function Trust() {
               <h3>Your cloud or ours. Same product.</h3>
             </div>
             <div class="lr-deploy__switch" role="group" aria-label="Deployment model">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 aria-pressed={deployment() === "cloud" ? "true" : "false"}
                 onClick={() => setDeployment("cloud")}
               >
                 Cloud
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 aria-pressed={deployment() === "self" ? "true" : "false"}
                 onClick={() => setDeployment("self")}
               >
                 Self-host
-              </button>
+              </Button>
             </div>
           </div>
 

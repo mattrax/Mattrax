@@ -1,5 +1,6 @@
 import { For, Show, createSignal } from "solid-js";
 import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
 import { installHoldProgress } from "~/lib/landing-motion";
 import { Eyebrow, SectionLink } from "./primitives";
 
@@ -56,7 +57,7 @@ function clockTime(): string {
   });
 }
 
-export function Capabilities() {
+export default function Capabilities() {
   return (
     <section id="capabilities" class="lx-section" aria-labelledby="capabilities-title">
       <div class="lx-shell">
@@ -140,9 +141,9 @@ function RemoteActionDemo() {
           Remote actions
           <span class="lx-note">Demo data · nothing is sent to a device</span>
         </p>
-        <Badge variant="outline" class="lx-demo__badge">
-          Sample device
-        </Badge>
+        <span class="lx-demo__badge">
+          <Badge variant="outline">Sample device</Badge>
+        </span>
       </div>
 
       <div class="lx-demo__body">
@@ -170,29 +171,29 @@ function RemoteActionDemo() {
           <div class="lx-actions">
             <For each={routineActions}>
               {(action) => (
-                <button
+                <Button
                   type="button"
-                  class="lx-action"
+                  variant="outline"
                   onClick={() => pushLog(action.toLowerCase(), "queued")}
                 >
                   {action}
-                </button>
+                </Button>
               )}
             </For>
 
-            <button
+            <Button
               type="button"
-              ref={(element) => {
-                wipeButton = element;
+              ref={(element: HTMLElement) => {
+                wipeButton = element as HTMLButtonElement;
               }}
-              class="lx-action lx-action--danger"
+              variant="destructive"
               aria-describedby="lx-demo-wipe-help"
               onClick={requestConfirm}
             >
               <svg class="lx-ring" viewBox="0 0 24 24" aria-hidden="true">
                 <circle class="lx-ring__track" cx="12" cy="12" r="9" />
                 <circle
-                  ref={(element) => {
+                  ref={(element: SVGCircleElement) => {
                     ring = element;
                   }}
                   class="lx-ring__fill"
@@ -202,7 +203,7 @@ function RemoteActionDemo() {
                 />
               </svg>
               Wipe
-            </button>
+            </Button>
           </div>
 
           <p id="lx-demo-wipe-help" class="lx-demo__hint">
@@ -213,29 +214,29 @@ function RemoteActionDemo() {
           <Show when={confirming()}>
             <div class="lx-confirm">
               <p>Wipe the sample device “Finance Laptop”? This demo records a log line only.</p>
-              <button
+              <Button
                 type="button"
-                class="lx-action lx-action--danger"
-                ref={(element) => {
+                variant="destructive"
+                ref={(element: HTMLElement) => {
                   queueMicrotask(() => element.focus());
                 }}
                 onClick={commitWipe}
-                onKeyDown={(event) => {
+                onKeyDown={(event: KeyboardEvent) => {
                   if (event.key === "Escape") cancelConfirm();
                 }}
               >
                 Confirm wipe
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                class="lx-action"
+                variant="outline"
                 onClick={cancelConfirm}
-                onKeyDown={(event) => {
+                onKeyDown={(event: KeyboardEvent) => {
                   if (event.key === "Escape") cancelConfirm();
                 }}
               >
                 Cancel
-              </button>
+              </Button>
             </div>
           </Show>
 

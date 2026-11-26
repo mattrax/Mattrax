@@ -22,6 +22,7 @@ import type {
   TenantExportUserAssignment,
   TenantExportUserGroupAssignment,
 } from "@mattrax/enterprise-domain";
+import { redactAuditObjectKeys } from "./tenantRestore.ts";
 import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
 
 export type TenantExportBundle = {
@@ -368,7 +369,9 @@ export const buildTenantExport = (
         targetType: entry.targetType,
         targetId: entry.targetId,
         actorEmail: entry.actorEmail,
-        metadata: entry.metadata,
+        // The archive leaves the deployment, so strip object keys here even
+        // though every read path already redacts them.
+        metadata: redactAuditObjectKeys(entry.metadata),
         createdAt: iso(entry.createdAt),
       }));
     }
@@ -512,6 +515,10 @@ export const buildTenantExport = (
       sha256: application.sha256,
       r2Key: application.r2Key,
       notes: application.notes,
+      catalogueTitleId: application.catalogueTitleId,
+      catalogueMethodId: application.catalogueMethodId,
+      catalogueTarget: application.catalogueTarget,
+      catalogueKind: application.catalogueKind,
       removeOnUnassign: application.removeOnUnassign,
       installers: (installersByApplication.get(application.id) ?? []).map((installer) => ({
         platform: installer.platform,

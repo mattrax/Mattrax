@@ -8,6 +8,35 @@ For the recorded threat model, trust boundaries and accepted risks, see
 [Threat model](/reference/threat-model). It maps each mitigation to the test suite
 that exercises it.
 
+## Certificate security
+
+Mattrax issues its own SCEP identity for device mTLS. Enterprise certificates for Wi-Fi,
+VPN and S/MIME are separate policy profiles: a trusted root, a PKCS profile or an imported
+PFX. See [Policies → Certificate profiles](/manage/policies#certificate-profiles).
+
+The PFX and its password are sealed with AES-256-GCM under `AUTH_SECRET` in a dedicated
+row. The policy configuration stores only public leaf metadata (subject, expiry,
+fingerprint) and a material digest, so the API, deployment snapshots and tenant exports
+never carry the key material. The upload is parsed as PKCS#12, the password is verified and
+the supplied leaf certificate must match a certificate in the file; metadata is derived
+from the PFX rather than trusted from the request. Restoring a tenant bundle therefore
+leaves certificate profiles without material until the PKCS#12 is uploaded again, and a
+rollback that would pair old metadata with different material is refused. Rotating
+`AUTH_SECRET` requires re-uploading certificate material, just like APNs keys and escrowed
+secrets.
+
+Two delivery copies are protected as well. Legacy Apple `InstallProfile` commands seal
+their payload in `device_command` and decrypt only at dispatch and installed-profile
+reconciliation. Windows `PFXCertBlob`/`PFXCertPassword` command payloads are sealed for the
+same reason.
+Apple identity assets are served only with the signed per-device token and after
+re-resolving that device's effective policy; a tenant-wide mTLS certificate is enough only
+for a public certificate/root asset, never for an identity.
+
+SCEP challenges are one-time and tenant-bound; SCEP CA keys are sealed with the same
+deployment secret and record retirement windows so a rotated CA can verify but never sign
+again.
+
 ## Account security
 
 Open **Account** to manage:

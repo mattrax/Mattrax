@@ -114,6 +114,19 @@ and the sign-in/register links are hidden. The login and registration pages keep
 forms; their cross-link becomes **Open dashboard**, and the sign-up warning explains that
 a second account needs a fresh sign-in.
 
+## Scope tags
+
+**Settings → Scope tags** carves a tenant into regions or teams. Tag devices,
+groups, policies, applications, scripts and dashboards, then give an
+administrator only the tags they should reach. A member with no tags is
+unscoped and sees the whole tenant; a resource with no tag is tenant-wide and is
+only visible to unscoped administrators. Owners always stay unscoped.
+
+The model, defaults, limits, audit actions and upgrade behaviour are documented
+in [Roles and permissions](./rbac.md#scope-tags). Bulk tagging is available from
+a list's selection bar, and an invitation can carry the new member's starting
+tags.
+
 ## Onboarding email
 
 Mattrax sends two transactional onboarding emails from

@@ -6,12 +6,13 @@ import { createEffect, createSignal, For, Show } from "solid-js";
 import type { EnrollmentQuestionRow } from "@mattrax/enterprise-domain/client";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
-import { QrCode } from "~/components/mdm/qr-code";
+import QrCode from "~/components/mdm/qr-code";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import { Checkbox, Switch } from "@mattrax/ui";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { CircleAlert, Info } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
-import { PasswordInput } from "~/components/ui/password-input";
+import PasswordInput from "~/components/ui/password-input";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { TenantEnrollmentInfo } from "~/lib/enterprise";
 import { optimisticallyUpdateCollection, optimisticUpdate } from "~/lib/optimistic";
@@ -20,7 +21,8 @@ import { queryClient } from "~/lib/query-client";
 import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
-import { StatusChip as Chip } from "~/components/settings/status-chip";
+import Chip from "~/components/settings/status-chip";
+import AppleByodPanel from "~/components/settings/apple-byod-panel";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -30,6 +32,7 @@ export const route = {
     // builder, pre-registrations and activity log load with the page.
     return preloadPage([
       () => queryClient.ensureQueryData(enterpriseQueries.enrollment(params.tenantId)),
+      () => queryClient.ensureQueryData(enterpriseQueries.appleByod(params.tenantId)),
       () => queryClient.ensureQueryData(enterpriseQueries.apns(params.tenantId)),
       () => queryClient.ensureQueryData(enterpriseQueries.scepCa(params.tenantId)),
       () => queryClient.ensureQueryData(enterpriseQueries.android(params.tenantId)),
@@ -460,6 +463,8 @@ export default function EnrollmentSettingsPage() {
         </div>
       </Panel>
 
+      <AppleByodPanel tenantId={params.tenantId ?? ""} canWrite={writable()} />
+
       <Panel
         title="SCEP identity"
         description="Each tenant has its own CA. Devices receive their management identity from it, and the enrollment profile is signed with it."
@@ -493,7 +498,7 @@ export default function EnrollmentSettingsPage() {
             </div>
             <div class="min-w-0 sm:col-span-2">
               <dt class="text-muted-foreground">SHA-256 fingerprint</dt>
-              <dd class="mt-0.5 break-all font-mono text-[11px] text-foreground">
+              <dd class="mt-0.5 break-all font-mono text-xs text-foreground">
                 {scepCa.data?.fingerprintSha256}
               </dd>
             </div>
@@ -560,7 +565,7 @@ export default function EnrollmentSettingsPage() {
               hint="PEM encoded. The CA must permit certificate signing."
             >
               <textarea
-                class="min-h-24 w-full rounded-lg border border-input bg-surface p-3 font-mono text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-xs"
+                class="min-h-24 w-full rounded-lg border border-input bg-surface p-3 font-mono text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 sm:text-xs"
                 aria-label="SCEP CA certificate PEM"
                 placeholder="-----BEGIN CERTIFICATE-----"
                 value={caCertificatePem()}
@@ -572,7 +577,7 @@ export default function EnrollmentSettingsPage() {
               hint="Unencrypted PKCS#8 PEM. It is sealed with the deployment secret before storage."
             >
               <textarea
-                class="min-h-24 w-full rounded-lg border border-input bg-surface p-3 font-mono text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-xs"
+                class="min-h-24 w-full rounded-lg border border-input bg-surface p-3 font-mono text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 sm:text-xs"
                 aria-label="SCEP CA private key PEM"
                 placeholder="-----BEGIN PRIVATE KEY-----"
                 value={caPrivateKeyPem()}
@@ -685,7 +690,7 @@ export default function EnrollmentSettingsPage() {
           <Show
             when={questionRows().length > 0}
             fallback={
-              <p class="text-[13px] text-muted-foreground">
+              <p class="text-xs text-muted-foreground">
                 {attributeDefinitions.isPending
                   ? "Loading attributes…"
                   : "No custom questions. Add a registered attribute to ask for it during enrollment."}
@@ -695,11 +700,11 @@ export default function EnrollmentSettingsPage() {
             <ul class="divide-y divide-border rounded-lg border border-border">
               <For each={questionRows()}>
                 {(row, index) => (
-                  <li class="grid gap-2 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-center">
+                  <li class="grid gap-2 px-3 py-2.5 sm:grid-cols-3 sm:items-center">
                     <div class="min-w-0">
-                      <p class="font-mono text-[11px] text-muted-foreground">{row.key}</p>
+                      <p class="font-mono text-xs text-muted-foreground">{row.key}</p>
                       <Input
-                        class="mt-1 h-8 text-[12.5px]"
+                        class="mt-1 h-8"
                         disabled={!writable()}
                         value={row.prompt}
                         placeholder="Question shown at enrollment"
@@ -714,16 +719,15 @@ export default function EnrollmentSettingsPage() {
                         }
                       />
                     </div>
-                    <label class="flex items-center gap-2 text-[12px]">
-                      <input
-                        type="checkbox"
+                    <label class="flex items-center gap-2 text-xs">
+                      <Checkbox
                         disabled={!writable()}
                         checked={row.required === true}
-                        onChange={(event) =>
+                        onCheckedChange={(checked) =>
                           setQuestionRows(
                             questionRows().map((candidate, position) =>
                               position === index()
-                                ? { ...candidate, required: event.currentTarget.checked }
+                                ? { ...candidate, required: checked === true }
                                 : candidate,
                             ),
                           )
@@ -735,14 +739,14 @@ export default function EnrollmentSettingsPage() {
                       <Button
                         variant="ghost"
                         size="xs"
-                        class="justify-self-start text-destructive hover:bg-destructive/10 sm:justify-self-end"
+                        class="justify-self-start sm:justify-self-end"
                         onClick={() =>
                           setQuestionRows(
                             questionRows().filter((_, position) => position !== index()),
                           )
                         }
                       >
-                        Remove
+                        <span class="text-destructive">Remove</span>
                       </Button>
                     </Show>
                   </li>
@@ -754,7 +758,7 @@ export default function EnrollmentSettingsPage() {
           <Show when={writable() && addableQuestions().length > 0}>
             <div class="flex flex-wrap items-center gap-2">
               <select
-                class="h-8 min-w-48 rounded-lg border border-input bg-transparent px-2 text-[12.5px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30"
+                class="h-8 min-w-48 rounded-lg border border-input bg-transparent px-2 text-xs text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30"
                 aria-label="Add an enrollment question"
                 value=""
                 onChange={(event) => {
@@ -822,7 +826,7 @@ export default function EnrollmentSettingsPage() {
         <Show
           when={(preRegistrations.data?.rows.length ?? 0) > 0}
           fallback={
-            <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">
+            <p class="px-4 py-6 text-xs text-muted-foreground sm:px-5">
               {preRegistrations.isPending
                 ? "Loading pre-registrations…"
                 : "No devices are pre-registered yet."}
@@ -832,7 +836,7 @@ export default function EnrollmentSettingsPage() {
           <ul class="divide-y divide-border">
             <For each={preRegistrations.data?.rows.slice(0, 5) ?? []}>
               {(row) => (
-                <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[13px] sm:px-5">
+                <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-xs sm:px-5">
                   <span class="font-medium text-foreground">{row.serial}</span>
                   <span class="text-muted-foreground">{row.name ?? "Unnamed"}</span>
                   <Show when={row.assetTag}>
@@ -879,7 +883,7 @@ export default function EnrollmentSettingsPage() {
         <Show
           when={(attempts.data?.attempts.length ?? 0) > 0}
           fallback={
-            <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">
+            <p class="px-4 py-6 text-xs text-muted-foreground sm:px-5">
               {attempts.isPending
                 ? "Loading enrollment activity…"
                 : "No enrollment attempts recorded yet."}
@@ -889,7 +893,7 @@ export default function EnrollmentSettingsPage() {
           <ul class="divide-y divide-border">
             <For each={attempts.data?.attempts ?? []}>
               {(attempt) => (
-                <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-[13px] sm:px-5">
+                <li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-xs sm:px-5">
                   <Chip tone={outcomeTone(attempt.outcome)} class="shrink-0">
                     {outcomeLabel(attempt.outcome)}
                   </Chip>
@@ -993,7 +997,7 @@ function Callout(props: { tone: "warning" | "danger"; children: JSX.Element }) {
 function ReadinessRow(props: { label: string; value: string; active: boolean }) {
   return (
     <div class="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-      <span class="text-[13px] text-foreground">{props.label}</span>
+      <span class="text-xs text-foreground">{props.label}</span>
       <Chip tone={props.active ? "success" : "neutral"}>{props.value}</Chip>
     </div>
   );
@@ -1010,7 +1014,7 @@ function ToggleRow(props: {
     <label class="flex cursor-pointer items-start justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
       <span class="min-w-0">
         <span class="flex flex-wrap items-center gap-2">
-          <span class="text-[13px] font-medium text-foreground">{props.title}</span>
+          <span class="text-xs font-medium text-foreground">{props.title}</span>
           <Show when={props.badge}>
             <Chip tone="warning">{props.badge}</Chip>
           </Show>
@@ -1021,22 +1025,12 @@ function ToggleRow(props: {
           </span>
         </Show>
       </span>
-      <span class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center">
-        <input
-          type="checkbox"
-          class="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
-          checked={props.checked}
-          onChange={(e) => props.onChange(e.currentTarget.checked)}
-        />
-        <span
-          aria-hidden="true"
-          class="h-5 w-9 rounded-full border border-border bg-hover transition-colors duration-150 peer-checked:border-brand peer-checked:bg-brand-solid peer-focus-visible:ring-2 peer-focus-visible:ring-ring/60 peer-disabled:opacity-50"
-        />
-        <span
-          aria-hidden="true"
-          class="pointer-events-none absolute left-0.5 top-0.5 size-3.5 rounded-full bg-card shadow-sm transition-transform duration-150 peer-checked:translate-x-[1.125rem] peer-disabled:opacity-50"
-        />
-      </span>
+      <Switch
+        class="mt-0.5"
+        checked={props.checked}
+        onCheckedChange={(checked) => props.onChange(checked === true)}
+        aria-label={props.title}
+      />
     </label>
   );
 }

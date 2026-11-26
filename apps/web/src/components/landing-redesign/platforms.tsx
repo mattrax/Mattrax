@@ -29,7 +29,7 @@ const platforms = [
   },
 ];
 
-export function Platforms() {
+export default function Platforms() {
   return (
     <section id="platforms" class="lr-section lr-platforms" aria-labelledby="platforms-title">
       <div class="lr-shell">
@@ -52,7 +52,7 @@ export function Platforms() {
                 target="_self"
                 class="lr-platform-card lr-reveal"
                 data-reveal="pending"
-                style={`--i:${index()}`}
+                style={{ "--i": index() }}
               >
                 <div class="lr-platform-card__top">
                   <span class="lr-platform-card__glyph" aria-hidden="true">

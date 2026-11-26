@@ -4,7 +4,7 @@ import { schema } from "@mattrax/enterprise-core";
 import { sealSecret } from "@mattrax/crypto";
 import { AppleDeviceEvent, MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { dbRows, makeDb, tableName } from "./fake-db.js";
+import { appleIdentityCertificate, dbRows, makeDb, tableName } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -38,6 +38,7 @@ const setup = () => {
         updatedAt: now,
       },
     ],
+    [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate({ deviceId: null })],
   });
 
   // SAFETY: the fake store implements only the query chains this test exercises.
@@ -51,6 +52,7 @@ const scope = {
   udid: "udid-ade-1",
   identityCertificate: "CN=Device,OU=org-1",
   identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
 };
 

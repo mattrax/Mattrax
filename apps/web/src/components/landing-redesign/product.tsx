@@ -1,5 +1,6 @@
 import { Check, CircleCheck } from "@mattrax/ui";
 import { For, Show, createSignal } from "solid-js";
+import { Button } from "~/components/ui/button";
 import { Activity, BookOpen } from "~/components/ui/icons";
 import { LandingEyebrow, LandingLink } from "./primitives";
 
@@ -46,11 +47,11 @@ const views: ReadonlyArray<{ id: TraceView; label: string }> = [
   { id: "audit", label: "Audit trail" },
 ];
 
-export function Product() {
+export default function Product() {
   const [view, setView] = createSignal<TraceView>("resolution");
 
   return (
-    <section id="product" class="lr-section lr-product" aria-labelledby="product-title">
+    <section id="product" class="lr-section" aria-labelledby="product-title">
       <div class="lr-shell">
         <div class="lr-section__head lr-reveal" data-reveal="pending">
           <div>
@@ -66,7 +67,7 @@ export function Product() {
         <div class="lr-steps lr-reveal" data-reveal="pending">
           <For each={steps}>
             {(step, index) => (
-              <article class="lr-step lr-stagger" style={`--i:${index()}`}>
+              <article class="lr-step lr-stagger" style={{ "--i": index() }}>
                 <div class="lr-step__number">{step.number}</div>
                 <p class="lr-step__label">{step.label}</p>
                 <h3>{step.title}</h3>
@@ -90,13 +91,15 @@ export function Product() {
             <div class="lr-trace__views" role="group" aria-label="Policy trace view">
               <For each={views}>
                 {(item) => (
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     aria-pressed={view() === item.id ? "true" : "false"}
                     onClick={() => setView(item.id)}
                   >
                     {item.label}
-                  </button>
+                  </Button>
                 )}
               </For>
             </div>

@@ -1,7 +1,12 @@
-import { Effect, Layer, Schema } from "effect";
+import { ByteSize, Cause, Effect, Layer, Schema } from "effect";
 import type { HttpApiBuilder } from "effect/http-api";
 import type { HttpServerRequest } from "effect/http";
-import { HttpServerResponse, HttpRouter } from "effect/http";
+import {
+  HttpServerError,
+  HttpServerRequest as HttpServerRequestModule,
+  HttpServerResponse,
+  HttpRouter,
+} from "effect/http";
 import { AppleMdmService, appleCheckinScope } from "./service.js";
 import { MDM_ASSET_CACHE_CONTROL, MDM_PROFILE_CACHE_CONTROL } from "./cache.js";
 import { parsePlist, serializePlist, PlistValue } from "@mattrax/plist";
@@ -23,6 +28,9 @@ import type { appleMdmApi } from "./domain.js";
 import type { CheckinScope } from "@mattrax/management-backend";
 
 const PlistDictionary = Schema.Record(Schema.String, PlistValue);
+
+/** Apple check-in and command-result plists are small; cap them before CMS verification. */
+export const APPLE_MDM_MAX_BODY_SIZE = ByteSize.mebibytes(1);
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
@@ -102,7 +110,7 @@ type CheckinFailure = {
 // Raw MDM checkin/command handler — registered outside HttpApiBuilder so that
 // Apple's "application/x-apple-aspen-mdm-checkin" / "application/x-apple-aspen-mdm"
 // content types pass through without a 415 from the framework.
-function handleMdm(request: HttpServerRequest.HttpServerRequest) {
+function handleMdm(request: HttpServerRequest.HttpServerRequest, maxBodySize: ByteSize.ByteSize) {
   const clientIp = headerString(request.headers["x-mattrax-client-address"]);
 
   const userAgent = headerString(request.headers["user-agent"])?.slice(0, 512);
@@ -131,7 +139,10 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
     const service = yield* AppleMdmService;
 
     const handle = Effect.gen(function* () {
-      const buf = yield* request.arrayBuffer;
+      fail("body", "body_read_failed");
+      const buf = yield* request.arrayBuffer.pipe(
+        Effect.provideService(HttpServerRequestModule.MaxBodySize, maxBodySize),
+      );
 
       const verifiedSignature = yield* service.verifyDeviceSignature({
         signature: request.headers["mdm-signature"],
@@ -495,6 +506,13 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
         onSuccess: (value) => Effect.succeed(value),
         onFailure: (err) =>
           Effect.gen(function* () {
+            if (
+              HttpServerError.isHttpServerError(err) &&
+              err.reason._tag === "RequestParseError" &&
+              err.reason.reason === "BodyTooLarge"
+            )
+              return HttpServerResponse.empty({ status: 413 });
+
             if (err instanceof DeviceUnenrolled) return HttpServerResponse.empty({ status: 410 });
 
             // A rejected check-in is a security event: record which device,
@@ -513,7 +531,12 @@ function handleMdm(request: HttpServerRequest.HttpServerRequest) {
                 clientIp,
                 userAgent,
               })
-              .pipe(Effect.catchCause(() => Effect.void));
+              .pipe(
+                Effect.catchCauseIf(
+                  (cause) => !Cause.hasInterrupts(cause),
+                  () => Effect.void,
+                ),
+              ) as Effect.Effect<void>;
 
             console.error("mdm error:", err);
 
@@ -659,9 +682,12 @@ function handleProfile(request: HttpServerRequest.HttpServerRequest) {
   );
 }
 
-export const appleMdmRoutes = Layer.mergeAll(
-  HttpRouter.add("PUT", "/mdm/apple/mdm", handleMdm),
-  HttpRouter.add("GET", "/mdm/apple/assets/:identifier", handleAsset),
-  HttpRouter.add("GET", "/mdm/apple/manifests/:identifier", handleManifest),
-  HttpRouter.add("GET", "/mdm/apple/profiles/:deviceToken/:policyId/:kind", handleProfile),
-);
+export const appleMdmRoutesWith = (maxBodySize = APPLE_MDM_MAX_BODY_SIZE) =>
+  Layer.mergeAll(
+    HttpRouter.add("PUT", "/mdm/apple/mdm", (request) => handleMdm(request, maxBodySize)),
+    HttpRouter.add("GET", "/mdm/apple/assets/:identifier", handleAsset),
+    HttpRouter.add("GET", "/mdm/apple/manifests/:identifier", handleManifest),
+    HttpRouter.add("GET", "/mdm/apple/profiles/:deviceToken/:policyId/:kind", handleProfile),
+  );
+
+export const appleMdmRoutes = appleMdmRoutesWith();

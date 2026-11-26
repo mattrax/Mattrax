@@ -620,6 +620,26 @@ export const windowsLapsResetNeedsPoll = (value: string | null | undefined): boo
   windowsLapsResetStatusKind(value) === "pending";
 
 /**
+ * Terminal parent outcome for a rotation status value, or null while the device
+ * is still working. The check-in uses this to close the Exec that the status
+ * Get belongs to, so `rotationInProgress` clears.
+ */
+export const windowsRotationTerminalOutcome = (
+  kind: "laps" | "bitlocker",
+  value: string | null | undefined,
+): "succeeded" | "failed" | null => {
+  const status =
+    kind === "bitlocker"
+      ? windowsBitlockerRotationStatusKind(value)
+      : windowsLapsResetStatusKind(value);
+
+  if (status === "succeeded") return "succeeded";
+  if (status === "failed") return "failed";
+
+  return null;
+};
+
+/**
  * Whether the next check-in should queue another status Get. The first poll is
  * queued when no status row exists; later polls stop on terminal success or
  * failure, and a 24-hour deadline stops a permanently failing device.

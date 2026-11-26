@@ -21,8 +21,21 @@ export const runApiEffect = <A, E>(effect: Effect.Effect<A, E, ApiClient>): Prom
  * failure use apiEffect with an injected ApiClient Layer instead.
  */
 export const fetchApi = async (request: Request): Promise<Response> => {
+  const url = new URL(request.url);
+  const headers = new Headers(request.headers);
+  const publicHost = request.headers.get("host")?.trim() || url.host;
+
+  // The API may be reached over a loopback or service-binding URL that loses
+  // the browser's host. Only this Worker may assert the public host, so an
+  // incoming value is discarded first. Apple BYOD discovery uses it to resolve
+  // the tenant and to build the BaseURL on the domain the device requested.
+  headers.delete("x-mattrax-public-host");
+  headers.delete("x-mattrax-public-origin");
+  headers.set("x-mattrax-public-host", publicHost);
+  headers.set("x-mattrax-public-origin", `${url.protocol}//${publicHost}`);
+
   try {
-    return await apiRuntime().runPromise(apiEffect(request));
+    return await apiRuntime().runPromise(apiEffect(new Request(request, { headers })));
   } catch (error) {
     console.error("[web] API request failed", error);
 

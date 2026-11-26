@@ -216,6 +216,11 @@ const AUDIT_TITLES = {
   "mdm.failure": "MDM request failed",
   "device_pre_registration.imported": "Enrollment pre-registration imported",
   "device_pre_registration.updated": "Enrollment pre-registration updated",
+  "restricted_software.violation_detected": "Restricted software detected",
+  "restricted_software.violation_resolved": "Restricted software removed",
+  "restricted_software.enforced": "Restricted software enforced",
+  "restricted_software.enforcement_failed": "Restricted software enforcement failed",
+  "restricted_software.enforcement_skipped": "Restricted software enforcement skipped",
 } satisfies Record<string, string>;
 
 const AUDIT_TITLE_BY_ACTION = new Map(Object.entries(AUDIT_TITLES));
@@ -254,6 +259,18 @@ const auditDetail = (row: AuditRow) => {
   const deviceName = trimmed(metadata.deviceName, 80);
 
   if (deviceName) parts.push(`Name: ${deviceName}`);
+
+  const ruleName = trimmed(metadata.ruleName, 80);
+
+  if (ruleName) parts.push(`Rule: ${ruleName}`);
+
+  const bundleId = trimmed(metadata.bundleId, 160);
+
+  if (bundleId) parts.push(bundleId);
+
+  const enforcement = trimmed(metadata.enforcement, 20);
+
+  if (enforcement) parts.push(`enforcement: ${enforcement}`);
 
   const lockScreenMessage = trimmed(metadata.lockScreenMessage, 120);
 

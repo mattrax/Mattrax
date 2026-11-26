@@ -1,12 +1,10 @@
-import { Capabilities } from "~/components/landing-redesign/capabilities";
-import { Hero } from "~/components/landing-redesign/hero";
-import { Platforms } from "~/components/landing-redesign/platforms";
-import { Product } from "~/components/landing-redesign/product";
-import { Trust } from "~/components/landing-redesign/trust";
+import Capabilities from "~/components/landing-redesign/capabilities";
+import Hero from "~/components/landing-redesign/hero";
+import Platforms from "~/components/landing-redesign/platforms";
+import Product from "~/components/landing-redesign/product";
+import Trust from "~/components/landing-redesign/trust";
 import { Closing, Faq, Pricing } from "~/components/landing/convert";
 import { installReveals } from "~/lib/landing-motion";
-import "../../landing.css";
-import "../../landing-redesign.css";
 
 export default function Page() {
   installReveals();

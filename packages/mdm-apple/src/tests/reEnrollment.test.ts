@@ -145,6 +145,30 @@ describe("Apple device re-enrollment", () => {
     });
   });
 
+  it("reclaims an unenrolled legacy row with no identity fingerprint", async () => {
+    const { db, backend } = setup({
+      [tableName(schema.device)]: [
+        device({
+          id: "existing-device",
+          status: "unenrolled",
+          serial: "C02A",
+          dmIdentifier: "old-udid",
+          dmIdentityFingerprint: null,
+        }),
+      ],
+    });
+
+    await run(backend.appleDeviceEvent(scope("new-udid"), authenticate()));
+
+    expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
+    expect(dbRows(db, tableName(schema.device))[0]).toMatchObject({
+      id: "existing-device",
+      status: "enrolling",
+      dmIdentifier: "new-udid",
+      dmIdentityFingerprint: "fingerprint-new-udid",
+    });
+  });
+
   it("preserves same-tenant relations when reclaiming a pre-registered serial", async () => {
     const { db, backend } = setup({
       [tableName(schema.device)]: [

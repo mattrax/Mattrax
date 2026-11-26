@@ -9,6 +9,7 @@ import {
   BillingWebhookError,
   billingWebhookRoutes,
   processStripeWebhook,
+  tenantEntitlement,
 } from "@mattrax/enterprise-billing";
 import { makeServicesDb as makeDb, runEffect } from "./helpers.js";
 
@@ -115,8 +116,8 @@ const makeLedgerDb = () => {
   const db = makeDb();
   const insert = db.insert.bind(db);
 
-  db.insert = (table: any) => {
-    const builder = insert(table);
+  db.insert = ((table: any) => {
+    const builder: any = insert(table);
 
     if (table !== servicesSchema.stripeEvent) return builder;
 
@@ -132,7 +133,7 @@ const makeLedgerDb = () => {
     };
 
     return builder;
-  };
+  }) as typeof db.insert;
 
   return db;
 };
@@ -141,8 +142,10 @@ const makeFailingLedgerDb = (error: unknown) => {
   const db = makeDb();
   const insert = db.insert.bind(db);
 
-  db.insert = (table: any) =>
-    table === servicesSchema.stripeEvent ? { values: () => Effect.fail(error) } : insert(table);
+  db.insert = ((table: any) =>
+    table === servicesSchema.stripeEvent
+      ? { values: () => Effect.fail(error) }
+      : insert(table)) as typeof db.insert;
 
   return db;
 };
@@ -342,6 +345,7 @@ describe("Stripe subscription lifecycle", () => {
         cancelAtPeriodEnd: false,
         createdAt: now,
         updatedAt: now,
+        entitlementRevision: 1,
       },
     ]);
   });
@@ -406,6 +410,7 @@ describe("Stripe subscription lifecycle", () => {
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "past_due",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -420,10 +425,16 @@ describe("Stripe subscription lifecycle", () => {
     };
 
     await deliverEvent(db, "invoice.paid", invoice);
-    expect(db.store.services_subscription[0]).toMatchObject({ status: "active" });
+    expect(db.store.services_subscription[0]).toMatchObject({
+      status: "active",
+      entitlementRevision: 1,
+    });
 
     await deliverEvent(db, "invoice.payment_failed", { ...invoice, status: "open" });
-    expect(db.store.services_subscription[0]).toMatchObject({ status: "past_due" });
+    expect(db.store.services_subscription[0]).toMatchObject({
+      status: "past_due",
+      entitlementRevision: 2,
+    });
     expect(db.store.services_subscription).toHaveLength(1);
   });
 
@@ -437,6 +448,7 @@ describe("Stripe subscription lifecycle", () => {
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "canceled",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -460,6 +472,62 @@ describe("Stripe subscription lifecycle", () => {
     await expect(
       deliverEvent(db, "customer.created", { id: "cus_1", object: "customer" }),
     ).resolves.toEqual({ ignored: true });
+  });
+
+  it("increments the entitlement revision for each committed subscription mutation", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+
+    await deliverEvent(db, "customer.subscription.created", subscription());
+    expect(db.store.services_subscription[0]).toMatchObject({ entitlementRevision: 1 });
+
+    await deliverEvent(db, "customer.subscription.updated", subscription({ status: "past_due" }));
+    expect(db.store.services_subscription[0]).toMatchObject({
+      status: "past_due",
+      entitlementRevision: 2,
+    });
+  });
+
+  it("reloads the committed revision for the post-commit entitlement push", async () => {
+    const db = makeDb();
+    const pushed: Array<{ revision: number; status: string }> = [];
+    seedOrganization(db, "org-1", "cus_1");
+
+    await deliverEvent(db, "customer.subscription.created", subscription(), {
+      onApplied: (result, servicesDb) =>
+        Effect.gen(function* () {
+          if (!result.tenantId) return;
+          const entitlement = yield* tenantEntitlement(servicesDb, result.tenantId);
+          if (entitlement)
+            pushed.push({ revision: entitlement.revision, status: entitlement.status });
+        }),
+    });
+
+    expect(pushed).toEqual([{ revision: 1, status: "active" }]);
+  });
+
+  it("locks the exact subscription row before mutating its revision", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+    const select = db.select.bind(db);
+    const locks: string[] = [];
+
+    db.select = ((fields?: any) => {
+      const builder: any = select(fields);
+      const lock = builder.for.bind(builder);
+
+      builder.for = (strength: string) => {
+        locks.push(strength);
+        return lock(strength);
+      };
+
+      return builder;
+    }) as typeof db.select;
+
+    await deliverEvent(db, "customer.subscription.updated", subscription());
+
+    expect(locks).toEqual(["update", "update"]);
+    expect(db.store.services_subscription[0]).toMatchObject({ entitlementRevision: 1 });
   });
 });
 
@@ -553,6 +621,74 @@ describe("Stripe Checkout completion", () => {
     expect(db.store.services_stripe_event).toHaveLength(1);
     expect(db.store.services_subscription).toHaveLength(1);
   });
+
+  it("allows replacement only through a validated Checkout completion", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+    db.store.services_subscription.push({
+      id: "local-sub",
+      plan: "device",
+      tenantId: "org-1",
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_old",
+      status: "canceled",
+      entitlementRevision: 4,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expect(
+      deliverEvent(
+        db,
+        "checkout.session.completed",
+        checkoutSession({ subscription: "sub_new", metadata: { organizationId: "org-1" } }),
+      ),
+    ).resolves.toMatchObject({ tenantId: "org-1" });
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_new",
+      status: "active",
+      entitlementRevision: 5,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(
+        db,
+        "customer.subscription.updated",
+        subscription({ id: "sub_old", status: "active" }),
+      ),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_new",
+      status: "active",
+      entitlementRevision: 5,
+    });
+  });
+
+  it("rejects Checkout that names another tenant's recorded subscription", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+    seedOrganization(db, "org-2", "cus_2");
+    db.store.services_subscription.push({
+      id: "local-sub-2",
+      plan: "device",
+      tenantId: "org-2",
+      stripeCustomerId: "cus_2",
+      stripeSubscriptionId: "sub_2",
+      status: "active",
+      entitlementRevision: 1,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(db, "checkout.session.completed", checkoutSession({ subscription: "sub_2" })),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({ tenantId: "org-2" });
+  });
 });
 
 describe("Stripe webhook tenant resolution", () => {
@@ -611,6 +747,7 @@ describe("Stripe webhook tenant resolution", () => {
       stripeCustomerId: "cus_2",
       stripeSubscriptionId: "sub_2",
       status: "active",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -646,6 +783,7 @@ describe("Stripe webhook tenant resolution", () => {
       stripeCustomerId: "cus_2",
       stripeSubscriptionId: "sub_2",
       status: "active",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -670,6 +808,70 @@ describe("Stripe webhook tenant resolution", () => {
     });
   });
 
+  it("rejects a stale invoice subscription id instead of falling back to the tenant row", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+    db.store.services_subscription.push({
+      id: "local-sub",
+      plan: "device",
+      tenantId: "org-1",
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(db, "invoice.paid", {
+        id: "in_stale",
+        object: "invoice",
+        customer: "cus_1",
+        subscription: "sub_replaced",
+        status: "paid",
+      }),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+    });
+  });
+
+  it("rejects a stale subscription id instead of replacing the tenant's current pointer", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+    db.store.services_subscription.push({
+      id: "local-sub",
+      plan: "device",
+      tenantId: "org-1",
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(
+        db,
+        "customer.subscription.updated",
+        subscription({ id: "sub_replaced", status: "active" }),
+      ),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+    });
+  });
+
   it("keeps tenants isolated when two organizations both have subscriptions", async () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
@@ -681,6 +883,7 @@ describe("Stripe webhook tenant resolution", () => {
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "active",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -906,15 +1109,15 @@ describe("POST /api/v1/billing/webhook", () => {
     seedOrganization(db, "org-1", "cus_1");
     const update = db.update.bind(db);
 
-    db.update = (table: any) => {
-      const builder = update(table);
+    db.update = ((table: any) => {
+      const builder: any = update(table);
 
       if (table !== servicesSchema.stripeEvent) return builder;
 
       const set = builder.set.bind(builder);
 
       builder.set = (patch: any) => {
-        const next = set(patch);
+        const next: any = set(patch);
 
         next.where = (_condition: any) =>
           Effect.fail(
@@ -932,7 +1135,7 @@ describe("POST /api/v1/billing/webhook", () => {
       };
 
       return builder;
-    };
+    }) as typeof db.update;
 
     const payload = JSON.stringify(event("customer.subscription.created", subscription()));
     const response = await makeHandler(db)(

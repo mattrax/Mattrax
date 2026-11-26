@@ -8,7 +8,7 @@ import { LoadingState } from "@mattrax/ui";
 import { AppShell } from "~/components/app-shell";
 import { PageErrorFallback } from "~/components/error-boundary";
 import { QueryError } from "~/components/mdm/common";
-import { StepUpDialog } from "~/components/step-up-dialog";
+import StepUpDialog from "~/components/step-up-dialog";
 import { authClient } from "~/lib/auth";
 import { queryClient } from "~/lib/query-client";
 import { broadcastCacheReset, setCrossTabTenant } from "~/lib/cross-tab-sync";
@@ -20,6 +20,12 @@ import { resetMePreload } from "~/lib/me-preload";
 import { reportGlobalError } from "~/lib/global-errors";
 import { syncPostHogTenant, syncPostHogUser } from "~/lib/posthog";
 import { clearSessionPresence, readSessionPresence } from "~/lib/session-presence";
+
+/** Read account data only after success so a held /me cannot suspend the shell. */
+const settledQueryData = <T,>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined => (query.isSuccess ? query.data : undefined);
 
 function DashboardBootScreen() {
   return (
@@ -36,7 +42,7 @@ function DashboardBootScreen() {
  * leaving it unmounted until the first keypress would break keyboard users.
  */
 const LazyCommandPalette = lazy(() =>
-  import("~/components/command-palette").then((module) => ({ default: module.CommandPalette })),
+  import("~/components/command-palette"),
 );
 
 const loadCommandPalette = () => import("~/components/command-palette");
@@ -121,14 +127,14 @@ function DashboardLayout(props: ParentProps) {
 
   const shellUser = () =>
     session().data?.user ??
-    (session().isPending && presenceActive() ? me.data?.account : undefined);
+    (session().isPending && presenceActive() ? settledQueryData(me)?.account : undefined);
 
   createEffect(
     () => ({
       pending: session().isPending,
       user: session().data?.user,
       verification: emailVerificationGate({
-        meVerified: me.data?.account.emailVerified,
+        meVerified: settledQueryData(me)?.account.emailVerified,
         sessionVerified: session().data?.user?.emailVerified,
         meFetching: me.isFetching,
       }),
@@ -191,7 +197,7 @@ function DashboardLayout(props: ParentProps) {
       const key = /^\/t\/([^/]+)/.exec(location.pathname)?.[1];
 
       const tenant = key
-        ? me.data?.tenants.find((entry) => entry.id === key || entry.slug === key)
+        ? settledQueryData(me)?.tenants.find((entry) => entry.id === key || entry.slug === key)
         : undefined;
 
       return {
@@ -236,7 +242,7 @@ function DashboardLayout(props: ParentProps) {
     >
       {(user) => (
         <Show
-          when={!me.isError || me.data}
+          when={!me.isError || settledQueryData(me)}
           fallback={
             <div class="flex min-h-svh items-center justify-center bg-background p-6 text-foreground">
               <QueryError

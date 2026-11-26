@@ -14,7 +14,7 @@ export function LandingLink(props: { href: string; children: JSX.Element; class?
   return (
     <a href={props.href} target="_self" class={`lr-link ${props.class ?? ""}`}>
       {props.children}
-      <ArrowRight class="lr-link__arrow" aria-hidden="true" />
+      <ArrowRight aria-hidden="true" />
     </a>
   );
 }

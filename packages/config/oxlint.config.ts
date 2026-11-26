@@ -237,6 +237,22 @@ export const lintConfig: OxlintConfig = {
   overrides: [
     ...(cloudflare.overrides ?? []),
     {
+      // Runtime composition and resource boundaries adopted with the Effect 4
+      // self-host work. Keep these checks on for new lifecycle code; the R2
+      // Promise adapter is excluded because its public binding is Promise-based.
+      files: [
+        "apps/cloud/src/{app,bestEffort,envSchema,scheduledRuntime}.ts",
+        "apps/docker/src/{backgroundTasks,config,cron,httpBridge,migrate,server}.ts",
+        "apps/services/src/migrate.ts",
+        "packages/cloud-services/src/{database,migrations}.ts",
+      ],
+      rules: {
+        "effecttsgo/run-effect-inside-effect": "error",
+        "effecttsgo/try-catch-in-effect-gen": "error",
+        "effecttsgo/leaking-requirements": "error",
+      },
+    },
+    {
       // Tests exercise intentionally malformed input and third-party mocks, and
       // assertions deliberately inspect error instances.
       files: ["**/*.test.ts", "**/*.test.tsx", "**/tests/**/*.{ts,tsx}"],

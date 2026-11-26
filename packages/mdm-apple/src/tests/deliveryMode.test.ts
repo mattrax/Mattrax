@@ -3,7 +3,7 @@ import {
   appleDeclarativeCapability,
   appleDeliveryModeChanged,
   decideAppleDelivery,
-} from "@mattrax/mdm-core";
+} from "../deliveryMode.js";
 
 const declarativeCapabilities = {
   "supported-versions": ["1.0"],

@@ -165,7 +165,9 @@ describe("SCIM atomic mutations", () => {
     const db = await makeScimDb();
     const user = await createUser(db, "ada@example.com");
     const group = await createGroup(db, [{ value: user.id }]);
-    const notifier = vi.fn(() => Effect.void);
+    const notifier = vi.fn(
+      (_request: any, _response: any, _ids: ReadonlyArray<string>) => Effect.void,
+    );
 
     db.failNextWrite("delete", "user_group_member");
 
@@ -278,7 +280,9 @@ describe("SCIM atomic mutations", () => {
     const first = await createUser(db, "ada@example.com");
     const second = await createUser(db, "bob@example.com");
     const group = await createGroup(db, [{ value: first.id }]);
-    const notifier = vi.fn(() => Effect.void);
+    const notifier = vi.fn(
+      (_request: any, _response: any, _ids: ReadonlyArray<string>) => Effect.void,
+    );
     db.failNextWrite("delete", "user_group_member");
 
     const response = await callScim(
@@ -339,7 +343,9 @@ describe("SCIM atomic mutations", () => {
     const db = await makeScimDb();
     const user = await createUser(db, "ada@example.com");
     const group = await createGroup(db, [{ value: user.id }]);
-    const notifier = vi.fn(() => Effect.void);
+    const notifier = vi.fn(
+      (_request: any, _response: any, _ids: ReadonlyArray<string>) => Effect.void,
+    );
 
     db.failNextWrite("delete", "user");
     expect(
@@ -361,7 +367,9 @@ describe("SCIM atomic mutations", () => {
     const first = await createUser(db, "ada@example.com");
     const second = await createUser(db, "bob@example.com");
     const group = await createGroup(db, [{ value: first.id }]);
-    const notifier = vi.fn(() => Effect.void);
+    const notifier = vi.fn(
+      (_request: any, _response: any, _ids: ReadonlyArray<string>) => Effect.void,
+    );
 
     const response = await callScim(
       db,

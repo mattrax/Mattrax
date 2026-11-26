@@ -27,6 +27,8 @@ import { SoftwareUpdateCache } from "@mattrax/enterprise-backend";
 type R2Bucket = Parameters<typeof R2.layer>[0];
 
 export type EnterpriseServiceOptions = {
+  /** True on Mattrax Cloud, where per-tenant custom hostnames do not exist yet. */
+  readonly hosted?: boolean;
   readonly azureGraph?: AzureGraphService;
   readonly azureClientId?: string;
   /** Deployment-wide Google Workspace directory credentials (optional). */
@@ -134,6 +136,7 @@ export const EnterpriseService = (options: EnterpriseServiceOptions = {}) =>
         db,
         schema,
         origin: env.origin,
+        hosted: options.hosted,
         branding: options.branding,
         billing: billing ?? options.billing,
         storage,

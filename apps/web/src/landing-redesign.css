@@ -2820,3 +2820,70 @@
     border: 1px solid CanvasText;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * Shared Button compatibility
+ *
+ * The marketing CTAs render the shared Button primitive rather than raw
+ * <button>/<a> elements. Keep the redesign's pill treatment on the primitive
+ * without passing presentation classes through Button's contract.
+ * ---------------------------------------------------------------------- */
+
+.lr-hero__actions [data-slot="button"],
+.lr-trust__copy [data-slot="button"] {
+  min-block-size: 3rem;
+  padding-inline: 1.5rem;
+  border-radius: 999px;
+  transition:
+    transform var(--duration-press) var(--ease-swift),
+    background-color var(--duration-hover) var(--ease-swift),
+    border-color var(--duration-hover) var(--ease-swift),
+    color var(--duration-hover) var(--ease-swift),
+    box-shadow var(--duration-hover) var(--ease-swift);
+}
+
+.lr-hero__actions [data-slot="button"]:not([href^="mailto:"]),
+.lr-trust__copy [data-slot="button"] {
+  box-shadow: 0 8px 20px -12px rgb(24 24 22 / 0.55);
+}
+
+.lr-hero__actions [data-slot="button"][href^="mailto:"] {
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+}
+
+.lr-trust__copy [data-slot="button"] {
+  border-color: var(--border-strong);
+  background: var(--card);
+  color: var(--card-foreground);
+}
+
+.lr-hero__actions [data-slot="button"] svg,
+.lr-trust__copy [data-slot="button"] svg {
+  inline-size: 0.95rem;
+  block-size: 0.95rem;
+  transition: transform var(--duration-hover) var(--ease-swift);
+}
+
+.lr-hero__actions [data-slot="button"]:active,
+.lr-trust__copy [data-slot="button"]:active {
+  transform: scale(0.97);
+}
+
+.lr-link svg {
+  inline-size: 0.9rem;
+  block-size: 0.9rem;
+  transition: transform var(--duration-hover) var(--ease-swift);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lr-hero__actions [data-slot="button"]:hover,
+  .lr-trust__copy [data-slot="button"]:hover {
+    transform: translateY(-2px);
+  }
+
+  .lr-hero__actions [data-slot="button"]:hover svg,
+  .lr-trust__copy [data-slot="button"]:hover svg,
+  .lr-link:hover svg {
+    transform: translateX(3px);
+  }
+}

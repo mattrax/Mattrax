@@ -1,7 +1,11 @@
 import { Context, Effect, Exit, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { ScepRepository, ScepService, scepRoutes } from "@mattrax/scep";
-import type { ScepAuthentication, ScepIssuedCertificate, ScepPkcsReq } from "@mattrax/scep";
+import type {
+  ScepAuthentication,
+  ScepAuthenticationRequest,
+  ScepIssuedCertificate,
+} from "@mattrax/scep";
 import type { ScepError } from "@mattrax/scep";
 import { createCaFixture } from "../fixtures/pki.ts";
 import type { ScepCaFixture } from "../fixtures/pki.ts";
@@ -25,7 +29,9 @@ export class ScepCaCache extends Context.Service<
 
 export type ScepHarnessState = {
   readonly ca: ScepCaFixture;
-  authenticate: (request: ScepPkcsReq) => Effect.Effect<ScepAuthentication | void, ScepError>;
+  authenticate: (
+    request: ScepAuthenticationRequest,
+  ) => Effect.Effect<ScepAuthentication | void, ScepError>;
   issued: Map<string, ScepIssuedCertificate>;
   recorded: ScepIssuedCertificate[];
   saveCount: number;

@@ -21,8 +21,10 @@ import { enterpriseUserApi } from "./UserApi.js";
 import { enterpriseSoftwareUpdateApi } from "./SoftwareUpdateApi.js";
 import { enterpriseOsPolicyApi } from "./OsPolicyApi.js";
 import { enterpriseListApi } from "./ListApi.js";
+import { enterpriseSoftwareCatalogueApi } from "./SoftwareCatalogueApi.js";
 import { enterpriseApprovalApi } from "./ApprovalApi.js";
 import { enterpriseWindowsApi } from "./WindowsApi.js";
+import { enterpriseScopeTagApi } from "./ScopeTagApi.js";
 
 export * from "./AccountApi.js";
 
@@ -58,15 +60,21 @@ export * from "./OsPolicyApi.js";
 
 export * from "./ListApi.js";
 
+export * from "./SoftwareCatalogueApi.js";
+
 export * from "./WindowsApi.js";
 
 export * from "./Params.js";
 
 export * from "./ScriptApi.js";
 
+export * from "./RestrictedSoftwareApi.js";
+
 export * from "./MigrationApi.js";
 
 export * from "./ApprovalApi.js";
+
+export * from "./ScopeTagApi.js";
 
 export const enterpriseHttpApi: HttpApi.HttpApi<
   "MattraxEnterprise",
@@ -87,8 +95,10 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   | typeof enterpriseSoftwareUpdateApi
   | typeof enterpriseOsPolicyApi
   | typeof enterpriseListApi
+  | typeof enterpriseSoftwareCatalogueApi
   | typeof enterpriseWindowsApi
   | typeof enterpriseApprovalApi
+  | typeof enterpriseScopeTagApi
 > = HttpApi.make("MattraxEnterprise")
   .add(enterpriseAccountApi)
   .add(enterpriseAdminApi)
@@ -107,8 +117,10 @@ export const enterpriseHttpApi: HttpApi.HttpApi<
   .add(enterpriseSoftwareUpdateApi)
   .add(enterpriseOsPolicyApi)
   .add(enterpriseListApi)
+  .add(enterpriseSoftwareCatalogueApi)
   .add(enterpriseWindowsApi)
-  .add(enterpriseApprovalApi);
+  .add(enterpriseApprovalApi)
+  .add(enterpriseScopeTagApi);
 
 /** The flattened client groups the dashboard can call. */
 export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi> &
@@ -128,8 +140,10 @@ export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi>
   HttpApiClient.Client<typeof enterpriseSoftwareUpdateApi> &
   HttpApiClient.Client<typeof enterpriseOsPolicyApi> &
   HttpApiClient.Client<typeof enterpriseListApi> &
+  HttpApiClient.Client<typeof enterpriseSoftwareCatalogueApi> &
   HttpApiClient.Client<typeof enterpriseWindowsApi> &
-  HttpApiClient.Client<typeof enterpriseApprovalApi>;
+  HttpApiClient.Client<typeof enterpriseApprovalApi> &
+  HttpApiClient.Client<typeof enterpriseScopeTagApi>;
 
 export type EnterpriseClientOptions = NonNullable<Parameters<typeof HttpApiClient.make>[1]>;
 

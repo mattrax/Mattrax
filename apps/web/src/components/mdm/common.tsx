@@ -40,7 +40,7 @@ import {
   Smartphone,
   TabletSmartphone,
 } from "~/components/ui/icons";
-import { Skeleton } from "~/components/ui/skeleton";
+import Skeleton from "~/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { buildBreadcrumbs } from "~/lib/breadcrumbs";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
@@ -51,9 +51,9 @@ import { cn } from "~/lib/utils";
  * pages start with their own masthead rather than another breadcrumb row. */
 export function Page(props: { children: JSX.Element; class?: string; wide?: boolean }) {
   return (
-    <UIPage wide={props.wide} class={cn("page-enter gap-5 px-4 py-4 sm:px-6 sm:py-5", props.class)}>
-      {props.children}
-    </UIPage>
+    <div class={cn("page-enter", props.class)}>
+      <UIPage wide={props.wide}>{props.children}</UIPage>
+    </div>
   );
 }
 
@@ -83,7 +83,8 @@ export function PageBreadcrumbs(props: {
 
   return (
     <Show when={trail().length > 0}>
-      <Breadcrumb class={cn("mb-2", props.class)}>
+      <div class={cn("mb-2", props.class)}>
+        <Breadcrumb>
         <BreadcrumbList class="flex-nowrap! overflow-hidden">
           <For each={trail()} keyed={(crumb) => crumb.href}>
             {(crumb, index) => {
@@ -105,12 +106,17 @@ export function PageBreadcrumbs(props: {
                   </Show>
                   <BreadcrumbItem class={cn(isMiddle() && "hidden sm:inline-flex")}>
                     <Show
-                      when={isLast()}
+                      // The current page is the crumb whose href is this URL.
+                      // A detail route can end its trail at an ancestor (the
+                      // page title dedupes the opaque id crumb), and that
+                      // ancestor must stay navigable instead of being marked
+                      // as the page you are already on.
+                      when={crumb().href === location.pathname}
                       fallback={
                         <BreadcrumbLink href={crumb().href}>{crumb().label}</BreadcrumbLink>
                       }
                     >
-                      <BreadcrumbPage class="truncate">{crumb().label}</BreadcrumbPage>
+                      <BreadcrumbPage>{crumb().label}</BreadcrumbPage>
                     </Show>
                   </BreadcrumbItem>
                   <Show when={total() > 2 && index() === 0}>
@@ -126,7 +132,8 @@ export function PageBreadcrumbs(props: {
             }}
           </For>
         </BreadcrumbList>
-      </Breadcrumb>
+        </Breadcrumb>
+      </div>
     </Show>
   );
 }
@@ -139,19 +146,19 @@ export function PageHeader(props: {
   meta?: JSX.Element;
 }) {
   return (
-    <UIPageHeader class="gap-3 border-0 pb-0 sm:items-center">
+    <UIPageHeader class="sm:items-center">
       <PageHeaderBody>
         <Show when={props.eyebrow}>
           <div class="label-caps mb-1.5">{props.eyebrow}</div>
         </Show>
-        <PageTitle class="text-[21px] font-[560] tracking-[-0.026em]">{props.title}</PageTitle>
+        <PageTitle>{props.title}</PageTitle>
         <Show when={props.description}>
-          <PageDescription class="mt-1 max-w-2xl text-[12.5px] leading-5">
+          <PageDescription class="mt-1 max-w-2xl">
             {props.description}
           </PageDescription>
         </Show>
         <Show when={props.meta}>
-          <div class="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+          <div class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {props.meta}
           </div>
         </Show>
@@ -179,11 +186,12 @@ export function Panel(props: {
   const titleId = () => (props.title ? `${headingId}-title` : undefined);
 
   return (
-    <Card
-      role={props.title ? "region" : undefined}
-      aria-labelledby={titleId()}
-      class={cn("relative overflow-hidden", props.class)}
-    >
+    <div class={props.class}>
+      <Card
+        role={props.title ? "region" : undefined}
+        aria-labelledby={titleId()}
+        class="relative overflow-hidden"
+      >
       <Show when={props.header ?? props.title}>
         <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3.5">
           <Show
@@ -192,12 +200,12 @@ export function Panel(props: {
               <div class="min-w-0 flex-1 basis-0">
                 <h2
                   id={titleId()}
-                  class="text-[14px] font-[560] leading-5 tracking-[-0.012em] text-foreground"
+                  class="text-sm font-semibold leading-5 tracking-tight text-foreground"
                 >
                   {props.title}
                 </h2>
                 <Show when={props.description}>
-                  <p class="mt-1 text-[12.5px] leading-5 text-muted-foreground">
+                  <p class="mt-1 text-xs leading-5 text-muted-foreground">
                     {props.description}
                   </p>
                 </Show>
@@ -211,8 +219,9 @@ export function Panel(props: {
           </Show>
         </div>
       </Show>
-      <div class={props.flush ? "" : "p-4"}>{props.children}</div>
-    </Card>
+        <div class={props.flush ? "" : "p-4"}>{props.children}</div>
+      </Card>
+    </div>
   );
 }
 
@@ -246,37 +255,30 @@ export function StatCard(props: {
       <div class="mt-1.5 flex items-baseline gap-2">
         <span
           data-numeric
-          class={cn("text-[19px] font-[560] leading-none tracking-[-0.025em]", toneClass())}
+          class={cn("text-lg font-semibold leading-none tracking-tight", toneClass())}
         >
           {props.value}
         </span>
       </div>
       <Show when={props.hint}>
-        <p class="mt-1 truncate text-[11.5px] text-muted-foreground">{props.hint}</p>
+        <p class="mt-1 truncate text-xs text-muted-foreground">{props.hint}</p>
       </Show>
     </>
-  );
-
-  const classes = cn(
-    "group flex min-w-0 flex-col rounded-xl border border-border bg-card p-3.5 text-left shadow-card",
-    (props.href ?? props.onClick) &&
-      "pressable hover:border-border-strong hover:shadow-popover focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/30",
-    props.class,
   );
 
   return (
     <Show
       when={props.href}
       fallback={
-        <button type="button" class={classes} onClick={() => props.onClick?.()}>
+        <Button type="button" variant="outline" class="w-full" onClick={() => props.onClick?.()}>
           {content}
-        </button>
+        </Button>
       }
     >
       {(href) => (
-        <a href={href()} class={classes}>
+        <Button as="a" href={href()} variant="outline" class="w-full">
           {content}
-        </a>
+        </Button>
       )}
     </Show>
   );
@@ -290,7 +292,7 @@ export function EmptyState(props: {
 }) {
   return (
     <UIEmptyState
-      class="min-h-0 rounded-xl py-9"
+      class="min-h-0"
       icon={
         <Show when={props.icon} fallback={<CircleAlert class="size-4" />}>
           {(icon) => icon()({ class: "size-4" })}
@@ -308,7 +310,7 @@ export function SkeletonRows(props: { rows?: number; class?: string }) {
   return (
     <div class={cn("space-y-1.5", props.class)} aria-hidden="true">
       <For each={Array.from({ length: props.rows ?? 4 }, (_, index) => index)}>
-        {() => <Skeleton class="h-11 rounded-lg bg-surface" />}
+        {() => <Skeleton class="h-11" />}
       </For>
     </div>
   );
@@ -329,54 +331,82 @@ export function DataTable<T>(props: {
   empty: JSX.Element;
   /** Names the table for screen readers; defaults to the visible column headers. */
   caption?: string;
+  /** Mobile-only guidance for tables that keep their columns on one line. */
+  swipeHint?: string;
 }) {
   const caption = () =>
     props.caption ?? `Table: ${props.columns.map((column) => column.header).join(", ")}`;
 
   return (
     <Show when={(props.rows?.length ?? 0) > 0} fallback={props.empty}>
-      <Table containerClass="page-enter" class="text-[12.5px]">
-        <TableCaption class="sr-only">{caption()}</TableCaption>
-        <TableHeader>
-          <TableRow class="bg-surface hover:bg-surface">
-            <For each={props.columns}>
-              {(col) => (
-                <TableHead scope="col" class={col.class}>
-                  {col.header}
-                </TableHead>
-              )}
-            </For>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          <For each={props.rows}>
-            {(row) => (
+      <div>
+        <Show when={props.swipeHint}>
+          {(hint) => (
+            <p class="rounded-t-xl border border-border border-b-0 bg-surface px-3 py-1.5 text-xs text-muted-foreground sm:hidden">
+              {hint()}
+            </p>
+          )}
+        </Show>
+        <div
+          class={cn(
+            "page-enter text-xs",
+            props.swipeHint && "rounded-t-none sm:rounded-xl",
+          )}
+        >
+          <Table containerClass="">
+            <TableCaption class="sr-only">{caption()}</TableCaption>
+            <TableHeader>
               <TableRow>
                 <For each={props.columns}>
                   {(col) => (
-                    <TableCell class={cn("text-muted-foreground", col.class)}>
-                      {col.cell(row)}
-                    </TableCell>
+                    <TableHead scope="col">
+                      <div class={col.class}>{col.header}</div>
+                    </TableHead>
                   )}
                 </For>
               </TableRow>
-            )}
-          </For>
-        </TableBody>
-      </Table>
+            </TableHeader>
+            <TableBody>
+              <For each={props.rows}>
+                {(row) => (
+                  <TableRow>
+                    <For each={props.columns}>
+                      {(col) => (
+                        <TableCell>
+                          <div class={col.class}>
+                            <span class="text-muted-foreground">{col.cell(row)}</span>
+                          </div>
+                        </TableCell>
+                      )}
+                    </For>
+                  </TableRow>
+                )}
+              </For>
+            </TableBody>
+          </Table>
+        </div>
+      </div>
     </Show>
   );
 }
 
 export function Field(props: { label: string; children: JSX.Element; hint?: string }) {
   return (
-    <label class="grid gap-1.5 text-sm">
-      <span class="text-[12.5px] font-medium text-foreground/90">{props.label}</span>
-      {props.children}
+    <div class="grid gap-1.5 text-sm">
+      {/*
+        The hint stays outside the label element. Inside it, the hint text is
+        part of the control's accessible name ("Key Lowercase letters…"), so
+        screen readers announce the whole sentence and `getByLabel("Key")`
+        no longer finds the field.
+      */}
+      <label class="grid gap-1.5">
+        <span class="text-xs font-medium text-foreground/90">{props.label}</span>
+        {props.children}
+      </label>
       <Show when={props.hint}>
-        <span class="text-[11px] leading-relaxed text-muted-foreground">{props.hint}</span>
+        <span class="text-xs leading-relaxed text-muted-foreground">{props.hint}</span>
       </Show>
-    </label>
+    </div>
   );
 }
 
@@ -408,10 +438,10 @@ export function QueryError(props: { error: unknown; onRetry?: () => void; class?
         class={cn("rounded-lg border border-destructive/25 bg-destructive/[0.07] p-4", props.class)}
       >
         <div class="flex items-start gap-2.5">
-          <CircleAlert class="mt-px size-4 shrink-0 text-destructive" />
+          <CircleAlert class="mt-px size-4 shrink-0" />
           <div class="min-w-0">
-            <p class="text-[13px] font-medium text-foreground">{presentation().title}</p>
-            <p class="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">
+            <p class="text-xs font-medium text-foreground">{presentation().title}</p>
+            <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               {presentation().message}
             </p>
             <div class="mt-3 flex flex-wrap gap-2">
@@ -460,7 +490,7 @@ export function DeviceStatusBadge(props: { status: string }) {
   return (
     <span
       class={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium capitalize",
         statusStyle(props.status),
       )}
     >
@@ -529,7 +559,7 @@ export function DevicePresenceBadge(props: {
   return (
     <span
       class={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
         online()
           ? "border-success/25 bg-success/10 text-success-foreground"
           : "border-border bg-surface text-muted-foreground",
@@ -599,7 +629,7 @@ export function DeviceHealthBadge(props: { level: string; reasons?: ReadonlyArra
   const badge = () => (
     <span
       class={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
         style().class,
       )}
     >
@@ -619,7 +649,7 @@ export function DeviceHealthBadge(props: { level: string; reasons?: ReadonlyArra
         <TooltipTrigger
           as="span"
           tabindex={0}
-          class="inline-flex cursor-default rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          class="inline-flex cursor-default"
           aria-label={`Health ${style().label}. ${reasons()
             .map((reason) => reason.label)
             .join("; ")}`}
@@ -627,15 +657,56 @@ export function DeviceHealthBadge(props: { level: string; reasons?: ReadonlyArra
           {badge()}
         </TooltipTrigger>
         <TooltipContent>
-          <p class="text-[11px] font-medium">
+          <p class="text-xs font-medium">
             Why {style().label === "MIA" ? "MIA" : style().label.toLowerCase()}
           </p>
-          <ul class="mt-1 space-y-0.5 text-[11.5px]">
+          <ul class="mt-1 space-y-0.5 text-xs">
             <For each={reasons()}>{(reason) => <li>{reason.label}</li>}</For>
           </ul>
         </TooltipContent>
       </Tooltip>
     </Show>
+  );
+}
+
+/** A small tinted platform tile for table name cells. */
+export function PlatformMark(props: { proto: string; class?: string }) {
+  const style = () =>
+    Match.value(props.proto).pipe(
+      Match.when("apple", () => "bg-foreground/[0.06] text-foreground"),
+      Match.when("win", () => "bg-info/10 text-info"),
+      Match.when("android", () => "bg-success/10 text-success"),
+      Match.orElse(() => "bg-surface text-muted-foreground"),
+    );
+
+  const icon = () =>
+    Match.value(props.proto).pipe(
+      Match.when("apple", () => <Laptop class="size-3" />),
+      Match.when("win", () => <MonitorSmartphone class="size-3" />),
+      Match.when("android", () => <Smartphone class="size-3" />),
+      Match.orElse(() => <TabletSmartphone class="size-3" />),
+    );
+
+  const label = () =>
+    Match.value(props.proto).pipe(
+      Match.when("apple", () => "Apple"),
+      Match.when("win", () => "Windows"),
+      Match.when("android", () => "Android"),
+      Match.orElse((proto) => proto),
+    );
+
+  return (
+    <span
+      class={cn(
+        "flex size-5 shrink-0 items-center justify-center rounded-xs",
+        style(),
+        props.class,
+      )}
+      title={label()}
+      aria-hidden="true"
+    >
+      {icon()}
+    </span>
   );
 }
 
@@ -657,7 +728,7 @@ export function PlatformBadge(props: { proto: string }) {
     );
 
   return (
-    <Badge variant="outline" class="gap-1.5 text-muted-foreground">
+    <Badge variant="outline">
       {icon()}
       {label()}
     </Badge>

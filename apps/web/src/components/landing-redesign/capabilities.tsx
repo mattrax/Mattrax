@@ -49,7 +49,7 @@ const healthSignals = [
   { label: "Battery health", value: 87 },
 ];
 
-export function Capabilities() {
+export default function Capabilities() {
   return (
     <section
       id="capabilities"
@@ -74,7 +74,7 @@ export function Capabilities() {
               <article
                 class={`lr-cap-card lr-cap-card--${capability.visual} lr-reveal`}
                 data-reveal="pending"
-                style={`--i:${index()}`}
+                style={{ "--i": index() }}
               >
                 <div class="lr-cap-card__copy">
                   <span class="lr-cap-card__number">{capability.number}</span>
@@ -156,7 +156,7 @@ function ShowVisual(props: { kind: string }) {
               <div>
                 <span>{signal.label}</span>
                 <i>
-                  <b style={`--value:${signal.value}%`} />
+                  <b style={{ "--value": `${signal.value}%` }} />
                 </i>
                 <strong>{signal.value}%</strong>
               </div>

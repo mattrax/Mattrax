@@ -1,6 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { Effect, Schema } from "effect";
+import { describe, expect, it, vi } from "vitest";
+import { Effect, Fiber, Schema } from "effect";
 import { createHmac } from "node:crypto";
+import { EventEmitter } from "node:events";
+import http2 from "node:http2";
 import { createServer } from "node:net";
 import { pemEncode } from "@mattrax/crypto";
 import { createTestApnsCertificate, createTestApnsKeys } from "./helpers.js";
@@ -260,6 +262,40 @@ describe("APNs outbound timeouts", () => {
     } finally {
       for (const socket of sockets) socket.destroy();
       server.close();
+    }
+  });
+
+  it("closes the HTTP/2 session when the parent fiber is interrupted", async () => {
+    const request = Object.assign(new EventEmitter(), { end: vi.fn() });
+    const session = Object.assign(new EventEmitter(), {
+      close: vi.fn(),
+      destroy: vi.fn(),
+      setTimeout: vi.fn(),
+      request: vi.fn(() => request),
+    });
+    const connect = vi.spyOn(http2, "connect").mockReturnValue(session as never);
+
+    try {
+      const transport = NodePushTransport({ certPem: "CERT", privateKeyPem: "KEY" });
+
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const fiber = yield* Effect.forkChild(
+            transport.push({
+              pushToken: "abcd",
+              pushMagic: "magic",
+              topic: "com.apple.mgmt.External.tenant",
+            }),
+            { startImmediately: true },
+          );
+
+          yield* Fiber.interrupt(fiber);
+        }),
+      );
+
+      expect(session.destroy).toHaveBeenCalledOnce();
+    } finally {
+      connect.mockRestore();
     }
   });
 });

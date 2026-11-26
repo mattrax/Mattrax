@@ -57,7 +57,7 @@ export default function TenantLandingPage() {
   return (
     <Show when={!ready() || (me.isPending && !me.data)} fallback={null}>
       <div class="flex flex-1 items-center justify-center py-24">
-        <p role="status" class="text-[12px] text-muted-foreground">
+        <p role="status" class="text-xs text-muted-foreground">
           Opening your tenant…
         </p>
       </div>

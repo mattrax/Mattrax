@@ -26,6 +26,7 @@
     { "path": "./packages/dm-android" },
     { "path": "./packages/config" },
     { "path": "./packages/ui" },
+    { "path": "./packages/software" },
     { "path": "./packages/enterprise-domain" },
     { "path": "./packages/email" },
     { "path": "./packages/enterprise-tokens" },
