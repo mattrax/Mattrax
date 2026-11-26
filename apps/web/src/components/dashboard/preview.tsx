@@ -56,6 +56,8 @@ export default function DashboardPreview(props: {
   widgets: ReadonlyArray<DashboardWidget> | undefined;
   widgetCount: number;
   class?: string;
+  /** Test seam: inject the batch hook instead of mocking its module. */
+  readonly useBatch?: typeof useDashboardWidgetBatch;
 }) {
   const widgets = createMemo(() => (props.widgets ?? []).slice(0, 3));
 
@@ -90,7 +92,7 @@ export default function DashboardPreview(props: {
           <For each={widgets()}>
             {(widget, index) => (
               <div class={cn("min-h-0 min-w-0", cellClass(index()))}>
-                <PreviewWidget widget={widget} />
+                <PreviewWidget widget={widget} useBatch={props.useBatch} />
               </div>
             )}
           </For>
@@ -100,8 +102,11 @@ export default function DashboardPreview(props: {
   );
 }
 
-function PreviewWidget(props: { widget: DashboardWidget }) {
-  const batchFor = useDashboardWidgetBatch({ preview: true });
+function PreviewWidget(props: {
+  widget: DashboardWidget;
+  useBatch?: typeof useDashboardWidgetBatch;
+}) {
+  const batchFor = (props.useBatch ?? useDashboardWidgetBatch)({ preview: true });
   const batch = () => batchFor?.(props.widget);
 
   return (

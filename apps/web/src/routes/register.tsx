@@ -27,6 +27,32 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const EMAIL_VERIFICATION_AUTOCOMPLETE = "email-verification-token";
 
 /**
+ * Test seam for browser and auth dependencies. Production callers omit it;
+ * tests inject fakes instead of replacing modules in the shared graph.
+ */
+export type RegisterPageDeps = {
+  readonly searchParams?: Readonly<Record<string, string | string[] | undefined>>;
+  readonly navigate?: (href: string, options?: { readonly replace?: boolean }) => void;
+  readonly session?: () => {
+    readonly data?: { readonly user?: { readonly email?: string } };
+    readonly isPending: boolean;
+  };
+  readonly auth?: Pick<
+    typeof authClient,
+    | "requestRegistrationCode"
+    | "verifyRegistrationCode"
+    | "register"
+    | "requestEmailVerification"
+    | "session"
+    | "signOut"
+  >;
+  readonly registrationNonce?: {
+    readonly read: typeof readRegistrationNonce;
+    readonly remember: typeof rememberRegistrationNonce;
+  };
+};
+
+/**
  * Sign-up proves the email address before it creates anything: the code form
  * issues and checks a guest challenge, then the passkey ceremony creates the
  * account with a verified address. No callback page or email link is needed.
@@ -35,9 +61,10 @@ const EMAIL_VERIFICATION_AUTOCOMPLETE = "email-verification-token";
  * field instead of moving to a second page, so the details a person just typed
  * stay in view while they read the email.
  */
-export default function RegisterPage() {
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+export default function RegisterPage(props: { readonly deps?: RegisterPageDeps }) {
+  const deps = props.deps ?? {};
+  const navigate = deps.navigate ?? useNavigate();
+  const searchParams = deps.searchParams ?? useSearchParams()[0];
   const [name, setName] = createSignal("");
   const [email, setEmail] = createSignal("");
   const [code, setCode] = createSignal("");
@@ -51,8 +78,18 @@ export default function RegisterPage() {
    * The server-issued nonce for this form. The browser fills the hidden token
    * input only when this attribute is present; a token attempt rotates it.
    */
-  const [verificationNonce, setVerificationNonce] = createSignal(readRegistrationNonce());
-  const session = authClient.useSession();
+  const readNonce = deps.registrationNonce?.read ?? readRegistrationNonce;
+  const rememberNonce = deps.registrationNonce?.remember ?? rememberRegistrationNonce;
+  const requestCode = deps.auth?.requestRegistrationCode ?? authClient.requestRegistrationCode;
+  const verifyRegistrationCode =
+    deps.auth?.verifyRegistrationCode ?? authClient.verifyRegistrationCode;
+  const register = deps.auth?.register ?? authClient.register;
+  const requestEmailVerification =
+    deps.auth?.requestEmailVerification ?? authClient.requestEmailVerification;
+  const readSession = deps.auth?.session ?? authClient.session;
+  const signOut = deps.auth?.signOut ?? authClient.signOut;
+  const [verificationNonce, setVerificationNonce] = createSignal(readNonce());
+  const session = deps.session ?? authClient.useSession();
   const signedInAs = () => session().data?.user;
   const [signingOut, setSigningOut] = createSignal(false);
 
@@ -111,7 +148,7 @@ export default function RegisterPage() {
    */
   const signOutForRegistration = async () => {
     setSigningOut(true);
-    await authClient.signOut();
+    await signOut();
     setSigningOut(false);
     setError(null);
   };
@@ -166,7 +203,7 @@ export default function RegisterPage() {
       // The signal is the rotated source of truth; the DOM attribute is only a
       // fallback for a render that has not flushed yet.
       const nonce = verificationNonce()?.trim() ?? tokenInput?.getAttribute("nonce")?.trim();
-      const result = await authClient.requestRegistrationCode({
+      const result = await requestCode({
         name: trimmedName,
         email: trimmedEmail,
         ...(token && nonce ? { token, nonce } : {}),
@@ -176,7 +213,7 @@ export default function RegisterPage() {
       // current binding alone.
       if (result.data?.nonce) {
         setVerificationNonce(result.data.nonce);
-        rememberRegistrationNonce(result.data.nonce);
+        rememberNonce(result.data.nonce);
       }
 
       // A consumed token must not survive into the code step, where a browser
@@ -228,7 +265,7 @@ export default function RegisterPage() {
   };
 
   const finishRegistration = async (grant: string) => {
-    const result = await authClient.register({
+    const result = await register({
       name: name().trim(),
       email: email().trim(),
       grant,
@@ -240,7 +277,7 @@ export default function RegisterPage() {
       // attempt after the wallet already stored the credential) can leave a
       // real account signed in. Send the person in rather than stranding them
       // on an error they cannot act on.
-      if ((await authClient.session()).data) {
+      if ((await readSession()).data) {
         navigate(returnTo() ?? "/dashboard", { replace: true });
 
         return;
@@ -258,7 +295,7 @@ export default function RegisterPage() {
 
     // One idempotent call so the welcome email has the same once-only trigger
     // as a token-verified sign-up. Never block sign-up on mail delivery.
-    void authClient.requestEmailVerification();
+    void requestEmailVerification();
 
     // The account and passkey exist. Usually registration also signs it in;
     // when the follow-up prompt did not take, send the person to the sign-in
@@ -291,7 +328,7 @@ export default function RegisterPage() {
     setPending("verify");
 
     try {
-      const result = await authClient.verifyRegistrationCode({
+      const result = await verifyRegistrationCode({
         email: email().trim(),
         code: value,
       });
@@ -484,12 +521,7 @@ export default function RegisterPage() {
             )}
           </Show>
 
-          <Button
-            type="submit"
-            size="lg"
-            class="w-full"
-            pending={pending() !== null}
-          >
+          <Button type="submit" size="lg" class="w-full" pending={pending() !== null}>
             {codeSent()
               ? pending() === "verify"
                 ? "Verifying…"

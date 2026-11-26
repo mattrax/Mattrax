@@ -1,5 +1,3 @@
-import { useParams } from "@solidjs/router";
-import { useNavigate } from "~/lib/navigation";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import type { InfiniteData } from "@tanstack/solid-query";
 import {
@@ -30,24 +28,7 @@ import {
   Show,
 } from "solid-js";
 import { isServer } from "@solidjs/web";
-import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import type { JSX } from "@solidjs/web";
-import {
-  DevicePresenceBadge,
-  devicePresence,
-  ErrorText,
-  Field,
-  formatDate,
-  formatDeviceDate,
-  Page,
-  PageBreadcrumbs,
-  PageSkeleton,
-  PlatformBadge,
-  PresenceDot,
-  QueryError,
-  SkeletonRows,
-  usePresenceNow,
-} from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -68,22 +49,6 @@ import {
   Textarea,
 } from "@mattrax/ui";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "~/components/ui/dialog";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "~/components/ui/sheet";
-import {
   CircleAlert,
   RefreshCw,
   Laptop,
@@ -91,17 +56,8 @@ import {
   Settings as SettingsIcon,
   Smartphone,
 } from "~/components/ui/icons";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  entitySummaryPlaceholder,
-} from "~/lib/enterprise";
+import { enterpriseKeys, entitySummaryPlaceholder } from "~/lib/enterprise";
 import type { DeviceApplication } from "~/lib/enterprise";
-import {
-  DeviceHandoverDialog,
-  deviceHandoverSecretSummary,
-} from "~/components/mdm/device-handover-dialog";
 import {
   appleUserBindingLabel,
   appleUserDisplayName,
@@ -112,7 +68,6 @@ import {
 } from "~/lib/device-apple-users";
 import { appleUserIdentitySourceLabel } from "~/lib/device-apple-users";
 import type { AppleUserActionName } from "@mattrax/enterprise-domain/client";
-import Markdown from "~/components/dashboard/markdown";
 import {
   commandStatusTone,
   isActiveCommandStatus,
@@ -128,20 +83,14 @@ import {
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { defaultApplyNameToDevice, shouldQueueDeviceNamePush } from "~/lib/device-name";
 import { optimisticallyPatchItem, optimisticallyRemoveDevices } from "~/lib/optimistic";
-import { toast } from "~/components/toast";
-import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { deviceRestrictedSoftwareQueryEnabled } from "~/lib/restricted-software-query";
-import { SoftwareUpdateTag } from "~/components/software-update-badge";
-import OsComplianceTag from "~/components/os-compliance-badge";
 import {
   decodeSoftwareUpdate,
   isMacOsUpdateTracked,
   softwareUpdateReason,
 } from "~/lib/software-updates";
 import { decodeOsCompliance } from "~/lib/os-compliance";
-import { useUnsavedChanges } from "~/lib/unsaved-changes";
-import { preloadPage } from "~/lib/page-data";
-import { queryClient } from "~/lib/query-client";
+import { useDevicePageDeps } from "./device-page-deps";
 
 type ChipTone = "success" | "warning" | "danger" | "brand" | "muted";
 
@@ -316,6 +265,10 @@ function WindowsSecurityCard(props: {
   canCommand: boolean;
   canReveal: boolean;
 }) {
+  // Test seam: lookups and presentational helpers come from the page context.
+  const deps = useDevicePageDeps();
+  const { enterprise } = deps;
+  const { ErrorText, formatDate, QueryError, SkeletonRows } = deps.common;
   const queryClient = useQueryClient();
   const [revealed, setRevealed] = createSignal<string | null>(null);
 
@@ -833,6 +786,10 @@ function AbmPanel(props: {
   adeProfile: DeviceActionMutation;
   adeUrl: () => string | null;
 }) {
+  // Test seam: lookups and presentational helpers come from the page context.
+  const deps = useDevicePageDeps();
+  const { enterpriseQueries } = deps;
+  const { ErrorText, formatDate, QueryError } = deps.common;
   const abmConfig = useQuery(() => enterpriseQueries.abm(props.tenantId));
   const [configured, setConfigured] = createSignal(false);
 
@@ -960,6 +917,10 @@ export const route = {
 
     if (intent === "initial" || !tenantId || !deviceId) return;
 
+    // Preload runs outside a component tree, so the context supplies the
+    // production defaults here.
+    const { preloadPage, queryClient, enterpriseQueries } = useDevicePageDeps();
+
     return preloadPage([
       () => queryClient.ensureQueryData(enterpriseQueries.item(tenantId, "device", deviceId)),
       () => queryClient.ensureQueryData(enterpriseQueries.deviceUsers(tenantId, deviceId)),
@@ -969,7 +930,9 @@ export const route = {
 };
 
 export default function DeviceDetailPage() {
-  const params = useParams();
+  const deps = useDevicePageDeps();
+  const params = deps.router.useParams();
+  const { Page, PageSkeleton } = deps.common;
 
   return (
     <Loading
@@ -986,13 +949,42 @@ export default function DeviceDetailPage() {
 }
 
 function DeviceDetailContent() {
+  const deps = useDevicePageDeps();
+  const { enterprise, enterpriseQueries, toast } = deps;
+  const {
+    DevicePresenceBadge,
+    devicePresence,
+    ErrorText,
+    Field,
+    formatDate,
+    formatDeviceDate,
+    Page,
+    PageBreadcrumbs,
+    PageSkeleton,
+    PlatformBadge,
+    PresenceDot,
+    QueryError,
+    SkeletonRows,
+    usePresenceNow,
+  } = deps.common;
+  const { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } =
+    deps.dialog;
+  const { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } =
+    deps.sheet;
+  const DeviceHandoverDialog = deps.handover.DeviceHandoverDialog;
+  const deviceHandoverSecretSummary = deps.handover.deviceHandoverSecretSummary;
+  const Markdown = deps.markdown;
+  const SoftwareUpdateTag = deps.softwareUpdate.SoftwareUpdateTag;
+  const OsComplianceTag = deps.osCompliance;
+  const ScopeTagAssignmentEditor = deps.scopeTags.ScopeTagAssignmentEditor;
+  const ReadOnlyNotice = deps.permissions.ReadOnlyNotice;
   // Presence is a function of the clock, so a device drops offline after the
   // 15-minute window even if no new event arrives.
   const presenceNow = usePresenceNow();
-  const params = useParams();
-  const navigate = useNavigate();
+  const params = deps.router.useParams();
+  const navigate = deps.router.useNavigate();
   const queryClient = useQueryClient();
-  const { can } = useCan();
+  const { can } = deps.permissions.useCan();
   // A list row is enough to paint the page, never enough to authorise a write
   // against detail-only fields. Wait for the authoritative response first.
   const writable = () => can("devices.write") && authoritativeLoaded();
@@ -1497,7 +1489,7 @@ function DeviceDetailContent() {
       notes() !== (row()!.notes ?? "") ||
       (canApplyName() && applyName() !== currentApplyName()));
 
-  const unsaved = useUnsavedChanges(() => detailsDirty() || usersDirty(), {
+  const unsaved = deps.unsavedChanges.useUnsavedChanges(() => detailsDirty() || usersDirty(), {
     title: "Discard device changes?",
     description: "Device details or linked users have edits that have not been saved.",
   });
@@ -2672,9 +2664,7 @@ function DeviceDetailContent() {
                   </h1>
                   <Show when={row()!.model}>
                     {(model) => (
-                      <p class="mt-1 truncate text-xs leading-5 text-muted-foreground">
-                        {model()}
-                      </p>
+                      <p class="mt-1 truncate text-xs leading-5 text-muted-foreground">{model()}</p>
                     )}
                   </Show>
                   <div class="mt-3 flex flex-wrap items-center gap-1.5">
@@ -2740,7 +2730,9 @@ function DeviceDetailContent() {
                     onClick={() => sync.mutate()}
                     disabled={sync.isPending || row()!.status !== "enrolled"}
                   >
-                    <span class={sync.isPending ? "animate-spin motion-reduce:animate-none" : undefined}>
+                    <span
+                      class={sync.isPending ? "animate-spin motion-reduce:animate-none" : undefined}
+                    >
                       <RefreshCw class="size-3.5" />
                     </span>
                   </Button>
@@ -2823,9 +2815,9 @@ function DeviceDetailContent() {
 
             <TabsPanel value="overview">
               <div
-              class="grid items-start gap-4 lg:grid-cols-(--overview-grid)"
-              style={{ "--overview-grid": "minmax(0,1fr) minmax(0,360px)" }}
-            >
+                class="grid items-start gap-4 lg:grid-cols-(--overview-grid)"
+                style={{ "--overview-grid": "minmax(0,1fr) minmax(0,360px)" }}
+              >
                 <div class="min-w-0 space-y-4">
                   <DetailCard
                     flush
@@ -3030,7 +3022,9 @@ function DeviceDetailContent() {
                                     <div class="flex items-center justify-between gap-2">
                                       <span class="flex min-w-0 items-center gap-1.5">
                                         <Chip tone={windowsFailureTone(failure.phase)}>
-                                          <span class="uppercase tracking-wide">{failure.phase}</span>
+                                          <span class="uppercase tracking-wide">
+                                            {failure.phase}
+                                          </span>
                                         </Chip>
                                         <strong
                                           class="min-w-0 truncate font-medium text-foreground"
@@ -4774,9 +4768,7 @@ function DeviceDetailContent() {
                         </Show>
                         <Show when={supports("schedule-os-update")}>
                           <div class="rounded-lg border border-border p-3">
-                            <p class="text-xs font-medium text-foreground">
-                              OS update command
-                            </p>
+                            <p class="text-xs font-medium text-foreground">OS update command</p>
                             <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                               Sends Apple's <code class="font-mono">ScheduleOSUpdate</code>
                               command. It runs on the next check-in and may restart the device.
@@ -4869,9 +4861,9 @@ function DeviceDetailContent() {
 
             <TabsPanel value="scope">
               <div
-              class="grid items-start gap-4 lg:grid-cols-(--scope-grid)"
-              style={{ "--scope-grid": "minmax(0,380px) minmax(0,1fr)" }}
-            >
+                class="grid items-start gap-4 lg:grid-cols-(--scope-grid)"
+                style={{ "--scope-grid": "minmax(0,380px) minmax(0,1fr)" }}
+              >
                 <DetailCard
                   title="Groups"
                   description="Direct membership and the dynamic groups whose rules currently include this device."
@@ -5197,9 +5189,7 @@ function DeviceDetailContent() {
           </DialogHeader>
           <Show when={confirmAction() === "delete" && escrowedSecretKinds().length > 0}>
             <div class="rounded-lg border border-warning/40 bg-warning/[0.07] p-3">
-              <p class="text-xs font-medium text-foreground">
-                This device holds escrowed secrets
-              </p>
+              <p class="text-xs font-medium text-foreground">This device holds escrowed secrets</p>
               <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                 Deleting destroys the {deviceHandoverSecretSummary(escrowedSecretKinds())}{" "}
                 permanently. After the delete there is no recovery path: the handover archive is the
@@ -5517,6 +5507,10 @@ function DeviceAttributesPanel(props: {
   /** "Collect now" queues a script run, so it needs scripts.write. */
   collectAllowed: boolean;
 }) {
+  // Test seam: lookups and notices come from the page context.
+  const deps = useDevicePageDeps();
+  const { enterprise, toast } = deps;
+  const { ErrorText, formatDate } = deps.common;
   const queryClient = useQueryClient();
 
   const definitions = useQuery(() => ({
@@ -5679,9 +5673,9 @@ function DeviceAttributesPanel(props: {
 
               return (
                 <div
-                class="grid gap-1.5 px-4 py-2.5 sm:grid-cols-(--definition-grid) sm:items-start sm:gap-4"
-                style={{ "--definition-grid": "220px minmax(0,1fr)" }}
-              >
+                  class="grid gap-1.5 px-4 py-2.5 sm:grid-cols-(--definition-grid) sm:items-start sm:gap-4"
+                  style={{ "--definition-grid": "220px minmax(0,1fr)" }}
+                >
                   <div class="min-w-0">
                     <p class="text-xs font-medium text-foreground">{definition.label}</p>
                     <p class="font-mono text-xs text-muted-foreground">{definition.key}</p>
@@ -5715,9 +5709,7 @@ function DeviceAttributesPanel(props: {
                                 : " · not collected yet"}
                             </p>
                             <Show when={collectionState()?.lastError}>
-                              <p class="text-xs text-destructive">
-                                {collectionState()!.lastError}
-                              </p>
+                              <p class="text-xs text-destructive">{collectionState()!.lastError}</p>
                             </Show>
                           </div>
                           <Button

@@ -245,8 +245,8 @@ jobs:
       # Every shard's failure report is useful; do not cancel the rest.
       fail-fast: false
       # Shared node projects take the 5,427 tests in 478 files from 53s to 9s
-      # locally; only files that still mock imports keep their own module
-      # graph. One runner stays well under the two-minute budget.
+      # locally; only files that pin a fake clock keep their own module graph.
+      # One runner stays well under the two-minute budget.
       # Keep the shard in the name and command so the denominator still comes
       # from the matrix if the suite ever needs to fan out again.
       matrix:
@@ -461,12 +461,12 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-  # One runner per shard with two Playwright workers inside it. The old reason
-  # for a single worker — shared dev-mailbox and rate-limit state — no longer
-  # holds: registrations use unique emails, tenants are unique, the mailbox
-  # looks codes up by recipient, and the per-address limiter is a generous
-  # abuse backstop rather than a per-test quota. Two workers halve the test
-  # slice without cross-test state; keep one locally for readable failures.
+  # One runner per shard with a single Playwright worker. Running two workers
+  # made unrelated specs fail in CI (chunk skew, policy UI and invitation
+  # assertions), so the shards keep their own browser: the suite shares a dev
+  # mailbox and rate-limit buckets through one server, and that isolation is
+  # worth more than the extra runners would save. Navigation waits are now
+  # hydration-based instead of network-idle, which is a safe per-spec saving.
   #
   # `packages/config/scripts/e2e-shard.ts` assigns the spec files instead of
   # Playwright's `--shard`: files are assigned largest-first to the emptiest
@@ -479,18 +479,13 @@ jobs:
   # migrations per shard. The shared schema cache keeps the 29s migration off
   # the path once main has published it; the build job above is the real path.
   #
-  # Seven shards. Two workers per shard and hydration-based navigation (no
-  # network-idle wait) put the other shards around ~120s including the ~48s
-  # setup. The `mfa.spec.ts` shard is the floor at ~150s: one 81-86s test
-  # enrolls, requires a pending code, uses a recovery code, regenerates and
-  # disables, and a single test cannot be split across workers. That floor was
-  # already the suite's wall clock with nine shards, so dropping to seven saves
-  # two runners without adding time. Only splitting that test would bring the
-  # browser suite itself under two minutes.
-  #
-  # With vitest also down to one, the account job count falls from 20 to 16:
-  # changes + lint + 1 vitest + typecheck + build/migrations + 4 Lighthouse + 7
-  # shards.
+  # Nine shards. Hydration-based navigation removes a fixed ~600ms from every
+  # document load (2,944ms -> 1,023ms for three auth specs locally), but the
+  # `mfa.spec.ts` shard stays the floor: one 81-86s test enrolls, requires a
+  # pending code, uses a recovery code, regenerates and disables. Splitting that
+  # test is the only way to bring the browser suite under two minutes; adding
+  # shards cannot help. With vitest down to one, the job count is 18: changes +
+  # lint + 1 vitest + typecheck + build/migrations + 4 Lighthouse + 9 shards.
   #
   # Measured per-shard cost is ~25s setup, ~1s schema restore, ~2s browser
   # cache, ~22s build-and-serve (MySQL and the schema load run underneath it)
@@ -515,9 +510,9 @@ jobs:
       matrix:
         # When the policy is enabled, one job runs `playwright test
         # --only-changed` for the PR. It is a single job because the selected
-        # set is usually a handful of specs; the full suite keeps its seven
+        # set is usually a handful of specs; the full suite keeps its nine
         # shards.
-        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2, 3, 4, 5, 6, 7]') }}
+        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2, 3, 4, 5, 6, 7, 8, 9]') }}
     env:
       E2E_CHANNEL: bundled
       # Serve the production build rather than the dev server: a dashboard page

@@ -1,5 +1,6 @@
 import { Effect } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { recorder } from "../../config/testing/recorder.ts";
 import { signToken, verifyToken } from "./tokens.js";
 
 const secret = "token-test-secret";
@@ -35,8 +36,6 @@ const expectTokenError = async (effect: Effect.Effect<unknown, unknown>, reason:
   await expect(Effect.runPromise(effect)).rejects.toMatchObject({ _tag: "TokenError", reason });
 };
 
-afterEach(() => vi.restoreAllMocks());
-
 describe("enterprise token codec", () => {
   it("round-trips a signed payload", async () => {
     const token = await Effect.runPromise(signToken(secret, payload));
@@ -68,10 +67,20 @@ describe("enterprise token codec", () => {
   });
 
   it("returns a typed error when WebCrypto rejects", async () => {
-    vi.spyOn(crypto.subtle, "verify").mockRejectedValueOnce(new Error("crypto unavailable"));
-    const token = await Effect.runPromise(signToken(secret, payload));
+    type Verify = typeof crypto.subtle.verify;
+    const originalVerify = crypto.subtle.verify;
+    const verify = recorder<Parameters<Verify>, ReturnType<Verify>>().mockRejectedValueOnce(
+      new Error("crypto unavailable"),
+    );
+    crypto.subtle.verify = verify as Verify;
 
-    await expectTokenError(verifyToken(secret, token), "crypto");
+    try {
+      const token = await Effect.runPromise(signToken(secret, payload));
+
+      await expectTokenError(verifyToken(secret, token), "crypto");
+    } finally {
+      crypto.subtle.verify = originalVerify;
+    }
   });
 
   it("returns a typed error when a payload cannot be serialized", async () => {

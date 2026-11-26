@@ -9,7 +9,7 @@ import {
   validateStorageBatch,
   withStorageValidation,
 } from "@yielded/auth-persistence/Adapter";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 type Counters = { columns: number; indexes: number };
 
@@ -107,14 +107,15 @@ describe("auth storage metadata cache", () => {
     const first: Counters = { columns: 0, indexes: 0 };
     const second: Counters = { columns: 0, indexes: 0 };
     let now = 1_000_000;
-    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const originalNow = Date.now;
+    Date.now = () => now;
 
     try {
       await Effect.runPromise(validate(first));
       now += 60_001;
       await Effect.runPromise(validate(second));
     } finally {
-      clock.mockRestore();
+      Date.now = originalNow;
     }
 
     expect(loaded(first)).toBe(2);

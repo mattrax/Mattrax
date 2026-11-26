@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installGlobals } from "../../../../packages/config/testing/globals.ts";
 import {
   SESSION_PRESENCE_COOKIE,
   clearSessionPresence,
@@ -11,8 +12,16 @@ const NOW = Date.parse("2026-06-01T12:00:00.000Z");
 
 beforeEach(() => vi.setSystemTime(new Date(NOW)));
 
+let restoreGlobals = () => {};
+
+const setGlobals = <V>(values: Record<string, V>) => {
+  restoreGlobals();
+  restoreGlobals = installGlobals(values);
+};
+
 afterEach(() => {
-  vi.unstubAllGlobals();
+  restoreGlobals();
+  restoreGlobals = () => {};
   vi.useRealTimers();
 });
 
@@ -28,29 +37,35 @@ describe("session presence", () => {
 
   it("reads active, expired and missing states", () => {
     const active = NOW + 60_000;
-    vi.stubGlobal("document", {
-      cookie: `${SESSION_PRESENCE_COOKIE}=v1.${active}`,
+    setGlobals({
+      document: {
+        cookie: `${SESSION_PRESENCE_COOKIE}=v1.${active}`,
+      },
     });
     expect(readSessionPresence()).toEqual({ state: "active", expiresAt: active });
 
-    vi.stubGlobal("document", {
-      cookie: `${SESSION_PRESENCE_COOKIE}=v1.${NOW - 60_000}`,
+    setGlobals({
+      document: {
+        cookie: `${SESSION_PRESENCE_COOKIE}=v1.${NOW - 60_000}`,
+      },
     });
     expect(readSessionPresence().state).toBe("expired");
 
-    vi.stubGlobal("document", { cookie: "" });
+    setGlobals({ document: { cookie: "" } });
     expect(readSessionPresence().state).toBe("missing");
   });
 
   it("clears the readable cookie", () => {
     const writes: string[] = [];
-    vi.stubGlobal("location", { protocol: "https:" });
-    vi.stubGlobal("document", {
-      get cookie() {
-        return "";
-      },
-      set cookie(value: string) {
-        writes.push(value);
+    setGlobals({
+      location: { protocol: "https:" },
+      document: {
+        get cookie() {
+          return "";
+        },
+        set cookie(value: string) {
+          writes.push(value);
+        },
       },
     });
     clearSessionPresence();

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { installGlobal } from "../../../../packages/config/testing/globals.ts";
 import type { MeResponse } from "@mattrax/enterprise-domain/client";
 import { clearMeCache } from "./me-cache";
 import { peekMePreloadFor, persistBrowserPreloadedMe, resetMePreload } from "./me-preload";
@@ -27,14 +28,17 @@ const fakeStorage = () => {
   };
 };
 
+let restoreGlobals = () => {};
+
 afterEach(() => {
-  vi.unstubAllGlobals();
+  restoreGlobals();
+  restoreGlobals = () => {};
   resetMePreload();
 });
 
 describe("me preload lifetime", () => {
   it("resets on sign-out but not when a session commit clears the cache", () => {
-    vi.stubGlobal("localStorage", fakeStorage());
+    restoreGlobals = installGlobal("localStorage", fakeStorage());
     persistBrowserPreloadedMe(data);
     expect(peekMePreloadFor()).toBe("user-1");
 

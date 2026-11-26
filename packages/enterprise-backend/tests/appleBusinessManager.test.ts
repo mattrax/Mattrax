@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { recorder } from "../../config/testing/recorder.ts";
 import type { Schema } from "effect";
 import { Effect } from "effect";
 import * as asn1js from "asn1js";
@@ -587,16 +588,19 @@ describe("ADE profile links", () => {
         ttlSeconds: 60,
       }),
     );
-    const verify = vi
-      .spyOn(crypto.subtle, "verify")
-      .mockRejectedValueOnce(new Error("crypto unavailable"));
+    type Verify = typeof crypto.subtle.verify;
+    const originalVerify = crypto.subtle.verify;
+    const verify = recorder<Parameters<Verify>, ReturnType<Verify>>().mockRejectedValueOnce(
+      new Error("crypto unavailable"),
+    );
+    crypto.subtle.verify = verify as Verify;
 
     try {
       await expect(
         runEffect(readAdeProfileToken({ authSecret, token: signed.token })),
       ).rejects.toMatchObject({ kind: "upstream" });
     } finally {
-      verify.mockRestore();
+      crypto.subtle.verify = originalVerify;
     }
   });
 

@@ -24,12 +24,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
-  // Specs are independent: every registration uses a unique email and every
-  // tenant is unique, and the dev mailbox looks codes up by recipient. The
-  // rate-limit buckets are generous backstops keyed by address, not per-test
-  // quotas. Two workers therefore halve a shard's test wall clock without
-  // sharing mutable state; keep one locally so a failing spec is easy to read.
-  workers: process.env.CI ? 2 : 1,
+  workers: 1,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {

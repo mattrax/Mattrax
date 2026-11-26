@@ -1,4 +1,5 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
+import { installGlobal } from "../../../../packages/config/testing/globals.ts";
 import {
   parseThemePreference,
   readThemePreference,
@@ -37,7 +38,7 @@ describe("theme preference", () => {
   });
 
   test("the account choice wins over the device default", () => {
-    vi.stubGlobal("localStorage", fakeStorage());
+    const restore = installGlobal("localStorage", fakeStorage());
 
     try {
       writeThemePreference("dark");
@@ -53,7 +54,7 @@ describe("theme preference", () => {
       expect(readThemePreference("user-2")).toBe("system");
       expect(readThemePreference()).toBe("system");
     } finally {
-      vi.unstubAllGlobals();
+      restore();
     }
   });
 

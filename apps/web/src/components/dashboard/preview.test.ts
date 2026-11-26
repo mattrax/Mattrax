@@ -2,22 +2,13 @@
 import { createComponent, flush } from "solid-js";
 import { render } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DashboardWidget } from "@mattrax/enterprise-domain/client";
-
-const mocks = vi.hoisted(() => ({
-  useDashboardWidgetBatch: vi.fn(() => undefined),
-}));
-
-vi.mock("~/components/dashboard/widget", () => ({
-  useDashboardWidgetBatch: mocks.useDashboardWidgetBatch,
-}));
-
-vi.mock("~/components/ui/icons", () => ({
-  LayoutDashboard: () => null,
-}));
-
+import { recorder } from "../../../../../packages/config/testing/recorder.ts";
 import DashboardPreview from "./preview";
+
+/** Inject the batch hook through the component's seam instead of its module. */
+const useBatch = recorder<[options?: { readonly preview?: boolean }], undefined>(() => undefined);
 
 const widget = (index: number): DashboardWidget => ({
   id: `widget-${index}`,
@@ -44,7 +35,7 @@ const renderHtml = (view: () => JSX.Element) => {
   return { html: container.innerHTML, text: container.textContent ?? "" };
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => useBatch.mockClear());
 
 afterEach(() => {
   for (const dispose of cleanups.splice(0).reverse()) dispose();
@@ -60,15 +51,11 @@ describe("DashboardPreview batch mode", () => {
       createComponent(DashboardPreview, {
         widgets,
         widgetCount: widgets.length,
+        useBatch,
       }),
     );
 
-    expect(mocks.useDashboardWidgetBatch).toHaveBeenCalledTimes(3);
-    expect(mocks.useDashboardWidgetBatch.mock.calls).toEqual([
-      [{ preview: true }],
-      [{ preview: true }],
-      [{ preview: true }],
-    ]);
+    expect(useBatch.calls).toEqual([[{ preview: true }], [{ preview: true }], [{ preview: true }]]);
   });
 
   it("preserves the empty-dashboard state without requesting widget data", () => {
@@ -76,10 +63,11 @@ describe("DashboardPreview batch mode", () => {
       createComponent(DashboardPreview, {
         widgets: undefined,
         widgetCount: 0,
+        useBatch,
       }),
     );
 
     expect(text).toContain("Empty dashboard");
-    expect(mocks.useDashboardWidgetBatch).not.toHaveBeenCalled();
+    expect(useBatch.calls).toEqual([]);
   });
 });

@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { recorder } from "../../../../packages/config/testing/recorder.ts";
 import {
   conditionalPasskeyAvailable,
   PasskeySignInError,
@@ -7,6 +8,8 @@ import {
 } from "./passkey-sign-in";
 
 const buffer = (...values: number[]) => new Uint8Array(values).buffer;
+
+const get = recorder<unknown[], Promise<Credential>>();
 
 const install = (available = true) => {
   Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
@@ -18,7 +21,7 @@ const install = (available = true) => {
   });
   Object.defineProperty(navigator, "credentials", {
     configurable: true,
-    value: { get: vi.fn() },
+    value: { get },
   });
 };
 
@@ -36,7 +39,10 @@ const assertion = () => ({
   getClientExtensionResults: () => ({ credProps: { rk: true } }),
 });
 
-beforeEach(() => install());
+beforeEach(() => {
+  get.mockClear();
+  install();
+});
 
 afterEach(() => {
   Object.defineProperty(window, "isSecureContext", { configurable: true, value: false });
@@ -62,7 +68,7 @@ describe("conditional passkey sign-in", () => {
 
   it("serialises an assertion in the shape the completion endpoint accepts", async () => {
     const signal = new AbortController().signal;
-    vi.mocked(navigator.credentials.get).mockResolvedValue(assertion() as Credential);
+    get.mockResolvedValue(assertion() as Credential);
 
     await expect(
       startConditionalPasskey(

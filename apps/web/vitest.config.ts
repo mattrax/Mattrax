@@ -8,9 +8,9 @@ const enrollmentSsrTests = [
   "src/components/enrollment/enrollment-states.test.ts",
 ];
 
-// Module mocks and fake clocks leak through a shared module graph, so these
-// files keep their own worker environment. The list is derived from source;
-// everything else injects dependencies through Effect layers.
+// Fake clocks leak through a shared module graph, so these files keep their
+// own worker environment. The list is derived from source; everything else
+// injects dependencies through Effect layers.
 const mockedTests = isolatedTestFiles
   .filter((file) => file.startsWith("apps/web/"))
   .map((file) => file.slice("apps/web/".length));

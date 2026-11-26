@@ -1,5 +1,6 @@
 import { Effect, Logger } from "effect";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { asFake, recorder } from "../../config/testing/recorder.ts";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { exportPrivateKeyJwk, generateCaKeyPair, pemEncode, sealSecret } from "@mattrax/crypto";
@@ -427,22 +428,23 @@ describe("credential expiry notifications", () => {
   it("notifies once per new alert with enabled owner/admin recipients only", async () => {
     const db = await withRecipients();
 
-    const notifications: Array<{
+    type Notification = {
       organizationId: string;
       organizationName: string;
       threshold: string;
       recipients: Array<{ email: string }>;
-    }> = [];
+    };
+    const notifications: Notification[] = [];
 
-    const notify = vi.fn((notification: any) =>
+    const notify = recorder((notification: Notification) =>
       Effect.sync(() => {
         notifications.push(notification);
       }),
     );
 
-    const first = await run(db, notify);
+    const first = await run(db, asFake<Parameters<typeof run>[1]>(notify));
     expect(first.credentialAlerts).toBe(2);
-    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify.calls).toHaveLength(2);
     expect(notifications.map((item) => item.organizationId)).toEqual(["org-a", "org-b"]);
 
     const orgA = notifications.find((item) => item.organizationId === "org-a")!;
@@ -459,9 +461,9 @@ describe("credential expiry notifications", () => {
 
     // A second run on the same UTC day is deduped by the audit trail, so no
     // duplicate email is sent.
-    const second = await run(db, notify);
+    const second = await run(db, asFake<Parameters<typeof run>[1]>(notify));
     expect(second.credentialAlerts).toBe(0);
-    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify.calls).toHaveLength(2);
   });
 
   it("keeps maintenance running and logs when the notifier fails or throws", async () => {

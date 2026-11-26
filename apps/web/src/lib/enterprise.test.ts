@@ -1,5 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Effect, Layer } from "effect";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { installGlobal } from "../../../../packages/config/testing/globals.ts";
 import { enterprise } from "./enterprise";
+import type { EnterpriseRequestContext } from "./enterprise";
 
 type CapturedRequest = {
   readonly method: string;
@@ -7,119 +11,101 @@ type CapturedRequest = {
   readonly headers: Record<string, string | string[] | undefined>;
 };
 
-const requestContext = vi.hoisted(() => ({
-  server: false,
-  url: "https://dashboard.test/settings",
-}));
-
-const transport = vi.hoisted(() => ({
+const transportState = {
   requests: [] as Array<CapturedRequest>,
   responses: [] as Array<unknown>,
-}));
+};
 
-vi.mock("@solidjs/web", () => ({
-  get isServer() {
-    return requestContext.server;
-  },
-  getRequestEvent: () =>
-    requestContext.server
-      ? {
-          request: new Request(requestContext.url, {
-            headers: { cookie: "__Host-mattrax_session=ssr-session" },
-          }),
-        }
-      : undefined,
-}));
+/** A recording HttpClient layer: the transport is injected per call, not mocked globally. */
+const recordingTransport = Layer.succeed(
+  HttpClient.HttpClient,
+  HttpClient.make((request) =>
+    Effect.sync(() => {
+      transportState.requests.push({
+        method: request.method,
+        url: request.url,
+        headers: { ...request.headers },
+      });
 
-// Keep the real generated HttpApi client and its request transforms; replace
-// only the transport so Node can inspect relative browser URLs without fetch.
-vi.mock("~/lib/web-http", async () => {
-  const [{ Effect, Layer }, { HttpClient, HttpClientResponse }] = await Promise.all([
-    import("effect"),
-    import("effect/http"),
-  ]);
+      return HttpClientResponse.fromWeb(
+        request,
+        Response.json(transportState.responses.shift() ?? { status: "ok" }),
+      );
+    }),
+  ),
+);
 
-  return {
-    webHttpClientLayer: Layer.succeed(
-      HttpClient.HttpClient,
-      HttpClient.make((request) =>
-        Effect.sync(() => {
-          transport.requests.push({
-            method: request.method,
-            url: request.url,
-            headers: { ...request.headers },
-          });
-
-          return HttpClientResponse.fromWeb(
-            request,
-            Response.json(transport.responses.shift() ?? { status: "ok" }),
-          );
-        }),
-      ),
-    ),
-  };
-});
+const context: EnterpriseRequestContext = { transport: recordingTransport };
 
 const installResponses = (...responses: Array<unknown>) => {
-  transport.responses.push(...responses);
+  transportState.responses.push(...responses);
 };
+
+const ssrContext = (): EnterpriseRequestContext => ({
+  transport: recordingTransport,
+  event: {
+    request: new Request("https://dashboard.test/settings", {
+      headers: { cookie: "__Host-mattrax_session=ssr-session" },
+    }),
+  },
+});
 
 const pathnameOf = (request: CapturedRequest) =>
   new URL(request.url, "https://dashboard.test").pathname;
 
+let restoreLocation: () => void;
+
 beforeEach(() => {
-  vi.stubGlobal("location", new URL("https://dashboard.test/settings"));
-  transport.requests.length = 0;
-  transport.responses.length = 0;
-  requestContext.server = false;
-  requestContext.url = "https://dashboard.test/settings";
+  restoreLocation = installGlobal("location", new URL("https://dashboard.test/settings"));
+  transportState.requests.length = 0;
+  transportState.responses.length = 0;
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  restoreLocation();
 });
 
 describe("enterprise client request security headers", () => {
   it("adds CSRF headers to generated typed mutations", async () => {
     installResponses({ status: "ok" }, { status: "ok", deletedTenants: [] });
 
-    await enterprise.updateMe({ name: "New name" });
-    await enterprise.deleteAccount({ confirmEmail: "owner@example.com" });
+    await enterprise.updateMe({ name: "New name" }, context);
+    await enterprise.deleteAccount({ confirmEmail: "owner@example.com" }, context);
 
-    expect(transport.requests).toHaveLength(2);
-    expect(transport.requests[0]?.method).toBe("PATCH");
-    expect(pathnameOf(transport.requests[0]!)).toBe("/api/v1/me");
-    expect(transport.requests[0]?.headers["x-effect-auth-csrf"]).toBe("1");
-    expect(transport.requests[1]?.method).toBe("DELETE");
-    expect(pathnameOf(transport.requests[1]!)).toBe("/api/v1/me");
-    expect(transport.requests[1]?.headers["x-effect-auth-csrf"]).toBe("1");
+    expect(transportState.requests).toHaveLength(2);
+    expect(transportState.requests[0]?.method).toBe("PATCH");
+    expect(pathnameOf(transportState.requests[0]!)).toBe("/api/v1/me");
+    expect(transportState.requests[0]?.headers["x-effect-auth-csrf"]).toBe("1");
+    expect(transportState.requests[1]?.method).toBe("DELETE");
+    expect(pathnameOf(transportState.requests[1]!)).toBe("/api/v1/me");
+    expect(transportState.requests[1]?.headers["x-effect-auth-csrf"]).toBe("1");
   });
 
   it("does not add CSRF headers to safe generated requests", async () => {
     installResponses({ tenants: [] });
 
-    await enterprise.listTenants();
+    await enterprise.listTenants(context);
 
-    expect(transport.requests[0]?.method).toBe("GET");
-    expect(transport.requests[0]?.headers["x-effect-auth-csrf"]).toBeUndefined();
-    expect(transport.requests[0]?.headers.origin).toBeUndefined();
+    expect(transportState.requests[0]?.method).toBe("GET");
+    expect(transportState.requests[0]?.headers["x-effect-auth-csrf"]).toBeUndefined();
+    expect(transportState.requests[0]?.headers.origin).toBeUndefined();
   });
 
   it("forwards cookie and explicit Origin for SSR typed mutations", async () => {
-    requestContext.server = true;
     installResponses({ status: "ok" });
 
-    await enterprise.updateMe({ name: "SSR name" });
+    await enterprise.updateMe({ name: "SSR name" }, ssrContext());
 
-    expect(transport.requests[0]?.headers["x-effect-auth-csrf"]).toBe("1");
-    expect(transport.requests[0]?.headers.origin).toBe("https://dashboard.test");
-    expect(transport.requests[0]?.headers.cookie).toBe("__Host-mattrax_session=ssr-session");
+    expect(transportState.requests[0]?.headers["x-effect-auth-csrf"]).toBe("1");
+    expect(transportState.requests[0]?.headers.origin).toBe("https://dashboard.test");
+    expect(transportState.requests[0]?.headers.cookie).toBe("__Host-mattrax_session=ssr-session");
   });
 
   it("preserves bearer and custom headers on unsafe downloads", async () => {
     installResponses({ ok: true });
 
     const response = await enterprise.request("https://dashboard.test/api/v1/custom-export", {
+      ...context,
       method: "POST",
       headers: {
         authorization: "Bearer oauth-token",
@@ -129,37 +115,38 @@ describe("enterprise client request security headers", () => {
     });
 
     expect(await response.json()).toEqual({ ok: true });
-    expect(transport.requests[0]?.method).toBe("POST");
-    expect(pathnameOf(transport.requests[0]!)).toBe("/api/v1/custom-export");
-    expect(transport.requests[0]?.headers["x-effect-auth-csrf"]).toBe("1");
-    expect(transport.requests[0]?.headers.authorization).toBe("Bearer oauth-token");
-    expect(transport.requests[0]?.headers["x-custom"]).toBe("preserved");
+    expect(transportState.requests[0]?.method).toBe("POST");
+    expect(pathnameOf(transportState.requests[0]!)).toBe("/api/v1/custom-export");
+    expect(transportState.requests[0]?.headers["x-effect-auth-csrf"]).toBe("1");
+    expect(transportState.requests[0]?.headers.authorization).toBe("Bearer oauth-token");
+    expect(transportState.requests[0]?.headers["x-custom"]).toBe("preserved");
   });
 
   it("adds SSR Origin without discarding bearer download headers", async () => {
-    requestContext.server = true;
     installResponses({ ok: true });
 
     await enterprise.request("https://dashboard.test/api/v1/custom-export", {
+      ...ssrContext(),
       method: "DELETE",
       headers: { authorization: "Bearer oauth-token" },
     });
 
-    expect(transport.requests[0]?.headers["x-effect-auth-csrf"]).toBe("1");
-    expect(transport.requests[0]?.headers.origin).toBe("https://dashboard.test");
-    expect(transport.requests[0]?.headers.cookie).toBe("__Host-mattrax_session=ssr-session");
-    expect(transport.requests[0]?.headers.authorization).toBe("Bearer oauth-token");
+    expect(transportState.requests[0]?.headers["x-effect-auth-csrf"]).toBe("1");
+    expect(transportState.requests[0]?.headers.origin).toBe("https://dashboard.test");
+    expect(transportState.requests[0]?.headers.cookie).toBe("__Host-mattrax_session=ssr-session");
+    expect(transportState.requests[0]?.headers.authorization).toBe("Bearer oauth-token");
   });
 
   it("keeps safe downloads header-preserving without CSRF", async () => {
     installResponses({ ok: true });
 
     await enterprise.request("https://dashboard.test/api/v1/custom-export", {
+      ...context,
       headers: { authorization: "Bearer oauth-token" },
     });
 
-    expect(transport.requests[0]?.method).toBe("GET");
-    expect(transport.requests[0]?.headers["x-effect-auth-csrf"]).toBeUndefined();
-    expect(transport.requests[0]?.headers.authorization).toBe("Bearer oauth-token");
+    expect(transportState.requests[0]?.method).toBe("GET");
+    expect(transportState.requests[0]?.headers["x-effect-auth-csrf"]).toBeUndefined();
+    expect(transportState.requests[0]?.headers.authorization).toBe("Bearer oauth-token");
   });
 });

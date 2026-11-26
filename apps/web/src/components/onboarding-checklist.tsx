@@ -20,6 +20,7 @@ import {
   writeOnboardingDismissal,
 } from "~/lib/onboarding-query";
 import { useTenantPermissions } from "~/lib/permissions";
+import type { TenantPermissionsApi } from "~/lib/permissions";
 import { supportUrl } from "~/lib/support-config-store";
 import { cn } from "~/lib/utils";
 import { resolveTenantId } from "~/lib/tenant";
@@ -44,9 +45,24 @@ function settledQueryData<T>(query: {
   return query.isSuccess ? query.data : undefined;
 }
 
-export default function OnboardingChecklist(props: { tenantId: string }) {
-  const { can, canAny, known, tenant } = useTenantPermissions();
-  const session = authClient.useSession();
+/**
+ * Test seam for the account, permissions and enterprise calls. Production
+ * callers omit it; tests inject fakes instead of replacing modules.
+ */
+export type OnboardingChecklistDeps = {
+  readonly session?: () => { readonly data?: { readonly user?: { readonly id?: string } } };
+  readonly permissions?: () => TenantPermissionsApi;
+  readonly onboardingQuery?: (tenantId: string) => ReturnType<typeof enterpriseQueries.onboarding>;
+  readonly patchTenantOnboarding?: typeof enterprise.patchTenantOnboarding;
+};
+
+export default function OnboardingChecklist(props: {
+  tenantId: string;
+  readonly deps?: OnboardingChecklistDeps;
+}) {
+  const deps = props.deps ?? {};
+  const { can, canAny, known, tenant } = (deps.permissions ?? useTenantPermissions)();
+  const session = deps.session ?? authClient.useSession();
   const queryClient = useQueryClient();
   const browserStorage = () => {
     try {
@@ -70,7 +86,9 @@ export default function OnboardingChecklist(props: { tenantId: string }) {
   );
 
   const state = useQuery(() => {
-    const options = enterpriseQueries.onboarding(props.tenantId);
+    const options = deps.onboardingQuery
+      ? deps.onboardingQuery(props.tenantId)
+      : enterpriseQueries.onboarding(props.tenantId);
 
     return {
       ...options,
@@ -132,7 +150,8 @@ export default function OnboardingChecklist(props: { tenantId: string }) {
   let dismissalFailed = false;
 
   const dismiss = useMutation(() => ({
-    mutationFn: () => enterprise.patchTenantOnboarding(props.tenantId, true),
+    mutationFn: () =>
+      (deps.patchTenantOnboarding ?? enterprise.patchTenantOnboarding)(props.tenantId, true),
     onMutate: async () => {
       // Solid Query does not await `onMutate`. Capture the rollback snapshot
       // and mark the browser before the cancellation await so a PATCH that

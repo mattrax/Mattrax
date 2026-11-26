@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createRoot, createSignal } from "solid-js";
+import { recorder } from "../../../../packages/config/testing/recorder.ts";
 import {
   createStaleWriteGuard,
   STALE_WRITE_TITLE,
@@ -26,8 +27,8 @@ describe("stale writes", () => {
   });
 
   it("toasts and refetches on 412", () => {
-    const notify = vi.fn();
-    const reload = vi.fn();
+    const notify = recorder();
+    const reload = recorder();
 
     expect(handleStaleWrite(preconditionFailure, { notify, reload })).toBe(true);
 
@@ -40,8 +41,8 @@ describe("stale writes", () => {
   });
 
   it("leaves other failures to the caller", () => {
-    const notify = vi.fn();
-    const reload = vi.fn();
+    const notify = recorder();
+    const reload = recorder();
 
     expect(
       handleStaleWrite({ _tag: "EnterpriseBadRequest", message: "bad" }, { notify, reload }),

@@ -63,12 +63,7 @@ export default defineConfig({
             "packages/*/src/**/*.test.ts",
             "packages/*/tests/**/*.test.ts",
           ],
-          exclude: [
-            "apps/web/**",
-            ...nodeIsolatedTests,
-            "**/node_modules/**",
-            "**/dist/**",
-          ],
+          exclude: ["apps/web/**", ...nodeIsolatedTests, "**/node_modules/**", "**/dist/**"],
         },
       },
       // Mocks and fake clocks leak through a shared module graph, so these

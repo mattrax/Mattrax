@@ -1,14 +1,10 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { vitestMockBaseline } from "./mock-baseline.ts";
 
 const repository = fileURLToPath(new URL("../../..", import.meta.url));
 
 const testFile = /\.(test|spec)\.[cm]?[jt]sx?$/;
-// The ratchet baseline already covers module mocks, including aliased vi
-// bindings. Fake clocks are not covered by the lint rule, so find those in
-// source. vi.fn is harmless, but over-isolating a few files is cheap insurance.
 const fakeTime = /\.(?:useFakeTimers|setSystemTime)\s*\(/;
 
 function* walk(directory: string): Generator<string> {
@@ -23,19 +19,15 @@ function* walk(directory: string): Generator<string> {
   }
 }
 
-const clockFiles = ["apps", "packages"]
+/**
+ * Repo-relative POSIX paths of tests that pin the clock. They keep their own
+ * module graph so a fake timer cannot leak into the next file. Module mocks
+ * are gone, so the lint rule no longer needs a baseline to find exceptions.
+ */
+export const isolatedTestFiles: ReadonlyArray<string> = ["apps", "packages"]
   .flatMap((directory) => [...walk(path.join(repository, directory))])
   .flatMap((file) =>
     fakeTime.test(readFileSync(file, "utf8"))
       ? [path.relative(repository, file).split(path.sep).join("/")]
       : [],
   );
-
-/**
- * Repo-relative POSIX paths of tests that replace modules or pin time. The
- * lint-enforced ratchet is the source of truth for module mocks; the source
- * scan adds fake clocks, which the lint rule does not cover.
- */
-export const isolatedTestFiles: ReadonlyArray<string> = [
-  ...new Set([...Object.keys(vitestMockBaseline), ...clockFiles]),
-];

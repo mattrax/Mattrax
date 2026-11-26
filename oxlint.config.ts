@@ -1,7 +1,6 @@
 import { fileURLToPath } from "node:url";
 
 import config from "./packages/config/oxlint.config.ts";
-import { vitestMockBaseline } from "./packages/config/testing/mock-baseline.ts";
 
 /**
  * Repository oxlint config.
@@ -92,16 +91,16 @@ export default {
   overrides: [
     ...(config.overrides ?? []),
     {
-      // Dependencies belong in the Effect service graph. Existing call sites
-      // are baselined so the rule stops new mocks without a big-bang migration.
+      // Dependencies belong in the Effect service graph. Test doubles are
+      // local recorders or injected layers, so there is no grandfathered set.
       files: ["**/*.test.ts", "**/*.test.tsx", "**/tests/**/*.{ts,tsx}"],
       rules: {
         "testing/no-vitest-mocking": [
           "error",
           {
-            // Existing call sites only: the rule fails on any new one and asks
-            // for the baseline to be lowered whenever a file improves.
-            baseline: vitestMockBaseline,
+            // Zero tolerance: test doubles are local recorders or injected
+            // Effect layers, never replacements for imported modules.
+            baseline: {},
             fn: true,
           },
         ],

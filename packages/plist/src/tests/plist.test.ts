@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
+import { recorder } from "../../../config/testing/recorder.ts";
 import { Effect, Exit, Schema } from "effect";
 import {
   parsePlist,
@@ -305,7 +306,11 @@ describe("plist", () => {
         first: [{ second: ["value"] }],
         third: { fourth: true },
       };
-      const objectEntries = vi.spyOn(Object, "entries");
+      const originalEntries = Object.entries;
+      const objectEntries = recorder<[object], Array<[string, unknown]>>((value) =>
+        originalEntries(value),
+      );
+      Object.entries = objectEntries as typeof Object.entries;
       let entryCount = 0;
       let result = "";
 
@@ -313,7 +318,7 @@ describe("plist", () => {
         result = Effect.runSync(serialize(value));
         entryCount = objectEntries.mock.calls.length;
       } finally {
-        objectEntries.mockRestore();
+        Object.entries = originalEntries;
       }
 
       expect(entryCount).toBe(3);

@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { installGlobals } from "../../../../packages/config/testing/globals.ts";
+import { recorder } from "../../../../packages/config/testing/recorder.ts";
 import { authClient } from "./auth";
 
 const NativeRequest = globalThis.Request;
@@ -8,34 +9,34 @@ const session = {
   subjectId: "account-1",
   claims: { name: "Ada", email: "ada@example.com", emailVerified: true },
 };
-const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+const fetch = recorder(async (_input: RequestInfo | URL, _init?: RequestInit) =>
   Response.json({ status: "ok", emailSent: true }),
 );
 
-const installBrowserRequest = () => {
-  vi.stubGlobal(
-    "Request",
-    class extends NativeRequest {
-      constructor(input: RequestInfo | URL, init?: RequestInit) {
-        super(
-          typeof input === "string" && input.startsWith("/")
-            ? new URL(input, "https://mattrax.test")
-            : input,
-          init,
-        );
-      }
-    },
-  );
-};
+const installBrowserRequest = () =>
+  class extends NativeRequest {
+    constructor(input: RequestInfo | URL, init?: RequestInit) {
+      super(
+        typeof input === "string" && input.startsWith("/")
+          ? new URL(input, "https://mattrax.test")
+          : input,
+        init,
+      );
+    }
+  };
+
+let restoreGlobals = () => {};
 
 beforeEach(() => {
-  installBrowserRequest();
-  fetch.mockReset();
-  vi.stubGlobal("fetch", fetch);
+  fetch
+    .mockClear()
+    .mockImplementation(async () => Response.json({ status: "ok", emailSent: true }));
+  restoreGlobals = installGlobals({ Request: installBrowserRequest(), fetch });
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  restoreGlobals();
+  restoreGlobals = () => {};
 });
 
 describe("browser auth transport", () => {
