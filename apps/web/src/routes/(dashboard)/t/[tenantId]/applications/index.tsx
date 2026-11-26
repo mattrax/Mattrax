@@ -12,7 +12,7 @@ import {
   PlatformBadge,
   relativeTime,
 } from "~/components/mdm/common";
-import { ApplicationViewTabs } from "~/components/mdm/application-view-tabs";
+import ApplicationViewTabs from "~/components/mdm/application-view-tabs";
 import { MdmTable } from "~/components/mdm/table";
 import type { MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
@@ -230,7 +230,7 @@ export default function ApplicationsPage() {
             <p
               role="status"
               aria-live="polite"
-              class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-[12px] text-muted-foreground"
+              class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground"
             >
               Filters changed — loading results. The rows below are from the previous filter until
               this finishes.
@@ -242,14 +242,14 @@ export default function ApplicationsPage() {
             <span
               role="status"
               aria-live="polite"
-              class="text-[12px] tabular-nums text-muted-foreground"
+              class="text-xs tabular-nums text-muted-foreground"
             >
               {rows().length} of {total()} application{total() === 1 ? "" : "s"} loaded
             </span>
             <Show
               when={apps.hasNextPage}
               fallback={
-                <span class="text-[12px] text-muted-foreground">
+                <span class="text-xs text-muted-foreground">
                   All matching applications are loaded.
                 </span>
               }
@@ -303,7 +303,7 @@ export default function ApplicationsPage() {
                   {row.name}
                 </a>
                 <span class="mt-0.5 flex items-center gap-1.5">
-                  <span class="block max-w-[34ch] truncate font-mono text-[11px] text-muted-foreground">
+                  <span class="block max-w-44 truncate font-mono text-xs text-muted-foreground">
                     {row.bundleId || "No bundle identifier"}
                   </span>
                   <Show when={row.availability === "unavailable"}>
@@ -328,7 +328,7 @@ export default function ApplicationsPage() {
             sort: (row) => row.source,
             search: (row) => row.source,
             cell: (row) => (
-              <Badge variant="outline" class="text-muted-foreground">
+              <Badge variant="outline">
                 {sourceLabel(row.source)}
               </Badge>
             ),
@@ -337,7 +337,7 @@ export default function ApplicationsPage() {
             id: "version",
             header: "Version",
             cell: (row) => (
-              <span class="whitespace-nowrap text-[12.5px] tabular-nums">{row.version || "—"}</span>
+              <span class="whitespace-nowrap text-xs tabular-nums">{row.version || "—"}</span>
             ),
           },
           {
@@ -350,13 +350,13 @@ export default function ApplicationsPage() {
               return (
                 <Show
                   when={groups + devices > 0}
-                  fallback={<span class="text-[12px] text-muted-foreground">Unassigned</span>}
+                  fallback={<span class="text-xs text-muted-foreground">Unassigned</span>}
                 >
                   <span class="flex flex-wrap items-center gap-1.5">
-                    <Badge variant="secondary" class="tabular-nums">
+                    <Badge variant="secondary">
                       {groups} group{groups === 1 ? "" : "s"}
                     </Badge>
-                    <Badge variant="secondary" class="tabular-nums">
+                    <Badge variant="secondary">
                       {devices} device{devices === 1 ? "" : "s"}
                     </Badge>
                   </span>
@@ -371,10 +371,10 @@ export default function ApplicationsPage() {
             sortId: "updatedAt",
             cell: (row) => (
               <span class="block min-w-0">
-                <span class="block whitespace-nowrap text-[12.5px]">
+                <span class="block whitespace-nowrap text-xs">
                   {relativeTime(row.updatedAt)}
                 </span>
-                <span class="block truncate text-[11px] text-muted-foreground">
+                <span class="block truncate text-xs text-muted-foreground">
                   {formatDate(row.updatedAt)}
                 </span>
               </span>
@@ -387,7 +387,7 @@ export default function ApplicationsPage() {
             sort: (row) => row.createdAt,
             sortId: "createdAt",
             cell: (row) => (
-              <span class="whitespace-nowrap text-[12.5px] text-muted-foreground">
+              <span class="whitespace-nowrap text-xs text-muted-foreground">
                 {formatDate(row.createdAt)}
               </span>
             ),

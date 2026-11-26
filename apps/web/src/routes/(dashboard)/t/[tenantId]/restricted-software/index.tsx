@@ -27,16 +27,18 @@ import { restrictedSoftwareQueryAccess } from "./query-access";
 
 type View = "rules" | "violations";
 
-const enforcementTone = (state: string) => {
+const enforcementTone = (
+  state: string,
+): "success" | "destructive" | "warning" | "outline" => {
   switch (state) {
     case "enforced":
-      return "border-success/30 text-success-foreground";
+      return "success";
     case "failed":
-      return "border-destructive/30 text-destructive";
+      return "destructive";
     case "pending":
-      return "border-warning/30 text-warning-foreground";
+      return "warning";
     default:
-      return "border-border text-muted-foreground";
+      return "outline";
   }
 };
 
@@ -114,10 +116,10 @@ export default function RestrictedSoftwarePage() {
       header: "Match",
       cell: (row: RestrictedSoftwareRuleInfo) => (
         <div class="min-w-0">
-          <span class="block text-[11.5px] text-muted-foreground">
+          <span class="block text-xs text-muted-foreground">
             {RESTRICTED_SOFTWARE_MATCH_LABELS[row.matchType]}
           </span>
-          <span class="block truncate font-mono text-[11.5px] text-foreground">
+          <span class="block truncate font-mono text-xs text-foreground">
             {row.matchValue}
           </span>
         </div>
@@ -129,8 +131,7 @@ export default function RestrictedSoftwarePage() {
         <div class="flex flex-wrap items-center gap-1.5">
           <span>{RESTRICTED_SOFTWARE_ACTION_LABELS[row.action]}</span>
           <Badge
-            variant="outline"
-            class={enforcementTone(
+            variant={enforcementTone(
               restrictedSoftwareCapability(row.platform, row.action).mode === "detection-only"
                 ? "detection-only"
                 : "pending",
@@ -209,7 +210,7 @@ export default function RestrictedSoftwarePage() {
           <span class="block truncate text-foreground">
             {row.applicationName ?? row.matchedBundleId}
           </span>
-          <span class="block truncate font-mono text-[11px] text-muted-foreground">
+          <span class="block truncate font-mono text-xs text-muted-foreground">
             {row.matchedBundleId}
           </span>
         </div>
@@ -218,7 +219,7 @@ export default function RestrictedSoftwarePage() {
     {
       header: "Enforcement",
       cell: (row: RestrictedSoftwareViolationInfo) => (
-        <Badge variant="outline" class={enforcementTone(row.enforcementState)}>
+        <Badge variant={enforcementTone(row.enforcementState)}>
           {stateLabel(row.enforcementState)}
         </Badge>
       ),
@@ -277,7 +278,7 @@ export default function RestrictedSoftwarePage() {
           >
             Violations
             <Show when={(settledQueryData(violations)?.summary.open ?? 0) > 0}>
-              <span class="ml-1 rounded-full bg-destructive/10 px-1.5 text-[10px] text-destructive">
+              <span class="ml-1 rounded-full bg-destructive/10 px-1.5 text-xs text-destructive">
                 {settledQueryData(violations)?.summary.open}
               </span>
             </Show>
@@ -303,7 +304,7 @@ export default function RestrictedSoftwarePage() {
         </div>
 
         <Show when={view() === "violations" && ruleFilter()}>
-          <div class="flex items-center gap-2 text-[11.5px] text-muted-foreground">
+          <div class="flex items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline">Filtered to one rule</Badge>
             <a
               href={`/t/${params.tenantId}/restricted-software`}
@@ -400,7 +401,7 @@ export default function RestrictedSoftwarePage() {
           </Show>
         </Show>
 
-        <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+        <p class="text-xs leading-relaxed text-muted-foreground">
           Android enforces Block installation through the Managed Google Play policy. macOS enforces
           Kill process and Delete app through mattraxd; it cannot prevent an install. Windows is
           detection-only because no Windows agent is deployed for OMA-DM process or application

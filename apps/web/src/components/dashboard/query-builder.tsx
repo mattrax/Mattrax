@@ -484,8 +484,8 @@ export function DeviceQueryBuilder(props: {
     <div class={props.compact ? "space-y-2" : "space-y-3"}>
       <Show when={!props.compact}>
         <div class="flex flex-wrap items-center gap-2">
-          <p class="text-[12.5px] font-medium text-foreground">Match devices</p>
-          <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-[10.5px] text-muted-foreground">
+          <p class="text-xs font-medium text-foreground">Match devices</p>
+          <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-muted-foreground">
             all conditions
           </span>
         </div>
@@ -496,7 +496,7 @@ export function DeviceQueryBuilder(props: {
           props.dataset === "software" && toFilterConditions(props.query, fields()).length === 0
         }
       >
-        <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+        <p class="text-xs leading-relaxed text-muted-foreground">
           Every installed application reported by the fleet is included until you filter devices.
         </p>
       </Show>
@@ -514,8 +514,8 @@ export function DeviceQueryBuilder(props: {
       />
 
       <details class="group">
-        <summary class="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md px-1 py-0.5 text-[11px] text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30">
-          <span class="transition-transform duration-[var(--duration-hover)] group-open:rotate-90">
+        <summary class="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30">
+          <span class="transition-transform duration-150 group-open:rotate-90">
             ›
           </span>
           Edit as text
@@ -523,7 +523,7 @@ export function DeviceQueryBuilder(props: {
         <div class="mt-1.5 space-y-1">
           <Input
             id="device-query-text"
-            class="h-8 font-mono text-[11.5px]"
+            class="h-8"
             disabled={props.disabled}
             value={text()}
             placeholder="platform is apple and staleDays at least 14"
@@ -536,7 +536,7 @@ export function DeviceQueryBuilder(props: {
               }
             }}
           />
-          <p class="text-[10.5px] text-muted-foreground">
+          <p class="text-xs text-muted-foreground">
             Shareable syntax: <code class="font-mono">field operator value</code>, joined with{" "}
             <code class="font-mono">and</code>.
           </p>

@@ -22,6 +22,7 @@ import { useTenantPermissions } from "~/lib/permissions";
 import { supportUrl } from "~/lib/support-config-store";
 import { cn } from "~/lib/utils";
 import { resolveTenantId } from "~/lib/tenant";
+import { Button } from "~/components/ui/button";
 
 /**
  * The in-product onboarding path for a new tenant.
@@ -66,13 +67,13 @@ function ProgressRing(props: { done: number; total: number }) {
         stroke-linecap="round"
         stroke-dasharray={String(circumference)}
         stroke-dashoffset={String(offset())}
-        class="transition-[stroke-dashoffset] duration-500 ease-out motion-reduce:transition-none"
+        class="transition duration-500 ease-out motion-reduce:transition-none"
       />
     </svg>
   );
 }
 
-export function OnboardingChecklist(props: { tenantId: string }) {
+export default function OnboardingChecklist(props: { tenantId: string }) {
   const { can, canAny, known, tenant } = useTenantPermissions();
   const session = authClient.useSession();
   const queryClient = useQueryClient();
@@ -250,23 +251,25 @@ export function OnboardingChecklist(props: { tenantId: string }) {
       >
         <div class="flex items-start gap-4">
           <div class="min-w-0 flex-1">
-            <h2 id="onboarding-title" class="text-[16px] font-[600] tracking-[-0.01em] text-foreground">
+            <h2 id="onboarding-title" class="text-xs font-semibold text-foreground">
               Get started
             </h2>
-            <p class="mt-1 text-[13px] text-muted-foreground">
+            <p class="mt-1 text-xs text-muted-foreground">
               {progress().done} of {progress().total} complete
             </p>
           </div>
           <ProgressRing done={progress().done} total={progress().total} />
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-xs"
             aria-label="Dismiss the Get started checklist"
-            class="-mr-1 -mt-1 rounded-md p-1 text-subtle-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground disabled:opacity-50 motion-reduce:transition-none"
+            class="-mr-1 -mt-1"
             disabled={dismiss.isPending}
             onClick={() => dismiss.mutate()}
           >
             <X class="size-4" />
-          </button>
+          </Button>
         </div>
 
         <ol class="mt-5 flex flex-col gap-1">
@@ -275,7 +278,7 @@ export function OnboardingChecklist(props: { tenantId: string }) {
               <li
                 data-state={index() === 0 ? "active" : "upcoming"}
                 class={cn(
-                  "rounded-xl transition-colors duration-[var(--duration-panel)] ease-swift motion-reduce:transition-none",
+                  "rounded-xl transition-colors duration-150 ease-swift motion-reduce:transition-none",
                   index() === 0 ? "bg-hover" : "hover:bg-hover/60",
                 )}
               >
@@ -285,11 +288,11 @@ export function OnboardingChecklist(props: { tenantId: string }) {
                     aria-hidden="true"
                   />
                   <span class="min-w-0 flex-1">
-                    <span class="block truncate text-[13px] font-[560] text-foreground">
+                    <span class="block truncate text-xs font-medium text-foreground">
                       {step.title}
                     </span>
                     <Show when={index() === 0}>
-                      <span class="mt-1 block truncate text-[12px] leading-4 text-muted-foreground">
+                      <span class="mt-1 block truncate text-xs leading-4 text-muted-foreground">
                         {step.description}
                       </span>
                     </Show>
@@ -297,7 +300,7 @@ export function OnboardingChecklist(props: { tenantId: string }) {
                   <span
                     aria-hidden="true"
                     class={cn(
-                      "shrink-0 rounded-lg px-3 py-1.5 text-[12px] font-[500] transition-[transform,background-color] duration-[var(--duration-hover)] ease-swift motion-reduce:transition-none",
+                      "shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition duration-150 ease-swift motion-reduce:transition-none",
                       index() === 0
                         ? "bg-foreground text-background"
                         : "border border-border bg-card text-foreground group-hover:border-border-strong",
@@ -313,21 +316,25 @@ export function OnboardingChecklist(props: { tenantId: string }) {
 
         <Show when={completed().length > 0}>
           <div class="mt-3 border-t border-border pt-3">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               aria-expanded={showCompleted() ? "true" : "false"}
               aria-controls="onboarding-completed"
-              class="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-left text-[12px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground motion-reduce:transition-none"
+              class="w-full justify-start"
               onClick={() => setShowCompleted((open) => !open)}
             >
               <span>Completed ({completed().length})</span>
-              <ChevronDown
+              <span
                 class={cn(
-                  "size-3.5 transition-transform duration-[var(--duration-hover)] ease-swift motion-reduce:transition-none",
+                  "transition-transform duration-150 ease-swift motion-reduce:transition-none",
                   showCompleted() && "rotate-180",
                 )}
-              />
-            </button>
+              >
+                <ChevronDown class="size-3.5" />
+              </span>
+            </Button>
             <Show when={showCompleted()}>
               <ul
                 id="onboarding-completed"
@@ -338,7 +345,7 @@ export function OnboardingChecklist(props: { tenantId: string }) {
                     <li>
                       <a
                         href={step.href}
-                        class="group flex items-center gap-3 rounded-lg px-3 py-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover motion-reduce:transition-none"
+                        class="group flex items-center gap-3 rounded-lg px-3 py-2 transition-colors duration-150 ease-swift hover:bg-hover motion-reduce:transition-none"
                       >
                         <span
                           class="flex size-5 shrink-0 items-center justify-center rounded-full bg-foreground text-background"
@@ -346,10 +353,10 @@ export function OnboardingChecklist(props: { tenantId: string }) {
                         >
                           <Check class="size-3" />
                         </span>
-                        <span class="min-w-0 flex-1 truncate text-[13px] text-muted-foreground group-hover:text-foreground">
+                        <span class="min-w-0 flex-1 truncate text-xs text-muted-foreground group-hover:text-foreground">
                           {step.title}
                         </span>
-                        <ChevronRight class="size-3 shrink-0 text-subtle-foreground" />
+                        <ChevronRight class="size-3 shrink-0" />
                       </a>
                     </li>
                   )}
@@ -359,13 +366,13 @@ export function OnboardingChecklist(props: { tenantId: string }) {
           </div>
         </Show>
 
-        <p class="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-3 text-[11px] text-muted-foreground">
+        <p class="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
           <span>Stuck, or want a walkthrough?</span>
           <a
             href={supportUrl()}
             target={externalSupport() ? "_blank" : undefined}
             rel={externalSupport() ? "noopener" : undefined}
-            class="font-[500] text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground"
+            class="font-medium text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground"
           >
             Talk to us
           </a>
@@ -373,7 +380,7 @@ export function OnboardingChecklist(props: { tenantId: string }) {
           <a
             href="/docs/"
             target="_self"
-            class="inline-flex items-center gap-1 font-[500] text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground"
+            class="inline-flex items-center gap-1 font-medium text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground"
           >
             <BookOpen class="size-3" aria-hidden="true" />
             Documentation
