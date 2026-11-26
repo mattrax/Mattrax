@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
-import { createTenant, gotoHydrated, register, signIn } from "./helpers";
+import { createTenant, gotoHydrated, register, signIn, signOut } from "./helpers";
 
 test.describe("authentication and onboarding", () => {
   test("registers, lands on the dashboard, and creates a tenant", async ({ page }) => {
@@ -84,10 +84,7 @@ test.describe("authentication and onboarding", () => {
     const tenant = await createTenant(page, "Session Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
-    await page.getByRole("button", { name: "Account menu" }).click();
-    await expect(page.locator("[data-slot=menu-content]")).toBeVisible();
-    await page.getByRole("menuitem", { name: /sign out/i }).click();
-    await expect(page).toHaveURL(/\/login/);
+    await signOut(page);
 
     await signIn(page, email);
     await expect(page).toHaveURL(/\/dashboard|\/t\//);

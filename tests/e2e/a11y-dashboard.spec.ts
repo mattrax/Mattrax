@@ -264,8 +264,7 @@ test.describe("dashboard accessibility", () => {
 
     // Column picker.
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
-    await page.getByRole("button", { name: "Choose visible columns" }).click();
-    await expect(page.locator('[data-slot="menu-content"]')).toBeVisible();
+    await openMenu(page, page.getByRole("button", { name: "Choose visible columns" }));
     await expectNoViolations(page, "column picker open", {
       include: '[data-slot="menu-content"]',
     });

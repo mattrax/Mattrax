@@ -6,6 +6,7 @@ import {
   installVirtualAuthenticator,
   register,
   setVirtualAuthenticatorPresence,
+  signOut,
 } from "./helpers";
 
 // Enrollment, sign-in and removal each include a step-up and a ceremony.
@@ -36,10 +37,7 @@ test.describe("passkeys", () => {
     await expect(card.getByText("E2E Passkey")).toBeVisible({ timeout: 30_000 });
 
     // Sign out, then use the passkey.
-    await page.getByRole("button", { name: "Account menu" }).click();
-    await expect(page.locator("[data-slot=menu-content]")).toBeVisible();
-    await page.getByRole("menuitem", { name: /sign out/i }).click();
-    await expect(page).toHaveURL(/\/login/);
+    await signOut(page);
 
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await page.locator("#email").fill(email);

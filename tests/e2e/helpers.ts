@@ -228,6 +228,34 @@ export async function signIn(page: Page, email: string) {
   }
 }
 
+/**
+ * Sign out through the account menu, retrying if a transient request failure
+ * leaves the menu closed without ending the session.
+ */
+export async function signOut(page: Page) {
+  await expect
+    .poll(
+      async () => {
+        if (page.url().includes("/login")) return true;
+
+        const item = page.getByRole("menuitem", { name: /sign out/i });
+
+        if (!(await item.isVisible().catch(() => false))) {
+          await page
+            .getByRole("button", { name: "Account menu" })
+            .click({ timeout: 2_000 })
+            .catch(() => undefined);
+        }
+
+        await item.click({ timeout: 2_000 }).catch(() => undefined);
+
+        return page.url().includes("/login");
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+}
+
 export async function createTenant(page: Page, name: string) {
   const baseSlug = name
     .toLowerCase()
