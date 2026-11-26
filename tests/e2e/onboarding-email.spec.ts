@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { installVirtualAuthenticator, uniqueEmail } from "./helpers.js";
+import { gotoHydrated, installVirtualAuthenticator, uniqueEmail } from "./helpers.js";
 
 type DebugEmail = {
   readonly to: string;
@@ -25,8 +25,7 @@ test.describe("onboarding email", () => {
     const email = uniqueEmail("welcome");
 
     await installVirtualAuthenticator(page);
-    await page.goto("/register", { waitUntil: "networkidle" });
-    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+    await gotoHydrated(page, "/register");
     await page.locator("#name").fill("Ada Lovelace");
     await page.locator("#email").fill(email);
 

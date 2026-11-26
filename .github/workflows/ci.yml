@@ -212,9 +212,10 @@ jobs:
   # The unit job used to run every check in series: lint 1m01s, vitest 4m26s,
   # typecheck 1m29s and the builds 42s, for 7-8 minutes in a single job. None of
   # those steps needs another's output, so the wall clock is now the slowest
-  # parallel branch (the vitest shards and typecheck, ~1m50s) instead of their
-  # sum. Install is 4 seconds from the pnpm store cache, so each job installs
-  # itself rather than waiting on an install job.
+  # parallel branch (typecheck ~1m29s) instead of their sum. Vitest no longer
+  # needs shards: one node project and shared module graphs cut the suite from
+  # 53s to 9s locally. Install is 4 seconds from the pnpm store cache, so each
+  # job installs itself rather than waiting on an install job.
   #
   # Lint, vitest and typecheck always run. They are not gated on the changed
   # paths because they genuinely read them: `public-routes.test.ts` enumerates
@@ -244,12 +245,13 @@ jobs:
     strategy:
       # Every shard's failure report is useful; do not cancel the rest.
       fail-fast: false
-      # 5,364 tests in 476 files took 4m26s as one process. Vitest's `--shard`
-      # splits the test files across processes, so three shards cost roughly a
-      # third of the run each; the fourth would save ~20s and add a runner, so
-      # the matrix stops at three.
+      # A single node project and no per-file module isolation take the 5,427
+      # tests in 478 files from 53s to 9s locally. One runner therefore stays
+      # well under the two-minute budget, so the three-way matrix is gone.
+      # Keep the shard in the name and command so the denominator still comes
+      # from the matrix if the suite ever needs to fan out again.
       matrix:
-        shard: [1, 2, 3]
+        shard: [1]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
@@ -460,10 +462,12 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-  # One runner per shard. The suite runs with a single Playwright worker because
-  # its tests share dev-mailbox state and rate-limit buckets through one server;
-  # sharding keeps that isolation intact while the suite as a whole runs in
-  # parallel.
+  # One runner per shard with two Playwright workers inside it. The old reason
+  # for a single worker — shared dev-mailbox and rate-limit state — no longer
+  # holds: registrations use unique emails, tenants are unique, the mailbox
+  # looks codes up by recipient, and the per-address limiter is a generous
+  # abuse backstop rather than a per-test quota. Two workers halve the test
+  # slice without cross-test state; keep one locally for readable failures.
   #
   # `packages/config/scripts/e2e-shard.ts` assigns the spec files instead of
   # Playwright's `--shard`: files are assigned largest-first to the emptiest
@@ -476,17 +480,17 @@ jobs:
   # migrations per shard. The shared schema cache keeps the 29s migration off
   # the path once main has published it; the build job above is the real path.
   #
-  # Nine shards. The per-URL Lighthouse matrix adds three jobs, and the build
-  # and migrations now share one, so this is exactly the account's 20-job
-  # limit: changes + lint + 3 vitest + typecheck + build/migrations + 4
-  # Lighthouse + 9 shards. A tenth shard would queue one e2e job, which costs
-  # more than the ~10s it saves.
+  # Seven shards. Two workers per shard and hydration-based navigation (no
+  # network-idle wait) bring the heaviest modeled shard to ~110s including the
+  # ~48s setup, so the suite stays under two minutes with two fewer runners.
+  # With the vitest job also down to one, the account job count falls from 20
+  # to 16: changes + lint + 1 vitest + typecheck + build/migrations + 4
+  # Lighthouse + 7 shards.
   #
-  # The floor is not the file list any more: `mfa.spec.ts` is one 81-86s test
-  # (enroll, pending code, recovery code, regenerate, disable, several page
-  # loads), so its shard is 48s fixed + ~86s no matter how many shards exist.
-  # The other eight shards model at ~93s of tests each. The remaining lever is
-  # a faster runner or changing that test, not more shards.
+  # `mfa.spec.ts` is still the longest file — one 81-86s test that enrolls,
+  # requires a pending code, uses a recovery code, regenerates and disables —
+  # but it is no longer the floor: two workers keep its shard inside the same
+  # budget as the others.
   #
   # Measured per-shard cost is ~25s setup, ~1s schema restore, ~2s browser
   # cache, ~22s build-and-serve (MySQL and the schema load run underneath it)
@@ -511,9 +515,9 @@ jobs:
       matrix:
         # When the policy is enabled, one job runs `playwright test
         # --only-changed` for the PR. It is a single job because the selected
-        # set is usually a handful of specs; the full suite keeps its nine
+        # set is usually a handful of specs; the full suite keeps its seven
         # shards.
-        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2, 3, 4, 5, 6, 7, 8, 9]') }}
+        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2, 3, 4, 5, 6, 7]') }}
     env:
       E2E_CHANNEL: bundled
       # Serve the production build rather than the dev server: a dashboard page

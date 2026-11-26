@@ -189,7 +189,8 @@ test.describe("authenticator MFA", () => {
     await confirmStepUp(page);
     await expect(disableCard.getByText(/security settings updated/i)).toBeVisible();
 
-    await page.goto("/login", { waitUntil: "networkidle" });
+    // signIn navigates to /login itself; a separate goto here only adds a
+    // network-idle wait on a page about to be replaced.
     await signIn(page, email);
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
     await expect(page.getByText(/two-factor authentication required/i)).toHaveCount(0);

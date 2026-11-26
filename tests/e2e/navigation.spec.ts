@@ -101,8 +101,7 @@ test.describe("top navigation", () => {
     const email = uniqueEmail("unverified");
 
     await installVirtualAuthenticator(page);
-    await page.goto("/register", { waitUntil: "networkidle" });
-    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+    await gotoHydrated(page, "/register");
     await page.locator("#name").fill("Unverified User");
     await page.locator("#email").fill(email);
     await page.getByRole("button", { name: /^continue$/i }).click();

@@ -193,12 +193,7 @@ export async function signIn(page: Page, email: string) {
       // Older browser builds without the capability already skip conditional UI.
     }
   });
-  await page.goto("/login", { waitUntil: "networkidle" });
-  await page.waitForFunction(
-    () => document.documentElement.dataset.hydrated === "true",
-    undefined,
-    { timeout: 20_000 },
-  );
+  await gotoHydrated(page, "/login");
 
   // Sign-in is email-first: the address decides whether SSO applies, and the
   // passkey ceremony follows on the next step.

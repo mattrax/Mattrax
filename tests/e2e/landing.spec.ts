@@ -127,7 +127,7 @@ test.describe("landing auth state", () => {
 
 test.describe("landing chrome", () => {
   test("offers a skip link that moves focus past the header", async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await gotoHydrated(page, "/");
 
     const skip = page.getByRole("link", { name: "Skip to content" });
 
@@ -142,7 +142,7 @@ test.describe("landing chrome", () => {
   });
 
   test("labels the primary navigation", async ({ page }) => {
-    await page.goto("/", { waitUntil: "networkidle" });
+    await gotoHydrated(page, "/");
 
     const primary = page.getByRole("navigation", { name: "Primary" });
 
@@ -152,7 +152,7 @@ test.describe("landing chrome", () => {
 
   test("opens the mobile menu and closes it with Escape", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/", { waitUntil: "networkidle" });
+    await gotoHydrated(page, "/");
 
     const trigger = page.getByRole("button", { name: "Open navigation menu" });
     const menu = page.getByRole("navigation", { name: "Site" });
