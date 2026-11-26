@@ -7,7 +7,7 @@ import {
   inspectMobileconfig,
   validateConfiguration,
   validateEscrowConfiguration,
-} from "@mattrax/mdm-core";
+} from "../policy.js";
 
 const certificate = async (commonName: string) => {
   const keyPair = await crypto.subtle.generateKey(

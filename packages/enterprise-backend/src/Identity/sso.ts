@@ -67,12 +67,14 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
         signIn: (_invocation: AuthInvocation, input: { token: string }) =>
           Effect.gen(function* () {
             const services = yield* SsoServicesTag;
+            const now = yield* DateTime.now;
+            const nowDate = DateTime.toDate(now);
 
             const payload = yield* verifyToken(services.secret, input.token).pipe(
               Effect.mapError(() => new SsoRejected({ message: "Invalid SSO assertion" })),
             );
 
-            if (payload.exp <= Date.now() || payload.purpose !== "sso-assertion")
+            if (payload.exp <= DateTime.toEpochMillis(now) || payload.purpose !== "sso-assertion")
               return yield* Effect.fail(new SsoRejected({ message: "SSO assertion expired" }));
             const tenantId = payload.tenantId;
 
@@ -88,7 +90,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
 
             yield* services.db
               .delete(schema.ssoAssertion)
-              .where(lt(schema.ssoAssertion.expiresAt, new Date()));
+              .where(lt(schema.ssoAssertion.expiresAt, nowDate));
 
             const claimed = yield* services.db
               .insert(schema.ssoAssertion)
@@ -96,7 +98,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
               .values({
                 jti: payload.jti,
                 expiresAt: new Date(payload.exp),
-                createdAt: new Date(),
+                createdAt: nowDate,
               });
 
             if (claimed.affectedRows === 0)
@@ -138,7 +140,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
             if (!user.emailVerified)
               yield* services.db
                 .update(schema.account)
-                .set({ emailVerified: true, updatedAt: new Date() })
+                .set({ emailVerified: true, updatedAt: nowDate })
                 .where(eq(schema.account.id, user.id));
 
             const flowId = Sessions.AuthenticationFlowId.make(`sso:${crypto.randomUUID()}`);
@@ -167,7 +169,7 @@ export const makeSsoStrategy = (): StrategyDefinition<any, string | undefined> =
                   factors: ["possession"],
                   userVerified: true,
                   phishingResistant: false,
-                  verifiedAt: DateTime.nowUnsafe(),
+                  verifiedAt: now,
                 },
               ],
             };

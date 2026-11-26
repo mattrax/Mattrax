@@ -2,7 +2,7 @@ import { useIsRouting, useLocation, useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import { createEffect, Show } from "solid-js";
+import { createEffect, Loading, Show } from "solid-js";
 import type { ParentProps } from "solid-js";
 import { authClient } from "~/lib/auth";
 import { meQueryOptions, resolveActiveTenant } from "~/lib/enterprise";
@@ -15,6 +15,7 @@ import {
   useCan,
 } from "~/lib/permissions";
 import { startTenantRealtime } from "~/lib/realtime";
+import { LoadingState } from "@mattrax/ui";
 
 /**
  * Guards every tenant-scoped route. The tenant id in the URL is the source of
@@ -22,6 +23,12 @@ import { startTenantRealtime } from "~/lib/realtime";
  * an empty shell full of failed requests. Wait for `me` and send the browser
  * back to `/dashboard` (which picks a membership it can actually show).
  */
+/** Read account data only after success so a held /me cannot suspend the guard. */
+const settledQueryData = <T,>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined => (query.isSuccess ? query.data : undefined);
+
 export default function TenantLayout(props: ParentProps) {
   const params = useParams();
   const navigate = useNavigate();
@@ -36,7 +43,7 @@ export default function TenantLayout(props: ParentProps) {
   // fresh read before it is treated as unknown.
   let rechecked: string | undefined;
 
-  const tenant = () => resolveActiveTenant(me.data, params.tenantId);
+  const tenant = () => resolveActiveTenant(settledQueryData(me), params.tenantId);
 
   /**
    * Slugs are the shareable, human-readable form of a tenant URL. An id still
@@ -68,7 +75,7 @@ export default function TenantLayout(props: ParentProps) {
 
       return {
         tenantId: params.tenantId,
-        loaded: me.data !== undefined,
+        loaded: settledQueryData(me) !== undefined,
         found: tenant() !== undefined,
         tenantRowId: tenant()?.id,
         canonical: canonicalParam(),
@@ -144,7 +151,7 @@ export default function TenantLayout(props: ParentProps) {
       when={tenant()}
       fallback={
         <div class="flex flex-1 items-center justify-center py-24">
-          <p role="status" class="text-[12px] text-muted-foreground">
+          <p role="status" class="text-xs text-muted-foreground">
             Opening tenant…
           </p>
         </div>
@@ -158,7 +165,7 @@ export default function TenantLayout(props: ParentProps) {
               <Show when={firstReadable()}>
                 {(href) => (
                   <a
-                    class="rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-medium text-primary-foreground"
+                    class="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
                     href={href()}
                   >
                     Open a section you can access
@@ -169,7 +176,19 @@ export default function TenantLayout(props: ParentProps) {
           />
         }
       >
-        {props.children}
+        {/* Keep this guard (and the shell around it) mounted while a nested
+            route's chunk loads. Without its own boundary, the router's root
+            loading state replaces the entire dashboard on every settings tab
+            change. */}
+        <Loading
+          fallback={
+            <div class="flex flex-1 items-center justify-center py-24">
+              <LoadingState label="Loading section…" size={18} />
+            </div>
+          }
+        >
+          {props.children}
+        </Loading>
         <RealtimeTenantSync tenantId={tenant()?.id ?? ""} />
       </Show>
     </Show>

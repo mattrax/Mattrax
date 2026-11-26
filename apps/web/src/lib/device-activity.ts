@@ -10,6 +10,7 @@ export type CommandStatusTone = "success" | "warning" | "danger" | "brand" | "mu
 const STATUS_TONES: Record<DeviceCommandStatus, CommandStatusTone> = {
   queued: "muted",
   sent: "brand",
+  accepted: "brand",
   deferred: "warning",
   succeeded: "success",
   failed: "danger",
@@ -24,7 +25,10 @@ export const commandStatusTone = (status: DeviceCommandStatus): CommandStatusTon
 
 /** Whether the device may still run the command, so its deadline matters. */
 export const isActiveCommandStatus = (status: DeviceCommandStatus) =>
-  status === "queued" || status === "sent" || status === "deferred";
+  status === "queued" ||
+  status === "sent" ||
+  status === "accepted" ||
+  status === "deferred";
 
 /**
  * Flatten activity pages into one feed. Each page continues from an opaque

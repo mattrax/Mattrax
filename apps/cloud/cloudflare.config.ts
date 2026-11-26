@@ -33,7 +33,23 @@ const configuredRateLimitBindings = () => {
     RATE_LIMITER_SCIM: rateLimitBinding("SCIM", 600),
     RATE_LIMITER_BILLING: rateLimitBinding("BILLING", 600),
     RATE_LIMITER_SCEP: rateLimitBinding("SCEP", 300),
+    RATE_LIMITER_POLICY: rateLimitBinding("POLICY", 120),
   };
+
+  // A production Worker without these has no shared limiter at all: it falls
+  // back to per-isolate counters, so the effective ceiling is the configured
+  // limit multiplied by however many isolates are warm. That is easy to ship
+  // by accident, so say it loudly in the deploy log.
+  if (process.env.MATTRAX_PRODUCTION === "true") {
+    const missing = Object.entries(candidates)
+      .filter(([, binding]) => binding === undefined)
+      .map(([name]) => name);
+
+    if (missing.length > 0)
+      console.warn(
+        `[rate-limit] ${missing.join(", ")} not configured; those buckets fall back to per-isolate limits. Set MATTRAX_RATE_LIMIT_*_NAMESPACE to enable the shared limiter.`,
+      );
+  }
 
   return Object.fromEntries(Object.entries(candidates).filter((entry) => entry[1] !== undefined));
 };
@@ -217,6 +233,10 @@ export const apiWorker = {
     MATTRAX_ONBOARDING_REPLY_TO: bindings.secret(),
     /** Support address in the onboarding footer; defaults to the sender. */
     MATTRAX_ONBOARDING_SUPPORT_EMAIL: bindings.secret(),
+    /** Deployment brand used before an account has a tenant. */
+    MATTRAX_BRAND_NAME: bindings.text(process.env.MATTRAX_BRAND_NAME ?? ""),
+    MATTRAX_BRAND_LOGO_URL: bindings.text(process.env.MATTRAX_BRAND_LOGO_URL ?? ""),
+    MATTRAX_BRAND_COLOR: bindings.text(process.env.MATTRAX_BRAND_COLOR ?? ""),
     /**
      * Set to `true` only on a deployment that intentionally has no outbound
      * email. Readiness then reports `mailer: skipped` (degraded) instead of
@@ -236,8 +256,13 @@ export const apiWorker = {
     /** Legacy Windows tenant pin and federated WSTEP app registration. */
     WINDOWS_ORGANIZATION_ID: bindings.text(""),
     WINDOWS_FEDERATED_AUDIENCE: bindings.text(""),
-    /** Set to `1` only behind a proxy that terminates device mTLS. */
-    TRUST_DEVICE_IDENTITY_HEADERS: bindings.text(process.env.TRUST_DEVICE_IDENTITY_HEADERS ?? ""),
+    /**
+     * Hosted Cloudflare reads identity from the verified `request.cf` mTLS
+     * handshake. Proxy-header trust and its peer allowlist are Node-only and
+     * stay disabled here regardless of the deploy process environment.
+     */
+    TRUST_DEVICE_IDENTITY_HEADERS: bindings.text(""),
+    TRUSTED_DEVICE_IDENTITY_PEERS: bindings.text(""),
     /** SMTP server used by self-hosted deployments. */
     MAIL_SMTP_HOST: bindings.text(""),
     MAIL_SMTP_PORT: bindings.text(""),

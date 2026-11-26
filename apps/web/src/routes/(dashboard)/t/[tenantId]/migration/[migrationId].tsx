@@ -17,10 +17,10 @@ import {
   formatDate,
   relativeTime,
 } from "~/components/mdm/common";
-import { Progress } from "@mattrax/ui";
+import { Checkbox, Progress } from "@mattrax/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
@@ -171,14 +171,13 @@ export default function MigrationDetailPage(props: { embedded?: boolean } = {}) 
     try {
       const tenant = resolveTenantId(params.tenantId) ?? params.tenantId ?? "";
 
-      const response = await fetch(
+      const response = await enterprise.request(
         "/api/v1/tenants/" +
           encodeURIComponent(tenant) +
           "/migrations/" +
           encodeURIComponent(migrationId()) +
           "/export?format=" +
           format,
-        { credentials: "include" },
       );
 
       if (!response.ok) throw new Error("Export failed (" + response.status + ")");
@@ -211,7 +210,7 @@ export default function MigrationDetailPage(props: { embedded?: boolean } = {}) 
     {
       header: "Serial",
       cell: (row: FleetMigrationEntry) => (
-        <span class="font-mono text-[12px] text-foreground">{row.serial}</span>
+        <span class="font-mono text-xs text-foreground">{row.serial}</span>
       ),
     },
     {
@@ -243,7 +242,7 @@ export default function MigrationDetailPage(props: { embedded?: boolean } = {}) 
     {
       header: "Evidence",
       cell: (row: FleetMigrationEntry) => (
-        <span class="line-clamp-2 text-[12px] text-muted-foreground" title={row.lastEvidence ?? ""}>
+        <span class="line-clamp-2 text-xs text-muted-foreground" title={row.lastEvidence ?? ""}>
           {row.lastEvidence ?? "—"}
         </span>
       ),
@@ -301,7 +300,7 @@ export default function MigrationDetailPage(props: { embedded?: boolean } = {}) 
         <Show when={props.embedded} fallback={<PageBreadcrumbs title="Migration" />}>
           <a
             href={routes.tenant(params.tenantId).settingsMigration()}
-            class="text-[11.5px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground"
+            class="text-xs text-muted-foreground transition-colors duration-140 ease-swift hover:text-foreground"
           >
             ← Migration cohorts
           </a>
@@ -376,12 +375,11 @@ export default function MigrationDetailPage(props: { embedded?: boolean } = {}) 
                   onInput={(event) => setBatchLimit(Number(event.currentTarget.value) || 10)}
                 />
               </Field>
-              <label class="flex items-start gap-2 self-end pb-2 text-[12.5px] text-muted-foreground sm:col-span-2">
-                <input
-                  type="checkbox"
+              <label class="flex items-start gap-2 self-end pb-2 text-xs text-muted-foreground sm:col-span-2">
+                <Checkbox
                   class="mt-0.5"
                   checked={confirmSoleCopy()}
-                  onChange={(event) => setConfirmSoleCopy(event.currentTarget.checked)}
+                  onCheckedChange={(checked) => setConfirmSoleCopy(checked === true)}
                 />
                 <span>
                   I understand a device already enrolled in Mattrax is its only managed copy:
@@ -448,13 +446,13 @@ function HandoffPanel(props: {
                   Copy URL
                 </Button>
               </div>
-              <p class="mt-1 break-all font-mono text-[12px] text-foreground">
+              <p class="mt-1 break-all font-mono text-xs text-foreground">
                 {guide.enrollmentUrl}
               </p>
-              <ol class="mt-2 list-decimal space-y-1 pl-4 text-[12px] text-muted-foreground">
+              <ol class="mt-2 list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
                 <For each={guide.steps}>{(step) => <li>{step}</li>}</For>
               </ol>
-              <p class="mt-2 text-[12px] text-subtle-foreground">{guide.note}</p>
+              <p class="mt-2 text-xs text-subtle-foreground">{guide.note}</p>
             </div>
           )}
         </For>
@@ -468,7 +466,7 @@ function HandoffPanel(props: {
                   {recipe.delivery === "script" ? "One-shot script" : "Manual step"}
                 </Badge>
               </div>
-              <p class="mt-1 text-[12px] text-muted-foreground">{recipe.instructions}</p>
+              <p class="mt-1 text-xs text-muted-foreground">{recipe.instructions}</p>
               <Show when={recipe.script}>
                 {(script) => (
                   <>
@@ -481,7 +479,7 @@ function HandoffPanel(props: {
                         Copy script
                       </Button>
                     </div>
-                    <pre class="mt-2 max-h-64 overflow-auto rounded-md bg-surface p-2 font-mono text-[11.5px] text-muted-foreground">
+                    <pre class="mt-2 max-h-64 overflow-auto rounded-md bg-surface p-2 font-mono text-xs text-muted-foreground">
                       {script()}
                     </pre>
                   </>
@@ -491,7 +489,7 @@ function HandoffPanel(props: {
           )}
         </For>
 
-        <p class="text-[12px] text-subtle-foreground">{props.detail.enrollment.deploymentHint}</p>
+        <p class="text-xs text-subtle-foreground">{props.detail.enrollment.deploymentHint}</p>
       </div>
     </Panel>
   );

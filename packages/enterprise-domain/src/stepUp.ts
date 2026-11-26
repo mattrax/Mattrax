@@ -28,11 +28,13 @@ export const STEP_UP_ACTIONS = [
   "android-disconnect",
   "script-change",
   "script-run",
+  "restricted-software-change",
   "billing-portal",
   "sso-policy",
   "tenant-mfa-policy",
   "scep-ca-rotate",
   "scep-ca-import",
+  "certificate-upload",
   "passkey-enroll",
   "passkey-remove",
 ] as const;
@@ -66,6 +68,10 @@ export class StepUpUnavailable extends Schema.TaggedError<StepUpUnavailable>()(
   "StepUpUnavailable",
   {
     message: Schema.String,
+    reason: Schema.optional(
+      Schema.Literals(["configuration", "storage", "cryptography", "protocol", "unavailable"]),
+    ),
+    retryable: Schema.optional(Schema.Boolean),
   },
 ) {}
 

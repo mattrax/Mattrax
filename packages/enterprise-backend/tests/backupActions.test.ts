@@ -112,7 +112,7 @@ describe("backup retention actions", () => {
 
     const pinned = await runEffect(
       setBackupRetention(db, "org-1", "run-1", "pinned", {
-        userId: "user-1",
+        accountId: "user-1",
         email: "owner@example.com",
       }),
     );

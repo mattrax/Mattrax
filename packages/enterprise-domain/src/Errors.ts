@@ -1,4 +1,5 @@
 import { HttpApiSchema } from "effect/http-api";
+import { Context, Effect, Layer } from "effect";
 import { STEP_UP_ACTIONS } from "./stepUp.js";
 import { Schema } from "effect";
 import { StepUpRequired } from "./stepUp.js";
@@ -186,6 +187,11 @@ export const EnterpriseAuthRequiredErrors = [
 
 export const EnterpriseDbErrors = [EnterpriseDbError.pipe(HttpApiSchema.status(500))] as const;
 
+/** Step-up infrastructure is temporarily unavailable, rather than a bad proof. */
+export const EnterpriseStepUpUnavailable = [
+  StepUpUnavailable.pipe(HttpApiSchema.status(503)),
+] as const;
+
 export const EnterpriseTenantReadErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
@@ -301,6 +307,10 @@ export const EnterpriseApnsErrors = [...EnterpriseTenantWriteErrors] as const;
 
 export const EnterpriseApplicationErrors = [...EnterpriseTenantWriteErrors] as const;
 
+export const EnterpriseApplicationError = Schema.Union(EnterpriseApplicationErrors);
+
+export type EnterpriseApplicationError = typeof EnterpriseApplicationError.Type;
+
 export const EnterpriseSsoErrors = [...EnterpriseTenantWriteErrors] as const;
 
 export const EnterpriseAndroidReadErrors = [
@@ -335,6 +345,7 @@ export const EnterpriseNoDomainErrors = [
 export const EnterpriseAccountErrors = [
   ...EnterpriseAuthRequiredErrors,
   ...EnterpriseDbErrors,
+  ...EnterpriseStepUpUnavailable,
   EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
   EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
   EnterpriseNotFound.pipe(HttpApiSchema.status(404)),
@@ -365,10 +376,7 @@ export const EnterpriseStepUpErrors = [
   ...EnterpriseStepUpRequired,
 ] as const;
 
-export const EnterpriseStepUpFactorErrors = [
-  ...EnterpriseStepUpErrors,
-  StepUpUnavailable.pipe(HttpApiSchema.status(400)),
-] as const;
+export const EnterpriseStepUpFactorErrors = [...EnterpriseStepUpErrors] as const;
 
 export const StepUpActionSchema = Schema.Literals(STEP_UP_ACTIONS);
 
@@ -462,24 +470,34 @@ export type EnterpriseErrorDiagnostic = {
   readonly details?: Schema.JsonObject;
 };
 
-const diagnostics = new WeakMap<object, EnterpriseErrorDiagnostic>();
+/** Create an isolated diagnostic store for synchronous service construction. */
+export const makeEnterpriseErrorDiagnostics = (): EnterpriseErrorDiagnostics["Service"] => {
+  const diagnostics = new WeakMap<object, EnterpriseErrorDiagnostic>();
 
-/** Attach operational detail to an error without changing its wire shape. */
-export const diagnoseError = <E extends object>(
-  error: E,
-  diagnostic: EnterpriseErrorDiagnostic,
-): E => {
-  diagnostics.set(error, diagnostic);
+  return EnterpriseErrorDiagnostics.of({
+    diagnose: (error, diagnostic) => {
+      diagnostics.set(error, diagnostic);
 
-  return error;
+      return error;
+    },
+    read: (error) =>
+      typeof error === "object" && error !== null ? diagnostics.get(error) : undefined,
+  });
 };
 
-/** Only object values can key the diagnostics WeakMap; primitives never carry one. */
-const isDiagnosticCarrier = <Value>(value: Value): value is Value & object =>
-  typeof value === "object" && value !== null;
-
-export const errorDiagnostic = <Value>(error: Value): EnterpriseErrorDiagnostic | undefined =>
-  isDiagnosticCarrier(error) ? diagnostics.get(error) : undefined;
+/** Operational error detail owned by one backend Layer. */
+export class EnterpriseErrorDiagnostics extends Context.Service<
+  EnterpriseErrorDiagnostics,
+  {
+    readonly diagnose: <E extends object>(error: E, diagnostic: EnterpriseErrorDiagnostic) => E;
+    readonly read: (error: unknown) => EnterpriseErrorDiagnostic | undefined;
+  }
+>()("@mattrax/enterprise-domain/EnterpriseErrorDiagnostics") {
+  static readonly layer = Layer.effect(
+    EnterpriseErrorDiagnostics,
+    Effect.sync(makeEnterpriseErrorDiagnostics),
+  );
+}
 
 export const defaultErrorCode = (tag: string): EnterpriseErrorCode | undefined => {
   switch (tag) {

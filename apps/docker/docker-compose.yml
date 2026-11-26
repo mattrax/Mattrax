@@ -31,9 +31,11 @@ services:
       ORIGIN: ${ORIGIN:?set ORIGIN to the public https URL}
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET to a random secret}
       DATABASE_URL: mysql://mattrax:${MYSQL_PASSWORD:-mattrax}@mysql:3306/mattrax
-      # Required when the proxy terminates device mTLS. See the self-hosting
-      # docs before enabling: the proxy must strip caller-supplied values.
+      # Required when the proxy terminates device mTLS. Both settings are
+      # mandatory: the proxy must strip caller values and its numeric socket
+      # address must be explicitly trusted. Startup fails otherwise.
       TRUST_DEVICE_IDENTITY_HEADERS: ${TRUST_DEVICE_IDENTITY_HEADERS:-}
+      TRUSTED_DEVICE_IDENTITY_PEERS: ${TRUSTED_DEVICE_IDENTITY_PEERS:-}
       # Optional integrations, all disabled when unset.
       POSTHOG_KEY: ${POSTHOG_KEY:-}
       POSTHOG_HOST: ${POSTHOG_HOST:-}
@@ -73,8 +75,13 @@ services:
       MATTRAX_ONBOARDING_SINCE: ${MATTRAX_ONBOARDING_SINCE:-}
       MATTRAX_ONBOARDING_REPLY_TO: ${MATTRAX_ONBOARDING_REPLY_TO:-}
       MATTRAX_ONBOARDING_SUPPORT_EMAIL: ${MATTRAX_ONBOARDING_SUPPORT_EMAIL:-}
+      MATTRAX_BRAND_NAME: ${MATTRAX_BRAND_NAME:-}
+      MATTRAX_BRAND_LOGO_URL: ${MATTRAX_BRAND_LOGO_URL:-}
+      MATTRAX_BRAND_COLOR: ${MATTRAX_BRAND_COLOR:-}
     ports:
-      - "8080:8080"
+      # Host reverse proxies work with the loopback default. Set this to a
+      # private host interface only when the proxy runs on another host.
+      - "${MATTRAX_BIND_ADDRESS:-127.0.0.1}:8080:8080"
     volumes:
       - mattrax-data:/data
 

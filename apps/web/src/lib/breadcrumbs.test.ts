@@ -37,6 +37,23 @@ describe("buildBreadcrumbs", () => {
     ]);
   });
 
+  it("labels the policy deployment tab instead of falling back to Details", () => {
+    expect(
+      buildBreadcrumbs({
+        pathname: `${tenant}/policies/policy_123/deployment`,
+        resourceName: "Staff policy",
+      }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Policies", href: `${tenant}/policies` },
+      { label: "Staff policy", href: `${tenant}/policies/policy_123` },
+      {
+        label: "Deployment",
+        href: `${tenant}/policies/policy_123/deployment`,
+      },
+    ]);
+  });
+
   it("names the policy when the page supplies its loaded name", () => {
     expect(
       buildBreadcrumbs({
@@ -67,6 +84,28 @@ describe("buildBreadcrumbs", () => {
       { label: "Policies", href: `${tenant}/policies` },
       { label: "Staff policy", href: `${tenant}/policies/policy_123` },
       { label: "Overview", href: `${tenant}/policies/policy_123` },
+    ]);
+  });
+
+  it("keeps the dashboard and reports crumbs without exposing the dashboard id", () => {
+    expect(
+      buildBreadcrumbs({
+        pathname: `${tenant}/dashboards/dash_123/reports`,
+        title: "Reports for Fleet",
+      }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Dashboards", href: `${tenant}/dashboards` },
+      { label: "Reports", href: `${tenant}/dashboards/dash_123/reports` },
+    ]);
+  });
+
+  it("links standalone migration detail back to the cohort list", () => {
+    expect(
+      buildBreadcrumbs({ pathname: `${tenant}/migration/migration_123`, title: "Migration" }),
+    ).toEqual([
+      { label: "Tenant", href: tenant },
+      { label: "Migration", href: `${tenant}/migration` },
     ]);
   });
 

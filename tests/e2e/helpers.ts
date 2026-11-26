@@ -54,6 +54,10 @@ export async function register(page: Page, options: { name?: string; email?: str
     if (message.type() === "error") errors.push(`console: ${message.text()}`);
   });
   await installVirtualAuthenticator(page);
+  // Stays on `networkidle`: the passkey ceremony that follows submits as soon
+  // as the code arrives, and starting it before the register page's own
+  // requests settle sends some sessions through the post-registration
+  // sign-in fallback, which then races the session it just created.
   await page.goto("/register", { waitUntil: "networkidle" });
 
   try {
@@ -129,7 +133,7 @@ export async function verificationCode(page: Page, email: string) {
         for (const message of messages) {
           if (message.to !== email) continue;
 
-          const match = message.text.match(/code is (\d{6})/);
+          const match = message.text.match(/code is:?\s+(\d{6})/);
 
           if (match?.[1]) {
             code = match[1];
@@ -188,6 +192,19 @@ export async function signIn(page: Page, email: string) {
   // that just ended; a real browser restart clears them too.
   await page.context().clearCookies();
   await installVirtualAuthenticator(page);
+  // The virtual authenticator completes conditional passkey requests without
+  // a person picking from the autofill sheet. Keep this helper on the explicit
+  // email → passkey path so the rest of the flow stays observable.
+  await page.addInitScript(() => {
+    try {
+      Object.defineProperty(window.PublicKeyCredential, "isConditionalMediationAvailable", {
+        configurable: true,
+        value: () => Promise.resolve(false),
+      });
+    } catch {
+      // Older browser builds without the capability already skip conditional UI.
+    }
+  });
   await page.goto("/login", { waitUntil: "networkidle" });
   await page.waitForFunction(
     () => document.documentElement.dataset.hydrated === "true",
@@ -256,7 +273,10 @@ export async function createTenant(page: Page, name: string) {
 }
 
 export async function gotoHydrated(page: Page, path: string) {
-  await page.goto(path, { waitUntil: "networkidle" });
+  // The hydration flag is the real readiness signal: it is only set once the
+  // client bundle has run and the router settled. `networkidle` would add a
+  // fixed 500ms of idle on top, on every navigation.
+  await page.goto(path, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     () => document.documentElement.dataset.hydrated === "true",
     undefined,
@@ -305,15 +325,29 @@ export async function api<T = unknown>(page: Page, path: string, init?: ApiReque
 }
 
 /**
+ * The control that opens the filter bar's field list.
+ *
+ * A table with no filters shows "Filter" (or "More filters" once the bar is
+ * compacted); one with filters applied shows "Add filter". They never coexist,
+ * so `or` resolves to exactly one of them.
+ */
+const filterBarTrigger = (page: Page) =>
+  page
+    .getByRole("button", { name: /^(Filter|More filters)$/ })
+    .or(page.getByRole("button", { name: "Add filter", exact: true }));
+
+/**
  * Add a condition through the Linear-style filter bar: open the field list,
  * pick the field, then pick its value. Works from both the empty "Filter"
  * button and the compact "Add filter" button.
  */
 export async function addFilter(page: Page, field: string, value: string) {
-  const empty = page.getByRole("button", { name: /^(Filter|More filters)$/ });
-
-  if ((await empty.count()) > 0) await empty.click();
-  else await page.getByRole("button", { name: "Add filter", exact: true }).click();
+  // The bar renders either the empty-state "Filter" button or the compact
+  // "Add filter" button, and it mounts with the table. Sampling one of them
+  // first picks a button that may not exist yet — and if the other one is the
+  // one that eventually renders, the click waits for it forever. `or` resolves
+  // to whichever control the page actually shows and auto-waits for it.
+  await filterBarTrigger(page).click();
 
   await page
     .getByRole("listbox", { name: "Filter by" })
@@ -327,10 +361,7 @@ export async function addFilter(page: Page, field: string, value: string) {
 
 /** Add a text-value filter: pick the field, type the value, apply. */
 export async function addTextFilter(page: Page, field: string, value: string) {
-  const empty = page.getByRole("button", { name: /^(Filter|More filters)$/ });
-
-  if ((await empty.count()) > 0) await empty.click();
-  else await page.getByRole("button", { name: "Add filter", exact: true }).click();
+  await filterBarTrigger(page).click();
 
   await page
     .getByRole("listbox", { name: "Filter by" })

@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Cause, Effect } from "effect";
 import { schema as s } from "@mattrax/enterprise-core";
 import type { Db } from "@mattrax/enterprise-core";
 import { realtimeEventInsertForAudit } from "@mattrax/enterprise-domain";
@@ -40,7 +40,9 @@ export const publishRealtimeEvent = (db: Db["Service"], source: RealtimePublishS
       createdAt: source.now ?? new Date(),
     });
   }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.logDebug(`Failed to append realtime event for ${source.action}: ${String(cause)}`),
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterrupts(cause),
+      (cause) =>
+        Effect.logDebug(`Failed to append realtime event for ${source.action}: ${String(cause)}`),
     ),
-  );
+  ) as Effect.Effect<void>;

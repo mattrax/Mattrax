@@ -19,7 +19,6 @@
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/enterprise-identity": "workspace:*",
     "@mattrax/enterprise-tokens": "workspace:*",
-    "@mattrax/net": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },

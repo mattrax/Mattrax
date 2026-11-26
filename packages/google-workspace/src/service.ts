@@ -1,4 +1,6 @@
-import { Data, Effect, Option, Schema } from "effect";
+import { Clock, Context, Data, Effect, Exit, Layer, Option, Schema, Stream } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import type { HttpClientResponse } from "effect/http";
 import type { GoogleWorkspaceCredentials, GoogleWorkspaceConfigError } from "./config.js";
 import { redactGoogleCredentials } from "./config.js";
 import { GOOGLE_TOKEN_URL, signServiceAccountAssertion } from "./jwt.js";
@@ -6,8 +8,10 @@ import { GOOGLE_TOKEN_URL, signServiceAccountAssertion } from "./jwt.js";
 /** A failed Google Directory/token request. Messages never contain credentials. */
 export class GoogleWorkspaceError extends Data.TaggedError("GoogleWorkspaceError")<{
   message: string;
+  kind?: "configuration" | "transport" | "timeout" | "response" | "decode";
   status?: number;
   retryAfterMs?: number;
+  retryable?: boolean;
   cause?: unknown;
 }> {}
 
@@ -199,15 +203,12 @@ const errorCode = (body: string): string | undefined => {
   return error.status ?? error.message;
 };
 
-const errorMessage = (body: string, status: number): string => {
-  const code = errorCode(body);
-  const snippet = body.replaceAll(/\s+/g, " ").trim().slice(0, 300);
+const errorMessage = (label: string, body: string, status: number): string => {
+  const code = errorCode(body)?.replaceAll(/\s+/g, " ").trim().slice(0, 300);
 
-  if (code) return `Google Workspace rejected the request (HTTP ${status}): ${code}`;
-
-  return snippet
-    ? `Google Workspace rejected the request (HTTP ${status}): ${snippet}`
-    : `Google Workspace rejected the request (HTTP ${status}).`;
+  return code
+    ? `${label} rejected the request (HTTP ${status}): ${code}`
+    : `${label} rejected the request (HTTP ${status}).`;
 };
 
 const isRateLimited = (status: number, body: string): boolean =>
@@ -216,7 +217,7 @@ const isRateLimited = (status: number, body: string): boolean =>
   (status === 403 &&
     /rateLimitExceeded|userRateLimitExceeded|quotaExceeded|backendError/i.test(body));
 
-const parseRetryAfter = (value: string | null, nowMs: number): number | undefined => {
+const parseRetryAfter = (value: string | undefined, nowMs: number): number | undefined => {
   if (!value) return undefined;
   const seconds = Number(value);
 
@@ -228,13 +229,14 @@ const parseRetryAfter = (value: string | null, nowMs: number): number | undefine
   return Math.max(0, date - nowMs);
 };
 
-type ServiceOptions = {
+export type GoogleWorkspaceServiceOptions = {
   readonly credentials: GoogleWorkspaceCredentials;
+  /** Test/proxy seam for the convenience constructor; the service itself uses HttpClient. */
   readonly fetch?: typeof globalThis.fetch;
-  /** Injectable clock (ms) for deterministic tests. */
-  readonly now?: () => number;
-  /** Injectable delay, so tests do not wait for real backoff. */
-  readonly sleep?: (durationMs: number) => Effect.Effect<void>;
+  /** Deadline for each HTTP attempt, including reading the response body. */
+  readonly timeoutMs?: number;
+  /** Maximum accepted response body size. */
+  readonly maxResponseBytes?: number;
   /** Injectable jitter, for deterministic backoff tests. */
   readonly jitter?: () => number;
   readonly maxAttempts?: number;
@@ -245,327 +247,456 @@ type ServiceOptions = {
 };
 
 const DEFAULT_BASE_URL = "https://admin.googleapis.com";
-
+const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const TOKEN_EXPIRY_SKEW_MS = 60_000;
+
+const httpClientLayer = (fetchImpl?: typeof globalThis.fetch) =>
+  fetchImpl === undefined
+    ? FetchHttpClient.layer
+    : FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
+
+type RawResponse = {
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string | undefined>>;
+  readonly text: string;
+};
+
+type CachedToken = {
+  readonly token: string;
+  readonly ttlMs: number;
+};
 
 /**
  * A Google Workspace Admin SDK (Directory API) client.
  *
- * Auth is a service-account JWT with domain-wide delegation: the deployment (or
- * tenant) stores the JSON key, and every call impersonates the configured
- * admin. Access tokens are cached in memory until shortly before expiry; the
- * key never leaves the process.
+ * The service requires Effect's HttpClient. Each attempt has a deadline that
+ * covers both headers and body, response bytes are bounded, and all JSON is
+ * Schema-decoded. Access tokens are shared by concurrent callers and refreshed
+ * once when Google rejects a cached token.
  */
-export const makeGoogleWorkspaceService = (options: ServiceOptions): GoogleWorkspaceService => {
-  const fetchImpl = options.fetch ?? globalThis.fetch;
-  const now = options.now ?? Date.now;
-  const sleep = options.sleep ?? ((durationMs: number) => Effect.sleep(durationMs));
-  const jitter = options.jitter ?? (() => Math.random() * 250);
-  const maxAttempts = Math.max(1, options.maxAttempts ?? 4);
-  const baseDelayMs = options.baseDelayMs ?? 500;
-  const maxDelayMs = options.maxDelayMs ?? 8_000;
-  const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
-  const tokenUrl = options.tokenUrl ?? GOOGLE_TOKEN_URL;
+export class GoogleWorkspace extends Context.Service<GoogleWorkspace, GoogleWorkspaceService>()(
+  "@mattrax/google-workspace/GoogleWorkspace",
+) {
+  static readonly layer = (options: GoogleWorkspaceServiceOptions) =>
+    Layer.effect(
+      GoogleWorkspace,
+      Effect.gen(function* () {
+        const client = yield* HttpClient.HttpClient;
+        const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+        const maxResponseBytes = Math.max(
+          1,
+          options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+        );
+        const jitter = options.jitter ?? (() => Math.random() * 250);
+        const maxAttempts = Math.max(1, options.maxAttempts ?? 4);
+        const baseDelayMs = Math.max(0, options.baseDelayMs ?? 500);
+        const maxDelayMs = Math.max(0, options.maxDelayMs ?? 8_000);
+        const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+        const tokenUrl = options.tokenUrl ?? GOOGLE_TOKEN_URL;
+        const safe = (message: string) => redactGoogleCredentials(message, options.credentials);
 
-  let cached: { readonly token: string; readonly expiresAt: number } | undefined;
+        const readBoundedText = (
+          response: HttpClientResponse.HttpClientResponse,
+          label: string,
+        ): Effect.Effect<string, GoogleWorkspaceError> => {
+          const declaredLength = Number(response.headers["content-length"]);
 
-  const safe = (message: string) => redactGoogleCredentials(message, options.credentials);
+          if (Number.isFinite(declaredLength) && declaredLength > maxResponseBytes)
+            return Effect.fail(
+              new GoogleWorkspaceError({
+                kind: "response",
+                message: `The ${label} response exceeded ${maxResponseBytes} bytes.`,
+              }),
+            );
 
-  const tokenRequest = (): Effect.Effect<
-    { readonly token: string; readonly expiresAt: number },
-    GoogleWorkspaceError
-  > =>
-    Effect.gen(function* () {
-      const assertion = yield* signServiceAccountAssertion({
-        serviceAccount: options.credentials.serviceAccount,
-        adminEmail: options.credentials.adminEmail,
-        audience: tokenUrl,
-      }).pipe(
-        Effect.mapError(
-          (error) => new GoogleWorkspaceError({ message: safe(error.message), cause: error }),
-        ),
-      );
+          return Stream.runFoldEffect(
+            response.stream,
+            () => ({ bytes: 0, text: "", decoder: new TextDecoder() }),
+            (state, chunk) => {
+              const bytes = state.bytes + chunk.byteLength;
 
-      const body = new URLSearchParams({
-        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-        assertion: assertion.assertion,
-      });
+              if (bytes > maxResponseBytes)
+                return Effect.fail(
+                  new GoogleWorkspaceError({
+                    kind: "response",
+                    message: `The ${label} response exceeded ${maxResponseBytes} bytes.`,
+                  }),
+                );
 
-      let lastError: GoogleWorkspaceError | undefined;
-
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const response = yield* Effect.tryPromise({
-          try: () =>
-            fetchImpl(tokenUrl, {
-              method: "POST",
-              headers: { "content-type": "application/x-www-form-urlencoded" },
-              body,
-            }),
-          catch: (cause) =>
-            new GoogleWorkspaceError({
-              message: "The Google token endpoint could not be reached.",
-              cause,
-            }),
-        });
-
-        const text = yield* Effect.tryPromise({
-          try: () => response.text(),
-          catch: (cause) =>
-            new GoogleWorkspaceError({
-              message: "The Google token response could not be read.",
-              cause,
-            }),
-        });
-
-        if (response.ok) {
-          const decoded = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(TokenResponse))(
-            text,
+              return Effect.succeed({
+                bytes,
+                text: state.text + state.decoder.decode(chunk, { stream: true }),
+                decoder: state.decoder,
+              });
+            },
           ).pipe(
+            Effect.map((state) => state.text + state.decoder.decode()),
+            Effect.mapError((cause) =>
+              cause instanceof GoogleWorkspaceError
+                ? cause
+                : new GoogleWorkspaceError({
+                    kind: "transport",
+                    message: `The ${label} response could not be read.`,
+                    retryable: true,
+                    cause,
+                  }),
+            ),
+          );
+        };
+
+        const execute = (
+          request: HttpClientRequest.HttpClientRequest,
+          label: string,
+        ): Effect.Effect<RawResponse, GoogleWorkspaceError> =>
+          Effect.gen(function* () {
+            const response = yield* client.execute(request).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new GoogleWorkspaceError({
+                    kind: "transport",
+                    message: `${label} could not be reached.`,
+                    retryable: true,
+                    cause,
+                  }),
+              ),
+            );
+            const text = yield* readBoundedText(response, label);
+
+            return { status: response.status, headers: response.headers, text };
+          }).pipe(
+            Effect.timeoutOrElse({
+              duration: timeoutMs,
+              orElse: () =>
+                Effect.fail(
+                  new GoogleWorkspaceError({
+                    kind: "timeout",
+                    message: `${label} timed out after ${timeoutMs}ms.`,
+                    retryable: true,
+                  }),
+                ),
+            }),
+          );
+
+        const retryDelay = (error: GoogleWorkspaceError, attempt: number): number =>
+          Math.min(maxDelayMs, error.retryAfterMs ?? baseDelayMs * 2 ** attempt + jitter());
+
+        const decodeJson = <T>(
+          text: string,
+          schema: Schema.Decoder<T>,
+          message: string,
+        ): Effect.Effect<T, GoogleWorkspaceError> =>
+          Effect.gen(function* () {
+            const json = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(
+              text,
+            );
+
+            return yield* Schema.decodeUnknownEffect(schema)(json);
+          }).pipe(
             Effect.mapError(
               () =>
                 new GoogleWorkspaceError({
-                  message: "The Google token endpoint returned an unexpected response.",
+                  kind: "decode",
+                  message,
                 }),
             ),
           );
 
-          const expiresIn = Number(decoded.expires_in ?? 3_600);
+        const tokenRequest: Effect.Effect<CachedToken, GoogleWorkspaceError> = Effect.gen(
+          function* () {
+            const assertion = yield* signServiceAccountAssertion({
+              serviceAccount: options.credentials.serviceAccount,
+              adminEmail: options.credentials.adminEmail,
+              audience: tokenUrl,
+            }).pipe(
+              Effect.mapError(
+                (error) =>
+                  new GoogleWorkspaceError({
+                    kind: "configuration",
+                    message: safe(error.message),
+                    cause: error,
+                  }),
+              ),
+            );
 
-          return {
-            token: decoded.access_token,
-            expiresAt:
-              now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 3_600) * 1_000,
-          };
-        }
+            const request = HttpClientRequest.post(tokenUrl).pipe(
+              HttpClientRequest.bodyUrlParams({
+                grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                assertion: assertion.assertion,
+              }),
+            );
 
-        lastError = new GoogleWorkspaceError({
-          message: safe(errorMessage(text, response.status)),
-          status: response.status,
-          retryAfterMs: parseRetryAfter(response.headers.get("retry-after"), now()),
-        });
+            let lastError: GoogleWorkspaceError | undefined;
 
-        if (attempt === maxAttempts - 1 || !isRateLimited(response.status, text)) break;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              const result = yield* execute(request, "The Google token endpoint").pipe(
+                Effect.map((raw) => ({ raw, error: undefined })),
+                Effect.catch((error) => Effect.succeed({ raw: undefined, error })),
+              );
 
-        const delay = Math.min(
-          maxDelayMs,
-          lastError.retryAfterMs ?? baseDelayMs * 2 ** attempt + jitter(),
+              if (result.error) {
+                lastError = result.error;
+
+                if (attempt === maxAttempts - 1 || !result.error.retryable) break;
+
+                yield* Effect.sleep(retryDelay(lastError, attempt));
+                continue;
+              }
+
+              const raw = result.raw!;
+
+              if (raw.status >= 200 && raw.status <= 299) {
+                const decoded = yield* decodeJson(
+                  raw.text,
+                  TokenResponse,
+                  "The Google token endpoint returned an unexpected response.",
+                );
+
+                const expiresIn = Number(decoded.expires_in ?? 3_600);
+                const lifetimeMs =
+                  (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 3_600) * 1_000;
+
+                return {
+                  token: decoded.access_token,
+                  ttlMs: Math.max(0, lifetimeMs - TOKEN_EXPIRY_SKEW_MS),
+                };
+              }
+
+              lastError = new GoogleWorkspaceError({
+                kind: "response",
+                message: safe(errorMessage("The Google token endpoint", raw.text, raw.status)),
+                status: raw.status,
+                retryAfterMs: parseRetryAfter(
+                  raw.headers["retry-after"],
+                  yield* Clock.currentTimeMillis,
+                ),
+                retryable: isRateLimited(raw.status, raw.text),
+              });
+
+              if (attempt === maxAttempts - 1 || !lastError.retryable) break;
+
+              yield* Effect.sleep(retryDelay(lastError, attempt));
+            }
+
+            return yield* Effect.fail(
+              lastError ??
+                new GoogleWorkspaceError({
+                  kind: "response",
+                  message: "The Google token endpoint rejected the request.",
+                }),
+            );
+          },
         );
 
-        yield* sleep(delay);
-      }
+        const [accessToken, invalidateAccessToken] = yield* Effect.cachedInvalidateWithTTL(
+          tokenRequest,
+          (exit) => (Exit.isSuccess(exit) ? exit.value.ttlMs : 0),
+        );
 
-      return yield* Effect.fail(
-        lastError ??
-          new GoogleWorkspaceError({ message: "The Google token endpoint rejected the request." }),
-      );
-    });
+        const requestJson = <T>(
+          url: string,
+          schema: Schema.Decoder<T>,
+        ): Effect.Effect<T, GoogleWorkspaceError> =>
+          Effect.gen(function* () {
+            let lastError: GoogleWorkspaceError | undefined;
+            let refreshed = false;
 
-  const accessToken = (): Effect.Effect<string, GoogleWorkspaceError> =>
-    Effect.gen(function* () {
-      const current = cached;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              const token = (yield* accessToken).token;
+              const request = HttpClientRequest.get(url).pipe(
+                HttpClientRequest.bearerToken(token),
+                HttpClientRequest.acceptJson,
+              );
+              const result = yield* execute(request, "Google Workspace").pipe(
+                Effect.map((raw) => ({ raw, error: undefined })),
+                Effect.catch((error) => Effect.succeed({ raw: undefined, error })),
+              );
 
-      if (current && current.expiresAt - TOKEN_EXPIRY_SKEW_MS > now()) return current.token;
+              if (result.error) {
+                lastError = result.error;
 
-      const next = yield* tokenRequest();
+                if (attempt === maxAttempts - 1 || !lastError.retryable) break;
 
-      cached = next;
+                yield* Effect.sleep(retryDelay(lastError, attempt));
+                continue;
+              }
 
-      return next.token;
-    });
+              const raw = result.raw!;
 
-  const requestJson = <T>(
-    url: string,
-    schema: Schema.Decoder<T>,
-  ): Effect.Effect<T, GoogleWorkspaceError> =>
-    Effect.gen(function* () {
-      let lastError: GoogleWorkspaceError | undefined;
+              if (raw.status >= 200 && raw.status <= 299)
+                return yield* decodeJson(
+                  raw.text,
+                  schema,
+                  "Google Workspace returned an unexpected response.",
+                );
 
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const token = yield* accessToken();
+              lastError = new GoogleWorkspaceError({
+                kind: "response",
+                message: safe(errorMessage("Google Workspace", raw.text, raw.status)),
+                status: raw.status,
+                retryAfterMs: parseRetryAfter(
+                  raw.headers["retry-after"],
+                  yield* Clock.currentTimeMillis,
+                ),
+                retryable: isRateLimited(raw.status, raw.text),
+              });
 
-        const response = yield* Effect.tryPromise({
-          try: () =>
-            fetchImpl(url, {
-              headers: { authorization: `Bearer ${token}`, accept: "application/json" },
+              if (raw.status === 401 && !refreshed) {
+                refreshed = true;
+                yield* invalidateAccessToken;
+                continue;
+              }
+
+              if (attempt === maxAttempts - 1 || !lastError.retryable) break;
+
+              yield* Effect.sleep(retryDelay(lastError, attempt));
+            }
+
+            return yield* Effect.fail(
+              lastError ??
+                new GoogleWorkspaceError({ message: "Google Workspace request failed." }),
+            );
+          });
+
+        const directoryUrl = (path: string, query: Record<string, string | undefined>): string => {
+          const url = new URL(`${baseUrl}/admin/directory/v1${path}`);
+
+          for (const [key, value] of Object.entries(query))
+            if (value !== undefined) url.searchParams.set(key, value);
+
+          return url.toString();
+        };
+
+        const listUsers: GoogleWorkspaceService["listUsers"] = (pageToken) =>
+          requestJson(
+            directoryUrl("/users", {
+              customer: options.credentials.customer,
+              maxResults: "200",
+              showDeleted: "true",
+              pageToken: pageToken ?? undefined,
             }),
-          catch: (cause) =>
-            new GoogleWorkspaceError({
-              message: "Google Workspace could not be reached.",
-              cause,
-            }),
-        });
+            GoogleUserList,
+          ).pipe(
+            Effect.map((page) => ({
+              users: (page.users ?? []).map(mapGoogleUser),
+              ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}),
+            })),
+          );
 
-        const text = yield* Effect.tryPromise({
-          try: () => response.text(),
-          catch: (cause) =>
-            new GoogleWorkspaceError({
-              message: "The Google Workspace response could not be read.",
-              cause,
+        const listGroups: GoogleWorkspaceService["listGroups"] = (pageToken) =>
+          requestJson(
+            directoryUrl("/groups", {
+              customer: options.credentials.customer,
+              maxResults: "200",
+              pageToken: pageToken ?? undefined,
             }),
-        });
+            GoogleGroupList,
+          ).pipe(
+            Effect.map((page) => ({
+              groups: (page.groups ?? []).map(mapGoogleGroup),
+              ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}),
+            })),
+          );
 
-        if (response.ok) {
-          return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(schema))(text).pipe(
-            Effect.mapError(
-              () =>
-                new GoogleWorkspaceError({
-                  message: "Google Workspace returned an unexpected response.",
-                }),
+        const listGroupMembers: GoogleWorkspaceService["listGroupMembers"] = (
+          groupKey,
+          pageToken,
+        ) =>
+          requestJson(
+            directoryUrl(`/groups/${encodeURIComponent(groupKey)}/members`, {
+              maxResults: "200",
+              pageToken: pageToken ?? undefined,
+            }),
+            GoogleMemberList,
+          ).pipe(
+            Effect.map((page) => ({
+              members: (page.members ?? [])
+                // Nested groups and customer principals are not people. The shared
+                // pipeline only links directory users.
+                .filter((member) => !member.type || member.type.toUpperCase() === "USER")
+                .flatMap((member) =>
+                  member.id
+                    ? [
+                        {
+                          id: member.id,
+                          ...(member.email ? { email: member.email.toLowerCase() } : {}),
+                          type: member.type ?? "USER",
+                        },
+                      ]
+                    : [],
+                ),
+              ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}),
+            })),
+          );
+
+        const listAllGroupMembers: GoogleWorkspaceService["listAllGroupMembers"] = (groupKey) =>
+          Effect.gen(function* () {
+            const members: GoogleGroupMember[] = [];
+            let pageToken: string | undefined;
+
+            for (let page = 0; page < 100; page++) {
+              const result = yield* listGroupMembers(groupKey, pageToken);
+
+              members.push(...result.members);
+
+              if (!result.nextPageToken) return members;
+              pageToken = result.nextPageToken;
+            }
+
+            return yield* Effect.fail(
+              new GoogleWorkspaceError({
+                message: "A group exceeded 100 membership pages.",
+              }),
+            );
+          }).pipe(
+            // A group deleted between list and member calls simply has no members;
+            // the next group listing reconciles it away.
+            Effect.catchTag("GoogleWorkspaceError", (error) =>
+              error.status === 404 ? Effect.succeed([]) : Effect.fail(error),
             ),
           );
-        }
 
-        lastError = new GoogleWorkspaceError({
-          message: safe(errorMessage(text, response.status)),
-          status: response.status,
-          retryAfterMs: parseRetryAfter(response.headers.get("retry-after"), now()),
+        const getUser: GoogleWorkspaceService["getUser"] = (key) =>
+          requestJson(directoryUrl(`/users/${encodeURIComponent(key)}`, {}), GoogleUserWire).pipe(
+            Effect.map(mapGoogleUser),
+            Effect.catchTag("GoogleWorkspaceError", (error) =>
+              error.status === 404 ? Effect.succeed(null) : Effect.fail(error),
+            ),
+          );
+
+        const validate: GoogleWorkspaceService["validate"] = () =>
+          Effect.gen(function* () {
+            const page = yield* listUsers();
+
+            return {
+              ok: true as const,
+              message: `Google Workspace is reachable; ${page.users.length} user(s) visible on the first page.`,
+            };
+          });
+
+        return GoogleWorkspace.of({
+          listUsers,
+          listGroups,
+          listGroupMembers,
+          listAllGroupMembers,
+          getUser,
+          validate,
         });
-
-        if (response.status === 401 && attempt < maxAttempts - 1) {
-          // A revoked/expired token is worth one refresh; the assertion itself
-          // may also be rejected, in which case the next response is final.
-          cached = undefined;
-          continue;
-        }
-
-        if (attempt === maxAttempts - 1 || !isRateLimited(response.status, text)) break;
-
-        const delay = Math.min(
-          maxDelayMs,
-          lastError.retryAfterMs ?? baseDelayMs * 2 ** attempt + jitter(),
-        );
-
-        yield* sleep(delay);
-      }
-
-      return yield* Effect.fail(
-        lastError ?? new GoogleWorkspaceError({ message: "Google Workspace request failed." }),
-      );
-    });
-
-  const directoryUrl = (path: string, query: Record<string, string | undefined>): string => {
-    const url = new URL(`${baseUrl}/admin/directory/v1${path}`);
-
-    for (const [key, value] of Object.entries(query))
-      if (value !== undefined) url.searchParams.set(key, value);
-
-    return url.toString();
-  };
-
-  const listUsers: GoogleWorkspaceService["listUsers"] = (pageToken) =>
-    requestJson(
-      directoryUrl("/users", {
-        customer: options.credentials.customer,
-        maxResults: "200",
-        showDeleted: "true",
-        pageToken: pageToken ?? undefined,
       }),
-      GoogleUserList,
-    ).pipe(
-      Effect.map((page) => ({
-        users: (page.users ?? []).map(mapGoogleUser),
-        ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}),
-      })),
     );
+}
 
-  const listGroups: GoogleWorkspaceService["listGroups"] = (pageToken) =>
-    requestJson(
-      directoryUrl("/groups", {
-        customer: options.credentials.customer,
-        maxResults: "200",
-        pageToken: pageToken ?? undefined,
-      }),
-      GoogleGroupList,
-    ).pipe(
-      Effect.map((page) => ({
-        groups: (page.groups ?? []).map(mapGoogleGroup),
-        ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}),
-      })),
-    );
-
-  const listGroupMembers: GoogleWorkspaceService["listGroupMembers"] = (groupKey, pageToken) =>
-    requestJson(
-      directoryUrl(`/groups/${encodeURIComponent(groupKey)}/members`, {
-        maxResults: "200",
-        pageToken: pageToken ?? undefined,
-      }),
-      GoogleMemberList,
-    ).pipe(
-      Effect.map((page) => ({
-        members: (page.members ?? [])
-          // Nested groups and customer principals are not people. The shared
-          // pipeline only links directory users.
-          .filter((member) => !member.type || member.type.toUpperCase() === "USER")
-          .flatMap((member) =>
-            member.id
-              ? [
-                  {
-                    id: member.id,
-                    ...(member.email ? { email: member.email.toLowerCase() } : {}),
-                    type: member.type ?? "USER",
-                  },
-                ]
-              : [],
-          ),
-        ...(page.nextPageToken ? { nextPageToken: page.nextPageToken } : {}),
-      })),
-    );
-
-  const listAllGroupMembers: GoogleWorkspaceService["listAllGroupMembers"] = (groupKey) =>
-    Effect.gen(function* () {
-      const members: GoogleGroupMember[] = [];
-      let pageToken: string | undefined;
-
-      for (let page = 0; page < 100; page++) {
-        const result = yield* listGroupMembers(groupKey, pageToken);
-
-        members.push(...result.members);
-
-        if (!result.nextPageToken) return members;
-        pageToken = result.nextPageToken;
-      }
-
-      return yield* Effect.fail(
-        new GoogleWorkspaceError({
-          message: `Group ${groupKey} exceeded 100 membership pages.`,
-        }),
-      );
-    }).pipe(
-      // A group deleted between list and member calls simply has no members;
-      // the next group listing reconciles it away.
-      Effect.catchTag("GoogleWorkspaceError", (error) =>
-        error.status === 404 ? Effect.succeed([]) : Effect.fail(error),
-      ),
-    );
-
-  const getUser: GoogleWorkspaceService["getUser"] = (key) =>
-    requestJson(directoryUrl(`/users/${encodeURIComponent(key)}`, {}), GoogleUserWire).pipe(
-      Effect.map(mapGoogleUser),
-      Effect.catchTag("GoogleWorkspaceError", (error) =>
-        error.status === 404 ? Effect.succeed(null) : Effect.fail(error),
-      ),
-    );
-
-  const validate: GoogleWorkspaceService["validate"] = () =>
-    Effect.gen(function* () {
-      const page = yield* listUsers();
-
-      return {
-        ok: true as const,
-        message: `Google Workspace is reachable; ${page.users.length} user(s) visible on the first page.`,
-      };
-    });
-
-  return {
-    listUsers,
-    listGroups,
-    listGroupMembers,
-    listAllGroupMembers,
-    getUser,
-    validate,
-  };
-};
+/** Build a client with the runtime fetch transport, or an injected test/proxy fetch. */
+export const makeGoogleWorkspaceService = (
+  options: GoogleWorkspaceServiceOptions,
+): Effect.Effect<GoogleWorkspaceService> =>
+  Effect.gen(function* () {
+    return yield* GoogleWorkspace;
+  }).pipe(
+    Effect.provide(GoogleWorkspace.layer(options)),
+    Effect.provide(httpClientLayer(options.fetch)),
+  );
 
 /** Turn a config error into the service error shape used by sync. */
 export const googleConfigFailure = (error: GoogleWorkspaceConfigError): GoogleWorkspaceError =>
-  new GoogleWorkspaceError({ message: error.message, cause: error });
+  new GoogleWorkspaceError({ kind: "configuration", message: error.message, cause: error });

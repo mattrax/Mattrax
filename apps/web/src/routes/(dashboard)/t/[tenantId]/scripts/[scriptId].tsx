@@ -16,11 +16,13 @@ import {
 } from "~/components/mdm/common";
 import { ScriptEditor } from "~/components/mdm/script-editor";
 import type { ScriptDraftValues } from "~/components/mdm/script-editor";
-import { StaleWriteBanner } from "~/components/stale-write-banner";
+import StaleWriteBanner from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
+import { Checkbox } from "@mattrax/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { ChevronDown } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type {
@@ -56,16 +58,16 @@ export const route = {
   },
 };
 
-const statusTone = (status: string) => {
+const statusVariant = (status: string) => {
   switch (status) {
     case "succeeded":
-      return "border-success/30 text-success-foreground";
+      return "success";
     case "failed":
-      return "border-destructive/30 text-destructive";
+      return "destructive";
     case "expired":
-      return "border-warning/30 text-warning-foreground";
+      return "warning";
     default:
-      return "border-border text-muted-foreground";
+      return "outline";
   }
 };
 
@@ -371,7 +373,7 @@ export default function ScriptDetailPage() {
     {
       header: "Status",
       cell: (row: ScriptExecutionInfo) => (
-        <Badge variant="outline" class={statusTone(row.status)}>
+        <Badge variant={statusVariant(row.status)}>
           {row.status}
         </Badge>
       ),
@@ -404,9 +406,11 @@ export default function ScriptDetailPage() {
       header: "Output",
       cell: (row: ScriptExecutionInfo) => (
         <details class="max-w-xl">
-          <summary class="inline-flex cursor-pointer list-none items-center gap-1 text-[12px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground">
+          <summary class="inline-flex cursor-pointer list-none items-center gap-1 text-xs text-muted-foreground transition-colors duration-140 ease-swift hover:text-foreground">
             {row.stdout || row.stderr ? "View output" : "No output"}
-            <ChevronDown class="disclosure-chevron size-3 shrink-0" />
+            <span class="disclosure-chevron">
+              <ChevronDown class="size-3 shrink-0" />
+            </span>
           </summary>
           <div class="mt-2 space-y-2">
             <div class="flex gap-2">
@@ -436,11 +440,11 @@ export default function ScriptDetailPage() {
               </Button>
             </div>
             <Show when={row.stdoutTruncated || row.stderrTruncated}>
-              <p class="text-[11.5px] text-muted-foreground">
+              <p class="text-xs text-muted-foreground">
                 Output was capped at 64 KiB per stream before storage.
               </p>
             </Show>
-            <pre class="max-h-80 overflow-auto rounded-md border border-border bg-surface p-3 font-mono text-[11.5px] leading-relaxed text-foreground">
+            <pre class="max-h-80 overflow-auto rounded-md border border-border bg-surface p-3 font-mono text-xs leading-relaxed text-foreground">
               {outputFor(row)}
             </pre>
           </div>
@@ -486,7 +490,7 @@ export default function ScriptDetailPage() {
                     <Badge variant="outline">
                       {scriptTriggerLabel(detail().script.trigger.type)}
                     </Badge>
-                    <span class="font-mono text-[11.5px] text-muted-foreground">
+                    <span class="font-mono text-xs text-muted-foreground">
                       {detail().script.language} · {detail().script.runAs}
                     </span>
                     <span class="text-muted-foreground">
@@ -517,18 +521,21 @@ export default function ScriptDetailPage() {
               </Show>
 
               <Show when={message()}>
-                <p role="status" class="text-[12.5px] text-muted-foreground">
+                <p role="status" class="text-xs text-muted-foreground">
                   {message()}
                 </p>
               </Show>
 
-              <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+              <div
+              class="grid gap-5 lg:grid-cols-(--script-grid) lg:items-start"
+              style={{ "--script-grid": "minmax(0,1fr) 360px" }}
+            >
                 <div class="space-y-5">
                   <Panel title="Script" description="Changing the body re-delivers the profile.">
                     <Show
                       when={writable()}
                       fallback={
-                        <pre class="overflow-auto rounded-md border border-border bg-surface p-3 font-mono text-[12px] leading-relaxed">
+                        <pre class="overflow-auto rounded-md border border-border bg-surface p-3 font-mono text-xs leading-relaxed">
                           {detail().body}
                         </pre>
                       }
@@ -554,7 +561,7 @@ export default function ScriptDetailPage() {
                     description="Output is redacted and capped before it is stored."
                     actions={
                       <select
-                        class="h-8 rounded-md border border-input bg-transparent px-2 text-[12px] text-foreground"
+                        class="h-8 rounded-md border border-input bg-transparent px-2 text-xs text-foreground"
                         value={deviceFilter()}
                         onChange={(event) => setDeviceFilter(event.currentTarget.value)}
                       >
@@ -574,7 +581,7 @@ export default function ScriptDetailPage() {
                         columns={runColumns}
                         caption="Script run history"
                         empty={
-                          <p class="text-[12.5px] text-muted-foreground">
+                          <p class="text-xs text-muted-foreground">
                             No runs yet. Run the script, or wait for its trigger to fire on a
                             device.
                           </p>
@@ -592,19 +599,18 @@ export default function ScriptDetailPage() {
                     <Show when={writable()} fallback={<AssignmentsReadOnly />}>
                       <div class="space-y-4">
                         <div>
-                          <p class="mb-2 text-[12px] font-medium text-foreground">Groups</p>
+                          <p class="mb-2 text-xs font-medium text-foreground">Groups</p>
                           <div class="max-h-52 space-y-1.5 overflow-y-auto">
                             <For each={groups.data?.rows ?? []}>
                               {(group) => (
-                                <label class="flex cursor-pointer items-center gap-2 text-[12.5px]">
-                                  <input
-                                    type="checkbox"
+                                <label class="flex cursor-pointer items-center gap-2 text-xs">
+                                  <Checkbox
                                     checked={groupIds().has(group.id)}
-                                    onChange={(event) =>
+                                    onCheckedChange={(checked) =>
                                       setGroupIds((current) => {
                                         const next = new Set(current);
 
-                                        if (event.currentTarget.checked) next.add(group.id);
+                                        if (checked === true) next.add(group.id);
                                         else next.delete(group.id);
 
                                         return next;
@@ -618,19 +624,18 @@ export default function ScriptDetailPage() {
                           </div>
                         </div>
                         <div>
-                          <p class="mb-2 text-[12px] font-medium text-foreground">Devices</p>
+                          <p class="mb-2 text-xs font-medium text-foreground">Devices</p>
                           <div class="max-h-60 space-y-1.5 overflow-y-auto">
                             <For each={devices.data?.rows ?? []}>
                               {(device) => (
-                                <label class="flex cursor-pointer items-center gap-2 text-[12.5px]">
-                                  <input
-                                    type="checkbox"
+                                <label class="flex cursor-pointer items-center gap-2 text-xs">
+                                  <Checkbox
                                     checked={selectedDeviceIds().has(device.id)}
-                                    onChange={(event) =>
+                                    onCheckedChange={(checked) =>
                                       setSelectedDeviceIds((current) => {
                                         const next = new Set(current);
 
-                                        if (event.currentTarget.checked) next.add(device.id);
+                                        if (checked === true) next.add(device.id);
                                         else next.delete(device.id);
 
                                         return next;
@@ -657,7 +662,7 @@ export default function ScriptDetailPage() {
                   </Panel>
 
                   <Panel title="Delivery">
-                    <dl class="space-y-2 text-[12px] leading-relaxed">
+                    <dl class="space-y-2 text-xs leading-relaxed">
                       <div class="flex justify-between gap-3">
                         <dt class="text-muted-foreground">Apple</dt>
                         <dd class="text-right">Profile + mattraxd</dd>
@@ -671,14 +676,14 @@ export default function ScriptDetailPage() {
                         <dd class="text-right text-muted-foreground">Unsupported</dd>
                       </div>
                     </dl>
-                    <p class="mt-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                    <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
                       Manual runs expire after 24 hours if the device never collects them. Results
                       are retained for 30 days.
                     </p>
                   </Panel>
 
                   <Panel title="Details">
-                    <dl class="space-y-2 text-[12px]">
+                    <dl class="space-y-2 text-xs">
                       <div class="flex justify-between gap-3">
                         <dt class="text-muted-foreground">Timeout</dt>
                         <dd class="tabular-nums">{detail().script.timeoutSeconds}s</dd>
@@ -696,6 +701,16 @@ export default function ScriptDetailPage() {
                         <dd>{formatDate(detail().script.updatedAt)}</dd>
                       </div>
                     </dl>
+                  </Panel>
+                  <Panel
+                    title="Scope tags"
+                    description="Limit which delegated administrators can see and run this script."
+                  >
+                    <ScopeTagAssignmentEditor
+                      tenantId={params.tenantId!}
+                      resourceType="script"
+                      resourceIds={[params.scriptId!]}
+                    />
                   </Panel>
                 </div>
               </div>
@@ -729,15 +744,15 @@ function AssignmentsReadOnly() {
   return (
     <Show
       when={(assignments.data?.groups.length ?? 0) + (assignments.data?.devices.length ?? 0) > 0}
-      fallback={<p class="text-[12.5px] text-muted-foreground">Not assigned to any target.</p>}
+      fallback={<p class="text-xs text-muted-foreground">Not assigned to any target.</p>}
     >
-      <div class="space-y-3 text-[12.5px]">
+      <div class="space-y-3 text-xs">
         <div>
-          <p class="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Groups</p>
+          <p class="text-xs uppercase tracking-widest text-muted-foreground">Groups</p>
           <p>{assignments.data?.groups.map((group) => group.name).join(", ") || "None"}</p>
         </div>
         <div>
-          <p class="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Devices</p>
+          <p class="text-xs uppercase tracking-widest text-muted-foreground">Devices</p>
           <p>{assignments.data?.devices.map((device) => device.name).join(", ") || "None"}</p>
         </div>
       </div>

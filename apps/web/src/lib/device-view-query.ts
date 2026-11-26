@@ -1,31 +1,4 @@
-import { Option, Schema } from "effect";
-import type { DeviceViewQuery } from "@mattrax/enterprise-domain/client";
 import type { FilterCondition } from "@mattrax/ui";
-
-/** Query-string keys that describe an explicit device search. */
-export const DEVICE_SEARCH_KEYS = [
-  "q",
-  "status",
-  "proto",
-  "staleDays",
-  "health",
-  "push",
-  "lostMode",
-  "localAccount",
-  "setup",
-  "notSeenSince",
-  "activation",
-  "groupId",
-  "attributeKey",
-  "attributeValue",
-  "query",
-  "sort",
-  "direction",
-  "page",
-  "columns",
-  "pageSize",
-  "view",
-] as const;
 
 export type DeviceFilterState = {
   status: string;
@@ -46,9 +19,9 @@ export type DeviceFilterState = {
 /**
  * Build the chips shown by the device table's FilterBar.
  *
- * Every filter the page applies must appear here. Otherwise a view can apply a
- * filter that is invisible, and the next FilterBar edit resets it as if it had
- * never existed.
+ * Every filter the page applies must appear here. Otherwise a filter can be
+ * active without a visible chip, and the next FilterBar edit resets it as if
+ * it had never existed.
  */
 export const deviceFilterConditions = (state: DeviceFilterState): FilterCondition[] => {
   const conditions: FilterCondition[] = [];
@@ -92,76 +65,6 @@ export const deviceFilterConditions = (state: DeviceFilterState): FilterConditio
     });
 
   return conditions;
-};
-
-type SearchValue = string | ReadonlyArray<string> | undefined;
-
-/** True when the device URL names any filter at all. */
-export const hasExplicitDeviceSearch = (search: Readonly<Record<string, SearchValue>>) =>
-  DEVICE_SEARCH_KEYS.some((key) => {
-    const value = search[key];
-
-    return value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0);
-  });
-
-/**
- * Resolve the member's default view exactly once per page load.
- *
- * `explicitAtMount` is latched by the caller. If the page opened on a copied
- * link, clearing that link later must not unexpectedly bring the default view
- * back.
- */
-export type DeviceDefaultViewState = { resolved: boolean };
-
-export const resolveDeviceDefaultView = (
-  state: DeviceDefaultViewState,
-  input: { explicitAtMount: boolean; ready: boolean; hasDefault: boolean },
-): "wait" | "apply" | "skip" => {
-  if (state.resolved) return "skip";
-  if (!input.ready) return "wait";
-
-  state.resolved = true;
-
-  return input.explicitAtMount || !input.hasDefault ? "skip" : "apply";
-};
-
-const decodeAttributeMap = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.String));
-
-const parseAttributes = (value: string | undefined): Record<string, string> => {
-  if (!value) return {};
-
-  try {
-    return Option.getOrElse(decodeAttributeMap(JSON.parse(value)), () => ({}));
-  } catch {
-    return {};
-  }
-};
-
-/**
- * Merge the parts of a stored view the table UI cannot represent into an
- * update.
- *
- * The table has one attribute editor but a view can carry several attribute
- * filters (for example from the API). Updating a view must not silently delete
- * the extras, and clearing a relative filter in the UI must not drop a stored
- * absolute cutoff the UI never showed.
- */
-export const mergeActiveViewQuery = (
-  active: DeviceViewQuery,
-  current: DeviceViewQuery,
-): DeviceViewQuery => {
-  const activeAttributes = parseAttributes(active.attributes);
-  const attributes =
-    Object.keys(activeAttributes).length > 0
-      ? JSON.stringify({ ...activeAttributes, ...parseAttributes(current.attributes) })
-      : current.attributes;
-
-  return {
-    ...current,
-    attributes,
-    staleDays: current.staleDays ?? active.staleDays,
-    notSeenSince: current.notSeenSince ?? active.notSeenSince,
-  };
 };
 
 /** A positive stale-day value the URL can carry, or `undefined`. */

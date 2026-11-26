@@ -1,10 +1,11 @@
-import { Effect, Option, Schema } from "effect";
-import { OUTBOUND_TIMEOUTS, fetchWithTimeout } from "@mattrax/net";
+import { Effect, identity, Layer, Option, Schema } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import {
   BillingInvoicesResponse,
   BillingSummary,
   EnterpriseStripeError,
 } from "@mattrax/enterprise-domain";
+import { BILLING_REQUEST_TIMEOUT_MS } from "./remoteBillingService.ts";
 import type { BillingOperations, BillingUsage } from "./billingService.ts";
 
 /**
@@ -22,7 +23,10 @@ export type ServicesBillingOptions = {
   readonly token: string;
   /** Public origin of this deployment, used for Stripe return URLs. */
   readonly origin: string;
+  /** Injected fetch seam for tests; production uses the shared HttpClient. */
   readonly fetch?: typeof globalThis.fetch;
+  /** Shared Effect transport supplied by the composition root. */
+  readonly httpClient?: HttpClient.HttpClient;
 };
 
 const BillingUrl = Schema.Struct({ url: Schema.String, quantity: Schema.optional(Schema.Number) });
@@ -49,11 +53,15 @@ const safeJson = (text: string): Schema.Json | undefined => {
   }
 };
 
+const fetchClientLayer = (fetchImpl: typeof globalThis.fetch) =>
+  FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
+
 export const makeServicesBillingService = ({
   url,
   token,
   origin,
-  fetch = globalThis.fetch,
+  fetch,
+  httpClient,
 }: ServicesBillingOptions): BillingOperations => {
   const post = (
     path: string,
@@ -65,30 +73,41 @@ export const makeServicesBillingService = ({
         catch: (cause) => failure(cause instanceof Error ? cause.message : "Invalid services URL"),
       });
 
-      const response = yield* Effect.tryPromise({
-        try: () =>
-          fetchWithTimeout(
-            target,
-            {
-              method: "POST",
-              headers: {
-                authorization: `Bearer ${token}`,
-                "content-type": "application/json",
-                accept: "application/json",
-              },
-              body: JSON.stringify(body),
-            },
-            { timeoutMs: OUTBOUND_TIMEOUTS.billing, fetch },
+      const client =
+        httpClient ?? Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient));
+
+      if (!client)
+        return yield* Effect.fail(failure("The services HTTP client is not configured."));
+
+      // The deadline covers the response body as well as the headers.
+      const exchange = Effect.gen(function* () {
+        const response = yield* client.execute(
+          HttpClientRequest.post(target).pipe(
+            HttpClientRequest.bearerToken(token),
+            HttpClientRequest.acceptJson,
+            HttpClientRequest.bodyText(JSON.stringify(body), "application/json"),
           ),
-        catch: () => failure("The services deployment is unavailable. Try again shortly."),
-      });
+        );
 
-      const text = yield* Effect.tryPromise({
-        try: () => response.text(),
-        catch: () => failure("The services deployment returned an unreadable response."),
-      });
+        return { status: response.status, text: yield* response.text };
+      }).pipe(
+        Effect.mapError(() =>
+          failure("The services deployment is unavailable. Try again shortly."),
+        ),
+        Effect.timeoutOrElse({
+          duration: BILLING_REQUEST_TIMEOUT_MS,
+          orElse: () =>
+            Effect.fail(
+              failure(
+                `The services deployment did not answer within ${BILLING_REQUEST_TIMEOUT_MS}ms.`,
+              ),
+            ),
+        }),
+      );
 
-      if (!response.ok) {
+      const { status, text } = yield* exchange;
+
+      if (status < 200 || status > 299) {
         const parsed = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorBody)(safeJson(text)));
 
         return yield* Effect.fail(
@@ -97,7 +116,7 @@ export const makeServicesBillingService = ({
       }
 
       return safeJson(text);
-    });
+    }).pipe(fetch ? Effect.provide(fetchClientLayer(fetch)) : identity);
 
   const decode = <A>(codec: Schema.Decoder<A>, value: Schema.Json | undefined) =>
     Option.match(Schema.decodeUnknownOption(codec)(value), {

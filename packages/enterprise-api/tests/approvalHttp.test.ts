@@ -1,5 +1,5 @@
 import { Effect, Layer } from "effect";
-import { HttpRouter } from "effect/http";
+import { HttpRouter, HttpServer } from "effect/http";
 import { HttpApi, HttpApiBuilder } from "effect/http-api";
 import { describe, expect, it } from "vitest";
 import {
@@ -11,6 +11,7 @@ import {
   enterpriseApprovalApi,
 } from "@mattrax/enterprise-domain";
 import { enterpriseAccountHandlers, enterpriseApprovalHandlers } from "@mattrax/enterprise-api";
+import { makeHttpHandler } from "./helpers.js";
 
 type Mode = {
   patch?: unknown;
@@ -139,9 +140,10 @@ const makeHandler = (mode: Mode = {}) => {
     ),
     Layer.provide(Layer.succeed(EnterpriseService, service as any)),
     Layer.provide(HttpRouter.layer),
+    Layer.provide(HttpServer.layerServices),
   );
 
-  return HttpRouter.toWebHandler(layer).handler;
+  return makeHttpHandler(layer);
 };
 
 const base = "http://localhost/api/v1/tenants/org-1";

@@ -15,7 +15,7 @@ import {
   describeBackupError,
 } from "@mattrax/enterprise-backend";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -159,7 +159,6 @@ const makeContext = (role = "owner") => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: the fake exposes the R2 methods backups call; it is not a full
     // `R2Bucket` (no signing, no metadata).
     storage,

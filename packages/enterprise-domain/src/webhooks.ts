@@ -18,6 +18,7 @@ export const WEBHOOK_EVENT_TYPES = [
   "device.compliance_changed",
   "policy.deployment_failed",
   "enrollment.attempt_failed",
+  "restricted_software.violation",
 ] as const;
 
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
@@ -34,6 +35,7 @@ export const WEBHOOK_EVENT_LABELS: Record<WebhookEventType, string> = {
   "device.compliance_changed": "Compliance changed",
   "policy.deployment_failed": "Policy deployment failed",
   "enrollment.attempt_failed": "Enrollment attempt failed",
+  "restricted_software.violation": "Restricted software violation",
 };
 
 /**

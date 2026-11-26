@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 const authSecret = "approval-test-secret";
@@ -24,7 +24,7 @@ const headers = (key: AccountKey, extra: Record<string, string> = {}) => ({
   ...extra,
 });
 
-const submit = <A, E>(effect: Effect.Effect<A, E, any>) => Effect.runPromise(Effect.result(effect));
+const submit = <A, E>(effect: Effect.Effect<A, E, any>) => runEffect(Effect.result(effect));
 
 const isFailure = (outcome: any) => outcome._tag === "Failure";
 
@@ -137,7 +137,6 @@ const makeContext = (options: { solo?: boolean } = {}) => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: no test reaches R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods these tests exercise.
@@ -1101,7 +1100,11 @@ describe("account deletion cannot bypass tenant.delete approval", () => {
 
     seedPolicy(context, { action: "tenant.delete" });
 
-    const outcome = await submit(context.service.deleteMe(request(headers("owner"))));
+    const outcome = await submit(
+      context.service.deleteMe(request(headers("owner")), {
+        confirmEmail: accounts.owner.email,
+      }),
+    );
 
     expect(isFailure(outcome)).toBe(true);
     expect((outcome as any).failure._tag).toBe("EnterpriseForbidden");
@@ -1115,7 +1118,11 @@ describe("account deletion cannot bypass tenant.delete approval", () => {
 
     context.db.store.member[0].role = "admin";
 
-    const outcome = await submit(context.service.deleteMe(request(headers("owner"))));
+    const outcome = await submit(
+      context.service.deleteMe(request(headers("owner")), {
+        confirmEmail: accounts.owner.email,
+      }),
+    );
 
     expect(isFailure(outcome)).toBe(true);
     expect((outcome as any).failure._tag).toBe("EnterpriseForbidden");

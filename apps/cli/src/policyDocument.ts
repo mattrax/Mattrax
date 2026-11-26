@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { Effect, Option, Schema } from "effect";
+import { Effect, FileSystem, Option, Schema } from "effect";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type {
   CreatePolicyRequest as CreatePolicyRequestSchema,
@@ -101,15 +100,19 @@ export const parsePolicyDocument = (
   });
 
 /** Read one file and decode it. File errors name the path, never the contents. */
-export const readPolicyDocument = (path: string): Effect.Effect<PolicyDocumentSource, CliFailure> =>
+export const readPolicyDocument = (
+  path: string,
+): Effect.Effect<PolicyDocumentSource, CliFailure, FileSystem.FileSystem> =>
   Effect.gen(function* () {
-    const text = yield* Effect.tryPromise({
-      try: () => readFile(path, "utf8"),
-      catch: () =>
-        new CliFailure({
-          message: `Could not read ${path}.`,
-        }),
-    });
+    const fs = yield* FileSystem.FileSystem;
+    const text = yield* fs.readFileString(path).pipe(
+      Effect.mapError(
+        () =>
+          new CliFailure({
+            message: `Could not read ${path}.`,
+          }),
+      ),
+    );
 
     const document = yield* parsePolicyDocument(text, path);
 

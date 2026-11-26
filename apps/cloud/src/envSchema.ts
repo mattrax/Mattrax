@@ -1,7 +1,35 @@
-import { Schema } from "effect";
+import { DateTime, Option, Schema } from "effect";
 import { parseServicesUrl } from "@mattrax/cloud-services/services";
+import { parseTrustedPeerAddresses } from "./trustedPeer.js";
 
 const nonEmptyString = Schema.String.check(Schema.isMinLength(1));
+
+const positiveInteger = Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0));
+
+const nonNegativeInteger = Schema.NumberFromString.check(
+  Schema.isInt(),
+  Schema.isGreaterThanOrEqualTo(0),
+);
+
+const boundedInteger = (minimum: number, maximum: number) =>
+  nonNegativeInteger.check(
+    Schema.isGreaterThanOrEqualTo(minimum),
+    Schema.isLessThanOrEqualTo(maximum),
+  );
+
+/** Date-only UTC input with a real calendar round-trip, not Date's rollover. */
+const utcDate = Schema.String.check(
+  Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/),
+  Schema.makeFilter<string>((value) => {
+    const decoded = Option.getOrUndefined(
+      Schema.decodeUnknownOption(Schema.DateTimeUtcFromString)(value),
+    );
+
+    return decoded && DateTime.toDateUtc(decoded).toISOString().slice(0, 10) === value
+      ? true
+      : "a valid UTC calendar date in YYYY-MM-DD form";
+  }),
+).pipe(Schema.decodeTo(Schema.DateTimeUtcFromString));
 
 const urlString = Schema.String.check(
   Schema.makeFilter<string>((value) => {
@@ -38,6 +66,8 @@ const ApiEnvSchema = Schema.Struct({
    */
   MATTRAX_SERVICES_URL: Schema.optional(servicesUrlString),
   SERVICES_TOKEN: Schema.optional(nonEmptyString),
+  /** Self-hosted deployment licence used by billing and the APNs relay. */
+  MATTRAX_LICENSE_KEY: Schema.optional(nonEmptyString),
   /**
    * Optional JSON plan catalogue mapping plan names to device/tenant limits.
    * Missing or `null` limits are unlimited. Parsed defensively at startup.
@@ -107,7 +137,7 @@ const ApiEnvSchema = Schema.Struct({
    * Lifetime in seconds of the bearer SCEP challenge embedded in an Apple
    * enrollment profile. Defaults to one hour; bounded to 60..86400.
    */
-  MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: Schema.optional(Schema.String),
+  MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: Schema.optional(boundedInteger(60, 86_400)),
   /**
    * Reply-To for the one-time onboarding emails. Defaults to
    * `oscar@otbeaumont.me`; set it to a monitored mailbox, never `no-reply@`.
@@ -116,10 +146,18 @@ const ApiEnvSchema = Schema.Struct({
   /** Support address in the onboarding email footer. Defaults to the sender. */
   MATTRAX_ONBOARDING_SUPPORT_EMAIL: Schema.optional(nonEmptyString),
   /**
+   * Deployment brand shown in account and onboarding email. Defaults to
+   * Mattrax. A logo is only used when it resolves to an https image; root
+   * relative paths are resolved against `ORIGIN`.
+   */
+  MATTRAX_BRAND_NAME: Schema.optional(nonEmptyString),
+  MATTRAX_BRAND_LOGO_URL: Schema.optional(nonEmptyString),
+  MATTRAX_BRAND_COLOR: Schema.optional(nonEmptyString),
+  /**
    * ISO date (for example `2026-11-14`). Tenants created before this date are
    * never sent the follow-up, so enabling it does not mail existing customers.
    */
-  MATTRAX_ONBOARDING_SINCE: Schema.optional(nonEmptyString),
+  MATTRAX_ONBOARDING_SINCE: Schema.optional(utcDate),
   /**
    * Outbound-email transport for deployments without the Cloudflare
    * `send_email` binding: `smtp`, `cloudflare` or `disabled`.
@@ -138,9 +176,9 @@ const ApiEnvSchema = Schema.Struct({
   /** EHLO name; defaults to the hostname reported by the runtime. */
   MAIL_SMTP_HELO: Schema.optional(nonEmptyString),
   /** Outbox deliveries in flight per maintenance run. Defaults to 4. */
-  MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: Schema.optional(Schema.String),
+  MAINTENANCE_EMAIL_OUTBOX_CONCURRENCY: Schema.optional(positiveInteger),
   /** Attempts before queued mail is permanently failed. Defaults to 5. */
-  MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS: Schema.optional(Schema.String),
+  MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS: Schema.optional(positiveInteger),
   /** Disable the scheduled one-week follow-up with `false`, `0` or `off`. */
   MAINTENANCE_ONBOARDING_EMAILS: Schema.optional(nonEmptyString),
   /**
@@ -150,14 +188,14 @@ const ApiEnvSchema = Schema.Struct({
    */
   MATTRAX_EMAIL_DISABLED: Schema.optional(nonEmptyString),
   /** Days after tenant creation before the follow-up is eligible. Defaults to 7. */
-  MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: Schema.optional(nonEmptyString),
+  MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS: Schema.optional(nonNegativeInteger),
   /** Extra eligible days after the follow-up threshold. Defaults to 7. */
-  MAINTENANCE_ONBOARDING_WINDOW_DAYS: Schema.optional(nonEmptyString),
+  MAINTENANCE_ONBOARDING_WINDOW_DAYS: Schema.optional(nonNegativeInteger),
   /**
    * Suppress a recipient who already received a follow-up for another tenant
    * this many days ago. `0` disables the cooldown. Defaults to 7.
    */
-  MAINTENANCE_ONBOARDING_COOLDOWN_DAYS: Schema.optional(nonEmptyString),
+  MAINTENANCE_ONBOARDING_COOLDOWN_DAYS: Schema.optional(nonNegativeInteger),
   /**
    * Legacy fallback tenant for Windows devices. Tenant-scoped enrollment URLs
    * carry a signed token, so this is no longer required. Set it only for a
@@ -179,6 +217,11 @@ const ApiEnvSchema = Schema.Struct({
    * the certificate comes from the mTLS handshake.
    */
   TRUST_DEVICE_IDENTITY_HEADERS: Schema.optional(nonEmptyString),
+  /**
+   * Comma-separated numeric addresses of proxies allowed to forward verified
+   * device identity. Required whenever trusted identity headers are enabled.
+   */
+  TRUSTED_DEVICE_IDENTITY_PEERS: Schema.optional(nonEmptyString),
   /** Trust `x-forwarded-for`/`x-real-ip`; set only behind a stripping proxy. */
   TRUST_PROXY_HEADERS: Schema.optional(nonEmptyString),
   /**
@@ -187,7 +230,7 @@ const ApiEnvSchema = Schema.Struct({
    * State changes (enrollment, policy delivery, command results, failures) are
    * never coalesced.
    */
-  MDM_AUDIT_CHECKIN_COALESCE_SECONDS: Schema.optional(nonEmptyString),
+  MDM_AUDIT_CHECKIN_COALESCE_SECONDS: Schema.optional(boundedInteger(0, 86_400)),
   /**
    * macOS software-update feed (SOFA). Defaults to the public macOS feed; a
    * mirror URL can be supplied for deployments that cannot reach GitHub or
@@ -195,22 +238,22 @@ const ApiEnvSchema = Schema.Struct({
    * operator can tune the trade-off without a schema change.
    */
   SOFA_FEED_URL: Schema.optional(urlString),
-  SOFA_FEED_CACHE_SECONDS: Schema.optional(Schema.String),
-  SOFA_FEED_RETRY_SECONDS: Schema.optional(Schema.String),
-  SOFA_FEED_TIMEOUT_MS: Schema.optional(Schema.String),
-  SOFA_FEED_SUPPORTED_MAJORS: Schema.optional(Schema.String),
+  SOFA_FEED_CACHE_SECONDS: Schema.optional(positiveInteger),
+  SOFA_FEED_RETRY_SECONDS: Schema.optional(positiveInteger),
+  SOFA_FEED_TIMEOUT_MS: Schema.optional(positiveInteger),
+  SOFA_FEED_SUPPORTED_MAJORS: Schema.optional(positiveInteger),
   SOFA_FEED_DISABLED: Schema.optional(nonEmptyString),
   /** Scheduled maintenance: days without a check-in before a device is marked unenrolled. */
-  MAINTENANCE_STALE_DEVICE_DAYS: Schema.optional(nonEmptyString),
+  MAINTENANCE_STALE_DEVICE_DAYS: Schema.optional(nonNegativeInteger),
   /** Scheduled maintenance: audit-log retention in days; `0` disables purging. */
-  MAINTENANCE_AUDIT_RETENTION_DAYS: Schema.optional(nonEmptyString),
+  MAINTENANCE_AUDIT_RETENTION_DAYS: Schema.optional(nonNegativeInteger),
   /** Scheduled tenant backups: days to keep non-pinned runs; `0` keeps forever. */
-  MAINTENANCE_BACKUP_RETENTION_DAYS: Schema.optional(nonEmptyString),
+  MAINTENANCE_BACKUP_RETENTION_DAYS: Schema.optional(nonNegativeInteger),
   /** Scheduled tenant backups: tenants backed up concurrently (default 4). */
-  MAINTENANCE_BACKUP_CONCURRENCY: Schema.optional(nonEmptyString),
+  MAINTENANCE_BACKUP_CONCURRENCY: Schema.optional(positiveInteger),
   /** Scheduled Entra directory sync: tenants synced concurrently (default 2). */
-  MAINTENANCE_ENTRA_SYNC_CONCURRENCY: Schema.optional(nonEmptyString),
-  MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: Schema.optional(nonEmptyString),
+  MAINTENANCE_ENTRA_SYNC_CONCURRENCY: Schema.optional(positiveInteger),
+  MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: Schema.optional(positiveInteger),
   /**
    * PostHog project API key. Without it product analytics and error tracking
    * are disabled and only the structured request log is written.
@@ -221,9 +264,11 @@ const ApiEnvSchema = Schema.Struct({
   /** PostHog environment tag, e.g. `production` or `staging`. */
   POSTHOG_ENVIRONMENT: Schema.optional(nonEmptyString),
   /** Fraction of eligible errors to report, 0..1. Defaults to 1. */
-  POSTHOG_ERROR_SAMPLE_RATE: Schema.optional(nonEmptyString),
+  POSTHOG_ERROR_SAMPLE_RATE: Schema.optional(
+    Schema.NumberFromString.check(Schema.isFinite(), Schema.isBetween({ minimum: 0, maximum: 1 })),
+  ),
   /** Maximum error events per isolate per minute. Defaults to 20. */
-  POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: Schema.optional(nonEmptyString),
+  POSTHOG_ERROR_MAX_EVENTS_PER_MINUTE: Schema.optional(positiveInteger),
   /**
    * `off` disables span recording and metrics collection (the tracer becomes
    * Effect's no-op). Any other value, or leaving it unset, keeps telemetry on.
@@ -246,6 +291,7 @@ const RawApiEnvSchema = Schema.Struct({
   AUTH_SECRET: optionalString,
   MATTRAX_SERVICES_URL: optionalString,
   SERVICES_TOKEN: optionalString,
+  MATTRAX_LICENSE_KEY: optionalString,
   MATTRAX_PLAN_LIMITS: optionalString,
   MATTRAX_SUPERADMINS: optionalString,
   CLOUD_APPLE_VENDOR_CERT: optionalString,
@@ -272,6 +318,9 @@ const RawApiEnvSchema = Schema.Struct({
   MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: optionalString,
   MATTRAX_ONBOARDING_REPLY_TO: optionalString,
   MATTRAX_ONBOARDING_SUPPORT_EMAIL: optionalString,
+  MATTRAX_BRAND_NAME: optionalString,
+  MATTRAX_BRAND_LOGO_URL: optionalString,
+  MATTRAX_BRAND_COLOR: optionalString,
   MATTRAX_ONBOARDING_SINCE: optionalString,
   MAIL_TRANSPORT: optionalString,
   MAIL_FROM: optionalString,
@@ -291,6 +340,7 @@ const RawApiEnvSchema = Schema.Struct({
   WINDOWS_ORGANIZATION_ID: optionalString,
   WINDOWS_FEDERATED_AUDIENCE: optionalString,
   TRUST_DEVICE_IDENTITY_HEADERS: optionalString,
+  TRUSTED_DEVICE_IDENTITY_PEERS: optionalString,
   TRUST_PROXY_HEADERS: optionalString,
   MDM_AUDIT_CHECKIN_COALESCE_SECONDS: optionalString,
   SOFA_FEED_URL: optionalString,
@@ -327,7 +377,7 @@ export const resolveApiEnv = (source: unknown) => {
   const rawEnv = Schema.decodeUnknownSync(RawApiEnvSchema)(source);
 
   // For now this is only used for runtime validation, so transformations aren't safe.
-  return Schema.decodeUnknownSync(ApiEnvSchema)({
+  const env = Schema.decodeUnknownSync(ApiEnvSchema)({
     // Keep the hosted default so existing deployments that have not set the
     // newly-configurable secret keep working. Local dev overrides it via
     // `.dev.vars`; whitelabel deployments set their own origin.
@@ -335,6 +385,7 @@ export const resolveApiEnv = (source: unknown) => {
     AUTH_SECRET: emptyStringAsUndefined(rawEnv.AUTH_SECRET),
     MATTRAX_SERVICES_URL: trimmedStringAsUndefined(rawEnv.MATTRAX_SERVICES_URL),
     SERVICES_TOKEN: trimmedStringAsUndefined(rawEnv.SERVICES_TOKEN),
+    MATTRAX_LICENSE_KEY: trimmedStringAsUndefined(rawEnv.MATTRAX_LICENSE_KEY),
     MATTRAX_PLAN_LIMITS: emptyStringAsUndefined(rawEnv.MATTRAX_PLAN_LIMITS),
     MATTRAX_SUPERADMINS: emptyStringAsUndefined(rawEnv.MATTRAX_SUPERADMINS),
     CLOUD_APPLE_VENDOR_CERT: emptyStringAsUndefined(rawEnv.CLOUD_APPLE_VENDOR_CERT),
@@ -375,6 +426,9 @@ export const resolveApiEnv = (source: unknown) => {
     MATTRAX_ONBOARDING_SUPPORT_EMAIL: emptyStringAsUndefined(
       rawEnv.MATTRAX_ONBOARDING_SUPPORT_EMAIL,
     ),
+    MATTRAX_BRAND_NAME: emptyStringAsUndefined(rawEnv.MATTRAX_BRAND_NAME),
+    MATTRAX_BRAND_LOGO_URL: emptyStringAsUndefined(rawEnv.MATTRAX_BRAND_LOGO_URL),
+    MATTRAX_BRAND_COLOR: emptyStringAsUndefined(rawEnv.MATTRAX_BRAND_COLOR),
     MATTRAX_ONBOARDING_SINCE: emptyStringAsUndefined(rawEnv.MATTRAX_ONBOARDING_SINCE),
     MAIL_TRANSPORT: emptyStringAsUndefined(rawEnv.MAIL_TRANSPORT),
     MAIL_FROM: emptyStringAsUndefined(rawEnv.MAIL_FROM),
@@ -404,6 +458,7 @@ export const resolveApiEnv = (source: unknown) => {
     WINDOWS_ORGANIZATION_ID: emptyStringAsUndefined(rawEnv.WINDOWS_ORGANIZATION_ID),
     WINDOWS_FEDERATED_AUDIENCE: emptyStringAsUndefined(rawEnv.WINDOWS_FEDERATED_AUDIENCE),
     TRUST_DEVICE_IDENTITY_HEADERS: emptyStringAsUndefined(rawEnv.TRUST_DEVICE_IDENTITY_HEADERS),
+    TRUSTED_DEVICE_IDENTITY_PEERS: trimmedStringAsUndefined(rawEnv.TRUSTED_DEVICE_IDENTITY_PEERS),
     TRUST_PROXY_HEADERS: emptyStringAsUndefined(rawEnv.TRUST_PROXY_HEADERS),
     MDM_AUDIT_CHECKIN_COALESCE_SECONDS: emptyStringAsUndefined(
       rawEnv.MDM_AUDIT_CHECKIN_COALESCE_SECONDS,
@@ -439,4 +494,13 @@ export const resolveApiEnv = (source: unknown) => {
     MATTRAX_METRICS: emptyStringAsUndefined(rawEnv.MATTRAX_METRICS),
     MATTRAX_METRICS_TOKEN: emptyStringAsUndefined(rawEnv.MATTRAX_METRICS_TOKEN),
   });
+
+  const trustedPeers = parseTrustedPeerAddresses(env.TRUSTED_DEVICE_IDENTITY_PEERS);
+
+  if (env.TRUST_DEVICE_IDENTITY_HEADERS === "1" && trustedPeers.size === 0)
+    throw new Error(
+      "TRUSTED_DEVICE_IDENTITY_PEERS is required when TRUST_DEVICE_IDENTITY_HEADERS=1",
+    );
+
+  return env;
 };

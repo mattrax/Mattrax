@@ -5,7 +5,7 @@ import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
 import { createWindowsBackend } from "@mattrax/mdm-windows";
-import { makeDb, tableName } from "./fake-db.js";
+import { appleIdentityCertificate, makeDb, tableName } from "./fake-db.js";
 
 const origin = "https://policies.test";
 
@@ -33,6 +33,7 @@ const device = (id: string, dmIdentifier: string, organizationId: string) => ({
   status: "enrolled",
   name: id,
   dmIdentifier,
+  dmIdentityFingerprint: "fingerprint-1",
   enrolledAt: new Date("2026-01-01T00:00:00Z"),
   lastSeenAt: new Date("2026-01-01T00:00:00Z"),
 });
@@ -65,6 +66,8 @@ const appleScope = {
   _tag: "device" as const,
   udid: "udid-1",
   identityCertificate: "CN=Device,OU=org-1",
+  identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
 };
 
@@ -75,6 +78,7 @@ describe("Apple declaration delivery uses resolved policy", () => {
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1")],
       [tableName(schema.device)]: [device("device-1", "udid-1", "org-1")],
+      [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
       [tableName(schema.enterpriseGroup)]: [
         { id: "group-1", organizationId: "org-1", name: "Engineering" },
       ],
@@ -109,6 +113,7 @@ describe("Apple declaration delivery uses resolved policy", () => {
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1")],
       [tableName(schema.device)]: [device("device-1", "udid-1", "org-1")],
+      [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
       [tableName(schema.enterpriseGroup)]: [
         { id: "group-1", organizationId: "org-1", name: "Engineering" },
       ],

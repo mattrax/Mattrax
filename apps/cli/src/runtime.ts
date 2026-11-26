@@ -1,13 +1,24 @@
-import { Context, Effect, Layer } from "effect";
-import { createHttpApi } from "./client.ts";
+import { Context, Effect, FileSystem, Layer, Path } from "effect";
+import type { HttpClient } from "effect/http";
+import { MattraxApiLive } from "./client.ts";
 import type { MattraxApi } from "./client.ts";
 import type { CliFailure } from "./settings.ts";
-import { configPath, readStoredSettings, requireToken, resolveSettings } from "./settings.ts";
+import {
+  configPath,
+  environmentValue,
+  readStoredSettings,
+  requireToken,
+  resolveSettings,
+} from "./settings.ts";
 import type { ResolvedSettings, SettingsFlags } from "./settings.ts";
 
 export interface CliRuntimeContract {
-  readonly resolveSettings: (flags: SettingsFlags) => Effect.Effect<ResolvedSettings, CliFailure>;
-  readonly api: (settings: ResolvedSettings) => Effect.Effect<MattraxApi, CliFailure>;
+  readonly resolveSettings: (
+    flags: SettingsFlags,
+  ) => Effect.Effect<ResolvedSettings, CliFailure, FileSystem.FileSystem | Path.Path>;
+  readonly api: (
+    settings: ResolvedSettings,
+  ) => Effect.Effect<MattraxApi, CliFailure, HttpClient.HttpClient>;
 }
 
 /**
@@ -23,16 +34,25 @@ export const processRuntimeLayer = Layer.succeed(
   CliRuntime.of({
     resolveSettings: (flags) =>
       Effect.gen(function* () {
-        const path = configPath();
+        const path = yield* configPath;
         const stored = yield* readStoredSettings(path);
+        const [url, token, tenant] = yield* Effect.all([
+          environmentValue("MATTRAX_URL"),
+          environmentValue("MATTRAX_TOKEN"),
+          environmentValue("MATTRAX_TENANT"),
+        ]);
 
         return yield* resolveSettings(flags, {
-          env: process.env,
+          env: { MATTRAX_URL: url, MATTRAX_TOKEN: token, MATTRAX_TENANT: tenant },
           stored,
           configPath: path,
         });
       }),
     api: (settings) =>
-      requireToken(settings).pipe(Effect.map((token) => createHttpApi(settings.url, token))),
+      requireToken(settings).pipe(
+        Effect.flatMap((token) =>
+          MattraxApiLive.pipe(Effect.provide(MattraxApiLive.layer(settings.url, token))),
+        ),
+      ),
   }),
 );

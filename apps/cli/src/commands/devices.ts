@@ -1,10 +1,10 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { Effect, Option } from "effect";
+import { Effect, FileSystem, Option } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 import type { DeviceSearchRow } from "@mattrax/enterprise-domain/client";
 import { decodeMattraxArchive } from "../handover.ts";
 import { formatJson, formatKeyValues, formatTable, line } from "../output.ts";
-import { CliFailure } from "../settings.ts";
+import { CliFailure, environmentValue } from "../settings.ts";
+import { CliSecureFileStore } from "../secureFileStore.ts";
 import { commandContext, requireConfirmation, resolveGroupId, resolveTenantId } from "./shared.ts";
 
 const DEVICE_ACTIONS = [
@@ -283,17 +283,21 @@ const handoverDecrypt = Command.make(
     ),
   },
   Effect.fn(function* (config) {
+    const fs = yield* FileSystem.FileSystem;
     const passphraseFile = Option.getOrUndefined(config.passphraseFile);
     const passphrase = passphraseFile
-      ? yield* Effect.tryPromise({
-          try: async () => (await readFile(passphraseFile, "utf8")).split(/\r?\n/)[0] ?? "",
-          catch: () =>
-            new CliFailure({
-              message: "The passphrase file could not be read.",
-              hint: "Check --passphrase-file and try again.",
-            }),
-        })
-      : (Option.getOrUndefined(config.passphrase) ?? process.env.MATTRAX_HANDOVER_PASSPHRASE);
+      ? yield* fs.readFileString(passphraseFile).pipe(
+          Effect.map((text) => text.split(/\r?\n/)[0] ?? ""),
+          Effect.mapError(
+            () =>
+              new CliFailure({
+                message: "The passphrase file could not be read.",
+                hint: "Check --passphrase-file and try again.",
+              }),
+          ),
+        )
+      : (Option.getOrUndefined(config.passphrase) ??
+        (yield* environmentValue("MATTRAX_HANDOVER_PASSPHRASE")));
 
     if (!passphrase)
       return yield* Effect.fail(
@@ -303,14 +307,15 @@ const handoverDecrypt = Command.make(
         }),
       );
 
-    const text = yield* Effect.tryPromise({
-      try: () => readFile(config.file, "utf8"),
-      catch: () =>
-        new CliFailure({
-          message: `Could not read "${config.file}".`,
-          hint: "Pass the downloaded JSON envelope.",
-        }),
-    });
+    const text = yield* fs.readFileString(config.file).pipe(
+      Effect.mapError(
+        () =>
+          new CliFailure({
+            message: `Could not read "${config.file}".`,
+            hint: "Pass the downloaded JSON envelope.",
+          }),
+      ),
+    );
 
     const decoded = yield* Effect.tryPromise({
       try: () => decodeMattraxArchive(text, passphrase),
@@ -328,14 +333,8 @@ const handoverDecrypt = Command.make(
     const output = Option.getOrUndefined(config.output);
 
     if (output) {
-      yield* Effect.tryPromise({
-        try: () => writeFile(output, body + "\n", { encoding: "utf8", mode: 0o600 }),
-        catch: () =>
-          new CliFailure({
-            message: `Could not write "${output}".`,
-            hint: "Choose a writable path outside shared directories.",
-          }),
-      });
+      const store = yield* CliSecureFileStore;
+      yield* store.writePrivate(output, body + "\n");
       yield* line(`Wrote decrypted ${decoded.kind} archive to ${output} (mode 0600).`);
 
       return;

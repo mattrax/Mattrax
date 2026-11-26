@@ -106,6 +106,11 @@ import { EffectivePolicyResponse } from "../Policy.js";
 import { EnrollmentAttemptsResponse } from "../Enrollment.js";
 import { EnrollmentQuery } from "../Enrollment.js";
 import { EnrollmentResponse } from "../Enrollment.js";
+import { AppleByodConfigInfo } from "../Enrollment.js";
+import { AppleByodTestResult } from "../Enrollment.js";
+import { ConfirmAppleByodHardwareRequest } from "../Enrollment.js";
+import { PatchAppleByodConfigRequest } from "../Enrollment.js";
+import { TestAppleByodConfigRequest } from "../Enrollment.js";
 import { AndroidEnterpriseInfo } from "../Android.js";
 import { AndroidSignupResponse } from "../Android.js";
 import { AndroidSyncResponse } from "../Android.js";
@@ -896,6 +901,41 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantParam,
       success: IdResponse,
     }),
+  )
+  .add(
+    HttpApiEndpoint.get("getAppleByodConfig", "/v1/tenants/:tenantId/apple/byod", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: AppleByodConfigInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchAppleByodConfig", "/v1/tenants/:tenantId/apple/byod", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: PatchAppleByodConfigRequest,
+      success: AppleByodConfigInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("testAppleByodConfig", "/v1/tenants/:tenantId/apple/byod/test", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: TestAppleByodConfigRequest,
+      success: AppleByodTestResult,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "confirmAppleByodHardware",
+      "/v1/tenants/:tenantId/apple/byod/validation",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        payload: ConfirmAppleByodHardwareRequest,
+        success: AppleByodConfigInfo,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.get("getApns", "/v1/tenants/:tenantId/apns", {

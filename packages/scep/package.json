@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@mattrax/crypto": "workspace:*",
+    "@mattrax/mdm-pki": "workspace:*",
     "asn1js": "catalog:",
     "effect": "catalog:",
     "pkijs": "catalog:"

@@ -101,4 +101,21 @@ describe("management webhook OpenAPI", () => {
     expect(operation).toBeDefined();
     expect(Object.keys(operation!.responses).sort()).toEqual(["200", "204", "500"]);
   });
+
+  it("documents optional Windows enrollment audit context", () => {
+    const operation = operations.find(
+      (candidate) => candidate.operationId === "ManagementWebhook.getWindowsEnrollmentPolicy",
+    );
+    const schema = operation?.requestBody?.content?.["application/json"]?.schema;
+
+    expect(schema).toMatchObject({
+      properties: {
+        authToken: { type: "string" },
+        tenantToken: { anyOf: [{ type: "string" }, { type: "null" }] },
+        clientIp: { anyOf: [{ type: "string" }, { type: "null" }] },
+        userAgent: { anyOf: [{ type: "string" }, { type: "null" }] },
+      },
+      required: ["authToken"],
+    });
+  });
 });

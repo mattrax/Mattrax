@@ -48,6 +48,23 @@ describe("me cache", () => {
     expect(readMeCache("user-1")).toBeUndefined();
   });
 
+  it("returns the same parsed entry until storage changes", () => {
+    const storage = fakeStorage();
+    vi.stubGlobal("localStorage", storage);
+    writeMeCache(data);
+
+    const first = readMeCache("user-1");
+    expect(readMeCache("user-1")).toBe(first);
+
+    // Another tab (or `writeMeCache`) replacing the value must be observed.
+    const replacement = { ...data, tenants: [] };
+    writeMeCache(replacement);
+    expect(readMeCache("user-1")?.data).toEqual(replacement);
+
+    storage.setItem("mattrax:me-cache:v1", JSON.stringify({ userId: "user-2", updatedAt: 0 }));
+    expect(readMeCache("user-1")).toBeUndefined();
+  });
+
   it("ignores corrupt or mismatched cache entries", () => {
     const storage = fakeStorage();
     storage.setItem("mattrax:me-cache:v1", '{"userId":"user-2","updatedAt":0,"data":{}}');

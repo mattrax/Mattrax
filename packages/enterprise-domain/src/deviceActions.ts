@@ -5,6 +5,18 @@ import {
   APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR,
   appleScheduleOsUpdateSupported,
 } from "./osPolicy.js";
+import {
+  WINDOWS_BITLOCKER_ROTATION_MIN_BUILD,
+  WINDOWS_DIAGNOSTICS_MIN_BUILD,
+  WINDOWS_FRESH_START_MIN_BUILD,
+  WINDOWS_LAPS_MIN_BUILD,
+  windowsBitlockerRotationSupported,
+  windowsBuildNumber,
+  windowsDiagnosticsSupported,
+  windowsFreshStartEditionSupported,
+  windowsFreshStartSupported,
+  windowsLapsSupported,
+} from "./windowsSecurity.js";
 
 /**
  * Remote actions a device can be asked to perform.
@@ -40,6 +52,9 @@ export const DeviceActionName = Schema.Literals([
   "schedule-os-update",
   "set-device-name",
   "set-lock-screen-message",
+  "fresh-start",
+  "collect-diagnostics",
+  "rotate-bitlocker-key",
   "unenroll",
 ]);
 
@@ -114,7 +129,15 @@ const APPLE_ACTIONS: ReadonlyArray<DeviceActionName> = [
  * so `sync` is deliberately absent. Wipe and restart are delivered as OMA-DM
  * `Exec` commands; unenroll uses `DMClient/Provider/{ProviderID}/Unenroll`.
  */
-const WINDOWS_ACTIONS: ReadonlyArray<DeviceActionName> = ["wipe", "restart", "unenroll"];
+const WINDOWS_ACTIONS: ReadonlyArray<DeviceActionName> = [
+  "wipe",
+  "restart",
+  "fresh-start",
+  "collect-diagnostics",
+  "rotate-bitlocker-key",
+  "rotate-local-admin-password",
+  "unenroll",
+];
 
 /**
  * Android Management API commands cover lock, wipe, reboot, lost mode,
@@ -183,6 +206,13 @@ const ACTION_CAPABILITIES: ReadonlyMap<string, DeviceActionName> = new Map([
   ["user-list", "refresh-local-accounts"],
   ["rotate-local-admin-password", "rotate-local-admin-password"],
   ["set-auto-admin-password", "rotate-local-admin-password"],
+  ["fresh-start", "fresh-start"],
+  ["freshstart", "fresh-start"],
+  ["cleanpc", "fresh-start"],
+  ["collect-diagnostics", "collect-diagnostics"],
+  ["diagnostics", "collect-diagnostics"],
+  ["rotate-bitlocker-key", "rotate-bitlocker-key"],
+  ["bitlocker-rotation", "rotate-bitlocker-key"],
   ["unenroll", "unenroll"],
 ]);
 
@@ -243,7 +273,15 @@ export type DeviceActionInput = {
   /** OS edition/version narrow commands that only newer releases support. */
   readonly osEdition?: string | null;
   readonly osVersion?: string | null;
+  /** Windows build (for example `22631.3155`); falls back to `osVersion`. */
+  readonly osBuild?: string | null;
   readonly model?: string | null;
+  /** Windows security state used to advertise BitLocker actions. */
+  readonly bitLockerEnabled?: boolean | null;
+  readonly entraDeviceId?: string | null;
+  readonly domainName?: string | null;
+  /** True when an effective Windows LAPS policy applies to the device. */
+  readonly windowsLapsConfigured?: boolean | null;
   /** Apple delivery path recorded on `device_apple`; legacy cannot use DDM. */
   readonly declarationMode?: "ddm" | "legacy" | null;
   /** Apple enrolment mode. User enrolment is BYOD and never supervised. */
@@ -480,15 +518,29 @@ export const deviceAvailableActions = (
         action !== "play-lost-mode-sound" ||
         (isAppleLostModeDevice(input) && input.lostModeEnabled === true),
     )
-    // `UserList` and `SetAutoAdminPassword` are macOS commands.
+    // `UserList` is a macOS command.
     .filter(
       (action) =>
-        (action !== "refresh-local-accounts" && action !== "rotate-local-admin-password") ||
-        (input.proto === "apple" && isMacOsDevice(input)),
+        action !== "refresh-local-accounts" || (input.proto === "apple" && isMacOsDevice(input)),
     )
-    // Rotation is only meaningful once Apple has reported the managed
-    // account's GUID; an older ADE enrolment cannot be rotated.
-    .filter((action) => action !== "rotate-local-admin-password" || Boolean(input.localAdminGuid))
+    // Apple rotation needs the managed account's GUID; Windows rotation is a
+    // LAPS CSP action and only exists once a LAPS policy applies to the device.
+    .filter(
+      (action) =>
+        action !== "rotate-local-admin-password" ||
+        (input.proto === "apple" && isMacOsDevice(input) && Boolean(input.localAdminGuid)) ||
+        (input.proto === "win" &&
+          windowsLapsSupported(input) &&
+          input.windowsLapsConfigured === true),
+    )
+    // CleanPC is Enterprise/Education only and destructive in both modes.
+    .filter((action) => action !== "fresh-start" || windowsFreshStartSupported(input))
+    // DiagnosticArchive exists on Windows 10 1903 and later.
+    .filter((action) => action !== "collect-diagnostics" || windowsDiagnosticsSupported(input))
+    // Rotation needs an encrypted, Entra- or hybrid-joined device.
+    .filter(
+      (action) => action !== "rotate-bitlocker-key" || windowsBitlockerRotationSupported(input),
+    )
     .filter((action) => input.proto !== "android" || androidActionSupported(input, action));
 
   if (status !== "enrolled" && status !== "unenrolling") return [];
@@ -545,6 +597,65 @@ export const deviceActionUnavailableReason = (
 
   if (input.proto === "android" && action === "relinquish-ownership")
     return "Relinquishing ownership is only available on company-owned work profiles, not on fully managed or personally-owned devices.";
+
+  if (action === "fresh-start" && input.proto !== "win")
+    return "Fresh Start is a Windows CleanPC action and is not available on this platform.";
+
+  if (action === "fresh-start" && !windowsFreshStartEditionSupported(input.osEdition))
+    return "Windows Fresh Start uses the CleanPC CSP, which is only available on Windows Enterprise and Education editions. This device reports " +
+      (input.osEdition?.trim() || "an unknown edition") +
+      ".";
+
+  if (action === "fresh-start") {
+    const build = windowsBuildNumber(input.osVersion, input.osBuild);
+
+    if (build !== null && build < WINDOWS_FRESH_START_MIN_BUILD)
+      return "Windows Fresh Start requires Windows 10 version 1703 (build 15063) or later.";
+  }
+
+  if (action === "collect-diagnostics" && input.proto !== "win")
+    return "Diagnostic collection uses the Windows DiagnosticLog CSP and is not available on this platform.";
+
+  if (action === "collect-diagnostics") {
+    const build = windowsBuildNumber(input.osVersion, input.osBuild);
+
+    if (build === null)
+      return "This Windows device has not reported its OS build yet, so Mattrax cannot confirm that the DiagnosticLog CSP is available. Collect inventory first.";
+
+    if (build < WINDOWS_DIAGNOSTICS_MIN_BUILD)
+      return "Diagnostic collection requires Windows 10 version 1903 (build 18362) or later.";
+  }
+
+  if (action === "rotate-bitlocker-key" && input.proto !== "win")
+    return "BitLocker key rotation is only available on Windows devices.";
+
+  if (action === "rotate-bitlocker-key" && input.bitLockerEnabled !== true)
+    return "BitLocker is not enabled on this device, so there is no recovery key to rotate.";
+
+  if (action === "rotate-bitlocker-key" && !input.entraDeviceId?.trim())
+    return "BitLocker recovery password rotation needs a Microsoft Entra device id: Entra joined or hybrid joined devices only. A plain AD-domain join has no Entra recovery-key store.";
+
+  if (action === "rotate-bitlocker-key") {
+    const build = windowsBuildNumber(input.osVersion, input.osBuild);
+
+    if (build !== null && build < WINDOWS_BITLOCKER_ROTATION_MIN_BUILD)
+      return "BitLocker recovery password rotation requires Windows 10 version 1909 (build 18363) or later.";
+  }
+
+  if (action === "rotate-local-admin-password" && input.proto === "win") {
+    if (!windowsLapsSupported(input)) {
+      const build = windowsBuildNumber(input.osVersion, input.osBuild);
+
+      return build === null
+        ? "This Windows device has not reported its OS build yet, so Mattrax cannot confirm Windows LAPS support. Collect inventory first."
+        : "Windows LAPS requires Windows 11 22H2 (build " +
+            WINDOWS_LAPS_MIN_BUILD +
+            ") or later, or Windows Server 2025.";
+    }
+
+    if (input.windowsLapsConfigured !== true)
+      return "No Windows LAPS policy applies to this device. Add a LAPS policy with a backup directory before rotating the local administrator password.";
+  }
 
   if (action === "return-to-service" && input.proto === "apple")
     return "Return to Service requires iOS/iPadOS 17 or later, tvOS 18 or later, or visionOS 26 or later. Apple does not support it on macOS.";
@@ -637,11 +748,16 @@ export const deviceActionUnavailableReason = (
 
   if (
     action === "rotate-local-admin-password" &&
+    input.proto !== "win" &&
     (input.proto !== "apple" || !isMacOsDevice(input))
   )
-    return "Only macOS devices have a managed local administrator password.";
+    return "Only macOS devices and Windows devices managed by Windows LAPS have a managed local administrator password.";
 
-  if (action === "rotate-local-admin-password" && !input.localAdminGuid)
+  if (
+    action === "rotate-local-admin-password" &&
+    input.proto === "apple" &&
+    !input.localAdminGuid
+  )
     return "This Mac has not reported the GUID of its managed local administrator yet. Rotate after its next local-account inventory.";
 
   return `This device does not support the ${action} action.`;
