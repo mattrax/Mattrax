@@ -1,6 +1,6 @@
-import { Cause, Effect, Exit, Fiber, Schema } from "effect";
-import { HttpClient, HttpClientResponse } from "effect/http";
-import { describe, expect, it, vi } from "vitest";
+import { Cause, Effect, Exit, Fiber, Layer, Schema } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
+import { describe, expect, it } from "vitest";
 import { schema } from "@mattrax/enterprise-core";
 import { sealSecret } from "@mattrax/crypto";
 import {
@@ -25,6 +25,27 @@ const authSecret = "webhook-test-secret";
 const now = new Date("2026-11-11T10:00:00.000Z");
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
+
+/** Fake platform fetch supplied through the shared Effect HTTP layer. */
+const transportLayer = (fetchImpl: typeof globalThis.fetch) =>
+  FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
+
+const runWithFetch = <A, E>(effect: Effect.Effect<A, E, any>, fetchImpl: typeof globalThis.fetch) =>
+  Effect.runPromise(
+    effect.pipe(Effect.provide(transportLayer(fetchImpl))) as Effect.Effect<A, E, never>,
+  );
+
+/** Fetch fake that records each call's init and returns a fixed response. */
+const countingFetch = (response: () => Response = () => new Response("ok", { status: 200 })) => {
+  const calls: Array<RequestInit | undefined> = [];
+  const fetch: typeof globalThis.fetch = async (_input, init) => {
+    calls.push(init);
+
+    return response();
+  };
+
+  return { calls, fetch };
+};
 
 const endpoint = (overrides: Partial<WebhookEndpointRow> = {}): WebhookEndpointRow => ({
   id: "wh_1",
@@ -240,42 +261,47 @@ describe("webhook URL guard", () => {
 describe("webhook delivery", () => {
   it("durably enqueues before any network I/O and recovers queued rows", async () => {
     const { db } = await setup();
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
+    const { calls, fetch } = countingFetch();
     const event = {
       organizationId: "org-1",
       type: "device.enrolled" as const,
       id: "evt_durable",
     };
 
-    const ids = await run(enqueueWebhookEvent(webhookDb(db), event, { authSecret, fetch, now }));
+    const ids = await runWithFetch(
+      enqueueWebhookEvent(webhookDb(db), event, { authSecret, now }),
+      fetch,
+    );
 
     expect(ids).toHaveLength(1);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
     expect(deliveries(db)[0]).toMatchObject({ attempt: 0, eventId: "evt_durable" });
 
     // Simulate a crash before the in-process worker runs: maintenance finds
     // the persisted attempt-0 row and completes it.
-    const retried = await run(
-      retryFailedWebhookDeliveries(webhookDb(db), { authSecret, fetch, now }),
+    const retried = await runWithFetch(
+      retryFailedWebhookDeliveries(webhookDb(db), { authSecret, now }),
+      fetch,
     );
 
     expect(retried).toMatchObject({ retried: 1, succeeded: 1, failed: 0 });
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(calls).toHaveLength(1);
     expect(deliveries(db)[0]).toMatchObject({ attempt: 1, status: "succeeded" });
   });
 
   it("completes a durable queue row without inserting a duplicate attempt", async () => {
     const { db } = await setup();
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
-    const [id] = await run(
+    const { fetch } = countingFetch();
+    const [id] = await runWithFetch(
       enqueueWebhookEvent(
         webhookDb(db),
         { organizationId: "org-1", type: "device.enrolled" },
-        { authSecret, fetch, now },
+        { authSecret, now },
       ),
+      fetch,
     );
 
-    await run(deliverQueuedWebhook(webhookDb(db), id!, { authSecret, fetch, now }));
+    await runWithFetch(deliverQueuedWebhook(webhookDb(db), id!, { authSecret, now }), fetch);
 
     expect(deliveries(db)).toHaveLength(1);
     expect(deliveries(db)[0]).toMatchObject({ attempt: 1, status: "succeeded" });
@@ -284,9 +310,9 @@ describe("webhook delivery", () => {
   it("filters by event and records a successful delivery", async () => {
     const { db, secret } = await setup({ eventFilters: ["device.enrolled"] });
 
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
+    const { calls, fetch } = countingFetch();
 
-    await run(
+    await runWithFetch(
       dispatchWebhookEvent(
         webhookDb(db),
         {
@@ -296,12 +322,13 @@ describe("webhook delivery", () => {
           id: "evt_1",
           occurredAt: now,
         },
-        { authSecret, fetch, now },
+        { authSecret, now },
       ),
+      fetch,
     );
 
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [, request] = fetch.mock.calls[0];
+    expect(calls).toHaveLength(1);
+    const request = calls[0];
     const headers = new Headers(request?.headers);
     const timestamp = Number(headers.get(WEBHOOK_TIMESTAMP_HEADER));
     const header = headers.get(WEBHOOK_SIGNATURE_HEADER);
@@ -337,28 +364,30 @@ describe("webhook delivery", () => {
     });
 
     // A different event is filtered out and produces no extra delivery.
-    await run(
+    await runWithFetch(
       dispatchWebhookEvent(
         webhookDb(db),
         { organizationId: "org-1", type: "device.unenrolled" },
-        { authSecret, fetch, now },
+        { authSecret, now },
       ),
+      fetch,
     );
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
     expect(deliveries(db)).toHaveLength(1);
   });
 
   it("treats an empty filter as all events", async () => {
     const { db } = await setup({ eventFilters: [] });
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 204 }));
-    await run(
+    const { calls, fetch } = countingFetch(() => new Response("ok", { status: 204 }));
+    await runWithFetch(
       dispatchWebhookEvent(
         webhookDb(db),
         { organizationId: "org-1", type: "device.unenrolled" },
-        { authSecret, fetch, now },
+        { authSecret, now },
       ),
+      fetch,
     );
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
   });
 
   it("uses a shared Effect HttpClient Layer without an injected fetch", async () => {
@@ -416,27 +445,29 @@ describe("webhook delivery", () => {
 
   it("never delivers to a different tenant's endpoint", async () => {
     const { db } = await setup();
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
-    await run(
+    const { calls, fetch } = countingFetch();
+    await runWithFetch(
       dispatchWebhookEvent(
         webhookDb(db),
         { organizationId: "org-2", type: "device.enrolled" },
-        { authSecret, fetch, now },
+        { authSecret, now },
       ),
+      fetch,
     );
-    expect(fetch).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
     expect(deliveries(db)).toHaveLength(0);
   });
 
   it("records a failed delivery and increments the failure counter", async () => {
     const { db } = await setup({ consecutiveFailures: 2 });
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("nope", { status: 503 }));
-    await run(
+    const { fetch } = countingFetch(() => new Response("nope", { status: 503 }));
+    await runWithFetch(
       dispatchWebhookEvent(
         webhookDb(db),
         { organizationId: "org-1", type: "device.enrolled", id: "evt_fail" },
-        { authSecret, fetch, now },
+        { authSecret, now },
       ),
+      fetch,
     );
 
     const rows = deliveries(db);
@@ -456,17 +487,18 @@ describe("webhook delivery", () => {
   it("swallows network errors instead of failing the caller", async () => {
     const { db } = await setup();
 
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+    const fetch: typeof globalThis.fetch = async () => {
       throw new Error("connection refused");
-    });
+    };
 
     await expect(
-      run(
+      runWithFetch(
         dispatchWebhookEvent(
           webhookDb(db),
           { organizationId: "org-1", type: "device.enrolled" },
-          { authSecret, fetch, now },
+          { authSecret, now },
         ),
+        fetch,
       ),
     ).resolves.toBeUndefined();
     expect(deliveries(db)[0]).toMatchObject({
@@ -482,15 +514,13 @@ describe("webhook delivery", () => {
     const startedPromise = new Promise<void>((resolve) => {
       started = resolve;
     });
-    const fetch = vi.fn<typeof globalThis.fetch>(
-      (_input: RequestInfo | URL, init?: RequestInit) =>
-        new Promise<Response>((_resolve, reject) => {
-          started();
-          init?.signal?.addEventListener("abort", () =>
-            reject(new DOMException("aborted", "AbortError")),
-          );
-        }),
-    );
+    const fetch: typeof globalThis.fetch = (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        started();
+        init?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        );
+      });
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -498,8 +528,8 @@ describe("webhook delivery", () => {
           dispatchWebhookEvent(
             webhookDb(db),
             { organizationId: "org-1", type: "device.enrolled" },
-            { authSecret, fetch, now },
-          ),
+            { authSecret, now },
+          ).pipe(Effect.provide(transportLayer(fetch))),
           { startImmediately: true },
         );
         yield* Effect.promise(() => startedPromise);
@@ -513,20 +543,21 @@ describe("webhook delivery", () => {
 
   it("does not deliver when no signing secret is configured", async () => {
     const { db } = await setup();
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
-    await run(
+    const { calls, fetch } = countingFetch();
+    await runWithFetch(
       dispatchWebhookEvent(
         webhookDb(db),
         { organizationId: "org-1", type: "device.enrolled" },
-        { fetch, now },
+        { now },
       ),
+      fetch,
     );
-    expect(fetch).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
   });
 
   it("sends a test event regardless of filters", async () => {
     const { db } = await setup({ eventFilters: ["device.enrolled"] });
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
+    const { fetch } = countingFetch();
 
     const stored = endpoints(db)[0];
 
@@ -534,8 +565,9 @@ describe("webhook delivery", () => {
       secret: Schema.decodeUnknownSync(Schema.String)(stored.secret),
     });
 
-    const outcome = await run(
-      sendTestWebhook(webhookDb(db), testEndpoint, { authSecret, fetch, now }),
+    const outcome = await runWithFetch(
+      sendTestWebhook(webhookDb(db), testEndpoint, { authSecret, now }),
+      fetch,
     );
 
     expect(outcome.status).toBe("succeeded");
@@ -569,19 +601,19 @@ describe("webhook retries", () => {
         createdAt: now,
       },
     ];
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
+    const { calls, fetch } = countingFetch();
 
-    const result = await run(
+    const result = await runWithFetch(
       retryFailedWebhookDeliveries(webhookDb(db), {
         authSecret,
-        fetch,
         now: new Date(now.getTime() + 60_000),
         maxAttempts: 3,
       }),
+      fetch,
     );
 
     expect(result).toEqual({ retried: 1, succeeded: 1, failed: 0 });
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
     expect(deliveries(db)[0]).toMatchObject({
       status: "succeeded",
       attempt: 2,
@@ -609,18 +641,18 @@ describe("webhook retries", () => {
         createdAt: now,
       },
     ];
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
+    const { calls, fetch } = countingFetch();
 
-    const result = await run(
+    const result = await runWithFetch(
       retryFailedWebhookDeliveries(webhookDb(db), {
         authSecret,
-        fetch,
         now,
         maxAttempts: 3,
       }),
+      fetch,
     );
 
     expect(result.retried).toBe(0);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
   });
 });

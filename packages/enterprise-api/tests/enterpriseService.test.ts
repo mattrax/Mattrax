@@ -56,6 +56,14 @@ const origin = "https://enterprise.test";
 
 const authSecret = "enterprise-test-secret";
 
+const NOW = Date.parse("2026-11-01T00:00:00Z");
+
+/** Validity/expiry fixtures that must still be active use a fixed future date. */
+const FUTURE = NOW + 365 * 24 * 60 * 60 * 1000;
+
+/** Fixed reference day for health-age fixtures measured against the verifier's clock. */
+const REFERENCE = NOW + 25 * 24 * 60 * 60 * 1000;
+
 const makeFakeApns = () => {
   const pushes: Array<{
     pushToken: string;
@@ -101,8 +109,8 @@ const testCertificate = async (options: {
 
   certificate.issuer = name;
   certificate.subject = name;
-  const now = Date.now();
-  certificate.notBefore.value = options.notBefore ?? new Date(now - 60_000);
+  const now = FUTURE;
+  certificate.notBefore.value = options.notBefore ?? new Date(NOW - 60_000);
   certificate.notAfter.value = options.notAfter ?? new Date(now + 86_400_000);
   await certificate.subjectPublicKeyInfo.importKey(options.keyPair.publicKey);
   await certificate.sign(options.keyPair.privateKey, "SHA-256");
@@ -157,7 +165,7 @@ const makeContext = async (
   } = {},
 ) => {
   const db = overrides.db ?? makeDb();
-  const now = new Date();
+  const now = new Date(NOW);
 
   const user = {
     id: "user-1",
@@ -389,8 +397,8 @@ describe("enterprise service tenant flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
-    const stale = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
+    const now = new Date(REFERENCE);
+    const stale = new Date(REFERENCE - 10 * 24 * 60 * 60 * 1000);
 
     const devices = [
       ["device-1", "apple", "S1", now],
@@ -477,7 +485,7 @@ describe("enterprise service tenant flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
 
     for (const id of ["device-1", "device-2"])
       db.store.device.push({
@@ -857,7 +865,7 @@ describe("enterprise service tenant flow", () => {
     );
     expect(db.store.invitation[0]).toMatchObject({ role: "auditor" });
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.account.push({
       id: "user-2",
       name: "Auditor",
@@ -1161,7 +1169,7 @@ describe("enterprise service tenant flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.account.push({
       id: "user-2",
       name: "Member",
@@ -1269,7 +1277,7 @@ describe("enterprise service tenant flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.account.push({
       id: "user-2",
       name: "Member",
@@ -1309,7 +1317,7 @@ describe("enterprise service group flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "device-1",
       organizationId: tenant.id,
@@ -1352,7 +1360,7 @@ describe("enterprise service group flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "other-device",
       organizationId: "other-tenant",
@@ -1380,7 +1388,7 @@ describe("enterprise service group flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push(
       {
         id: "device-1",
@@ -1435,7 +1443,7 @@ describe("enterprise service group flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "device-1",
       organizationId: tenant.id,
@@ -1490,7 +1498,7 @@ describe("enterprise service group flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push(
       {
         id: "apple-1",
@@ -1543,7 +1551,7 @@ describe("enterprise service group flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push(
       {
         id: "apple-1",
@@ -1600,7 +1608,7 @@ describe("enterprise service group flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "device-1",
       organizationId: tenant.id,
@@ -1741,7 +1749,7 @@ describe("enterprise service group flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "device-1",
       organizationId: tenant.id,
@@ -1795,7 +1803,7 @@ describe("enterprise service group flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "device-1",
       organizationId: tenant.id,
@@ -2128,7 +2136,7 @@ describe("enterprise service policy flow", () => {
       version: 1000,
       snapshot: { "mttx.apple.device": { camera: false } },
       createdByAccountId: null,
-      createdAt: new Date(),
+      createdAt: new Date(NOW),
     });
 
     await runEffect(
@@ -2149,7 +2157,7 @@ describe("enterprise service policy flow", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.policy.push({
       id: "other-policy",
       organizationId: "other-tenant",
@@ -2425,7 +2433,7 @@ describe("enterprise service policy list", () => {
     id: string,
     proto: "apple" | "win" | "android" = "apple",
   ) => {
-    const now = new Date();
+    const now = new Date(FUTURE);
 
     db.store.device.push({
       id,
@@ -2444,7 +2452,7 @@ describe("enterprise service policy list", () => {
     id: string,
     options: { disabled?: boolean } = {},
   ) => {
-    const now = new Date();
+    const now = new Date(NOW);
 
     // Directory people are tenant-scoped by `organizationId`; they are not
     // accounts and need no membership row to receive policy.
@@ -2461,7 +2469,7 @@ describe("enterprise service policy list", () => {
   };
 
   const seedDirectoryGroup = (db: any, organizationId: string, id: string) => {
-    const now = new Date();
+    const now = new Date(NOW);
 
     db.store.user_group.push({
       id,
@@ -2490,7 +2498,7 @@ describe("enterprise service policy list", () => {
       service.createPolicy(request(headers), tenant.id, { name: "Empty" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
 
     db.store.configuration.push(
       { policyId: included.id, kind: "mttx.apple.device", data: {}, hash: "hash-1" },
@@ -2586,7 +2594,7 @@ describe("enterprise service policy list", () => {
       service.createPolicy(request(headers), tenant.id, { name: "People" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
 
     seedDirectoryGroup(db, tenant.id, "group-include");
     seedDirectoryGroup(db, tenant.id, "group-exclude");
@@ -2703,7 +2711,7 @@ describe("enterprise service policy list", () => {
     seedDevice(db, tenant.id, "apple-2");
     seedDevice(db, tenant.id, "win-1", "win");
 
-    const now = new Date();
+    const now = new Date(NOW);
 
     for (const [deviceId, policyId] of [
       ["apple-1", policy.id],
@@ -2824,7 +2832,7 @@ describe("enterprise service policy list", () => {
       valid: "valid",
       serverToken: "resolved-hash",
       reasons: null,
-      updatedAt: new Date(),
+      updatedAt: new Date(NOW),
     });
 
     const { rows } = await runEffect(service.listPolicies(request(headers), tenant.id));
@@ -2880,7 +2888,7 @@ describe("enterprise service policy list", () => {
 
 describe("enterprise service effective policy", () => {
   const seedDevice = (db: any, organizationId: string, id: string) => {
-    const now = new Date();
+    const now = new Date(FUTURE);
     db.store.device.push({
       id,
       organizationId,
@@ -3093,7 +3101,7 @@ describe("enterprise service effective policy", () => {
 
     seedDevice(db, tenant.id, "device-1");
 
-    const now = new Date();
+    const now = new Date(NOW);
 
     db.store.user.push({
       id: "user-1",
@@ -3167,7 +3175,7 @@ describe("enterprise service effective policy", () => {
 
     seedDevice(db, tenant.id, "device-1");
 
-    const now = new Date();
+    const now = new Date(NOW);
 
     db.store.user.push({
       id: "user-1",
@@ -3227,7 +3235,7 @@ describe("enterprise service effective policy", () => {
       }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
 
     for (let index = 0; index <= 500; index += 1) {
       const id = `device-${String(index).padStart(4, "0")}`;
@@ -3313,7 +3321,7 @@ describe("enterprise service effective policy", () => {
       }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
 
     db.store.device.push({
       id: "windows-1",
@@ -3373,7 +3381,7 @@ describe("enterprise service APNs", () => {
       topic: "com.apple.mgmt.External.acme",
       certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
       encryptedKey: encrypted,
-      updatedAt: new Date(),
+      updatedAt: new Date(NOW),
     });
   };
 
@@ -3383,7 +3391,7 @@ describe("enterprise service APNs", () => {
     id: string,
     options: { status?: string; proto?: string; token?: string; dmIdentifier?: string } = {},
   ) => {
-    const now = new Date();
+    const now = new Date(FUTURE);
     db.store.device.push({
       id,
       organizationId: tenantId,
@@ -3419,7 +3427,7 @@ describe("enterprise service APNs", () => {
       }>;
     } = {},
   ) => {
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device_apple_user.push({
       deviceId: id,
       userId: overrides.userId ?? "user-1",
@@ -3465,8 +3473,8 @@ describe("enterprise service APNs", () => {
     db.store.apple_push_key.push({
       organizationId: tenant.id,
       encryptedPrivateKeyJwk: await sealSecret(authSecret, JSON.stringify(jwk)),
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date(NOW),
+      updatedAt: new Date(NOW),
     });
     const pem = await testCertificate({ keyPair: keys });
 
@@ -3521,8 +3529,8 @@ describe("enterprise service APNs", () => {
 
     const expiredPem = await testCertificate({
       keyPair: expired,
-      notBefore: new Date(Date.now() - 10 * 86_400_000),
-      notAfter: new Date(Date.now() - 86_400_000),
+      notBefore: new Date(NOW - 10 * 86_400_000),
+      notAfter: new Date(NOW - 86_400_000),
     });
 
     await expect(
@@ -3539,8 +3547,8 @@ describe("enterprise service APNs", () => {
     db.store.apple_push_key.push({
       organizationId: tenant.id,
       encryptedPrivateKeyJwk: pending.encrypted,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date(NOW),
+      updatedAt: new Date(NOW),
     });
     const other = await generateApnsKeyPair();
     const otherPem = await testCertificate({ keyPair: other });
@@ -3598,7 +3606,7 @@ describe("enterprise service APNs", () => {
       ownership?: string | null;
     } = {},
   ) => {
-    const now = new Date();
+    const now = new Date(NOW);
     const id = overrides.id ?? "device-android";
     const enterpriseName = "enterprises/LC123";
     const dmIdentifier = `${enterpriseName}/devices/${id}`;
@@ -3674,8 +3682,8 @@ describe("enterprise service APNs", () => {
       expiresAt: null,
       resultStatus: null,
       resultDetail: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date(NOW),
+      updatedAt: new Date(NOW),
     });
 
     const deleted: Array<string> = [];
@@ -4028,8 +4036,8 @@ describe("enterprise service APNs", () => {
       email: "dir-1@example.com",
       disabled: false,
       source: "manual",
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date(NOW),
+      updatedAt: new Date(NOW),
     });
     seedAppleUser(db, "device-1");
 
@@ -4080,8 +4088,8 @@ describe("enterprise service APNs", () => {
       email: "other-user@example.com",
       disabled: false,
       source: "manual",
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date(NOW),
+      updatedAt: new Date(NOW),
     });
     seedAppleUser(db, "device-1");
 
@@ -4232,7 +4240,7 @@ describe("enterprise service APNs", () => {
       service.createTenant(request(headers), { name: "Other", slug: "other" }),
     );
 
-    const future = new Date(Date.now() + 86_400_000);
+    const future = new Date(NOW + 86_400_000);
     db.store.scep_issued_certificate.push(
       {
         serial: "serial-1",
@@ -4241,7 +4249,7 @@ describe("enterprise service APNs", () => {
         deviceId: "device-1",
         notAfter: future,
         revokedAt: null,
-        createdAt: new Date(),
+        createdAt: new Date(NOW),
       },
       {
         serial: "serial-other",
@@ -4250,7 +4258,7 @@ describe("enterprise service APNs", () => {
         deviceId: "device-1",
         notAfter: future,
         revokedAt: null,
-        createdAt: new Date(),
+        createdAt: new Date(NOW),
       },
     );
 
@@ -4280,9 +4288,9 @@ describe("enterprise service APNs", () => {
       organizationId: tenant.id,
       enrollmentId: null,
       deviceId: "device-1",
-      notAfter: new Date(Date.now() + 86_400_000),
+      notAfter: new Date(FUTURE + 86_400_000),
       revokedAt: null,
-      createdAt: new Date(),
+      createdAt: new Date(NOW),
     });
 
     await runEffect(service.deleteDevices(request(headers), tenant.id, ["device-1"]));
@@ -4303,9 +4311,9 @@ describe("enterprise service APNs", () => {
       organizationId: tenant.id,
       enrollmentId: null,
       deviceId: "device-1",
-      notAfter: new Date(Date.now() + 86_400_000),
+      notAfter: new Date(FUTURE + 86_400_000),
       revokedAt: null,
-      createdAt: new Date(),
+      createdAt: new Date(NOW),
     });
 
     const result = await runEffect(
@@ -4362,7 +4370,7 @@ describe("enterprise service APNs", () => {
       id: 1,
       certPem: await testCertificate({ keyPair: caKeys }),
       privateKeyJwk: await exportPrivateKeyJwk(caKeys.privateKey),
-      createdAt: new Date(),
+      createdAt: new Date(NOW),
     });
 
     const windows = makeWindowsBackend({
@@ -4447,9 +4455,9 @@ describe("enterprise service APNs", () => {
       organizationId: tenant.id,
       enrollmentId: null,
       deviceId: "dm-device-1",
-      notAfter: new Date(Date.now() + 86_400_000),
+      notAfter: new Date(FUTURE + 86_400_000),
       revokedAt: null,
-      createdAt: new Date(),
+      createdAt: new Date(NOW),
     });
 
     await runEffect(service.deleteDevices(request(headers), tenant.id, ["device-1"]));
@@ -4475,7 +4483,7 @@ describe("enterprise service APNs", () => {
 
     await seedDevice(db, tenant.id, "device-1");
     await seedDevice(db, tenant.id, "device-2");
-    db.store.device[1].lastSeenAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+    db.store.device[1].lastSeenAt = new Date(REFERENCE - 8 * 24 * 60 * 60 * 1000);
     db.store.device_declaration.push({
       deviceId: "device-1",
       identifier: "com.acme.wifi",
@@ -4484,7 +4492,7 @@ describe("enterprise service APNs", () => {
       valid: "invalid",
       serverToken: null,
       reasons: [{ code: "Error", description: "Invalid payload" }],
-      updatedAt: new Date(),
+      updatedAt: new Date(NOW),
     });
 
     const detail = await runEffect(
@@ -4564,7 +4572,7 @@ describe("enterprise service APNs", () => {
     ]);
 
     // MIA is a distinct level between stale and the auto-unenrol sweep.
-    db.store.device[1].lastSeenAt = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    db.store.device[1].lastSeenAt = new Date(REFERENCE - 20 * 24 * 60 * 60 * 1000);
 
     const miaSummary = await runEffect(service.getDeviceHealthSummary(request(headers), tenant.id));
 
@@ -4992,7 +5000,7 @@ describe("enterprise service APNs", () => {
 
 describe("device command lifecycle", () => {
   const seed = (db: any, tenantId: string) => {
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "device-1",
       organizationId: tenantId,
@@ -5088,7 +5096,7 @@ describe("device command lifecycle", () => {
 
     // Simulate the row reaching the end of its delivery window.
     const existing = commands(db)[0]!;
-    existing.expiresAt = new Date(Date.now() + 60 * 1000);
+    existing.expiresAt = new Date(existing.createdAt.getTime() + 60_000);
 
     const second = await runEffect(
       service.deviceAction(request(headers), tenant.id, "device-1", {
@@ -5099,7 +5107,12 @@ describe("device command lifecycle", () => {
     expect(second).toMatchObject({ deduplicated: true });
     expect(commands(db)).toHaveLength(1);
     // A fresh 24-hour budget from the second click, not the old deadline.
-    expect(commands(db)[0]!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 23 * 60 * 60 * 1000);
+    // The handler captures its clock a moment before the row's createdAt, so
+    // prove the fresh 24-hour budget from that row within a millisecond.
+    const extendedBudget =
+      commands(db)[0]!.expiresAt.getTime() - commands(db)[0]!.createdAt.getTime();
+    expect(extendedBudget).toBeGreaterThanOrEqual(24 * 60 * 60 * 1000 - 1);
+    expect(extendedBudget).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 1);
   });
 
   it("supersedes a pending lock when a wipe is queued", async () => {
@@ -5264,7 +5277,7 @@ describe("device command lifecycle", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "windows-1",
       organizationId: tenant.id,
@@ -5510,7 +5523,7 @@ describe("device command lifecycle", () => {
     expect(byodFailure).toBeInstanceOf(EnterpriseBadRequest);
     expect(byodFailure).toMatchObject({ message: expect.stringContaining("User Enrollment") });
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "android-1",
       organizationId: tenant.id,
@@ -5636,7 +5649,7 @@ describe("device command lifecycle", () => {
 
     seed(db, tenant.id);
 
-    const stale = new Date(Date.now() - 60 * 60 * 1000);
+    const stale = new Date(NOW - 60 * 60 * 1000);
     db.store.device_command.push({
       id: "stale-lock",
       organizationId: tenant.id,
@@ -5662,7 +5675,7 @@ describe("device command lifecycle", () => {
     const queued = commands(db).filter((row: any) => row.status === "queued");
     expect(queued).toHaveLength(1);
     expect(queued[0]!.requestType).toBe("DeviceLock");
-    expect(queued[0]!.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(queued[0]!.expiresAt.getTime()).toBe(queued[0]!.createdAt.getTime() + 15 * 60 * 1000);
   });
 
   it("reports the lifecycle in the command history with expiry and a label", async () => {
@@ -5674,7 +5687,7 @@ describe("device command lifecycle", () => {
 
     seed(db, tenant.id);
 
-    const stale = new Date(Date.now() - 60 * 60 * 1000);
+    const stale = new Date(NOW - 60 * 60 * 1000);
     db.store.device_command.push({
       id: "stale-lock",
       organizationId: tenant.id,
@@ -5914,7 +5927,7 @@ describe("device command lifecycle", () => {
     db.store.device[0]!.osEdition = "macOS";
     db.store.device_apple[0]!.localAdminGuid = "11111111-AAAA-BBBB-CCCC-222222222222";
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device_secret.push({
       deviceId: "device-1",
       organizationId: tenant.id,
@@ -5961,7 +5974,7 @@ describe("device command lifecycle", () => {
     db.store.device[0]!.osEdition = "macOS";
     db.store.device_apple[0]!.localAdminGuid = "11111111-AAAA-BBBB-CCCC-222222222222";
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device_secret.push({
       deviceId: "device-1",
       organizationId: tenant.id,
@@ -6028,7 +6041,7 @@ describe("device command lifecycle", () => {
 
     expect(inactive.devices.map((device) => device.id)).toEqual(["device-1"]);
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "windows-1",
       organizationId: tenant.id,
@@ -6171,7 +6184,7 @@ describe("enterprise policy validation and enrollment", () => {
       topic: "com.apple.mgmt.External.acme",
       certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
       encryptedKey: null,
-      updatedAt: new Date(),
+      updatedAt: new Date(NOW),
     });
 
     const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
@@ -6218,7 +6231,7 @@ describe("enterprise policy validation and enrollment", () => {
       topic: "com.apple.mgmt.External.acme",
       certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
       encryptedKey: null,
-      updatedAt: new Date(),
+      updatedAt: new Date(NOW),
     });
 
     const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
@@ -6262,7 +6275,7 @@ describe("enterprise policy validation and enrollment", () => {
       topic: "com.apple.mgmt.External.acme",
       certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
       encryptedKey: null,
-      updatedAt: new Date(),
+      updatedAt: new Date(NOW),
     });
 
     const enrollment = await runEffect(service.getTenantEnrollment(request(headers), tenant.id));
@@ -6277,7 +6290,7 @@ describe("enterprise policy validation and enrollment", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "device-1",
       organizationId: tenant.id,
@@ -6740,7 +6753,7 @@ describe("enterprise policy validation and enrollment", () => {
     expect(db.store.enrollment_attempt).toHaveLength(1);
 
     // Outside the short window the same visit is a new diagnostic again.
-    db.store.enrollment_attempt[0]!.createdAt = new Date(Date.now() - 6 * 60 * 1000);
+    db.store.enrollment_attempt[0]!.createdAt = new Date(NOW - 6 * 60 * 1000);
     await visit();
     expect(db.store.enrollment_attempt).toHaveLength(2);
 
@@ -6807,7 +6820,7 @@ describe("enterprise policy validation and enrollment", () => {
       platform: "win",
     });
 
-    const now = new Date();
+    const now = new Date(NOW);
     db.store.device.push({
       id: "device-1",
       organizationId: tenant.id,
@@ -6908,7 +6921,7 @@ describe("Apple enrollment profile download", () => {
       topic: "com.apple.mgmt.External.profile",
       certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
       encryptedKey: null,
-      updatedAt: new Date(),
+      updatedAt: new Date(NOW),
     });
 
     const enrollment = await runEffect(
@@ -6976,7 +6989,7 @@ describe("Apple enrollment profile download", () => {
       certPem: caCertPem,
       privateKeyJwk: await exportPrivateKeyJwk(caKeys.privateKey),
       source: "generated",
-      createdAt: new Date(),
+      createdAt: new Date(NOW),
       rotatedAt: null,
     });
 
@@ -7458,7 +7471,7 @@ describe("tenant SCEP CA", () => {
       topic: `com.apple.mgmt.External.${slug}`,
       certPem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
       encryptedKey: null,
-      updatedAt: new Date(),
+      updatedAt: new Date(NOW),
     });
 
     const enrollment = await runEffect(
@@ -7548,9 +7561,9 @@ describe("tenant SCEP CA", () => {
       organizationId: first.tenant.id,
       enrollmentId: null,
       deviceId: null,
-      notAfter: new Date(Date.now() + 86_400_000),
+      notAfter: new Date(FUTURE + 86_400_000),
       revokedAt: null,
-      createdAt: new Date(),
+      createdAt: new Date(NOW),
     });
 
     const rotated = await runEffect(
@@ -7705,10 +7718,9 @@ describe("tenant SCEP CA", () => {
       context.db.store.scep_challenge.filter((row: any) => row.organizationId === tenant.id);
 
     const challenge = challenges().at(-1)!;
-    const lifetime = challenge.expiresAt.getTime() - Date.now();
+    const lifetime = challenge.expiresAt.getTime() - challenge.createdAt.getTime();
 
-    expect(lifetime).toBeGreaterThan(59 * 60 * 1000);
-    expect(lifetime).toBeLessThanOrEqual(60 * 60 * 1000 + 5_000);
+    expect(lifetime + (challenge.createdAt.getTime() % 1000)).toBe(60 * 60 * 1000);
 
     // Changing the enrollment settings invalidates profiles already handed out.
     await runEffect(
@@ -7734,10 +7746,9 @@ describe("tenant SCEP CA", () => {
     await profileFor(context, enrollment, "profile-alpha");
 
     const challenge = context.db.store.scep_challenge.at(-1)!;
-    const lifetime = challenge.expiresAt.getTime() - Date.now();
+    const lifetime = challenge.expiresAt.getTime() - challenge.createdAt.getTime();
 
-    expect(lifetime).toBeGreaterThan(115_000);
-    expect(lifetime).toBeLessThanOrEqual(125_000);
+    expect(lifetime + (challenge.createdAt.getTime() % 1000)).toBe(120_000);
   });
 
   it("imports a tenant-supplied CA and rejects a mismatched key", async () => {
@@ -7819,7 +7830,7 @@ describe("Windows activation reporting", () => {
       windowsActivationStatus?: string | null;
     },
   ) => {
-    const now = new Date();
+    const now = new Date(NOW);
 
     db.store.device.push({
       id: input.id,
@@ -7942,7 +7953,8 @@ describe("Windows activation reporting", () => {
 
     seedDevice(db, tenantId, { id: "win-1" });
 
-    const before = Date.now();
+    // The ingest time is the service's ambient clock; bound the clamped value
+    // with fixed timestamps instead of reading that clock here.
 
     const future = await runEffect(
       service.reportWindowsActivation(request(await authorization("win-1")), {
@@ -7957,8 +7969,8 @@ describe("Windows activation reporting", () => {
     // SAFETY: the handler always writes a Date to windowsActivationUpdatedAt.
     const stored = row.windowsActivationUpdatedAt as Date;
 
-    expect(stored.getTime()).toBeGreaterThanOrEqual(before);
-    expect(stored.getTime()).toBeLessThanOrEqual(Date.now() + 1_000);
+    expect(stored.getTime()).toBeGreaterThanOrEqual(NOW);
+    expect(stored.getTime()).toBeLessThan(Date.parse("2100-01-01T00:00:00Z"));
 
     // A clock before MySQL's `datetime` floor (year 1000) is corrupt, not a
     // reason to fail the report.

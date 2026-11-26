@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryObserver } from "@tanstack/solid-query";
 import type { MeResponse } from "@mattrax/enterprise-domain/client";
@@ -8,7 +9,13 @@ import {
   ME_QUERY_GC_TIME,
   ME_QUERY_STALE_TIME,
   meQueryCachePolicy,
+  meQueryNow,
 } from "./me-query";
+
+/** Fixed time shared by the Effect clock and TanStack Query 5's ambient reads. */
+const NOW = Date.parse("2026-06-01T12:00:00.000Z");
+
+afterEach(() => vi.useRealTimers());
 
 /**
  * Regression guard for #631. An observer is what every page creates through
@@ -67,10 +74,6 @@ const mountMeObserver = (client: QueryClient, queryFn: () => Promise<number>) =>
     check();
   });
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
 describe("me query cache policy", () => {
   it("reuses one request across repeated navigation mounts", async () => {
     const client = makeClient();
@@ -84,20 +87,28 @@ describe("me query cache policy", () => {
   });
 
   it("refetches once the shell is stale", async () => {
+    // TanStack Query 5 reads the ambient clock internally. Pinning Date makes
+    // its staleness check and Effect's clock agree to the millisecond.
+    vi.setSystemTime(new Date(NOW));
+
     const client = makeClient();
-    let now = 1_000;
-    vi.spyOn(Date, "now").mockImplementation(() => now);
     let requests = 0;
     const queryFn = async () => ++requests;
 
     await mountMeObserver(client, queryFn);
     expect(requests).toBe(1);
 
-    now += ME_QUERY_STALE_TIME - 1;
+    const aged = (millis: number) => ({
+      updatedAt: Effect.runSync(meQueryNow()) - millis,
+    });
+    expect(Effect.runSync(meQueryNow())).toBe(NOW);
+
+    // One millisecond before the boundary is still fresh; one past it refetches.
+    client.setQueryData(ME_KEY, client.getQueryData(ME_KEY), aged(ME_QUERY_STALE_TIME - 1));
     await mountMeObserver(client, queryFn);
     expect(requests).toBe(1);
 
-    now += 2;
+    client.setQueryData(ME_KEY, client.getQueryData(ME_KEY), aged(ME_QUERY_STALE_TIME + 1));
     await mountMeObserver(client, queryFn);
     expect(requests).toBe(2);
   });

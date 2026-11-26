@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { addFilter, api, bootstrapTenant, gotoHydrated } from "./helpers";
@@ -200,7 +201,7 @@ test.describe("tenant settings", () => {
 
   test("requires I understand before changing the tenant slug", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Slug Warning Tenant");
-    const nextSlug = `renamed-${Math.random().toString(36).slice(2, 8)}`;
+    const nextSlug = `renamed-${randomUUID().slice(0, 8)}`;
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
 
     await page.getByLabel(/^Slug/).fill(nextSlug);

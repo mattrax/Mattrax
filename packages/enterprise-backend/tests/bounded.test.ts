@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
+import { Deferred, Effect, Fiber, Ref } from "effect";
 import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
 import { forEachBounded, chunk } from "../src/bounded.ts";
@@ -7,28 +7,39 @@ import { makeApplePush } from "../src/Device/push.ts";
 
 describe("forEachBounded", () => {
   it("never exceeds the concurrency limit", async () => {
-    let active = 0;
-    let peak = 0;
-    const seen: number[] = [];
+    const { peak, seen } = await Effect.runPromise(
+      Effect.gen(function* () {
+        const active = yield* Ref.make(0);
+        const peak = yield* Ref.make(0);
+        const release = yield* Deferred.make<void>();
+        const seen: number[] = [];
 
-    await Effect.runPromise(
-      forEachBounded(
-        Array.from({ length: 20 }, (_, index) => index),
-        { concurrency: 3, chunkSize: 5 },
-        (item) =>
-          Effect.gen(function* () {
-            active++;
-            peak = Math.max(peak, active);
-            yield* Effect.promise(
-              () =>
-                new Promise((resolve) => {
-                  setTimeout(resolve, 1);
-                }),
-            );
-            seen.push(item);
-            active--;
-          }),
-      ),
+        const fiber = yield* Effect.forkChild(
+          forEachBounded(
+            Array.from({ length: 20 }, (_, index) => index),
+            { concurrency: 3, chunkSize: 5 },
+            (item) =>
+              Effect.gen(function* () {
+                const inFlight = yield* Ref.updateAndGet(active, (value) => value + 1);
+                yield* Ref.update(peak, (value) => Math.max(value, inFlight));
+                // Hold every worker at a Deferred gate so the observed peak is
+                // the real concurrency limit, not a scheduling accident.
+                yield* Deferred.await(release);
+                seen.push(item);
+                yield* Ref.update(active, (value) => value - 1);
+              }),
+          ),
+          { startImmediately: true },
+        );
+
+        // Let the workers reach the gate before releasing it.
+        for (let i = 0; i < 20; i++) yield* Effect.yieldNow;
+        const heldPeak = yield* Ref.get(peak);
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(fiber);
+
+        return { peak: heldPeak, seen };
+      }),
     );
 
     expect(peak).toBeLessThanOrEqual(3);
@@ -51,14 +62,10 @@ describe("APNs fan-out", () => {
 
     let active = 0;
     let peak = 0;
-
-    const sleep = (ms: number) =>
-      Effect.promise(
-        () =>
-          new Promise((resolve) => {
-            setTimeout(resolve, ms);
-          }),
-      );
+    // A barrier holds the two workers in flight until the test has observed
+    // the peak. No timer (and therefore no wall-clock duration) is involved.
+    const release = Deferred.makeUnsafe<void>();
+    const twoInFlight = Deferred.makeUnsafe<void>();
 
     const db = {
       query: {
@@ -103,7 +110,8 @@ describe("APNs fan-out", () => {
         Effect.gen(function* () {
           active++;
           peak = Math.max(peak, active);
-          yield* sleep(pushToken === "token-device-2" ? 3 : 1);
+          if (active === 2) yield* Deferred.succeed(twoInFlight, undefined);
+          yield* Deferred.await(release);
           active--;
 
           if (pushToken === "token-device-2") return yield* Effect.fail(new Error("boom"));
@@ -124,7 +132,18 @@ describe("APNs fan-out", () => {
     });
 
     const result = await Effect.runPromise(
-      apple.pushAppleDevices(["device-1", "device-2", "device-3", "device-1"]),
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          apple.pushAppleDevices(["device-1", "device-2", "device-3", "device-1"]),
+          { startImmediately: true },
+        );
+
+        yield* Deferred.await(twoInFlight);
+        yield* Effect.yieldNow;
+        yield* Deferred.succeed(release, undefined);
+
+        return yield* Fiber.join(fiber);
+      }),
     );
 
     expect(peak).toBeLessThanOrEqual(2);

@@ -1,6 +1,7 @@
 import type { Schema } from "effect";
-import { Effect } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { Effect, Layer } from "effect";
+import { FetchHttpClient } from "effect/http";
+import { describe, expect, it } from "vitest";
 import {
   EnterpriseBadRequest,
   EnterpriseNotFound,
@@ -16,7 +17,7 @@ const authSecret = "enterprise-test-secret";
 
 const now = new Date("2026-11-11T10:00:00.000Z");
 
-const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch } = {}) => {
+const makeContext = (options: { role?: string } = {}) => {
   const db = makeDb();
   db.store.account.push({
     id: "user-1",
@@ -99,13 +100,19 @@ const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch }
     // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret,
-    webhookFetch: options.fetch,
   });
 
   return { db, service, headers: { cookie: "mattrax_session=test" } };
 };
 
 type Service = ReturnType<typeof createEnterpriseService>;
+
+/** Route outbound webhooks through a fake fetch in the shared HTTP layer. */
+const transportLayer = (fetchImpl: typeof globalThis.fetch) =>
+  FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
+
+const runWithFetch = <A, E>(effect: Effect.Effect<A, E, any>, fetchImpl: typeof globalThis.fetch) =>
+  runEffect(effect.pipe(Effect.provide(transportLayer(fetchImpl))));
 
 const create = (service: Service, payload: Schema.JsonObject, tenantId = "org-1") =>
   runEffect(service.createWebhookEndpoint(request({ cookie: "1" }), tenantId, payload));
@@ -241,21 +248,27 @@ describe("webhook endpoint CRUD", () => {
 
 describe("webhook test delivery", () => {
   it("sends a test event and records the outcome", async () => {
-    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
-    const { db, service, headers } = makeContext({ fetch });
+    const calls: Array<string> = [];
+    const fetch: typeof globalThis.fetch = async (input) => {
+      calls.push(String(input));
+
+      return new Response("ok", { status: 200 });
+    };
+    const { db, service, headers } = makeContext();
 
     const created = await create(service, {
       url: "https://hooks.example.com/a",
       events: ["device.enrolled"],
     });
 
-    const result = await runEffect(
+    const result = await runWithFetch(
       service.testWebhookEndpoint(request(headers), "org-1", created.endpoint.id),
+      fetch,
     );
 
     expect(result.status).toBe("succeeded");
     expect(result.responseStatus).toBe(200);
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["https://hooks.example.com/a"]);
     expect(db.store.webhook_delivery[0]).toMatchObject({
       event: "webhook.test",
       status: "succeeded",
@@ -269,16 +282,17 @@ describe("webhook test delivery", () => {
   });
 
   it("reports a failing endpoint without throwing", async () => {
-    const fetch = vi.fn(async () => new Response("nope", { status: 500 }));
-    const { db, service, headers } = makeContext({ fetch });
+    const fetch: typeof globalThis.fetch = async () => new Response("nope", { status: 500 });
+    const { db, service, headers } = makeContext();
 
     const created = await create(service, {
       url: "https://hooks.example.com/a",
       events: [],
     });
 
-    const result = await runEffect(
+    const result = await runWithFetch(
       service.testWebhookEndpoint(request(headers), "org-1", created.endpoint.id),
+      fetch,
     );
 
     expect(result).toMatchObject({
@@ -295,8 +309,13 @@ describe("webhook test delivery", () => {
 
 describe("webhook event emission", () => {
   it("emits device.unenrolled when an administrator deletes a device", async () => {
-    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
-    const { db, service, headers } = makeContext({ fetch });
+    const calls: Array<string> = [];
+    const fetch: typeof globalThis.fetch = async (input) => {
+      calls.push(String(input));
+
+      return new Response("ok", { status: 200 });
+    };
+    const { db, service, headers } = makeContext();
     db.store.device.push({
       id: "device-1",
       organizationId: "org-1",
@@ -312,9 +331,9 @@ describe("webhook event emission", () => {
       events: ["device.unenrolled"],
     });
 
-    await runEffect(service.deleteDevices(request(headers), "org-1", ["device-1"]));
+    await runWithFetch(service.deleteDevices(request(headers), "org-1", ["device-1"]), fetch);
     expect(db.store.device).toHaveLength(0);
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["https://hooks.example.com/a"]);
     expect(db.store.webhook_delivery[0]).toMatchObject({
       event: "device.unenrolled",
       status: "succeeded",
@@ -322,8 +341,13 @@ describe("webhook event emission", () => {
   });
 
   it("emits enrollment.attempt_failed for a bad enrollment password", async () => {
-    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
-    const { db, service } = makeContext({ fetch });
+    const calls: Array<string> = [];
+    const fetch: typeof globalThis.fetch = async (input) => {
+      calls.push(String(input));
+
+      return new Response("ok", { status: 200 });
+    };
+    const { db, service } = makeContext();
     db.store.enterprise_enrollment.push({
       id: "enr-1",
       organizationId: "org-1",
@@ -338,12 +362,13 @@ describe("webhook event emission", () => {
     });
     await create(service, { url: "https://hooks.example.com/a", events: [] });
 
-    const result = await runEffect(
+    const result = await runWithFetch(
       service.getEnrollment("enr-1", "wrong-code", { platform: "apple", ip: "203.0.113.9" }),
+      fetch,
     );
 
     expect(result.authenticated).toBe(false);
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["https://hooks.example.com/a"]);
     expect(db.store.webhook_delivery[0]).toMatchObject({
       event: "enrollment.attempt_failed",
       status: "succeeded",

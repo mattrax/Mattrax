@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { api, bootstrapTenant, gotoHydrated, register, uniqueEmail } from "./helpers";
@@ -120,7 +121,7 @@ const inviteThroughUi = async (page: Page, email: string, roleValue: string) => 
 test.describe("invitations", () => {
   test("an invited user joins the tenant through the invite link", async ({ page, browser }) => {
     const tenant = await bootstrapTenant(page, "Invite Tenant");
-    const email = `invitee-${Date.now()}@example.com`;
+    const email = `invitee-${randomUUID()}@example.com`;
 
     const invitation = await api<{ inviteUrl: string }>(
       page,
@@ -216,7 +217,7 @@ test.describe("invitations", () => {
     const tenant = await bootstrapTenant(page, "Invite Custom");
     const name = await tenantName(page, tenant.id);
     const email = uniqueEmail("custom-invitee");
-    const roleName = `Device reviewer ${Math.random().toString(36).slice(2, 6)}`;
+    const roleName = `Device reviewer ${randomUUID().slice(0, 6)}`;
 
     const role = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/roles`, {
       method: "POST",

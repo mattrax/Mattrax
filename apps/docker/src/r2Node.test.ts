@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { NodeFileSystem } from "@effect/platform-node";
-import { Effect, FileSystem, PlatformError } from "effect";
+import { Deferred, Effect, Fiber, FileSystem, PlatformError, Ref } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { fileSystemR2 } from "./r2Node.js";
 
@@ -228,6 +228,9 @@ describe("filesystem R2", () => {
   });
 
   it("bounds concurrent removals", async () => {
+    const gate = await Effect.runPromise(Deferred.make<void>());
+    const eightActive = await Effect.runPromise(Deferred.make<void>());
+    const activeCount = await Effect.runPromise(Ref.make(0));
     let active = 0;
     let maximum = 0;
     const r2 = await Effect.runPromise(
@@ -238,7 +241,9 @@ describe("filesystem R2", () => {
               Effect.gen(function* () {
                 active += 1;
                 maximum = Math.max(maximum, active);
-                yield* Effect.sleep("1 milli");
+                const count = yield* Ref.updateAndGet(activeCount, (value) => value + 1);
+                if (count === 8) yield* Deferred.succeed(eightActive, undefined);
+                yield* Deferred.await(gate);
                 active -= 1;
               }),
           }),
@@ -246,7 +251,16 @@ describe("filesystem R2", () => {
       ),
     );
 
-    await r2.delete(Array.from({ length: 20 }, (_, index) => `key-${index}`));
+    const deleting = Effect.runFork(
+      Effect.promise(() => r2.delete(Array.from({ length: 20 }, (_, index) => `key-${index}`))),
+    );
+
+    // Hold the eight in-flight removals at the barrier instead of sleeping.
+    await Effect.runPromise(Deferred.await(eightActive));
+    expect(maximum).toBe(8);
+
+    await Effect.runPromise(Deferred.succeed(gate, undefined));
+    await Effect.runPromise(Fiber.join(deleting));
 
     expect(maximum).toBeGreaterThan(1);
     expect(maximum).toBeLessThanOrEqual(8);

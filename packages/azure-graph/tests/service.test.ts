@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Fiber, Layer, Logger, Schema } from "effect";
+import { Deferred, Effect, Fiber, Layer, Logger, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { TestClock } from "effect/testing";
 import {
@@ -504,13 +504,26 @@ describe("AzureGraph", () => {
   it("retries a 429 once after the Retry-After delay", async () => {
     let graphCalls = 0;
     let tokenCalls = 0;
-    const startedAt = Date.now();
 
-    const result = await run(
+    const result = await runWithClock(
       Effect.gen(function* () {
-        const graph = yield* AzureGraph;
+        const request = yield* Effect.forkChild(
+          Effect.gen(function* () {
+            const graph = yield* AzureGraph;
 
-        return yield* graph.domains(tenantId);
+            return yield* graph.domains(tenantId);
+          }),
+          { startImmediately: true },
+        );
+
+        // The Retry-After delay is scheduled on the Effect clock. Drive it
+        // virtually; the retry itself is the behavioural assertion.
+        for (let i = 0; i < 5 && graphCalls < 2; i++) {
+          yield* TestClock.adjust("10 millis");
+          yield* Effect.yieldNow;
+        }
+
+        return yield* Fiber.join(request);
       }),
       (url) => {
         if (isTokenRequest(url)) {
@@ -534,7 +547,6 @@ describe("AzureGraph", () => {
 
     expect(tokenCalls).toBe(1);
     expect(graphCalls).toBe(2);
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(5);
     expect(result).toEqual([contosoDomain]);
   });
 
@@ -617,22 +629,45 @@ describe("AzureGraph outbound timeouts", () => {
   });
 
   it("fails a hung Graph request with a timeout instead of hanging", async () => {
-    const started = Date.now();
+    const graphRequested = Deferred.makeUnsafe<void>();
 
-    const error = await runWithConfig(
-      domains,
-      (url, init) => (isTokenRequest(url) ? tokenResponse() : hangingResponse(url, init)),
+    const error = await runWithClock(
+      Effect.gen(function* () {
+        const request = yield* Effect.forkChild(domains, { startImmediately: true });
+        // Wait until the stalled request is actually in flight so its 20ms
+        // deadline is on the virtual clock before it is advanced.
+        yield* Deferred.await(graphRequested);
+        yield* TestClock.adjust("20 millis");
+        return yield* Effect.flip(Fiber.join(request));
+      }),
+      (url, init) => {
+        if (isTokenRequest(url)) return tokenResponse();
+
+        void Effect.runPromise(Deferred.succeed(graphRequested, undefined));
+        return hangingResponse(url, init);
+      },
       { timeoutMs: 20 },
-    ).catch((error_: unknown) => error_);
+    );
 
     expect(error).toBeInstanceOf(AzureGraphRequestFailed);
     expect(error instanceof Error ? error.message : "").toContain("timed out after 20ms");
-    expect(Date.now() - started).toBeLessThan(2_000);
   });
 
   it("bounds the token request too", async () => {
-    const error = await runWithConfig(domains, hangingResponse, { timeoutMs: 20 }).catch(
-      (error_: unknown) => error_,
+    const tokenRequested = Deferred.makeUnsafe<void>();
+
+    const error = await runWithClock(
+      Effect.gen(function* () {
+        const request = yield* Effect.forkChild(domains, { startImmediately: true });
+        yield* Deferred.await(tokenRequested);
+        yield* TestClock.adjust("20 millis");
+        return yield* Effect.flip(Fiber.join(request));
+      }),
+      (url, init) => {
+        void Effect.runPromise(Deferred.succeed(tokenRequested, undefined));
+        return hangingResponse(url, init);
+      },
+      { timeoutMs: 20 },
     );
 
     expect(error).toBeInstanceOf(AzureGraphRequestFailed);
@@ -642,8 +677,17 @@ describe("AzureGraph outbound timeouts", () => {
   it("still retries a throttled request within the deadline", async () => {
     let graphCalls = 0;
 
-    const result = await runWithConfig(
-      domains,
+    const result = await runWithClock(
+      Effect.gen(function* () {
+        const request = yield* Effect.forkChild(domains, { startImmediately: true });
+
+        for (let i = 0; i < 5 && graphCalls < 2; i++) {
+          yield* TestClock.adjust("10 millis");
+          yield* Effect.yieldNow;
+        }
+
+        return yield* Fiber.join(request);
+      }),
       (url) => {
         if (isTokenRequest(url)) return tokenResponse();
         graphCalls++;

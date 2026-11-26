@@ -1,5 +1,5 @@
 import { Passkey, Totp } from "@yielded/auth";
-import { Effect, Layer, ManagedRuntime } from "effect";
+import { Deferred, Effect, Layer, ManagedRuntime } from "effect";
 import { MysqlClient } from "@effect/sql-mysql2";
 import type { RowDataPacket } from "mysql2/promise";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -13,6 +13,8 @@ describe.skipIf(!process.env.TEST_MYSQL_URL)("step-up TOTP lockout on disposable
   let fixture: MysqlFixture;
   let runtime: ManagedRuntime.ManagedRuntime<StepUpService, never>;
   let matches = 0;
+  let releaseMatches: Deferred.Deferred<void>;
+  let fiveEntered: Deferred.Deferred<void>;
 
   beforeAll(async () => {
     fixture = (await startMysqlFixture())!;
@@ -32,13 +34,13 @@ describe.skipIf(!process.env.TEST_MYSQL_URL)("step-up TOTP lockout on disposable
     const totpCryptography = Layer.succeed(Totp.TotpCryptography, {
       decryptSecret: () => Effect.succeed(new Uint8Array(32).fill(1)),
       matchCode: () =>
-        Effect.promise(async () => {
+        Effect.gen(function* () {
           matches++;
-          // Keep every concurrent request inside the admission window. The
-          // old read-compute-overwrite implementation loses these increments.
-          await new Promise((resolve) => {
-            setTimeout(resolve, 25);
-          });
+          // Keep every admitted request inside the window until all five are
+          // pending. The old read-compute-overwrite implementation loses
+          // these increments; a gate makes the race deterministic.
+          if (matches === 5) yield* Deferred.succeed(fiveEntered, undefined);
+          yield* Deferred.await(releaseMatches);
           return null;
         }),
     } as any);
@@ -74,6 +76,8 @@ describe.skipIf(!process.env.TEST_MYSQL_URL)("step-up TOTP lockout on disposable
 
   beforeEach(async () => {
     matches = 0;
+    releaseMatches = Deferred.makeUnsafe<void>();
+    fiveEntered = Deferred.makeUnsafe<void>();
     await fixture.query("DELETE FROM step_up_totp_state");
   });
 
@@ -83,13 +87,19 @@ describe.skipIf(!process.env.TEST_MYSQL_URL)("step-up TOTP lockout on disposable
   });
 
   it("admits at most five concurrent failures and locks the sixth", async () => {
-    const results = await Promise.all(
-      Array.from({ length: 6 }, () =>
-        runtime.runPromise(
-          Effect.flatMap(StepUpService, (service) => service.verifyTotp("user-1", "000000")),
-        ),
+    const requests = Array.from({ length: 6 }, () =>
+      runtime.runPromise(
+        Effect.flatMap(StepUpService, (service) => service.verifyTotp("user-1", "000000")),
       ),
     );
+
+    // Five calls are held inside the admission window while the sixth waits
+    // for a slot. Releasing only after that point exercises the lost-update
+    // race without depending on a 25ms sleep.
+    await Effect.runPromise(Deferred.await(fiveEntered));
+    await Effect.runPromise(Deferred.succeed(releaseMatches, undefined));
+
+    const results = await Promise.all(requests);
 
     expect(results).toEqual([false, false, false, false, false, false]);
     expect(matches).toBe(5);

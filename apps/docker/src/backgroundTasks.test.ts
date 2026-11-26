@@ -1,6 +1,30 @@
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Deferred, Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 import { createBackgroundTasks } from "./backgroundTasks.js";
+import type { ScheduleDeadline } from "./backgroundTasks.js";
+
+/** Drives shutdown deadlines from the test instead of the wall clock. */
+const manualDeadline = () => {
+  let fire: (() => void) | undefined;
+  let delayMs: number | undefined;
+  let cancels = 0;
+  const scheduleDeadline: ScheduleDeadline = (callback, delay) => {
+    fire = callback;
+    delayMs = delay;
+
+    return () => {
+      cancels++;
+      fire = undefined;
+    };
+  };
+
+  return {
+    scheduleDeadline,
+    delayMs: () => delayMs,
+    fire: () => fire?.(),
+    cancels: () => cancels,
+  };
+};
 
 describe("tracked background tasks", () => {
   it("observes failures and removes completed work", async () => {
@@ -72,12 +96,26 @@ describe("tracked background tasks", () => {
   });
 
   it("tracks forked work in the parent shutdown deadline", async () => {
-    const parent = createBackgroundTasks();
+    const deadline = manualDeadline();
+    const parent = createBackgroundTasks(undefined, {
+      scheduleDeadline: deadline.scheduleDeadline,
+    });
     const tick = parent.fork();
     const running = Effect.runPromiseExit(Effect.never, { signal: tick.signal });
     tick.waitUntil(running);
 
-    await expect(parent.drain(5)).resolves.toBe("interrupted");
+    const draining = parent.drain(5);
+    expect(deadline.delayMs()).toBe(5);
+    let settled = false;
+    void draining.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    deadline.fire();
+    await expect(draining).resolves.toBe("interrupted");
+    expect(deadline.cancels()).toBe(1);
     expect(tick.signal).toBe(parent.signal);
     const exit = await running;
 
@@ -85,10 +123,14 @@ describe("tracked background tasks", () => {
   });
 
   it("drains successful work without interrupting it", async () => {
-    const tasks = createBackgroundTasks();
+    const deadline = manualDeadline();
+    const tasks = createBackgroundTasks(undefined, {
+      scheduleDeadline: deadline.scheduleDeadline,
+    });
+    const gate = await Effect.runPromise(Deferred.make<void>());
     let interrupted = false;
     const running = Effect.runPromiseExit(
-      Effect.sleep("1 milli").pipe(
+      Deferred.await(gate).pipe(
         Effect.onInterrupt(() =>
           Effect.sync(() => {
             interrupted = true;
@@ -99,17 +141,35 @@ describe("tracked background tasks", () => {
     );
     tasks.waitUntil(running);
 
-    await expect(tasks.drain(20)).resolves.toBe("drained");
+    const draining = tasks.drain(20);
+    expect(deadline.delayMs()).toBe(20);
+    await Effect.runPromise(Deferred.succeed(gate, undefined));
+    await expect(draining).resolves.toBe("drained");
+    expect(deadline.cancels()).toBe(1);
     expect(Exit.isSuccess(await running)).toBe(true);
     expect(interrupted).toBe(false);
   });
 
   it("interrupts remaining Effect fibers at the shutdown deadline", async () => {
-    const tasks = createBackgroundTasks();
+    const deadline = manualDeadline();
+    const tasks = createBackgroundTasks(undefined, {
+      scheduleDeadline: deadline.scheduleDeadline,
+    });
     const running = Effect.runPromiseExit(Effect.never, { signal: tasks.signal });
     tasks.waitUntil(running);
 
-    await expect(tasks.drain(5)).resolves.toBe("interrupted");
+    const draining = tasks.drain(5);
+    expect(deadline.delayMs()).toBe(5);
+    let settled = false;
+    void draining.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    deadline.fire();
+    await expect(draining).resolves.toBe("interrupted");
+    expect(deadline.cancels()).toBe(1);
     expect(tasks.signal.aborted).toBe(true);
     const exit = await running;
 

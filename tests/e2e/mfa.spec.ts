@@ -1,17 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import {
   bootstrapTenant,
   confirmStepUp,
-  freshTotpCode,
   gotoHydrated,
   register,
   signIn,
   stepUpGrant,
   totpCode,
 } from "./helpers";
-
-// Enrollment plus two step-boundary waits can exceed the default test timeout.
-test.describe.configure({ timeout: 150_000 });
 
 test.describe("authenticator MFA", () => {
   test("keeps the method selector secondary to the single passkey action", async ({ page }) => {
@@ -117,7 +114,10 @@ test.describe("authenticator MFA", () => {
     });
 
     expect(beforeMfa).toBe(401);
-    await page.locator("#mfa-code").fill(await freshTotpCode(manualKey));
+    // Enrollment consumed the current step. The verifier accepts a one-step
+    // skew, so the next step's code is valid now and is a new step for replay
+    // protection — no need to wait for the clock to tick over.
+    await page.locator("#mfa-code").fill(totpCode(manualKey, 1));
     await page.getByRole("button", { name: /^continue$/i }).click();
 
     // A code can land on a replay-protected step boundary. Wait for the outcome
@@ -133,7 +133,7 @@ test.describe("authenticator MFA", () => {
     ]);
 
     if (totpOutcome === "rejected") {
-      await page.locator("#mfa-code").fill(await freshTotpCode(manualKey));
+      await page.locator("#mfa-code").fill(totpCode(manualKey, 1));
       await page.getByRole("button", { name: /^continue$/i }).click();
     }
 
@@ -175,14 +175,16 @@ test.describe("authenticator MFA", () => {
       hasText: /regenerate recovery codes/i,
     });
 
-    await regenerateForm.getByPlaceholder("000000").fill(await freshTotpCode(manualKey));
+    // The management forms check the code but not step replay, so the current
+    // step is enough here and in the disable form below.
+    await regenerateForm.getByPlaceholder("000000").fill(totpCode(manualKey));
     await regenerateForm.getByRole("button", { name: /^regenerate$/i }).click();
     await confirmStepUp(page);
     await expect(enabledCard.getByText(/save these one-time recovery codes/i)).toBeVisible();
 
     const disableCard = page.locator("section", { hasText: "Authenticator app" });
     const disableForm = disableCard.locator("form", { hasText: /disable authenticator app/i });
-    await disableForm.getByPlaceholder("000000").fill(await freshTotpCode(manualKey));
+    await disableForm.getByPlaceholder("000000").fill(totpCode(manualKey));
     await disableForm.getByRole("button", { name: /^disable$/i }).click();
     await confirmStepUp(page);
     await expect(disableCard.getByText(/security settings updated/i)).toBeVisible();
@@ -196,13 +198,14 @@ test.describe("authenticator MFA", () => {
   test("allows requiring MFA once a passkey is enrolled", async ({ page }) => {
     await register(page);
 
-    const tenantId = await page.evaluate(async () => {
+    const slug = `mfa-${randomUUID().slice(0, 8)}`;
+    const tenantId = await page.evaluate(async (slug) => {
       const response = await fetch("/api/v1/tenants", {
         method: "POST",
         headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
         body: JSON.stringify({
           name: "MFA Tenant",
-          slug: `mfa-${Math.random().toString(36).slice(2, 8)}`,
+          slug,
         }),
       });
 
@@ -211,7 +214,7 @@ test.describe("authenticator MFA", () => {
       const body: { id: string } = await response.json();
 
       return body.id;
-    });
+    }, slug);
 
     const grant = await stepUpGrant(page, "sso-policy");
 

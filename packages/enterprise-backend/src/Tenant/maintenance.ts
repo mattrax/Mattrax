@@ -83,6 +83,9 @@ export type CredentialExpiryNotifier = (
   notification: CredentialExpiryNotification,
 ) => Effect.Effect<void, unknown, Db>;
 
+/** Lazy Apps and Books client, injectable so a failed chunk can be exercised. */
+export type VppClientLoader = () => Promise<typeof import("@mattrax/apple-business-manager")>;
+
 export type MaintenanceOptions = {
   /** Injectable clock for tests. Defaults to `new Date()`. */
   readonly now?: Date;
@@ -150,8 +153,8 @@ export type MaintenanceOptions = {
   readonly authSecret?: string;
   /** Refresh due Apps and Books assets. Defaults to true. */
   readonly vppSync?: boolean;
-  /** Injected fetch for retry tests. */
-  readonly webhookFetch?: typeof globalThis.fetch;
+  /** Lazy Apps and Books client loader; defaults to the module import. */
+  readonly vppClientLoader?: VppClientLoader;
   /** Maximum recorded attempts for a retried delivery. Defaults to 3. */
   readonly webhookMaxAttempts?: number;
   /**
@@ -717,7 +720,6 @@ export const runMaintenance = (
               {
                 now,
                 authSecret: options.webhookAuthSecret,
-                fetch: options.webhookFetch,
               } satisfies WebhookDeliveryOptions,
             ),
           { concurrency: 4, discard: true },
@@ -1132,7 +1134,6 @@ export const runMaintenance = (
       const retried = yield* retryFailedWebhookDeliveries(db, {
         now,
         authSecret: options.webhookAuthSecret,
-        fetch: options.webhookFetch,
         maxAttempts: options.webhookMaxAttempts,
       });
 
@@ -1213,8 +1214,10 @@ export const runMaintenance = (
       // here so it stays out of the API Worker's startup closure. A chunk that
       // cannot be loaded is logged and skips this step: it must not fail the
       // rest of maintenance (or become a defect `Effect.catch` cannot see).
+      const loadVppClient =
+        options.vppClientLoader ?? (() => import("@mattrax/apple-business-manager"));
       const vppClient = yield* Effect.tryPromise({
-        try: () => import("@mattrax/apple-business-manager"),
+        try: () => loadVppClient(),
         catch: (cause) => cause,
       }).pipe(
         Effect.catch((error) =>

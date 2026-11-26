@@ -12,6 +12,8 @@ import { makeDb, request, requireField, runEffect, schema } from "./helpers.js";
 const origin = "https://enterprise.test";
 const authSecret = "windows-security-test-secret";
 
+const NOW = Date.parse("2026-11-01T00:00:00Z");
+
 const at = new Date("2026-11-24T10:00:00.000Z");
 
 const makeStorage = () => {
@@ -753,8 +755,8 @@ describe("BitLocker escrow", () => {
       expiresAt: null,
       resultStatus: null,
       resultDetail: null,
-      createdAt: new Date(Date.now() + 1),
-      updatedAt: new Date(),
+      createdAt: new Date(exec.createdAt.getTime() + 1),
+      updatedAt: new Date(NOW),
     });
 
     await expect(
@@ -796,7 +798,7 @@ describe("BitLocker escrow", () => {
         row.requestType === "WindowsBitLockerRotate" && row.id === secondCommand.commandId,
     );
     secondExec.status = "accepted";
-    secondExec.expiresAt = new Date(Date.now() - 1_000);
+    secondExec.expiresAt = new Date(NOW - 1_000);
 
     db.store.device_command.push({
       id: "status-2",
@@ -806,11 +808,11 @@ describe("BitLocker escrow", () => {
       payload: { kind: "Get", execCommandId: secondCommand.commandId },
       status: "sent",
       dedupeKey: null,
-      expiresAt: new Date(Date.now() - 1_000),
+      expiresAt: new Date(NOW - 1_000),
       resultStatus: null,
       resultDetail: "Status 1",
-      createdAt: new Date(Date.now() + 2),
-      updatedAt: new Date(),
+      createdAt: new Date(secondExec.createdAt.getTime() + 2),
+      updatedAt: new Date(NOW),
     });
 
     await expect(
@@ -968,7 +970,7 @@ describe("Windows diagnostics and Fresh Start", () => {
         "windows-diagnostics-download",
         tenant.id + ":" + archive.id + ":win-1",
         token,
-        Date.now(),
+        NOW,
       ),
     ).toBe(true);
 
@@ -1066,7 +1068,7 @@ describe("Windows diagnostics and Fresh Start", () => {
     ).toBe(401);
     expect(unknownArchive.pulls()).toBe(0);
 
-    context.db.store.device_diagnostics_archive[0].expiresAt = new Date(Date.now() - 1_000);
+    context.db.store.device_diagnostics_archive[0].expiresAt = new Date(NOW - 1_000);
     const expired = trackedEffectRequest(uploadUrl, [zip]);
     expect(
       (await runEffect(context.service.uploadWindowsDiagnostics(expired.request))).status,
@@ -1152,7 +1154,7 @@ describe("Windows diagnostics and Fresh Start", () => {
     expect(context.storage.objects.size).toBe(1);
 
     const archive = db.store.device_diagnostics_archive[0];
-    archive.expiresAt = new Date(Date.now() - 1_000);
+    archive.expiresAt = new Date(NOW - 1_000);
 
     const listed = await runEffect(
       service.listDeviceDiagnostics(request(headers), tenant.id, "win-1"),

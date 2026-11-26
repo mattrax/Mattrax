@@ -51,13 +51,15 @@ const serve = async (api: ApiRuntime): Promise<string> => {
   return `http://127.0.0.1:${address.port}`;
 };
 
-const collect = (url: string, headers?: Record<string, string>) =>
+const collect = (url: string, headers?: Record<string, string>, onData?: (chunk: string) => void) =>
   new Promise<{ status: number | undefined; body: string; failed: boolean }>((resolve) => {
     const outgoing = request(url, { headers }, (response) => {
       let body = "";
       let failed = false;
       response.on("data", (chunk) => {
-        body += String(chunk);
+        const text = String(chunk);
+        body += text;
+        onData?.(text);
       });
       const finish = () => {
         resolve({ status: response.statusCode, body, failed });
@@ -122,16 +124,23 @@ describe("Node Effect HTTP bridge", () => {
   });
 
   it("never appends an error body after response streaming starts", async () => {
+    let prefixObserved!: () => void;
+    const observedPrefix = new Promise<void>((resolve) => {
+      prefixObserved = resolve;
+    });
     const url = await serve(
       runtime(async () => {
         let pulled = false;
+        let errorScheduled = false;
         const body = new ReadableStream<Uint8Array>({
           pull(controller) {
             if (!pulled) {
               pulled = true;
               controller.enqueue(new TextEncoder().encode("prefix-"));
-            } else {
-              setTimeout(() => controller.error(new Error("stream failed")), 1);
+            } else if (!errorScheduled) {
+              errorScheduled = true;
+              // Fail only after the client has read the prefix, with no timer.
+              void observedPrefix.then(() => controller.error(new Error("stream failed")));
             }
           },
         });
@@ -139,7 +148,13 @@ describe("Node Effect HTTP bridge", () => {
         return new Response(body, { status: 200 });
       }),
     );
-    const response = await collect(url);
+    let sawPrefix = false;
+    const response = await collect(url, undefined, () => {
+      if (!sawPrefix) {
+        sawPrefix = true;
+        prefixObserved();
+      }
+    });
 
     expect(response.status).toBe(200);
     expect(response.body).toBe("prefix-");

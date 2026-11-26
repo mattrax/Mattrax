@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import { createHmac } from "node:crypto";
 import { EventEmitter } from "node:events";
-import http2 from "node:http2";
 import {
   ApnsError,
   MtlsPushTransport,
@@ -166,6 +166,26 @@ describe("APNs outbound timeouts", () => {
       ),
     );
 
+  /** Fetch-backed transports use an Effect deadline; drive it virtually. */
+  const pushWithClock = (transport: ReturnType<typeof MtlsPushTransport>) =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          Effect.flip(
+            transport.push({
+              pushToken: "abcd",
+              pushMagic: "magic",
+              topic: "com.apple.mgmt.External.tenant",
+            }),
+          ),
+          { startImmediately: true },
+        );
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("25 millis");
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+
   it("aborts a hung mTLS fetch", async () => {
     let aborted: AbortSignal | undefined;
 
@@ -180,11 +200,9 @@ describe("APNs outbound timeouts", () => {
         }),
     });
 
-    const started = Date.now();
-    const error = await push(transport);
+    const error = await pushWithClock(transport);
     expect(error).toBeInstanceOf(ApnsError);
     expect(error.message).toContain("timed out");
-    expect(Date.now() - started).toBeLessThan(1_000);
     expect(aborted?.aborted).toBe(true);
   });
 
@@ -201,7 +219,7 @@ describe("APNs outbound timeouts", () => {
         }),
     });
 
-    const error = await push(transport);
+    const error = await pushWithClock(transport);
     expect(error).toBeInstanceOf(ApnsError);
     expect(error.message).toContain("timed out");
   });
@@ -210,66 +228,67 @@ describe("APNs outbound timeouts", () => {
     // A stalled connect never emits a response, so only the session's deadline
     // callback can settle the push. Firing it on the next microtask keeps the
     // test deterministic and avoids a real socket and a generated key pair.
-    const request = Object.assign(new EventEmitter(), { end: vi.fn() });
+    const request = Object.assign(new EventEmitter(), { end: () => {} });
+    let destroyed = 0;
     const session = Object.assign(new EventEmitter(), {
-      close: vi.fn(),
-      destroy: vi.fn(),
-      setTimeout: vi.fn((_ms: number, onStall: () => void) => {
+      close: () => {},
+      destroy: () => {
+        destroyed++;
+      },
+      setTimeout: (_ms: number, onStall: () => void) => {
         queueMicrotask(onStall);
-      }),
-      request: vi.fn(() => request),
+      },
+      request: () => request,
     });
-    const connect = vi.spyOn(http2, "connect").mockReturnValue(session as never);
 
-    try {
-      const transport = NodePushTransport({
-        certPem: "CERT",
-        privateKeyPem: "KEY",
-        timeoutMs: 25,
-      });
+    const transport = NodePushTransport({
+      certPem: "CERT",
+      privateKeyPem: "KEY",
+      timeoutMs: 25,
+      connect: () => session as never,
+    });
 
-      const error = await push(transport);
+    const error = await push(transport);
 
-      expect(error).toBeInstanceOf(ApnsError);
-      expect(error.message).toContain("timed out");
-      expect(session.destroy).toHaveBeenCalledOnce();
-    } finally {
-      connect.mockRestore();
-    }
+    expect(error).toBeInstanceOf(ApnsError);
+    expect(error.message).toContain("timed out");
+    expect(destroyed).toBe(1);
   });
 
   it("closes the HTTP/2 session when the parent fiber is interrupted", async () => {
-    const request = Object.assign(new EventEmitter(), { end: vi.fn() });
+    const request = Object.assign(new EventEmitter(), { end: () => {} });
+    let destroyed = 0;
     const session = Object.assign(new EventEmitter(), {
-      close: vi.fn(),
-      destroy: vi.fn(),
-      setTimeout: vi.fn(),
-      request: vi.fn(() => request),
+      close: () => {},
+      destroy: () => {
+        destroyed++;
+      },
+      setTimeout: () => {},
+      request: () => request,
     });
-    const connect = vi.spyOn(http2, "connect").mockReturnValue(session as never);
 
-    try {
-      const transport = NodePushTransport({ certPem: "CERT", privateKeyPem: "KEY" });
+    const transport = NodePushTransport({
+      certPem: "CERT",
+      privateKeyPem: "KEY",
+      connect: () => session as never,
+    });
 
-      await Effect.runPromise(
-        Effect.gen(function* () {
-          const fiber = yield* Effect.forkChild(
-            transport.push({
-              pushToken: "abcd",
-              pushMagic: "magic",
-              topic: "com.apple.mgmt.External.tenant",
-            }),
-            { startImmediately: true },
-          );
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          transport.push({
+            pushToken: "abcd",
+            pushMagic: "magic",
+            topic: "com.apple.mgmt.External.tenant",
+          }),
+          { startImmediately: true },
+        );
 
-          yield* Fiber.interrupt(fiber);
-        }),
-      );
+        yield* Fiber.interrupt(fiber);
+      }),
+    );
 
-      expect(session.destroy).toHaveBeenCalledOnce();
-    } finally {
-      connect.mockRestore();
-    }
+    expect(destroyed).toBe(1);
   });
 });
 

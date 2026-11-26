@@ -2,6 +2,7 @@ import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
+
 import {
   BeginRegistrationVerificationResponse,
   CompleteRegistrationVerificationResponse,
@@ -9,9 +10,10 @@ import {
   Permission,
 } from "@mattrax/enterprise-domain/client";
 import type { UpdateMeRequest } from "@mattrax/enterprise-domain/client";
-import { Effect, Option, Schema } from "effect";
+import { Context, Effect, Layer, Option, Schema } from "effect";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { webHttpClientLayer } from "~/lib/web-http";
+
 import { createSignal, isHydrating, onHydrationEnd, onSettled } from "solid-js";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import { apiFetch } from "~/lib/auth-api.server";
@@ -31,6 +33,52 @@ import {
   PasskeySignInError,
   startConditionalPasskey,
 } from "~/lib/passkey-sign-in";
+
+type WebAuthnBridge = typeof import("@simplewebauthn/browser");
+
+/** The browser WebAuthn bridge, as an Effect service so callers can replace it. */
+export type PasskeyCeremony = Pick<WebAuthnBridge, "startAuthentication" | "startRegistration">;
+
+export class WebAuthnCeremony extends Context.Service<WebAuthnCeremony, PasskeyCeremony>()(
+  "mattrax/web/WebAuthnCeremony",
+) {}
+
+const lazyWebAuthn: PasskeyCeremony = {
+  startAuthentication: async (options) => {
+    const { startAuthentication } = await import("@simplewebauthn/browser");
+
+    return startAuthentication(options);
+  },
+  startRegistration: async (options) => {
+    const { startRegistration } = await import("@simplewebauthn/browser");
+
+    return startRegistration(options);
+  },
+};
+
+/** Production ceremony: SimpleWebAuthn loads only when a prompt is needed. */
+export const webAuthnCeremonyLayer: Layer.Layer<WebAuthnCeremony> = Layer.succeed(
+  WebAuthnCeremony,
+  lazyWebAuthn,
+);
+
+/** Run a ceremony through the service; tests provide their own runtime layer. */
+export type PasskeyCeremonyRun = <A>(use: (ceremony: PasskeyCeremony) => Promise<A>) => Promise<A>;
+
+const defaultCeremonyRun: PasskeyCeremonyRun = (use) =>
+  Effect.runPromise(
+    Effect.flatMap(WebAuthnCeremony, (ceremony) => Effect.promise(() => use(ceremony))).pipe(
+      Effect.provide(webAuthnCeremonyLayer),
+    ),
+  );
+
+/** Options for the async passkey flow. Production callers omit both overrides. */
+export type PasskeyFlowOptions = {
+  /** Set for conditional UI; the caller aborts it on an email edit or unmount. */
+  readonly conditional?: AbortSignal;
+  readonly ceremonyRun?: PasskeyCeremonyRun;
+  readonly transport?: typeof webHttpClientLayer;
+};
 
 type AuthUser = {
   id: string;
@@ -148,6 +196,7 @@ class AuthResponseError extends Schema.TaggedError<AuthResponseError>()("AuthRes
 const readAuthResponse = async (
   path: string,
   init: RequestInit,
+  transport: typeof webHttpClientLayer = webHttpClientLayer,
 ): Promise<{ readonly status: number; readonly body: unknown }> => {
   const url = path.startsWith("/v1/") ? "/api" + path : "/api/v1" + path;
   const event = isServer ? getRequestEvent() : undefined;
@@ -201,7 +250,7 @@ const readAuthResponse = async (
           ),
         ),
       ),
-      Effect.provide(webHttpClientLayer),
+      Effect.provide(transport),
     ),
   );
 
@@ -282,8 +331,9 @@ async function requestEnvelope<S extends Schema.ConstraintDecoder<unknown, never
   path: string,
   schema: S,
   init: RequestInit = {},
+  transport: typeof webHttpClientLayer = webHttpClientLayer,
 ): Promise<AuthEnvelope<S["Type"]>> {
-  const response = await readAuthResponse(path, init);
+  const response = await readAuthResponse(path, init, transport);
 
   return decodeAuthEnvelope(response.status, response.body, schema, {
     directSuccess: hasDirectSuccessResponse(path),
@@ -301,8 +351,9 @@ async function request<S extends Schema.ConstraintDecoder<unknown, never>>(
   path: string,
   schema: S,
   init: RequestInit = {},
+  transport: typeof webHttpClientLayer = webHttpClientLayer,
 ): Promise<S["Type"]> {
-  return (await requestEnvelope(path, schema, init)).value;
+  return (await requestEnvelope(path, schema, init, transport)).value;
 }
 
 const result = async <T>(fn: () => Promise<T>): AuthResult<T> => {
@@ -635,24 +686,24 @@ const revealOf = <S extends Schema.ConstraintDecoder<unknown>>(
 };
 
 /** Discoverable-credential sign-in shared by the login page and registration. */
-const passkeySignInFlow = async (
-  options: {
-    /** Set for conditional UI; the caller aborts it on an email edit or unmount. */
-    conditional?: AbortSignal;
-  } = {},
-): Promise<CompletionState> => {
+const passkeySignInFlow = async (options: PasskeyFlowOptions = {}): Promise<CompletionState> => {
   const environmentFailure = passkeyEnvironmentFailure();
 
   if (environmentFailure) throw environmentFailure;
 
-  const started = await request("/beginPasskeySignIn", PasskeyRequestStart, {
-    method: "POST",
-    body: authBody({
-      flowId: crypto.randomUUID(),
-      commandId: crypto.randomUUID(),
-      profileId: "default",
-    }),
-  });
+  const started = await request(
+    "/beginPasskeySignIn",
+    PasskeyRequestStart,
+    {
+      method: "POST",
+      body: authBody({
+        flowId: crypto.randomUUID(),
+        commandId: crypto.randomUUID(),
+        profileId: "default",
+      }),
+    },
+    options.transport,
+  );
 
   if (options.conditional?.aborted)
     throw new PasskeySignInError("PasskeyCancelled", "Passkey sign-in was cancelled.");
@@ -666,16 +717,19 @@ const passkeySignInFlow = async (
         options.conditional,
       );
     } else {
-      const { startAuthentication } = await import("@simplewebauthn/browser");
-      response = await startAuthentication({
-        // A registration follow-up should not leave the person staring at a
-        // browser prompt for the server's full five-minute window.
-        optionsJSON: {
-          ...toRequestOptions(started.options),
-          timeout: Math.min(started.options.timeout ?? 60_000, 60_000),
-        },
-        useBrowserAutofill: false,
-      });
+      const run = options.ceremonyRun ?? defaultCeremonyRun;
+
+      response = await run((ceremony) =>
+        ceremony.startAuthentication({
+          // A registration follow-up should not leave the person staring at a
+          // browser prompt for the server's full five-minute window.
+          optionsJSON: {
+            ...toRequestOptions(started.options),
+            timeout: Math.min(started.options.timeout ?? 60_000, 60_000),
+          },
+          useBrowserAutofill: false,
+        }),
+      );
     }
   } catch (error) {
     if (error instanceof PasskeySignInError) throw error;
@@ -688,10 +742,15 @@ const passkeySignInFlow = async (
   if (options.conditional?.aborted)
     throw new PasskeySignInError("PasskeyCancelled", "Passkey sign-in was cancelled.");
 
-  const completion = await request("/completePasskeySignIn", Schema.Json, {
-    method: "POST",
-    body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
-  });
+  const completion = await request(
+    "/completePasskeySignIn",
+    Schema.Json,
+    {
+      method: "POST",
+      body: authBody({ flowId: started.flowId, response: JSON.stringify(response) }),
+    },
+    options.transport,
+  );
 
   const state = completionState(completion);
 
@@ -817,8 +876,9 @@ export const authClient = {
       let response: unknown;
 
       try {
-        const { startRegistration } = await import("@simplewebauthn/browser");
-        response = await startRegistration({ optionsJSON: toCreationOptions(started.options) });
+        response = await defaultCeremonyRun((ceremony) =>
+          ceremony.startRegistration({ optionsJSON: toCreationOptions(started.options) }),
+        );
       } catch (error) {
         throw new Error(passkeyCreationFailure(error), { cause: error });
       }
@@ -933,7 +993,7 @@ export const authClient = {
    * signal runs it as conditional UI, where the browser offers saved passkeys
    * inline and the caller owns cancellation.
    */
-  passkeySignIn: async (options?: { conditional?: AbortSignal }): AuthResult<CompletionState> => {
+  passkeySignIn: async (options?: PasskeyFlowOptions): AuthResult<CompletionState> => {
     try {
       return { data: await passkeySignInFlow(options) };
     } catch (error) {
@@ -960,11 +1020,12 @@ export const authClient = {
       let response: unknown;
 
       try {
-        const { startAuthentication } = await import("@simplewebauthn/browser");
-        response = await startAuthentication({
-          optionsJSON: toRequestOptions(started.options),
-          useBrowserAutofill: false,
-        });
+        response = await defaultCeremonyRun((ceremony) =>
+          ceremony.startAuthentication({
+            optionsJSON: toRequestOptions(started.options),
+            useBrowserAutofill: false,
+          }),
+        );
       } catch (error) {
         throw passkeyAuthenticationFailure(error);
       }
@@ -1016,8 +1077,9 @@ export const authClient = {
       let response: unknown;
 
       try {
-        const { startRegistration } = await import("@simplewebauthn/browser");
-        response = await startRegistration({ optionsJSON: toCreationOptions(started.options) });
+        response = await defaultCeremonyRun((ceremony) =>
+          ceremony.startRegistration({ optionsJSON: toCreationOptions(started.options) }),
+        );
       } catch (error) {
         throw new Error(passkeyCreationFailure(error), { cause: error });
       }

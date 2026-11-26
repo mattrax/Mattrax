@@ -7,15 +7,13 @@ import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import { HttpApi, HttpApiBuilder } from "effect/http-api";
 import type { OutboundEmailMessage } from "@mattrax/email";
 import { EnterpriseService, enterpriseAccountApi } from "@mattrax/enterprise-domain";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { VerifyEmailTokenInput } from "email-verification-api";
+import { describe, expect, it } from "vitest";
 import { makeDb, makeHttpHandler, schema } from "./helpers.js";
-
-const state = vi.hoisted(() => ({ verify: vi.fn() }));
-
-vi.mock("email-verification-api", () => ({ verifyEmailToken: state.verify }));
 
 import { createEnterpriseService } from "../src/enterpriseHandlers.js";
 import { enterpriseAccountHandlers } from "../src/enterpriseHandlers.js";
+import { RegistrationTokenVerifier } from "../src/registrationVerification.js";
 
 const origin = "https://mattrax.test";
 
@@ -31,6 +29,20 @@ const request = (cookie?: string) =>
   }) as unknown as HttpServerRequest;
 
 const cookieFor = (nonce: string) => `mattrax_register_nonce=${nonce}`;
+
+/** Fake issuer port that records every verification attempt. */
+const verifierFake = (outcome: "ok" | "invalid" = "ok") => {
+  const calls: Array<VerifyEmailTokenInput> = [];
+  const service = RegistrationTokenVerifier.of({
+    verify: (input) => {
+      calls.push(input);
+
+      return Promise.resolve({ ok: outcome === "ok" });
+    },
+  });
+
+  return { calls, service };
+};
 
 const makeService = () => {
   const db = makeDb();
@@ -71,16 +83,18 @@ const sendCode = (
   service: ReturnType<typeof makeService>["service"],
   payload: { name: string; email: string; token?: string; nonce?: string },
   cookie?: string,
-): Promise<RegistrationResult> =>
-  Effect.runPromise(service.requestRegistrationCode(request(cookie), payload));
+  verifier?: RegistrationTokenVerifier.Service,
+): Promise<RegistrationResult> => {
+  const effect = service.requestRegistrationCode(request(cookie), payload);
 
-beforeEach(() => {
-  state.verify.mockReset();
-});
+  return Effect.runPromise(
+    verifier ? effect.pipe(Effect.provideService(RegistrationTokenVerifier, verifier)) : effect,
+  );
+};
 
 describe("requestRegistrationCode Email Verification API", () => {
   it("verifies the token, skips the email and marks the registration verified", async () => {
-    state.verify.mockResolvedValue({ ok: true });
+    const { calls, service: verifier } = verifierFake("ok");
     const { db, service, sent } = makeService();
 
     const result = await sendCode(
@@ -92,6 +106,7 @@ describe("requestRegistrationCode Email Verification API", () => {
         nonce: "nonce-1",
       },
       cookieFor("nonce-1"),
+      verifier,
     );
 
     expect(result.body).toMatchObject({ status: "ok", emailSent: false, verified: true });
@@ -104,18 +119,18 @@ describe("requestRegistrationCode Email Verification API", () => {
       grant: result.body.grant,
     });
     expect(db.store.registration_verification[0]?.verifiedAt).toBeInstanceOf(Date);
-    expect(state.verify).toHaveBeenCalledWith(
+    expect(calls).toEqual([
       expect.objectContaining({
         email: "ada@example.com",
         token: "evt-token",
         nonce: "nonce-1",
         audience: origin,
       }),
-    );
+    ]);
   });
 
   it("falls through to the emailed code when verification fails", async () => {
-    state.verify.mockResolvedValue({ ok: false });
+    const { service: verifier } = verifierFake("invalid");
     const { db, service, sent } = makeService();
 
     const result = await sendCode(
@@ -127,6 +142,7 @@ describe("requestRegistrationCode Email Verification API", () => {
         nonce: "nonce-1",
       },
       cookieFor("nonce-1"),
+      verifier,
     );
 
     expect(result.body).toMatchObject({ status: "ok", emailSent: true });
@@ -139,6 +155,7 @@ describe("requestRegistrationCode Email Verification API", () => {
   });
 
   it("never calls the verifier for a token whose nonce is not this session's", async () => {
+    const { calls, service: verifier } = verifierFake();
     const { service, sent } = makeService();
 
     const result = await sendCode(
@@ -150,15 +167,16 @@ describe("requestRegistrationCode Email Verification API", () => {
         nonce: "stale-nonce",
       },
       cookieFor("current-nonce"),
+      verifier,
     );
 
     expect(result.body).toMatchObject({ status: "ok", emailSent: true });
-    expect(state.verify).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
     expect(sent).toHaveLength(1);
   });
 
   it("serialises the rotated nonce as a Set-Cookie on the HTTP response", async () => {
-    state.verify.mockResolvedValue({ ok: true });
+    const { service: verifier } = verifierFake("ok");
     const { service } = makeService();
     const api = HttpApi.make("RegistrationNonceHttpTest").add(enterpriseAccountApi);
     const layer = HttpApiBuilder.layer(api).pipe(
@@ -168,6 +186,7 @@ describe("requestRegistrationCode Email Verification API", () => {
         ),
       ),
       Layer.provide(Layer.succeed(EnterpriseService, service as never)),
+      Layer.provide(Layer.succeed(RegistrationTokenVerifier, verifier)),
       Layer.provide(HttpRouter.layer),
       Layer.provide(HttpServer.layerServices),
     );
@@ -208,17 +227,19 @@ describe("requestRegistrationCode Email Verification API", () => {
   });
 
   it("behaves exactly like today when no token is submitted", async () => {
+    const { calls, service: verifier } = verifierFake();
     const { service, sent } = makeService();
 
     const result = await sendCode(
       service,
       { name: "Ada Lovelace", email: "ada@example.com" },
       cookieFor("nonce-1"),
+      verifier,
     );
 
     expect(result.body).toMatchObject({ status: "ok", emailSent: true });
     expect(result.headers["set-cookie"]).toBeUndefined();
-    expect(state.verify).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
     expect(sent).toHaveLength(1);
   });
 });

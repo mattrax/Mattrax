@@ -63,6 +63,11 @@ if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
 
 const origin = "https://windows.test";
 
+const NOW = Date.parse("2026-11-01T00:00:00Z");
+
+/** Validity windows are checked against the real clock, so valid fixtures use a fixed future date. */
+const FUTURE = new Date(NOW + 365 * 24 * 60 * 60 * 1000);
+
 const authSecret = "windows-test-secret";
 
 // WSTEP enrollment tokens are "<subject>.<issued-at-seconds>.<base64url HMAC>".
@@ -161,7 +166,7 @@ const issuedCertificateRow = (serial: string, deviceId: string, overrides: Row =
   deviceId,
   byodEnrollmentId: null,
   caFingerprintSha256: null,
-  notAfter: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+  notAfter: FUTURE,
   revokedAt: null,
   createdAt: new Date("2024-01-01T00:00:00Z"),
   ...overrides,
@@ -204,7 +209,7 @@ const setup = async (
         certPem: ca.certPem,
         privateKeyJwk: ca.privateKeyJwk,
         source: "generated",
-        createdAt: new Date(),
+        createdAt: new Date(NOW),
         rotatedAt: null,
       },
       ...(lateCa
@@ -215,7 +220,7 @@ const setup = async (
               certPem: lateCa.certPem,
               privateKeyJwk: lateCa.privateKeyJwk,
               source: "generated",
-              createdAt: new Date(),
+              createdAt: new Date(NOW),
               rotatedAt: null,
             },
           ]
@@ -264,8 +269,8 @@ const signTestIdentity = async (
       csr: await makeCsr(commonName),
       caCertPem: ca.certPem,
       caPrivateKeyJwk: ca.privateKeyJwk,
-      notBefore: new Date(Date.now() - 1_000),
-      notAfter: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+      notBefore: new Date(NOW - 1_000),
+      notAfter: FUTURE,
       deviceId: commonName,
       organizationalUnit: organizationId,
     }),
@@ -308,7 +313,7 @@ const commandPayload = (row: Row): Schema.JsonObject | undefined =>
   Schema.is(Schema.JsonObject)(row.payload) ? row.payload : undefined;
 
 const suppressInventory = (db: ReturnType<typeof makeDb>) => {
-  const now = new Date();
+  const now = FUTURE;
 
   for (const row of db.store[tableName(schema.device)] ?? []) {
     row.inventoryRequestedAt = now;
@@ -382,7 +387,7 @@ const makeFederatedToken = async (
   kid = "federated-test-key",
 ) => {
   const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT", kid }));
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(NOW / 1000);
 
   const payload = base64Url(
     JSON.stringify({
@@ -392,7 +397,8 @@ const makeFederatedToken = async (
       sub: "federated-subject",
       oid: "federated-device-object",
       upn: "device@contoso.com",
-      exp: now + 3_600,
+      // JOSE checks exp against the real clock; keep valid tokens far-future there.
+      exp: Math.floor(NOW / 1000) + 365 * 24 * 60 * 60,
       nbf: now - 10,
       iat: now - 10,
       ...overrides,
@@ -482,7 +488,7 @@ describe("Windows enterprise backend", () => {
     // An authentic token whose lifetime elapsed may start a fresh enrollment
     // subject, so a device that was offline for a while is not wedged.
     const expired = await createWindowsEnrollmentToken("subject", authSecret, {
-      now: Date.now() - 2 * 60 * 60 * 1000,
+      now: NOW - 2 * 60 * 60 * 1000,
     });
 
     const renewed = await run(backend.getWindowsEnrollmentPolicy(expired));
@@ -792,7 +798,7 @@ describe("Windows enterprise backend", () => {
       const identity = await signTestIdentity(ca, "device-1");
       const certificate = issuedCertificateRow(identity.serial, "existing");
       if (state === "revoked") certificate.revokedAt = now;
-      if (state === "expired") certificate.notAfter = new Date(Date.now() - 1_000);
+      if (state === "expired") certificate.notAfter = new Date(NOW - 1_000);
       db.store[tableName(schema.scepIssuedCertificate)] = [certificate];
       const policy = await run(backend.getWindowsEnrollmentPolicy(""));
       const proof =
@@ -856,7 +862,7 @@ describe("Windows enterprise backend", () => {
     ).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
 
     const expired = await createWindowsEnrollmentToken("subject", authSecret, {
-      now: Date.now() - 2 * 60 * 60 * 1000,
+      now: NOW - 2 * 60 * 60 * 1000,
     });
 
     await expect(run(backend.windowsEnroll(enrollmentRequest(expired, csr)))).rejects.toMatchObject(
@@ -1659,19 +1665,19 @@ describe("Windows identity lifecycle", () => {
     // A management URL token expires long before the device certificate; the
     // certificate OU must keep the device checking in.
     const expiredToken = await createWindowsTenantToken("org-early", authSecret, {
-      now: Date.now() - 8 * 24 * 60 * 60 * 1000,
+      now: NOW - 8 * 24 * 60 * 60 * 1000,
     });
 
     await expect(checkin(backend, { ...scope, tenantToken: expiredToken })).resolves.toEqual({
       commands: [],
     });
 
-    storedCertificate.revokedAt = new Date();
+    storedCertificate.revokedAt = new Date(NOW);
     await expect(checkin(backend, scope)).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
 
     storedCertificate.revokedAt = null;
     const notAfter = storedCertificate.notAfter;
-    storedCertificate.notAfter = new Date(Date.now() - 1_000);
+    storedCertificate.notAfter = new Date(NOW - 1_000);
     await expect(checkin(backend, scope)).rejects.toMatchObject({ _tag: "UnknownDevice" as const });
     storedCertificate.notAfter = notAfter;
 
@@ -1719,8 +1725,8 @@ describe("Windows identity lifecycle", () => {
             serial: "DEVICE-1",
             enrollmentState: "enrolled",
             profileStatus: "assigned",
-            createdAt: new Date(),
-            updatedAt: new Date(),
+            createdAt: new Date(NOW),
+            updatedAt: new Date(NOW),
           },
         ];
       } else if (proof === "pre-registration") {
@@ -1730,8 +1736,8 @@ describe("Windows identity lifecycle", () => {
             id: "pre-registration-1",
             organizationId: "org-early",
             serial: "device-1",
-            createdAt: new Date(),
-            updatedAt: new Date(),
+            createdAt: new Date(NOW),
+            updatedAt: new Date(NOW),
           },
         ];
       } else if (proof === "foreign-autopilot") {
@@ -1742,8 +1748,8 @@ describe("Windows identity lifecycle", () => {
             serial: "DEVICE-1",
             enrollmentState: "enrolled",
             profileStatus: "assigned",
-            createdAt: new Date(),
-            updatedAt: new Date(),
+            createdAt: new Date(NOW),
+            updatedAt: new Date(NOW),
           },
         ];
       }
@@ -1870,7 +1876,7 @@ describe("Windows identity lifecycle", () => {
       fingerprintSha256: description.fingerprintSha256,
       source: "generated",
       retiredAt: now,
-      trustUntil: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+      trustUntil: FUTURE,
       createdAt: now,
     };
     db.store[trustTable] = [trustRow];
@@ -1883,7 +1889,7 @@ describe("Windows identity lifecycle", () => {
       checkin(backend, { deviceId: "device-1", ...identity.proof, mdmOrigin }),
     ).resolves.toEqual({ commands: [] });
 
-    trustRow.trustUntil = new Date(Date.now() - 1_000);
+    trustRow.trustUntil = new Date(NOW - 1_000);
     await expect(
       checkin(backend, { deviceId: "device-1", ...identity.proof, mdmOrigin }),
     ).rejects.toMatchObject({ _tag: "UnknownDevice" });
@@ -2698,7 +2704,7 @@ describe("Windows command history and desired-state policy", () => {
 
     suppressInventory(db);
 
-    const createdAt = new Date();
+    const createdAt = new Date(NOW);
 
     db.store[table(schema.deviceCommand)] = [
       {
@@ -3001,7 +3007,7 @@ describe("Windows failure history", () => {
     // A fault outside the coalescing window appends a new row.
     await run(
       recordWindowsFailure(enterpriseDb, input, {
-        now: new Date(Date.now() + 5 * 60 * 1_000),
+        now: new Date(FUTURE.getTime() + 5 * 60 * 1_000),
       }),
     );
     expect(failures(db)).toHaveLength(3);
@@ -3053,7 +3059,7 @@ describe("Windows failure history", () => {
     const { backend, db } = await setup();
 
     const expiredToken = await createWindowsTenantToken("org-early", authSecret, {
-      now: Date.now() - 8 * 24 * 60 * 60 * 1000,
+      now: NOW - 8 * 24 * 60 * 60 * 1000,
     });
 
     await run(
@@ -3306,8 +3312,8 @@ describe("Windows MDM activity in the organisation event log", () => {
         hash: "hash-1",
       },
       status: "sent",
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date(NOW),
+      updatedAt: new Date(NOW),
     });
 
     const rejection = {
@@ -3340,8 +3346,8 @@ describe("Windows MDM activity in the organisation event log", () => {
       requestType: "WindowsSyncML",
       payload: { kind: "Exec", locURI: "./Vendor/MSFT/Test" },
       status: "sent",
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date(NOW),
+      updatedAt: new Date(NOW),
     });
 
     // Windows reports command outcomes as SyncML statuses in the next

@@ -1,5 +1,6 @@
 import { Cause, Deferred, Effect, Exit, Fiber, Logger, Ref } from "effect";
 import { describe, expect, it } from "vitest";
+import { TestClock } from "effect/testing";
 import { runChecks } from "../src/runner.ts";
 import type { Check } from "../src/types.ts";
 
@@ -15,15 +16,26 @@ const check = (id: string, run: Check["run"]): Check => ({
 describe("compliance runner", () => {
   it("interrupts timed-out checks and runs their finalizers", async () => {
     const interrupted = await Effect.runPromise(Ref.make(false));
+    const started = await Effect.runPromise(Deferred.make<void>());
     const report = await Effect.runPromise(
-      runChecks(
-        [
-          check("slow", () =>
-            Effect.never.pipe(Effect.onInterrupt(() => Ref.set(interrupted, true))),
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          runChecks(
+            [
+              check("slow", () =>
+                Deferred.succeed(started, undefined).pipe(
+                  Effect.andThen(Effect.never),
+                  Effect.onInterrupt(() => Ref.set(interrupted, true)),
+                ),
+              ),
+            ],
+            { timeoutMs: 5 },
           ),
-        ],
-        { timeoutMs: 5 },
-      ),
+        );
+        yield* Deferred.await(started);
+        yield* TestClock.adjust(5);
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestClock.layer())),
     );
 
     expect(report.checks[0]?.status).toBe("failed");

@@ -1,5 +1,6 @@
-import { Effect } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { Effect, Layer } from "effect";
+import { FetchHttpClient } from "effect/http";
+import { describe, expect, it } from "vitest";
 import { sealSecret } from "@mattrax/crypto";
 import {
   EnterpriseBadRequest,
@@ -22,7 +23,7 @@ const authSecret = "enterprise-test-secret";
 
 const now = new Date("2026-11-16T12:00:00.000Z");
 
-const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch } = {}) => {
+const makeContext = (options: { role?: string } = {}) => {
   const db = makeDb();
   db.store.account.push({
     id: "user-1",
@@ -95,7 +96,6 @@ const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch }
     // SAFETY: the fake only implements the auth methods these tests exercise.
     auth: auth as any,
     authSecret,
-    webhookFetch: options.fetch,
   });
 
   return { db, service, headers: { cookie: "mattrax_session=test" } };
@@ -156,6 +156,22 @@ const delivery = (input: {
 // delivery methods this file exercises.
 const call = <Result>(service: any, method: string, ...args: Array<unknown>) =>
   runEffect<Result, unknown>(service[method](request({ cookie: "1" }), ...args));
+
+/** Route replay deliveries through a fake fetch in the shared HTTP layer. */
+const callWithFetch = <Result>(
+  service: any,
+  method: string,
+  fetchImpl: typeof globalThis.fetch,
+  ...args: Array<unknown>
+) => {
+  const transport = FetchHttpClient.layer.pipe(
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)),
+  );
+
+  return runEffect<Result, unknown>(
+    service[method](request({ cookie: "1" }), ...args).pipe(Effect.provide(transport)),
+  );
+};
 
 describe("webhook delivery history", () => {
   it("pages newest first and only within the retention window", async () => {
@@ -350,13 +366,13 @@ describe("webhook delivery replay", () => {
     const sealed = await sealSecret(authSecret, "whsec_replay");
     const requests: Array<RequestInit> = [];
 
-    const fetch = vi.fn(async (_input: any, init?: RequestInit) => {
+    const fetch: typeof globalThis.fetch = async (_input, init) => {
       requests.push(init ?? {});
 
       return new Response("ok", { status: 200 });
-    });
+    };
 
-    const { db, service } = makeContext({ fetch });
+    const { db, service } = makeContext();
     db.store.webhook_endpoint.push(endpoint("wh-1", "org-1", sealed));
     db.store.webhook_delivery.push(
       delivery({
@@ -366,9 +382,10 @@ describe("webhook delivery replay", () => {
       }),
     );
 
-    const result = await call<WebhookDeliveryReplayResponse>(
+    const result = await callWithFetch<WebhookDeliveryReplayResponse>(
       service,
       "replayWebhookDelivery",
+      fetch,
       "org-1",
       "wh-1",
       "d-1",
@@ -385,7 +402,7 @@ describe("webhook delivery replay", () => {
       },
     });
     expect(result.delivery.id).not.toBe("d-1");
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(requests).toHaveLength(1);
 
     const headers = new Headers(requests[0].headers);
     expect(headers.get("X-Mattrax-Delivery")).toBe("evt_original");
@@ -404,15 +421,16 @@ describe("webhook delivery replay", () => {
 
   it("records a failed replay instead of throwing when the endpoint fails", async () => {
     const sealed = await sealSecret(authSecret, "whsec_replay");
-    const fetch = vi.fn(async () => new Response("nope", { status: 503 }));
+    const fetch: typeof globalThis.fetch = async () => new Response("nope", { status: 503 });
 
-    const { db, service } = makeContext({ fetch });
+    const { db, service } = makeContext();
     db.store.webhook_endpoint.push(endpoint("wh-1", "org-1", sealed));
     db.store.webhook_delivery.push(delivery({ id: "d-1", createdAt: now }));
 
-    const result = await call<WebhookDeliveryReplayResponse>(
+    const result = await callWithFetch<WebhookDeliveryReplayResponse>(
       service,
       "replayWebhookDelivery",
+      fetch,
       "org-1",
       "wh-1",
       "d-1",

@@ -1,6 +1,7 @@
 import type { Schema } from "effect";
-import { Effect, Exit, Fiber, Ref } from "effect";
+import { Deferred, Effect, Exit, Fiber, Ref } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
+import { TestClock } from "effect/testing";
 import { beforeAll, describe, expect, it } from "vitest";
 import { deriveSoftwareUpdate, parseSofaFeed } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
@@ -180,6 +181,38 @@ const countingFetch = (respond: () => Response | Promise<Response>) => {
   return { client: clientForFetch(fetchImpl), calls: () => calls };
 };
 
+/**
+ * The stale-while-revalidate path detaches its refresh. Capture that work and
+ * expose a Deferred that completes when it settles, so tests await the refresh
+ * itself instead of polling the database for a write that may not have landed.
+ */
+const trackBackground = () => {
+  const done = Deferred.makeUnsafe<void>();
+
+  return {
+    done,
+    run: (work: Effect.Effect<unknown>) => {
+      void Effect.runPromise(
+        work.pipe(
+          Effect.exit,
+          Effect.flatMap(() => Deferred.succeed(done, undefined)),
+        ),
+      );
+    },
+  };
+};
+
+/** Run an effect whose only timer is the fetch deadline on a virtual clock. */
+const runWithClock = <A>(effect: Effect.Effect<A>) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const fiber = yield* Effect.forkChild(effect, { startImmediately: true });
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust("100 millis");
+      return yield* Fiber.join(fiber);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
 describe("software update feed cache", () => {
   // The first real fetch/parse pays a one-off decoding cost. Pay it here so
   // any test can be first under --sequence.shuffle.
@@ -290,7 +323,11 @@ describe("software update feed cache", () => {
     const { db, rows, selects } = makeFeedDb();
     let version = "26.7.2";
     const fetch = countingFetch(() => jsonResponse(feedBody(version)));
-    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+    const background = trackBackground();
+    const options = optionsFor(db, fetch.client, {
+      feedUrl: configured,
+      background: background.run,
+    });
 
     await runEffect(loadSoftwareUpdateCatalog(options));
 
@@ -304,9 +341,8 @@ describe("software update feed cache", () => {
     expect(stale.error).toBeNull();
     expect(stale.catalog?.majors[0]?.latest.version).toBe("26.7.2");
 
-    await expect
-      .poll(() => rows[0]?.fetchedAt?.getTime(), { interval: 1 })
-      .toBe(expiresAt.getTime());
+    await Effect.runPromise(Deferred.await(background.done));
+    expect(rows[0]?.fetchedAt?.getTime()).toBe(expiresAt.getTime());
 
     const fresh = await runEffect(
       loadSoftwareUpdateCatalog({ ...options, now: new Date(expiresAt.getTime() + 1) }),
@@ -322,20 +358,22 @@ describe("software update feed cache", () => {
   it("single-flights revalidation for concurrent expired loads", async () => {
     const configured = feedUrl();
     const { db, rows, selects, writes } = makeFeedDb();
-    let releaseRefresh!: () => void;
-    const refreshGate = new Promise<void>((resolve) => {
-      releaseRefresh = resolve;
-    });
-    let calls = 0;
+    const refreshGate = Deferred.makeUnsafe<void>();
+    const refreshFetchStarted = Deferred.makeUnsafe<void>();
     let version = "26.7.2";
     const fetch = countingFetch(async () => {
-      calls++;
-
-      if (calls === 2) await refreshGate;
+      if (fetch.calls() === 2) {
+        await Effect.runPromise(Deferred.succeed(refreshFetchStarted, undefined));
+        await Effect.runPromise(Deferred.await(refreshGate));
+      }
 
       return jsonResponse(feedBody(version));
     });
-    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+    const background = trackBackground();
+    const options = optionsFor(db, fetch.client, {
+      feedUrl: configured,
+      background: background.run,
+    });
 
     await runEffect(loadSoftwareUpdateCatalog(options));
 
@@ -353,15 +391,18 @@ describe("software update feed cache", () => {
     expect(states.every((state) => state.catalog?.majors[0]?.latest.version === "26.7.2")).toBe(
       true,
     );
-    await expect.poll(() => fetch.calls(), { interval: 1 }).toBe(2);
+
+    // Wait for the single background fetch to start, then for the refresh to
+    // settle, rather than polling counters with an interval.
+    await Effect.runPromise(Deferred.await(refreshFetchStarted));
+    expect(fetch.calls()).toBe(2);
     expect(selects()).toBe(1);
     expect(writes()).toBe(1);
 
-    releaseRefresh();
+    await Effect.runPromise(Deferred.succeed(refreshGate, undefined));
+    await Effect.runPromise(Deferred.await(background.done));
 
-    await expect
-      .poll(() => rows[0]?.fetchedAt?.getTime(), { interval: 1 })
-      .toBe(expiresAt.getTime());
+    expect(rows[0]?.fetchedAt?.getTime()).toBe(expiresAt.getTime());
     expect(fetch.calls()).toBe(2);
     expect(writes()).toBe(2);
   });
@@ -373,7 +414,11 @@ describe("software update feed cache", () => {
     const fetch = countingFetch(() =>
       down ? jsonResponse({ error: "down" }, 503) : jsonResponse(feedBody()),
     );
-    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+    const background = trackBackground();
+    const options = optionsFor(db, fetch.client, {
+      feedUrl: configured,
+      background: background.run,
+    });
 
     await runEffect(loadSoftwareUpdateCatalog(options));
 
@@ -386,7 +431,8 @@ describe("software update feed cache", () => {
     expect(stale.stale).toBe(true);
     expect(stale.error).toBeNull();
 
-    await expect.poll(() => rows[0]?.lastError, { interval: 1 }).toBe("http_503");
+    await Effect.runPromise(Deferred.await(background.done));
+    expect(rows[0]?.lastError).toBe("http_503");
 
     const suppressed = await runEffect(
       loadSoftwareUpdateCatalog({ ...options, now: new Date(expiresAt.getTime() + 1_000) }),
@@ -455,29 +501,26 @@ describe("software update feed cache", () => {
     const fetch = countingFetch(() =>
       down ? jsonResponse({ error: "down" }, 503) : jsonResponse(feedBody(version)),
     );
+    const background = trackBackground();
+    const optionsForUrl = (feedUrl: string) =>
+      optionsFor(db, fetch.client, { feedUrl, cache, background: background.run });
 
-    await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: firstUrl, cache })),
-    );
+    await runEffect(loadSoftwareUpdateCatalog(optionsForUrl(firstUrl)));
 
     version = "26.7.3";
 
-    await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: secondUrl, cache })),
-    );
+    await runEffect(loadSoftwareUpdateCatalog(optionsForUrl(secondUrl)));
 
     down = true;
 
     const expiresAt = new Date(now.getTime() + 60_000);
     const stale = await runEffect(
-      loadSoftwareUpdateCatalog({
-        ...optionsFor(db, fetch.client, { feedUrl: firstUrl, cache }),
-        now: expiresAt,
-      }),
+      loadSoftwareUpdateCatalog({ ...optionsForUrl(firstUrl), now: expiresAt }),
     );
 
     expect(stale.stale).toBe(true);
-    await expect.poll(() => rows[0]?.lastError, { interval: 1 }).toBe("http_503");
+    await Effect.runPromise(Deferred.await(background.done));
+    expect(rows[0]?.lastError).toBe("http_503");
     expect(rows[0]?.sourceUrl).toBe(secondUrl);
     expect(rows[0]?.payload).toEqual(catalog("26.7.3"));
   });
@@ -505,7 +548,7 @@ describe("software update feed cache", () => {
       });
     }) satisfies typeof globalThis.fetch;
 
-    const state = await runEffect(
+    const state = await runWithClock(
       loadSoftwareUpdateCatalog(optionsFor(db, clientForFetch(fetchImpl), { timeoutMs: 1 })),
     );
 

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Effect, Layer, Schema } from "effect";
-import { HttpRouter, HttpServer } from "effect/http";
+import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
 import { AzureOidc } from "@mattrax/azure-oidc";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { appleRemotemanagementRedirect } from "./appleByod.js";
@@ -11,6 +11,15 @@ import type { SsoRoutesOptions } from "./sso.js";
 const origin = "https://app.test";
 
 const secret = "sso-test-secret";
+
+const NOW = Date.parse("2026-11-01T00:00:00Z");
+
+/** State tokens and challenge windows are checked against the real clock. */
+const FUTURE = NOW + 365 * 24 * 60 * 60 * 1000;
+
+/** Default IdP token response for callbacks that reach the code exchange. */
+const tokenFetch: typeof globalThis.fetch = async () =>
+  Response.json({ id_token: "id-token-value" });
 
 const tenantId = "tenant-1";
 
@@ -136,7 +145,7 @@ const makeDb = (initial: Partial<Store> = {}) => {
                       row.authorizedAt == null &&
                       row.tokenHash == null &&
                       row.challengeExpiresAt instanceof Date &&
-                      row.challengeExpiresAt.getTime() > Date.now(),
+                      row.challengeExpiresAt.getTime() > NOW,
                   )
                 : [];
             for (const row of matched) Object.assign(row, value);
@@ -169,8 +178,8 @@ const account = (overrides: Row = {}) => ({
   authRevision: "revision-1",
   image: null,
   stripeCustomerId: null,
-  createdAt: new Date(),
-  updatedAt: new Date(),
+  createdAt: new Date(NOW),
+  updatedAt: new Date(NOW),
   ...overrides,
 });
 
@@ -179,8 +188,8 @@ const config = (overrides: Row = {}) => ({
   enabled: true,
   azureTenantId: "entra-tenant",
   autoProvision: true,
-  createdAt: new Date(),
-  updatedAt: new Date(),
+  createdAt: new Date(NOW),
+  updatedAt: new Date(NOW),
   ...overrides,
 });
 
@@ -188,7 +197,7 @@ const identity = (overrides: Row = {}) => ({
   organizationId: tenantId,
   objectId: "entra-object",
   accountId: "account-1",
-  createdAt: new Date(),
+  createdAt: new Date(NOW),
   ...overrides,
 });
 
@@ -216,8 +225,8 @@ const oidc = (overrides: OidcOverrides = {}) =>
         email: "owner@example.com",
         nonce: "nonce-1",
         name: "Owner",
-        exp: Math.floor(Date.now() / 1000) + 600,
-        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(FUTURE / 1000),
+        iat: Math.floor(NOW / 1000),
       }),
     jwks: () => Effect.die("not used"),
     ...overrides,
@@ -230,7 +239,7 @@ const stateToken = (overrides: Row = {}) =>
     signToken(secret, {
       sub: tenantId,
       email: "sso-state",
-      exp: Date.now() + 10 * 60 * 1000,
+      exp: FUTURE,
       purpose: "sso-state",
       nonce: "nonce-1",
       ...overrides,
@@ -249,6 +258,7 @@ const serve = async (input: {
   request: Request;
   oidc?: any;
   routeOptions?: SsoRoutesOptions;
+  fetch?: typeof globalThis.fetch;
 }) => {
   const app = ssoRoutes(input.routeOptions ?? options).pipe(
     Layer.provide(HttpServer.layerServices),
@@ -256,6 +266,7 @@ const serve = async (input: {
     // layer type names the production service surface.
     Layer.provideMerge(Layer.succeed(Db, input.db as never)),
     Layer.provideMerge(Layer.succeed(AzureOidc, input.oidc ?? oidc())),
+    Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, input.fetch ?? tokenFetch)),
   );
 
   // SAFETY: the fake provides only the Db chains the callback uses; the
@@ -321,10 +332,6 @@ const signedState = async (overrides: Row = {}) => {
 
   return { state, cookie: cookie(state) };
 };
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("Entra SSO callback failures", () => {
   it("redirects a misconfigured deployment to the completion page", async () => {
@@ -400,7 +407,7 @@ describe("Entra SSO callback failures", () => {
   });
 
   it("redirects an expired state", async () => {
-    const { state, cookie: stateCookie } = await signedState({ exp: Date.now() - 1 });
+    const { state, cookie: stateCookie } = await signedState({ exp: NOW - 1 });
 
     const response = await serve({
       db: makeDb({ ssoConfig: [config()] }),
@@ -458,19 +465,14 @@ describe("Entra SSO callback failures", () => {
   it("redirects a rejected token exchange", async () => {
     const { state, cookie: stateCookie } = await signedState();
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
+    const response = await serve({
+      db: makeDb({ ssoConfig: [config()] }),
+      request: callbackRequest(`code=code&state=${state}`, stateCookie),
+      fetch: async () =>
         Response.json(
           { error: "invalid_grant", error_description: "token exchange secret-detail" },
           { status: 400 },
         ),
-      ),
-    );
-
-    const response = await serve({
-      db: makeDb({ ssoConfig: [config()] }),
-      request: callbackRequest(`code=code&state=${state}`, stateCookie),
     });
 
     expectFailure(response, "idp_rejected", ["invalid_grant", "secret-detail", "token exchange"]);
@@ -479,14 +481,10 @@ describe("Entra SSO callback failures", () => {
   it("redirects a token response without an ID token", async () => {
     const { state, cookie: stateCookie } = await signedState();
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ access_token: "secret-token" })),
-    );
-
     const response = await serve({
       db: makeDb({ ssoConfig: [config()] }),
       request: callbackRequest(`code=code&state=${state}`, stateCookie),
+      fetch: async () => Response.json({ access_token: "secret-token" }),
     });
 
     expectFailure(response, "idp_rejected", ["secret-token", "access_token"]);
@@ -494,11 +492,6 @@ describe("Entra SSO callback failures", () => {
 
   it("redirects an ID token that fails validation", async () => {
     const { state, cookie: stateCookie } = await signedState();
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
 
     const response = await serve({
       db: makeDb({ ssoConfig: [config()] }),
@@ -511,11 +504,6 @@ describe("Entra SSO callback failures", () => {
 
   it("redirects a nonce mismatch", async () => {
     const { state, cookie: stateCookie } = await signedState();
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
 
     const response = await serve({
       db: makeDb({ ssoConfig: [config()] }),
@@ -530,8 +518,8 @@ describe("Entra SSO callback failures", () => {
             email: "owner@example.com",
             nonce: "other-nonce",
             name: "Owner",
-            exp: Math.floor(Date.now() / 1000) + 600,
-            iat: Math.floor(Date.now() / 1000),
+            exp: Math.floor(FUTURE / 1000),
+            iat: Math.floor(NOW / 1000),
           }),
       }),
     });
@@ -541,11 +529,6 @@ describe("Entra SSO callback failures", () => {
 
   it("redirects when the identity provider returns no email", async () => {
     const { state, cookie: stateCookie } = await signedState();
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
 
     const response = await serve({
       db: makeDb({ ssoConfig: [config()] }),
@@ -559,8 +542,8 @@ describe("Entra SSO callback failures", () => {
             oid: "entra-object",
             nonce: "nonce-1",
             name: "Owner",
-            exp: Math.floor(Date.now() / 1000) + 600,
-            iat: Math.floor(Date.now() / 1000),
+            exp: Math.floor(FUTURE / 1000),
+            iat: Math.floor(NOW / 1000),
           }),
       }),
     });
@@ -577,11 +560,6 @@ describe("Entra SSO callback failures", () => {
       ssoIdentity: [identity()],
       member: [{ id: "member-1", organizationId: tenantId, accountId: "account-1" }],
     });
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
 
     const response = await serve({
       db,
@@ -609,11 +587,6 @@ describe("Entra SSO callback failures", () => {
       member: [{ id: "member-2", organizationId: "tenant-2", accountId: "account-1" }],
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
-
     const response = await serve({
       db,
       request: callbackRequest(`code=code&state=${state}`, stateCookie),
@@ -636,11 +609,6 @@ describe("Entra SSO callback failures", () => {
         { id: "member-2", organizationId: "tenant-2", accountId: "account-1" },
       ],
     });
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
 
     const response = await serve({
       db,
@@ -670,11 +638,6 @@ describe("Entra SSO callback failures", () => {
       ],
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
-
     const response = await serve({
       db,
       request: callbackRequest(`code=code&state=${state}`, stateCookie),
@@ -686,11 +649,6 @@ describe("Entra SSO callback failures", () => {
   it("redirects when auto-provisioning is disabled and no account exists", async () => {
     const { state, cookie: stateCookie } = await signedState();
     const db = makeDb({ ssoConfig: [config({ autoProvision: false })] });
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
 
     const response = await serve({
       db,
@@ -706,16 +664,12 @@ describe("Entra SSO callback failures", () => {
     const db = makeDb({ ssoConfig: [config()] });
 
     // A defect after the state is verified still lands on the styled page.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => {
-        throw new Error("socket secret-detail");
-      }),
-    );
-
     const response = await serve({
       db,
       request: callbackRequest(`code=code&state=${state}`, stateCookie),
+      fetch: async () => {
+        throw new Error("socket secret-detail");
+      },
     });
 
     expectFailure(response, "idp_unavailable", ["socket secret-detail"]);
@@ -748,7 +702,7 @@ describe("No-code Apple BYOD callback", () => {
       signToken(secret, {
         sub: tenantId,
         email: "student@verified.example",
-        exp: Date.now() + 10 * 60 * 1000,
+        exp: FUTURE,
         purpose: "apple-byod-sso-state",
         tenantId,
         nonce: "nonce-1",
@@ -767,7 +721,7 @@ describe("No-code Apple BYOD callback", () => {
         accountId: undefined,
         directoryUserId: undefined,
         requestHash: "request-hash",
-        challengeExpiresAt: new Date(Date.now() + 60_000),
+        challengeExpiresAt: new Date(FUTURE + 60_000),
         authorizedAt: null,
         tokenHash: null,
       },
@@ -790,8 +744,8 @@ describe("No-code Apple BYOD callback", () => {
         externalId: "entra-object",
         source: "entra",
         disabled: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        createdAt: new Date(NOW),
+        updatedAt: new Date(NOW),
       },
     ],
     account: [account({ email: "student@verified.example" })],
@@ -840,11 +794,6 @@ describe("No-code Apple BYOD callback", () => {
       authorizedAt: null,
     });
 
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
-
     const completed = await serve({
       db,
       request: callbackRequest(`code=code&state=${victimState}`, victimCookies),
@@ -869,7 +818,7 @@ describe("No-code Apple BYOD callback", () => {
   });
 
   it("rejects an expired matching no-code state and clears only the BYOD cookie", async () => {
-    const state = await byodState({ exp: Date.now() - 1 });
+    const state = await byodState({ exp: NOW - 1 });
     const response = await serve({
       db: makeDb(),
       request: callbackRequest(`state=${state}`, byodCookie(state)),
@@ -904,11 +853,6 @@ describe("No-code Apple BYOD callback", () => {
 describe("Entra SSO callback success and replay", () => {
   const successfulRequest = async (db: any, returnTo?: string) => {
     const { state, cookie: stateCookie } = await signedState(returnTo ? { returnTo } : undefined);
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
 
     const response = await serve({
       db,
@@ -1030,10 +974,6 @@ describe("Entra SSO callback success and replay", () => {
     expectFailure(response, "state_mismatch", [tabA, tabB], { clearsCookie: false });
 
     // Tab A can still complete with the cookie it started with.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json({ id_token: "id-token-value" })),
-    );
 
     const completed = await serve({
       db,

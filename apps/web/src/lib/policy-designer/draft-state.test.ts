@@ -10,6 +10,9 @@ import {
   seedPolicyDraftBaseline,
 } from "./draft-state";
 
+/** Fixed timestamp for autosave metadata fixtures. */
+const NOW = Date.parse("2026-06-01T12:00:00.000Z");
+
 const selection = (identifier: string, values: Record<string, string> = {}): Selection => ({
   collectionId: `apple/profiles/${identifier}`,
   identifier,
@@ -74,12 +77,12 @@ describe("policy draft saved state", () => {
     const draft = emptyPolicyDraft("Baseline");
     const saved = policyDraftSnapshot(draft);
 
-    expect(isPolicyDraftDirty({ ...draft, savedAt: Date.now() }, saved)).toBe(false);
+    expect(isPolicyDraftDirty({ ...draft, savedAt: NOW }, saved)).toBe(false);
   });
 
   it("treats a browser autosave newer than the server draft as dirty", () => {
     const server = withSelection(emptyPolicyDraft("Baseline"), selection("wifi"));
-    const local = { ...withSelection(server, selection("vpn")), savedAt: Date.now() };
+    const local = { ...withSelection(server, selection("vpn")), savedAt: NOW };
     const baseline = seedPolicyDraftBaseline({
       persistedDraft: server,
       initialDraft: local,

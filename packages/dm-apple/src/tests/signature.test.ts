@@ -1,4 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
+
+const NOW = Date.parse("2026-11-01T00:00:00Z");
 import { createHash } from "node:crypto";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
@@ -101,8 +103,8 @@ const createCertificate = async (options: {
   cert.serialNumber = new asn1js.Integer({ value: ++serialCounter });
   cert.subject = options.subject;
   cert.issuer = options.issuer;
-  cert.notBefore.value = options.notBefore ?? new Date(Date.now() - DAY);
-  cert.notAfter.value = options.notAfter ?? new Date(Date.now() + 365 * DAY);
+  cert.notBefore.value = options.notBefore ?? new Date(NOW - DAY);
+  cert.notAfter.value = options.notAfter ?? new Date(NOW + 365 * DAY);
 
   const extensions = [
     new pkijs.Extension({
@@ -142,8 +144,8 @@ const createCa = async (name: string): Promise<TestCertificate> => {
     publicKey: keyPair.publicKey,
     signingKey: keyPair.privateKey,
     isCa: true,
-    notBefore: new Date(Date.now() - DAY),
-    notAfter: new Date(Date.now() + 10 * 365 * DAY),
+    notBefore: new Date(NOW - DAY),
+    notAfter: new Date(NOW + 10 * 365 * DAY),
   });
 
   return { cert, keyPair, pem: pemEncode("CERTIFICATE", cert.toSchema().toBER(false)) };
@@ -398,8 +400,8 @@ describe("verifyMdmSignature", () => {
 
     const leaf = await createLeaf({
       ca,
-      notBefore: new Date(Date.now() - 2 * 365 * DAY),
-      notAfter: new Date(Date.now() - 365 * DAY),
+      notBefore: new Date(NOW - 2 * 365 * DAY),
+      notAfter: new Date(NOW - 365 * DAY),
     });
 
     const payload = body();

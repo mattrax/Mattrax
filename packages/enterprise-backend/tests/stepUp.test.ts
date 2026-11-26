@@ -19,6 +19,8 @@ import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
+const NOW = Date.parse("2026-11-01T00:00:00Z");
+
 const authSecret = "step-up-test-secret";
 
 const sha256 = async (value: string) =>
@@ -28,7 +30,7 @@ const sha256 = async (value: string) =>
   ).join("");
 
 const seed = () => {
-  const now = new Date();
+  const now = new Date(NOW);
 
   return {
     account: [
@@ -73,10 +75,11 @@ const makeContext = (verifyTotp = true) => {
   const run = <A>(work: (auth: any) => Effect.Effect<A, any, any>): Promise<A> =>
     runEffect(
       Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
         const auth = yield* EnterpriseAuth;
 
         return yield* work(auth);
-      }).pipe(Effect.provide(Live)),
+      }).pipe(Effect.provide(Live), Effect.provide(TestClock.layer())),
     );
 
   return { db, run };
@@ -110,13 +113,13 @@ const grant = (
       action: input.action ?? "tenant-delete",
       method: "passkey" as const,
       credentialId: "passkey-1",
-      expiresAtMillis: input.expiresAtMillis ?? Date.now() + 60_000,
+      expiresAtMillis: input.expiresAtMillis ?? NOW + 60_000,
     }),
   );
 
 describe("step-up clock boundaries", () => {
   it("expires grants and flow bindings on the Effect clock", async () => {
-    const grantToken = await grant({ expiresAtMillis: 1_000 });
+    const grantToken = await grant({ expiresAtMillis: NOW + 1_000 });
     const flowToken = await Effect.runPromise(
       signStepUpFlow(authSecret, {
         subjectId: "user-1",
@@ -125,12 +128,14 @@ describe("step-up clock boundaries", () => {
         action: "tenant-delete",
         flowId: "flow-1",
         requestBindingVerifier: "verifier",
-        requestBindingExpiresAtMillis: 1_000,
+        requestBindingExpiresAtMillis: NOW + 1_000,
       }),
     );
 
     await Effect.runPromise(
       Effect.gen(function* () {
+        yield* TestClock.setTime(NOW);
+
         expect(
           yield* verifyStepUpGrant(authSecret, grantToken, {
             subjectId: "user-1",
@@ -186,7 +191,7 @@ describe("step-up enforcement", () => {
 
   it("rejects an expired grant", async () => {
     const { run } = makeContext();
-    const expired = await grant({ expiresAtMillis: Date.now() - 1_000 });
+    const expired = await grant({ expiresAtMillis: NOW - 1_000 });
     await expect(
       run((auth) => auth.requireStepUp(session(expired), "tenant-delete")),
     ).rejects.toBeInstanceOf(StepUpRequired);
@@ -224,8 +229,8 @@ describe("step-up enforcement", () => {
       lastUsedAt: null,
       expiresAt: null,
       revokedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: new Date(NOW),
+      updatedAt: new Date(NOW),
     });
 
     const bearer = new Request(`${origin}/api/v1/tenants/tenant-1`, {
@@ -251,7 +256,7 @@ describe("step-up enforcement", () => {
     )) as { method: string; expiresAtMillis: number; grant: string };
 
     expect(issued.method).toBe("totp");
-    expect(issued.expiresAtMillis).toBeGreaterThan(Date.now());
+    expect(issued.expiresAtMillis).toBe(NOW + 5 * 60_000);
     await expect(
       run((auth) => auth.requireStepUp(session(issued.grant), "tenant-delete")),
     ).resolves.toBeDefined();

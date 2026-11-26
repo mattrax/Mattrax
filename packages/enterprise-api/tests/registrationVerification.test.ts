@@ -1,5 +1,6 @@
 import { Effect } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import type { VerifyEmailTokenInput } from "email-verification-api";
+import { describe, expect, it } from "vitest";
 import {
   newRegistrationNonce,
   readRegistrationNonce,
@@ -7,6 +8,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import {
   proveRegistrationEmail,
+  RegistrationTokenVerifier,
   registrationAudience,
   registrationTokenAttempted,
 } from "../src/registrationVerification.js";
@@ -94,50 +96,66 @@ describe("registration audience", () => {
   });
 });
 
+const verifierFake = (outcome: "ok" | "invalid" | "throws") => {
+  const calls: Array<VerifyEmailTokenInput> = [];
+  const service = RegistrationTokenVerifier.of({
+    verify: (input) => {
+      calls.push(input);
+
+      return outcome === "throws"
+        ? Promise.reject(new Error("issuer unreachable"))
+        : Promise.resolve({ ok: outcome === "ok" });
+    },
+  });
+
+  return { calls, service };
+};
+
+const verifyWith = <A>(effect: Effect.Effect<A>, service: RegistrationTokenVerifier.Service) =>
+  Effect.runPromise(effect.pipe(Effect.provideService(RegistrationTokenVerifier, service)));
+
 describe("registration email token proof", () => {
   it("verifies when the token and this session's nonce are present", async () => {
-    const verify = vi.fn().mockResolvedValue({ ok: true });
+    const { calls, service } = verifierFake("ok");
 
-    await expect(Effect.runPromise(proveRegistrationEmail(proof(), verify))).resolves.toBe(true);
-    expect(verify).toHaveBeenCalledWith(
+    await expect(verifyWith(proveRegistrationEmail(proof()), service)).resolves.toBe(true);
+    expect(calls).toEqual([
       expect.objectContaining({
         email: "ada@example.com",
         token: "evt-token",
         nonce: "expected-nonce",
         audience: "https://mattrax.test",
       }),
-    );
+    ]);
   });
 
   it("is absent without a token and never calls the verifier", async () => {
-    const verify = vi.fn();
+    const { calls, service } = verifierFake("ok");
 
     await expect(
-      Effect.runPromise(proveRegistrationEmail(proof({ token: undefined }), verify)),
+      verifyWith(proveRegistrationEmail(proof({ token: undefined })), service),
     ).resolves.toBe(false);
-    expect(verify).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
   });
 
   it("is invalid when the issuer rejects the token", async () => {
-    const verify = vi.fn().mockResolvedValue({ ok: false });
+    const { service } = verifierFake("invalid");
 
-    await expect(Effect.runPromise(proveRegistrationEmail(proof(), verify))).resolves.toBe(false);
+    await expect(verifyWith(proveRegistrationEmail(proof()), service)).resolves.toBe(false);
   });
 
   it("is invalid when verification throws", async () => {
-    const verify = vi.fn().mockRejectedValue(new Error("issuer unreachable"));
+    const { service } = verifierFake("throws");
 
-    await expect(Effect.runPromise(proveRegistrationEmail(proof(), verify))).resolves.toBe(false);
+    await expect(verifyWith(proveRegistrationEmail(proof()), service)).resolves.toBe(false);
   });
 
   it("never calls the verifier for a nonce from another session", async () => {
-    const verify = vi.fn();
+    const { calls, service } = verifierFake("ok");
 
     await expect(
-      Effect.runPromise(
-        proveRegistrationEmail(proof({ sessionNonce: newRegistrationNonce() }), verify),
-      ),
+      verifyWith(proveRegistrationEmail(proof({ sessionNonce: newRegistrationNonce() })), service),
     ).resolves.toBe(false);
-    expect(verify).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
   });
 });

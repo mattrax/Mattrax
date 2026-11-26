@@ -1,17 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Under Vitest SSR resolution @solidjs/web resolves to its server build, where
-// isServer is a constant true; the browser client needs the web build.
-vi.mock("@solidjs/web", () => ({ isServer: false }));
-
 const STORAGE_KEY = "mattrax.posthog";
 
+/**
+ * Browser globals are the thing under test here (pagehide, visibilitychange,
+ * localStorage coalescing), so they are stubbed. The recorders are plain
+ * functions rather than Vitest mocks: this module has no injectable ports, and
+ * adding one would be a rewrite of its whole lifecycle.
+ */
 const setupBrowser = () => {
   const stored = new Map<string, string>();
-  const setItem = vi.fn((key: string, value: string) => stored.set(key, value));
+  const writes: Array<{ key: string; value: string }> = [];
   const localStorage = {
     getItem: (key: string) => stored.get(key) ?? null,
-    setItem,
+    setItem: (key: string, value: string) => {
+      writes.push({ key, value });
+      stored.set(key, value);
+    },
   };
   const windowListeners = new Map<string, () => void>();
   const window = {
@@ -21,10 +26,21 @@ const setupBrowser = () => {
   const document = {
     referrer: "",
     visibilityState: "visible",
-    addEventListener: vi.fn(),
+    addEventListener: (_event: string, _listener: () => void) => undefined,
   };
-  const sendBeacon = vi.fn((_url: string, _data: Blob) => true);
-  const fetch = vi.fn().mockResolvedValue({ ok: true });
+  const beacons: Blob[] = [];
+  const sendBeacon = (_url: string, data: Blob) => {
+    beacons.push(data);
+
+    return true;
+  };
+  const requests: RequestInit[] = [];
+  let nextFetch: (() => Promise<Response>) | undefined;
+  const fetch = (_input: RequestInfo | URL, init: RequestInit = {}) => {
+    requests.push(init);
+
+    return nextFetch?.() ?? Promise.resolve({ ok: true } as Response);
+  };
 
   vi.stubGlobal("localStorage", localStorage);
   vi.stubGlobal("window", window);
@@ -37,7 +53,22 @@ const setupBrowser = () => {
   vi.stubGlobal("navigator", { sendBeacon });
   vi.stubGlobal("fetch", fetch);
 
-  return { stored, setItem, windowListeners, sendBeacon, fetch };
+  return {
+    stored,
+    writes,
+    windowListeners,
+    beacons,
+    requests,
+    deferNextFetch: () => {
+      let reject!: (error: Error) => void;
+      nextFetch = () =>
+        new Promise((_resolve, rejectPromise) => {
+          reject = rejectPromise;
+        });
+
+      return (error: Error) => reject(error);
+    },
+  };
 };
 
 describe("PostHog persistence and lifecycle delivery", () => {
@@ -56,21 +87,21 @@ describe("PostHog persistence and lifecycle delivery", () => {
     const browser = setupBrowser();
     const posthog = await import("./posthog");
 
-    expect(await posthog.initPostHog()).toBe(true);
-    expect(browser.setItem).toHaveBeenCalledTimes(1);
+    expect(await posthog.initPostHog(false)).toBe(true);
+    expect(browser.writes).toHaveLength(1);
 
     for (let index = 0; index < 5; index++) posthog.capturePostHog(`click-${index}`);
-    expect(browser.setItem).toHaveBeenCalledTimes(1);
+    expect(browser.writes).toHaveLength(1);
 
     await vi.advanceTimersByTimeAsync(4_999);
-    expect(browser.setItem).toHaveBeenCalledTimes(1);
+    expect(browser.writes).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1);
-    expect(browser.setItem).toHaveBeenCalledTimes(2);
+    expect(browser.writes).toHaveLength(2);
 
     browser.windowListeners.get("pagehide")?.();
     await Promise.resolve();
-    expect(browser.setItem).toHaveBeenCalledTimes(3);
-    expect(browser.sendBeacon).toHaveBeenCalledOnce();
+    expect(browser.writes).toHaveLength(3);
+    expect(browser.beacons).toHaveLength(1);
 
     const persisted = JSON.parse(browser.stored.get(STORAGE_KEY) ?? "{}");
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -83,34 +114,26 @@ describe("PostHog persistence and lifecycle delivery", () => {
 
   it("beacons pageleave while a normal send is pending, then retries the rejected normal batch", async () => {
     const browser = setupBrowser();
-    let rejectNormal: ((error: Error) => void) | undefined;
-    browser.fetch.mockImplementationOnce(
-      () =>
-        new Promise((_resolve, reject) => {
-          rejectNormal = reject;
-        }),
-    );
+    const rejectNormal = browser.deferNextFetch();
     const posthog = await import("./posthog");
 
-    await posthog.initPostHog();
+    await posthog.initPostHog(false);
     posthog.capturePostHog("normal-event");
     await vi.advanceTimersByTimeAsync(2_000);
-    expect(browser.fetch).toHaveBeenCalledTimes(1);
+    expect(browser.requests).toHaveLength(1);
 
     browser.windowListeners.get("pagehide")?.();
-    expect(browser.sendBeacon).toHaveBeenCalledOnce();
-    const beacon = browser.sendBeacon.mock.calls[0]?.[1] as Blob;
-    const payload = JSON.parse(await beacon.text());
+    expect(browser.beacons).toHaveLength(1);
+    const payload = JSON.parse(await browser.beacons[0]!.text());
     expect(payload.batch.map((event: { event: string }) => event.event)).toEqual(["$pageleave"]);
 
-    rejectNormal?.(new Error("normal send rejected during unload"));
+    rejectNormal(new Error("normal send rejected during unload"));
     await Promise.resolve();
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(2_000);
 
-    expect(browser.fetch).toHaveBeenCalledTimes(2);
-    const retry = browser.fetch.mock.calls[1]?.[1] as RequestInit;
-    const retryPayload = JSON.parse(String(retry.body));
+    expect(browser.requests).toHaveLength(2);
+    const retryPayload = JSON.parse(String(browser.requests[1]!.body));
     expect(retryPayload.batch.map((event: { event: string }) => event.event)).toEqual([
       "normal-event",
     ]);

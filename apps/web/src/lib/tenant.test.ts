@@ -1,8 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-
-// Vitest SSR resolution picks @solidjs/web's server build; these are browser
-// directory tests, so pin the web build's isServer/getRequestEvent.
-vi.mock("@solidjs/web", () => ({ isServer: false, getRequestEvent: () => undefined }));
+import { describe, expect, it } from "vitest";
 
 import {
   canonicalTenantParam,
@@ -17,12 +13,20 @@ import {
   setRequestTenantDirectory,
   tenantLandingHref,
 } from "./tenant";
+import type { TenantEnvironment } from "./tenant";
 
 const acme = { id: "tenant-a1b2", slug: "acme", name: "Acme" };
 
 const globex = { id: "tenant-c3d4", slug: "globex", name: "Globex" };
 
 const tenants = [acme, globex];
+
+// These are browser-directory tests. Pass the environment explicitly instead
+// of mocking @solidjs/web (whose SSR build reports isServer = true under Vitest).
+const browserEnvironment: TenantEnvironment = Object.freeze({
+  isServer: false,
+  getRequestEvent: () => undefined,
+});
 
 describe("tenant URL resolution", () => {
   it("prefers the slug as the canonical URL segment", () => {
@@ -56,8 +60,8 @@ describe("tenant URL resolution", () => {
   });
 
   it("resolves a slug saved in this account before the shell refreshes", () => {
-    rememberTenants(tenants, "account-a");
-    rememberTenantAlias("acme-renamed", acme.id, "account-a");
+    rememberTenants(tenants, "account-a", browserEnvironment);
+    rememberTenantAlias("acme-renamed", acme.id, "account-a", browserEnvironment);
     const directory = createTenantDirectory(tenants, new Map([["acme-renamed", acme.id]]));
 
     expect(resolveTenant(tenants, "acme-renamed", directory)).toBe(acme);
@@ -85,14 +89,14 @@ describe("tenant URL resolution", () => {
   });
 
   it("clears browser aliases when the signed-in account changes", () => {
-    rememberTenants(tenants, "account-a");
-    rememberTenantAlias("acme-renamed", acme.id, "account-a");
-    expect(resolveTenantId("acme-renamed")).toBe(acme.id);
+    rememberTenants(tenants, "account-a", browserEnvironment);
+    rememberTenantAlias("acme-renamed", acme.id, "account-a", browserEnvironment);
+    expect(resolveTenantId("acme-renamed", undefined, browserEnvironment)).toBe(acme.id);
 
-    rememberTenants([globex], "account-b");
+    rememberTenants([globex], "account-b", browserEnvironment);
 
-    expect(resolveTenantId("acme-renamed")).toBe("acme-renamed");
-    expect(resolveTenantId("globex")).toBe(globex.id);
+    expect(resolveTenantId("acme-renamed", undefined, browserEnvironment)).toBe("acme-renamed");
+    expect(resolveTenantId("globex", undefined, browserEnvironment)).toBe(globex.id);
   });
 });
 
