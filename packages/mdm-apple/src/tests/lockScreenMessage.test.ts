@@ -282,7 +282,9 @@ describe("Apple lock screen profile check-in", () => {
     const removals = profileCommands(db).filter((row) => row.requestType === "RemoveProfile");
 
     expect(removals).toHaveLength(1);
-    expect(removals[0]!.payload).toMatchObject({ Identifier: expect.any(String) });
+    expect(removals[0]!.payload).toMatchObject({
+      Identifier: appleLockScreenProfileIdentifier(String(storedDevice(db).id)),
+    });
   });
 
   it("records the applied message when the device acknowledges the profile", async () => {

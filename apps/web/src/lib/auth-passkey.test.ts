@@ -4,8 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const webAuthn = vi.hoisted(() => ({ startAuthentication: vi.fn() }));
 
 vi.mock("@simplewebauthn/browser", () => webAuthn);
-vi.mock("@solidjs/web", () => ({ isServer: false, getRequestEvent: () => undefined }));
-vi.mock("~/lib/posthog", () => ({ capturePostHog: vi.fn() }));
 import { authClient } from "./auth";
 
 const NativeRequest = globalThis.Request;

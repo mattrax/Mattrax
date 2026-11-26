@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { Schema } from "effect";
 import { Effect } from "effect";
 import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
@@ -104,6 +104,17 @@ describe("summarizeApplePushHealth", () => {
 describe("makeApplePush outbound backstop", () => {
   const authSecret = "push-test-secret";
 
+  // The key and its sealed envelope are read-only here: every test builds its
+  // own fake DB and captures its own effects. Generate once per file.
+  let sealedKey: string;
+
+  beforeAll(async () => {
+    const keyPair = await generateCaKeyPair();
+    const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
+
+    sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
+  });
+
   /** Columns `pushAppleDevice` writes back to the device row. */
   type PushPatch = Partial<{
     lastPushAt: Date;
@@ -205,12 +216,9 @@ describe("makeApplePush outbound backstop", () => {
     });
 
   it("gives up on a transport that never settles and records delivery_failed", async () => {
-    const keyPair = await generateCaKeyPair();
-    const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
-    const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
     const captured: PushCapture = {};
 
-    const apple = makePush(makeFakeDb(sealedKey, captured), () => Effect.never, 25);
+    const apple = makePush(makeFakeDb(sealedKey, captured), () => Effect.never, 5);
 
     const started = Date.now();
     await Effect.runPromise(apple.pushAppleDevice("device-1"));
@@ -220,9 +228,6 @@ describe("makeApplePush outbound backstop", () => {
   });
 
   it("records success without waiting for the backstop", async () => {
-    const keyPair = await generateCaKeyPair();
-    const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
-    const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
     const captured: PushCapture = {};
 
     const apple = makePush(makeFakeDb(sealedKey, captured), () => Effect.void, 5_000);
@@ -234,10 +239,6 @@ describe("makeApplePush outbound backstop", () => {
   });
 
   it("writes a system audit event on the first invalid-token failure", async () => {
-    const keyPair = await generateCaKeyPair();
-    const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
-    const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
-
     const captured: PushCapture = { audit: [] };
 
     const apple = makePush(
@@ -259,10 +260,6 @@ describe("makeApplePush outbound backstop", () => {
   });
 
   it("does not audit a repeated invalid-token state or ordinary delivery failures", async () => {
-    const keyPair = await generateCaKeyPair();
-    const jwk = await exportPrivateKeyJwk(keyPair.privateKey);
-    const sealedKey = await sealSecret(authSecret, JSON.stringify(jwk));
-
     const repeated: PushCapture = { audit: [] };
 
     const repeatedApple = makePush(

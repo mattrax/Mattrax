@@ -1,6 +1,11 @@
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
-import { EnterpriseBadRequest, EnterpriseConflict } from "@mattrax/enterprise-domain";
+import { beforeAll, describe, expect, it } from "vitest";
+import {
+  decodeCutoverArchive,
+  encodeCutoverArchive,
+  EnterpriseBadRequest,
+  EnterpriseConflict,
+} from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
@@ -90,22 +95,43 @@ const exportArchive = async (context: ReturnType<typeof makeContext>, tenantId: 
     }),
   );
 
+// The service derives the archive key at the production work factor. One real
+// export in setup gives us the same payload; encodeCutoverArchive's documented
+// test-only override then reseals it at the minimum work factor the format
+// accepts. The archive is read-only input, so every import and preview test can
+// share it without sharing any database state.
+const FAST_KDF_ITERATIONS = 10_000;
+let fastArchive: string;
+let realExport: Awaited<ReturnType<typeof exportArchive>>;
+
+beforeAll(async () => {
+  const context = makeContext();
+  const { tenant } = await seedTenant(context);
+  realExport = await exportArchive(context, tenant.id);
+  const { payload } = await decodeCutoverArchive({ archive: realExport.body, passphrase });
+  const resealed = await encodeCutoverArchive({
+    payload,
+    passphrase,
+    iterations: FAST_KDF_ITERATIONS,
+  });
+
+  fastArchive = resealed.archive;
+});
+
 describe("cutover API", () => {
   it("exports an encrypted archive and previews it without writing", async () => {
     const context = makeContext();
-    const { tenant } = await seedTenant(context);
+    await seedTenant(context);
 
-    const exported = await exportArchive(context, tenant.id);
-
-    expect(exported.body).toContain('"format": "mattrax.cutover"');
-    expect(exported.body).not.toContain("correct horse battery staple");
-    expect(exported.counts.groups).toBe(1);
+    expect(realExport.body).toContain('"format": "mattrax.cutover"');
+    expect(realExport.body).not.toContain("correct horse battery staple");
+    expect(realExport.counts.groups).toBe(1);
 
     const before = context.db.store.organization.length;
 
     const preview = await runEffect(
       context.service.previewTenantCutover(request(headers), {
-        archive: exported.body,
+        archive: fastArchive,
         passphrase,
         targetTenantId: null,
       }),
@@ -120,11 +146,10 @@ describe("cutover API", () => {
   it("imports into a new tenant and reports the summary", async () => {
     const context = makeContext();
     const { tenant } = await seedTenant(context);
-    const exported = await exportArchive(context, tenant.id);
 
     const result = await runEffect(
       context.service.importTenantCutover(request(headers), {
-        archive: exported.body,
+        archive: fastArchive,
         passphrase,
         confirm: "acme",
         allowCrossDeployment: true,
@@ -140,25 +165,27 @@ describe("cutover API", () => {
     expect(result.tenantId).not.toBe(tenant.id);
   });
 
-  it("rejects a wrong passphrase and a missing confirmation", async () => {
+  it("rejects a wrong passphrase", async () => {
     const context = makeContext();
-    const { tenant } = await seedTenant(context);
-    const exported = await exportArchive(context, tenant.id);
 
     await expect(
       runEffect(
         context.service.importTenantCutover(request(headers), {
-          archive: exported.body,
+          archive: fastArchive,
           passphrase: "wrong passphrase",
           confirm: "acme",
         }),
       ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("rejects a missing confirmation", async () => {
+    const context = makeContext();
 
     await expect(
       runEffect(
         context.service.importTenantCutover(request(headers), {
-          archive: exported.body,
+          archive: fastArchive,
           passphrase,
           confirm: "not-acme",
         }),
@@ -185,8 +212,6 @@ describe("cutover API", () => {
 
   it("requires a verified account for import", async () => {
     const context = makeContext();
-    const { tenant } = await seedTenant(context);
-    const exported = await exportArchive(context, tenant.id);
 
     const previous = context.user.emailVerified;
     context.user.emailVerified = false;
@@ -194,7 +219,7 @@ describe("cutover API", () => {
     await expect(
       runEffect(
         context.service.importTenantCutover(request(headers), {
-          archive: exported.body,
+          archive: fastArchive,
           passphrase,
           confirm: "acme",
         }),
@@ -207,11 +232,10 @@ describe("cutover API", () => {
   it("reports an existing target's configuration as a required acknowledgement", async () => {
     const context = makeContext();
     const { tenant } = await seedTenant(context);
-    const exported = await exportArchive(context, tenant.id);
 
     const preview = await runEffect(
       context.service.previewTenantCutover(request(headers), {
-        archive: exported.body,
+        archive: fastArchive,
         passphrase,
         targetTenantId: tenant.id,
       }),
@@ -223,7 +247,7 @@ describe("cutover API", () => {
     await expect(
       runEffect(
         context.service.importTenantCutover(request(headers), {
-          archive: exported.body,
+          archive: fastArchive,
           passphrase,
           confirm: "acme",
           targetTenantId: tenant.id,

@@ -59,12 +59,14 @@ test.describe("sign-in flow", () => {
 
   test("does not start a second redirect when Continue is pressed twice", async ({ page }) => {
     let requests = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
 
     await page.route("**/api/v1/sso/azure/start*", async (route) => {
       requests += 1;
-      await new Promise((resolve) => {
-        setTimeout(resolve, 500);
-      });
+      await gate;
       await route.fulfill({ json: { url: "/login?sso=started" } });
     });
 
@@ -80,8 +82,12 @@ test.describe("sign-in flow", () => {
       form?.requestSubmit();
     });
 
-    await expect(page).toHaveURL(/sso=started/);
+    // The lookup is still in flight: the guard must be holding the second submit.
+    await expect(page.locator('button[aria-busy="true"]')).toHaveCount(1);
     expect(requests).toBe(1);
+
+    release();
+    await expect(page).toHaveURL(/sso=started/);
   });
 
   test("keeps a provider failure retryable and offers the passkey path", async ({ page }) => {

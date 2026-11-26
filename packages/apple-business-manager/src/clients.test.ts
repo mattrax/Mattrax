@@ -99,30 +99,29 @@ describe("ABM OAuth requests", () => {
 });
 
 describe("Apple collection response validation", () => {
-  it("accepts explicit empty collection arrays", async () => {
+  it("accepts an explicit empty ABM device collection", async () => {
     const abm = createAbmClient({
       businessBaseUrl: "https://api.example.test/v1",
       fetch: (async () => jsonResponse({ data: [] })) satisfies typeof globalThis.fetch,
     });
+
+    await expect(Effect.runPromise(abm.listOrgDevices("access-token"))).resolves.toEqual([]);
+  });
+
+  it("accepts an explicit empty Apps and Books asset collection", async () => {
     const vpp = makeVppClient({
       baseUrl: "https://vpp.example.test/mdm",
       fetch: (async () =>
         jsonResponse({ assets: [], totalPages: 1 })) satisfies typeof globalThis.fetch,
     });
 
-    await expect(Effect.runPromise(abm.listOrgDevices("access-token"))).resolves.toEqual([]);
     await expect(Effect.runPromise(vpp.listAssets("content-token"))).resolves.toEqual([]);
   });
 
-  it.each([
-    {},
-    { data: {} },
-    { data: [{ attributes: { serialNumber: "SERIAL-1" } }] },
-    { data: [{ id: "" }] },
-  ])("rejects a malformed ABM device page: %j", async (page) => {
+  it("rejects a response without a data array", async () => {
     const client = createAbmClient({
       businessBaseUrl: "https://api.example.test/v1",
-      fetch: (async () => jsonResponse(page)) satisfies typeof globalThis.fetch,
+      fetch: (async () => jsonResponse({})) satisfies typeof globalThis.fetch,
     });
 
     const failure = await Effect.runPromise(Effect.flip(client.listOrgDevices("access-token")));
@@ -130,19 +129,87 @@ describe("Apple collection response validation", () => {
     expect(failure).toMatchObject({ kind: "invalid_response" });
   });
 
-  it.each([{}, { assets: {} }, { assets: [{}], totalPages: 1 }, { assets: [], totalPages: 0 }])(
-    "rejects a malformed Apps and Books asset page: %j",
-    async (page) => {
-      const client = makeVppClient({
-        baseUrl: "https://vpp.example.test/mdm",
-        fetch: (async () => jsonResponse(page)) satisfies typeof globalThis.fetch,
-      });
+  it("rejects a data object instead of an array", async () => {
+    const client = createAbmClient({
+      businessBaseUrl: "https://api.example.test/v1",
+      fetch: (async () => jsonResponse({ data: {} })) satisfies typeof globalThis.fetch,
+    });
 
-      const failure = await Effect.runPromise(Effect.flip(client.listAssets("content-token")));
+    const failure = await Effect.runPromise(Effect.flip(client.listOrgDevices("access-token")));
 
-      expect(failure).toMatchObject({ kind: "invalid_response" });
-    },
-  );
+    expect(failure).toMatchObject({ kind: "invalid_response" });
+  });
+
+  it("rejects a device without an id", async () => {
+    const client = createAbmClient({
+      businessBaseUrl: "https://api.example.test/v1",
+      fetch: (async () =>
+        jsonResponse({
+          data: [{ attributes: { serialNumber: "SERIAL-1" } }],
+        })) satisfies typeof globalThis.fetch,
+    });
+
+    const failure = await Effect.runPromise(Effect.flip(client.listOrgDevices("access-token")));
+
+    expect(failure).toMatchObject({ kind: "invalid_response" });
+  });
+
+  it("rejects a device with an empty id", async () => {
+    const client = createAbmClient({
+      businessBaseUrl: "https://api.example.test/v1",
+      fetch: (async () => jsonResponse({ data: [{ id: "" }] })) satisfies typeof globalThis.fetch,
+    });
+
+    const failure = await Effect.runPromise(Effect.flip(client.listOrgDevices("access-token")));
+
+    expect(failure).toMatchObject({ kind: "invalid_response" });
+  });
+
+  it("rejects a response without an assets array", async () => {
+    const client = makeVppClient({
+      baseUrl: "https://vpp.example.test/mdm",
+      fetch: (async () => jsonResponse({})) satisfies typeof globalThis.fetch,
+    });
+
+    const failure = await Effect.runPromise(Effect.flip(client.listAssets("content-token")));
+
+    expect(failure).toMatchObject({ kind: "invalid_response" });
+  });
+
+  it("rejects an assets object instead of an array", async () => {
+    const client = makeVppClient({
+      baseUrl: "https://vpp.example.test/mdm",
+      fetch: (async () => jsonResponse({ assets: {} })) satisfies typeof globalThis.fetch,
+    });
+
+    const failure = await Effect.runPromise(Effect.flip(client.listAssets("content-token")));
+
+    expect(failure).toMatchObject({ kind: "invalid_response" });
+  });
+
+  it("rejects an asset without an adamId", async () => {
+    const client = makeVppClient({
+      baseUrl: "https://vpp.example.test/mdm",
+      fetch: (async () =>
+        jsonResponse({ assets: [{}], totalPages: 1 })) satisfies typeof globalThis.fetch,
+    });
+
+    const failure = await Effect.runPromise(Effect.flip(client.listAssets("content-token")));
+
+    expect(failure).toMatchObject({ kind: "invalid_response" });
+  });
+
+  it("rejects an empty collection with no pages", async () => {
+    const client = makeVppClient({
+      baseUrl: "https://vpp.example.test/mdm",
+      fetch: (async () =>
+        jsonResponse({ assets: [], totalPages: 0 })) satisfies typeof globalThis.fetch,
+    });
+
+    const failure = await Effect.runPromise(Effect.flip(client.listAssets("content-token")));
+
+    expect(failure).toMatchObject({ kind: "invalid_response" });
+  });
 });
 
 describe("Apple pagination bounds", () => {

@@ -238,7 +238,7 @@ describe("filesystem R2", () => {
               Effect.gen(function* () {
                 active += 1;
                 maximum = Math.max(maximum, active);
-                yield* Effect.sleep("5 millis");
+                yield* Effect.sleep("1 milli");
                 active -= 1;
               }),
           }),

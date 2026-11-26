@@ -101,13 +101,19 @@ describe("Mattrax HttpClient", () => {
 
   it("cancels response body reads on interruption", async () => {
     let cancelled = false;
+    let bodyStarted!: () => void;
+    const bodyRead = new Promise<void>((resolve) => {
+      bodyStarted = resolve;
+    });
     const client = HttpClient.make((request) =>
       Effect.succeed(
         HttpClientResponse.fromWeb(
           request,
           new Response(
             new ReadableStream({
-              start() {},
+              start() {
+                bodyStarted();
+              },
               cancel() {
                 cancelled = true;
               },
@@ -118,7 +124,7 @@ describe("Mattrax HttpClient", () => {
     );
     const fiber = Effect.runFork(createHttpApi(client, origin, token).listTenants());
 
-    await Effect.runPromise(Effect.sleep(5));
+    await bodyRead;
     await Effect.runPromise(Fiber.interrupt(fiber));
     await Effect.runPromise(Fiber.await(fiber));
 

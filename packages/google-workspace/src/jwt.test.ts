@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import { TestClock } from "effect/testing";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { GOOGLE_DIRECTORY_SCOPES, GOOGLE_TOKEN_URL, signServiceAccountAssertion } from "./jwt.js";
 
 const base64UrlDecode = (value: string) =>
@@ -32,8 +32,15 @@ const makeKeyPair = async () => {
 };
 
 describe("Google service-account assertions", () => {
+  // The 2048-bit key pair is read only: generate it once for the file.
+  let keys: Awaited<ReturnType<typeof makeKeyPair>>;
+
+  beforeAll(async () => {
+    keys = await makeKeyPair();
+  });
+
   it("signs an RS256 JWT with domain-wide delegation claims", async () => {
-    const { pair, publicKey, pem } = await makeKeyPair();
+    const { pair, publicKey, pem } = keys;
 
     const result = await Effect.runPromise(
       signServiceAccountAssertion({
@@ -67,7 +74,7 @@ describe("Google service-account assertions", () => {
   });
 
   it("caps the assertion lifetime at one hour", async () => {
-    const { pem } = await makeKeyPair();
+    const { pem } = keys;
 
     await expect(
       Effect.runPromise(

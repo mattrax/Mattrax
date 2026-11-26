@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
-import { exportPrivateKeyJwk, generateCaKeyPair } from "@mattrax/crypto";
 import {
   ScepCaKeyError,
   isPrivateRsaJwk,
@@ -12,10 +11,15 @@ import type { StoredCaPrivateKey } from "../ca-key.js";
 
 const secret = "scep-ca-test-secret";
 
-const makeJwk = async () => {
-  const keyPair = await generateCaKeyPair();
-
-  return exportPrivateKeyJwk(keyPair.privateKey);
+// The sealer only checks the JWK's shape and stores its JSON: no signing or
+// verification happens here, so a fixed RSA-shaped JWK proves the same thing as
+// a freshly generated 2048-bit key without paying for key generation in every
+// test.
+const JWK: JsonWebKey = {
+  kty: "RSA",
+  n: "test-modulus",
+  e: "AQAB",
+  d: "test-private-exponent",
 };
 
 /** Flip one bit in the ciphertext so the GCM tag no longer verifies. */
@@ -35,7 +39,7 @@ const tamper = (base64: string) => {
 
 describe("SCEP CA private key sealing", () => {
   it("seals and opens a round trip without changing the key", async () => {
-    const jwk = await makeJwk();
+    const jwk = JWK;
     const sealed = await sealCaPrivateKey(secret, jwk);
 
     expect(sealed.v).toBe(1);
@@ -48,7 +52,7 @@ describe("SCEP CA private key sealing", () => {
   });
 
   it("never writes the plaintext JWK into the envelope", async () => {
-    const jwk = await makeJwk();
+    const jwk = JWK;
     const sealed = await sealCaPrivateKey(secret, jwk);
 
     expect(Object.keys(sealed).sort()).toEqual(["sealed", "v"]);
@@ -60,7 +64,7 @@ describe("SCEP CA private key sealing", () => {
   });
 
   it("migrates a legacy plaintext JWK on read", async () => {
-    const jwk = await makeJwk();
+    const jwk = JWK;
     const opened = await openCaPrivateKey(jwk, secret);
 
     expect(opened.privateKeyJwk).toEqual(jwk);
@@ -77,14 +81,14 @@ describe("SCEP CA private key sealing", () => {
   });
 
   it("migrates a plaintext JWK stored as JSON text (D1/fs)", async () => {
-    const jwk = await makeJwk();
+    const jwk = JWK;
     const opened = await openCaPrivateKey(JSON.stringify(jwk), secret);
     expect(opened.privateKeyJwk).toEqual(jwk);
     expect(opened.migrated).toBeDefined();
   });
 
   it("fails closed when a sealed value is tampered with", async () => {
-    const jwk = await makeJwk();
+    const jwk = JWK;
     const sealed = await sealCaPrivateKey(secret, jwk);
     const corrupted = { v: 1 as const, sealed: tamper(sealed.sealed) };
 
@@ -95,7 +99,7 @@ describe("SCEP CA private key sealing", () => {
   });
 
   it("fails closed when the sealed value was written with another secret", async () => {
-    const jwk = await makeJwk();
+    const jwk = JWK;
     const sealed = await sealCaPrivateKey("another-secret", jwk);
 
     await expect(openCaPrivateKey(sealed, secret)).rejects.toBeInstanceOf(ScepCaKeyError);
@@ -105,7 +109,7 @@ describe("SCEP CA private key sealing", () => {
   });
 
   it("fails closed when no application secret is configured", async () => {
-    const jwk = await makeJwk();
+    const jwk = JWK;
     const sealed = await sealCaPrivateKey(secret, jwk);
 
     for (const stored of [sealed, jwk]) {
@@ -123,7 +127,7 @@ describe("SCEP CA private key sealing", () => {
   });
 
   it("rejects malformed stored values without leaking them", async () => {
-    const jwk = await makeJwk();
+    const jwk = JWK;
 
     const cases: StoredCaPrivateKey[] = [
       {},
@@ -147,7 +151,7 @@ describe("SCEP CA private key sealing", () => {
   });
 
   it("does not attach key material to decrypt errors", async () => {
-    const jwk = await makeJwk();
+    const jwk = JWK;
     const sealed = await sealCaPrivateKey(secret, jwk);
 
     const error = await openCaPrivateKey({ v: 1, sealed: tamper(sealed.sealed) }, secret).catch(
@@ -163,7 +167,7 @@ describe("SCEP CA private key sealing", () => {
   });
 
   it("validates RSA private JWK shape", async () => {
-    const jwk = await makeJwk();
+    const jwk = JWK;
     expect(isPrivateRsaJwk(jwk)).toBe(true);
     expect(isPrivateRsaJwk({ kty: "RSA", n: "abc" })).toBe(false);
     expect(isPrivateRsaJwk({ kty: "RSA", n: "abc", d: "" })).toBe(false);

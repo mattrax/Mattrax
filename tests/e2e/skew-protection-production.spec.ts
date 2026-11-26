@@ -76,8 +76,14 @@ test.describe("skew protection (production bundle)", () => {
 
     // The reloaded document carries the one-shot marker, so the same failure
     // must not refresh again.
+    // Vite rethrows the failed import when nobody prevents its preload error;
+    // that is the positive signal that this failure did not trigger a reload.
+    const rethrown = page.waitForEvent("pageerror", {
+      predicate: (error) => error.message.includes("/assets/register-"),
+      timeout: 10_000,
+    });
     await page.getByRole("link", { name: /sign up/i }).click();
-    await page.waitForTimeout(2_000);
+    await rethrown;
 
     expect(await page.evaluate(() => window.name)).toBe("2");
   });

@@ -12,12 +12,18 @@ import {
 
 // ─── PKIjs Engine ────────────────────────────────────────────────
 
-beforeAll(() => {
+beforeAll(async () => {
   try {
     pkijs.getEngine();
   } catch {
     pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
   }
+
+  keyPool = await Promise.all(
+    Array.from({ length: 4 }, () =>
+      crypto.subtle.generateKey(RSA_ALGORITHM, true, ["sign", "verify"] as const),
+    ),
+  );
 });
 
 // ─── Test PKI ────────────────────────────────────────────────────
@@ -28,6 +34,8 @@ const RSA_ALGORITHM: RsaHashedKeyGenParams = {
   modulusLength: 2048,
   publicExponent: new Uint8Array([1, 0, 1]),
 };
+
+let keyPool: CryptoKeyPair[] | undefined;
 
 const SHA256_OID = "2.16.840.1.101.3.4.2.1";
 
@@ -49,8 +57,17 @@ let serialCounter = 0;
 
 const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 
-const generateKeyPair = (): Promise<CryptoKeyPair> =>
-  crypto.subtle.generateKey(RSA_ALGORITHM, true, ["sign", "verify"] as const);
+// Key generation dominates this file. Keys are read-only inputs: certificates
+// are rebuilt per test with their own subjects and serials, and the pool rotates
+// so every key request inside one test gets a distinct pair.
+let keyCursor = 0;
+
+const generateKeyPair = (): Promise<CryptoKeyPair> => {
+  const pair = keyPool![keyCursor % keyPool!.length]!;
+  keyCursor += 1;
+
+  return Promise.resolve(pair);
+};
 
 const DN_OIDS = new Map<string, string>([
   ["CN", "2.5.4.3"],

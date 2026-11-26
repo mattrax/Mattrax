@@ -32,88 +32,98 @@ const service = (overrides?: Parameters<typeof mockManagementBackend>[0]) =>
   );
 
 describe("Windows SOAP protocol boundaries", () => {
-  it.each(["policy", "enroll"] as const)(
-    "rejects thousands of token-shaped elements quickly on %s",
-    async (route) => {
-      let backendCalls = 0;
-      const implementation = await Effect.runPromise(
-        service({
-          getWindowsEnrollmentPolicy: () => {
-            backendCalls++;
+  const expectHeaderRejected = async (route: "policy" | "enroll") => {
+    let backendCalls = 0;
+    const implementation = await Effect.runPromise(
+      service({
+        getWindowsEnrollmentPolicy: () => {
+          backendCalls++;
 
-            return Effect.succeed({
-              authToken: "token",
-              minimalKeyLength: "2048",
-              certificateValidityPeriodSeconds: "31536000",
-              renewalPeriodSeconds: "15552000",
-            });
-          },
-          windowsEnroll: () => {
-            backendCalls++;
-
-            return Effect.succeed({
-              deviceId: "device-1",
-              signedCertificate: "signed",
-              identityCertificate: "identity",
-              username: "device-1",
-              secret: "secret",
-              providerId: "Mattrax",
-            });
-          },
-        }),
-      );
-      const security = Array.from({ length: 5_000 }, () => "<wsse:BinarySecurityToken/>").join("");
-      const started = performance.now();
-      const result = await Effect.runPromise(
-        implementation[route](
-          envelope(route === "policy" ? policyBody : enrollBody, security),
-        ).pipe(Effect.result),
-      );
-
-      expect(performance.now() - started).toBeLessThan(2_000);
-      expect(result).toMatchObject({
-        _tag: "Failure",
-        failure: {
-          _tag: "WindowsMdmError",
-          code: "invalid_envelope",
-          cause: { reason: "header_too_large" },
+          return Effect.succeed({
+            authToken: "token",
+            minimalKeyLength: "2048",
+            certificateValidityPeriodSeconds: "31536000",
+            renewalPeriodSeconds: "15552000",
+          });
         },
-      });
-      expect(backendCalls).toBe(0);
-    },
-  );
+        windowsEnroll: () => {
+          backendCalls++;
 
-  it.each(["policy", "enroll"] as const)(
-    "rejects an oversized request body before parsing or token validation on %s",
-    async (route) => {
-      let backendCalls = 0;
-      const implementation = await Effect.runPromise(
-        service({
-          getWindowsEnrollmentPolicy: () => {
-            backendCalls++;
+          return Effect.succeed({
+            deviceId: "device-1",
+            signedCertificate: "signed",
+            identityCertificate: "identity",
+            username: "device-1",
+            secret: "secret",
+            providerId: "Mattrax",
+          });
+        },
+      }),
+    );
+    const security = Array.from({ length: 5_000 }, () => "<wsse:BinarySecurityToken/>").join("");
+    const started = performance.now();
+    const result = await Effect.runPromise(
+      implementation[route](envelope(route === "policy" ? policyBody : enrollBody, security)).pipe(
+        Effect.result,
+      ),
+    );
 
-            return Effect.die("backend must not run");
-          },
-          windowsEnroll: () => {
-            backendCalls++;
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(result).toMatchObject({
+      _tag: "Failure",
+      failure: {
+        _tag: "WindowsMdmError",
+        code: "invalid_envelope",
+        cause: { reason: "header_too_large" },
+      },
+    });
+    expect(backendCalls).toBe(0);
+  };
 
-            return Effect.die("backend must not run");
-          },
-        }),
-      );
-      const result = await Effect.runPromise(
-        implementation[route](
-          envelope(`<Payload>${"x".repeat(1024 * 1024 + 1)}</Payload>`, ""),
-        ).pipe(Effect.result),
-      );
+  it("rejects thousands of token-shaped elements on the policy route", async () => {
+    await expectHeaderRejected("policy");
+  });
 
-      expect(result).toMatchObject({
-        _tag: "Failure",
-        failure: { cause: { reason: "request_too_large" } },
-      });
-      expect(backendCalls).toBe(0);
-    },
-  );
+  it("rejects thousands of token-shaped elements on the enroll route", async () => {
+    await expectHeaderRejected("enroll");
+  });
+
+  const expectBodyRejected = async (route: "policy" | "enroll") => {
+    let backendCalls = 0;
+    const implementation = await Effect.runPromise(
+      service({
+        getWindowsEnrollmentPolicy: () => {
+          backendCalls++;
+
+          return Effect.die("backend must not run");
+        },
+        windowsEnroll: () => {
+          backendCalls++;
+
+          return Effect.die("backend must not run");
+        },
+      }),
+    );
+    const result = await Effect.runPromise(
+      implementation[route](envelope(`<Payload>${"x".repeat(1024 * 1024 + 1)}</Payload>`, "")).pipe(
+        Effect.result,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      _tag: "Failure",
+      failure: { cause: { reason: "request_too_large" } },
+    });
+    expect(backendCalls).toBe(0);
+  };
+
+  it("rejects an oversized body on the policy route before token validation", async () => {
+    await expectBodyRejected("policy");
+  });
+
+  it("rejects an oversized body on the enroll route before token validation", async () => {
+    await expectBodyRejected("enroll");
+  });
 
   it("reads exactly one direct WS-Security token and strips XML whitespace", async () => {
     let token: string | undefined;

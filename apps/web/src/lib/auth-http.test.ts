@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@solidjs/web", () => ({ isServer: false, getRequestEvent: () => undefined }));
-vi.mock("~/lib/posthog", () => ({ capturePostHog: vi.fn() }));
 import { authClient } from "./auth";
 
 const NativeRequest = globalThis.Request;
@@ -94,29 +92,33 @@ describe("browser auth transport", () => {
     });
   });
 
-  it.each(["revoked", "already-invalid", "client-only"])(
-    "accepts the sign-out action's enveloped %s result",
-    async (invalidation) => {
-      fetch.mockResolvedValueOnce(
-        Response.json({
-          _tag: "Success",
-          value: { clearCredential: true, invalidation },
-        }),
-      );
+  const signOutWithInvalidation = async (invalidation: string) => {
+    fetch.mockResolvedValueOnce(
+      Response.json({
+        _tag: "Success",
+        value: { clearCredential: true, invalidation },
+      }),
+    );
 
-      await expect(authClient.signOut()).resolves.toEqual({ data: { status: "ok" } });
+    await expect(authClient.signOut()).resolves.toEqual({ data: { status: "ok" } });
 
-      const [input, init] = fetch.mock.calls[0]!;
-      const headers = new Headers(init?.headers);
+    const [input, init] = fetch.mock.calls[0]!;
+    const headers = new Headers(init?.headers);
 
-      expect(String(input)).toBe("https://mattrax.test/api/v1/signOut");
-      expect(init?.method).toBe("POST");
-      expect(headers.get("content-type")).toBe("application/json");
-      expect(headers.get("x-effect-auth-csrf")).toBe("1");
-      expect(new TextDecoder().decode(init?.body as Uint8Array)).toBe("{}");
-      expect((init as RequestInit & { duplex?: string }).duplex).toBeUndefined();
-    },
-  );
+    expect(String(input)).toBe("https://mattrax.test/api/v1/signOut");
+    expect(init?.method).toBe("POST");
+    expect(headers.get("content-type")).toBe("application/json");
+    expect(headers.get("x-effect-auth-csrf")).toBe("1");
+    expect(new TextDecoder().decode(init?.body as Uint8Array)).toBe("{}");
+    expect((init as RequestInit & { duplex?: string }).duplex).toBeUndefined();
+  };
+
+  it("accepts a revoked sign-out result", () => signOutWithInvalidation("revoked"));
+
+  it("accepts an already-invalid sign-out result", () =>
+    signOutWithInvalidation("already-invalid"));
+
+  it("accepts a client-only sign-out result", () => signOutWithInvalidation("client-only"));
 
   it("treats a declared sign-out-without-revocation result as signed out", async () => {
     fetch.mockResolvedValueOnce(
@@ -129,15 +131,7 @@ describe("browser auth transport", () => {
     await expect(authClient.signOut()).resolves.toEqual({ data: { status: "ok" } });
   });
 
-  it.each([
-    {},
-    { status: "ok" },
-    { clearCredential: true, invalidation: "revoked" },
-    { _tag: "Success", value: { clearCredential: true } },
-    { _tag: "Success", value: { clearCredential: false, invalidation: "revoked" } },
-    { _tag: "Success", value: { clearCredential: true, invalidation: "expired" } },
-    { _tag: "Success", value: { _tag: "SessionSignOutUnavailable" } },
-  ])("rejects a malformed sign-out success %#", async (responseBody) => {
+  const rejectsMalformedSignOut = async (responseBody: unknown) => {
     fetch.mockResolvedValueOnce(Response.json(responseBody));
 
     await expect(authClient.signOut()).resolves.toEqual({
@@ -146,7 +140,32 @@ describe("browser auth transport", () => {
         tag: "AuthResponseError",
       },
     });
-  });
+  };
+
+  it("rejects an empty body", () => rejectsMalformedSignOut({}));
+
+  it("rejects a bare ok status", () => rejectsMalformedSignOut({ status: "ok" }));
+
+  it("rejects a direct success body without a tag", () =>
+    rejectsMalformedSignOut({ clearCredential: true, invalidation: "revoked" }));
+
+  it("rejects a success value without a clear-credential flag", () =>
+    rejectsMalformedSignOut({ _tag: "Success", value: { clearCredential: true } }));
+
+  it("rejects a success value that does not clear the credential", () =>
+    rejectsMalformedSignOut({
+      _tag: "Success",
+      value: { clearCredential: false, invalidation: "revoked" },
+    }));
+
+  it("rejects a success value with an unknown invalidation", () =>
+    rejectsMalformedSignOut({
+      _tag: "Success",
+      value: { clearCredential: true, invalidation: "expired" },
+    }));
+
+  it("rejects a success value without a clear-credential variant", () =>
+    rejectsMalformedSignOut({ _tag: "Success", value: { _tag: "SessionSignOutUnavailable" } }));
 
   it("preserves a non-2xx sign-out failure", async () => {
     fetch.mockResolvedValueOnce(

@@ -85,7 +85,6 @@ test.describe("authentication and onboarding", () => {
     const { email } = await register(page);
     const tenant = await createTenant(page, "Session Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
-    await page.waitForTimeout(300);
 
     await page.getByRole("button", { name: "Account menu" }).click();
     await expect(page.locator("[data-slot=menu-content]")).toBeVisible();

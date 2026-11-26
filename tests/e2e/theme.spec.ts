@@ -25,16 +25,13 @@ for (const theme of ["light", "dark"] as const) {
     expect(early.colorScheme).toBe(theme);
     expect(early.meta).toBe(theme === "dark" ? "#10100f" : "#e9e9e6");
 
-    await page.waitForTimeout(600);
+    // The inline bootstrap resolves the theme before paint; the stylesheet's
+    // canvas token arrives with the CSS, so poll the value actually shown.
+    await expect
+      .poll(() => page.evaluate(() => getComputedStyle(document.body).backgroundColor))
+      .toBe(theme === "dark" ? "rgb(16, 16, 15)" : "rgb(233, 233, 230)");
 
-    const settled = await page.evaluate(() => ({
-      theme: document.documentElement.dataset.theme,
-      body: getComputedStyle(document.body).backgroundColor,
-    }));
-
-    expect(settled.theme).toBe(theme);
-    // The page canvas is the `--background` token: gray-1 in light, #08080a in dark.
-    expect(settled.body).toBe(theme === "dark" ? "rgb(16, 16, 15)" : "rgb(233, 233, 230)");
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe(theme);
   });
 }
 

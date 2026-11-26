@@ -403,7 +403,7 @@ describe("email outbox drain", () => {
           inFlight += 1;
           peak = Math.max(peak, inFlight);
           await new Promise((resolve) => {
-            setTimeout(resolve, 5);
+            setTimeout(resolve, 1);
           });
           inFlight -= 1;
         }),

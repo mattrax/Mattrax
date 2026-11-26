@@ -1,7 +1,7 @@
 import type { Schema } from "effect";
 import { Effect, Exit, Fiber, Ref } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { deriveSoftwareUpdate, parseSofaFeed } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
@@ -181,6 +181,15 @@ const countingFetch = (respond: () => Response | Promise<Response>) => {
 };
 
 describe("software update feed cache", () => {
+  // The first real fetch/parse pays a one-off decoding cost. Pay it here so
+  // any test can be first under --sequence.shuffle.
+  beforeAll(async () => {
+    const { db } = makeFeedDb();
+    const warm = countingFetch(() => jsonResponse(feedBody()));
+
+    await runEffect(loadSoftwareUpdateCatalog(optionsFor(db, warm.client)));
+  });
+
   it("serves a fresh row from the configured URL without fetching", async () => {
     const configured = feedUrl();
 
@@ -295,7 +304,9 @@ describe("software update feed cache", () => {
     expect(stale.error).toBeNull();
     expect(stale.catalog?.majors[0]?.latest.version).toBe("26.7.2");
 
-    await expect.poll(() => rows[0]?.fetchedAt?.getTime()).toBe(expiresAt.getTime());
+    await expect
+      .poll(() => rows[0]?.fetchedAt?.getTime(), { interval: 1 })
+      .toBe(expiresAt.getTime());
 
     const fresh = await runEffect(
       loadSoftwareUpdateCatalog({ ...options, now: new Date(expiresAt.getTime() + 1) }),
@@ -342,13 +353,15 @@ describe("software update feed cache", () => {
     expect(states.every((state) => state.catalog?.majors[0]?.latest.version === "26.7.2")).toBe(
       true,
     );
-    await expect.poll(() => fetch.calls()).toBe(2);
+    await expect.poll(() => fetch.calls(), { interval: 1 }).toBe(2);
     expect(selects()).toBe(1);
     expect(writes()).toBe(1);
 
     releaseRefresh();
 
-    await expect.poll(() => rows[0]?.fetchedAt?.getTime()).toBe(expiresAt.getTime());
+    await expect
+      .poll(() => rows[0]?.fetchedAt?.getTime(), { interval: 1 })
+      .toBe(expiresAt.getTime());
     expect(fetch.calls()).toBe(2);
     expect(writes()).toBe(2);
   });
@@ -373,7 +386,7 @@ describe("software update feed cache", () => {
     expect(stale.stale).toBe(true);
     expect(stale.error).toBeNull();
 
-    await expect.poll(() => rows[0]?.lastError).toBe("http_503");
+    await expect.poll(() => rows[0]?.lastError, { interval: 1 }).toBe("http_503");
 
     const suppressed = await runEffect(
       loadSoftwareUpdateCatalog({ ...options, now: new Date(expiresAt.getTime() + 1_000) }),
@@ -464,7 +477,7 @@ describe("software update feed cache", () => {
     );
 
     expect(stale.stale).toBe(true);
-    await expect.poll(() => rows[0]?.lastError).toBe("http_503");
+    await expect.poll(() => rows[0]?.lastError, { interval: 1 }).toBe("http_503");
     expect(rows[0]?.sourceUrl).toBe(secondUrl);
     expect(rows[0]?.payload).toEqual(catalog("26.7.3"));
   });
@@ -493,7 +506,7 @@ describe("software update feed cache", () => {
     }) satisfies typeof globalThis.fetch;
 
     const state = await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(db, clientForFetch(fetchImpl), { timeoutMs: 10 })),
+      loadSoftwareUpdateCatalog(optionsFor(db, clientForFetch(fetchImpl), { timeoutMs: 1 })),
     );
 
     expect(state.error).toBe("timeout");
@@ -570,21 +583,25 @@ describe("software update feed cache", () => {
       },
     });
 
+    let releaseFetch!: () => void;
+    const fetchGate = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
     const fetch = countingFetch(async () => {
-      await new Promise((resolve) => {
-        setTimeout(resolve, 20);
-      });
+      await fetchGate;
 
       return jsonResponse(feedBody("26.7.3"));
     });
 
     const options = optionsFor(db, fetch.client, { feedUrl: configured });
 
-    const [first, second] = await runEffect(
+    const loads = runEffect(
       Effect.all([loadSoftwareUpdateCatalog(options), loadSoftwareUpdateCatalog(options)], {
         concurrency: "unbounded",
       }),
     );
+    releaseFetch();
+    const [first, second] = await loads;
 
     expect(first.available).toBe(true);
     expect(second.available).toBe(true);
@@ -605,24 +622,26 @@ describe("software update feed cache", () => {
     expect(fetch.calls()).toBe(0);
   });
 
-  it("reports invalid JSON and an invalid feed without a catalog", async () => {
+  it("reports invalid JSON without a catalog", async () => {
     const invalidJson = countingFetch(() => new Response("not-json", { status: 200 }));
 
-    const first = await runEffect(
+    const state = await runEffect(
       loadSoftwareUpdateCatalog(optionsFor(makeFeedDb().db, invalidJson.client)),
     );
 
-    expect(first.error).toBe("invalid_json");
-    expect(first.catalog).toBeNull();
+    expect(state.error).toBe("invalid_json");
+    expect(state.catalog).toBeNull();
+  });
 
+  it("reports an invalid feed without a catalog", async () => {
     const invalidFeed = countingFetch(() => jsonResponse({}));
 
-    const second = await runEffect(
+    const state = await runEffect(
       loadSoftwareUpdateCatalog(optionsFor(makeFeedDb().db, invalidFeed.client)),
     );
 
-    expect(second.error).toBe("invalid_feed");
-    expect(second.catalog).toBeNull();
+    expect(state.error).toBe("invalid_feed");
+    expect(state.catalog).toBeNull();
   });
 
   it("returns database_error without fetching when the read fails", async () => {

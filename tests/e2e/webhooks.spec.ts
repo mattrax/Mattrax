@@ -20,11 +20,11 @@ test.describe("tenant outbound webhooks", () => {
     const secretDialog = page.getByRole("dialog").filter({ hasText: "Signing secret" });
     await expect(secretDialog).toBeVisible();
     const secret = await secretDialog.getByRole("textbox").inputValue();
-    expect(secret).toMatch(/^whsec_/);
+    // 32 random bytes, base64url encoded, behind the documented prefix.
+    expect(secret).toMatch(/^whsec_[A-Za-z0-9_-]{43}$/);
     await secretDialog.getByRole("button", { name: "I have copied it" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await page.waitForTimeout(350);
-
+    // The following visibility assertions retry until the list re-renders.
     await expect(page.getByText("https://hooks.example.com/e2e")).toBeVisible();
     await expect(page.getByText("E2E receiver")).toBeVisible();
 
@@ -43,11 +43,10 @@ test.describe("tenant outbound webhooks", () => {
     const rotatedDialog = page.getByRole("dialog").filter({ hasText: "Signing secret" });
     await expect(rotatedDialog).toBeVisible();
     const rotated = await rotatedDialog.getByRole("textbox").inputValue();
-    expect(rotated).toMatch(/^whsec_/);
+    expect(rotated).toMatch(/^whsec_[A-Za-z0-9_-]{43}$/);
     expect(rotated).not.toBe(secret);
     await rotatedDialog.getByRole("button", { name: "I have copied it" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await page.waitForTimeout(350);
 
     // Delete.
     await page.getByRole("button", { name: "Delete", exact: true }).click();

@@ -1024,7 +1024,7 @@ describe("enterprise service tenant flow", () => {
           method: "GET",
           path: `/api/v1/tenants/${tenant.id}/devices`,
           status: 200,
-          credential: { type: "api_token", id: expect.any(String) },
+          credential: { type: "api_token", id: "token-1" },
         },
       },
     ]);
@@ -2166,10 +2166,10 @@ describe("enterprise service policy flow", () => {
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
   });
 
-  it.each([
-    {
-      name: "connection",
-      error: () =>
+  it("does not retry a Drizzle-wrapped a connection failure", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () =>
+      Effect.fail(
         snapshotSqlError(
           new SqlError.ConnectionError({
             cause: mysqlDriverError(2003, "ECONNREFUSED", "connect ECONNREFUSED"),
@@ -2177,10 +2177,25 @@ describe("enterprise service policy flow", () => {
             operation: "insert",
           }),
         ),
-    },
-    {
-      name: "syntax",
-      error: () =>
+      ),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts).toHaveLength(1);
+    expect(db.store.policy_deployment).toHaveLength(1);
+  });
+
+  it("does not retry a Drizzle-wrapped a syntax failure", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () =>
+      Effect.fail(
         snapshotSqlError(
           new SqlError.SqlSyntaxError({
             cause: mysqlDriverError(1064, "ER_PARSE_ERROR", "You have an error in your SQL"),
@@ -2188,10 +2203,25 @@ describe("enterprise service policy flow", () => {
             operation: "insert",
           }),
         ),
-    },
-    {
-      name: "non-unique constraint",
-      error: () =>
+      ),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts).toHaveLength(1);
+    expect(db.store.policy_deployment).toHaveLength(1);
+  });
+
+  it("does not retry a Drizzle-wrapped a non-unique constraint failure", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () =>
+      Effect.fail(
         snapshotSqlError(
           new SqlError.ConstraintError({
             cause: mysqlDriverError(1452, "ER_NO_REFERENCED_ROW_2", "Constraint failed"),
@@ -2199,23 +2229,50 @@ describe("enterprise service policy flow", () => {
             operation: "insert",
           }),
         ),
-    },
-    {
-      name: "unique constraint on another table",
-      error: () => snapshotCollision("configuration.PRIMARY"),
-    },
-    {
-      name: "unstructured driver duplicate",
-      error: () =>
+      ),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts).toHaveLength(1);
+    expect(db.store.policy_deployment).toHaveLength(1);
+  });
+
+  it("does not retry a Drizzle-wrapped a unique constraint on another table", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () =>
+      Effect.fail(snapshotCollision("configuration.PRIMARY")),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts).toHaveLength(1);
+    expect(db.store.policy_deployment).toHaveLength(1);
+  });
+
+  it("does not retry a Drizzle-wrapped an unstructured driver duplicate", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () =>
+      Effect.fail(
         new EffectDrizzleQueryError({
           query: deploymentQuery,
           params: undefined,
           cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
         }),
-    },
-  ])("does not retry a Drizzle-wrapped $name snapshot failure", async ({ error }) => {
-    const { db, service, headers, tenant, policy } = await makePolicyContext();
-    const attempts = interceptDeploymentInserts(db, () => Effect.fail(error()));
+      ),
+    );
 
     await expect(
       runEffect(
@@ -4371,7 +4428,7 @@ describe("enterprise service APNs", () => {
     expect(health.certificates).toHaveLength(1);
     expect(health.certificates[0]).toMatchObject({
       serial: certificate.serial,
-      revokedAt: expect.any(String),
+      revokedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
     });
   });
 
@@ -5880,7 +5937,7 @@ describe("device command lifecycle", () => {
     expect(command).toMatchObject({ requestType: "SetAutoAdminPassword", status: "queued" });
     expect(command!.payload).toMatchObject({
       GUID: "11111111-AAAA-BBBB-CCCC-222222222222",
-      passwordHash: expect.any(String),
+      passwordHash: expect.stringMatching(/^[A-Za-z0-9+/]+=*$/),
     });
     expect(atob(command!.payload.passwordHash)).toContain("SALTED-SHA512-PBKDF2");
     expect(db.store.device_secret).toEqual(
@@ -6805,9 +6862,7 @@ describe("enterprise policy validation and enrollment", () => {
   it("rejects an invalid mobileconfig preview", async () => {
     const { service, headers } = await makeContext();
     await expect(
-      runEffect(
-        service.previewMobileconfig(request(headers), { mobileconfig: "not base64!" }),
-      ),
+      runEffect(service.previewMobileconfig(request(headers), { mobileconfig: "not base64!" })),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
 
@@ -6815,9 +6870,7 @@ describe("enterprise policy validation and enrollment", () => {
     const { service, headers, user } = await makeContext();
 
     await expect(
-      runEffect(
-        service.previewMobileconfig(request(), { mobileconfig: btoa("<plist></plist>") }),
-      ),
+      runEffect(service.previewMobileconfig(request(), { mobileconfig: btoa("<plist></plist>") })),
     ).rejects.toBeDefined();
 
     user.emailVerified = false;
@@ -7046,7 +7099,7 @@ describe("device pre-registration", () => {
         name: "Alice Mac",
         assetTag: "AT-1",
         notes: "Front desk",
-        groupId: expect.any(String),
+        groupId: expect.stringMatching(/^[0-9a-f]{24}$/),
         consumedDeviceId: null,
       },
     ]);

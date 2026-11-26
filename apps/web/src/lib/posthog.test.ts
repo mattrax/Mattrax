@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Under Vitest SSR resolution @solidjs/web resolves to its server build, where
+// isServer is a constant true; the browser client needs the web build.
 vi.mock("@solidjs/web", () => ({ isServer: false }));
 
 const STORAGE_KEY = "mattrax.posthog";
@@ -42,6 +44,7 @@ describe("PostHog persistence and lifecycle delivery", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-01T00:00:00Z"));
   });
 
   afterEach(() => {
@@ -70,9 +73,12 @@ describe("PostHog persistence and lifecycle delivery", () => {
     expect(browser.sendBeacon).toHaveBeenCalledOnce();
 
     const persisted = JSON.parse(browser.stored.get(STORAGE_KEY) ?? "{}");
-    expect(persisted.distinctId).toEqual(expect.any(String));
-    expect(persisted.sessionId).toEqual(expect.any(String));
-    expect(persisted.activeAt).toEqual(expect.any(Number));
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+    expect(persisted.distinctId).toEqual(expect.stringMatching(uuid));
+    expect(persisted.sessionId).toEqual(expect.stringMatching(uuid));
+    // Five capture calls advanced the fake clock by 5s before the flush.
+    expect(persisted.activeAt).toBe(Date.parse("2026-11-01T00:00:00Z") + 5_000);
   });
 
   it("beacons pageleave while a normal send is pending, then retries the rejected normal batch", async () => {

@@ -65,11 +65,14 @@ const origin = "https://windows.test";
 
 const authSecret = "windows-test-secret";
 
+// WSTEP enrollment tokens are "<subject>.<issued-at-seconds>.<base64url HMAC>".
+const WINDOWS_AUTH_TOKEN = /^[^.\s]+\.\d{10}\.[A-Za-z0-9_-]{43}$/;
+
 const mdmOrigin = new MdmOrigin({ url: origin });
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
-const makeCa = async () => {
+const buildCa = async () => {
   const keyPair = await generateCaKeyPair();
   const privateKeyJwk = await exportPrivateKeyJwk(keyPair.privateKey);
   const certificate = await createCaCertificate(keyPair, "Mattrax Windows Test CA");
@@ -77,7 +80,21 @@ const makeCa = async () => {
   return { certPem: certToPem(certificate), privateKeyJwk, certificate };
 };
 
-const makeCsr = async (commonName = "DESKTOP-TEST") => {
+// RSA key generation is by far the most expensive work in this file. CA
+// material is read-only: every test still gets its own fake database, and the
+// two fixtures rotate so two CA requests inside one test never share a key.
+let caFixtures: Array<Awaited<ReturnType<typeof buildCa>>> | undefined;
+let caCursor = 0;
+
+const makeCa = async (): Promise<Awaited<ReturnType<typeof buildCa>>> => {
+  caFixtures ??= [await buildCa(), await buildCa()];
+  const fixture = caFixtures[caCursor % caFixtures.length]!;
+  caCursor += 1;
+
+  return fixture;
+};
+
+const buildCsr = async (commonName: string) => {
   const keyPair = await generateCaKeyPair();
   const csr = new pkijs.CertificationRequest();
   csr.version = 0;
@@ -93,6 +110,22 @@ const makeCsr = async (commonName = "DESKTOP-TEST") => {
   await csr.sign(keyPair.privateKey, "SHA-256");
 
   return arrayBufferToBase64(csr.toSchema().toBER(false));
+};
+
+// A CSR is an immutable request; signing still happens per test with that
+// test's own CA, so caching the encoded request by subject keeps signatures and
+// database state independent.
+const csrFixtures = new Map<string, Promise<string>>();
+
+const makeCsr = (commonName = "DESKTOP-TEST"): Promise<string> => {
+  let csr = csrFixtures.get(commonName);
+
+  if (!csr) {
+    csr = buildCsr(commonName);
+    csrFixtures.set(commonName, csr);
+  }
+
+  return csr;
 };
 
 const organizationRow = (id: string, createdAt: Date) => ({
@@ -298,7 +331,7 @@ const base64Url = (value: Uint8Array | string): string => {
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 };
 
-const makeFederatedSigner = async () => {
+const buildFederatedSigner = async () => {
   const pair = await crypto.subtle.generateKey(
     {
       name: "RSASSA-PKCS1-v1_5",
@@ -327,6 +360,20 @@ const makeFederatedSigner = async () => {
       ],
     },
   };
+};
+
+// Signing keys are read-only and signing happens per test. Two rotating
+// fixtures keep consecutive signers distinct (the JWKS-refresh tests rely on
+// that) without generating an RSA key in every test.
+let federatedSigners: Array<Awaited<ReturnType<typeof buildFederatedSigner>>> | undefined;
+let signerCursor = 0;
+
+const makeFederatedSigner = async (): Promise<Awaited<ReturnType<typeof buildFederatedSigner>>> => {
+  federatedSigners ??= [await buildFederatedSigner(), await buildFederatedSigner()];
+  const signer = federatedSigners[signerCursor % federatedSigners.length]!;
+  signerCursor += 1;
+
+  return signer;
 };
 
 const makeFederatedToken = async (
@@ -423,7 +470,7 @@ describe("Windows enterprise backend", () => {
     // Mattrax token exists; that first-enrollment path must keep working.
     await expect(
       run(backend.getWindowsEnrollmentPolicy("opaque-wstep-client-credential")),
-    ).resolves.toMatchObject({ authToken: expect.any(String) });
+    ).resolves.toMatchObject({ authToken: expect.stringMatching(WINDOWS_AUTH_TOKEN) });
 
     // A token in our format that fails signature verification is not a first
     // enrollment.
@@ -2124,7 +2171,7 @@ describe("Windows federated Entra enrollment", () => {
 
     await expect(
       run(backend.getWindowsEnrollmentPolicy(rotatedToken, { tenantToken })),
-    ).resolves.toMatchObject({ authToken: expect.any(String) });
+    ).resolves.toMatchObject({ authToken: expect.stringMatching(WINDOWS_AUTH_TOKEN) });
     expect(fetches).toBe(2);
     await run(backend.getWindowsEnrollmentPolicy(rotatedToken, { tenantToken }));
     expect(fetches).toBe(2);
@@ -2134,6 +2181,14 @@ describe("Windows federated Entra enrollment", () => {
     const current = await makeFederatedSigner();
     const rotated = withKeyId(await makeFederatedSigner(), "rotated-key");
     let fetches = 0;
+    let enteredFirst!: () => void;
+    const firstEntered = new Promise<void>((resolve) => {
+      enteredFirst = resolve;
+    });
+    let releaseFirst!: () => void;
+    const firstFetch = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
     const { backend } = await setup({
       ssoConfig: [federatedSsoConfig("org-early")],
       federated: {
@@ -2141,12 +2196,14 @@ describe("Windows federated Entra enrollment", () => {
         audience: federatedAudience,
         jwksUri: () => "https://example.test/keys",
         fetch: async () => {
-          fetches++;
-          await new Promise((resolve) => {
-            setTimeout(resolve, 10);
-          });
+          const count = ++fetches;
 
-          return new Response(JSON.stringify(fetches === 1 ? current.jwks : rotated.jwks), {
+          if (count === 1) {
+            enteredFirst();
+            await firstFetch;
+          }
+
+          return new Response(JSON.stringify(count === 1 ? current.jwks : rotated.jwks), {
             status: 200,
           });
         },
@@ -2155,10 +2212,16 @@ describe("Windows federated Entra enrollment", () => {
     const tenantToken = await createWindowsTenantToken("org-early", authSecret);
     const rotatedToken = await makeFederatedToken(rotated, {}, "rotated-key");
 
-    await Promise.all([
+    const both = Promise.all([
       run(backend.getWindowsEnrollmentPolicy(rotatedToken, { tenantToken })),
       run(backend.getWindowsEnrollmentPolicy(rotatedToken, { tenantToken })),
     ]);
+
+    // Hold the first JWKS fetch open until both requests are in flight, so the
+    // coalescing window is created by the test rather than by a fixed sleep.
+    await firstEntered;
+    releaseFirst();
+    await both;
 
     expect(fetches).toBe(2);
   });
@@ -2408,8 +2471,7 @@ describe("Windows command history and desired-state policy", () => {
     const pfxBase64 = arrayBufferToBase64(pfx.buffer);
     const first = await checkin(backend);
     const add = first.commands.find(
-      (command) =>
-        command.kind === "Add" && (command.locURI ?? "").endsWith("/PFXCertBlob"),
+      (command) => command.kind === "Add" && (command.locURI ?? "").endsWith("/PFXCertBlob"),
     );
 
     expect(add).toBeDefined();
@@ -2418,9 +2480,7 @@ describe("Windows command history and desired-state policy", () => {
       true,
     );
 
-    const stored = dbRows(db, table(schema.deviceCommand)).find(
-      (row) => row.id === add?.cmdID,
-    );
+    const stored = dbRows(db, table(schema.deviceCommand)).find((row) => row.id === add?.cmdID);
 
     expect(stored).toMatchObject({ requestType: WINDOWS_POLICY_REPLACE_REQUEST_TYPE });
     expect(JSON.stringify(stored?.payload)).not.toContain(pfxBase64);

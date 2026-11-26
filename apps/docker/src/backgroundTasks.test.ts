@@ -88,7 +88,7 @@ describe("tracked background tasks", () => {
     const tasks = createBackgroundTasks();
     let interrupted = false;
     const running = Effect.runPromiseExit(
-      Effect.sleep("5 millis").pipe(
+      Effect.sleep("1 milli").pipe(
         Effect.onInterrupt(() =>
           Effect.sync(() => {
             interrupted = true;
@@ -99,7 +99,7 @@ describe("tracked background tasks", () => {
     );
     tasks.waitUntil(running);
 
-    await expect(tasks.drain(100)).resolves.toBe("drained");
+    await expect(tasks.drain(20)).resolves.toBe("drained");
     expect(Exit.isSuccess(await running)).toBe(true);
     expect(interrupted).toBe(false);
   });

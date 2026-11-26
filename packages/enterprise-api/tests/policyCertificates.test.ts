@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { EnterpriseBadRequest, EnterpriseConflict } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { openSecret } from "@mattrax/crypto";
@@ -86,6 +86,21 @@ const pfxConfiguration = (password = TEST_PFX_PASSWORD) => ({
   exportable: false,
 });
 
+// PFX and certificate parsing lazily initialises its crypto stack on first
+// use. Pay that once in setup so whichever test runs first is not charged for
+// every other test's warm-up (the suite also runs shuffled).
+beforeAll(async () => {
+  const context = makeContext();
+  const tenant = await makeTenant(context);
+
+  await runEffect(
+    context.service.createPolicy(request(headers), tenant.id, {
+      name: "warm-up",
+      configurations: { "mttx.apple.pfx.smime": pfxConfiguration() },
+    }),
+  );
+});
+
 describe("policy certificate material", () => {
   it("stores the PFX sealed and never returns it in the configuration", async () => {
     const context = makeContext();
@@ -101,9 +116,7 @@ describe("policy certificate material", () => {
       }),
     );
 
-    const configuration = context.db.store.configuration.find(
-      (row) => row.policyId === created.id,
-    );
+    const configuration = context.db.store.configuration.find((row) => row.policyId === created.id);
     const stored = structuredClone(configuration?.data ?? {});
 
     expect(stored).not.toHaveProperty("pfx");
@@ -111,7 +124,9 @@ describe("policy certificate material", () => {
     expect(stored.materialSha256).toMatch(/^[a-f0-9]{64}$/);
     expect(stored.certificatePem).toContain("BEGIN CERTIFICATE");
     expect(stored.subject).toBe("person@example.com");
-    expect(stored.notAfter).toEqual(expect.any(String));
+    expect(stored.notAfter).toEqual(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+    );
     expect(context.stepUps).toContain("certificate-upload");
 
     const material = context.db.store.policy_certificate_material.find(
@@ -157,9 +172,8 @@ describe("policy certificate material", () => {
 
     // A metadata-only edit keeps the stored material and ignores client-supplied
     // subject/fingerprint, so the configuration cannot claim a different cert.
-    const current = context.db.store.configuration.find(
-      (row) => row.policyId === created.id,
-    )!.data as Schema.JsonObject;
+    const current = context.db.store.configuration.find((row) => row.policyId === created.id)!
+      .data as Schema.JsonObject;
 
     await runEffect(
       context.service.patchPolicy(request(headers), tenant.id, created.id, {
@@ -173,9 +187,8 @@ describe("policy certificate material", () => {
       }),
     );
 
-    const updated = context.db.store.configuration.find(
-      (row) => row.policyId === created.id,
-    )!.data as Schema.JsonObject;
+    const updated = context.db.store.configuration.find((row) => row.policyId === created.id)!
+      .data as Schema.JsonObject;
 
     expect(updated.subject).not.toBe("attacker.example");
     expect(updated.fingerprintSha256).toBe(current.fingerprintSha256);
@@ -197,9 +210,7 @@ describe("policy certificate material", () => {
     );
 
     expect(wrongPassword).toBeInstanceOf(EnterpriseBadRequest);
-    expect((wrongPassword as EnterpriseBadRequest).message).toContain(
-      "PFX password is wrong",
-    );
+    expect((wrongPassword as EnterpriseBadRequest).message).toContain("PFX password is wrong");
 
     const mismatched = await runEffect(
       context.service
@@ -241,9 +252,7 @@ describe("policy certificate material", () => {
     );
 
     expect(copied).toBeDefined();
-    expect(await openSecret(authSecret, copied?.sealedPfx as string)).toBe(
-      pfxConfiguration().pfx,
-    );
+    expect(await openSecret(authSecret, copied?.sealedPfx as string)).toBe(pfxConfiguration().pfx);
   });
 
   it("refuses a rollback that would pair old metadata with different material", async () => {

@@ -14,9 +14,7 @@ import {
   appleRemotemanagementRedirect,
 } from "./appleByod.js";
 
-const claims = (
-  overrides: Record<string, string | number | boolean | null | undefined> = {},
-) => ({
+const claims = (overrides: Record<string, string | number | boolean | null | undefined> = {}) => ({
   email: "student@school.example",
   oid: "entra-object",
   nonce: "nonce-1",
@@ -38,10 +36,7 @@ const oidc = (options: {
       : Effect.succeed(options.claims ?? claims()),
 });
 
-const exchange = (options: {
-  readonly oidc: ReturnType<typeof oidc>;
-  readonly nonce?: string;
-}) =>
+const exchange = (options: { readonly oidc: ReturnType<typeof oidc>; readonly nonce?: string }) =>
   Effect.runPromise(
     exchangeSsoCode({
       code: "code-1",
@@ -97,7 +92,10 @@ describe("BYOD SSO code exchange", () => {
   });
 
   it("rejects a token endpoint failure", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 400 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("nope", { status: 400 })),
+    );
 
     await expect(exchange({ oidc: oidc({}) })).resolves.toMatchObject({
       ok: false,
@@ -124,7 +122,11 @@ describe("BYOD SSO code exchange", () => {
     );
 
     await expect(
-      exchange({ oidc: oidc({ claims: claims({ email: undefined, preferred_username: undefined, upn: undefined }) }) }),
+      exchange({
+        oidc: oidc({
+          claims: claims({ email: undefined, preferred_username: undefined, upn: undefined }),
+        }),
+      }),
     ).resolves.toMatchObject({
       ok: false,
       failure: { code: "unknown_account" },
@@ -191,11 +193,7 @@ const rows = (initial: Record<string, FakeRow[]>) => {
   };
 };
 
-const runAuthorize = (
-  db: ReturnType<typeof rows>["db"],
-  url: string,
-  host: string,
-) =>
+const runAuthorize = (db: ReturnType<typeof rows>["db"], url: string, host: string) =>
   Effect.runPromise(
     appleByodAuthorize(
       // SAFETY: the authorize path only reads the URL and headers.
@@ -346,9 +344,9 @@ const callbackDb = (rows: Record<string, FakeRow[]>) => {
 
           return Effect.void;
         },
-          ignore: () => ({
-            values: (value: FakeRow) => {
-              store[tableName(table)]?.push(value);
+        ignore: () => ({
+          values: (value: FakeRow) => {
+            store[tableName(table)]?.push(value);
 
             return Effect.void;
           },
@@ -489,9 +487,7 @@ describe("BYOD callback security", () => {
         organizationId: "org-1",
         name: "Student",
         email: "student@school.example",
-        externalId: Object.hasOwn(overrides, "externalId")
-          ? overrides.externalId
-          : "entra-object",
+        externalId: Object.hasOwn(overrides, "externalId") ? overrides.externalId : "entra-object",
         source: "entra",
         disabled: false,
         createdAt: new Date(),
@@ -629,8 +625,7 @@ describe("BYOD callback security", () => {
       accountId: "account-1",
       directoryUserId: "directory-1",
     });
-    expect(enrollment?.tokenHash).toEqual(expect.any(String));
-    expect(enrollment?.tokenHash).not.toBe("");
+    expect(enrollment?.tokenHash).toEqual(expect.stringMatching(/^[0-9a-f]{64}$/));
     expect(enrollment?.authorizedAt).toBeInstanceOf(Date);
   });
 });

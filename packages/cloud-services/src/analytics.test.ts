@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Schema } from "effect";
 import {
   authEventForRequest,
@@ -26,6 +26,7 @@ const fakeClient = () => {
     properties?: AnalyticsProperties;
   }> = [];
 
+  let flushes = 0;
   const client: AnalyticsClient = {
     capture: (message) => {
       events.push(message);
@@ -33,10 +34,12 @@ const fakeClient = () => {
     captureException: (cause, distinctId, properties) => {
       exceptions.push({ cause, distinctId, properties });
     },
-    flush: vi.fn(async () => {}),
+    flush: async () => {
+      flushes++;
+    },
   };
 
-  return { client, events, exceptions };
+  return { client, events, exceptions, flushes: () => flushes };
 };
 
 const analytics = (client: AnalyticsClient, overrides: Partial<AnalyticsConfig> = {}) =>
@@ -219,71 +222,148 @@ describe("PostHog analytics", () => {
     });
   });
 
-  it("flushes the request-scoped client and swallows provider errors", async () => {
+  it("flushes the request-scoped client", async () => {
     const fake = fakeClient();
     const session = analytics(fake.client);
     session.capture("test_event");
     await session.flush();
-    expect(fake.client.flush).toHaveBeenCalledTimes(1);
 
-    const failing = fakeClient();
-    failing.client.flush = vi.fn(async () => {
-      throw new Error("network down");
-    });
+    expect(fake.flushes()).toBe(1);
+  });
+
+  it("swallows provider flush errors with a warning", async () => {
     const warnings: string[] = [];
+    const client: AnalyticsClient = {
+      capture: () => {},
+      captureException: () => {},
+      flush: async () => {
+        throw new Error("network down");
+      },
+    };
+    const session = analytics(client, { warn: (message: string) => warnings.push(message) });
+    session.capture("test_event");
+    await session.flush();
 
-    const failingSession = analytics(failing.client, {
-      warn: (message: string) => warnings.push(message),
-    });
-
-    failingSession.capture("test_event");
-    await failingSession.flush();
     expect(warnings[0]).toContain("PostHog flush failed");
   });
 
-  it("validates headers and only reports server failures", () => {
+  it("accepts a valid client distinct id", () => {
     const headers = new Headers({
       "x-posthog-distinct-id": "anon-1",
       "x-posthog-session-id": sessionId,
     });
 
     expect(readClientDistinctId(headers)).toBe("anon-1");
+  });
+
+  it("accepts a valid browser session id", () => {
+    const headers = new Headers({
+      "x-posthog-distinct-id": "anon-1",
+      "x-posthog-session-id": sessionId,
+    });
+
     expect(readClientSessionId(headers)).toBe(sessionId);
+  });
+
+  it("rejects a malformed distinct id", () => {
     expect(
       readClientDistinctId(new Headers({ "x-posthog-distinct-id": "bad id" })),
     ).toBeUndefined();
-    expect(readClientSessionId(new Headers({ "x-posthog-session-id": "nope" }))).toBeUndefined();
+  });
 
+  it("rejects a malformed session id", () => {
+    expect(readClientSessionId(new Headers({ "x-posthog-session-id": "nope" }))).toBeUndefined();
+  });
+
+  it("reports a 500 failure", () => {
     expect(shouldReportError(500, false)).toBe(true);
+  });
+
+  it("reports a 503 failure", () => {
     expect(shouldReportError(503, false)).toBe(true);
+  });
+
+  it("reports an explicitly forced failure", () => {
     expect(shouldReportError(undefined, true)).toBe(true);
+  });
+
+  it("ignores a 404", () => {
     expect(shouldReportError(404, false)).toBe(false);
+  });
+
+  it("ignores a 429", () => {
     expect(shouldReportError(429, false)).toBe(false);
+  });
+
+  it("ignores a success status", () => {
     expect(shouldReportError(200, false)).toBe(false);
   });
 
-  it("maps auth conversions and skips non-product traffic", () => {
+  it("maps a completed sign-in to auth_signed_in", () => {
     expect(authEventForRequest("/api/v1/completePasskeySignIn", "POST", 200)).toBe(
       "auth_signed_in",
     );
+  });
+
+  it("maps a completed registration to auth_register_submitted", () => {
     expect(authEventForRequest("/api/v1/completePasskeyRegistration", "POST", 200)).toBe(
       "auth_register_submitted",
     );
-    expect(authEventForRequest("/api/v1/completePasskeySignIn", "POST", 401)).toBeUndefined();
-    expect(authEventForRequest("/api/v1/completePasskeySignIn", "GET", 200)).toBeUndefined();
-    expect(authEventForRequest("/api/v1/tenants/1/policies", "POST", 200)).toBeUndefined();
+  });
 
+  it("ignores a failed sign-in", () => {
+    expect(authEventForRequest("/api/v1/completePasskeySignIn", "POST", 401)).toBeUndefined();
+  });
+
+  it("ignores a GET sign-in", () => {
+    expect(authEventForRequest("/api/v1/completePasskeySignIn", "GET", 200)).toBeUndefined();
+  });
+
+  it("ignores a policy mutation", () => {
+    expect(authEventForRequest("/api/v1/tenants/1/policies", "POST", 200)).toBeUndefined();
+  });
+
+  it("tracks an authenticated read", () => {
     expect(shouldTrackApiRequest("/api/v1/me", "GET")).toBe(true);
+  });
+
+  it("ignores the health probe", () => {
     expect(shouldTrackApiRequest("/api/health", "GET")).toBe(false);
+  });
+
+  it("ignores the readiness probe", () => {
     expect(shouldTrackApiRequest("/api/ready", "GET")).toBe(false);
+  });
+
+  it("ignores the metrics route", () => {
     expect(shouldTrackApiRequest("/api/metrics", "GET")).toBe(false);
+  });
+
+  it("ignores the OpenAPI document", () => {
     expect(shouldTrackApiRequest("/api/openapi.json", "GET")).toBe(false);
+  });
+
+  it("ignores webhook OpenAPI docs", () => {
     expect(shouldTrackApiRequest("/api/webhooks/openapi.json", "GET")).toBe(false);
+  });
+
+  it("ignores the session lookup", () => {
     expect(shouldTrackApiRequest("/api/v1/getSession", "POST")).toBe(false);
+  });
+
+  it("ignores the bootstrap read", () => {
     expect(shouldTrackApiRequest("/api/v1/bootstrap", "GET")).toBe(false);
-    // The MCP gateway's internal identity lookup; tool calls are tracked.
+  });
+
+  it("ignores the MCP context lookup", () => {
     expect(shouldTrackApiRequest("/api/v1/mcp/context", "GET")).toBe(false);
+  });
+
+  it("ignores API docs", () => {
     expect(shouldTrackApiRequest("/api/docs", "GET")).toBe(false);
+  });
+
+  it("ignores a CORS preflight", () => {
     expect(shouldTrackApiRequest("/api/v1/me", "OPTIONS")).toBe(false);
   });
 
@@ -310,10 +390,13 @@ describe("PostHog analytics", () => {
     await expect(authOutcomeFromResponse(new Response("no"))).resolves.toBeUndefined();
   });
 
-  it("treats query strings as non-analytics data", () => {
+  it("strips query strings from analytics paths", () => {
     expect(safeAnalyticsPath("/api/v1/tenants/acme/devices?token=secret")).toBe(
       "/api/v1/tenants/acme/devices",
     );
+  });
+
+  it("redacts email addresses from analytics text", () => {
     expect(redactAnalyticsText("owner@example.com")).toBe("[email]");
   });
 });

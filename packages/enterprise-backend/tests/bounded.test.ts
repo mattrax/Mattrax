@@ -22,7 +22,7 @@ describe("forEachBounded", () => {
             yield* Effect.promise(
               () =>
                 new Promise((resolve) => {
-                  setTimeout(resolve, 2);
+                  setTimeout(resolve, 1);
                 }),
             );
             seen.push(item);
@@ -103,7 +103,7 @@ describe("APNs fan-out", () => {
         Effect.gen(function* () {
           active++;
           peak = Math.max(peak, active);
-          yield* sleep(pushToken === "token-device-2" ? 15 : 5);
+          yield* sleep(pushToken === "token-device-2" ? 3 : 1);
           active--;
 
           if (pushToken === "token-device-2") return yield* Effect.fail(new Error("boom"));

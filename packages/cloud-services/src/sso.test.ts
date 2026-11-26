@@ -857,7 +857,7 @@ describe("No-code Apple BYOD callback", () => {
       appleRemotemanagementRedirect("").split("?")[0]!,
     );
     expect(new URL(completed.headers.get("location")!).searchParams.get("access-token")).toEqual(
-      expect.any(String),
+      expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
     );
     expect(completed.headers.get("set-cookie")).toContain("__Host-byod_sso_state=;");
     expect(completed.headers.get("set-cookie")).not.toContain("__Host-sso_state=");

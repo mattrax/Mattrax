@@ -29,8 +29,22 @@ const ALGORITHM: RsaHashedKeyGenParams = {
   publicExponent: new Uint8Array([1, 0, 1]),
 };
 
+// Key generation dominates the SCEP service tests. Keys are read-only inputs:
+// certificates and PKCSReq messages are rebuilt per test, and the pool rotates
+// so consecutive key requests inside one test always get distinct pairs.
+let keyPool: CryptoKeyPair[] | undefined;
+let keyCursor = 0;
+
 export async function generateKeyPair(): Promise<CryptoKeyPair> {
-  return crypto.subtle.generateKey(ALGORITHM, true, ["sign", "verify"] as const);
+  keyPool ??= await Promise.all(
+    Array.from({ length: 6 }, () =>
+      crypto.subtle.generateKey(ALGORITHM, true, ["sign", "verify"] as const),
+    ),
+  );
+  const pair = keyPool[keyCursor % keyPool.length]!;
+  keyCursor += 1;
+
+  return pair;
 }
 
 export async function createTestCaCert(

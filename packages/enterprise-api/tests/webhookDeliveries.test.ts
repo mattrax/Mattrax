@@ -187,7 +187,7 @@ describe("webhook delivery history", () => {
       responseStatus: 200,
     });
     expect(first.deliveries[0]).not.toHaveProperty("payload");
-    expect(first.nextCursor).toEqual(expect.any(String));
+    expect(first.nextCursor).toEqual(expect.stringMatching(/^[A-Za-z0-9_-]+$/));
 
     const second = await call<WebhookDeliveriesResponse>(
       service,

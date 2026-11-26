@@ -390,14 +390,32 @@ describe("HttpStripeClient", () => {
     expect(signal?.aborted).toBe(true);
   });
 
-  it.each([
-    ["non-JSON", new Response("not json", { status: 200 })],
-    ["missing id", json({})],
-    ["wrong id type", json({ id: 42 })],
-  ])("fails a malformed 200 as a typed Stripe error: %s", async (_name, response) => {
+  it("fails a malformed 200 as a typed Stripe error: non-JSON", async () => {
     const client = StripeService.make("sk_test", {
       maxNetworkRetries: 0,
-      fetch: async () => response,
+      fetch: async () => new Response("not json", { status: 200 }),
+    });
+
+    await expect(
+      Effect.runPromise(Effect.flip(client.customers.create({ name: "Acme" }))),
+    ).resolves.toMatchObject({ _tag: "StripeUnknownError" });
+  });
+
+  it("fails a malformed 200 as a typed Stripe error: missing id", async () => {
+    const client = StripeService.make("sk_test", {
+      maxNetworkRetries: 0,
+      fetch: async () => json({}),
+    });
+
+    await expect(
+      Effect.runPromise(Effect.flip(client.customers.create({ name: "Acme" }))),
+    ).resolves.toMatchObject({ _tag: "StripeUnknownError" });
+  });
+
+  it("fails a malformed 200 as a typed Stripe error: wrong id type", async () => {
+    const client = StripeService.make("sk_test", {
+      maxNetworkRetries: 0,
+      fetch: async () => json({ id: 42 }),
     });
 
     await expect(
@@ -587,12 +605,42 @@ describe("verifyStripeSignature", () => {
     expect(error).toMatchObject({ message: "Timestamp outside the tolerance zone" });
   });
 
-  it.each([
-    "not json",
-    JSON.stringify(null),
-    JSON.stringify({ id: "evt_1", type: "customer.created" }),
-    JSON.stringify({ id: "evt_1", type: "customer.created", data: { object: null } }),
-  ])("rejects an authenticated malformed event payload: %s", async (body) => {
+  it("rejects an authenticated malformed event payload: a body that is not JSON", async () => {
+    const body = "not json";
+
+    await expect(
+      Effect.runPromise(Effect.flip(verifyAt(body, signingHeader(body, secret, nowSeconds)))),
+    ).resolves.toMatchObject({
+      type: "StripeInvalidRequestError",
+      message: "Invalid Stripe event payload",
+    });
+  });
+
+  it("rejects an authenticated malformed event payload: a JSON null", async () => {
+    const body = "null";
+
+    await expect(
+      Effect.runPromise(Effect.flip(verifyAt(body, signingHeader(body, secret, nowSeconds)))),
+    ).resolves.toMatchObject({
+      type: "StripeInvalidRequestError",
+      message: "Invalid Stripe event payload",
+    });
+  });
+
+  it("rejects an authenticated malformed event payload: an event without a data object", async () => {
+    const body = '{"id":"evt_1","type":"customer.created"}';
+
+    await expect(
+      Effect.runPromise(Effect.flip(verifyAt(body, signingHeader(body, secret, nowSeconds)))),
+    ).resolves.toMatchObject({
+      type: "StripeInvalidRequestError",
+      message: "Invalid Stripe event payload",
+    });
+  });
+
+  it("rejects an authenticated malformed event payload: an event with a null data object", async () => {
+    const body = '{"id":"evt_1","type":"customer.created","data":{"object":null}}';
+
     await expect(
       Effect.runPromise(Effect.flip(verifyAt(body, signingHeader(body, secret, nowSeconds)))),
     ).resolves.toMatchObject({
@@ -605,79 +653,97 @@ describe("verifyStripeSignature", () => {
     const digestFor = (timestamp: number, signingSecret = secret) =>
       createHmac("sha256", signingSecret).update(`${timestamp}.${payload}`).digest("hex");
 
-    type Case = {
-      readonly name: string;
-      readonly header: string;
-      readonly secret?: string;
-      /** `"accept"` or the expected rejection message. */
-      readonly expected: "accept" | string;
-    };
+    it("accepts a valid signature at the exact clock", async () => {
+      const verification = verifyAt(payload, `t=${nowSeconds},v1=${digestFor(nowSeconds)}`);
 
-    const cases: Case[] = [
-      {
-        name: "accepts a valid signature at the exact clock",
-        header: `t=${nowSeconds},v1=${digestFor(nowSeconds)}`,
-        expected: "accept",
-      },
-      {
-        name: "rejects a header with no timestamp",
-        header: `v1=${digestFor(nowSeconds)}`,
-        expected: "Invalid signature",
-      },
-      {
-        name: "rejects a non-numeric timestamp",
-        header: `t=not-a-number,v1=${digestFor(nowSeconds)}`,
-        expected: "Invalid signature",
-      },
-      {
-        name: "rejects the epoch timestamp (t=0)",
-        header: `t=0,v1=${digestFor(0)}`,
-        expected: "Timestamp outside the tolerance zone",
-      },
-      {
-        name: "rejects a timestamp 301 seconds old",
-        header: `t=${nowSeconds - 301},v1=${digestFor(nowSeconds - 301)}`,
-        expected: "Timestamp outside the tolerance zone",
-      },
-      {
-        name: "accepts a timestamp exactly 300 seconds old",
-        header: `t=${nowSeconds - 300},v1=${digestFor(nowSeconds - 300)}`,
-        expected: "accept",
-      },
-      {
-        name: "rejects a timestamp 301 seconds in the future",
-        header: `t=${nowSeconds + 301},v1=${digestFor(nowSeconds + 301)}`,
-        expected: "Timestamp outside the tolerance zone",
-      },
-      {
-        name: "accepts when one of several v1 values matches",
-        header: `t=${nowSeconds},v1=${"0".repeat(64)},v1=${digestFor(nowSeconds)}`,
-        expected: "accept",
-      },
-      {
-        name: "rejects an empty v1 value",
-        header: `t=${nowSeconds},v1=`,
-        expected: "No matching signature",
-      },
-      {
-        name: "rejects an empty signing secret",
-        header: `t=${nowSeconds},v1=${digestFor(nowSeconds, "")}`,
-        secret: "",
-        expected: "Invalid signature",
-      },
-    ];
+      await expect(Effect.runPromise(verification)).resolves.toMatchObject({ id: "evt_1" });
+    });
 
-    it.each(cases)("$name", async ({ header, secret: signingSecret, expected }) => {
-      const verification = verifyAt(payload, header, signingSecret ?? secret);
+    it("rejects a header with no timestamp", async () => {
+      const verification = verifyAt(payload, `v1=${digestFor(nowSeconds)}`);
 
-      if (expected === "accept") {
-        await expect(Effect.runPromise(verification)).resolves.toMatchObject({ id: "evt_1" });
-      } else {
-        await expect(Effect.runPromise(Effect.flip(verification))).resolves.toMatchObject({
-          type: "StripeInvalidRequestError",
-          message: expected,
-        });
-      }
+      await expect(Effect.runPromise(Effect.flip(verification))).resolves.toMatchObject({
+        type: "StripeInvalidRequestError",
+        message: "Invalid signature",
+      });
+    });
+
+    it("rejects a non-numeric timestamp", async () => {
+      const verification = verifyAt(payload, `t=not-a-number,v1=${digestFor(nowSeconds)}`);
+
+      await expect(Effect.runPromise(Effect.flip(verification))).resolves.toMatchObject({
+        type: "StripeInvalidRequestError",
+        message: "Invalid signature",
+      });
+    });
+
+    it("rejects the epoch timestamp (t=0)", async () => {
+      const verification = verifyAt(payload, `t=0,v1=${digestFor(0)}`);
+
+      await expect(Effect.runPromise(Effect.flip(verification))).resolves.toMatchObject({
+        type: "StripeInvalidRequestError",
+        message: "Timestamp outside the tolerance zone",
+      });
+    });
+
+    it("rejects a timestamp 301 seconds old", async () => {
+      const verification = verifyAt(
+        payload,
+        `t=${nowSeconds - 301},v1=${digestFor(nowSeconds - 301)}`,
+      );
+
+      await expect(Effect.runPromise(Effect.flip(verification))).resolves.toMatchObject({
+        type: "StripeInvalidRequestError",
+        message: "Timestamp outside the tolerance zone",
+      });
+    });
+
+    it("accepts a timestamp exactly 300 seconds old", async () => {
+      const verification = verifyAt(
+        payload,
+        `t=${nowSeconds - 300},v1=${digestFor(nowSeconds - 300)}`,
+      );
+
+      await expect(Effect.runPromise(verification)).resolves.toMatchObject({ id: "evt_1" });
+    });
+
+    it("rejects a timestamp 301 seconds in the future", async () => {
+      const verification = verifyAt(
+        payload,
+        `t=${nowSeconds + 301},v1=${digestFor(nowSeconds + 301)}`,
+      );
+
+      await expect(Effect.runPromise(Effect.flip(verification))).resolves.toMatchObject({
+        type: "StripeInvalidRequestError",
+        message: "Timestamp outside the tolerance zone",
+      });
+    });
+
+    it("accepts when one of several v1 values matches", async () => {
+      const verification = verifyAt(
+        payload,
+        `t=${nowSeconds},v1=${"0".repeat(64)},v1=${digestFor(nowSeconds)}`,
+      );
+
+      await expect(Effect.runPromise(verification)).resolves.toMatchObject({ id: "evt_1" });
+    });
+
+    it("rejects an empty v1 value", async () => {
+      const verification = verifyAt(payload, `t=${nowSeconds},v1=`);
+
+      await expect(Effect.runPromise(Effect.flip(verification))).resolves.toMatchObject({
+        type: "StripeInvalidRequestError",
+        message: "No matching signature",
+      });
+    });
+
+    it("rejects an empty signing secret", async () => {
+      const verification = verifyAt(payload, `t=${nowSeconds},v1=${digestFor(nowSeconds, "")}`, "");
+
+      await expect(Effect.runPromise(Effect.flip(verification))).resolves.toMatchObject({
+        type: "StripeInvalidRequestError",
+        message: "Invalid signature",
+      });
     });
   });
 });

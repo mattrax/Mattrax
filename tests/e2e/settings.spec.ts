@@ -340,10 +340,8 @@ test.describe("tenant settings", () => {
     await expect(result).toHaveCount(0);
     await dialog.getByRole("button", { name: "Use JP" }).click();
     await expect(dialog).toBeHidden({ timeout: 15_000 });
-    // The dialog's dismiss layer lingers while it animates out; a click in that
-    // window is treated as an outside press and swallowed.
-    await page.waitForTimeout(350);
-
+    // toContainText retries until the picker has committed and the dialog's
+    // dismiss layer has finished animating out.
     await expect(trigger).toContainText("Japan");
     await saveTenantSettings(page);
 

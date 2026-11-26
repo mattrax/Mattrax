@@ -10,21 +10,18 @@ import { normalisePath } from "./rateLimit.js";
 const chrome =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-const delay = (millis: number) =>
-  new Promise((resolve) => {
-    setTimeout(resolve, millis);
+/** Let the detached recorder run without a wall-clock sleep. */
+const flush = () =>
+  new Promise<void>((resolve) => {
+    setImmediate(resolve);
   });
-
-/** The recorder runs detached, so give its fiber a moment to finish. */
-const waitForRows = async (rows: Array<Schema.Json>, expected: number) => {
-  for (let attempt = 0; attempt < 100 && rows.length < expected; attempt++) await delay(5);
-};
 
 /** Serve one request through a router that has the observer and a fake database. */
 const requestWith = async (
   rows: Array<Schema.Json>,
   response: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown>,
   path: string,
+  onWrite?: (row: Schema.Json) => void,
   headers: Record<string, string> = {
     "user-agent": chrome,
     "x-mattrax-client-address": "203.0.113.8",
@@ -32,7 +29,11 @@ const requestWith = async (
 ): Promise<Response> => {
   const db = {
     insert: () => ({
-      values: (row: Schema.Json) => Effect.sync(() => void rows.push(row)),
+      values: (row: Schema.Json) =>
+        Effect.sync(() => {
+          rows.push(row);
+          onWrite?.(row);
+        }),
     }),
     select: () => ({
       from: () => ({
@@ -73,12 +74,20 @@ const requestWith = async (
 };
 
 /** The routes the tests use answer with a fixed JSON body. */
-const request = (rows: Array<Schema.Json>, body: Schema.Json, path: string) =>
-  requestWith(rows, HttpServerResponse.json(body), path);
+const request = (
+  rows: Array<Schema.Json>,
+  body: Schema.Json,
+  path: string,
+  onWrite?: (row: Schema.Json) => void,
+) => requestWith(rows, HttpServerResponse.json(body), path, onWrite);
 
 describe("login attempt observer", () => {
   it("stores no address when only spoofable forwarding headers are present", async () => {
     const rows: Array<Schema.Json> = [];
+    let signalWrite!: () => void;
+    const written = new Promise<void>((resolve) => {
+      signalWrite = resolve;
+    });
     const body = {
       _tag: "Success",
       value: {
@@ -91,20 +100,30 @@ describe("login attempt observer", () => {
       },
     };
 
-    await requestWith(rows, HttpServerResponse.json(body), "/api/v1/completePasskeySignIn", {
-      "user-agent": chrome,
-      "cf-connecting-ip": "203.0.113.200",
-      "x-forwarded-for": "203.0.113.201",
-      "x-real-ip": "203.0.113.202",
-    });
+    await requestWith(
+      rows,
+      HttpServerResponse.json(body),
+      "/api/v1/completePasskeySignIn",
+      signalWrite,
+      {
+        "user-agent": chrome,
+        "cf-connecting-ip": "203.0.113.200",
+        "x-forwarded-for": "203.0.113.201",
+        "x-real-ip": "203.0.113.202",
+      },
+    );
 
-    await waitForRows(rows, 1);
+    await written;
 
     expect(rows).toMatchObject([{ accountId: "account-1", ip: null }]);
   });
 
   it("records a completed session without changing the response", async () => {
     const rows: Array<Schema.Json> = [];
+    let signalWrite!: () => void;
+    const written = new Promise<void>((resolve) => {
+      signalWrite = resolve;
+    });
 
     const body = {
       _tag: "Success",
@@ -118,12 +137,12 @@ describe("login attempt observer", () => {
       },
     };
 
-    const response = await request(rows, body, "/api/v1/completePasskeySignIn");
+    const response = await request(rows, body, "/api/v1/completePasskeySignIn", signalWrite);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(body);
 
-    await waitForRows(rows, 1);
+    await written;
 
     expect(rows).toMatchObject([
       {
@@ -139,6 +158,10 @@ describe("login attempt observer", () => {
 
   it("leaves a streamed completion body intact", async () => {
     const rows: Array<Schema.Json> = [];
+    let signalWrite!: () => void;
+    const written = new Promise<void>((resolve) => {
+      signalWrite = resolve;
+    });
 
     const body = {
       _tag: "Success",
@@ -165,18 +188,23 @@ describe("login attempt observer", () => {
         ),
       ),
       "/api/v1/completePasskeySignIn",
+      signalWrite,
     );
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(body);
 
-    await waitForRows(rows, 1);
+    await written;
 
     expect(rows).toHaveLength(1);
   });
 
   it("matches the route after case, duplicate-slash and trailing-slash normalisation", async () => {
     const rows: Array<Schema.Json> = [];
+    let signalWrite!: () => void;
+    const written = new Promise<void>((resolve) => {
+      signalWrite = resolve;
+    });
 
     const response = await request(
       rows,
@@ -192,11 +220,12 @@ describe("login attempt observer", () => {
         },
       },
       "/API/V1//completePasskeySignIn/",
+      signalWrite,
     );
 
     expect(response.status).toBe(200);
 
-    await waitForRows(rows, 1);
+    await written;
 
     expect(rows).toHaveLength(1);
     expect(signInFactorForPath(normalisePath("/API/V1//completePasskeySignIn/"))).toBe("passkey");
@@ -211,7 +240,7 @@ describe("login attempt observer", () => {
       "/api/v1/completePasskeySignIn",
     );
 
-    await delay(25);
+    await flush();
 
     expect(rows).toEqual([]);
   });
@@ -221,7 +250,7 @@ describe("login attempt observer", () => {
 
     await request(rows, { _tag: "Success" }, "/api/v1/getSession");
 
-    await delay(25);
+    await flush();
 
     expect(rows).toEqual([]);
   });

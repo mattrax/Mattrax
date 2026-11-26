@@ -103,13 +103,16 @@ describe("entity summary cache", () => {
     });
     full.resolve(authoritative);
 
-    await vi.waitFor(() => {
-      expect(observer.getCurrentResult()).toMatchObject({
-        status: "success",
-        isPlaceholderData: false,
-        data: authoritative,
-      });
-    });
+    await vi.waitFor(
+      () => {
+        expect(observer.getCurrentResult()).toMatchObject({
+          status: "success",
+          isPlaceholderData: false,
+          data: authoritative,
+        });
+      },
+      { interval: 1 },
+    );
     expect(client.getQueryData(detailKey)).toEqual(authoritative);
     expect(entitySummaryPlaceholder(client, tenantId, "device", row.id)).toEqual(row);
 
@@ -139,7 +142,9 @@ describe("entity summary cache", () => {
       data: row,
     });
 
-    await vi.waitFor(() => expect(observer.getCurrentResult().status).toBe("error"));
+    await vi.waitFor(() => expect(observer.getCurrentResult().status).toBe("error"), {
+      interval: 1,
+    });
     expect(observer.getCurrentResult().data).toBeUndefined();
     expect(client.getQueryData(detailKey)).toBeUndefined();
 

@@ -131,7 +131,7 @@ describe("Node Effect HTTP bridge", () => {
               pulled = true;
               controller.enqueue(new TextEncoder().encode("prefix-"));
             } else {
-              setTimeout(() => controller.error(new Error("stream failed")), 10);
+              setTimeout(() => controller.error(new Error("stream failed")), 1);
             }
           },
         });

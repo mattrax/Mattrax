@@ -25,14 +25,25 @@ type SnapshotEntry = {
 
 type Snapshot = { readonly ddl: ReadonlyArray<SnapshotEntry> };
 
+let cachedSnapshot: Snapshot | undefined;
+
 const latestSnapshot = (): Snapshot => {
-  const names = readdirSync(migrationsDir, { withFileTypes: true })
+  // The snapshot is read-only for this whole file. Parsing this JSON for every
+  // assertion is the dominant cost of these otherwise pure checks.
+  cachedSnapshot ??= JSON.parse(
+    readFileSync(join(migrationsDir, cachedMigrationNames().at(-1)!, "snapshot.json"), "utf8"),
+  );
+
+  return cachedSnapshot;
+};
+
+let cachedNames: string[] | undefined;
+
+const cachedMigrationNames = () =>
+  (cachedNames ??= readdirSync(migrationsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
-    .sort();
-
-  return JSON.parse(readFileSync(join(migrationsDir, names.at(-1)!, "snapshot.json"), "utf8"));
-};
+    .sort());
 
 const columnNames = (entry: SnapshotEntry): ReadonlyArray<string> =>
   (entry.columns ?? []).map((column) => {

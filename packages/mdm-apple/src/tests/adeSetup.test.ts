@@ -142,7 +142,11 @@ describe("ADE setup gating", () => {
       shortName: "mattrax-admin",
       hidden: true,
     });
-    expect(payload.AutoSetupAdminAccounts[0].passwordHash).toEqual(expect.any(String));
+    // Apple's passwordHash is a plist XML document encoded as base64.
+    expect(payload.AutoSetupAdminAccounts[0].passwordHash).toEqual(
+      expect.stringMatching(/^[A-Za-z0-9+/]+={0,2}$/),
+    );
+    expect(atob(payload.AutoSetupAdminAccounts[0].passwordHash)).toContain("SALTED-SHA512-PBKDF2");
 
     const secret = dbRows(db, tableName(schema.deviceSecret)).find(
       (row) => row.kind === "local_admin_password",

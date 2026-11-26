@@ -119,11 +119,20 @@ test.describe("authenticator MFA", () => {
     expect(beforeMfa).toBe(401);
     await page.locator("#mfa-code").fill(await freshTotpCode(manualKey));
     await page.getByRole("button", { name: /^continue$/i }).click();
-    await page.waitForTimeout(600);
 
-    // A code can land on a replay-protected step boundary; retry once the way
-    // a real user would.
-    if (page.url().includes("/login")) {
+    // A code can land on a replay-protected step boundary. Wait for the outcome
+    // the page actually shows, then retry once the way a real user would.
+    const totpOutcome = await Promise.race([
+      page
+        .waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 15_000 })
+        .then(() => "signed-in"),
+      page
+        .locator("#mfa-error")
+        .waitFor({ timeout: 15_000 })
+        .then(() => "rejected"),
+    ]);
+
+    if (totpOutcome === "rejected") {
       await page.locator("#mfa-code").fill(await freshTotpCode(manualKey));
       await page.getByRole("button", { name: /^continue$/i }).click();
     }
@@ -139,9 +148,18 @@ test.describe("authenticator MFA", () => {
     await page.getByRole("button", { name: /recovery code/i }).click();
     await page.locator("#mfa-code").fill(recoveryCodes[0]);
     await page.getByRole("button", { name: /^continue$/i }).click();
-    await page.waitForTimeout(600);
 
-    if (page.url().includes("/login")) {
+    const recoveryOutcome = await Promise.race([
+      page
+        .waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 15_000 })
+        .then(() => "signed-in"),
+      page
+        .locator("#mfa-error")
+        .waitFor({ timeout: 15_000 })
+        .then(() => "rejected"),
+    ]);
+
+    if (recoveryOutcome === "rejected") {
       await page.locator("#mfa-code").fill(recoveryCodes[1]);
       await page.getByRole("button", { name: /^continue$/i }).click();
     }

@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit } from "effect";
 import { getTableName } from "drizzle-orm";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import * as pkijs from "pkijs";
 import { Db } from "@mattrax/enterprise-core";
 import { TestConsole } from "effect/testing";
@@ -19,6 +19,12 @@ import { makeDb, runEffect } from "./helpers.js";
 const DAY = 24 * 60 * 60 * 1000;
 
 const now = new Date("2026-11-10T12:00:00.000Z");
+
+// RSA key generation is paid by whichever test runs first under shuffle.
+// Warm the WebCrypto path once per file so no single test inherits the cost.
+beforeAll(async () => {
+  await runEffect(generateScepCa("warmup", { now }));
+});
 
 const run = (db: ReturnType<typeof makeDb>) =>
   runEffect(
@@ -288,7 +294,9 @@ describe("maintenance bounded retention", () => {
   it("keysets more than 500 expired sessions interspersed among live sessions", async () => {
     const db = makeDb();
     const queries = observeMaintenanceQueries(db);
-    const total = 1_501;
+    // The smallest alternating set with more than one full batch of expired
+    // sessions: 501 expired, 500 live.
+    const total = 2 * MAINTENANCE_DELETE_BATCH_SIZE + 1;
     const expiredCount = Math.ceil(total / 2);
     const sessionId = (index: number) =>
       "session-" + String((index * 7919) % 100_000).padStart(6, "0");

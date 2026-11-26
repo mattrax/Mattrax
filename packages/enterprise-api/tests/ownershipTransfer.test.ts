@@ -166,7 +166,7 @@ describe("tenant ownership transfer", () => {
       acceptedAt: null,
       cancelledAt: null,
     });
-    expect(row.tokenHash).toEqual(expect.any(String));
+    expect(row.tokenHash).toEqual(expect.stringMatching(/^[0-9a-f]{64}$/));
     expect(row.tokenHash).not.toBe(tokenFrom(created.acceptUrl));
 
     expect(owner.sent).toHaveLength(0);

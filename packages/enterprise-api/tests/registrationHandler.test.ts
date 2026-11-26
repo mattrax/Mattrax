@@ -95,7 +95,7 @@ describe("requestRegistrationCode Email Verification API", () => {
     );
 
     expect(result.body).toMatchObject({ status: "ok", emailSent: false, verified: true });
-    expect(result.body.grant).toEqual(expect.any(String));
+    expect(result.body.grant).toEqual(expect.stringMatching(/^[0-9a-f]{64}$/));
     expect(result.headers["set-cookie"]).toContain("mattrax_register_nonce=");
     expect(result.headers["set-cookie"]).not.toContain("nonce-1");
     expect(sent).toHaveLength(0);
@@ -199,7 +199,9 @@ describe("requestRegistrationCode Email Verification API", () => {
     };
 
     expect(body.verified).toBe(true);
-    expect(body.nonce).toEqual(expect.any(String));
+    expect(body.nonce).toEqual(
+      expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+    );
     expect(cookie).toContain(`mattrax_register_nonce=${body.nonce}`);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("Secure");

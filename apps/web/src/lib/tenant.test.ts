@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+// Vitest SSR resolution picks @solidjs/web's server build; these are browser
+// directory tests, so pin the web build's isServer/getRequestEvent.
 vi.mock("@solidjs/web", () => ({ isServer: false, getRequestEvent: () => undefined }));
+
 import {
   canonicalTenantParam,
   canonicalTenantSegment,

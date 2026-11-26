@@ -268,7 +268,7 @@ describe("services Node HTTP server", () => {
         Effect.succeed(
           HttpServerResponse.stream(
             Stream.make(new TextEncoder().encode("partial")).pipe(
-              Stream.concat(Stream.fromEffect(Effect.sleep("50 millis")).pipe(Stream.drain)),
+              Stream.concat(Stream.fromEffect(Effect.sleep("5 millis")).pipe(Stream.drain)),
               Stream.concat(Stream.fail(new Error("stream failed"))),
             ),
           ),

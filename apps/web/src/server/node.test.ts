@@ -8,23 +8,32 @@ vi.mock("node:fs/promises", () => ({ stat: vi.fn() }));
 
 const clientRoot = path.resolve(import.meta.dirname, "../client");
 const fileStats = (size = 1): Stats => ({ isFile: () => true, size }) as Stats;
+const missing = (): never => {
+  throw new Error("missing");
+};
 
 describe("Node static files", () => {
   beforeEach(() => {
     vi.mocked(stat).mockReset();
   });
 
-  it.each([
-    "/",
-    "/privacy/",
-    "/dashboard",
-    "/t/acme/devices/device-1",
-    "/login",
-    "/%64ashboard",
-    "/api/v1/bootstrap",
-  ])("does not probe dynamic page %s", async (pathname) => {
-    await expect(findStaticFile(pathname)).resolves.toBeUndefined();
-    expect(stat).not.toHaveBeenCalled();
+  describe("dynamic pages", () => {
+    const paths = [
+      "/",
+      "/privacy/",
+      "/dashboard",
+      "/t/acme/devices/device-1",
+      "/login",
+      "/%64ashboard",
+      "/api/v1/bootstrap",
+    ];
+
+    for (const pathname of paths) {
+      it(`does not probe ${pathname}`, async () => {
+        await expect(findStaticFile(pathname)).resolves.toBeUndefined();
+        expect(stat).not.toHaveBeenCalled();
+      });
+    }
   });
 
   it("still probes static files that only share a dynamic prefix", async () => {
@@ -34,34 +43,44 @@ describe("Node static files", () => {
     expect(stat).toHaveBeenCalledExactlyOnceWith(path.join(clientRoot, "login-theme.css"));
   });
 
-  it.each([
-    {
-      pathname: "/docs/getting-started",
-      existing: ["index.html", "getting-started", "getting-started.html"],
-      expected: "docs/getting-started/index.html",
-    },
-    {
-      pathname: "/guide",
-      existing: ["guide", "guide.html"],
-      expected: "guide",
-    },
-    {
-      pathname: "/guide",
-      existing: ["guide.html"],
-      expected: "guide.html",
-    },
-  ])("selects $expected in asset-layer precedence", async ({ pathname, existing, expected }) => {
-    vi.mocked(stat).mockImplementation(async (file) => {
-      const name = path.basename(String(file));
-      if (!existing.includes(name)) throw new Error("missing");
+  describe("asset-layer precedence", () => {
+    const cases = [
+      {
+        name: "an index sibling for a docs page",
+        pathname: "/docs/getting-started",
+        existing: ["index.html", "getting-started", "getting-started.html"],
+        expected: "docs/getting-started/index.html",
+      },
+      {
+        name: "an exact file over its html sibling",
+        pathname: "/guide",
+        existing: ["guide", "guide.html"],
+        expected: "guide",
+      },
+      {
+        name: "an html sibling when no exact file exists",
+        pathname: "/guide",
+        existing: ["guide.html"],
+        expected: "guide.html",
+      },
+    ];
 
-      return fileStats(existing.indexOf(name) + 1);
-    });
+    for (const { name, pathname, existing, expected } of cases) {
+      it(name, async () => {
+        vi.mocked(stat).mockImplementation(async (file) => {
+          const basename = path.basename(String(file));
 
-    await expect(findStaticFile(pathname)).resolves.toEqual({
-      path: path.join(clientRoot, expected),
-      size: existing.indexOf(path.basename(expected)) + 1,
-    });
+          if (!existing.includes(basename)) return missing();
+
+          return fileStats(existing.indexOf(basename) + 1);
+        });
+
+        await expect(findStaticFile(pathname)).resolves.toEqual({
+          path: path.join(clientRoot, expected),
+          size: existing.indexOf(path.basename(expected)) + 1,
+        });
+      });
+    }
   });
 
   it("probes candidates concurrently without changing docs precedence", async () => {
@@ -79,9 +98,9 @@ describe("Node static files", () => {
     expect(index).toBe(path.join(clientRoot, "guide/index.html"));
     expect(exact).toBe(path.join(clientRoot, "guide"));
     expect(html).toBe(path.join(clientRoot, "guide.html"));
-    releases.get(html!)!({ isFile: () => true, size: 3 } as Stats);
-    releases.get(exact!)!({ isFile: () => true, size: 2 } as Stats);
-    releases.get(index!)!({ isFile: () => true, size: 1 } as Stats);
+    releases.get(html!)!(fileStats(3));
+    releases.get(exact!)!(fileStats(2));
+    releases.get(index!)!(fileStats(1));
 
     await expect(result).resolves.toEqual({ path: index, size: 1 });
   });
