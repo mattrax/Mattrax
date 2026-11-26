@@ -5,7 +5,7 @@ export type ApplicationView = "applications" | "catalogue";
 
 /** The two surfaces over the same delivery pipeline: the tenant's entries and
  * the vendor catalogue they are added from. */
-export function ApplicationViewTabs(props: { tenantId: string; active: ApplicationView }) {
+export default function ApplicationViewTabs(props: { tenantId: string; active: ApplicationView }) {
   const tabs = () => [
     {
       id: "applications" as const,
@@ -34,8 +34,8 @@ export function ApplicationViewTabs(props: { tenantId: string; active: Applicati
               aria-current={current ? "page" : undefined}
               class={
                 current
-                  ? "relative flex h-8 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-brand px-2.5 text-[12.5px] font-medium text-foreground transition-colors duration-[var(--duration-hover)] ease-swift"
-                  : "relative flex h-8 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-transparent px-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/50 hover:text-foreground"
+                  ? "relative flex h-8 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-brand px-2.5 text-xs font-medium text-foreground transition-colors duration-(--duration-hover) ease-swift"
+                  : "relative flex h-8 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 border-transparent px-2.5 text-xs font-medium text-muted-foreground transition-colors duration-(--duration-hover) ease-swift hover:bg-muted/50 hover:text-foreground"
               }
             >
               {tab.label}

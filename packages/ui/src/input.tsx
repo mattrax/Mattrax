@@ -3,7 +3,7 @@ import { splitProps } from "./lib/solid";
 import { cn } from "./lib/cn";
 
 const fieldBase =
-  "w-full rounded-md border border-input bg-card px-2.5 text-[13px] text-foreground shadow-[0_1px_1px_rgb(24_24_22/0.02)] outline-none transition-[border-color,box-shadow,background-color] duration-150 placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/15";
+  "w-full rounded-md border border-input bg-card px-2.5 text-xs text-foreground shadow-card outline-none transition duration-150 placeholder:text-subtle-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/15";
 
 function Input(props: ComponentProps<"input">) {
   const [local, others] = splitProps(props, ["class", "type"]);
@@ -37,7 +37,7 @@ function Label(props: ComponentProps<"label">) {
     <label
       data-slot="label"
       class={cn(
-        "flex select-none items-center gap-1 text-[12px] font-[500] text-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-60",
+        "flex select-none items-center gap-1 text-xs font-medium text-foreground peer-disabled:cursor-not-allowed peer-disabled:opacity-60",
         local.class,
       )}
       {...others}
@@ -57,7 +57,7 @@ function FieldHint(props: ComponentProps<"p">) {
   return (
     <p
       data-slot="field-hint"
-      class={cn("text-[11.5px] leading-4 text-muted-foreground", local.class)}
+      class={cn("text-xs leading-4 text-muted-foreground", local.class)}
       {...others}
     />
   );
@@ -70,7 +70,7 @@ function FieldError(props: ComponentProps<"p">) {
     <p
       data-slot="field-error"
       role="alert"
-      class={cn("text-[11.5px] leading-4 text-destructive", local.class)}
+      class={cn("text-xs leading-4 text-destructive", local.class)}
       {...others}
     />
   );

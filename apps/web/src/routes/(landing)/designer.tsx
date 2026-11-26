@@ -1,15 +1,11 @@
 import { lazy, Loading } from "solid-js";
 import { LoadingState } from "~/components/ui";
 
-const LazyPolicyDesigner = lazy(() =>
-  import("~/components/mdm/policy-designer").then((module) => ({
-    default: module.PolicyDesigner,
-  })),
-);
+const LazyPolicyDesigner = lazy(() => import("~/components/mdm/policy-designer"));
 
 export default function DesignerPage() {
   return (
-    <main class="flex h-[calc(100svh-4rem)] min-h-0 w-full flex-col overflow-hidden bg-stone-50">
+    <main style="--designer-height: calc(100svh - 4rem)" class="flex h-(--designer-height) min-h-0 w-full flex-col overflow-hidden bg-page">
       <h1 class="sr-only">MDM policy designer</h1>
       <Loading
         fallback={
