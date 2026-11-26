@@ -4,11 +4,12 @@ import type {
   OnboardingFollowUpEmailInput,
   WelcomeEmailInput,
 } from "../src/Tenant/onboardingEmail.ts";
+import { buttonTextColor, contrastRatio } from "../src/Mail/emailTemplate.ts";
 
 const welcome: WelcomeEmailInput = {
   firstName: "Ada",
   dashboardUrl: "https://app.mattrax.app/dashboard",
-  enrollUrl: "https://app.mattrax.app/enrol?platform=apple",
+  createTenantUrl: "https://app.mattrax.app/tenants/new",
   replyTo: "oscar@mattrax.app",
 };
 
@@ -16,7 +17,7 @@ const followUp: OnboardingFollowUpEmailInput = {
   firstName: "Ada",
   tenantName: "Acme",
   dashboardUrl: "https://app.mattrax.app/dashboard",
-  enrollUrl: "https://app.mattrax.app/enrol?platform=apple",
+  enrollUrl: "https://app.mattrax.app/t/acme/enrollment",
   replyTo: "oscar@mattrax.app",
   daysSinceCreation: 7,
 };
@@ -37,8 +38,10 @@ describe("welcomeEmail", () => {
   });
 
   it("greets by first name when one is present", () => {
-    expect(welcomeEmail(welcome).text).toContain("Hey Ada,");
-    expect(welcomeEmail(welcome).html).toContain("Hey Ada,");
+    const email = welcomeEmail(welcome);
+
+    expect(email.text).toContain("Hey Ada,");
+    expect(email.html).toContain("Hey Ada,");
   });
 
   it("falls back to a plain greeting without a first name", () => {
@@ -49,29 +52,65 @@ describe("welcomeEmail", () => {
     expect(email.html).not.toContain("undefined");
   });
 
-  it("puts the enrolment and dashboard links in both bodies", () => {
+  it("links to tenant creation and the dashboard in both bodies", () => {
     const email = welcomeEmail(welcome);
 
-    expect(email.text).toContain(welcome.enrollUrl);
+    expect(email.text).toContain(welcome.createTenantUrl);
     expect(email.text).toContain(welcome.dashboardUrl);
-    expect(email.html).toContain(`href="${welcome.enrollUrl}"`);
+    expect(email.html).toContain(`href="${welcome.createTenantUrl}"`);
     expect(email.html).toContain(`href="${welcome.dashboardUrl}"`);
+  });
+
+  it("starts with creating a tenant, not a tenantless enrolment link", () => {
+    const email = welcomeEmail(welcome);
+
+    expect(email.text).toContain(`Create your tenant: ${welcome.createTenantUrl}`);
+    expect(email.html).toContain(`href="${welcome.createTenantUrl}"`);
+    expect(email.text).toContain("Create your tenant");
+    expect(email.text).toContain("Set a baseline policy");
+    expect(email.text).toContain("Enrol your first device");
+    expect(email.text).not.toContain("/enrollment");
+    expect(email.html).not.toContain("/enrollment");
+  });
+
+  it("keeps the deprecated enrolment input as an additional step link", () => {
+    const enrollUrl = "https://app.mattrax.app/t/acme/enrollment";
+
+    const email = welcomeEmail({ ...welcome, enrollUrl });
+
+    expect(email.text).toContain(`Open enrolment: ${enrollUrl}`);
+    expect(email.html).toContain(`href="${enrollUrl}"`);
+  });
+
+  it("defaults tenant creation to /tenants/new on the dashboard origin", () => {
+    const email = welcomeEmail({ ...welcome, createTenantUrl: null });
+
+    expect(email.text).toContain("Create your tenant: https://app.mattrax.app/tenants/new");
+    expect(email.html).toContain('href="https://app.mattrax.app/tenants/new"');
   });
 
   it("renders the reply-to line and address", () => {
     const email = welcomeEmail(welcome);
 
-    expect(email.text).toContain("Reply to this email and it comes straight to me.");
+    expect(email.text).toContain("Questions? Reply to this email and it comes straight to me.");
+    expect(email.text).toContain("I read every reply.");
     expect(email.text).toContain("Replies go to oscar@mattrax.app.");
-    expect(email.text).toContain("what you expected versus what actually happened");
     expect(email.html).toContain("Reply to this email and it comes straight to me.");
   });
 
-  it("signs off as Oscar, Founder of Mattrax", () => {
+  it("signs off as Oscar, Founder of Mattrax for the default brand", () => {
     const email = welcomeEmail(welcome);
 
     expect(email.text).toContain("Oscar\nFounder, Mattrax");
-    expect(email.html).toContain("Oscar<br />Founder, Mattrax");
+    expect(email.html).toContain("Founder, Mattrax");
+  });
+
+  it("does not claim to be a founder of a white-label brand", () => {
+    const email = welcomeEmail({ ...welcome, brandName: "Acme Device Management" });
+
+    expect(email.text).toContain("Oscar\nThe Mattrax team");
+    expect(email.text).not.toContain("Founder, Acme");
+    expect(email.html).toContain("The Mattrax team");
   });
 
   it("escapes HTML in the first name", () => {
@@ -94,37 +133,42 @@ describe("welcomeEmail", () => {
     expect(email.html).not.toMatch(/[\r\n]Bcc:/);
   });
 
-  it("has exactly one primary CTA pointing at enrolment", () => {
+  it("has exactly one primary CTA, pointing at the dashboard", () => {
     const email = welcomeEmail(welcome);
     const ctas = email.html.match(/data-cta="primary"/g) ?? [];
 
     expect(ctas).toHaveLength(1);
     expect(email.html).toMatch(
-      /<a data-cta="primary" href="https:\/\/app\.mattrax\.app\/enrol\?platform=apple"/,
-    );
-  });
-
-  it("falls back to the dashboard when no enrolment URL is given", () => {
-    const email = welcomeEmail({ ...welcome, enrollUrl: null });
-
-    expect(email.html).toMatch(
       /<a data-cta="primary" href="https:\/\/app\.mattrax\.app\/dashboard"/,
     );
-    expect(email.text).toContain(`Enrol your first device: ${welcome.dashboardUrl}`);
+    expect(email.text).toContain(`Open your dashboard: ${welcome.dashboardUrl}`);
   });
 
-  it("shows the fallback URL as visible text", () => {
+  it("shows the dashboard URL as visible text", () => {
     const email = welcomeEmail(welcome);
 
-    expect(email.html).toContain(welcome.enrollUrl);
+    expect(email.html).toContain(welcome.dashboardUrl);
     expect(email.html).toContain("Or paste this link into your browser:");
   });
 
-  it("keeps the welcome body between 150 and 200 words", () => {
-    const body = wordsBetween(welcomeEmail(welcome).text, "Thanks for signing up", "\n\nOscar\n");
+  it("links to the quick start on the dashboard origin", () => {
+    const email = welcomeEmail(welcome);
 
-    expect(body).toBeGreaterThanOrEqual(150);
-    expect(body).toBeLessThanOrEqual(200);
+    expect(email.text).toContain(
+      "Read the quick start: https://app.mattrax.app/docs/getting-started/quick-start",
+    );
+    expect(email.html).toContain('href="https://app.mattrax.app/docs/getting-started/quick-start"');
+  });
+
+  it("keeps the welcome body concise", () => {
+    const body = wordsBetween(
+      welcomeEmail(welcome).text,
+      "Your account is ready. Create a tenant",
+      "\n\nOscar\n",
+    );
+
+    expect(body).toBeGreaterThanOrEqual(70);
+    expect(body).toBeLessThanOrEqual(180);
   });
 
   it("includes support and unsubscribe details only when provided", () => {
@@ -163,9 +207,10 @@ describe("welcomeEmail", () => {
   it.each([
     ["relative dashboard", { dashboardUrl: "/dashboard" }],
     ["javascript dashboard", { dashboardUrl: "javascript:alert(1)" }],
-    ["relative enrolment", { enrollUrl: "/enrol" }],
-    ["ftp enrolment", { enrollUrl: "ftp://example.com/enrol" }],
+    ["relative tenant creation", { createTenantUrl: "/tenants/new" }],
+    ["ftp tenant creation", { createTenantUrl: "ftp://example.com/tenants/new" }],
     ["relative unsubscribe", { unsubscribeUrl: "/unsubscribe" }],
+    ["relative docs", { docsUrl: "/docs" }],
   ])("rejects an %s", (_label, patch) => {
     expect(() => welcomeEmail({ ...welcome, ...patch })).toThrow(/absolute http\(s\) URL/);
   });
@@ -183,6 +228,172 @@ describe("welcomeEmail", () => {
     expect(email.text).not.toContain("<");
     expect(email.html).toContain("<!doctype html>");
   });
+
+  it("uses the tenant brand name, colour and logo when supplied", () => {
+    const email = welcomeEmail({
+      ...welcome,
+      brandName: "Acme Device Management",
+      brandColor: "#2563EB",
+      logoUrl: "https://cdn.acme.test/logo.png?tenant=acme&size=2",
+      supportEmail: "help@acme.test",
+      accountEmail: "ada@acme.test",
+    });
+
+    expect(email.subject).toBe("Welcome to Acme Device Management");
+    expect(email.text).toContain("Acme Device Management");
+    expect(email.text).toContain(
+      "You're receiving this because the Acme Device Management account ada@acme.test was created.",
+    );
+    expect(email.html).toContain("background:#2563eb;");
+    expect(email.html).toContain('src="https://cdn.acme.test/logo.png?tenant=acme&amp;size=2"');
+    expect(email.html).toContain('href="mailto:help@acme.test"');
+  });
+
+  it("keeps the text brand mark and wordmark when images are blocked", () => {
+    const email = welcomeEmail({
+      ...welcome,
+      brandName: "Acme",
+      logoUrl: "https://cdn.acme.test/logo.png",
+    });
+
+    // The coloured square is aria-hidden decoration and the wordmark is the
+    // accessible brand; the logo is decorative, so a blocked image leaves both.
+    expect(email.html).toContain('aria-hidden="true" class="email-mark"');
+    expect(email.html).toContain(">A</td>");
+    expect(email.html).toContain("Acme</td>");
+    expect(email.html).toContain('alt="" role="presentation"');
+  });
+
+  it("preserves logo aspect ratio and puts it on a light chip", () => {
+    for (const logoUrl of [
+      "https://cdn.acme.test/logo-208x32.png",
+      "https://cdn.acme.test/logo-wide-600x40.png",
+    ]) {
+      const email = welcomeEmail({ ...welcome, logoUrl });
+
+      expect(email.html).toContain("max-width:120px;max-height:28px");
+      expect(email.html).toContain("width:auto;height:auto");
+      expect(email.html).toContain('width="120" height="28"');
+      expect(email.html).toContain('bgcolor="#ffffff"');
+      expect(email.html).toContain("border:1px solid #e5e5df;border-radius:6px");
+    }
+  });
+
+  it("resolves a root-relative logo against the dashboard origin", () => {
+    const email = welcomeEmail({ ...welcome, logoUrl: "/assets/acme.png" });
+
+    expect(email.html).toContain('src="https://app.mattrax.app/assets/acme.png"');
+  });
+
+  it("omits logos that email clients cannot load", () => {
+    for (const logoUrl of [
+      "//cdn.acme.test/logo.png",
+      "http://cdn.acme.test/logo.png",
+      "javascript:alert(1)",
+      "data:image/png;base64,iVBORw0KGgo=",
+    ]) {
+      const email = welcomeEmail({ ...welcome, logoUrl });
+
+      expect(email.html).not.toContain("<img");
+    }
+  });
+
+  it("renders real email-client structure rather than a marker", () => {
+    const email = welcomeEmail(welcome);
+
+    expect(email.html).toContain('<meta name="color-scheme" content="light dark" />');
+    expect(email.html).toContain('<meta name="supported-color-schemes" content="light dark" />');
+    expect(email.html).toContain("@media (prefers-color-scheme: dark)");
+    expect(email.html).toContain("[data-ogsc]");
+    expect(email.html).toContain("<!--[if mso]>");
+    expect(email.html).toContain('role="presentation"');
+    expect(email.html).toContain('class="email-card"');
+    expect(email.html).toContain('bgcolor="#e9e9e6"');
+    expect(email.html).toContain('bgcolor="#ffffff"');
+    expect(email.html).toContain("border-spacing:0");
+    expect(email.html).toContain("mso-table-lspace:0pt");
+    expect(email.html).toContain('dir="auto"');
+    expect(email.html).toContain("overflow-wrap:anywhere");
+    expect(email.html).not.toContain('<div style="max-width:520px');
+  });
+
+  it("escapes every user-controlled value in HTML", () => {
+    const email = welcomeEmail({
+      ...welcome,
+      firstName: "<script>alert('x')</script>",
+      brandName: "A & B <C> \"D\" 'E'",
+      accountEmail: "ada+<x>@example.com",
+      logoUrl: "https://cdn.acme.test/logo.png?tenant=a&next=b",
+    });
+
+    expect(email.html).not.toContain("<script>");
+    expect(email.html).not.toContain("<C>");
+    expect(email.html).toContain("&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
+    expect(email.html).toContain("A &amp; B &lt;C&gt; &quot;D&quot; &#39;E&#39;");
+    expect(email.html).toContain("ada+&lt;x&gt;@example.com");
+    expect(email.html).toContain("tenant=a&amp;next=b");
+  });
+
+  it("wraps a 255-character unbroken brand name and isolates it", () => {
+    const brandName = "A".repeat(255);
+    const email = welcomeEmail({ ...welcome, brandName });
+
+    expect(email.html).toContain(brandName);
+    expect(email.html).toContain('dir="auto"');
+    expect(email.html).toContain("unicode-bidi:isolate");
+    expect(email.html).toContain("overflow-wrap:anywhere");
+    // English copy keeps an explicit LTR base direction; the name is isolated
+    // inside it rather than flipping the paragraph.
+    expect(email.html).toContain('dir="ltr"');
+    expect(email.html).not.toContain('dir="auto" class="email-heading"');
+  });
+
+  it("isolates RTL brand names inside English copy", () => {
+    const email = welcomeEmail({ ...welcome, brandName: "شركة أكمي" });
+
+    expect(email.html).toContain("شركة أكمي");
+    expect(email.html).toContain('dir="auto"');
+    expect(email.html).toContain("unicode-bidi:isolate");
+  });
+
+  it("chooses WCAG AA contrast for mid-tone and light brand colours", () => {
+    expect(buttonTextColor("#16a34a")).toBe("#1c1917");
+    expect(buttonTextColor("#999999")).toBe("#1c1917");
+    expect(buttonTextColor("#2563eb")).toBe("#ffffff");
+
+    for (const background of [
+      "#16a34a",
+      "#999999",
+      "#808080",
+      "#777777",
+      "#7f7f7f",
+      "#2563eb",
+      "#ffffff",
+      "#000000",
+    ]) {
+      const chosen = buttonTextColor(background);
+
+      expect(contrastRatio(background, chosen)).toBeGreaterThanOrEqual(4.5);
+    }
+
+    // These three are the boundary the old white/near-black pair missed.
+    for (const background of ["#808080", "#777777", "#7f7f7f"]) {
+      expect(buttonTextColor(background)).toBe("#000000");
+      expect(contrastRatio(background, buttonTextColor(background))).toBeGreaterThanOrEqual(4.5);
+    }
+
+    const midTone = welcomeEmail({ ...welcome, brandColor: "#16a34a" });
+    expect(midTone.html).toContain("background:#16a34a;");
+    expect(midTone.html).toContain("color:#1c1917;");
+
+    const boundary = welcomeEmail({ ...welcome, brandColor: "#808080" });
+    expect(boundary.html).toContain("background:#808080;");
+    expect(boundary.html).toContain("color:#000000;");
+
+    const nearWhite = welcomeEmail({ ...welcome, brandColor: "#ffffff" });
+    expect(nearWhite.html).toContain("color:#1c1917;");
+    expect(nearWhite.html).toContain("border:1px solid #d6d6cf;");
+  });
 });
 
 describe("onboardingFollowUpEmail", () => {
@@ -196,7 +407,8 @@ describe("onboardingFollowUpEmail", () => {
     expect(email.text).toContain("since you set up Acme on Mattrax");
     expect(email.text).toContain("no device has enrolled yet");
     expect(email.text).toContain("Did something get in the way?");
-    expect(email.html).toContain("since you set up Acme on Mattrax");
+    expect(email.html).toContain("It's been 7 days since you set up");
+    expect(email.html).toContain("Acme");
     expect(email.html).toContain("no device has enrolled yet");
     expect(email.html).toContain("Did something get in the way?");
   });
@@ -220,8 +432,10 @@ describe("onboardingFollowUpEmail", () => {
     const email = onboardingFollowUpEmail(followUp);
 
     expect(email.html.match(/data-cta="primary"/g) ?? []).toHaveLength(1);
-    expect(email.html).toContain('href="https://app.mattrax.app/enrol?platform=apple"');
-    expect(email.text).toContain("Finish enrolling a device: https://app.mattrax.app/enrol");
+    expect(email.html).toContain('href="https://app.mattrax.app/t/acme/enrollment"');
+    expect(email.text).toContain(
+      "Finish enrolling a device: https://app.mattrax.app/t/acme/enrollment",
+    );
     expect(email.text).toContain("Reply and tell me where you got stuck: oscar@mattrax.app");
     expect(email.html).toContain('href="mailto:oscar@mattrax.app"');
   });
@@ -232,7 +446,7 @@ describe("onboardingFollowUpEmail", () => {
     expect(email.text).toContain("Reply to this email and it comes straight to me.");
     expect(email.text).toContain("Oscar\nFounder, Mattrax");
     expect(email.text).toContain("walkthrough");
-    expect(email.html).toContain("Oscar<br />Founder, Mattrax");
+    expect(email.html).toContain("Founder, Mattrax");
   });
 
   it("escapes tenant and first-name text in HTML", () => {
@@ -243,7 +457,7 @@ describe("onboardingFollowUpEmail", () => {
     });
 
     expect(email.html).toContain("Hey &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;,");
-    expect(email.html).toContain("set up A &amp; B &lt;C&gt; &quot;D&quot; &#39;E&#39; on Mattrax");
+    expect(email.html).toContain("A &amp; B &lt;C&gt; &quot;D&quot; &#39;E&#39;");
     expect(email.html).not.toContain("<script>");
   });
 
@@ -253,7 +467,7 @@ describe("onboardingFollowUpEmail", () => {
       tenantName: "Acme\r\nBcc: attacker@example.com",
     });
 
-    expect(email.text).toContain("set up Acme Bcc: attacker@example.com on Mattrax");
+    expect(email.text).toContain("since you set up Acme Bcc: attacker@example.com on Mattrax");
     expect(email.text).not.toContain("\r");
     expect(email.html).not.toMatch(/[\r\n]Bcc:/);
   });

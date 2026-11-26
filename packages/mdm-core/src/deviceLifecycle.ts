@@ -3,6 +3,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { schema as s } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { SYSTEM_AUDIT_ACTIONS, writeSystemAudit } from "./audit.js";
+import type { SystemAuditOptions } from "./audit.js";
 
 /**
  * The device row and everything that hangs off it.
@@ -58,6 +59,7 @@ export const deleteDepartedTenantDevice = (input: {
   readonly reason?: string;
   /** Enables the `device.unenrolled` webhook for the losing tenant. */
   readonly authSecret?: string;
+  readonly webhookDispatch?: SystemAuditOptions["webhookDispatch"];
   readonly now?: Date;
 }): Effect.Effect<void, unknown> => {
   const { db, device } = input;
@@ -133,7 +135,7 @@ export const deleteDepartedTenantDevice = (input: {
           destroyedSecretKinds: [...destroyedSecretKinds].sort(),
         },
       },
-      { authSecret: input.authSecret },
+      { authSecret: input.authSecret, webhookDispatch: input.webhookDispatch },
     );
   });
 };

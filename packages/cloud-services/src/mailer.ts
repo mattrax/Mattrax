@@ -1,17 +1,8 @@
 import { Effect, Schema } from "effect";
-import {
-  DEFAULT_EMAIL_FROM,
-  EmailFailure,
-  parseEmailSender,
-  replyToAddress,
-  smtpEmailTransport,
-} from "@mattrax/email";
-import type {
-  EmailAddress,
-  EmailReplyTo,
-  EmailTransport,
-  SmtpTransportOptions,
-} from "@mattrax/email";
+import { DEFAULT_EMAIL_FROM, EmailFailure, parseEmailSender, replyToAddress } from "@mattrax/email";
+import { smtpEmailTransport } from "@mattrax/email/smtp";
+import type { EmailAddress, EmailReplyTo, EmailTransport } from "@mattrax/email";
+import type { SmtpTransportOptions } from "@mattrax/email/smtp";
 import { isDevMailboxEnabled, recordDevEmail } from "./devMailbox.js";
 
 /**

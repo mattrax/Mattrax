@@ -12,9 +12,9 @@ import {
   relativeTime,
 } from "~/components/mdm/common";
 import { DashboardWidgetBatchProvider } from "~/components/dashboard/widget";
-import { DashboardPreview } from "~/components/dashboard/preview";
+import DashboardPreview from "~/components/dashboard/preview";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@mattrax/ui";
 import { Input } from "~/components/ui/input";
+import { ScopeTagSelect } from "~/components/scope-tags/scope-tag-select";
 import {
   ChevronDown,
   Ellipsis,
@@ -56,7 +57,7 @@ import {
   togglePinnedDashboard,
 } from "~/lib/pinned-dashboards";
 import { resolveTenantId } from "~/lib/tenant";
-import { cn } from "~/lib/utils";
+import { isSubmitEnter } from "~/lib/ime";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -95,6 +96,7 @@ export default function DashboardsPage() {
   );
 
   const [name, setName] = createSignal("");
+  const [scopeTags, setScopeTags] = createSignal<Array<string>>([]);
   const [error, setError] = createSignal<string | null>(null);
   const [createOpen, setCreateOpen] = createSignal(false);
   const [filter, setFilter] = createSignal<Filter>("all");
@@ -151,9 +153,25 @@ export default function DashboardsPage() {
 
       return enterprise.createDashboard(params.tenantId, { name: title });
     },
-    onSuccess: (result) => {
+    onSuccess: async (result) => {
+      // Tagging is a second request. If it fails, keep the created resource
+      // and let the detail page's tag editor retry rather than leaving the
+      // form ready to create a duplicate on the next click.
+      if (scopeTags().length > 0) {
+        try {
+          await enterprise.setScopeTagAssignments(params.tenantId, {
+            resourceType: "dashboard",
+            resourceIds: [result.id],
+            tagIds: scopeTags(),
+          });
+        } catch {
+          // The resource exists; its tag editor remains available.
+        }
+      }
+
       setCreateOpen(false);
       setName("");
+      setScopeTags([]);
       setError(null);
       navigate(routes.tenant(params.tenantId).dashboard(result.id, { edit: "1" }));
       void invalidate();
@@ -286,7 +304,7 @@ export default function DashboardsPage() {
             <For each={[0, 1, 2, 3, 4, 5]}>
               {() => (
                 <div class="overflow-hidden rounded-xl border border-border bg-card">
-                  <div class="h-[168px] animate-pulse border-b border-border bg-surface/60" />
+                  <div class="h-42 animate-pulse border-b border-border bg-surface/60" />
                   <div class="space-y-2 p-4">
                     <span class="block h-2 w-16 animate-pulse rounded-full bg-hover" />
                     <span class="block h-3 w-2/3 animate-pulse rounded-full bg-hover" />
@@ -312,46 +330,43 @@ export default function DashboardsPage() {
             <div class="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 shadow-card">
               <For each={Object.keys(FILTER_LABELS) as Filter[]}>
                 {(value) => (
-                  <button
+                  <Button
                     type="button"
+                    size="xs"
+                    variant={filter() === value ? "secondary" : "ghost"}
                     onClick={() => setFilter(value)}
                     aria-pressed={filter() === value ? "true" : "false"}
-                    class={cn(
-                      "inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-[11.5px] font-[500] transition-colors",
-                      filter() === value
-                        ? "bg-hover text-foreground"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
                   >
                     {FILTER_LABELS[value]}
-                    <span class="tabular-nums text-[10px] text-subtle-foreground">
+                    <span class="tabular-nums text-xs text-subtle-foreground">
                       {counts()[value]}
                     </span>
-                  </button>
+                  </Button>
                 )}
               </For>
             </div>
 
-            <div class="relative min-w-[13rem] flex-1 sm:max-w-xs">
-              <Search
-                class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-                aria-hidden="true"
-              />
+            <div class="relative min-w-52 flex-1 sm:max-w-xs">
               <Input
                 value={search()}
                 onInput={(event) => setSearch(event.currentTarget.value)}
                 placeholder="Search dashboards"
-                class="h-7 pl-8"
+                class="h-7"
                 aria-label="Search dashboards"
               />
+              <span class="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 text-muted-foreground">
+                <Search class="size-3.5" aria-hidden="true" />
+              </span>
             </div>
 
             <div class="ml-auto">
               <DropdownMenu placement="bottom-end">
-                <DropdownMenuTrigger class="flex h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-[11.5px] text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60">
-                  Sort: {sort() === "name" ? "Name" : sort() === "recent" ? "Recent" : "Widgets"}
-                  <ChevronDown class="size-3.5" />
-                </DropdownMenuTrigger>
+                <span class="inline-flex rounded-md border border-border bg-card px-2.5 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-within:ring-2 focus-within:ring-ring/60">
+                  <DropdownMenuTrigger class="flex h-7 items-center">
+                    Sort: {sort() === "name" ? "Name" : sort() === "recent" ? "Recent" : "Widgets"}
+                    <ChevronDown class="ml-1.5 size-3.5" />
+                  </DropdownMenuTrigger>
+                </span>
                 <DropdownMenuContent class="w-40">
                   <DropdownMenuRadioGroup
                     value={sort()}
@@ -390,7 +405,7 @@ export default function DashboardsPage() {
               <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 <For each={visible()}>
                   {(dashboard) => (
-                    <article class="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift hover:border-border-strong hover:shadow-card">
+                    <article class="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card transition duration-150 ease-swift hover:border-border-strong hover:shadow-card">
                       <a
                         href={routes.tenant(params.tenantId).dashboard(dashboard.id)}
                         class="block outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
@@ -404,19 +419,19 @@ export default function DashboardsPage() {
 
                       <div class="flex flex-1 flex-col p-4">
                         <div class="flex min-w-0 items-center gap-2">
-                          <span class="label-caps inline-flex items-center gap-1 rounded-full border border-border bg-surface px-1.5 py-0.5 text-[9px]">
+                          <span class="label-caps inline-flex items-center gap-1 rounded-full border border-border bg-surface px-1.5 py-0.5 text-xs">
                             <Show when={dashboard.isDefault}>
                               <Star class="size-2.5" />
                             </Show>
                             {dashboard.isDefault ? "Overview" : "Custom"}
                           </span>
-                          <span class="tabular-nums text-[10.5px] text-muted-foreground">
+                          <span class="tabular-nums text-xs text-muted-foreground">
                             {dashboard.widgetCount} widget
                             {dashboard.widgetCount === 1 ? "" : "s"}
                           </span>
                           <Show when={isDashboardPinned(tenantId(), dashboard.id)}>
-                            <span class="ml-auto inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                              <Pin class="size-3 fill-current" />
+                            <span class="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <span class="inline-flex fill-current"><Pin class="size-3" /></span>
                               Pinned
                             </span>
                           </Show>
@@ -424,18 +439,18 @@ export default function DashboardsPage() {
 
                         <a
                           href={routes.tenant(params.tenantId).dashboard(dashboard.id)}
-                          class="mt-2.5 rounded-[4px] outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                          class="mt-2.5 rounded-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
                         >
-                          <h2 class="truncate text-[14px] font-[560] tracking-[-0.012em] text-foreground group-hover:underline">
+                          <h2 class="truncate text-sm font-semibold tracking-tight text-foreground group-hover:underline">
                             {dashboard.name}
                           </h2>
-                          <p class="mt-1 line-clamp-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                          <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                             {dashboard.description?.trim() || "No description yet."}
                           </p>
                         </a>
 
                         <div class="mt-auto flex items-center justify-between gap-2 pt-4">
-                          <span class="truncate text-[10.5px] text-muted-foreground">
+                          <span class="truncate text-xs text-muted-foreground">
                             Updated {relativeTime(dashboard.updatedAt)}
                           </span>
                           <DashboardCardMenu
@@ -490,12 +505,12 @@ export default function DashboardsPage() {
             </DialogDescription>
           </DialogHeader>
           <label class="mt-1 block">
-            <span class="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
+            <span class="mb-1 block text-xs font-medium text-muted-foreground">Name</span>
             <Input
               value={name()}
               onInput={(event) => setName(event.currentTarget.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && name().trim() && !create.isPending) {
+                if (isSubmitEnter(event) && name().trim() && !create.isPending) {
                   event.preventDefault();
                   create.mutate();
                 }
@@ -504,8 +519,13 @@ export default function DashboardsPage() {
               autofocus
             />
           </label>
+          <ScopeTagSelect
+            tenantId={params.tenantId!}
+            value={scopeTags()}
+            onChange={setScopeTags}
+          />
           <Show when={error()}>
-            <p role="alert" class="text-[12px] text-destructive">
+            <p role="alert" class="text-xs text-destructive">
               {error()}
             </p>
           </Show>
@@ -560,12 +580,14 @@ function DashboardCardMenu(props: {
 
   return (
     <DropdownMenu placement="bottom-end">
-      <DropdownMenuTrigger
-        aria-label={`Actions for ${props.dashboard.name}`}
-        class="flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
-      >
-        <Ellipsis class="size-4" />
-      </DropdownMenuTrigger>
+      <span class="inline-flex rounded-md text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-within:ring-2 focus-within:ring-ring/60">
+        <DropdownMenuTrigger
+          aria-label={`Actions for ${props.dashboard.name}`}
+          class="flex size-7 items-center justify-center"
+        >
+          <Ellipsis class="size-4" />
+        </DropdownMenuTrigger>
+      </span>
       <DropdownMenuContent class="w-44">
         <DropdownMenuItem onSelect={props.onOpen}>Open</DropdownMenuItem>
         <Show when={props.writable}>

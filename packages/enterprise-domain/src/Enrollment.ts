@@ -142,6 +142,81 @@ export const TenantEnrollmentInfo = Schema.Struct({
 
 export type TenantEnrollmentInfo = typeof TenantEnrollmentInfo.Type;
 
+/** A domain an administrator may point the Apple discovery document at. */
+export const AppleByodDomainOption = Schema.Struct({
+  domain: Schema.String,
+  /** `entra` is a verified directory domain; `deployment` is this origin. */
+  source: Schema.Literals(["entra", "deployment"]),
+  isVerified: Schema.Boolean,
+});
+
+export type AppleByodDomainOption = typeof AppleByodDomainOption.Type;
+
+/**
+ * Account-driven Apple User Enrollment (BYOD) setup state.
+ *
+ * `blockers` is the authoritative "why can this not be enabled" list so the
+ * setup page can show the exact prerequisite instead of a generic failure.
+ */
+export const AppleByodConfigInfo = Schema.Struct({
+  enabled: Schema.Boolean,
+  domain: Schema.optional(NullableString),
+  domains: Schema.Array(AppleByodDomainOption),
+  /** Public origin of this deployment, used for the copyable DNS target. */
+  deploymentOrigin: Schema.String,
+  /** Mattrax Cloud has no per-tenant custom hostname yet. */
+  hosted: Schema.Boolean,
+  /** Absolute discovery URL for the selected domain, when one is selected. */
+  wellKnownUrl: Schema.optional(NullableString),
+  /** The exact JSON the discovery endpoint must answer with. */
+  expectedDocument: Schema.optional(NullableString),
+  ssoEnabled: Schema.Boolean,
+  apnsConfigured: Schema.Boolean,
+  validatedAt: Schema.optional(NullableString),
+  hardwareValidationRequired: Schema.Boolean,
+  hardwareValidatedAt: Schema.optional(NullableString),
+  ready: Schema.Boolean,
+  blockers: Schema.Array(Schema.String),
+});
+
+export type AppleByodConfigInfo = typeof AppleByodConfigInfo.Type;
+
+export const PatchAppleByodConfigRequest = Schema.Struct({
+  enabled: Schema.optional(Schema.Boolean),
+  /** Null clears the selection; it must be one of `domains`. */
+  domain: Schema.optional(Schema.NullOr(Schema.String)),
+  hardwareValidationRequired: Schema.optional(Schema.Boolean),
+});
+
+export type PatchAppleByodConfigRequest = typeof PatchAppleByodConfigRequest.Type;
+
+/** Result of fetching the discovery document over the public origin. */
+export const AppleByodTestResult = Schema.Struct({
+  ok: Schema.Boolean,
+  checkedAt: Schema.String,
+  status: Schema.optional(NullableString),
+  contentType: Schema.optional(NullableString),
+  /** The response body when it was small enough to describe. */
+  body: Schema.optional(NullableString),
+  errors: Schema.Array(Schema.String),
+});
+
+export type AppleByodTestResult = typeof AppleByodTestResult.Type;
+
+/** The selected (possibly unsaved) domain to test. */
+export const TestAppleByodConfigRequest = Schema.Struct({
+  domain: Schema.optional(NullableString),
+});
+
+export type TestAppleByodConfigRequest = typeof TestAppleByodConfigRequest.Type;
+
+export const ConfirmAppleByodHardwareRequest = Schema.Struct({
+  /** False withdraws a previous confirmation; true stamps `hardwareValidatedAt`. */
+  validated: Schema.Boolean,
+});
+
+export type ConfirmAppleByodHardwareRequest = typeof ConfirmAppleByodHardwareRequest.Type;
+
 /**
  * The tenant's SCEP CA as shown to administrators. The private key is never
  * returned; the fingerprint is enough to verify which CA a device trusts.

@@ -24,6 +24,8 @@ export const PERMISSIONS = [
   "applications.write",
   "scripts.read",
   "scripts.write",
+  "restricted_software.read",
+  "restricted_software.write",
   "dashboards.read",
   "dashboards.write",
   "enrollment.read",
@@ -43,6 +45,8 @@ export const PERMISSIONS = [
   "members.write",
   "roles.read",
   "roles.write",
+  "scope_tags.read",
+  "scope_tags.write",
   "approvals.read",
   "approvals.write",
 ] as const;
@@ -137,6 +141,23 @@ export const PERMISSION_GROUPS: ReadonlyArray<{
         id: "scripts.write",
         label: "Manage and run scripts",
         description: "Create, edit, assign and run scripts.",
+      },
+    ],
+  },
+  {
+    id: "restricted_software",
+    label: "Restricted software",
+    description: "Deny-listed applications, violations and enforcement.",
+    permissions: [
+      {
+        id: "restricted_software.read",
+        label: "View restricted software",
+        description: "See deny-list rules and detected violations.",
+      },
+      {
+        id: "restricted_software.write",
+        label: "Manage restricted software",
+        description: "Create, edit, scope and delete deny-list rules.",
       },
     ],
   },
@@ -263,6 +284,23 @@ export const PERMISSION_GROUPS: ReadonlyArray<{
     permissions: [
       { id: "roles.read", label: "View roles", description: "See role definitions." },
       { id: "roles.write", label: "Manage roles", description: "Create, edit and delete roles." },
+    ],
+  },
+  {
+    id: "scope_tags",
+    label: "Scope tags",
+    description: "Regional or team scopes for delegated administrators.",
+    permissions: [
+      {
+        id: "scope_tags.read",
+        label: "View scope tags",
+        description: "See tags and which resources carry them.",
+      },
+      {
+        id: "scope_tags.write",
+        label: "Manage scope tags",
+        description: "Create tags, rename them and tag resources.",
+      },
     ],
   },
   {

@@ -1,12 +1,18 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@solidjs/web", () => ({ isServer: false, getRequestEvent: () => undefined }));
 import {
   canonicalTenantParam,
+  canonicalTenantSegment,
+  createTenantDirectory,
+  getRequestTenantDirectory,
   rememberTenantAlias,
   rememberTenants,
-  resetTenantDirectory,
   resolveLandingTenant,
   resolveTenant,
   resolveTenantId,
+  setRequestTenantDirectory,
+  tenantLandingHref,
 } from "./tenant";
 
 const acme = { id: "tenant-a1b2", slug: "acme", name: "Acme" };
@@ -16,8 +22,6 @@ const globex = { id: "tenant-c3d4", slug: "globex", name: "Globex" };
 const tenants = [acme, globex];
 
 describe("tenant URL resolution", () => {
-  beforeEach(() => resetTenantDirectory());
-
   it("prefers the slug as the canonical URL segment", () => {
     expect(canonicalTenantParam(acme)).toBe("acme");
     expect(canonicalTenantParam({ id: "tenant-1", slug: null })).toBe("tenant-1");
@@ -40,26 +44,52 @@ describe("tenant URL resolution", () => {
   });
 
   it("translates slugs to ids for API calls", () => {
-    rememberTenants(tenants);
+    const directory = createTenantDirectory(tenants);
 
-    expect(resolveTenantId("acme")).toBe(acme.id);
-    expect(resolveTenantId(acme.id)).toBe(acme.id);
-    expect(resolveTenantId("globex")).toBe(globex.id);
+    expect(resolveTenantId("acme", directory)).toBe(acme.id);
+    expect(resolveTenantId(acme.id, directory)).toBe(acme.id);
+    expect(resolveTenantId("globex", directory)).toBe(globex.id);
+    expect(canonicalTenantSegment(acme.id, directory)).toBe("acme");
   });
 
-  it("resolves a slug saved in this tab before the shell refreshes", () => {
-    rememberTenants(tenants);
-    rememberTenantAlias("acme-renamed", acme.id);
+  it("resolves a slug saved in this account before the shell refreshes", () => {
+    rememberTenants(tenants, "account-a");
+    rememberTenantAlias("acme-renamed", acme.id, "account-a");
+    const directory = createTenantDirectory(tenants, new Map([["acme-renamed", acme.id]]));
 
-    expect(resolveTenant(tenants, "acme-renamed")).toBe(acme);
-    expect(resolveTenantId("acme-renamed")).toBe(acme.id);
+    expect(resolveTenant(tenants, "acme-renamed", directory)).toBe(acme);
+    expect(resolveTenantId("acme-renamed", directory)).toBe(acme.id);
   });
 
   it("passes unknown values through so a freshly created id still works", () => {
-    rememberTenants(tenants);
+    const directory = createTenantDirectory(tenants);
 
-    expect(resolveTenantId("tenant-new")).toBe("tenant-new");
-    expect(resolveTenantId(undefined)).toBeUndefined();
+    expect(resolveTenantId("tenant-new", directory)).toBe("tenant-new");
+    expect(resolveTenantId(undefined, directory)).toBeUndefined();
+  });
+
+  it("keeps interleaved SSR request directories isolated", () => {
+    const first = new Request("https://mattrax.test/t/acme");
+    const second = new Request("https://mattrax.test/t/other");
+    const other = { id: "tenant-other", slug: "other" };
+    setRequestTenantDirectory(first, tenants);
+    setRequestTenantDirectory(second, [other]);
+
+    expect(resolveTenantId("acme", getRequestTenantDirectory(first))).toBe(acme.id);
+    expect(resolveTenantId("acme", getRequestTenantDirectory(second))).toBe("acme");
+    expect(resolveTenantId("other", getRequestTenantDirectory(first))).toBe("other");
+    expect(resolveTenantId("other", getRequestTenantDirectory(second))).toBe(other.id);
+  });
+
+  it("clears browser aliases when the signed-in account changes", () => {
+    rememberTenants(tenants, "account-a");
+    rememberTenantAlias("acme-renamed", acme.id, "account-a");
+    expect(resolveTenantId("acme-renamed")).toBe(acme.id);
+
+    rememberTenants([globex], "account-b");
+
+    expect(resolveTenantId("acme-renamed")).toBe("acme-renamed");
+    expect(resolveTenantId("globex")).toBe(globex.id);
   });
 });
 
@@ -119,5 +149,26 @@ describe("landing tenant precedence", () => {
   it("returns nothing when the account has no memberships", () => {
     expect(resolveLandingTenant([], { defaultTenantId: acme.id })).toBeUndefined();
     expect(resolveLandingTenant(undefined, { lastTenantId: acme.id })).toBeUndefined();
+  });
+
+  it("builds the canonical /t redirect and keeps the tail intact", () => {
+    expect(tenantLandingHref(tenants, { defaultTenantId: globex.id })).toBe("/t/globex");
+    expect(
+      tenantLandingHref(
+        tenants,
+        { defaultTenantId: globex.id, lastTenantId: acme.id },
+        "?health=attention#fleet",
+      ),
+    ).toBe("/t/globex?health=attention#fleet");
+    expect(tenantLandingHref(tenants, { lastTenantId: acme.id })).toBe("/t/acme");
+    expect(tenantLandingHref([], { defaultTenantId: acme.id })).toBeUndefined();
+  });
+
+  it("encodes a slug that is not URL-safe", () => {
+    expect(
+      tenantLandingHref([{ id: "tenant-1", slug: "acme corp", name: "Acme" }], {
+        defaultTenantId: "tenant-1",
+      }),
+    ).toBe("/t/acme%20corp");
   });
 });

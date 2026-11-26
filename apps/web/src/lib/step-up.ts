@@ -1,6 +1,8 @@
 import type { PublicKeyCredentialRequestOptionsJSON } from "@simplewebauthn/browser";
 import { StepUpMethods, StepUpRequired } from "@mattrax/enterprise-domain/client";
-import { Option, Schema } from "effect";
+import { Effect, Option, Schema } from "effect";
+import { HttpBody, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import { webHttpClientLayer } from "~/lib/web-http";
 import { errorPresentation, errorTag, raisedFailure, stepUpFailure } from "~/lib/errors";
 import {
   requestStepUp,
@@ -37,61 +39,79 @@ const decodeAction = Schema.decodeUnknownOption(StepUpActionSchema);
 
 const decodeMethods = Schema.decodeUnknownOption(Schema.Array(StepUpMethodSchema));
 
+const errorName = (error: unknown): string | undefined => {
+  if (typeof error !== "object" || error === null || !("name" in error)) return undefined;
+
+  return typeof error.name === "string" ? error.name : undefined;
+};
+
+/** Native passkey dismissal surfaces as NotAllowedError, sometimes wrapped. */
+export const isPasskeyCancellation = (error: unknown): boolean => {
+  if (errorName(error) === "NotAllowedError") return true;
+
+  const cause =
+    typeof error === "object" && error !== null && "cause" in error ? error.cause : undefined;
+
+  return errorName(cause) === "NotAllowedError";
+};
+
 const stepUpPath = (path: string) => `/api/v1/account/step-up${path}`;
 
-async function call<S extends Schema.ConstraintDecoder<unknown>>(
+const call = <S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,
   path: string,
   body?: Schema.Json,
-): Promise<S["Type"]> {
-  const headers = Object.fromEntries([["x-effect-auth-csrf", "1"]]);
-
-  const init: RequestInit = {
-    method: body === undefined ? "GET" : "POST",
-    credentials: "include",
-    headers,
+): Promise<S["Type"]> => {
+  const headers = {
+    "x-effect-auth-csrf": "1",
+    ...(body === undefined ? {} : { "content-type": "application/json" }),
   };
 
-  if (body !== undefined) {
-    headers["content-type"] = "application/json";
-    init.body = JSON.stringify(body);
-  }
+  const effect: Effect.Effect<S["Type"], Error | StepUpRequired, HttpClient.HttpClient> =
+    Effect.gen(function* () {
+      const client = yield* HttpClient.HttpClient;
+      const response = yield* client
+        .execute(
+          HttpClientRequest.make(body === undefined ? "GET" : "POST")(stepUpPath(path), {
+            headers,
+            ...(body === undefined ? {} : { body: HttpBody.jsonUnsafe(body) }),
+          }),
+        )
+        .pipe(
+          Effect.catch(() => Effect.fail(new Error("The step-up service could not be reached"))),
+        );
+      const raw = yield* HttpClientResponse.schemaBodyJson(Schema.Json)(response).pipe(
+        Effect.catch(() => Effect.succeed(null)),
+      );
+      const failed = isFailureEnvelope(raw);
 
-  const response = await fetch(stepUpPath(path), init);
+      if (response.status < 200 || response.status >= 300 || failed) {
+        const failure = failed ? raw.error : raw;
+        const failureValue = raisedFailure(failure);
+        const action = Option.getOrUndefined(decodeAction(stepUpFailure(failureValue).action));
+        const methods = Option.getOrUndefined(decodeMethods(stepUpFailure(failureValue).methods));
+        const message = errorPresentation(
+          failureValue,
+          "We couldn't confirm that action. Try again.",
+        ).message;
 
-  const raw =
-    Option.getOrUndefined(
-      Schema.decodeUnknownOption(Schema.Json)(await response.json().catch(() => null)),
-    ) ?? null;
+        if (errorTag(failureValue) === "StepUpRequired" && action !== undefined)
+          return yield* Effect.fail(
+            new StepUpRequired({ message, action, methods: methods ?? [] }),
+          );
 
-  const failed = isFailureEnvelope(raw);
+        return yield* Effect.fail(new Error(message));
+      }
 
-  if (!response.ok || failed) {
-    const failure = failed ? raw.error : raw;
-    const failureValue = raisedFailure(failure);
-    const action = Option.getOrUndefined(decodeAction(stepUpFailure(failureValue).action));
-    const methods = Option.getOrUndefined(decodeMethods(stepUpFailure(failureValue).methods));
+      return yield* Schema.decodeUnknownEffect(schema)(raw).pipe(
+        Effect.catch(() =>
+          Effect.fail(new Error("The step-up service returned an unexpected response. Try again.")),
+        ),
+      );
+    });
 
-    const message = errorPresentation(
-      failureValue,
-      "We couldn't confirm that action. Try again.",
-    ).message;
-
-    if (errorTag(failureValue) === "StepUpRequired" && action !== undefined) {
-      throw new StepUpRequired({ message, action, methods: methods ?? [] });
-    }
-
-    throw new Error(message);
-  }
-
-  const data = Option.getOrUndefined(Schema.decodeUnknownOption(schema)(raw));
-
-  if (data === undefined) {
-    throw new Error("The step-up service returned an unexpected response. Try again.");
-  }
-
-  return data;
-}
+  return Effect.runPromise(effect.pipe(Effect.provide(webHttpClientLayer)));
+};
 
 export const stepUpMethods = () => call(StepUpMethods, "");
 
@@ -119,8 +139,13 @@ export const performStepUp = async (
       optionsJSON: started.options as PublicKeyCredentialRequestOptionsJSON,
       useBrowserAutofill: false,
     });
-  } catch {
-    throw new Error("That passkey wasn't confirmed. Try again or use another method.");
+  } catch (error) {
+    throw new Error(
+      isPasskeyCancellation(error)
+        ? "Passkey confirmation cancelled."
+        : "That passkey wasn't confirmed. Try again or use another method.",
+      { cause: error },
+    );
   }
 
   return call(StepUpGrant, "/passkey/complete", {

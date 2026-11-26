@@ -1,8 +1,9 @@
 import { isServer } from "@solidjs/web";
 import { Option, Schema } from "effect";
 import type { RaisedFailure } from "~/lib/errors";
-import { analyticsHeaders, registerPostHogReader } from "./posthog-context";
+import { registerPostHogReader } from "./posthog-context";
 import { sanitizePostHogCapture } from "./posthog-sanitize";
+import { AnalyticsQueue, AnalyticsStorageQueue } from "./analytics-queue";
 
 /**
  * Minimal browser analytics client.
@@ -42,6 +43,8 @@ const STORAGE_KEY = "mattrax.posthog";
 const SESSION_IDLE_MILLIS = 30 * 60 * 1000;
 
 const FLUSH_AFTER_MILLIS = 2_000;
+
+const PERSIST_AFTER_MILLIS = 5_000;
 
 const MAX_QUEUE = 20;
 
@@ -101,13 +104,15 @@ let identifySignature: string | undefined;
 
 let lastPage: string | undefined;
 
-let queue: CapturedEvent[] = [];
+let analyticsQueue: AnalyticsQueue<CapturedEvent> | undefined;
 
-let flushTimer: ReturnType<typeof setTimeout> | undefined;
+let identityQueue: AnalyticsStorageQueue<StoredIdentity> | undefined;
 
 const persist = (): void => {
-  writeStorage({ distinctId, sessionId, activeAt: sessionActiveAt });
+  identityQueue?.set({ distinctId, sessionId, activeAt: sessionActiveAt });
 };
+
+const flushIdentity = (): void => identityQueue?.flush();
 
 const ensureSession = (): void => {
   const now = Date.now();
@@ -162,37 +167,31 @@ const baseProperties = () => {
 
 const endpoint = (): string => `${config!.host.replace(/\/+$/, "")}/batch/`;
 
-const scheduleFlush = (): void => {
-  flushTimer ??= setTimeout(() => {
-    flushTimer = undefined;
-    void flush();
-  }, FLUSH_AFTER_MILLIS);
-};
+const sendBatch = (batch: ReadonlyArray<CapturedEvent>): Promise<void> =>
+  fetch(endpoint(), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ api_key: config!.key, batch }),
+    keepalive: true,
+    mode: "cors",
+  }).then(() => undefined);
 
-const flush = async (beacon = false): Promise<void> => {
-  if (!config || queue.length === 0) return;
+const flush = (beacon = false): Promise<void> => {
+  if (!config || !analyticsQueue) return Promise.resolve();
 
-  const batch = queue;
-  queue = [];
-  const body = JSON.stringify({ api_key: config.key, batch });
+  if (beacon && navigator.sendBeacon)
+    return analyticsQueue.flushPendingWith((batch) =>
+      Promise.resolve(
+        navigator.sendBeacon(
+          endpoint(),
+          new Blob([JSON.stringify({ api_key: config!.key, batch })], { type: "application/json" }),
+        ),
+      ).then((sent) => {
+        if (!sent) throw new Error("Analytics beacon was rejected");
+      }),
+    );
 
-  if (beacon && navigator.sendBeacon) {
-    navigator.sendBeacon(endpoint(), new Blob([body], { type: "application/json" }));
-
-    return;
-  }
-
-  try {
-    await fetch(endpoint(), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body,
-      keepalive: true,
-      mode: "cors",
-    });
-  } catch {
-    // Analytics is best-effort and must never affect the dashboard.
-  }
+  return analyticsQueue.flush();
 };
 
 const enqueue = (event: string, properties: AnalyticsProperties): void => {
@@ -204,7 +203,7 @@ const enqueue = (event: string, properties: AnalyticsProperties): void => {
     properties: { ...baseProperties(), ...properties },
   });
 
-  queue.push({
+  analyticsQueue?.push({
     event,
     distinct_id: distinctId,
     properties: capture.properties ?? {},
@@ -212,47 +211,7 @@ const enqueue = (event: string, properties: AnalyticsProperties): void => {
     ...(tenant ? { groups: { tenant: tenant.id } } : {}),
   });
 
-  if (queue.length >= MAX_QUEUE) {
-    void flush();
-
-    return;
-  }
-
-  scheduleFlush();
-};
-
-const installFetchHeaders = (): void => {
-  if (typeof window === "undefined") return;
-  const originalFetch = window.fetch.bind(window);
-  // SAFETY: the wrapper accepts the same `(input, init)` arguments and forwards
-  // every request unchanged to the bound native fetch.
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    const raw = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
-    let url: URL;
-
-    try {
-      url = new URL(String(raw), window.location.href);
-    } catch {
-      return originalFetch(input, init);
-    }
-
-    if (
-      url.origin !== window.location.origin ||
-      !(url.pathname === "/api" || url.pathname.startsWith("/api/"))
-    )
-      return originalFetch(input, init);
-
-    const headers = new Headers(
-      input instanceof Request ? (init?.headers ?? input.headers) : init?.headers,
-    );
-
-    for (const [name, value] of Object.entries(analyticsHeaders())) headers.set(name, value);
-
-    return originalFetch(
-      input instanceof Request ? new Request(input, { ...init, headers }) : input,
-      input instanceof Request ? undefined : { ...init, headers },
-    );
-  };
+  if (analyticsQueue && analyticsQueue.size >= MAX_QUEUE) void flush();
 };
 
 const stackFrames = (stack: string | undefined) => {
@@ -298,11 +257,18 @@ const start = (): void => {
   distinctId = stored.distinctId ?? randomId();
   sessionId = stored.sessionId ?? randomId();
   sessionActiveAt = stored.activeAt ?? Date.now();
+  identityQueue = new AnalyticsStorageQueue({
+    delay: PERSIST_AFTER_MILLIS,
+    persist: writeStorage,
+  });
   ensureSession();
+  // Establish the initial identity immediately; subsequent event-time updates
+  // are coalesced until the throttle window or a page lifecycle flush.
+  flushIdentity();
   ready = true;
 
   registerPostHogReader(() => ({ distinctId, sessionId }));
-  installFetchHeaders();
+  analyticsQueue = new AnalyticsQueue({ delay: FLUSH_AFTER_MILLIS, send: sendBatch });
 
   document.addEventListener(
     "click",
@@ -330,15 +296,15 @@ const start = (): void => {
     true,
   );
 
-  window.addEventListener("pagehide", () => {
+  const leave = () => {
     enqueue("$pageleave", { $pathname: location.pathname });
+    flushIdentity();
     void flush(true);
-  });
+  };
 
+  window.addEventListener("pagehide", leave);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "hidden") return;
-    enqueue("$pageleave", { $pathname: location.pathname });
-    void flush(true);
+    if (document.visibilityState === "hidden") leave();
   });
 };
 
@@ -380,6 +346,7 @@ export const syncPostHogUser = (user: PostHogUser | null): void => {
     identifySignature = undefined;
     lastPage = undefined;
     persist();
+    flushIdentity();
     void flush();
 
     return;
@@ -412,7 +379,6 @@ export const syncPostHogUser = (user: PostHogUser | null): void => {
   });
 
   identifySignature = signature;
-  persist();
 };
 
 /** Group pageviews and interactions by the active tenant. */

@@ -1,11 +1,11 @@
 import { createSignal, onCleanup, onSettled, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
 import { Button } from "~/components/ui/button";
-import { EmailCodeField } from "~/components/email-code-field";
+import EmailCodeField from "~/components/email-code-field";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
-const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
+const feedbackEnter = "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-150";
 
 /** Seconds before the address can ask for another code. */
 const RESEND_COOLDOWN_SECONDS = 30;
@@ -15,7 +15,7 @@ const RESEND_COOLDOWN_SECONDS = 30;
  * address can ask for another after a short cooldown; codes are single-use and
  * expire after 15 minutes.
  */
-export function EmailCodeForm(props: { email: string; onVerified: () => void | Promise<void> }) {
+export default function EmailCodeForm(props: { email: string; onVerified: () => void | Promise<void> }) {
   const [challenge, setChallenge] = createSignal("");
   const [code, setCode] = createSignal("");
   const [pending, setPending] = createSignal(false);
@@ -149,10 +149,10 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
   return (
     <div class="space-y-5">
       <div class="text-center">
-        <h1 class="text-2xl font-semibold text-stone-900">Verify your email</h1>
-        <p class="mt-1 text-sm text-stone-500">
+        <h1 class="text-2xl font-semibold text-foreground">Verify your email</h1>
+        <p class="mt-1 text-sm text-muted-foreground">
           Enter the six-digit code we sent to{" "}
-          <span class="font-medium text-stone-700">{props.email}</span>.
+          <span class="font-medium text-muted-foreground">{props.email}</span>.
         </p>
       </div>
 
@@ -166,11 +166,12 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
             inputRef={(input) => (codeField = input)}
           />
           <div class="flex items-center justify-end">
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="xs"
               onClick={() => void send({ resend: true })}
               disabled={sending() || cooldown() > 0}
-              class="text-xs font-medium text-stone-700 underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-stone-900 disabled:no-underline disabled:opacity-60"
             >
               <span>
                 {sending()
@@ -182,7 +183,7 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
               <span class="sr-only" aria-live="polite">
                 {sending() ? "Sending a new code" : ""}
               </span>
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -191,7 +192,7 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
             <p
               id="verification-code-error"
               role="alert"
-              class={`text-sm text-red-600 ${feedbackEnter}`}
+              class={`text-sm text-destructive ${feedbackEnter}`}
             >
               {message()}
             </p>
@@ -199,13 +200,13 @@ export function EmailCodeForm(props: { email: string; onVerified: () => void | P
         </Show>
         <Show when={notice()}>
           {(message) => (
-            <p role="status" class={`text-sm text-emerald-600 ${feedbackEnter}`}>
+            <p role="status" class={`text-sm text-success ${feedbackEnter}`}>
               {message()}
             </p>
           )}
         </Show>
 
-        <Button type="submit" class="h-9 w-full text-sm" pending={pending()}>
+        <Button type="submit" class="h-9 w-full" pending={pending()}>
           {pending() ? "Verifying…" : "Verify email"}
         </Button>
       </form>

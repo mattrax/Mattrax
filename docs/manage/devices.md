@@ -621,7 +621,10 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices/$DEVICE_ID/action" 
 | `stop-lost-mode`               | Yes (supervised iPhone/iPad)  | No            | Yes         | Yes          |
 | `play-lost-mode-sound`         | Yes (while in Lost Mode)      | No            | No          | Yes          |
 | `refresh-local-accounts`       | Yes (macOS)                   | No            | No          | No           |
-| `rotate-local-admin-password`  | Yes (macOS ADE admin)         | No            | No          | Yes          |
+| `rotate-local-admin-password`  | Yes (macOS ADE admin)         | Yes (LAPS)    | No          | Yes          |
+| `fresh-start`                  | No                            | Yes (Enterprise/Education, explicit data choice) | No | Yes + approval |
+| `collect-diagnostics`          | No                            | Yes (Windows 10 1903+; 24h archive) | No | Yes |
+| `rotate-bitlocker-key`         | No                            | Yes (Entra/hybrid, encrypted) | No          | Yes          |
 | `reset-password`               | No                            | No            | Yes         | Yes          |
 | `clear-app-data`               | No                            | No            | Yes         | Yes          |
 | `request-device-info`          | No                            | No            | Yes         | Yes          |
@@ -632,7 +635,17 @@ The action menu is capability-driven: `GET /api/v1/tenants/:tenantId/devices/:id
 `actions` array for the device. The API rejects an action that is not in that list, so a
 Windows device never accepts `sync` (it has no push channel; changes are applied at the next
 SyncML poll) and an unenrolled device accepts nothing. The list is derived from the platform,
-the enrollment status and any action capabilities the device reports.
+the enrollment status, reported action capabilities, the OS build/edition, join state and the
+effective LAPS policy. A Windows Pro or Home device does not advertise Fresh Start; a device
+that has not reported its build does not advertise diagnostics; and a device without an
+encrypted Entra/hybrid join does not advertise BitLocker rotation. The rejection names the
+missing prerequisite instead of queueing a command that can never run.
+
+Windows LAPS and BitLocker reveal are not device actions: they are device-scoped reads that
+require `devices.recovery_key`, a fresh step-up and a reason. Every reveal is audited.
+BitLocker keys are listed and fetched from Microsoft Entra ID (they are not collected by an
+agent); Windows LAPS passwords are read from the tenant's Entra-backed store. See
+[Windows](/platforms/windows/) for prerequisites and limits.
 
 Commands are recorded with a lifecycle and a delivery deadline:
 
@@ -640,6 +653,7 @@ Commands are recorded with a lifecycle and a delivery deadline:
 | ------------ | ---------------------------------------------------------------------------------- |
 | `queued`     | Waiting for the device's next check-in.                                            |
 | `sent`       | Handed to the device; waiting for its result.                                      |
+| `accepted`   | The device acknowledged an asynchronous command and is processing it. Never re-delivered. |
 | `deferred`   | The device answered `NotNow` (for example while locked). Retried every 10 minutes. |
 | `succeeded`  | Terminal. Reported by the device, or reconciled from the state it reported.        |
 | `failed`     | Terminal. Reported by the device, or reconciled from the state it reported.        |
@@ -791,8 +805,13 @@ because it erases work data.
 unenroll the physical device. It also permanently destroys every escrowed secret recorded
 for the device: the FileVault recovery key, Activation Lock bypass code, Recovery Lock
 password, managed local administrator password and bootstrap token are rows in the
-`device_secret` table with a cascading foreign key. There is no grace period, recycle bin
-or undo. If the hardware is leaving your organisation, hand it over first.
+`device_secret` table. BitLocker recovery keys live in Microsoft Entra ID; Mattrax stores
+only key metadata and a sealed copy after a reveal (`device_bitlocker_key`). All local rows
+use cascading foreign keys. A Windows LAPS password is not included in the handover archive
+and does not block deletion: it is re-readable from Microsoft Entra ID. The handover archive
+includes every active BitLocker key that is cached locally; uncached keys stay in Entra. There is no grace period, recycle bin or
+undo. If the hardware is leaving your organisation, hand it over first when a local-only
+secret such as a FileVault key or BitLocker key may still be needed.
 
 ```bash
 curl -X DELETE "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/devices" \

@@ -205,6 +205,10 @@ export const managementWebhookGroup = HttpApiGroup.make("ManagementWebhook")
       payload: Schema.Struct({
         authToken: Schema.String,
         tenantToken: Schema.optional(Schema.String),
+        /** Verified enrollment-request address, authenticated by the webhook signature. */
+        clientIp: Schema.optional(Schema.String),
+        /** Bounded enrollment-request User-Agent, authenticated by the webhook signature. */
+        userAgent: Schema.optional(Schema.String),
       }),
       success: WindowsEnrollmentPolicy,
       error: Schema.Union([ManagementNotSupported, UnknownDevice, InternalServerError]),

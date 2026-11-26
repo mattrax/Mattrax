@@ -8,7 +8,6 @@
     { "path": "../crypto" },
     { "path": "../enterprise-core" },
     { "path": "../enterprise-tokens" },
-    { "path": "../net" },
     { "path": "../plist" }
   ],
   "include": ["src"]

@@ -11,6 +11,7 @@
   "dependencies": {
     "@effect/sql-mysql2": "catalog:",
     "@mattrax/enterprise-domain": "workspace:*",
+    "@mattrax/management-backend": "workspace:*",
     "@yielded/auth": "catalog:",
     "@yielded/auth-persistence-drizzle": "catalog:",
     "drizzle-orm": "catalog:",

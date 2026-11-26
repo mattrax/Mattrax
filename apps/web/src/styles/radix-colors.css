@@ -8,8 +8,8 @@
  * `--<scale>-N` declarations from the package's `<scale>.css` and
  * `<scale>-dark.css` files, dropping the `@supports (color: display-p3)` blocks.
  *
- * Light values apply on `:root` and on any `.theme-light` island (the public
- * enrollment page). Dark values override them under `.dark`.
+ * Light values apply on `:root` and on any `.theme-light` island. Dark values
+ * override them under `.dark`.
  */
 
 :root,

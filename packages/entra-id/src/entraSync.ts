@@ -1,12 +1,40 @@
-import { Effect, Exit, Schema } from "effect";
+import { Effect, Exit, Predicate, Schema } from "effect";
 import { and, eq, gt, inArray, lt, ne } from "drizzle-orm";
 import { isDirectorySyncDue, nextDirectorySyncAt, syncDirectory } from "@mattrax/directory-sync";
+import type { DirectorySyncDatabase } from "@mattrax/directory-sync";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import { schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { entraDirectoryUserDirectory } from "./provider.js";
 
 const now = () => new Date();
+
+type EntraErrorLogFields = {
+  readonly tag: string;
+  readonly status?: number;
+  readonly message: string;
+};
+
+/** Provider tags/messages are safe; response bodies and raw causes are not. */
+const entraErrorLogFields = (error: unknown): EntraErrorLogFields => {
+  if (
+    Predicate.isObject(error) &&
+    Predicate.hasProperty(error, "_tag") &&
+    Predicate.isString(error._tag)
+  )
+    return {
+      tag: error._tag,
+      ...(Predicate.hasProperty(error, "status") && Predicate.isNumber(error.status)
+        ? { status: error.status }
+        : {}),
+      message:
+        Predicate.hasProperty(error, "message") && Predicate.isString(error.message)
+          ? error.message.slice(0, 2_000)
+          : "Microsoft Graph directory sync failed.",
+    };
+
+  return { tag: "UnknownError", message: "Microsoft Graph directory sync failed." };
+};
 
 const normalizedDomain = (domain: string) => domain.trim().toLowerCase().replace(/\.$/, "");
 
@@ -160,7 +188,10 @@ export const syncEntraDirectory = (options: {
   readonly usersDeltaLink?: string | null;
   readonly groupsDeltaLink?: string | null;
   readonly syncUsersAndGroups?: boolean;
-  readonly onProgress?: (progress: EntraSyncProgress) => Effect.Effect<void, unknown>;
+  readonly onProgress?: (
+    progress: EntraSyncProgress,
+    database: DirectorySyncDatabase,
+  ) => Effect.Effect<void, unknown>;
 }) =>
   Effect.gen(function* () {
     const { db, graph, organizationId, azureTenantId } = options;
@@ -248,30 +279,36 @@ export const syncEntraDirectory = (options: {
       directory: entraDirectoryUserDirectory({ graph, azureTenantId }),
       usersCursor: options.usersDeltaLink,
       groupsCursor: options.groupsDeltaLink,
-      // Persist each resource class's cursor as soon as it is complete, so a
-      // later failure does not replay the whole tenant.
-      onUsersComplete: (progress) => {
+      // The shared pipeline invokes this after reconciliation, in the same
+      // transaction, so a checkpoint can never skip rolled-back work.
+      onUsersComplete: (progress, tx) => {
         counts.users = progress.users;
         usersDelta = progress.cursor;
 
         return options.onProgress
-          ? options.onProgress({
-              users: progress.users,
-              groups: 0,
-              domains: counts.domains,
-              usersDelta: progress.cursor,
-            })
+          ? options.onProgress(
+              {
+                users: progress.users,
+                groups: 0,
+                domains: counts.domains,
+                usersDelta: progress.cursor,
+              },
+              tx,
+            )
           : Effect.void;
       },
-      onGroupsComplete: (progress) =>
+      onGroupsComplete: (progress, tx) =>
         options.onProgress
-          ? options.onProgress({
-              users: counts.users,
-              groups: progress.groups,
-              domains: counts.domains,
-              usersDelta,
-              groupsDelta: progress.cursor,
-            })
+          ? options.onProgress(
+              {
+                users: counts.users,
+                groups: progress.groups,
+                domains: counts.domains,
+                usersDelta,
+                groupsDelta: progress.cursor,
+              },
+              tx,
+            )
           : Effect.void,
     });
 
@@ -405,10 +442,10 @@ export const runEntraDirectorySyncForTenant = <R = never>(options: {
         usersDeltaLink: state?.usersDeltaLink,
         groupsDeltaLink: state?.groupsDeltaLink,
         syncUsersAndGroups: true,
-        // Persist each resource class's delta cursor as soon as it is
-        // complete, so a later failure does not replay the whole tenant.
-        onProgress: (progress) =>
-          db
+        // Reconciliation and checkpoint commit together in the shared
+        // pipeline's transaction.
+        onProgress: (progress, tx) =>
+          tx
             .update(schema.entraDirectorySync)
             .set({
               usersDeltaLink: progress.usersDelta,
@@ -446,8 +483,9 @@ export const runEntraDirectorySyncForTenant = <R = never>(options: {
     if (result.changedUserIds.length > 0 && options.onMembershipsChanged)
       yield* options.onMembershipsChanged(organizationId, result.changedUserIds).pipe(
         Effect.catch((error) =>
-          Effect.sync(() => {
-            console.error("Entra directory membership refresh failed", organizationId, error);
+          Effect.logError("Entra directory membership refresh failed", {
+            organizationId,
+            ...entraErrorLogFields(error),
           }),
         ),
       );
@@ -481,12 +519,15 @@ export const runEntraDirectorySyncForTenant = <R = never>(options: {
     } as const;
   }).pipe(
     Effect.catch((error) =>
-      Effect.sync(() => {
-        console.error("Entra directory sync failed", options.organizationId, error);
+      Effect.gen(function* () {
+        yield* Effect.logError("Entra directory sync failed", {
+          organizationId: options.organizationId,
+          ...entraErrorLogFields(error),
+        });
 
         return {
           status: "error",
-          message: String(error).slice(0, 2000),
+          message: String(error).slice(0, 2_000),
         } as const;
       }),
     ),
@@ -556,8 +597,11 @@ export const runScheduledEntraSync = <R = never>(options: {
           onMembershipsChanged: options.onMembershipsChanged,
         }).pipe(
           Effect.catch((error) =>
-            Effect.sync(() => {
-              console.error("Scheduled Entra directory sync failed", row.organizationId, error);
+            Effect.gen(function* () {
+              yield* Effect.logError("Scheduled Entra directory sync failed", {
+                organizationId: row.organizationId,
+                ...entraErrorLogFields(error),
+              });
 
               return { status: "error", message: String(error) } as const;
             }),

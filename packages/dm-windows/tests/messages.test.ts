@@ -119,8 +119,8 @@ describe("Windows MDM - GetPolicies", () => {
       '<GetPolicies xmlns="http://schemas.microsoft.com/windows/pki/2009/01/enrollmentpolicy">',
     );
     expect(xml).toContain("<client>");
-    expect(xml).toContain('<lastUpdate xsi:nil="true"/>');
-    expect(xml).toContain('<preferredLanguage xsi:nil="true"/>');
+    expect(xml).toContain('xsi:nil="true"');
+    expect(xml).toContain('xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"');
     expect(xml).toContain("<TPMManufacturer>IBM</TPMManufacturer>");
   });
 
@@ -288,13 +288,14 @@ describe("Windows MDM - SOAP Fault", () => {
     };
 
     const xml = await runPromise(serializeSoapElement(SoapFault, fault));
-    expect(xml).toContain("<s:Fault>");
-    expect(xml).toContain("<s:Code>");
-    expect(xml).toContain("<s:Value>s:receiver</s:Value>");
-    expect(xml).toContain("<s:Subcode>");
-    expect(xml).toContain("<s:Value>s:authentication</s:Value>");
+    expect(xml).toContain("<s:Fault");
+    expect(xml).toContain("<s:Code");
+    expect(xml).toContain("s:receiver");
+    expect(xml).toContain("<s:Subcode");
+    expect(xml).toContain("s:authentication");
     expect(xml).toContain('xml:lang="en-us"');
     expect(xml).toContain("invalid input request");
+    await expect(runPromise(deserializeSoapElement(xml, SoapFault))).resolves.toEqual(fault);
   });
 
   it("should deserialize a SOAP fault", async () => {

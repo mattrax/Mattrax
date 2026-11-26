@@ -22,6 +22,8 @@ export type WindowsMdmRequestContext = {
   readonly tenantToken?: string;
   readonly identityCertificate?: string;
   readonly identityCertificateSerial?: string;
+  /** Verified client certificate DER as standard base64. */
+  readonly identityCertificateDerBase64?: string;
   /** Verified client address, set by the deployment boundary for the audit log. */
   readonly clientIp?: string;
   /** Bounded request `User-Agent`; audit only. */
@@ -46,7 +48,7 @@ export interface WindowsMdmServiceContract {
     xml: string,
     context?: WindowsMdmRequestContext,
   ) => Effect.Effect<string, WindowsMdmError>;
-  readonly fault: (message: string, relatesTo?: string) => Effect.Effect<string, never>;
+  readonly fault: (message: string, relatesTo?: string) => Effect.Effect<string, WindowsMdmError>;
 }
 
 export class WindowsMdmService extends Context.Service<
@@ -57,6 +59,25 @@ export class WindowsMdmService extends Context.Service<
 export declare namespace WindowsMdmService {
   export type Service = WindowsMdmServiceContract;
 }
+
+/** Share one in-flight dynamic import, but allow a later request to retry it. */
+export const retryingLazyImport = <A>(importModule: () => Promise<A>) => {
+  let implementation: Promise<A> | undefined;
+
+  return (): Promise<A> => {
+    if (implementation) return implementation;
+
+    const pending: Promise<A> = importModule().catch((error: unknown) => {
+      if (implementation === pending) implementation = undefined;
+
+      throw error;
+    });
+
+    implementation = pending;
+
+    return pending;
+  };
+};
 
 /**
  * Windows MDM protocol service.
@@ -73,21 +94,18 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
       const backend = yield* ManagementBackend;
       const mdmOrigin = new MdmOrigin({ url: config.origin });
 
-      // `??=` caches the import for this layer, so several calls in one request
-      // share one implementation and the module is evaluated once per isolate.
-      let implementation: Promise<WindowsMdmServiceContract> | undefined;
-
-      const load = (): Promise<WindowsMdmServiceContract> =>
-        (implementation ??= import("./service-impl.js").then((module) =>
-          module.makeWindowsMdmService(backend, config),
-        ));
+      // Several calls share one import, but a rejected chunk load is evicted so
+      // a transient deployment/cache failure does not poison the whole isolate.
+      const load = retryingLazyImport(() =>
+        import("./service-impl.js").then((module) => module.makeWindowsMdmService(backend, config)),
+      );
 
       // A rejected chunk load is a typed error, so the routes answer with a
       // SOAP fault instead of a defect.
       const delegate = <E>(run: (service: WindowsMdmServiceContract) => Effect.Effect<string, E>) =>
         Effect.flatMap(
           Effect.tryPromise({
-            try: load,
+            try: () => load(),
             catch: (cause) =>
               new WindowsMdmError({
                 message:
@@ -105,9 +123,9 @@ export const WindowsMdmServiceLive = (config: { origin: string; providerId?: str
         policy: (xml, context) => delegate((service) => service.policy(xml, context)),
         enroll: (xml, context) => delegate((service) => service.enroll(xml, context)),
         management: (xml, context) => delegate((service) => service.management(xml, context)),
-        // The contract declares `fault` infallible: when the implementation
-        // itself is unavailable, return an empty body and let the route's
-        // minimal fixed envelope stand in for it.
+        // Fault encoding is best effort: when the implementation itself is
+        // unavailable, return an empty body and let the route's minimal fixed
+        // envelope stand in for it.
         fault: (message, relatesTo) =>
           delegate((service) => service.fault(message, relatesTo)).pipe(
             Effect.catch(() => Effect.succeed("")),

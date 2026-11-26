@@ -8,7 +8,7 @@ import { cn } from "~/lib/utils";
  * with a warning mark, what is missing, and the action that fixes it. Avoid
  * stacking a separate status badge and callout above it.
  */
-export function SetupNotice(props: {
+export default function SetupNotice(props: {
   title: string;
   description: JSX.Element;
   icon?: JSX.Element;
@@ -26,8 +26,8 @@ export function SetupNotice(props: {
           {props.icon ?? <CircleAlert />}
         </span>
         <div class="min-w-0 flex-1">
-          <p class="text-[13px] font-[550] leading-5 text-foreground">{props.title}</p>
-          <div class="mt-1 text-[12px] leading-5 text-muted-foreground">{props.description}</div>
+          <p class="text-xs font-medium leading-5 text-foreground">{props.title}</p>
+          <div class="mt-1 text-xs leading-5 text-muted-foreground">{props.description}</div>
           <Show when={props.action}>
             <div class="mt-3 flex flex-wrap items-center gap-2">{props.action}</div>
           </Show>

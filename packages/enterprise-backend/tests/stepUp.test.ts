@@ -1,4 +1,5 @@
 import { Effect, Layer } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import {
@@ -8,7 +9,12 @@ import {
   StepUpUnavailable,
 } from "@mattrax/enterprise-domain";
 import { makeEnterpriseAuthLive } from "../src/Identity/enterpriseAuth.ts";
-import { signStepUpGrant } from "../src/Account/stepUp.ts";
+import {
+  signStepUpFlow,
+  signStepUpGrant,
+  verifyAnyStepUpFlow,
+  verifyStepUpGrant,
+} from "../src/Account/stepUp.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";
@@ -107,6 +113,57 @@ const grant = (
       expiresAtMillis: input.expiresAtMillis ?? Date.now() + 60_000,
     }),
   );
+
+describe("step-up clock boundaries", () => {
+  it("expires grants and flow bindings on the Effect clock", async () => {
+    const grantToken = await grant({ expiresAtMillis: 1_000 });
+    const flowToken = await Effect.runPromise(
+      signStepUpFlow(authSecret, {
+        subjectId: "user-1",
+        email: "owner@example.com",
+        sessionId: "session-1",
+        action: "tenant-delete",
+        flowId: "flow-1",
+        requestBindingVerifier: "verifier",
+        requestBindingExpiresAtMillis: 1_000,
+      }),
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        expect(
+          yield* verifyStepUpGrant(authSecret, grantToken, {
+            subjectId: "user-1",
+            sessionId: "session-1",
+            action: "tenant-delete",
+          }),
+        ).toBe(true);
+        expect(
+          yield* verifyAnyStepUpFlow(authSecret, flowToken, {
+            subjectId: "user-1",
+            sessionId: "session-1",
+          }),
+        ).toBeDefined();
+
+        yield* TestClock.adjust(1_000);
+
+        expect(
+          yield* verifyStepUpGrant(authSecret, grantToken, {
+            subjectId: "user-1",
+            sessionId: "session-1",
+            action: "tenant-delete",
+          }),
+        ).toBe(false);
+        expect(
+          yield* verifyAnyStepUpFlow(authSecret, flowToken, {
+            subjectId: "user-1",
+            sessionId: "session-1",
+          }),
+        ).toBeUndefined();
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+  });
+});
 
 describe("step-up enforcement", () => {
   it("rejects a sensitive action without a grant and reports usable factors", async () => {

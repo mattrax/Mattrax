@@ -20,6 +20,7 @@ import {
 import type { RealtimeEvent } from "@mattrax/enterprise-domain";
 import { loadTenantAccess } from "@mattrax/enterprise-identity";
 import { parseStoredCredentialScopes } from "@mattrax/enterprise-backend";
+import { catchCausePreservingInterrupts } from "./errorBoundary.js";
 
 /**
  * Authenticated, tenant-scoped realtime invalidation over Server-Sent Events.
@@ -95,7 +96,7 @@ export const authorizeRealtimeTenant = (input: {
   readonly auth: EnterpriseAuth["Service"];
   readonly tenantId: string;
   readonly headers: HeaderRecord;
-}): Effect.Effect<RealtimeAuthorization> =>
+}): Effect.Effect<RealtimeAuthorization, unknown> =>
   Effect.gen(function* () {
     const resolved = yield* Effect.exit(
       // SAFETY: the auth service's resolved shape is dynamic by design; the
@@ -185,7 +186,7 @@ export const authorizeRealtimeTenant = (input: {
     // An auth service failure (expired session, revoked token, disabled
     // account) must not produce a stream. Anything not explicitly swallowed
     // above is an authentication failure.
-    Effect.catchCause(() =>
+    catchCausePreservingInterrupts(() =>
       Effect.succeed({
         allowed: false,
         status: 401,
@@ -373,7 +374,7 @@ export const realtimeHandler =
         },
       });
     }).pipe(
-      Effect.catchCause((cause) =>
+      catchCausePreservingInterrupts((cause) =>
         Effect.gen(function* () {
           yield* Effect.logError("Realtime stream failed", cause);
 

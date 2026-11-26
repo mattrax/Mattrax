@@ -34,6 +34,7 @@ export const EMAIL_OUTBOX_TEMPLATES = [
   "credential_expiry",
   "dashboard_report",
   "approval_request",
+  "restricted_software_violation",
 ] as const;
 
 export type EmailOutboxTemplate = (typeof EMAIL_OUTBOX_TEMPLATES)[number];
@@ -80,6 +81,8 @@ const EmailOutboxPayload = Schema.Struct({
   subject: Schema.String,
   text: Schema.optional(Schema.String),
   html: Schema.optional(Schema.String),
+  /** Extra MIME headers (for example `OTP-Token`) that must survive a retry. */
+  headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** Base64 attachment bodies (scheduled reports). */
   attachments: Schema.optional(
     Schema.Array(
