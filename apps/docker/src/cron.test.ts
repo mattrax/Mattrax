@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createBackgroundTasks } from "./backgroundTasks.ts";
 import { parseCron, startCronScheduler } from "./cron.ts";
 
 describe("cron", () => {
@@ -58,6 +59,43 @@ describe("cron", () => {
       expect(calls).toBe(2);
       stop();
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not let unrelated request work hold the cron overlap guard", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-24T12:00:00Z"));
+    const processTasks = createBackgroundTasks();
+    let releaseAnalytics!: () => void;
+    processTasks.waitUntil(
+      new Promise<void>((resolve) => {
+        releaseAnalytics = resolve;
+      }),
+    );
+    let calls = 0;
+    const stop = startCronScheduler({
+      expressions: ["* * * * *"],
+      trigger: async () => {
+        const tickTasks = processTasks.fork();
+        calls += 1;
+        tickTasks.waitUntil(Promise.resolve());
+        await tickTasks.idle();
+      },
+      log: () => {},
+    });
+
+    try {
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(calls).toBe(1);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(calls).toBe(2);
+      stop();
+      await stop.idle();
+    } finally {
+      stop();
+      releaseAnalytics();
+      await processTasks.idle();
       vi.useRealTimers();
     }
   });

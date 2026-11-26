@@ -9,9 +9,9 @@ import { errorMessage } from "~/lib/errors";
 import { bulkFailureReason, bulkReport, runBulkBatches, rolePatch } from "~/lib/bulk-members";
 import type { BulkFailure } from "~/lib/bulk-members";
 import { Button } from "~/components/ui/button";
-import { FilterBar } from "@mattrax/ui";
+import { Checkbox, FilterBar } from "@mattrax/ui";
 import type { FilterField } from "@mattrax/ui";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -22,7 +22,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { UsersRound } from "~/components/ui/icons";
-import { EntityHoverCard } from "~/components/entity-hover-card";
+import EntityHoverCard from "~/components/entity-hover-card";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type {
@@ -41,7 +41,7 @@ import {
 } from "~/lib/optimistic";
 import { initials } from "~/lib/names";
 import { cn } from "~/lib/utils";
-import { StatusChip as Chip } from "~/components/settings/status-chip";
+import Chip from "~/components/settings/status-chip";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 
@@ -77,7 +77,7 @@ const isBuiltInOwnerUser = (account: { role: string; roleId?: string | null }) =
     .includes("owner");
 
 const selectClass =
-  "h-11 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground sm:h-8 sm:text-[12.5px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50 sm:w-auto";
+  "h-11 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground sm:h-8 sm:text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50 sm:w-auto";
 
 const statusLabels: Record<TenantInvitation["status"], string> = {
   pending: "Pending",
@@ -717,15 +717,6 @@ export default function AdministratorsSettingsPage() {
         : new Set<string>(),
     );
 
-  let selectAllAccountsRef: HTMLInputElement | undefined;
-
-  createEffect(
-    () => someSelectableSelected(),
-    (selected) => {
-      if (selectAllAccountsRef) selectAllAccountsRef.indeterminate = selected;
-    },
-  );
-
   const changeRoles = useMutation(() => ({
     meta: { inlineError: true },
     mutationFn: async () => {
@@ -1047,7 +1038,7 @@ export default function AdministratorsSettingsPage() {
 
           <Show when={unavailableChoices().length > 0}>
             <details class="mt-3 text-xs leading-relaxed text-muted-foreground">
-              <summary class="w-fit cursor-pointer rounded text-[12px] font-medium text-muted-foreground hover:text-foreground">
+              <summary class="w-fit cursor-pointer rounded text-xs font-medium text-muted-foreground hover:text-foreground">
                 Why some roles are unavailable
               </summary>
               <ul class="mt-2 space-y-1">
@@ -1132,7 +1123,7 @@ export default function AdministratorsSettingsPage() {
             >
               <div class="grid gap-2 sm:grid-cols-2">
                 <label>
-                  <span class="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
+                  <span class="mb-1 block text-xs font-medium text-muted-foreground">Name</span>
                   <Input
                     value={roleName()}
                     onInput={(event) => setRoleName(event.currentTarget.value)}
@@ -1140,7 +1131,7 @@ export default function AdministratorsSettingsPage() {
                   />
                 </label>
                 <label>
-                  <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+                  <span class="mb-1 block text-xs font-medium text-muted-foreground">
                     Description
                   </span>
                   <Input
@@ -1150,7 +1141,7 @@ export default function AdministratorsSettingsPage() {
                   />
                 </label>
               </div>
-              <p class="text-[11px] leading-relaxed text-muted-foreground">
+              <p class="text-xs leading-relaxed text-muted-foreground">
                 Only permissions your own role holds are shown. Your role is the ceiling: a custom
                 role can never grant more than you already have.
               </p>
@@ -1158,7 +1149,7 @@ export default function AdministratorsSettingsPage() {
                 <For each={visiblePermissionGroups()}>
                   {(group) => (
                     <div class="min-w-0">
-                      <p class="mb-1 text-[11px] font-medium text-foreground">{group.label}</p>
+                      <p class="mb-1 text-xs font-medium text-foreground">{group.label}</p>
                       <div class="space-y-1">
                         <For each={group.permissions}>
                           {(permission) => {
@@ -1167,24 +1158,23 @@ export default function AdministratorsSettingsPage() {
 
                             return (
                               <label
-                                class="flex cursor-pointer items-start gap-2 text-[11.5px] text-muted-foreground"
+                                class="flex cursor-pointer items-start gap-2 text-xs text-muted-foreground"
                                 title={
                                   disabled()
                                     ? "Only a tenant owner can grant owner-only permissions"
                                     : undefined
                                 }
                               >
-                                <input
-                                  type="checkbox"
-                                  class="mt-0.5 size-4 accent-[var(--brand-solid)]"
+                                <Checkbox
+                                  class="mt-0.5"
                                   checked={rolePermissions().has(permission.id)}
                                   disabled={disabled()}
-                                  onChange={() => togglePermission(permission.id)}
+                                  onCheckedChange={() => togglePermission(permission.id)}
                                 />
                                 <span>
                                   {permission.label}
                                   <Show when={ownerOnly()}>
-                                    <span class="ml-1 text-[10px] text-muted-foreground">
+                                    <span class="ml-1 text-xs text-muted-foreground">
                                       (owner only)
                                     </span>
                                   </Show>
@@ -1235,15 +1225,15 @@ export default function AdministratorsSettingsPage() {
               {(item) => (
                 <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-center sm:justify-between">
                   <div class="min-w-0">
-                    <p class="text-[12.5px] font-medium text-foreground">
+                    <p class="text-xs font-medium text-foreground">
                       {item.name}
                       <Show when={item.builtIn}>
-                        <span class="ml-2 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                        <span class="ml-2 rounded-full border border-border px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
                           Built-in
                         </span>
                       </Show>
                     </p>
-                    <p class="mt-0.5 text-[11px] text-muted-foreground">
+                    <p class="mt-0.5 text-xs text-muted-foreground">
                       {item.memberCount} administrator{item.memberCount === 1 ? "" : "s"} ·{" "}
                       {item.permissions.length} permission
                       {item.permissions.length === 1 ? "" : "s"}
@@ -1298,27 +1288,28 @@ export default function AdministratorsSettingsPage() {
         <Show
           when={accountCount() > 0}
           fallback={
-            <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">
+            <p class="px-4 py-6 text-xs text-muted-foreground sm:px-5">
               No administrators yet.
             </p>
           }
         >
           <Show when={can("members.write") && selectableAccounts().length > 0}>
             <div class="flex items-center gap-2 border-b border-border px-4 py-2 sm:px-5">
-              <input
-                ref={(element) => {
-                  selectAllAccountsRef = element;
-                }}
+              <Checkbox
                 id="select-all-administrators"
-                type="checkbox"
-                class="size-3.5 accent-[var(--primary)]"
-                checked={allSelectableSelected()}
-                onChange={(event) => toggleAllAccounts(event.currentTarget.checked)}
+                checked={
+                  allSelectableSelected()
+                    ? true
+                    : someSelectableSelected()
+                      ? "indeterminate"
+                      : false
+                }
+                onCheckedChange={(checked) => toggleAllAccounts(checked === true)}
                 aria-label="Select all administrators whose role you can change"
               />
               <label
                 for="select-all-administrators"
-                class="cursor-pointer text-[11.5px] text-muted-foreground"
+                class="cursor-pointer text-xs text-muted-foreground"
               >
                 Select all changeable administrators
               </label>
@@ -1353,12 +1344,10 @@ export default function AdministratorsSettingsPage() {
                     )}
                   >
                     <Show when={can("members.write")}>
-                      <input
-                        type="checkbox"
-                        class="size-3.5 shrink-0 accent-[var(--primary)]"
+                      <Checkbox
                         checked={selectedAccountIds().has(account.accountId)}
-                        onChange={(event) =>
-                          toggleAccount(account.accountId, event.currentTarget.checked)
+                        onCheckedChange={(checked) =>
+                          toggleAccount(account.accountId, checked === true)
                         }
                         disabled={!canChangeAccountRole(account)}
                         title={selectionTitle()}
@@ -1370,19 +1359,19 @@ export default function AdministratorsSettingsPage() {
                       class="flex min-w-0 items-center gap-3"
                     >
                       <span
-                        class="flex size-7 shrink-0 items-center justify-center rounded-full bg-hover text-[10px] font-semibold text-foreground ring-1 ring-inset ring-border"
+                        class="flex size-7 shrink-0 items-center justify-center rounded-full bg-hover text-xs font-semibold text-foreground ring-1 ring-inset ring-border"
                         aria-hidden="true"
                       >
                         {initials(account.name)}
                       </span>
                       <div class="min-w-0">
-                        <strong class="block truncate text-[13px] font-medium text-foreground">
+                        <strong class="block truncate text-xs font-medium text-foreground">
                           {account.name}
                         </strong>
                         <span class="block truncate text-xs text-muted-foreground">
                           {account.email}
                         </span>
-                        <span class="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                        <span class="mt-0.5 block truncate text-xs text-muted-foreground">
                           {account.roleName ?? account.role}
                         </span>
                       </div>
@@ -1478,9 +1467,9 @@ export default function AdministratorsSettingsPage() {
           <div
             role="group"
             aria-label="Bulk administrator actions"
-            class="fixed bottom-5 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-popover"
+            class="fixed bottom-5 inset-x-4 z-40 mx-auto flex max-w-full flex-wrap items-center justify-center gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-popover"
           >
-            <span class="flex items-center gap-2 text-[12px] font-[550] tabular-nums">
+            <span class="flex items-center gap-2 text-xs font-medium tabular-nums">
               <span class="size-1.5 rounded-full bg-primary" aria-hidden="true" />
               {selectedAccounts().length} selected
             </span>
@@ -1580,7 +1569,7 @@ export default function AdministratorsSettingsPage() {
                 <Show
                   when={transferCandidates().length > 0}
                   fallback={
-                    <p class="text-[13px] text-muted-foreground">
+                    <p class="text-xs text-muted-foreground">
                       Invite another administrator before transferring ownership. Owners cannot take
                       over from each other.
                     </p>
@@ -1646,11 +1635,11 @@ export default function AdministratorsSettingsPage() {
                 <div class="rounded-lg border border-warning/25 bg-warning/[0.06] p-3">
                   <div class="flex flex-wrap items-center gap-2">
                     <Chip tone="warning">Pending</Chip>
-                    <span class="text-[13px] text-foreground">
+                    <span class="text-xs text-foreground">
                       Ownership is waiting for acceptance.
                     </span>
                   </div>
-                  <dl class="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12px]">
+                  <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
                     <dt class="text-muted-foreground">Requested by</dt>
                     <dd class="min-w-0 truncate font-medium text-foreground">
                       {transfer().requestedBy.name} ({transfer().requestedBy.email})
@@ -1707,7 +1696,7 @@ export default function AdministratorsSettingsPage() {
                 <span class="font-medium text-foreground">{notice().email}</span>. Expires{" "}
                 <time datetime={notice().expiresAt}>{formatDate(notice().expiresAt)}</time>.
               </p>
-              <code class="mt-2 block break-all rounded-md border border-border bg-muted p-2 font-mono text-[11px] text-muted-foreground">
+              <code class="mt-2 block break-all rounded-md border border-border bg-muted p-2 font-mono text-xs text-muted-foreground">
                 {notice().inviteUrl}
               </code>
               <div class="mt-2 flex flex-wrap items-center gap-2">
@@ -1750,7 +1739,7 @@ export default function AdministratorsSettingsPage() {
         <Show
           when={filteredInvitations().length > 0}
           fallback={
-            <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">
+            <p class="px-4 py-6 text-xs text-muted-foreground sm:px-5">
               {filter() === "active"
                 ? "No pending invitations."
                 : "No invitations match this filter."}
@@ -1776,10 +1765,10 @@ export default function AdministratorsSettingsPage() {
                   <li class="flex flex-col gap-3 px-4 py-3 sm:px-5">
                     <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div class="min-w-0">
-                        <p class="break-all text-[13px] font-medium text-foreground">
+                        <p class="break-all text-xs font-medium text-foreground">
                           {item.email}
                         </p>
-                        <p class="mt-0.5 text-[11px] text-muted-foreground">
+                        <p class="mt-0.5 text-xs text-muted-foreground">
                           {item.roleName}
                           <Show when={item.invitedBy}>
                             {(inviter) => (
@@ -1790,7 +1779,7 @@ export default function AdministratorsSettingsPage() {
                             )}
                           </Show>
                         </p>
-                        <p class="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+                        <p class="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                           <span>
                             Created{" "}
                             <time datetime={item.createdAt} title={formatDate(item.createdAt)}>
@@ -1857,7 +1846,7 @@ export default function AdministratorsSettingsPage() {
                       <p
                         role="status"
                         aria-live="polite"
-                        class="text-[11px] text-success"
+                        class="text-xs text-success"
                       >
                         Link copied to clipboard.
                       </p>
@@ -1883,9 +1872,9 @@ export default function AdministratorsSettingsPage() {
         }}
       >
         <DialogContent class="max-w-md">
-          <DialogHeader class="gap-1.5">
-            <DialogTitle class="text-[15px] font-semibold">Resend invitation?</DialogTitle>
-            <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
+          <DialogHeader>
+            <DialogTitle>Resend invitation?</DialogTitle>
+            <DialogDescription>
               Resending creates a brand-new link for{" "}
               <span class="font-medium text-foreground">{resendTarget()?.email}</span>. The previous
               link stops working immediately.
@@ -1923,9 +1912,9 @@ export default function AdministratorsSettingsPage() {
         }}
       >
         <DialogContent class="max-w-md">
-          <DialogHeader class="gap-1.5">
-            <DialogTitle class="text-[15px] font-semibold">Cancel invitation?</DialogTitle>
-            <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
+          <DialogHeader>
+            <DialogTitle>Cancel invitation?</DialogTitle>
+            <DialogDescription>
               The invitation for{" "}
               <span class="font-medium text-foreground">{cancelTarget()?.email}</span> will stop
               working. You can send a new invitation later.
@@ -1985,9 +1974,9 @@ export default function AdministratorsSettingsPage() {
         }}
       >
         <DialogContent class="max-w-lg">
-          <DialogHeader class="gap-1.5">
-            <DialogTitle class="text-[15px] font-semibold">Scope tags</DialogTitle>
-            <DialogDescription class="text-[12.5px] leading-relaxed text-muted-foreground">
+          <DialogHeader>
+            <DialogTitle>Scope tags</DialogTitle>
+            <DialogDescription>
               Choose the tagged resources{" "}
               <span class="font-medium text-foreground">
                 {tagTarget()?.name ?? "this administrator"}

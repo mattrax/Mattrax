@@ -1,5 +1,4 @@
 import { useParams, useSearchParams } from "@solidjs/router";
-import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { Show, createSignal } from "solid-js";
 import {
@@ -23,32 +22,23 @@ import {
   RESTRICTED_SOFTWARE_PLATFORM_LABELS,
   restrictedSoftwareCapability,
 } from "@mattrax/enterprise-domain/client";
-import { preloadPage } from "~/lib/page-data";
 import { AccessDenied, useCan } from "~/lib/permissions";
-import { queryClient } from "~/lib/query-client";
-
-export const route = {
-  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
-    if (intent === "initial") return;
-
-    return preloadPage([
-      () => queryClient.ensureQueryData(enterpriseQueries.restrictedSoftware(params.tenantId)),
-    ]);
-  },
-};
+import { restrictedSoftwareQueryAccess } from "./query-access";
 
 type View = "rules" | "violations";
 
-const enforcementTone = (state: string) => {
+const enforcementTone = (
+  state: string,
+): "success" | "destructive" | "warning" | "outline" => {
   switch (state) {
     case "enforced":
-      return "border-success/30 text-success-foreground";
+      return "success";
     case "failed":
-      return "border-destructive/30 text-destructive";
+      return "destructive";
     case "pending":
-      return "border-warning/30 text-warning-foreground";
+      return "warning";
     default:
-      return "border-border text-muted-foreground";
+      return "outline";
   }
 };
 
@@ -61,6 +51,14 @@ const stateLabel = (state: string) =>
         ? "Failed"
         : "Pending";
 
+/** Read query data only after success so a pending query cannot suspend the page. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function RestrictedSoftwarePage() {
   const params = useParams();
   const [searchParams] = useSearchParams();
@@ -70,16 +68,29 @@ export default function RestrictedSoftwarePage() {
   const [view, setView] = createSignal<View>(ruleFilter() ? "violations" : "rules");
   const [violationFilter, setViolationFilter] = createSignal<"open" | "all">("open");
 
-  const rules = useQuery(() => enterpriseQueries.restrictedSoftware(params.tenantId));
-  const violations = useQuery(() =>
-    enterpriseQueries.restrictedSoftwareViolations(params.tenantId, {
+  const queryAccess = () =>
+    restrictedSoftwareQueryAccess({
+      read: can("restricted_software.read"),
+      write: writable(),
+      isNew: false,
+      violationsView: view() === "violations",
+    });
+  const rules = useQuery(() => {
+    const options = enterpriseQueries.restrictedSoftware(params.tenantId);
+
+    return { ...options, enabled: options.enabled && queryAccess().rules };
+  });
+  const violations = useQuery(() => {
+    const options = enterpriseQueries.restrictedSoftwareViolations(params.tenantId, {
       status: violationFilter() === "open" ? "open" : undefined,
       ruleId: ruleFilter(),
-    }),
-  );
+    });
 
-  const ruleRows = () => [...(rules.data?.rules ?? [])];
-  const violationRows = () => [...(violations.data?.violations ?? [])];
+    return { ...options, enabled: options.enabled && queryAccess().violations };
+  });
+
+  const ruleRows = () => [...(settledQueryData(rules)?.rules ?? [])];
+  const violationRows = () => [...(settledQueryData(violations)?.violations ?? [])];
 
   const ruleColumns = [
     {
@@ -105,10 +116,10 @@ export default function RestrictedSoftwarePage() {
       header: "Match",
       cell: (row: RestrictedSoftwareRuleInfo) => (
         <div class="min-w-0">
-          <span class="block text-[11.5px] text-muted-foreground">
+          <span class="block text-xs text-muted-foreground">
             {RESTRICTED_SOFTWARE_MATCH_LABELS[row.matchType]}
           </span>
-          <span class="block truncate font-mono text-[11.5px] text-foreground">
+          <span class="block truncate font-mono text-xs text-foreground">
             {row.matchValue}
           </span>
         </div>
@@ -120,8 +131,7 @@ export default function RestrictedSoftwarePage() {
         <div class="flex flex-wrap items-center gap-1.5">
           <span>{RESTRICTED_SOFTWARE_ACTION_LABELS[row.action]}</span>
           <Badge
-            variant="outline"
-            class={enforcementTone(
+            variant={enforcementTone(
               restrictedSoftwareCapability(row.platform, row.action).mode === "detection-only"
                 ? "detection-only"
                 : "pending",
@@ -200,7 +210,7 @@ export default function RestrictedSoftwarePage() {
           <span class="block truncate text-foreground">
             {row.applicationName ?? row.matchedBundleId}
           </span>
-          <span class="block truncate font-mono text-[11px] text-muted-foreground">
+          <span class="block truncate font-mono text-xs text-muted-foreground">
             {row.matchedBundleId}
           </span>
         </div>
@@ -209,7 +219,7 @@ export default function RestrictedSoftwarePage() {
     {
       header: "Enforcement",
       cell: (row: RestrictedSoftwareViolationInfo) => (
-        <Badge variant="outline" class={enforcementTone(row.enforcementState)}>
+        <Badge variant={enforcementTone(row.enforcementState)}>
           {stateLabel(row.enforcementState)}
         </Badge>
       ),
@@ -238,7 +248,7 @@ export default function RestrictedSoftwarePage() {
           title="Restricted software"
           description="Deny-list applications, record violations and enforce removal where a platform supports it."
           meta={
-            <Show when={rules.data}>
+            <Show when={settledQueryData(rules)}>
               <span class="tabular-nums">
                 {ruleRows().length} rule{ruleRows().length === 1 ? "" : "s"}
               </span>
@@ -267,9 +277,9 @@ export default function RestrictedSoftwarePage() {
             onClick={() => setView("violations")}
           >
             Violations
-            <Show when={(violations.data?.summary.open ?? 0) > 0}>
-              <span class="ml-1 rounded-full bg-destructive/10 px-1.5 text-[10px] text-destructive">
-                {violations.data?.summary.open}
+            <Show when={(settledQueryData(violations)?.summary.open ?? 0) > 0}>
+              <span class="ml-1 rounded-full bg-destructive/10 px-1.5 text-xs text-destructive">
+                {settledQueryData(violations)?.summary.open}
               </span>
             </Show>
           </Button>
@@ -294,7 +304,7 @@ export default function RestrictedSoftwarePage() {
         </div>
 
         <Show when={view() === "violations" && ruleFilter()}>
-          <div class="flex items-center gap-2 text-[11.5px] text-muted-foreground">
+          <div class="flex items-center gap-2 text-xs text-muted-foreground">
             <Badge variant="outline">Filtered to one rule</Badge>
             <a
               href={`/t/${params.tenantId}/restricted-software`}
@@ -357,22 +367,22 @@ export default function RestrictedSoftwarePage() {
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <Panel title="Open" description="Violations currently present.">
                 <p class="text-2xl font-semibold tabular-nums">
-                  {violations.data?.summary.open ?? 0}
+                  {settledQueryData(violations)?.summary.open ?? 0}
                 </p>
               </Panel>
               <Panel title="Enforced" description="Agent or policy action recorded.">
                 <p class="text-2xl font-semibold tabular-nums">
-                  {violations.data?.summary.enforced ?? 0}
+                  {settledQueryData(violations)?.summary.enforced ?? 0}
                 </p>
               </Panel>
               <Panel title="Detection only" description="No enforcement path on this platform.">
                 <p class="text-2xl font-semibold tabular-nums">
-                  {violations.data?.summary.detectionOnly ?? 0}
+                  {settledQueryData(violations)?.summary.detectionOnly ?? 0}
                 </p>
               </Panel>
               <Panel title="Failed" description="Enforcement reported an error.">
                 <p class="text-2xl font-semibold tabular-nums">
-                  {violations.data?.summary.failed ?? 0}
+                  {settledQueryData(violations)?.summary.failed ?? 0}
                 </p>
               </Panel>
             </div>
@@ -391,7 +401,7 @@ export default function RestrictedSoftwarePage() {
           </Show>
         </Show>
 
-        <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+        <p class="text-xs leading-relaxed text-muted-foreground">
           Android enforces Block installation through the Managed Google Play policy. macOS enforces
           Kill process and Delete app through mattraxd; it cannot prevent an install. Windows is
           detection-only because no Windows agent is deployed for OMA-DM process or application

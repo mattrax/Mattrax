@@ -1,4 +1,4 @@
-import { Effect, Option } from "effect";
+import { Effect } from "effect";
 import type { HttpServerRequest } from "effect/http";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { and, eq, gt, isNull } from "drizzle-orm";
@@ -76,7 +76,7 @@ const failureCopy = {
   sign_in_failed: "Single sign-on failed. Try again or contact your administrator.",
 } satisfies Record<string, string>;
 
-const failure = (code: string, status = 400) => {
+const failure = (code: string, status = 400, clearState = true) => {
   const message =
     Object.entries(failureCopy).find(([candidate]) => candidate === code)?.[1] ??
     "Enrollment could not be completed. Try again.";
@@ -92,7 +92,11 @@ const failure = (code: string, status = 400) => {
   return HttpServerResponse.text(html, {
     status,
     contentType: "text/html; charset=utf-8",
-    headers: { ...noStore, "set-cookie": STATE_COOKIE_CLEAR },
+    headers: {
+      ...noStore,
+      // A foreign state must never expire the cookie another flow depends on.
+      ...(clearState ? { "set-cookie": STATE_COOKIE_CLEAR } : {}),
+    },
   });
 };
 
@@ -299,8 +303,8 @@ export const appleByodAuthorize = (
  *
  * The state token has already been signature- and cookie-checked there. This
  * function completes the code exchange, enforces that the IdP identity is the
- * Managed Apple Account, binds the directory person and mints the one-time
- * access token.
+ * Managed Apple Account, proves the account and directory person share the
+ * immutable IdP object id, and mints the one-time access token.
  */
 export const handleAppleByodSsoCallback = (input: {
   readonly request: HttpServerRequest.HttpServerRequest;
@@ -362,32 +366,24 @@ export const handleAppleByodSsoCallback = (input: {
     // For a federated Managed Apple Account the IdP address and the Apple
     // account are the same. Anything else needs a mapping this feature does
     // not claim to provide, so fail closed instead of enrolling the wrong
-    // person under the wrong Apple ID.
+    // person under the wrong Apple ID. The immutable object id, not this
+    // mutable email claim, is the person key used below.
     if (exchanged.email !== parsed.identifier) {
       yield* recordFailure(input, null, exchanged.email);
       return failure("account_mismatch", 403);
     }
 
-    const directoryUser = yield* db.query.user.findFirst({
-      where: {
-        organizationId,
-        email: exchanged.email,
-        disabled: false,
-      },
-    });
-
-    if (!directoryUser) {
-      yield* recordFailure(input, null, exchanged.email);
-      return failure("directory_user_missing", 403);
-    }
-
+    // BYOD must not create a new account or SSO link: both identities have to
+    // already be linked through this exact immutable IdP object. Otherwise an
+    // email-equal account could enroll a different directory person.
     const resolved = yield* resolveSsoAccount({
       db,
       tenantId: organizationId,
-      autoProvision: sso.autoProvision,
+      autoProvision: false,
       email: exchanged.email,
       objectId: exchanged.objectId,
       name: exchanged.name,
+      requireExistingIdentity: true,
     });
 
     if (!resolved.ok) {
@@ -396,7 +392,20 @@ export const handleAppleByodSsoCallback = (input: {
         resolved.failure.accountId ?? null,
         resolved.failure.email,
       );
-      return failure(resolved.failure.code);
+      return failure(resolved.failure.code, 403);
+    }
+
+    const directoryUser = yield* db.query.user.findFirst({
+      where: {
+        organizationId,
+        externalId: exchanged.objectId,
+        disabled: false,
+      },
+    });
+
+    if (!directoryUser) {
+      yield* recordFailure(input, null, exchanged.email);
+      return failure("directory_user_missing", 403);
     }
 
     yield* ensureCredential(db, resolved.user.id);
@@ -455,7 +464,6 @@ const recordFailure = (
     if (accountId == null) return;
     const client = loginAttemptClient(
       input.request.headers,
-      Option.getOrUndefined(input.request.remoteAddress) ?? null,
     );
 
     yield* recordLoginAttempt(input.db, {
@@ -480,7 +488,6 @@ const recordSuccess = (
   Effect.gen(function* () {
     const client = loginAttemptClient(
       input.request.headers,
-      Option.getOrUndefined(input.request.remoteAddress) ?? null,
     );
 
     yield* recordLoginAttempt(input.db, {

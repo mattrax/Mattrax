@@ -8,7 +8,7 @@ import { cn } from "~/lib/utils";
  * choice, which `prefers-color-scheme` media queries cannot express. Only one
  * copy is rendered at a time, so both carry the same accessible name.
  */
-export function BrandLogo(props: { class?: string; mark?: boolean }) {
+export default function BrandLogo(props: { class?: string; mark?: boolean }) {
   const sizing = () => props.class ?? "h-4";
 
   // The collapsed rail has no room for the wordmark; the "M" glyph keeps the
@@ -17,7 +17,7 @@ export function BrandLogo(props: { class?: string; mark?: boolean }) {
     return (
       <span
         aria-hidden="true"
-        class={`inline-flex items-center justify-center font-sans font-[680] leading-none tracking-[-0.06em] text-foreground ${props.class ?? "text-[18px]"}`}
+        class={`inline-flex items-center justify-center font-sans font-bold leading-none tracking-tighter text-foreground ${props.class ?? "text-lg"}`}
       >
         M
       </span>

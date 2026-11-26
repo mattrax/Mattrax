@@ -93,11 +93,17 @@ export type TenantPermissionsApi = {
  * Permissions for the tenant in the current URL. Every tenant page and the
  * dashboard shell read the same `me` query, so this adds no extra request.
  */
+/** Read account data only after success so a held /me cannot suspend callers. */
+const settledQueryData = <T,>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined => (query.isSuccess ? query.data : undefined);
+
 export function useTenantPermissions(): TenantPermissionsApi {
   const params = useParams();
   const session = authClient.useSession();
   const me = useQuery(() => meQueryOptions(session().data?.user?.id));
-  const tenant = createMemo(() => resolveActiveTenant(me.data, params.tenantId));
+  const tenant = createMemo(() => resolveActiveTenant(settledQueryData(me), params.tenantId));
   const permissions = createMemo(() => tenantPermissions(tenant()));
 
   return {
@@ -145,7 +151,7 @@ export function ReadOnlyNotice(props: { class?: string; children?: JSX.Element }
     <div
       role="status"
       class={cn(
-        "flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-[12px] leading-relaxed text-muted-foreground",
+        "flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted-foreground",
         props.class,
       )}
     >
@@ -163,10 +169,10 @@ export function AccessDenied(props: { title?: string; message?: string; action?:
   return (
     <div class="flex flex-1 items-center justify-center px-4 py-16">
       <div class="w-full max-w-md rounded-xl border border-border bg-surface p-6 text-center">
-        <h1 class="text-[15px] font-semibold text-foreground">
+        <h1 class="text-sm font-semibold text-foreground">
           {props.title ?? "You don't have access"}
         </h1>
-        <p class="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
+        <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
           {props.message ??
             "Your role does not include permission for this area. Ask a tenant owner if you need access."}
         </p>

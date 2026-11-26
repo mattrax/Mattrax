@@ -17,7 +17,7 @@ import type {
 } from "@mattrax/enterprise-domain/client";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -28,23 +28,15 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { toast } from "~/components/toast";
-import {
-  ErrorText,
-  Page,
-  PageHeader,
-  Panel,
-  QueryError,
-  relativeTime,
-} from "~/components/mdm/common";
+import { ErrorText, Panel, QueryError, relativeTime } from "~/components/mdm/common";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { useTenantPermissions } from "~/lib/permissions";
 import { approvalRetryFor, clearApprovalRetry } from "~/lib/approval-retry";
-import { cn } from "~/lib/utils";
 
 const selectClass =
-  "h-9 w-full rounded-lg border border-input bg-surface px-2.5 text-[12.5px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50";
+  "h-9 w-full rounded-lg border border-input bg-surface px-2.5 text-xs text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50";
 
-const labelClass = "text-[11px] font-[560] uppercase tracking-[0.02em] text-muted-foreground";
+const labelClass = "text-xs font-semibold uppercase tracking-wide text-muted-foreground";
 
 const permissionOptions = PERMISSION_GROUPS.flatMap((group) =>
   group.permissions.map((permission) => ({
@@ -117,7 +109,7 @@ function RequestCard(props: {
       <div class="flex flex-wrap items-start justify-between gap-2">
         <div class="min-w-0">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="text-[13px] font-[560] text-foreground">{props.request.actionLabel}</span>
+            <span class="text-xs font-semibold text-foreground">{props.request.actionLabel}</span>
             <Badge
               variant={statusTone(props.request.status)}
               dot={pending() ? "warning" : undefined}
@@ -128,21 +120,21 @@ function RequestCard(props: {
               <Badge variant="destructive">Break-glass</Badge>
             </Show>
           </div>
-          <p class="mt-1 text-[12px] text-muted-foreground">
+          <p class="mt-1 text-xs text-muted-foreground">
             {props.request.requesterName ?? "An administrator"}
             <Show when={props.request.requesterEmail}> ({props.request.requesterEmail})</Show>{" "}
             requested this {relativeTime(props.request.createdAt)}.{" "}
             {props.request.approvalsReceived} of {props.request.approvalsRequired} approvals.
           </p>
         </div>
-        <div class="text-right text-[11.5px] text-muted-foreground">
+        <div class="text-right text-xs text-muted-foreground">
           <div>Expires {relativeTime(props.request.expiresAt)}</div>
-          <div class="font-mono text-[10.5px]">{props.request.id}</div>
+          <div class="font-mono text-xs">{props.request.id}</div>
         </div>
       </div>
 
       <Show when={summaryEntries(props.request.payloadSummary).length > 0}>
-        <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-[12px] sm:grid-cols-3">
+        <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
           <For each={summaryEntries(props.request.payloadSummary)}>
             {([key, value]) => (
               <>
@@ -158,7 +150,7 @@ function RequestCard(props: {
         <ul class="mt-3 space-y-1 border-t border-border pt-2">
           <For each={props.request.decisions}>
             {(decision) => (
-              <li class="text-[12px] text-muted-foreground">
+              <li class="text-xs text-muted-foreground">
                 <span class={decision.decision === "reject" ? "text-destructive" : "text-success"}>
                   {decision.decision === "reject" ? "Rejected" : "Approved"}
                 </span>{" "}
@@ -201,7 +193,7 @@ function RequestCard(props: {
           <Button size="sm" onClick={() => props.onRetry(props.request)}>
             Retry with this approval
           </Button>
-          <span class="self-center text-[11.5px] text-muted-foreground">
+          <span class="self-center text-xs text-muted-foreground">
             Replays the action you started in this browser.
           </span>
         </div>
@@ -212,7 +204,7 @@ function RequestCard(props: {
           <Button size="sm" variant="outline" onClick={() => props.onBreakGlass(props.request)}>
             Break-glass and run
           </Button>
-          <span class="self-center text-[11.5px] text-muted-foreground">
+          <span class="self-center text-xs text-muted-foreground">
             Owner override; the reason is audited.
           </span>
         </div>
@@ -424,45 +416,37 @@ export default function ApprovalsSettingsPage() {
       : permissionOptions.map((item) => ({ value: item.value, label: item.label }));
 
   return (
-    <Page>
-      <PageHeader
-        eyebrow="Security"
-        title="Approvals"
-        description="Require a second administrator before destructive actions run. Policies are optional; when none matches an action it behaves exactly as before."
-        actions={
-          <Show when={canManage()}>
-            <Button size="sm" onClick={openCreate}>
-              New policy
-            </Button>
-          </Show>
-        }
-      />
-
-      <div class="grid gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+    <>
+      <div class="grid gap-4 lg:grid-cols-5">
         <Panel
+          class="lg:col-span-3"
           title="Approval queue"
           description="Pending requests need another administrator. Approving does not run the action; the requester retries with the request id."
+          actions={
+            <Show when={canManage()}>
+              <Button size="sm" onClick={openCreate}>
+                New policy
+              </Button>
+            </Show>
+          }
         >
           <div class="mb-3 flex gap-1 rounded-lg bg-hover p-1">
             <For each={queueTabs()}>
               {([value, label]) => (
-                <button
+                <Button
                   type="button"
-                  class={cn(
-                    "flex-1 rounded-md px-3 py-1.5 text-[12.5px] font-[520] transition-colors",
-                    tab() === value
-                      ? "bg-card text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
+                  size="sm"
+                  variant={tab() === value ? "secondary" : "ghost"}
+                  class="flex-1"
                   onClick={() => setTab(value)}
                 >
                   {label}
                   <Show when={value === "pending" && (pendingQuery.data?.requests.length ?? 0) > 0}>
-                    <span class="ml-1.5 rounded-full bg-warning/15 px-1.5 text-[10.5px] text-warning">
+                    <span class="ml-1.5 rounded-full bg-warning/15 px-1.5 text-xs text-warning">
                       {pendingQuery.data?.requests.length}
                     </span>
                   </Show>
-                </button>
+                </Button>
               )}
             </For>
           </div>
@@ -472,7 +456,7 @@ export default function ApprovalsSettingsPage() {
           <Show
             when={(activeQuery().data?.requests.length ?? 0) > 0}
             fallback={
-              <p class="py-6 text-center text-[12.5px] text-muted-foreground">
+              <p class="py-6 text-center text-xs text-muted-foreground">
                 {tab() === "pending"
                   ? "No approvals are waiting."
                   : tab() === "mine"
@@ -515,7 +499,7 @@ export default function ApprovalsSettingsPage() {
           </Show>
         </Panel>
 
-        <div class="space-y-4">
+        <div class="space-y-4 lg:col-span-2">
           <Show when={canReadQueue()}>
             <Panel
               title="Policies"
@@ -528,7 +512,7 @@ export default function ApprovalsSettingsPage() {
               <Show
                 when={(policiesQuery.data?.policies.length ?? 0) > 0}
                 fallback={
-                  <p class="py-4 text-[12.5px] text-muted-foreground">
+                  <p class="py-4 text-xs text-muted-foreground">
                     No policies. Destructive actions keep their existing step-up checks only.
                   </p>
                 }
@@ -538,10 +522,10 @@ export default function ApprovalsSettingsPage() {
                     {(policy) => (
                       <li class="flex items-start justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                         <div class="min-w-0">
-                          <div class="text-[12.5px] font-[540] text-foreground">
+                          <div class="text-xs font-medium text-foreground">
                             {actionLabel(policy.action)}
                           </div>
-                          <div class="text-[11.5px] text-muted-foreground">
+                          <div class="text-xs text-muted-foreground">
                             {policyScopeLabel(policy)} · {policyApproverLabel(policy)} ·{" "}
                             {policy.approvalsRequired} approval
                             {policy.approvalsRequired === 1 ? "" : "s"}
@@ -555,10 +539,9 @@ export default function ApprovalsSettingsPage() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              class="text-destructive"
                               onClick={() => setDeleting(policy)}
                             >
-                              Delete
+                              <span class="text-destructive">Delete</span>
                             </Button>
                           </div>
                         </Show>
@@ -577,7 +560,7 @@ export default function ApprovalsSettingsPage() {
             <Show
               when={(mineQuery.data?.requests.length ?? 0) > 0}
               fallback={
-                <p class="py-3 text-[12.5px] text-muted-foreground">
+                <p class="py-3 text-xs text-muted-foreground">
                   Nothing requested yet. A gated action creates a request automatically.
                 </p>
               }
@@ -585,11 +568,11 @@ export default function ApprovalsSettingsPage() {
               <ul class="space-y-2">
                 <For each={mineQuery.data?.requests ?? []}>
                   {(request) => (
-                    <li class="flex items-center justify-between gap-2 text-[12px]">
+                    <li class="flex items-center justify-between gap-2 text-xs">
                       <span class="min-w-0 truncate">
                         {request.actionLabel}{" "}
                         <span class="text-muted-foreground">{relativeTime(request.createdAt)}</span>
-                        <span class="ml-1.5 font-mono text-[10.5px] text-muted-foreground">
+                        <span class="ml-1.5 font-mono text-xs text-muted-foreground">
                           {request.id}
                         </span>
                       </span>
@@ -719,7 +702,7 @@ export default function ApprovalsSettingsPage() {
               </label>
             </div>
 
-            <p class="text-[11.5px] leading-5 text-muted-foreground">
+            <p class="text-xs leading-5 text-muted-foreground">
               Approvers also need <span class="font-mono">approvals.write</span>. API tokens can
               request approval but can never approve. Account-wide tokens can only be created by
               platform administrators, so tenant members always create a token this policy can
@@ -879,6 +862,6 @@ export default function ApprovalsSettingsPage() {
           if (request) cancel.mutate(request);
         }}
       />
-    </Page>
+    </>
   );
 }

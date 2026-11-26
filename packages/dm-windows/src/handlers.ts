@@ -76,10 +76,15 @@ function requestContext(request: HttpServerRequest.HttpServerRequest): WindowsMd
     request.headers["x-device-identity-certificate-serial"],
   );
 
+  const identityCertificateDerBase64 = headerString(
+    request.headers["x-device-identity-certificate-der-base64"],
+  );
+
   return {
     tenantToken,
     identityCertificate,
     identityCertificateSerial,
+    identityCertificateDerBase64,
     clientIp: headerString(request.headers["x-mattrax-client-address"]),
     userAgent: headerString(request.headers["user-agent"])?.slice(0, 512),
   };

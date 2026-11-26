@@ -880,6 +880,40 @@ describe("BitLocker escrow", () => {
 describe("Windows diagnostics and Fresh Start", () => {
   const zip = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]);
 
+  const collectUploadUrl = async (context: Awaited<ReturnType<typeof makeContext>>) => {
+    await runEffect(
+      context.service.deviceAction(request(context.headers), context.tenant.id, "win-1", {
+        action: "collect-diagnostics",
+      }),
+    );
+    const command = context.db.store.device_command.find(
+      (row: any) => row.requestType === "WindowsCollectDiagnostics",
+    );
+    const match = /https:\/\/[^"\]]+\?token=[^&"]+&archiveId=[^"\]]+/.exec(command.payload.data);
+
+    return match![0];
+  };
+
+  const trackedEffectRequest = (
+    url: string,
+    chunks: ReadonlyArray<Uint8Array>,
+    headers: Record<string, string> = {},
+  ) => {
+    let pulls = 0;
+    const stream = Stream.make(...chunks).pipe(
+      Stream.tap(() =>
+        Effect.sync(() => {
+          pulls++;
+        }),
+      ),
+    );
+
+    return {
+      request: { url, headers, stream } as never,
+      pulls: () => pulls,
+    };
+  };
+
   it("queues a DiagnosticLog collection, accepts the CSP upload and serves a short-lived link", async () => {
     const { db, service, headers, tenant, storage } = await makeContext();
     seedDevice(db, tenant.id, "win-1");
@@ -998,64 +1032,124 @@ describe("Windows diagnostics and Fresh Start", () => {
     ).toBe(400);
   });
 
-  it("rejects expiry, replay and an over-size stream without content-length", async () => {
-    const { db, service, headers, tenant } = await makeContext({
-      windowsDiagnosticsMaxBytes: 8,
-    });
-    seedDevice(db, tenant.id, "win-1");
-
-    await runEffect(
-      service.deviceAction(request(headers), tenant.id, "win-1", {
-        action: "collect-diagnostics",
-      }),
+  it("does not pull the body for a forged, missing, unknown or expired upload token", async () => {
+    const context = await makeContext({ windowsDiagnosticsMaxBytes: 8 });
+    seedDevice(context.db, context.tenant.id, "win-1");
+    const uploadUrl = await collectUploadUrl(context);
+    const forgedUrl = new URL(uploadUrl);
+    forgedUrl.searchParams.set("token", "forged");
+    const body = trackedEffectRequest(
+      forgedUrl.toString(),
+      [new Uint8Array([0x50, 0x4b, 0x03, 0x04])],
+      {
+        "content-length": "4",
+      },
     );
-
-    const command = db.store.device_command.find(
-      (row: any) => row.requestType === "WindowsCollectDiagnostics",
+    expect((await runEffect(context.service.uploadWindowsDiagnostics(body.request))).status).toBe(
+      401,
     );
-    const match = /https:\/\/[^"\]]+\?token=[^&"]+&archiveId=[^"\]]+/.exec(command.payload.data);
+    expect(body.pulls()).toBe(0);
 
-    // No content-length: the handler must stop at the byte cap while reading.
-    const fakeRequest = {
-      url: match![0],
-      headers: {},
-      stream: Stream.make(
-        new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]),
-        new Uint8Array([5, 6, 7, 8]),
-      ),
-    } as never;
+    const missingTokenUrl = new URL(uploadUrl);
+    missingTokenUrl.searchParams.delete("token");
+    const missingToken = trackedEffectRequest(missingTokenUrl.toString(), [zip]);
+    expect(
+      (await runEffect(context.service.uploadWindowsDiagnostics(missingToken.request))).status,
+    ).toBe(401);
+    expect(missingToken.pulls()).toBe(0);
 
-    expect((await runEffect(service.uploadWindowsDiagnostics(fakeRequest))).status).toBe(413);
+    const unknownArchiveUrl = new URL(uploadUrl);
+    unknownArchiveUrl.searchParams.set("archiveId", "missing-archive");
+    const unknownArchive = trackedEffectRequest(unknownArchiveUrl.toString(), [zip]);
+    expect(
+      (await runEffect(context.service.uploadWindowsDiagnostics(unknownArchive.request))).status,
+    ).toBe(401);
+    expect(unknownArchive.pulls()).toBe(0);
 
-    const failedStream = {
-      url: match![0],
-      headers: {},
-      stream: Stream.fail(new Error("stream broke")),
-    } as never;
+    context.db.store.device_diagnostics_archive[0].expiresAt = new Date(Date.now() - 1_000);
+    const expired = trackedEffectRequest(uploadUrl, [zip]);
+    expect(
+      (await runEffect(context.service.uploadWindowsDiagnostics(expired.request))).status,
+    ).toBe(401);
+    expect(expired.pulls()).toBe(0);
+    expect(context.db.store.device_diagnostics_archive[0].status).toBe("pending");
+    expect(context.storage.objects.size).toBe(0);
+  });
 
-    expect((await runEffect(service.uploadWindowsDiagnostics(failedStream))).status).toBe(400);
+  it("bounds chunked uploads, rejects declared oversize without pulls, and prevents replay", async () => {
+    const context = await makeContext({ windowsDiagnosticsMaxBytes: 8 });
+    seedDevice(context.db, context.tenant.id, "win-1");
+    const uploadUrl = await collectUploadUrl(context);
+    const { db, service, headers, tenant } = context;
 
-    // A successful upload consumes the pending archive; replaying the same
-    // signed URL cannot overwrite it.
-    const first = await runEffect(
-      service.uploadWindowsDiagnostics(
-        new Request(match![0], { method: "PUT", body: new Uint8Array([0x50, 0x4b, 0x05, 0x06]) }),
-      ),
+    const declaredOversize = trackedEffectRequest(uploadUrl, [zip], { "content-length": "9" });
+    expect(
+      (await runEffect(service.uploadWindowsDiagnostics(declaredOversize.request))).status,
+    ).toBe(413);
+    expect(declaredOversize.pulls()).toBe(0);
+
+    // No content-length: stop on the chunk that crosses the cap.
+    const chunkedOversize = trackedEffectRequest(uploadUrl, [
+      new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
+      new Uint8Array([1, 2, 3, 4, 5]),
+    ]);
+    expect(
+      (await runEffect(service.uploadWindowsDiagnostics(chunkedOversize.request))).status,
+    ).toBe(413);
+    expect(chunkedOversize.pulls()).toBe(2);
+    expect(db.store.device_diagnostics_archive[0].status).toBe("pending");
+
+    let webPulls = 0;
+    let cancelled = false;
+    const webBody = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          webPulls++;
+          if (webPulls === 1) controller.enqueue(new Uint8Array([0x50, 0x4b, 0x03, 0x04]));
+          else if (webPulls === 2) controller.enqueue(new Uint8Array([1, 2, 3, 4, 5]));
+          else controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
     );
-    expect(first.status).toBe(200);
-
     expect(
       (
         await runEffect(
           service.uploadWindowsDiagnostics(
-            new Request(match![0], {
-              method: "PUT",
-              body: new Uint8Array([0x50, 0x4b, 0x05, 0x06]),
-            }),
+            new Request(uploadUrl, { method: "POST", body: webBody, duplex: "half" } as never),
           ),
         )
       ).status,
-    ).toBe(401);
+    ).toBe(413);
+    expect(webPulls).toBe(2);
+    expect(cancelled).toBe(true);
+
+    const empty = trackedEffectRequest(uploadUrl, []);
+    expect((await runEffect(service.uploadWindowsDiagnostics(empty.request))).status).toBe(413);
+
+    const failedStream = {
+      url: uploadUrl,
+      headers: {},
+      stream: Stream.fail(new Error("stream broke")),
+    } as never;
+    expect((await runEffect(service.uploadWindowsDiagnostics(failedStream))).status).toBe(400);
+
+    // A valid chunked upload at the cap is still retained and accepted.
+    const first = trackedEffectRequest(uploadUrl, [
+      new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
+      new Uint8Array([1, 2, 3, 4]),
+    ]);
+    expect((await runEffect(service.uploadWindowsDiagnostics(first.request))).status).toBe(200);
+    expect(first.pulls()).toBe(2);
+
+    // Replaying the signed URL fails before the replacement body is pulled.
+    const replay = trackedEffectRequest(uploadUrl, [zip]);
+    expect((await runEffect(service.uploadWindowsDiagnostics(replay.request))).status).toBe(401);
+    expect(replay.pulls()).toBe(0);
+    expect(context.storage.objects.size).toBe(1);
 
     const archive = db.store.device_diagnostics_archive[0];
     archive.expiresAt = new Date(Date.now() - 1_000);

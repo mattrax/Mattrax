@@ -53,6 +53,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "catalog:",
+    "@mattrax/management-backend": "workspace:*",
     "@rolldown/perf-kit": "catalog:",
     "@types/node": "catalog:",
     "cf": "catalog:",

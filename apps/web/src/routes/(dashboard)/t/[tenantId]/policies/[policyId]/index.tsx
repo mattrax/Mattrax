@@ -1,3 +1,4 @@
+import { Checkbox } from "@mattrax/ui";
 import { useParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
@@ -7,7 +8,7 @@ import {
   certificateRenewalDueAt,
 } from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
-import { createEffect, createSignal, For, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, For, Show } from "solid-js";
 import {
   ErrorText,
   Field,
@@ -20,15 +21,15 @@ import {
   relativeTime,
   SkeletonRows,
 } from "~/components/mdm/common";
-import { MobileconfigPreview } from "~/components/mdm/mobileconfig-preview";
-import { PolicyProgressBar } from "~/components/mdm/policy-progress";
-import { PolicyViewTabs } from "~/components/mdm/policy-view-tabs";
+import MobileconfigPreview from "~/components/mdm/mobileconfig-preview";
+import PolicyProgressBar from "~/components/mdm/policy-progress";
+import PolicyViewTabs from "~/components/mdm/policy-view-tabs";
 import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
-import { PasswordInput } from "~/components/ui/password-input";
+import PasswordInput from "~/components/ui/password-input";
 import {
   Dialog,
   DialogContent,
@@ -46,7 +47,7 @@ import {
   SlidersHorizontal,
   Wifi,
 } from "~/components/ui/icons";
-import { StaleWriteBanner } from "~/components/stale-write-banner";
+import StaleWriteBanner from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
@@ -241,7 +242,12 @@ const describe = (kind: string, data: Schema.Json | undefined) => {
           ? ` · ${String(record.passwordAgeDays)} day password`
           : ""),
       collections: [
-        { label: isString(record.accountName) ? String(record.accountName) : "Built-in administrator", platform: "windows" },
+        {
+          label: isString(record.accountName)
+            ? String(record.accountName)
+            : "Built-in administrator",
+          platform: "windows",
+        },
       ],
       platforms: ["windows"],
     };
@@ -268,7 +274,7 @@ const describe = (kind: string, data: Schema.Json | undefined) => {
 };
 
 const textareaClass =
-  "min-h-28 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "min-h-28 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 const kindLabel = (kind: string) => {
   if (kind === "mttx.apple.device") return "Device restrictions";
@@ -337,6 +343,14 @@ export const route = {
   },
 };
 
+/** Read secondary query data only after success so pending async values never throw during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function PolicyDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -349,7 +363,7 @@ export default function PolicyDetailPage() {
     queryFn: () => enterprise.get(params.tenantId, "policy", params.policyId),
   }));
 
-  const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+  const row = () => Option.getOrUndefined(decodePolicyRow(settledQueryData(policy)));
   const guard = createStaleWriteGuard(() => row()?.updatedAt);
   /** Bumped by "Reload latest" to reseed the metadata form. */
   const [reseed, setReseed] = createSignal(0);
@@ -569,7 +583,7 @@ export default function PolicyDetailPage() {
 
   const androidDeliveryUnavailable = () =>
     configurations().some(([kind]) => kind.startsWith("mttx.android.policy")) &&
-    (!android.data?.configured || !android.data?.available);
+    (!settledQueryData(android)?.configured || !settledQueryData(android)?.available);
 
   const deployments = useQuery(() => ({
     queryKey: [...enterpriseKeys.item(params.tenantId, "policy", params.policyId), "deployments"],
@@ -583,7 +597,7 @@ export default function PolicyDetailPage() {
   );
 
   const deploymentApplicable = () => {
-    const counts = deploymentSummary.data?.counts;
+    const counts = settledQueryData(deploymentSummary)?.counts;
 
     return counts ? counts.delivered + counts.pending + counts.failed : 0;
   };
@@ -703,13 +717,13 @@ export default function PolicyDetailPage() {
   const scope = useQuery(() => enterpriseQueries.policyScope(params.tenantId, params.policyId));
 
   const scopeCounts = (): PolicyScopeCounts | undefined => {
-    const data = scope.data;
+    const data = settledQueryData(scope);
 
     return data ? policyScopeCounts(data.devices) : undefined;
   };
 
   const scopeWarnings = () => {
-    const data = scope.data;
+    const data = settledQueryData(scope);
 
     return data ? policyScopeWarnings(data) : [];
   };
@@ -739,14 +753,14 @@ export default function PolicyDetailPage() {
                 Disabled
               </Badge>
             </Show>
-            <Badge variant="outline" class="gap-1.5 text-muted-foreground">
+            <Badge variant="outline">
               <SlidersHorizontal class="size-3" />
               {configurations().length} configuration{configurations().length === 1 ? "" : "s"}
             </Badge>
-            <Badge variant="outline" class="gap-1.5 text-muted-foreground">
+            <Badge variant="outline">
               Priority <span class="tabular-nums text-foreground">{row()?.priority ?? 0}</span>
             </Badge>
-            <span class="text-[11.5px]">Updated {relativeTime(row()?.updatedAt)}</span>
+            <span class="text-xs">Updated {relativeTime(row()?.updatedAt)}</span>
           </Show>
         }
         actions={
@@ -781,7 +795,10 @@ export default function PolicyDetailPage() {
       <ErrorText error={sync.error} />
       <ErrorText error={dup.error} />
 
-      <div class="grid gap-5 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div
+        class="grid gap-5 lg:grid-cols-(--policy-grid)"
+        style={{ "--policy-grid": "360px minmax(0,1fr)" }}
+      >
         <Panel title="Details" description="Metadata saved with this policy.">
           <form
             class="space-y-4"
@@ -819,7 +836,7 @@ export default function PolicyDetailPage() {
                   if (next === "" || /^\d+$/.test(next)) setPriority(next);
                 }}
               />
-              <p class="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+              <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                 Higher numbers win when included policies provide the same configuration kind.
                 Direct device assignments beat group assignments first; ties fall back to the most
                 recently updated policy, then the smallest id.
@@ -828,7 +845,7 @@ export default function PolicyDetailPage() {
             <Show when={row()}>
               <div class="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/15 p-3">
                 <div class="min-w-0">
-                  <p class="flex items-center gap-2 text-[12.5px] font-medium text-foreground">
+                  <p class="flex items-center gap-2 text-xs font-medium text-foreground">
                     <Badge
                       variant={policyStatePresentation(row()!).tone}
                       dot={enabled() ? "success" : "warning"}
@@ -836,7 +853,7 @@ export default function PolicyDetailPage() {
                       {enabled() ? "Enabled" : "Disabled"}
                     </Badge>
                   </p>
-                  <p class="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                  <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                     {enabled()
                       ? "Disabling withdraws this policy's settings from its scoped devices. The configuration and assignments are kept, and enabling it deploys them again."
                       : "This policy is disabled, so its settings are withdrawn from devices. The configuration and assignments are kept; enabling it deploys them again."}
@@ -888,7 +905,7 @@ export default function PolicyDetailPage() {
           description="A return message and optional asset tag for supervised iPhone and iPad devices in this policy's scope. A per-device override on the device page wins."
         >
           <div class="space-y-3">
-            <p class="text-[12px] leading-relaxed text-muted-foreground">
+            <p class="text-xs leading-relaxed text-muted-foreground">
               Mattrax installs Apple's shared-device lock screen profile on the device's next
               check-in and removes it when no message remains. Devices without an asset tag cannot
               include one, and unenrolled or BYOD devices do not accept the profile.
@@ -903,23 +920,21 @@ export default function PolicyDetailPage() {
                 onInput={(event) => setLockScreenMessage(event.currentTarget.value)}
               />
             </Field>
-            <label class="flex items-start gap-2 text-[12.5px] text-muted-foreground">
-              <input
-                type="checkbox"
-                class="mt-0.5 size-3.5 accent-[var(--brand-solid)]"
+            <label class="flex items-start gap-2 text-xs text-muted-foreground">
+              <Checkbox
                 checked={lockScreenIncludeAssetTag()}
                 disabled={!writable()}
-                onChange={(event) => setLockScreenIncludeAssetTag(event.currentTarget.checked)}
+                onCheckedChange={(checked) => setLockScreenIncludeAssetTag(checked === true)}
               />
               <span>
                 Include each device's asset tag
-                <span class="mt-0.5 block text-[11.5px]">
+                <span class="mt-0.5 block text-xs">
                   Adds the asset tag as Apple's AssetTagInformation under the message.
                 </span>
               </span>
             </label>
             <Show when={lockScreenMessage().trim().length > APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH}>
-              <p class="text-[11.5px] text-destructive">
+              <p class="text-xs text-destructive">
                 The message must be at most {APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH} characters.
               </p>
             </Show>
@@ -954,7 +969,7 @@ export default function PolicyDetailPage() {
                 </Show>
               </Show>
               <Show when={lockScreenDirty()}>
-                <span class="text-[11px] text-muted-foreground">Unsaved changes</span>
+                <span class="text-xs text-muted-foreground">Unsaved changes</span>
               </Show>
             </div>
           </div>
@@ -965,7 +980,7 @@ export default function PolicyDetailPage() {
           description="Payloads delivered to devices in this policy's scope."
           actions={
             <div class="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" class="tabular-nums">
+              <Badge variant="secondary">
                 {visibleConfigurations().length}
               </Badge>
               <Button
@@ -988,7 +1003,7 @@ export default function PolicyDetailPage() {
             when={visibleConfigurations().length > 0}
             fallback={
               <div class="flex flex-col items-start gap-3 rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6">
-                <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                <p class="text-xs leading-relaxed text-muted-foreground">
                   Nothing else is delivered yet. Add a Wi-Fi network or passcode rule, or open the
                   policy editor for the full catalogue.
                 </p>
@@ -1012,7 +1027,7 @@ export default function PolicyDetailPage() {
           >
             <div class="space-y-2">
               <Show when={androidDeliveryUnavailable()}>
-                <div class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2.5 text-[12px] leading-relaxed text-warning-foreground">
+                <div class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2.5 text-xs leading-relaxed text-warning-foreground">
                   <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
                   <span>
                     Android delivery is not available for this tenant. This policy is saved, but no
@@ -1044,24 +1059,24 @@ export default function PolicyDetailPage() {
           title="Scope"
           description="Where this policy actually applies, and why it loses anywhere it does not."
           actions={
-            <Show when={scope.data}>
+            <Show when={settledQueryData(scope)}>
               {(data) => (
                 <span class="flex flex-wrap items-center justify-end gap-1.5">
                   <For each={data().platforms}>
                     {(platform) => (
-                      <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                      <Badge variant="outline">
                         {policyScopePlatformLabel(platform)}
                       </Badge>
                     )}
                   </For>
                   <Show when={policyOsRangeLabel(data())}>
                     {(range) => (
-                      <Badge variant="secondary" class="text-[10px] tabular-nums">
+                      <Badge variant="secondary">
                         {range()}
                       </Badge>
                     )}
                   </Show>
-                  <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                  <Badge variant="outline">
                     {policyScopeChannelLabel(data().channels)}
                   </Badge>
                 </span>
@@ -1070,7 +1085,7 @@ export default function PolicyDetailPage() {
           }
         >
           <Show
-            when={scope.data}
+            when={settledQueryData(scope)}
             fallback={
               <Show when={scope.isError} fallback={<SkeletonRows rows={3} />}>
                 <QueryError error={scope.error} onRetry={() => void scope.refetch()} />
@@ -1080,11 +1095,11 @@ export default function PolicyDetailPage() {
             {(data) => (
               <div class="space-y-4">
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <p class="text-[12.5px] text-muted-foreground">
+                  <p class="text-xs text-muted-foreground">
                     {policyScopeCountsLabel(scopeCounts()!)}
                   </p>
                   <Show when={data().channels.includes("user")}>
-                    <p class="text-[11.5px] text-muted-foreground">
+                    <p class="text-xs text-muted-foreground">
                       User-scoped settings are resolved on a user channel where the platform has one
                       (Apple), so a device can appear once per linked user. Windows delivers its
                       per-user OMA-URI settings on the device channel.
@@ -1096,7 +1111,7 @@ export default function PolicyDetailPage() {
                   <div class="space-y-2">
                     <For each={scopeWarnings()}>
                       {(warning) => (
-                        <div class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2.5 text-[12px] leading-relaxed text-warning-foreground">
+                        <div class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2.5 text-xs leading-relaxed text-warning-foreground">
                           <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
                           <span>
                             <a
@@ -1116,7 +1131,7 @@ export default function PolicyDetailPage() {
                 <Show
                   when={data().devices.length > 0}
                   fallback={
-                    <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+                    <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-xs text-muted-foreground">
                       {visibleConfigurations().length === 0 && !lockScreenConfiguration()
                         ? "This policy has no settings yet. Add a configuration to see where it applies."
                         : "No device is assigned this policy yet. Assign it to a device, a group, or a directory user to see where it applies."}
@@ -1126,7 +1141,7 @@ export default function PolicyDetailPage() {
                   <div class="divide-y divide-border overflow-hidden rounded-lg border border-border">
                     <For each={data().devices.slice(0, scopeLimit())}>
                       {(entry) => (
-                        <div class="space-y-1.5 bg-muted/10 px-3 py-2.5 text-[12.5px]">
+                        <div class="space-y-1.5 bg-muted/10 px-3 py-2.5 text-xs">
                           <div class="flex flex-wrap items-center justify-between gap-2">
                             <a
                               class="min-w-0 truncate font-medium text-foreground hover:underline"
@@ -1138,32 +1153,32 @@ export default function PolicyDetailPage() {
                               <Badge variant={policyScopeStatusTone(entry)}>
                                 {policyScopeStatusLabel(entry)}
                               </Badge>
-                              <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                              <Badge variant="outline">
                                 {policyScopePlatformLabel(entry.platform)}
                                 <Show when={entry.deviceOs}> · {entry.deviceOs}</Show>
                               </Badge>
-                              <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                              <Badge variant="outline">
                                 {entry.channel === "user"
                                   ? `User: ${entry.userName ?? "linked user"}`
                                   : "Device channel"}
                               </Badge>
                               <Show when={entry.kinds.length > 0}>
-                                <Badge variant="subtle" class="text-[10px] tabular-nums">
+                                <Badge variant="subtle">
                                   {entry.kinds.length} setting
                                   {entry.kinds.length === 1 ? "" : "s"}
                                 </Badge>
                               </Show>
                             </span>
                           </div>
-                          <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                          <p class="text-xs leading-relaxed text-muted-foreground">
                             {policyScopeReasonLabel(entry)}
                           </p>
                           <Show when={entry.losses.length > 0}>
-                            <ul class="space-y-0.5 text-[11px] text-muted-foreground">
+                            <ul class="space-y-0.5 text-xs text-muted-foreground">
                               <For each={entry.losses.slice(0, 6)}>
                                 {(loss) => (
                                   <li>
-                                    <span class="font-mono text-[10.5px]">{loss.kind}</span>
+                                    <span class="font-mono text-xs">{loss.kind}</span>
                                     <Show when={loss.winnerPolicyName}>
                                       {" "}
                                       → {loss.winnerPolicyName}
@@ -1178,7 +1193,7 @@ export default function PolicyDetailPage() {
                     </For>
                   </div>
                   <Show when={data().truncated}>
-                    <p class="text-[11px] text-muted-foreground">
+                    <p class="text-xs text-muted-foreground">
                       Showing a capped list of {data().devices.length} entries for{" "}
                       {data().deviceCount} devices in scope.
                     </p>
@@ -1203,7 +1218,7 @@ export default function PolicyDetailPage() {
           title="Deployment"
           description="Per-device progress for the latest saved version."
           actions={
-            <Show when={deploymentSummary.data}>
+            <Show when={settledQueryData(deploymentSummary)}>
               {(summary) => (
                 <Button
                   as="a"
@@ -1219,16 +1234,16 @@ export default function PolicyDetailPage() {
         >
           <Show when={!deployments.isPending} fallback={<SkeletonRows rows={2} />}>
             <Show
-              when={(deployments.data?.deployments.length ?? 0) > 0}
+              when={(settledQueryData(deployments)?.deployments.length ?? 0) > 0}
               fallback={
-                <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+                <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-xs text-muted-foreground">
                   No deployments yet. Every save creates a version and starts tracking each device
                   in scope.
                 </p>
               }
             >
               <Show
-                when={deploymentSummary.data}
+                when={settledQueryData(deploymentSummary)}
                 fallback={
                   <Show when={deploymentSummary.isError} fallback={<SkeletonRows rows={2} />}>
                     <QueryError
@@ -1246,7 +1261,7 @@ export default function PolicyDetailPage() {
                   return (
                     <div class="space-y-3">
                       <div class="flex flex-wrap items-center justify-between gap-2">
-                        <p class="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                        <p class="flex items-center gap-2 text-xs font-medium text-foreground">
                           <Badge variant={presentation().tone} dot={presentation().dot}>
                             {presentation().label}
                           </Badge>
@@ -1254,7 +1269,7 @@ export default function PolicyDetailPage() {
                             Version {summary().version}
                           </span>
                         </p>
-                        <p class="text-[11.5px] text-muted-foreground">
+                        <p class="text-xs text-muted-foreground">
                           {summary().counts.scoped} device
                           {summary().counts.scoped === 1 ? "" : "s"} in scope
                         </p>
@@ -1262,7 +1277,7 @@ export default function PolicyDetailPage() {
 
                       <PolicyProgressBar segments={segments()} />
 
-                      <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-[11.5px] text-muted-foreground">
+                      <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
                         <For each={segments().filter((segment) => segment.value > 0)}>
                           {(segment) => (
                             <span class="inline-flex items-center gap-1.5">
@@ -1277,7 +1292,7 @@ export default function PolicyDetailPage() {
                         </For>
                       </div>
 
-                      <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                      <p class="text-xs leading-relaxed text-muted-foreground">
                         {summary().counts.scoped === 0
                           ? "This policy's assignments match no devices right now."
                           : deploymentApplicable() > 0
@@ -1310,31 +1325,31 @@ export default function PolicyDetailPage() {
           title="Deployment history"
           description="Every save produces a versioned deployment that can be restored."
           actions={
-            <Badge variant="outline" class="gap-1.5 text-muted-foreground">
+            <Badge variant="outline">
               <Activity class="size-3" />
-              {deployments.data?.deployments.length ?? 0} version
-              {(deployments.data?.deployments.length ?? 0) === 1 ? "" : "s"}
+              {settledQueryData(deployments)?.deployments.length ?? 0} version
+              {(settledQueryData(deployments)?.deployments.length ?? 0) === 1 ? "" : "s"}
             </Badge>
           }
         >
           <Show
-            when={(deployments.data?.deployments.length ?? 0) > 0}
+            when={(settledQueryData(deployments)?.deployments.length ?? 0) > 0}
             fallback={
-              <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+              <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-xs text-muted-foreground">
                 No deployments yet.
               </p>
             }
           >
             <div class="divide-y divide-border/60 overflow-hidden rounded-lg border border-border">
-              <For each={deployments.data?.deployments ?? []}>
+              <For each={settledQueryData(deployments)?.deployments ?? []}>
                 {(deployment) => (
-                  <div class="flex flex-wrap items-center justify-between gap-3 bg-muted/10 px-3 py-2.5 text-[13px]">
+                  <div class="flex flex-wrap items-center justify-between gap-3 bg-muted/10 px-3 py-2.5 text-xs">
                     <span class="flex min-w-0 items-center gap-2">
                       <a
-                        class="rounded-[5px] outline-none hover:opacity-80 focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                        class="rounded-xs outline-none hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/30"
                         href={`/t/${params.tenantId}/policies/${params.policyId}/deployment?version=${deployment.version}`}
                       >
-                        <Badge variant="secondary" class="text-[10px] tabular-nums">
+                        <Badge variant="secondary">
                           Version {deployment.version}
                         </Badge>
                       </a>
@@ -1390,7 +1405,7 @@ export default function PolicyDetailPage() {
           setDeleteOpen(open);
         }}
       >
-        <DialogContent class="max-w-md rounded-lg p-6">
+        <DialogContent class="max-w-md">
           <DialogHeader>
             <DialogTitle>Delete {row()?.name ?? "policy"}?</DialogTitle>
           </DialogHeader>
@@ -1437,7 +1452,7 @@ function ConfigurationCard(props: {
       class="group overflow-hidden rounded-lg border border-border bg-muted/15"
       onToggle={(event) => setOpened(event.currentTarget.open)}
     >
-      <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-[13px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/40">
+      <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-xs transition-colors duration-140 ease-swift hover:bg-muted/40">
         <span class="flex min-w-0 items-center gap-2.5">
           <span class="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-surface text-muted-foreground">
             <Show
@@ -1456,7 +1471,7 @@ function ConfigurationCard(props: {
           </span>
           <span class="min-w-0">
             <span class="block truncate font-medium text-foreground">{info().title}</span>
-            <span class="mt-0.5 block truncate text-[11.5px] text-muted-foreground">
+            <span class="mt-0.5 block truncate text-xs text-muted-foreground">
               {info().subtitle}
             </span>
           </span>
@@ -1464,12 +1479,14 @@ function ConfigurationCard(props: {
         <span class="flex shrink-0 items-center gap-1.5">
           <For each={info().platforms}>
             {(platform) => (
-              <Badge variant="outline" class="text-[10px] text-muted-foreground">
+              <Badge variant="outline">
                 {platformLabel(platform)}
               </Badge>
             )}
           </For>
-          <ChevronDown class="disclosure-chevron size-3.5 shrink-0 text-muted-foreground" />
+          <span class="disclosure-chevron">
+            <ChevronDown class="size-3.5 shrink-0" />
+          </span>
         </span>
       </summary>
       <div class="space-y-3 border-t border-border bg-background/40 p-3">
@@ -1477,13 +1494,13 @@ function ConfigurationCard(props: {
           <div class="flex flex-wrap gap-1.5">
             <For each={info().collections.slice(0, 24)}>
               {(collection) => (
-                <span class="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-[11px] text-foreground/85">
+                <span class="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1 text-xs text-foreground/85">
                   {collection.label}
                 </span>
               )}
             </For>
             <Show when={info().collections.length > 24}>
-              <span class="px-1 py-1 text-[11px] text-muted-foreground">
+              <span class="px-1 py-1 text-xs text-muted-foreground">
                 +{info().collections.length - 24} more
               </span>
             </Show>
@@ -1549,6 +1566,19 @@ function AddConfigurationDialog(props: {
   const [requireAlphanumeric, setRequireAlphanumeric] = createSignal(false);
   const [allowSimple, setAllowSimple] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
+  const errorId = createUniqueId();
+  let ssidInput: HTMLInputElement | undefined;
+  let passwordInput: HTMLInputElement | undefined;
+
+  const ssidInvalid = () => preset() === "wifi" && error() === "Enter the network name (SSID).";
+  const passwordInvalid = () => preset() === "wifi" && error() === "Enter the Wi-Fi password.";
+
+  const fail = (message: string, field?: "ssid" | "password") => {
+    setError(message);
+
+    if (field === "ssid") ssidInput?.focus();
+    if (field === "password") passwordInput?.focus();
+  };
 
   const reset = () => {
     setSsid("");
@@ -1568,16 +1598,22 @@ function AddConfigurationDialog(props: {
     setError(null);
   };
 
+  const choosePreset = (next: "wifi" | "passcode" | "laps") => {
+    setPreset(next);
+    setError(null);
+  };
+
   const submit = () => {
     setError(null);
     const next: PolicyConfigurations = Object.fromEntries(props.existing);
 
     if (preset() === "wifi") {
-      if (!ssid().trim()) return setError("Enter the network name (SSID).");
+      if (!ssid().trim()) return fail("Enter the network name (SSID).", "ssid");
 
-      if (security() !== "open" && !password()) return setError("Enter the Wi-Fi password.");
+      if (security() !== "open" && !password())
+        return fail("Enter the Wi-Fi password.", "password");
 
-      if (!apple() && !windows()) return setError("Choose at least one platform.");
+      if (!apple() && !windows()) return fail("Choose at least one platform.");
 
       const value = {
         ssid: ssid().trim(),
@@ -1598,13 +1634,13 @@ function AddConfigurationDialog(props: {
       }
     } else if (preset() === "laps") {
       if (lapsAgeDays() < 1 || lapsAgeDays() > 365)
-        return setError("The password age must be between 1 and 365 days.");
+        return fail("The password age must be between 1 and 365 days.");
 
       if (lapsBackupDirectory() === "entra-id" && lapsAgeDays() < 7)
-        return setError("Entra-backed Windows LAPS requires a password age of at least 7 days.");
+        return fail("Entra-backed Windows LAPS requires a password age of at least 7 days.");
 
       if (lapsLength() < 8 || lapsLength() > 64)
-        return setError("The password length must be between 8 and 64 characters.");
+        return fail("The password length must be between 8 and 64 characters.");
 
       next["mttx.windows.laps"] = {
         backupDirectory: lapsBackupDirectory(),
@@ -1636,76 +1672,74 @@ function AddConfigurationDialog(props: {
         if (!open) reset();
       }}
     >
-      <DialogContent class="max-w-lg rounded-lg p-5">
+      <DialogContent class="max-w-lg">
         <DialogHeader>
-          <DialogTitle class="text-base">Add a configuration</DialogTitle>
-          <DialogDescription class="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+          <DialogTitle>Add a configuration</DialogTitle>
+          <DialogDescription class="mt-1">
             Start with the basics. The policy editor exposes every platform setting if you need
             more.
           </DialogDescription>
         </DialogHeader>
 
         <div class="mt-4 grid grid-cols-2 gap-2">
-          <button
+          <Button
             type="button"
-            onClick={() => setPreset("wifi")}
-            class={`pressable rounded-lg border p-3 text-left ${
-              preset() === "wifi"
-                ? "border-foreground/25 bg-hover"
-                : "border-border hover:bg-muted/40"
-            }`}
+            onClick={() => choosePreset("wifi")}
+            variant={preset() === "wifi" ? "secondary" : "outline"}
+            class="h-auto"
           >
-            <Wifi class="size-4 text-muted-foreground" />
-            <span class="mt-2 block text-[13px] font-medium text-foreground">Wi-Fi network</span>
-            <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+            <Wifi class="size-4" />
+            <span class="mt-2 block text-xs font-medium text-foreground">Wi-Fi network</span>
+            <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
               SSID, security and password for Apple and Windows.
             </span>
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            onClick={() => setPreset("passcode")}
-            class={`pressable rounded-lg border p-3 text-left ${
-              preset() === "passcode"
-                ? "border-foreground/25 bg-hover"
-                : "border-border hover:bg-muted/40"
-            }`}
+            onClick={() => choosePreset("passcode")}
+            variant={preset() === "passcode" ? "secondary" : "outline"}
+            class="h-auto"
           >
-            <ShieldCheck class="size-4 text-muted-foreground" />
-            <span class="mt-2 block text-[13px] font-medium text-foreground">Passcode</span>
-            <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+            <ShieldCheck class="size-4" />
+            <span class="mt-2 block text-xs font-medium text-foreground">Passcode</span>
+            <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
               Minimum length and complexity for Apple devices.
             </span>
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            onClick={() => setPreset("laps")}
-            class={`pressable rounded-lg border p-3 text-left ${
-              preset() === "laps"
-                ? "border-foreground/25 bg-hover"
-                : "border-border hover:bg-muted/40"
-            }`}
+            onClick={() => choosePreset("laps")}
+            variant={preset() === "laps" ? "secondary" : "outline"}
+            class="h-auto"
           >
-            <ShieldCheck class="size-4 text-muted-foreground" />
-            <span class="mt-2 block text-[13px] font-medium text-foreground">Windows LAPS</span>
-            <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+            <ShieldCheck class="size-4" />
+            <span class="mt-2 block text-xs font-medium text-foreground">Windows LAPS</span>
+            <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
               Managed local administrator password and backup directory.
             </span>
-          </button>
+          </Button>
         </div>
 
         <Show when={preset() === "wifi"}>
           <div class="mt-4 space-y-3">
             <Field label="Network name (SSID)">
               <Input
+                ref={ssidInput}
                 value={ssid()}
-                onInput={(event) => setSsid(event.currentTarget.value)}
+                aria-invalid={ssidInvalid() ? "true" : undefined}
+                aria-describedby={ssidInvalid() ? errorId : undefined}
+                onInput={(event) => {
+                  setSsid(event.currentTarget.value);
+
+                  if (ssidInvalid() && event.currentTarget.value.trim()) setError(null);
+                }}
                 placeholder="Staff Wi-Fi"
               />
             </Field>
             <div class="grid gap-3 sm:grid-cols-2">
               <Field label="Security">
                 <select
-                  class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground"
+                  class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                   value={security()}
                   onChange={(event) => {
                     const value = Option.getOrUndefined(
@@ -1723,49 +1757,48 @@ function AddConfigurationDialog(props: {
               <Show when={security() !== "open"}>
                 <Field label="Password">
                   <PasswordInput
+                    ref={passwordInput}
                     value={password()}
-                    onInput={(event) => setPassword(event.currentTarget.value)}
+                    aria-invalid={passwordInvalid() ? "true" : undefined}
+                    aria-describedby={passwordInvalid() ? errorId : undefined}
+                    onInput={(event) => {
+                      setPassword(event.currentTarget.value);
+
+                      if (passwordInvalid() && event.currentTarget.value) setError(null);
+                    }}
                   />
                 </Field>
               </Show>
             </div>
-            <div class="flex flex-wrap gap-4 text-[12.5px] text-muted-foreground">
+            <div class="flex flex-wrap gap-4 text-xs text-muted-foreground">
               <label class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  class="size-3.5 accent-[var(--brand-solid)]"
-                  checked={autoJoin()}
-                  onChange={(event) => setAutoJoin(event.currentTarget.checked)}
-                />
+                <Checkbox
+ checked={autoJoin()}
+ onCheckedChange={(checked) => setAutoJoin(checked === true)}
+/>
                 Join automatically
               </label>
               <label class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  class="size-3.5 accent-[var(--brand-solid)]"
-                  checked={hidden()}
-                  onChange={(event) => setHidden(event.currentTarget.checked)}
-                />
+                <Checkbox
+ checked={hidden()}
+ onCheckedChange={(checked) => setHidden(checked === true)}
+/>
                 Hidden network
               </label>
             </div>
-            <div class="flex flex-wrap gap-4 text-[12.5px] text-muted-foreground">
+            <div class="flex flex-wrap gap-4 text-xs text-muted-foreground">
               <label class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  class="size-3.5 accent-[var(--brand-solid)]"
-                  checked={apple()}
-                  onChange={(event) => setApple(event.currentTarget.checked)}
-                />
+                <Checkbox
+ checked={apple()}
+ onCheckedChange={(checked) => setApple(checked === true)}
+/>
                 Apple
               </label>
               <label class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  class="size-3.5 accent-[var(--brand-solid)]"
-                  checked={windows()}
-                  onChange={(event) => setWindows(event.currentTarget.checked)}
-                />
+                <Checkbox
+ checked={windows()}
+ onCheckedChange={(checked) => setWindows(checked === true)}
+/>
                 Windows
               </label>
             </div>
@@ -1783,27 +1816,23 @@ function AddConfigurationDialog(props: {
                 onInput={(event) => setMinimumLength(Number(event.currentTarget.value) || 0)}
               />
             </Field>
-            <div class="flex flex-col gap-2 text-[12.5px] text-muted-foreground">
+            <div class="flex flex-col gap-2 text-xs text-muted-foreground">
               <label class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  class="size-3.5 accent-[var(--brand-solid)]"
-                  checked={requireAlphanumeric()}
-                  onChange={(event) => setRequireAlphanumeric(event.currentTarget.checked)}
-                />
+                <Checkbox
+ checked={requireAlphanumeric()}
+ onCheckedChange={(checked) => setRequireAlphanumeric(checked === true)}
+/>
                 Require letters and numbers
               </label>
               <label class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  class="size-3.5 accent-[var(--brand-solid)]"
-                  checked={allowSimple()}
-                  onChange={(event) => setAllowSimple(event.currentTarget.checked)}
-                />
+                <Checkbox
+ checked={allowSimple()}
+ onCheckedChange={(checked) => setAllowSimple(checked === true)}
+/>
                 Allow simple passcodes (e.g. 1111)
               </label>
             </div>
-            <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+            <p class="text-xs leading-relaxed text-muted-foreground">
               Apple devices only. Windows Hello and Android use their own policy models.
             </p>
           </div>
@@ -1813,16 +1842,12 @@ function AddConfigurationDialog(props: {
           <div class="mt-4 space-y-3">
             <Field label="Backup directory">
               <select
-                class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground"
+                class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                 value={lapsBackupDirectory()}
                 onChange={(event) => {
                   const value = event.currentTarget.value;
 
-                  if (
-                    value === "entra-id" ||
-                    value === "active-directory" ||
-                    value === "disabled"
-                  )
+                  if (value === "entra-id" || value === "active-directory" || value === "disabled")
                     setLapsBackupDirectory(value);
                 }}
               >
@@ -1853,7 +1878,7 @@ function AddConfigurationDialog(props: {
             </div>
             <Field label="Complexity">
               <select
-                class="h-8 w-full rounded-md border border-input bg-background px-2 text-[13px] text-foreground"
+                class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
                 value={String(lapsComplexity())}
                 onChange={(event) => setLapsComplexity(Number(event.currentTarget.value) || 4)}
               >
@@ -1864,20 +1889,25 @@ function AddConfigurationDialog(props: {
                 <option value="5">Improved readability</option>
               </select>
             </Field>
-            <p class="text-[11.5px] leading-relaxed text-muted-foreground">
-              Requires Windows 11 22H2+/Server 2025. Only an Entra ID backup can be read by
-              Mattrax; rotation works with Active Directory, but a disabled backup cannot
-              rotate because the password would be stored nowhere. Passphrase complexity is
-              Windows 11 24H2+ only and is not offered on this baseline.
+            <p class="text-xs leading-relaxed text-muted-foreground">
+              Requires Windows 11 22H2+/Server 2025. Only an Entra ID backup can be read by Mattrax;
+              rotation works with Active Directory, but a disabled backup cannot rotate because the
+              password would be stored nowhere. Passphrase complexity is Windows 11 24H2+ only and
+              is not offered on this baseline.
             </p>
           </div>
         </Show>
 
-        <Show when={error()}>
-          {(message) => <p class="mt-3 text-[12.5px] text-destructive">{message()}</p>}
-        </Show>
+        <p
+          id={errorId}
+          role="alert"
+          aria-live="polite"
+          class={error() ? "mt-3 text-xs text-destructive" : "sr-only"}
+        >
+          {error()}
+        </p>
 
-        <DialogFooter class="mt-5 flex-row justify-end gap-2 bg-transparent p-0">
+        <DialogFooter class="mt-5 flex-row justify-end">
           <Button variant="outline" onClick={() => props.onOpenChange(false)}>
             Cancel
           </Button>

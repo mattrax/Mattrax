@@ -46,9 +46,9 @@ export type DeviceFilterState = {
 /**
  * Build the chips shown by the device table's FilterBar.
  *
- * Every filter the page applies must appear here. Otherwise a view can apply a
- * filter that is invisible, and the next FilterBar edit resets it as if it had
- * never existed.
+ * Every filter the page applies must appear here. Otherwise a filter can be
+ * active without a visible chip, and the next FilterBar edit resets it as if
+ * it had never existed.
  */
 export const deviceFilterConditions = (state: DeviceFilterState): FilterCondition[] => {
   const conditions: FilterCondition[] = [];

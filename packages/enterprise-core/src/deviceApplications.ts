@@ -345,28 +345,29 @@ export const replaceDeviceApplications = (
     )
     .pipe(
       Effect.flatMap((applications) =>
-        Effect.as(
-          reconcileApplicationUninstalls(db, {
-            deviceId: input.deviceId,
-            organizationId: input.organizationId,
-            applications,
-            at: input.reportedAt,
-          }),
-          applications.length,
-        ),
-      ),
-      // A fresh inventory is the moment a banned app becomes known. Running
-      // detection here means every platform that replaces inventory through
-      // this helper (Android and Windows today) gets violation recording
-      // without a second delivery path.
-      Effect.tap((count) =>
-        reconcileRestrictedSoftwareForDevice(db, {
+        reconcileApplicationUninstalls(db, {
           deviceId: input.deviceId,
           organizationId: input.organizationId,
+          applications,
           at: input.reportedAt,
         }).pipe(
-          Effect.catch(() => Effect.succeed(undefined)),
-          Effect.as(count),
+          // A fresh inventory is the moment a banned app becomes known. Every
+          // platform using this helper gets detection without reading the rows
+          // it just wrote back from the database.
+          Effect.tap(() =>
+            reconcileRestrictedSoftwareForDevice(db, {
+              deviceId: input.deviceId,
+              organizationId: input.organizationId,
+              at: input.reportedAt,
+              // Match the evidence persisted above, including text clipping.
+              applications: applications.map((application) => ({
+                bundleId: application.bundleId,
+                name: text(application.name),
+                version: text(application.version),
+              })),
+            }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+          ),
+          Effect.as(applications.length),
         ),
       ),
     );

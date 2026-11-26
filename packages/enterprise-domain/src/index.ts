@@ -64,8 +64,10 @@ export * from "./sso.ts";
 export {
   applicationKey,
   applicationPrefix,
+  isTenantApplicationObjectKey,
   policyApplicationKey,
   policyApplicationPrefix,
+  tenantApplicationObjectPrefix,
 } from "./storage.ts";
 
 export { ApplicationStorefrontService, EnterpriseAuth, EnterpriseService } from "./service.ts";

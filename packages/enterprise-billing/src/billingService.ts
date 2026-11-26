@@ -1,5 +1,5 @@
 import { Context, Effect, Exit, Layer } from "effect";
-import { eq, lt } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
 import { DEFAULT_PLAN_NAME, planLimitsFor } from "@mattrax/enterprise-core";
 import type {
@@ -16,6 +16,7 @@ import type {
   BillingSummary,
 } from "@mattrax/enterprise-domain";
 import type { ServicesDb } from "./db.ts";
+import type { Entitlement } from "./entitlementSync.ts";
 import { servicesSchema as schema } from "./schema.ts";
 
 /**
@@ -230,12 +231,75 @@ const upsertUsage = (db: ServicesDb, usage: BillingUsage) =>
 export const tenantEntitlement = (db: ServicesDb, tenantId: string) =>
   Effect.gen(function* () {
     const [subscription] = yield* db
-      .select({ plan: schema.subscription.plan, status: schema.subscription.status })
+      .select({
+        plan: schema.subscription.plan,
+        status: schema.subscription.status,
+        revision: schema.subscription.entitlementRevision,
+      })
       .from(schema.subscription)
       .where(eq(schema.subscription.tenantId, tenantId))
       .limit(1);
 
     return subscription;
+  });
+
+/**
+ * Promote legacy revision-0 rows and repush every current tenant entitlement.
+ *
+ * Run this after old services instances have drained and the revision-aware
+ * receiver is deployed. Repushing all rows makes the command retry-safe: a
+ * failed HTTP push can be repaired by running it again, and equal revisions
+ * remain no-ops at the receiver.
+ */
+export const reconcileEntitlements = (
+  db: ServicesDb,
+  push: (entitlement: Entitlement) => Effect.Effect<void, unknown>,
+) =>
+  Effect.gen(function* () {
+    const tenants = yield* db
+      .select({ tenantId: schema.subscription.tenantId })
+      .from(schema.subscription);
+    let promoted = 0;
+
+    for (const tenant of tenants) {
+      yield* db.transaction((tx) =>
+        Effect.gen(function* () {
+          const [current] = yield* tx
+            .select({ revision: schema.subscription.entitlementRevision })
+            .from(schema.subscription)
+            .where(eq(schema.subscription.tenantId, tenant.tenantId))
+            .limit(1)
+            .for("update");
+
+          if (!current) return;
+
+          if (current.revision === 0) {
+            yield* tx
+              .update(schema.subscription)
+              .set({ entitlementRevision: 1, updatedAt: new Date() })
+              .where(
+                and(
+                  eq(schema.subscription.tenantId, tenant.tenantId),
+                  eq(schema.subscription.entitlementRevision, 0),
+                ),
+              );
+            promoted++;
+          }
+        }),
+      );
+
+      const entitlement = yield* tenantEntitlement(db, tenant.tenantId);
+
+      if (!entitlement) continue;
+      if (entitlement.revision === 0)
+        return yield* Effect.fail(
+          new Error("Billing entitlement reconciliation left a revision-0 subscription."),
+        );
+
+      yield* push({ organizationId: tenant.tenantId, ...entitlement });
+    }
+
+    return { tenants: tenants.length, promoted };
   });
 
 const tenantUsage = (db: ServicesDb, tenantId: string) =>
@@ -469,7 +533,10 @@ export const makeStripeBillingService = ({
     invoices: ({ organization }) =>
       asBillingError(
         Effect.gen(function* () {
-          if (!stripe) return yield* Effect.fail(notConfigured());
+          // Nothing can have been invoiced without Stripe. Return the empty
+          // collection the billing page already renders for this state instead
+          // of failing the whole settings page on an unconfigured deployment.
+          if (!stripe) return { invoices: [] };
 
           const [tenant] = yield* db
             .select({ stripeCustomerId: schema.tenant.stripeCustomerId })

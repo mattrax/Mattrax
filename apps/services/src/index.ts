@@ -91,10 +91,14 @@ const onApplied = (
 
     const subscription = yield* tenantEntitlement(db, result.tenantId);
 
+    if (!subscription)
+      return yield* Effect.fail(new Error("Billing entitlement is missing its subscription."));
+
     yield* entitlementSync({
       organizationId: result.tenantId,
-      plan: subscription?.plan ?? "free",
-      status: subscription?.status ?? null,
+      plan: subscription.plan,
+      status: subscription.status,
+      revision: subscription.revision,
     });
   });
 

@@ -1,7 +1,7 @@
 import { useParams } from "@solidjs/router";
 import { useInfiniteQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { ApplicationViewTabs } from "~/components/mdm/application-view-tabs";
+import ApplicationViewTabs from "~/components/mdm/application-view-tabs";
 import {
   EmptyState,
   LinkButton,
@@ -53,7 +53,7 @@ const MDM_LABELS = {
 const label = (labels: Readonly<Record<string, string>>, value: string) => labels[value] ?? value;
 
 const selectClass =
-  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 const platformSummary = (title: CatalogueTitle) => {
   const visible = title.platforms.slice(0, 4);
@@ -151,20 +151,22 @@ export default function SoftwareCataloguePage() {
         description="Search names, vendors and aliases, or narrow by supported platform and category."
       >
         <div class="space-y-3">
-          <label class="relative block">
+          <label class="relative block text-muted-foreground">
             <span class="sr-only">Search the software catalogue</span>
-            <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              value={q()}
-              onInput={(event) => setQ(event.currentTarget.value)}
-              placeholder="Search Chrome, Slack, Microsoft, browsers…"
-              class="w-full pl-8"
-            />
+            <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
+            <div class="pl-8">
+              <Input
+                type="search"
+                value={q()}
+                onInput={(event) => setQ(event.currentTarget.value)}
+                placeholder="Search Chrome, Slack, Microsoft, browsers…"
+                class="w-full"
+              />
+            </div>
           </label>
           <div class="grid gap-3 sm:grid-cols-3">
             <label class="space-y-1">
-              <span class="block text-[11px] font-medium text-muted-foreground">Category</span>
+              <span class="block text-xs font-medium text-muted-foreground">Category</span>
               <select
                 class={selectClass}
                 value={category()}
@@ -177,7 +179,7 @@ export default function SoftwareCataloguePage() {
               </select>
             </label>
             <label class="space-y-1">
-              <span class="block text-[11px] font-medium text-muted-foreground">
+              <span class="block text-xs font-medium text-muted-foreground">
                 Supported platform
               </span>
               <select
@@ -192,7 +194,7 @@ export default function SoftwareCataloguePage() {
               </select>
             </label>
             <label class="space-y-1">
-              <span class="block text-[11px] font-medium text-muted-foreground">
+              <span class="block text-xs font-medium text-muted-foreground">
                 Deployable with
               </span>
               <select
@@ -209,7 +211,7 @@ export default function SoftwareCataloguePage() {
           </div>
           <Show when={hasFilters()}>
             <div class="flex items-center justify-between gap-3">
-              <span class="text-[12px] text-muted-foreground">
+              <span class="text-xs text-muted-foreground">
                 Showing titles that match the active filters.
               </span>
               <Button variant="ghost" size="sm" onClick={clearFilters}>
@@ -262,48 +264,48 @@ export default function SoftwareCataloguePage() {
               return (
                 <a
                   href={routes.tenant(params.tenantId).softwareCatalogueTitle(title.id)}
-                  class="group flex min-h-44 flex-col rounded-xl border border-border bg-card p-4 shadow-card outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:border-brand/40 hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50"
+                  class="group flex min-h-44 flex-col rounded-xl border border-border bg-card p-4 shadow-card outline-none transition-colors duration-150 ease-swift hover:border-brand/40 hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring/50"
                 >
                   <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">
-                      <h2 class="truncate text-[14px] font-[560] tracking-[-0.01em] text-foreground">
+                      <h2 class="truncate text-sm font-semibold tracking-normal text-foreground">
                         {title.name}
                       </h2>
-                      <p class="mt-0.5 truncate text-[11.5px] text-muted-foreground">
+                      <p class="mt-0.5 truncate text-xs text-muted-foreground">
                         {title.vendor}
                       </p>
                     </div>
                     <Show when={added > 0}>
-                      <Badge variant="secondary" class="shrink-0 tabular-nums">
+                      <Badge variant="secondary" class="shrink-0">
                         Added{added > 1 ? " " + added : ""}
                       </Badge>
                     </Show>
                   </div>
 
-                  <p class="mt-3 line-clamp-2 text-[12px] leading-5 text-muted-foreground">
+                  <p class="mt-3 line-clamp-2 text-xs leading-5 text-muted-foreground">
                     {title.description}
                   </p>
 
                   <div class="mt-3 flex flex-wrap gap-1">
                     <For each={platforms.visible}>
                       {(value) => (
-                        <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                        <Badge variant="outline">
                           {label(PLATFORM_LABELS, value)}
                         </Badge>
                       )}
                     </For>
                     <Show when={platforms.hidden > 0}>
-                      <Badge variant="outline" class="text-[10px] text-muted-foreground">
+                      <Badge variant="outline">
                         +{platforms.hidden}
                       </Badge>
                     </Show>
                   </div>
 
                   <div class="mt-auto flex items-center justify-between gap-2 pt-4">
-                    <span class="text-[10.5px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                    <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       {label(CATEGORY_LABELS, title.category)}
                     </span>
-                    <span class="flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground transition-colors group-hover:text-foreground">
+                    <span class="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors group-hover:text-foreground">
                       View
                       <ArrowRightLeft class="size-3" aria-hidden="true" />
                     </span>
@@ -318,14 +320,14 @@ export default function SoftwareCataloguePage() {
           <span
             role="status"
             aria-live="polite"
-            class="text-[12px] tabular-nums text-muted-foreground"
+            class="text-xs tabular-nums text-muted-foreground"
           >
             {rows().length} of {total()} title{total() === 1 ? "" : "s"} loaded
           </span>
           <Show
             when={catalogue.hasNextPage}
             fallback={
-              <span class="text-[12px] text-muted-foreground">All matching titles are loaded.</span>
+              <span class="text-xs text-muted-foreground">All matching titles are loaded.</span>
             }
           >
             <Button

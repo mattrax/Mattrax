@@ -359,6 +359,7 @@ export const DEVICE_VIEW_COLUMN_IDS = [
   "groups",
   "notes",
   "lastSeen",
+  "enrolledAt",
 ] as const;
 
 export type DeviceViewColumnId = (typeof DEVICE_VIEW_COLUMN_IDS)[number];

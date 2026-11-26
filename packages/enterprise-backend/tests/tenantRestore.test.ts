@@ -2,7 +2,12 @@ import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import type { R2Bucket } from "@mattrax/enterprise-core";
 import type { BackupActionError } from "../src/Tenant/backup.ts";
-import { parseTenantRestoreBundle, restoreTenantFromBackup } from "../src/Tenant/tenantRestore.ts";
+import {
+  isTenantApplicationObjectKey,
+  parseTenantRestoreBundle,
+  redactAuditObjectKeys,
+  restoreTenantFromBackup,
+} from "../src/Tenant/tenantRestore.ts";
 import type { TenantRestoreError } from "../src/Tenant/tenantRestore.ts";
 import { buildTenantExport } from "../src/Tenant/tenantExport.ts";
 import { makeDb, makeOrganization, runEffect } from "./helpers.js";
@@ -770,6 +775,119 @@ describe("in-place tenant restore", () => {
     // Validation happens before the snapshot and before any write.
     expect(db.store.backup_run).toHaveLength(1);
     expect(db.store.policy.map((row: { name: string }) => row.name)).toEqual(["Old policy"]);
+  });
+});
+
+describe("application object ownership", () => {
+  const uploadedApplication = (r2Key: string) => ({
+    key: "app-1",
+    name: "Fixture",
+    platform: "apple",
+    source: "upload",
+    bundleId: null,
+    version: null,
+    manifestUrl: null,
+    storeId: null,
+    fileName: "Fixture.pkg",
+    contentType: "application/octet-stream",
+    size: 12,
+    sha256: "a".repeat(64),
+    r2Key,
+    notes: null,
+    groupKeys: [],
+    userGroupIds: [],
+    installers: [
+      {
+        platform: "apple",
+        source: "upload",
+        bundleId: null,
+        version: null,
+        manifestUrl: null,
+        storeId: null,
+        fileName: "Fixture.pkg",
+        contentType: "application/octet-stream",
+        size: 12,
+        sha256: "a".repeat(64),
+        r2Key,
+        minOsVersion: null,
+        requiredCapability: null,
+        priority: 0,
+      },
+    ],
+  });
+
+  it("never persists a foreign application or installer key and reports the file", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    objects.set(
+      "backups/org-1/run-1.json",
+      JSON.stringify({
+        ...bundle,
+        applications: [uploadedApplication("a/org-2/app-1/sha")],
+      }),
+    );
+
+    const result = await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    expect(db.store.application[0]).toMatchObject({ name: "Fixture", r2Key: null });
+    expect(db.store.application_installer[0]).toMatchObject({ fileName: "Fixture.pkg", r2Key: null });
+    expect(result.applicationsWithoutFiles).toBe(1);
+    // The row (and therefore assignments) survives; only the object reference
+    // is dropped.
+    expect(db.store.application).toHaveLength(1);
+  });
+
+  it("keeps an object under the same tenant prefix", async () => {
+    const { db, storage, objects, organization } = makeContext();
+    const key = "a/org-1/app-1/sha";
+
+    objects.set(
+      "backups/org-1/run-1.json",
+      JSON.stringify({ ...bundle, applications: [uploadedApplication(key)] }),
+    );
+
+    const result = await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    expect(db.store.application[0]).toMatchObject({ r2Key: key });
+    expect(db.store.application_installer[0]).toMatchObject({ r2Key: key });
+    expect(result.applicationsWithoutFiles).toBe(0);
+  });
+
+  it("does not accept a key from a tenant id that shares a prefix", () => {
+    expect(isTenantApplicationObjectKey("org-1", "a/org-1/app/sha")).toBe(true);
+    expect(isTenantApplicationObjectKey("org-1", "a/org-10/app/sha")).toBe(false);
+    expect(isTenantApplicationObjectKey("org-1", "backups/org-2/run.json")).toBe(false);
+    expect(isTenantApplicationObjectKey("org-1", null)).toBe(false);
+  });
+
+  it("redacts object-key shapes from audit metadata", () => {
+    expect(
+      redactAuditObjectKeys({
+        key: "backups/org-2/run.json",
+        r2Key: "a/org-2/app/sha",
+        nested: { objectKey: "p/org-2/policy/sha", note: "kept" },
+        safe: "backup completed",
+      }),
+    ).toEqual({
+      key: "[redacted]",
+      r2Key: "[redacted]",
+      nested: { objectKey: "[redacted]", note: "kept" },
+      safe: "backup completed",
+    });
   });
 });
 

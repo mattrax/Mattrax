@@ -54,7 +54,7 @@ const auditEvents = [
   },
 ];
 
-export function Prove() {
+export default function Prove() {
   return (
     <section id="prove" class="lx-section" aria-labelledby="prove-title">
       <div class="lx-shell">
@@ -72,7 +72,7 @@ export function Prove() {
 
             <For each={signals}>
               {(signal, index) => (
-                <div class="lx-signal" style={`--v:${signal.value};--i:${index()}`}>
+                <div class="lx-signal" style={{ "--v": signal.value, "--i": index() }}>
                   <span class="lx-signal__label">{signal.label}</span>
                   <span class="lx-signal__value">
                     <span data-count={String(signal.value)}>{signal.value}</span>
@@ -100,7 +100,7 @@ export function Prove() {
             <ol class="lx-audit" aria-label="Sample audit events">
               <For each={auditEvents}>
                 {(event, index) => (
-                  <li style={`--i:${index()}`}>
+                  <li style={{ "--i": index() }}>
                     <time>{event.time}</time>
                     <span class="lx-audit__event">
                       <b>{event.actor}</b> {event.action} <code>{event.target}</code>

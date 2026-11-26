@@ -2,7 +2,7 @@ import { useLocation, useParams } from "@solidjs/router";
 import { Loading } from "solid-js";
 import type { ParentProps } from "solid-js";
 import { LoadingState } from "@mattrax/ui";
-import { SectionTabs } from "~/components/settings/section-tabs";
+import SectionTabs from "~/components/settings/section-tabs";
 import { useCan } from "~/lib/permissions";
 
 const tabs = [

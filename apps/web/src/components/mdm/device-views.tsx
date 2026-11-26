@@ -16,7 +16,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,7 +39,7 @@ import { deviceViewSync } from "~/lib/device-view-sync";
  * dialogs and cache invalidation so the device page does not grow another
  * hundred lines of form state.
  */
-export function DeviceViewsMenu(props: {
+export default function DeviceViewsMenu(props: {
   tenantId: string;
   accountId: string;
   views: ReadonlyArray<DeviceView>;
@@ -206,11 +206,13 @@ export function DeviceViewsMenu(props: {
   };
 
   const menuTrigger = (): JSX.Element => (
-    <DropdownMenuTrigger class="flex h-7 items-center gap-1.5 rounded-full border border-border bg-card px-2.5 text-[11.5px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60">
-      <Settings class="size-3.5" />
-      <span class="max-w-32 truncate">{current()?.name ?? "Views"}</span>
-      <ChevronDown class="size-3.5" />
-    </DropdownMenuTrigger>
+    <span class="inline-flex rounded-full border border-border bg-card px-2.5 text-xs text-muted-foreground transition-colors duration-140 ease-swift hover:bg-hover hover:text-foreground focus-within:ring-2 focus-within:ring-ring/60">
+      <DropdownMenuTrigger class="flex h-7 items-center">
+        <Settings class="size-3.5" />
+        <span class="mx-1.5 max-w-32 truncate">{current()?.name ?? "Views"}</span>
+        <ChevronDown class="size-3.5" />
+      </DropdownMenuTrigger>
+    </span>
   );
 
   return (
@@ -222,7 +224,7 @@ export function DeviceViewsMenu(props: {
           <Show
             when={props.views.length > 0}
             fallback={
-              <p class="px-2 py-2 text-[12px] text-muted-foreground">
+              <p class="px-2 py-2 text-xs text-muted-foreground">
                 Save the current filters and columns to reuse them later.
               </p>
             }
@@ -244,7 +246,9 @@ export function DeviceViewsMenu(props: {
                         <Badge variant="subtle">Tenant</Badge>
                       </Show>
                       <Show when={view.isDefault}>
-                        <Star class="size-3 shrink-0 text-brand" aria-label="Your default" />
+                        <span class="inline-flex shrink-0 text-brand">
+                          <Star class="size-3" aria-label="Your default" />
+                        </span>
                       </Show>
                     </span>
                   </DropdownMenuRadioItem>
@@ -304,7 +308,7 @@ export function DeviceViewsMenu(props: {
       </DropdownMenu>
 
       <Dialog open={editorOpen()} onOpenChange={(open) => !busy() && setEditorOpen(open)}>
-        <DialogContent class="max-w-md rounded-lg p-6">
+        <DialogContent class="max-w-md">
           <DialogHeader>
             <DialogTitle>{editingId() ? "Rename view" : "Save view"}</DialogTitle>
             <DialogDescription>
@@ -349,7 +353,7 @@ export function DeviceViewsMenu(props: {
                   <option value="tenant">Everyone in this tenant</option>
                 </Show>
               </NativeSelect>
-              <p class="text-[11px] text-muted-foreground">
+              <p class="text-xs text-muted-foreground">
                 {editingId() !== null
                   ? "Visibility is fixed after a view is saved. Create a new view to change it."
                   : visibility() === "tenant"

@@ -5,6 +5,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Checkbox,
 } from "@mattrax/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { Button } from "~/components/ui/button";
@@ -19,7 +20,7 @@ import {
 import type { ScriptLanguage, ScriptRunAs } from "~/lib/script-editor-options";
 
 const textareaClass =
-  "w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-[12.5px] leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 export type ScriptDraftValues = {
   name: string;
@@ -276,7 +277,7 @@ export function ScriptEditor(props: {
               <div class="flex flex-wrap items-center gap-2">
                 <Input
                   aria-label="Environment variable name"
-                  class="w-40 font-mono"
+                  class="w-40"
                   value={entry.name}
                   disabled={props.disabled}
                   placeholder="NAME"
@@ -286,7 +287,7 @@ export function ScriptEditor(props: {
                 />
                 <Input
                   aria-label="Environment variable value"
-                  class="min-w-0 flex-1 font-mono"
+                  class="min-w-0 flex-1"
                   value={entry.value}
                   disabled={props.disabled}
                   placeholder="value"
@@ -294,13 +295,13 @@ export function ScriptEditor(props: {
                     updateEnvironment(index(), { value: event.currentTarget.value })
                   }
                 />
-                <label class="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                  <input
-                    type="checkbox"
+                <label class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Checkbox
+                    class="size-3.5"
                     checked={entry.secret}
                     disabled={props.disabled}
-                    onChange={(event) =>
-                      updateEnvironment(index(), { secret: event.currentTarget.checked })
+                    onCheckedChange={(checked) =>
+                      updateEnvironment(index(), { secret: checked === true })
                     }
                   />
                   Secret

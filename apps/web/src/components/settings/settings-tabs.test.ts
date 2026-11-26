@@ -48,6 +48,15 @@ describe("settings tab metadata", () => {
 describe("settings tab routing", () => {
   const base = "/t/acme/settings";
 
+  it.each(SETTINGS_TABS)("resolves the $label section from a cold deep link", (tab) => {
+    const freshTenantBase = "/t/fresh-tenant/settings";
+    const pathname = settingsTabHref(freshTenantBase, tab.id);
+    const active = activeSettingsTab(pathname, freshTenantBase);
+
+    expect(active).toBe(tab.id);
+    expect(settingsTabById(active)?.label).toBe(tab.label);
+  });
+
   it("builds the general and tab addresses", () => {
     expect(settingsTabHref(base, "")).toBe(base);
     expect(settingsTabHref(base, "backups")).toBe("/t/acme/settings/backups");
