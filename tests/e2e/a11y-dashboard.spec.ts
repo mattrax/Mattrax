@@ -78,7 +78,9 @@ const expectNoViolations = async (
 ) => {
   // Entrance animations and delayed transitions change contrast while they
   // run. Poll the scan itself: the assertion retries on the thing it cares
-  // about instead of guessing how long the page needs to settle.
+  // about instead of guessing how long the page needs to settle. An include
+  // selector must exist before axe runs or the scan throws instead of retrying.
+  if (options.include) await expect(page.locator(options.include).first()).toBeVisible();
   await expect
     .poll(
       async () => {

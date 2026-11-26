@@ -482,7 +482,7 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-  # One runner per shard with two Playwright workers. The failures seen on the
+  # One runner per shard with six Playwright workers. The failures seen on the
   # first attempt were real defects rather than shared state: the skew spec
   # waited for a pageerror that the error boundary converts to console.error,
   # the invitation select lost a Solid signal update, and the editor nav had a
@@ -500,13 +500,13 @@ jobs:
   # migrations per shard. The shared schema cache keeps the 29s migration off
   # the path once main has published it; the build job above is the real path.
   #
-  # Seven shards. Hydration-based navigation removes ~600ms per document load,
-  # the 86s MFA test is split into four tests (longest ~50-60s), two workers
-  # halve each shard's test slice, and the production build comes from cache
-  # instead of being rebuilt on every runner. That puts the heaviest shard
-  # around 100s including setup, under the two-minute budget. With vitest down
-  # to one, the job count is 16: changes + lint + 1 vitest + typecheck +
-  # build/migrations + 4 Lighthouse + 7 shards.
+  # Two shards. Hydration-based navigation removes ~600ms per document load,
+  # the 86s MFA test is split into four tests (longest ~50-60s), six workers
+  # fan out each shard's files, and the production build comes from cache
+  # instead of being rebuilt on every runner. CI measures the resulting wall
+  # clock; adjust workers before adding shards. With vitest down to one, the
+  # job count is 11: changes + lint + 1 vitest + typecheck + build/migrations
+  # + 4 Lighthouse + 2 shards.
   #
   # Setup is ~25s: schema restore ~1s, browser cache ~2s, cached build ~5s
   # (MySQL and the schema load overlap it), plus the duration-weighted tests.
@@ -530,9 +530,9 @@ jobs:
       matrix:
         # When the policy is enabled, one job runs `playwright test
         # --only-changed` for the PR. It is a single job because the selected
-        # set is usually a handful of specs; the full suite keeps its seven
+        # set is usually a handful of specs; the full suite keeps its two
         # shards.
-        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2, 3, 4, 5, 6, 7]') }}
+        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2]') }}
     env:
       E2E_CHANNEL: bundled
       # Serve the production build rather than the dev server: a dashboard page

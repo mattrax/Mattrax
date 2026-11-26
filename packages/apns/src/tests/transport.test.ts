@@ -167,7 +167,10 @@ describe("APNs outbound timeouts", () => {
     );
 
   /** Fetch-backed transports use an Effect deadline; drive it virtually. */
-  const pushWithClock = (transport: ReturnType<typeof MtlsPushTransport>) =>
+  const pushWithClock = (
+    transport: ReturnType<typeof MtlsPushTransport>,
+    started: Promise<void>,
+  ) =>
     Effect.runPromise(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(
@@ -180,7 +183,9 @@ describe("APNs outbound timeouts", () => {
           ),
           { startImmediately: true },
         );
-        yield* Effect.yieldNow;
+        // Do not advance the clock before the child has installed its timer;
+        // under CI load a single yieldNow is not a reliable scheduling gate.
+        yield* Effect.promise(() => started);
         yield* TestClock.adjust("25 millis");
         return yield* Fiber.join(fiber);
       }).pipe(Effect.provide(TestClock.layer())),
@@ -188,38 +193,49 @@ describe("APNs outbound timeouts", () => {
 
   it("aborts a hung mTLS fetch", async () => {
     let aborted: AbortSignal | undefined;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
 
     const transport = MtlsPushTransport({
       timeoutMs: 25,
       fetch: (request: Request) =>
         new Promise<Response>((_resolve, reject) => {
           aborted = request.signal;
+          markStarted();
           request.signal.addEventListener("abort", () =>
             reject(new DOMException("aborted", "AbortError")),
           );
         }),
     });
 
-    const error = await pushWithClock(transport);
+    const error = await pushWithClock(transport, started);
     expect(error).toBeInstanceOf(ApnsError);
     expect(error.message).toContain("timed out");
     expect(aborted?.aborted).toBe(true);
   });
 
   it("aborts a hung relay fetch", async () => {
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+
     const transport = RelayPushTransport({
       url: "https://relay.test/apns",
       secret: "relay-secret",
       timeoutMs: 25,
       fetch: (_input: RequestInfo | URL, init?: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
+          markStarted();
           init?.signal?.addEventListener("abort", () =>
             reject(new DOMException("aborted", "AbortError")),
           );
         }),
     });
 
-    const error = await pushWithClock(transport);
+    const error = await pushWithClock(transport, started);
     expect(error).toBeInstanceOf(ApnsError);
     expect(error.message).toContain("timed out");
   });
