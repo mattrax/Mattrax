@@ -84,7 +84,9 @@ test.describe("policy designer", () => {
       .getByRole("checkbox", { name: /Disable the camera on secure keyguard screens/ })
       .check();
     const [androidFile] = await Promise.all([
-      page.waitForEvent("download"),
+      page.waitForEvent("download", {
+        predicate: (download) => download.suggestedFilename().endsWith(".json"),
+      }),
       page.getByRole("button", { name: /^Export$/ }).click(),
     ]);
     const policy = JSON.parse(await readFile(await androidFile.path(), "utf8"));
@@ -259,6 +261,9 @@ test.describe("policy designer", () => {
     await expect(page.getByRole("heading", { name: "Android policy", exact: true })).toBeVisible();
 
     // warns before replacing advanced-editor configurations
+    // The previous policy designer autosaved a global draft; start clean so
+    // the next editor does not restore it mid-hydration.
+    await page.evaluate(() => localStorage.clear());
     await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
     await page.locator("form input").first().fill("Guarded policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();
@@ -301,7 +306,7 @@ test.describe("policy designer", () => {
     await gotoHydrated(page, "/designer");
     await page.getByRole("button", { name: /security baseline/i }).click();
     await page.getByRole("button", { name: /Deploy in Mattrax/ }).click();
-    await expect(page).toHaveURL(/\dashboard\?designerDraft=1/);
+    await expect(page).toHaveURL(/dashboard\?designerDraft=1/);
     await expect(page.getByText("Policy draft ready")).toBeVisible();
     await page.getByRole("button", { name: /Create policy & continue/ }).click();
     await expect(page).toHaveURL(/\design$/, { timeout: 20_000 });

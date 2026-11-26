@@ -360,7 +360,11 @@ test.describe("dashboard accessibility", () => {
     const input = page.locator('input[role="combobox"]');
     await expect(input).toBeVisible();
     await expect(input).toBeFocused();
-    await page.keyboard.press("Escape");
+    // A preceding overlay can consume the first Escape as an outside press.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if ((await page.locator('[data-slot="command-palette"]').count()) === 0) break;
+      await page.keyboard.press("Escape");
+    }
     await expect(page.locator('[data-slot="command-palette"]')).toHaveCount(0);
     await expect(search).toBeFocused();
 
