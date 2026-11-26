@@ -83,3 +83,7 @@ apps/mattraxd/build/
 
 # Local dumps from apps/cloud/scripts/db-backup.sh
 .backups/
+
+# CDP (Chrome DevTools Protocol) artifacts
+.cdp/
+.cdp-report/
