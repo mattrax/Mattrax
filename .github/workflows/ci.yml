@@ -509,9 +509,9 @@ jobs:
       (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
     # The browser suite is CPU-bound: four workers on a 4-vCPU runner spent
     # 1,207s of test time and could not fit the two-minute budget. One
-    # 8-vCPU Blacksmith runner still runs the suite as a single shard while
-    # giving Playwright eight workers and native arm64 Chromium.
-    runs-on: blacksmith-8vcpu-ubuntu-2404-arm
+    # Blacksmith runner still runs the suite as a single shard while giving
+    # Playwright native arm64 Chromium.
+    runs-on: blacksmith-4vcpu-ubuntu-2404-arm
     # Keep headroom for setup, artifacts and a retried failure.
     timeout-minutes: 30
     env:
