@@ -30,7 +30,7 @@ import {
   formatPlanUsage,
 } from "~/lib/plan-limits";
 import { cn } from "~/lib/utils";
-import { StatusChip as Chip } from "~/components/settings/status-chip";
+import Chip from "~/components/settings/status-chip";
 import type { StatusTone } from "~/components/settings/status-chip";
 
 const formatDate = (value: string | null | undefined) => {
@@ -199,18 +199,19 @@ export default function BillingSettingsPage() {
       </Show>
 
       <Panel class="xl:col-span-2">
-        <div class="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.8fr)]">
-          <Card role="region" aria-labelledby={usageHeadingId} class="min-w-0 p-4 sm:p-5">
+        <div class="grid gap-4 xl:grid-cols-5">
+          <Card role="region" aria-labelledby={usageHeadingId} class="min-w-0 xl:col-span-3">
+            <div class="p-4 sm:p-5">
             <div class="flex items-start justify-between gap-3">
               <div>
                 <div class="label-caps">Plan usage</div>
                 <h2
                   id={usageHeadingId}
-                  class="mt-1 text-[18px] font-[580] tracking-[-0.025em] text-foreground"
+                  class="mt-1 text-lg font-semibold tracking-tight text-foreground"
                 >
                   Usage & limits
                 </h2>
-                <p class="mt-1 text-[12.5px] leading-5 text-muted-foreground">
+                <p class="mt-1 text-xs leading-5 text-muted-foreground">
                   See how much of your plan this account is using.
                 </p>
               </div>
@@ -243,7 +244,7 @@ export default function BillingSettingsPage() {
             </div>
 
             <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-              <p class="max-w-[52ch] text-[11.5px] leading-5 text-muted-foreground">
+              <p class="max-w-prose text-xs leading-5 text-muted-foreground">
                 Only enrolled devices are billable. Checked-out devices stop counting toward the
                 next billing period.
               </p>
@@ -252,9 +253,11 @@ export default function BillingSettingsPage() {
                 <ArrowRight class="size-3.5" />
               </Button>
             </div>
+            </div>
           </Card>
 
-          <Card role="region" aria-labelledby={planHeadingId} class="min-w-0 p-4 sm:p-5">
+          <Card role="region" aria-labelledby={planHeadingId} class="min-w-0 xl:col-span-2">
+            <div class="p-4 sm:p-5">
             <div class="flex items-center justify-between gap-3">
               <h2 id={planHeadingId} class="label-caps">
                 Current plan
@@ -265,14 +268,14 @@ export default function BillingSettingsPage() {
                   : (billing.data?.status ?? "inactive")}
               </Chip>
             </div>
-            <p class="mt-3 text-[28px] font-[580] leading-none tracking-[-0.035em] capitalize text-foreground">
+            <p class="mt-3 text-3xl font-semibold leading-none tracking-tight capitalize text-foreground">
               {billing.data?.plan ?? "Free"}
             </p>
-            <p class="mt-2 text-[12.5px] leading-5 text-muted-foreground">
+            <p class="mt-2 text-xs leading-5 text-muted-foreground">
               Current plan and renewal details.
             </p>
 
-            <dl class="mt-6 divide-y divide-border text-[12.5px]">
+            <dl class="mt-6 divide-y divide-border text-xs">
               <DefinitionRow
                 label="Current period ends"
                 value={formatDate(billing.data?.periodEnd)}
@@ -308,7 +311,7 @@ export default function BillingSettingsPage() {
                     <ArrowUpRight class="size-3.5" />
                   </Button>
                 </div>
-                <p class="mt-2 text-[11.5px] leading-5 text-muted-foreground">
+                <p class="mt-2 text-xs leading-5 text-muted-foreground">
                   Stripe handles payment methods, plan changes and cancellations. Seat counts follow
                   your fleet automatically.
                 </p>
@@ -322,6 +325,7 @@ export default function BillingSettingsPage() {
               </Show>
               <ErrorText error={checkout.error} />
               <ErrorText error={portal.error} />
+            </div>
             </div>
           </Card>
         </div>
@@ -364,12 +368,12 @@ export default function BillingSettingsPage() {
             }
           >
             <div class="overflow-x-auto" role="region" aria-labelledby={invoiceCaptionId}>
-              <table class="w-full min-w-[34rem] text-left text-[13px]">
+              <table class="w-full min-w-136 text-left text-xs">
                 <caption id={invoiceCaptionId} class="sr-only">
                   Invoices for this tenant
                 </caption>
                 <thead>
-                  <tr class="border-b border-border text-[11px] font-medium tracking-wide text-muted-foreground">
+                  <tr class="border-b border-border text-xs font-medium tracking-wide text-muted-foreground">
                     <th scope="col" class="py-2 pr-3 font-medium">
                       Invoice
                     </th>
@@ -391,7 +395,7 @@ export default function BillingSettingsPage() {
                   <For each={invoices.data?.invoices ?? []}>
                     {(invoice) => (
                       <tr>
-                        <td class="py-3 pr-3 font-mono text-[12px] font-medium text-foreground">
+                        <td class="py-3 pr-3 font-mono text-xs font-medium text-foreground">
                           {invoice.number ?? invoice.id}
                         </td>
                         <td class="py-3 pr-3">
@@ -470,19 +474,19 @@ export default function BillingSettingsPage() {
           </Button>
         }
       >
-        <ul class="grid gap-4 text-[12px] leading-5 text-muted-foreground sm:grid-cols-3">
+        <ul class="grid gap-4 text-xs leading-5 text-muted-foreground sm:grid-cols-3">
           <li>
-            <strong class="font-[560] text-foreground">Enrolled devices</strong>
+            <strong class="font-semibold text-foreground">Enrolled devices</strong>
             <p class="mt-1">
               Only enrolled devices are billable. Checked-out devices stop counting.
             </p>
           </li>
           <li>
-            <strong class="font-[560] text-foreground">Automatic seat counts</strong>
+            <strong class="font-semibold text-foreground">Automatic seat counts</strong>
             <p class="mt-1">Your subscription quantity follows the current fleet automatically.</p>
           </li>
           <li>
-            <strong class="font-[560] text-foreground">Stripe manages payments</strong>
+            <strong class="font-semibold text-foreground">Stripe manages payments</strong>
             <p class="mt-1">Payment methods, plan changes and cancellations happen in Stripe.</p>
           </li>
         </ul>
@@ -556,11 +560,11 @@ function UsageMeter(props: {
   return (
     <div class="min-w-0">
       <div class="flex items-center justify-between gap-2">
-        <h3 class="flex min-w-0 items-center gap-2 text-[12.5px] font-[560] text-foreground">
+        <h3 class="flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground">
           <span class={cn("shrink-0", tone().icon)}>{props.icon}</span>
           <span class="truncate">{props.label}</span>
         </h3>
-        <Chip tone={tone().chip} class="max-w-[45%] truncate">
+        <Chip tone={tone().chip} class="w-2/5 max-w-full truncate">
           {statusLabel()}
         </Chip>
       </div>
@@ -568,11 +572,11 @@ function UsageMeter(props: {
       <div class="mt-4 flex items-baseline gap-1.5">
         <span
           data-numeric
-          class="text-[32px] font-[580] leading-none tracking-[-0.04em] text-foreground"
+          class="text-3xl font-semibold leading-none tracking-tight text-foreground"
         >
           {props.used}
         </span>
-        <span class="text-[15px] font-medium text-muted-foreground">/ {props.limit ?? "∞"}</span>
+        <span class="text-sm font-medium text-muted-foreground">/ {props.limit ?? "∞"}</span>
       </div>
 
       <Show
@@ -587,22 +591,22 @@ function UsageMeter(props: {
           class={cn(
             "mt-3 h-2 w-full appearance-none overflow-clip rounded-full border-0 bg-muted",
             "[&::-webkit-progress-bar]:bg-transparent [&::-webkit-progress-value]:rounded-full",
-            "[&::-webkit-progress-value]:transition-[inline-size] [&::-webkit-progress-value]:duration-[var(--duration-panel)] [&::-webkit-progress-value]:ease-swift",
-            "[&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:transition-[inline-size] [&::-moz-progress-bar]:duration-[var(--duration-panel)] [&::-moz-progress-bar]:ease-swift",
+            "[&::-webkit-progress-value]:transition-all [&::-webkit-progress-value]:duration-200 [&::-webkit-progress-value]:ease-swift",
+            "[&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:transition-all [&::-moz-progress-bar]:duration-200 [&::-moz-progress-bar]:ease-swift",
             "motion-reduce:[&::-webkit-progress-value]:transition-none motion-reduce:[&::-moz-progress-bar]:transition-none",
             tone().progress,
           )}
         />
       </Show>
 
-      <p class="mt-2 text-[11.5px] leading-5 text-muted-foreground">{props.detail}</p>
+      <p class="mt-2 text-xs leading-5 text-muted-foreground">{props.detail}</p>
       <Show when={state() === "near" || state() === "full"}>
-        <p class="mt-1 text-[11.5px] font-medium text-warning">
+        <p class="mt-1 text-xs font-medium text-warning">
           {state() === "full" ? "This plan is at its limit." : "This plan is nearing its limit."}
         </p>
       </Show>
       <Show when={state() === "over"}>
-        <p class="mt-1 text-[11.5px] font-medium text-destructive">
+        <p class="mt-1 text-xs font-medium text-destructive">
           Upgrade or remove usage to add more.
         </p>
       </Show>
@@ -636,11 +640,11 @@ function Callout(props: {
     <div class={cn("flex items-start gap-2.5 rounded-lg border p-4", tone().box, props.class)}>
       <Show
         when={props.tone === "success"}
-        fallback={<CircleAlert class={cn("mt-0.5 size-4 shrink-0", tone().text)} />}
+        fallback={<span class={cn("mt-0.5 size-4 shrink-0", tone().text)}><CircleAlert class="size-4" /></span>}
       >
-        <CheckCircle2 class={cn("mt-0.5 size-4 shrink-0", tone().text)} />
+        <span class={cn("mt-0.5 size-4 shrink-0", tone().text)}><CheckCircle2 class="size-4" /></span>
       </Show>
-      <div class={cn("min-w-0 text-[13px] leading-relaxed", tone().text)}>{props.children}</div>
+      <div class={cn("min-w-0 text-xs leading-relaxed", tone().text)}>{props.children}</div>
     </div>
   );
 }

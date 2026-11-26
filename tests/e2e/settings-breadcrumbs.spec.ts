@@ -44,9 +44,23 @@ test.describe("settings breadcrumbs", () => {
       releaseMe = resolve;
     });
     const mePath = /\/api\/v1\/me(?:\?|$)/;
+    // Track each intercepted request so teardown can wait for its handler to
+    // finish. Unrouting a route whose handler is still waiting hands the
+    // request back to the network, and the handler's own `continue()` then
+    // fails with "Route is already handled!".
+    const continuing = new Set<Promise<void>>();
     await page.route(mePath, async (route) => {
-      await meGate;
-      await route.continue();
+      const done = (async () => {
+        await meGate;
+        await route.continue();
+      })();
+      continuing.add(done);
+
+      try {
+        await done;
+      } finally {
+        continuing.delete(done);
+      }
     });
 
     try {
@@ -59,6 +73,7 @@ test.describe("settings breadcrumbs", () => {
       await expect(breadcrumb.getByRole("link")).toHaveCount(0);
     } finally {
       releaseMe();
+      await Promise.allSettled(continuing);
       await page.unroute(mePath);
     }
 

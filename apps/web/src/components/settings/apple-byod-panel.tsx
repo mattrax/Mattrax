@@ -4,9 +4,10 @@ import type { AppleByodConfigInfo } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Info } from "~/components/ui/icons";
-import { StatusChip as Chip } from "~/components/settings/status-chip";
+import Chip from "~/components/settings/status-chip";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import { Input } from "~/components/ui/input";
 
 const copy = async (value: string | undefined, label: string) => {
   if (!value) return;
@@ -27,7 +28,7 @@ const copy = async (value: string | undefined, label: string) => {
  * email domain is enough. It shows the exact document, the public test result
  * and the real-device validation gate.
  */
-export function AppleByodPanel(props: {
+export default function AppleByodPanel(props: {
   readonly tenantId: string;
   readonly canWrite: boolean;
 }) {
@@ -119,28 +120,28 @@ export function AppleByodPanel(props: {
           <div class="mt-4 space-y-4">
             <div class="grid gap-3 sm:grid-cols-3">
               <div class="rounded-lg border border-border p-3">
-                <p class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                   Domain
                 </p>
-                <p class="mt-1 break-all text-[13px] font-medium text-foreground">
+                <p class="mt-1 break-all text-xs font-medium text-foreground">
                   {info().domain ?? "Not selected"}
                 </p>
               </div>
               <div class="rounded-lg border border-border p-3">
-                <p class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                   Public test
                 </p>
-                <p class="mt-1 text-[13px] font-medium text-foreground">
+                <p class="mt-1 text-xs font-medium text-foreground">
                   {info().validatedAt
                     ? `Passed ${new Date(info().validatedAt!).toLocaleString()}`
                     : "Not verified"}
                 </p>
               </div>
               <div class="rounded-lg border border-border p-3">
-                <p class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                <p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                   Real device
                 </p>
-                <p class="mt-1 text-[13px] font-medium text-foreground">
+                <p class="mt-1 text-xs font-medium text-foreground">
                   {info().hardwareValidatedAt
                     ? `Validated ${new Date(info().hardwareValidatedAt!).toLocaleDateString()}`
                     : info().hardwareValidationRequired
@@ -153,7 +154,7 @@ export function AppleByodPanel(props: {
             <Show
               when={info().domains.length > 0}
               fallback={
-                <div class="rounded-lg border border-border bg-surface p-3 text-[12.5px] leading-relaxed text-muted-foreground">
+                <div class="rounded-lg border border-border bg-surface p-3 text-xs leading-relaxed text-muted-foreground">
                   No verified domain is available. Connect Microsoft Entra single sign-on, run
                   directory sync and confirm a verified domain under{" "}
                   <a
@@ -167,10 +168,10 @@ export function AppleByodPanel(props: {
               }
             >
               <div class="grid gap-3 sm:grid-cols-2">
-                <label class="block text-[12.5px] font-medium text-foreground">
+                <label class="block text-xs font-medium text-foreground">
                   Managed Apple Account domain
                   <select
-                    class="mt-1.5 min-h-9 w-full rounded-lg border border-border bg-background px-2 text-[13px]"
+                    class="mt-1.5 min-h-9 w-full rounded-lg border border-border bg-background px-2 text-xs"
                     disabled={disabled()}
                     value={domain() ?? ""}
                     onChange={(event) => setDomain(event.currentTarget.value || null)}
@@ -188,8 +189,8 @@ export function AppleByodPanel(props: {
                 </label>
 
                 <div class="flex flex-col justify-end gap-2 sm:flex-row sm:items-end">
-                  <label class="flex min-h-9 items-center gap-2 text-[12.5px] text-foreground">
-                    <input
+                  <label class="flex min-h-9 items-center gap-2 text-xs text-foreground">
+                    <Input
                       type="checkbox"
                       checked={enabled()}
                       disabled={disabled()}
@@ -200,8 +201,8 @@ export function AppleByodPanel(props: {
                 </div>
               </div>
 
-              <label class="flex items-start gap-2 text-[12.5px] text-foreground">
-                <input
+              <label class="flex items-start gap-2 text-xs text-foreground">
+                <Input
                   class="mt-0.5"
                   type="checkbox"
                   checked={hardwareRequired()}
@@ -210,7 +211,7 @@ export function AppleByodPanel(props: {
                 />
                 <span>
                   Require real-device validation before the discovery document is exposed
-                  <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+                  <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
                     Turn this off only while setting up and testing. Turn it back on once an iPhone
                     or iPad has completed the flow.
                   </span>
@@ -235,10 +236,10 @@ export function AppleByodPanel(props: {
               {(wellKnownUrl) => (
                 <div class="space-y-3 rounded-lg border border-border p-3">
                   <div>
-                    <p class="text-[12.5px] font-medium text-foreground">
+                    <p class="text-xs font-medium text-foreground">
                       DNS and discovery prerequisite
                     </p>
-                    <p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+                    <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                       Point <code class="break-all">{info().domain}</code> at this deployment (
                       {new URL(info().deploymentOrigin).host}) with a CNAME, ALIAS or A/AAAA record.
                       The domain must serve this document over HTTPS; the apex of the Managed Apple
@@ -247,7 +248,7 @@ export function AppleByodPanel(props: {
                     </p>
                   </div>
                   <div class="flex flex-wrap items-center gap-2">
-                    <code class="min-w-0 flex-1 break-all rounded bg-surface px-2 py-1.5 text-[11.5px]">
+                    <code class="min-w-0 flex-1 break-all rounded bg-surface px-2 py-1.5 text-xs">
                       {wellKnownUrl()}
                     </code>
                     <Button
@@ -259,7 +260,7 @@ export function AppleByodPanel(props: {
                     </Button>
                   </div>
                   <div class="flex flex-wrap items-center gap-2">
-                    <code class="min-w-0 flex-1 break-all rounded bg-surface px-2 py-1.5 text-[11.5px]">
+                    <code class="min-w-0 flex-1 break-all rounded bg-surface px-2 py-1.5 text-xs">
                       CNAME {info().domain} → {new URL(info().deploymentOrigin).host}
                     </code>
                     <Button
@@ -276,9 +277,9 @@ export function AppleByodPanel(props: {
                     </Button>
                   </div>
                   <div>
-                    <p class="text-[12px] font-medium text-foreground">Expected response</p>
+                    <p class="text-xs font-medium text-foreground">Expected response</p>
                     <div class="mt-1 flex flex-wrap items-start gap-2">
-                      <pre class="min-w-0 flex-1 overflow-x-auto rounded bg-surface p-2 text-[11px] leading-relaxed">
+                      <pre class="min-w-0 flex-1 overflow-x-auto rounded bg-surface p-2 text-xs leading-relaxed">
                         {info().expectedDocument}
                       </pre>
                       <Button
@@ -298,17 +299,17 @@ export function AppleByodPanel(props: {
 
             <Show when={info().blockers.length > 0}>
               <div class="rounded-lg border border-warning/25 bg-warning/[0.06] p-3">
-                <p class="text-[12.5px] font-medium text-warning-foreground">
+                <p class="text-xs font-medium text-warning-foreground">
                   Before this can be enabled
                 </p>
-                <ul class="mt-1 list-disc space-y-1 pl-4 text-[12px] leading-relaxed text-warning-foreground">
+                <ul class="mt-1 list-disc space-y-1 pl-4 text-xs leading-relaxed text-warning-foreground">
                   <For each={info().blockers}>{(blocker) => <li>{blocker}</li>}</For>
                 </ul>
               </div>
             </Show>
 
             <Show when={info().hosted}>
-              <p class="rounded-lg border border-border bg-surface p-3 text-[12px] leading-relaxed text-muted-foreground">
+              <p class="rounded-lg border border-border bg-surface p-3 text-xs leading-relaxed text-muted-foreground">
                 This is a Mattrax Cloud deployment. Per-tenant custom hostnames are not available
                 yet (issues 460 and 526), so account-driven enrollment needs a self-hosted deployment on the
                 organisation's verified domain.
@@ -316,15 +317,15 @@ export function AppleByodPanel(props: {
             </Show>
 
             <Show when={test.data && !test.data.ok && test.data.errors.length > 0}>
-              <div class="rounded-lg border border-red-600/20 bg-red-50 p-3 dark:bg-red-950/20">
-                <p class="text-[12.5px] font-medium text-red-700 dark:text-red-300">
+              <div class="rounded-lg border border-destructive/20 bg-destructive/10 p-3 dark:bg-destructive/10">
+                <p class="text-xs font-medium text-destructive dark:text-destructive">
                   Discovery test failed
                 </p>
-                <ul class="mt-1 list-disc space-y-1 pl-4 text-[12px] leading-relaxed text-red-700 dark:text-red-300">
+                <ul class="mt-1 list-disc space-y-1 pl-4 text-xs leading-relaxed text-destructive dark:text-destructive">
                   <For each={test.data!.errors}>{(problem) => <li>{problem}</li>}</For>
                 </ul>
                 <Show when={(test.data as { body?: string | null } | undefined)?.body}>
-                  <pre class="mt-2 max-h-32 overflow-auto rounded bg-background/60 p-2 text-[11px]">
+                  <pre class="mt-2 max-h-32 overflow-auto rounded bg-background/60 p-2 text-xs">
                     {(test.data as { body?: string | null }).body}
                   </pre>
                 </Show>
@@ -343,13 +344,13 @@ export function AppleByodPanel(props: {
                   ? "Withdraw real-device validation"
                   : "Mark real-device validation complete"}
               </Button>
-              <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+              <p class="text-xs leading-relaxed text-muted-foreground">
                 Only tick this after an iPhone or iPad with a Managed Apple Account completes the
                 flow against this tenant. It is an audit record, not a test.
               </p>
             </div>
 
-            <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+            <p class="text-xs leading-relaxed text-muted-foreground">
               Limits: only Microsoft Entra SSO is implemented; Google Workspace sign-in is not.
               Federated Managed Apple Accounts must match the IdP email address. Apple must reach
               the discovery document publicly over HTTPS, and this deployment must own that

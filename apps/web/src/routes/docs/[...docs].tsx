@@ -10,7 +10,7 @@ import { ErrorPanel } from "~/components/error-boundary";
 export default function Page() {
   if (import.meta.env.DEV)
     return (
-      <p class="p-4 text-[13px] text-muted-foreground">
+      <p class="p-4 text-xs text-muted-foreground">
         Documentation is not available in development.
       </p>
     );
@@ -34,7 +34,7 @@ export default function Page() {
         </div>
       )}
     >
-      <div class="min-h-svh bg-background p-6 text-[13px] text-muted-foreground">
+      <div class="min-h-svh bg-background p-6 text-xs text-muted-foreground">
         Opening the documentation…
       </div>
     </Errored>

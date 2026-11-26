@@ -2,8 +2,8 @@ import { useParams, useSearchParams } from "@solidjs/router";
 import { useInfiniteQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { EmptyState, formatDate, LinkButton, Page, PageHeader } from "~/components/mdm/common";
-import { EntityHoverCard } from "~/components/entity-hover-card";
-import { EntityActions } from "~/components/mdm/entity-actions";
+import EntityHoverCard from "~/components/entity-hover-card";
+import EntityActions from "~/components/mdm/entity-actions";
 import { EntityQueryBar, formatEntityQuery, parseEntityQuery } from "~/components/mdm/entity-query";
 import type { EntityCondition, EntityField } from "~/components/mdm/entity-query";
 import { MdmTable } from "~/components/mdm/table";
@@ -29,8 +29,8 @@ function MembershipBadge(props: { kind: GroupRow["kind"]; directoryGroupId?: str
     <span
       class={
         dynamic() || directory()
-          ? "inline-flex items-center gap-1.5 rounded-full border border-border bg-hover px-2 py-0.5 text-[11px] font-medium text-foreground/85"
-          : "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+          ? "inline-flex items-center gap-1.5 rounded-full border border-border bg-hover px-2 py-0.5 text-xs font-medium text-foreground/85"
+          : "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-xs font-medium text-muted-foreground"
       }
       title={directory() ? "Membership follows a linked directory group" : undefined}
     >
@@ -207,7 +207,7 @@ export default function GroupsPage() {
             <p
               role="status"
               aria-live="polite"
-              class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-[12px] text-muted-foreground"
+              class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground"
             >
               Filters changed — loading results. The rows below are from the previous filter until
               this finishes.
@@ -219,14 +219,14 @@ export default function GroupsPage() {
             <span
               role="status"
               aria-live="polite"
-              class="text-[12px] tabular-nums text-muted-foreground"
+              class="text-xs tabular-nums text-muted-foreground"
             >
               {rows().length} of {total()} group{total() === 1 ? "" : "s"} loaded
             </span>
             <Show
               when={groups.hasNextPage}
               fallback={
-                <span class="text-[12px] text-muted-foreground">
+                <span class="text-xs text-muted-foreground">
                   All matching groups are loaded.
                 </span>
               }
@@ -293,7 +293,7 @@ export default function GroupsPage() {
                 </EntityHoverCard>
                 <Show when={row.notes?.trim()}>
                   {(notes) => (
-                    <span class="mt-0.5 block max-w-[320px] truncate text-[11px] text-muted-foreground">
+                    <span class="mt-0.5 block max-w-80 truncate text-xs text-muted-foreground">
                       {notes()}
                     </span>
                   )}
@@ -333,7 +333,7 @@ export default function GroupsPage() {
             sort: (row) => row.updatedAt,
             sortId: "updatedAt",
             cell: (row) => (
-              <span class="whitespace-nowrap text-[12.5px] text-muted-foreground">
+              <span class="whitespace-nowrap text-xs text-muted-foreground">
                 {formatDate(row.updatedAt)}
               </span>
             ),

@@ -13,7 +13,7 @@ import {
   QueryError,
   formatDate,
 } from "~/components/mdm/common";
-import { Progress } from "@mattrax/ui";
+import { Checkbox, Progress } from "@mattrax/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -35,10 +35,10 @@ export const route = {
 };
 
 const selectClass =
-  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 const textareaClass =
-  "min-h-28 w-full rounded-lg border border-input bg-transparent p-2.5 font-mono text-[12px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "min-h-28 w-full rounded-lg border border-input bg-transparent p-2.5 font-mono text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 const sources = [
   { value: "jamf", label: "Jamf Pro" },
@@ -161,7 +161,7 @@ export default function MigrationPage(props: { embedded?: boolean } = {}) {
       cell: (row: FleetMigrationSummary) => (
         <div class="min-w-40 space-y-1.5">
           <div class="flex flex-wrap items-center justify-between gap-1.5">
-            <span class="font-mono text-[11px] tabular-nums text-muted-foreground">
+            <span class="font-mono text-xs tabular-nums text-muted-foreground">
               {progress(row)}
             </span>
             <Show when={row.counts.stuck > 0}>
@@ -241,11 +241,10 @@ export default function MigrationPage(props: { embedded?: boolean } = {}) {
               <div class="flex flex-wrap gap-3 pt-1.5">
                 <For each={platforms}>
                   {(entry) => (
-                    <label class="flex items-center gap-1.5 text-[12.5px]">
-                      <input
-                        type="checkbox"
+                    <label class="flex items-center gap-1.5 text-xs">
+                      <Checkbox
                         checked={selected().includes(entry.value)}
-                        onChange={() => togglePlatform(entry.value)}
+                        onCheckedChange={() => togglePlatform(entry.value)}
                       />
                       {entry.label}
                     </label>

@@ -64,8 +64,12 @@ export type StaleWriteGuard = {
    * Acknowledge a server-side refresh that advanced `updatedAt` while the
    * editor kept its draft. A forced 412 remains pinned until the operator
    * explicitly accepts the latest version.
+   *
+   * Pass the timestamp from the refresh response or its follow-up fetch: the
+   * reactive row can still hold the previous value for a tick after a refetch
+   * resolves, and saving that stale base is a guaranteed 412.
    */
-  readonly markRefreshed: () => void;
+  readonly markRefreshed: (updatedAt?: string) => void;
   /**
    * Accept the refetched version as the new base. Callers keep their draft,
    * so this is the explicit "save mine over it" action.
@@ -115,11 +119,11 @@ export const createStaleWriteGuard = (
       pendingResync = true;
       setConflict(false);
     },
-    markRefreshed: () => {
+    markRefreshed: (refreshedAt?: string) => {
       if (conflict()) return;
 
       pendingResync = false;
-      const updatedAt = currentUpdatedAt();
+      const updatedAt = refreshedAt ?? currentUpdatedAt();
 
       if (updatedAt !== undefined) setBase(updatedAt);
     },

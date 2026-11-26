@@ -61,7 +61,7 @@ export default function UsersPage() {
             >
               {row.name}
             </a>
-            <span class="mt-0.5 block truncate text-[11px] text-muted-foreground">{row.email}</span>
+            <span class="mt-0.5 block truncate text-xs text-muted-foreground">{row.email}</span>
           </div>
         ),
       },
@@ -72,7 +72,7 @@ export default function UsersPage() {
         sort: (row) => row.email,
         search: (row) => row.email,
         cell: (row) => (
-          <span class="truncate text-[12.5px] text-muted-foreground">{row.email}</span>
+          <span class="truncate text-xs text-muted-foreground">{row.email}</span>
         ),
       },
       {
@@ -81,7 +81,7 @@ export default function UsersPage() {
         sort: (row) => row.source,
         search: (row) => SOURCE_LABELS[row.source],
         cell: (row) => (
-          <span class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+          <span class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-xs font-medium text-muted-foreground">
             <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
             {SOURCE_LABELS[row.source]}
           </span>
@@ -97,8 +97,8 @@ export default function UsersPage() {
               data-success-badge="active"
               class={
                 row.disabled
-                  ? "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                  : "inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success"
+                  ? "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-2 py-0.5 text-xs font-medium text-muted-foreground"
+                  : "inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-xs font-medium text-success"
               }
             >
               <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
@@ -106,7 +106,7 @@ export default function UsersPage() {
             </span>
             <Show when={row.linked}>
               <span
-                class="inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand/10 px-2 py-0.5 text-[11px] font-medium text-brand"
+                class="inline-flex items-center gap-1.5 rounded-full border border-brand/25 bg-brand/10 px-2 py-0.5 text-xs font-medium text-brand"
                 title="This directory person is linked to a Mattrax account for single sign-on"
               >
                 SSO linked

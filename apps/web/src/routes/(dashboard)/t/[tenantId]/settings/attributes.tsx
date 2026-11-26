@@ -11,7 +11,8 @@ import type {
 } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import { Checkbox } from "@mattrax/ui";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import {
@@ -23,10 +24,10 @@ import { queryClient } from "~/lib/query-client";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 
 const selectClass =
-  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 const textareaClass =
-  "min-h-40 w-full rounded-lg border border-input bg-transparent p-2.5 font-mono text-[12px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "min-h-40 w-full rounded-lg border border-input bg-transparent p-2.5 font-mono text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 const typeLabels: Readonly<Record<AttributeType, string>> = {
   text: "Text",
@@ -296,7 +297,7 @@ export default function AttributeSettingsPage() {
         <Show
           when={(definitions.data?.rows.length ?? 0) > 0}
           fallback={
-            <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">
+            <p class="px-4 py-6 text-xs text-muted-foreground sm:px-5">
               {definitions.isPending
                 ? "Loading attributes…"
                 : "No attributes yet. Add cost centre, warranty end or anything else you track."}
@@ -304,8 +305,8 @@ export default function AttributeSettingsPage() {
           }
         >
           <div class="overflow-x-auto">
-            <table class="w-full text-left text-[12.5px]">
-              <thead class="border-b border-border text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <table class="w-full text-left text-xs">
+              <thead class="border-b border-border text-xs uppercase tracking-widest text-muted-foreground">
                 <tr>
                   <th class="px-4 py-2 font-medium sm:px-5">Label</th>
                   <th class="px-3 py-2 font-medium">Key</th>
@@ -322,7 +323,7 @@ export default function AttributeSettingsPage() {
                   {(row) => (
                     <tr class="hover:bg-hover">
                       <td class="px-4 py-2.5 font-medium text-foreground sm:px-5">{row.label}</td>
-                      <td class="px-3 py-2.5 font-mono text-[11.5px] text-muted-foreground">
+                      <td class="px-3 py-2.5 font-mono text-xs text-muted-foreground">
                         {row.key}
                       </td>
                       <td class="px-3 py-2.5">{typeLabels[row.type]}</td>
@@ -353,10 +354,9 @@ export default function AttributeSettingsPage() {
                             <Button
                               variant="ghost"
                               size="xs"
-                              class="text-destructive hover:bg-destructive/10"
                               onClick={() => setDeleteTarget(row)}
                             >
-                              Delete
+                              <span class="text-destructive">Delete</span>
                             </Button>
                           </div>
                         </Show>
@@ -493,17 +493,16 @@ export default function AttributeSettingsPage() {
             </Field>
           </Show>
           <Show when={draft().source === "directory"}>
-            <p class="text-[12px] text-muted-foreground sm:col-span-2">
+            <p class="text-xs text-muted-foreground sm:col-span-2">
               Directory collection is not implemented yet. Choosing it records intent; values can
               still be edited manually until a directory connector lands.
             </p>
           </Show>
-          <label class="flex items-center gap-2 self-end pb-2 text-[12.5px]">
-            <input
-              type="checkbox"
+          <label class="flex items-center gap-2 self-end pb-2 text-xs">
+            <Checkbox
               checked={draft().required}
               disabled={!writable()}
-              onChange={(event) => setDraft({ ...draft(), required: event.currentTarget.checked })}
+              onCheckedChange={(checked) => setDraft({ ...draft(), required: checked === true })}
             />
             Required on every device
           </label>
@@ -538,7 +537,7 @@ export default function AttributeSettingsPage() {
           <div class="space-y-1.5">
             <label
               for="attribute-csv-file"
-              class="block text-[12.5px] font-medium text-foreground/90"
+              class="block text-xs font-medium text-foreground/90"
             >
               Import device values CSV
             </label>
@@ -546,7 +545,7 @@ export default function AttributeSettingsPage() {
               id="attribute-csv-file"
               type="file"
               accept=".csv,text/csv"
-              class="block w-full text-[12.5px] text-muted-foreground file:mr-3 file:rounded-md file:border file:border-border file:bg-surface file:px-2.5 file:py-1.5 file:text-[12px] file:text-foreground"
+              class="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-md file:border file:border-border file:bg-surface file:px-2.5 file:py-1.5 file:text-xs file:text-foreground"
               onChange={(event) => void readCsvFile(event.currentTarget.files?.[0])}
             />
           </div>
@@ -572,14 +571,14 @@ export default function AttributeSettingsPage() {
           </div>
           <Show when={importSummary()}>
             {(summary) => (
-              <p class="text-[12.5px] text-muted-foreground">
+              <p class="text-xs text-muted-foreground">
                 {summary().updated} row{summary().updated === 1 ? "" : "s"} applied
                 {summary().failed > 0 ? `, ${summary().failed} failed` : ""}.
               </p>
             )}
           </Show>
           <Show when={importResults()?.length}>
-            <ul class="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border p-3 text-[12px]">
+            <ul class="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-border p-3 text-xs">
               <For each={importResults() ?? []}>
                 {(result) => (
                   <li

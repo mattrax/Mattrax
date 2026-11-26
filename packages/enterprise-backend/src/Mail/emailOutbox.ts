@@ -81,6 +81,8 @@ const EmailOutboxPayload = Schema.Struct({
   subject: Schema.String,
   text: Schema.optional(Schema.String),
   html: Schema.optional(Schema.String),
+  /** Extra MIME headers (for example `OTP-Token`) that must survive a retry. */
+  headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** Base64 attachment bodies (scheduled reports). */
   attachments: Schema.optional(
     Schema.Array(

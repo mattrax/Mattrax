@@ -26,17 +26,27 @@ const budgets = {
 module.exports = {
   ci: {
     collect: {
-      url: [
-        "http://localhost:9050/",
-        "http://localhost:9050/login",
-        "http://localhost:9050/register",
-        "http://localhost:9050/designer",
-      ],
+      // PRs run one URL per matrix job (`LHCI_URL`); `main` runs all four in
+      // one job. Both keep three samples per URL, so the median and the
+      // statistical confidence are unchanged.
+      url: process.env.LHCI_URL
+        ? [process.env.LHCI_URL]
+        : [
+            "http://localhost:9050/",
+            "http://localhost:9050/login",
+            "http://localhost:9050/register",
+            "http://localhost:9050/designer",
+          ],
       startServerCommand: "node packages/config/scripts/lighthouse-server.mjs",
       startServerReadyPattern: "Lighthouse server ready",
       startServerReadyTimeout: 120000,
-      // A single sample keeps the local loop fast; CI medians three runs to
-      // damp runner noise.
+      // A single sample keeps the local loop fast. CI medians three runs to
+      // damp runner noise. Sampling once per URL on pull requests was measured
+      // on #893: it cut the job from 191s to 82s, but a single sample on
+      // unchanged code failed the homepage performance budget (0.70 against
+      // 0.85, 1837ms TBT against 500ms) and the designer budget (0.76 against
+      // 0.8). A noisy sample is not a regression, so PRs keep three samples
+      // until the budgets (or the runner) can absorb single-run variance.
       numberOfRuns: process.env.CI ? 3 : 1,
       settings: {
         // Lighthouse 13 adds the agentic-browsing category; request it
