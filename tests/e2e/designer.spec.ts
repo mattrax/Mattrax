@@ -56,9 +56,10 @@ test.describe("policy designer", () => {
     await page.getByRole("button", { name: /security baseline/i }).click();
     await expect(page.getByRole("button", { name: "Remove Firewall from policy" })).toBeVisible();
     await page.locator(`input[placeholder="Policy name"]`).fill("Windows baseline");
-    const download = page.waitForEvent("download");
-    await page.getByRole("button", { name: /^Export$/ }).click();
-    const file = await download;
+    const [file] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: /^Export$/ }).click(),
+    ]);
     expect(file.suggestedFilename()).toContain("Windows-baseline.syncml.xml");
     const contents = await readFile(await file.path(), "utf8");
     // Numeric and boolean settings keep their SyncML type instead of being
@@ -66,6 +67,9 @@ test.describe("policy designer", () => {
     expect(contents).toContain(`<Format xmlns="syncml:metinf">int</Format>`);
     expect(contents).toContain("<Data>1</Data>");
 
+    // A Windows selection autosaves to the browser draft; reload from a clean
+    // draft so the Android export emits one JSON artifact, not a ZIP bundle.
+    await page.evaluate(() => localStorage.clear());
     await gotoHydrated(page, "/designer");
 
     // exports Android array enums as arrays
@@ -79,9 +83,10 @@ test.describe("policy designer", () => {
     await page
       .getByRole("checkbox", { name: /Disable the camera on secure keyguard screens/ })
       .check();
-    const androidDownload = page.waitForEvent("download");
-    await page.getByRole("button", { name: /^Export$/ }).click();
-    const androidFile = await androidDownload;
+    const [androidFile] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: /^Export$/ }).click(),
+    ]);
     const policy = JSON.parse(await readFile(await androidFile.path(), "utf8"));
     expect(policy.keyguardDisabledFeatures).toContain("CAMERA");
   });
@@ -129,6 +134,9 @@ test.describe("policy designer", () => {
     expect(requested).toContain("/catalog/windows/search.json");
 
     // opens a Windows collection from a property search result
+    // The previous search filters the catalogue; restore the full list before
+    // asserting the catalogue is ready, then re-run the property search.
+    await page.getByPlaceholder("Search settings…").fill("");
     await expect(page.getByText("BitLocker", { exact: true }).first()).toBeVisible({
       timeout: 30_000,
     });

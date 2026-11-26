@@ -135,6 +135,37 @@ const openPalette = async (page: Page) => {
   return input;
 };
 
+/**
+ * Scan an overlay that was just opened in the merged flow. Earlier overlays
+ * can leave dismiss layers or stale data-slot nodes behind, so close any
+ * existing overlay, wait for it to go away, re-open it immediately before the
+ * scan, and retry once if it closes between the visibility check and axe.
+ */
+const scanFreshOverlay = async <T>(
+  page: Page,
+  context: string,
+  selector: string,
+  close: () => Promise<void>,
+  open: () => Promise<T>,
+  allow?: Allow,
+): Promise<T> => {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await close();
+    await expect(page.locator(selector).first()).toBeHidden();
+    const opened = await open();
+    await expect(page.locator(selector).first()).toBeVisible();
+
+    try {
+      await expectNoViolations(page, context, { include: selector, allow });
+      return opened;
+    } catch (error) {
+      if (attempt === 1) throw error;
+    }
+  }
+
+  throw new Error(`overlay never stayed open for ${context}`);
+};
+
 test.describe("dashboard accessibility", () => {
   test.setTimeout(300_000);
 
@@ -192,18 +223,34 @@ test.describe("dashboard accessibility", () => {
     // Original case: "filter surfaces have no axe violations".
     await gotoHydrated(page, `${base}/devices`);
 
-    await page.getByRole("button", { name: "Filter", exact: true }).click();
-    await expectNoViolations(page, "filter field picker", {
-      include: '[data-slot="popover-content"]',
-    });
+    const closeOverlay = async () => {
+      await page.keyboard.press("Escape");
+    };
+    const openFieldPicker = async () => {
+      await page.getByRole("button", { name: "Filter", exact: true }).click();
+    };
 
-    await page
-      .getByRole("listbox", { name: "Filter by" })
-      .getByRole("option", { name: "Status", exact: true })
-      .click();
-    await expectNoViolations(page, "filter value picker", {
-      include: '[data-slot="popover-content"]',
-    });
+    await scanFreshOverlay(
+      page,
+      "filter field picker",
+      '[data-slot="popover-content"]',
+      closeOverlay,
+      openFieldPicker,
+    );
+
+    await scanFreshOverlay(
+      page,
+      "filter value picker",
+      '[data-slot="popover-content"]',
+      closeOverlay,
+      async () => {
+        await openFieldPicker();
+        await page
+          .getByRole("listbox", { name: "Filter by" })
+          .getByRole("option", { name: "Status", exact: true })
+          .click();
+      },
+    );
 
     await page
       .getByRole("listbox", { name: "Status value" })
@@ -214,50 +261,80 @@ test.describe("dashboard accessibility", () => {
     await page.getByRole("button", { name: "Remove Status filter" }).click();
     await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible();
 
+    // A stale filter popover would swallow the palette shortcut below.
+    await closeOverlay();
+    await expect(page.locator('[data-slot="popover-content"]').first()).toBeHidden();
+
     // Original case: "overlay open states have no axe violations".
     // Command palette.
-    const paletteInput = await openPalette(page);
-    await expectNoViolations(page, "command palette open", {
-      include: '[data-slot="command-palette"]',
-    });
-    await paletteInput.fill("settings");
-    await expectNoViolations(page, "command palette with results", {
-      include: '[data-slot="command-palette"]',
-    });
+    const paletteInput = await scanFreshOverlay(
+      page,
+      "command palette open",
+      '[data-slot="command-palette"]',
+      closeOverlay,
+      () => openPalette(page),
+    );
+
+    await scanFreshOverlay(
+      page,
+      "command palette with results",
+      '[data-slot="command-palette"]',
+      closeOverlay,
+      async () => {
+        await openPalette(page);
+        await paletteInput.fill("settings");
+      },
+    );
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="command-palette"]')).toHaveCount(0);
 
     // Tenant switcher.
-    await openMenu(page, page.getByRole("button", { name: /Switch tenant/ }));
-    await expectNoViolations(page, "tenant switcher open", {
-      include: '[data-slot="menu-content"]',
-    });
+    await scanFreshOverlay(
+      page,
+      "tenant switcher open",
+      '[data-slot="menu-content"]',
+      closeOverlay,
+      () => openMenu(page, page.getByRole("button", { name: /Switch tenant/ })),
+    );
     await page.keyboard.press("Escape");
 
     // User menu.
-    await openMenu(page, page.getByRole("button", { name: /account menu/i }));
-    await expectNoViolations(page, "user menu open", {
-      include: '[data-slot="menu-content"]',
-    });
+    await scanFreshOverlay(
+      page,
+      "user menu open",
+      '[data-slot="menu-content"]',
+      closeOverlay,
+      () => openMenu(page, page.getByRole("button", { name: /account menu/i })),
+    );
     await page.keyboard.press("Escape");
 
     // Column picker.
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
-    await page.getByRole("button", { name: "Choose visible columns" }).click();
-    await expect(page.locator('[data-slot="menu-content"]')).toBeVisible();
-    await expectNoViolations(page, "column picker open", {
-      include: '[data-slot="menu-content"]',
-    });
+    await scanFreshOverlay(
+      page,
+      "column picker open",
+      '[data-slot="menu-content"]',
+      closeOverlay,
+      async () => {
+        await page.getByRole("button", { name: "Choose visible columns" }).click();
+        await expect(page.locator('[data-slot="menu-content"]')).toBeVisible();
+      },
+    );
     await page.keyboard.press("Escape");
 
     // Destructive confirmation dialog, opened from the bulk selection bar.
     await gotoHydrated(page, `${base}/groups`);
     await page.getByLabel("Select Overlay group").check();
-    await page.getByRole("button", { name: /^Delete 1 group/ }).click();
-    await expect(page.locator('[data-slot="dialog-content"]')).toBeVisible();
-    await expectNoViolations(page, "confirm dialog open", {
-      include: '[data-slot="dialog-content"]',
-    });
+    await scanFreshOverlay(
+      page,
+      "confirm dialog open",
+      '[data-slot="dialog-content"]',
+      async () => undefined,
+      async () => {
+        await page.getByRole("button", { name: /^Delete 1 group/ }).click();
+        await expect(page.locator('[data-slot="dialog-content"]')).toBeVisible();
+      },
+    );
     // The shared dialog primitive's Escape handling is owned by
     // `components/ui/dialog.tsx`; dismiss through its Cancel button here.
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
@@ -323,11 +400,16 @@ test.describe("dashboard accessibility", () => {
     // table to finish loading first: a late row refresh overwrites the live
     // region with its own count and would hide the selection announcement.
     await gotoHydrated(page, `/t/${tenant.id}/groups`);
-    await expect(page.getByRole("status")).toHaveText(/rows? shown/);
+    // The page also exposes shell and footer status regions; the table's
+    // sr-only <p> is the live region that announces row and selection counts.
+    const tableStatus = page.locator(
+      'p[role="status"][aria-live="polite"][aria-atomic="true"]',
+    );
+    await expect(tableStatus).toHaveText(/rows? shown/);
     const select = page.getByLabel("Select Announce group");
     await select.check();
     await expect(select).toBeChecked();
-    await expect(page.getByRole("status")).toHaveText(/1 selected/);
+    await expect(tableStatus).toHaveText(/1 selected/);
 
     // The document title names the page and the tenant.
     await expect(page).toHaveTitle(/Groups · .+ · Mattrax/);
@@ -377,7 +459,15 @@ test.describe("dashboard accessibility", () => {
     await expect(page.locator("#main")).not.toBeFocused();
 
     // Original case: "palette announcements describe result changes".
+    // The query-only navigation above leaves its palette dismissing, and
+    // openPalette() reuses an input that is still mounted. Wait for that
+    // palette to unmount so the announcement comes from a fresh search.
+    await page.keyboard.press("Escape");
+    await expect(page.locator('[data-slot="command-palette"]')).toHaveCount(0);
+    await expect(page.locator('input[role="combobox"]')).toHaveCount(0);
+
     const announcementInput = await openPalette(page);
+    await expect(announcementInput).toBeFocused();
     await announcementInput.fill("this-command-does-not-exist");
     const status = page.locator('[data-slot="command-palette"] [role="status"]');
 
