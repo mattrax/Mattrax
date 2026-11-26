@@ -189,7 +189,10 @@ test.describe("dashboards", () => {
       await page.mouse.down();
       await page.mouse.move(startX + column * 6, startY, { steps: 20 });
       await page.evaluate(
-        () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+        () =>
+          new Promise<void>((resolve) => {
+            requestAnimationFrame(() => resolve());
+          }),
       );
       await page.mouse.up();
 
