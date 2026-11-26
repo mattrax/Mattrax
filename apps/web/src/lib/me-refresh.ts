@@ -11,6 +11,21 @@ export type EmailVerificationRefresh = {
   readonly optimistic?: boolean;
 };
 
+type InvalidateFilter = Parameters<QueryClient["invalidateQueries"]>[0];
+
+/**
+ * The one side effect this helper performs. Passing it in keeps the helper
+ * observable without spying on a real QueryClient (whose `refetchType: "all"`
+ * would otherwise start a refetch with no query function).
+ */
+export type MeInvalidator = {
+  readonly invalidate: (filter: InvalidateFilter) => Promise<void>;
+};
+
+const queryClientInvalidator = (client: QueryClient): MeInvalidator => ({
+  invalidate: (filter) => client.invalidateQueries(filter),
+});
+
 /**
  * Make a completed email verification visible to the shell immediately.
  *
@@ -27,6 +42,7 @@ export type EmailVerificationRefresh = {
 export async function refreshMeAfterEmailVerification(
   client: QueryClient,
   options: EmailVerificationRefresh = {},
+  invalidator: MeInvalidator = queryClientInvalidator(client),
 ): Promise<void> {
   if (options.optimistic) {
     client.setQueryData<MeResponse>(ME_QUERY_KEY, (current) =>
@@ -34,5 +50,5 @@ export async function refreshMeAfterEmailVerification(
     );
   }
 
-  await client.invalidateQueries({ queryKey: ME_QUERY_KEY, refetchType: "all" });
+  await invalidator.invalidate({ queryKey: ME_QUERY_KEY, refetchType: "all" });
 }

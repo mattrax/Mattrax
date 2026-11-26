@@ -26,16 +26,24 @@ const memoryStorage = (): DeploymentStorage => {
 };
 
 describe("chunk load failures", () => {
-  it.each([
-    "Failed to fetch dynamically imported module: https://e.mattrax.app/assets/devices-abc.js",
-    "error loading dynamically imported module",
-    "Importing a module script failed.",
-    "Failed to load module script: Expected a JavaScript module script",
-    "ChunkLoadError: Loading chunk 42 failed.",
-    "Unable to preload CSS for /assets/app.css",
-  ])("recognises %s", (message) => {
+  const recognises = (message: string) => {
     expect(isChunkLoadFailure(message)).toBe(true);
-  });
+  };
+
+  it("recognises a failed dynamic module fetch", () =>
+    recognises(
+      "Failed to fetch dynamically imported module: https://e.mattrax.app/assets/devices-abc.js",
+    ));
+  it("recognises a lowercase module load error", () =>
+    recognises("error loading dynamically imported module"));
+  it("recognises a failed module script import", () =>
+    recognises("Importing a module script failed."));
+  it("recognises a failed module script load", () =>
+    recognises("Failed to load module script: Expected a JavaScript module script"));
+  it("recognises a webpack chunk error", () =>
+    recognises("ChunkLoadError: Loading chunk 42 failed."));
+  it("recognises a failed CSS preload", () =>
+    recognises("Unable to preload CSS for /assets/app.css"));
 
   it("leaves ordinary application errors alone", () => {
     expect(isChunkLoadFailure("Cannot read properties of undefined")).toBe(false);

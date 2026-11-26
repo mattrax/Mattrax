@@ -272,7 +272,7 @@ describe("mail relay SMTP client", () => {
 
     try {
       await expect(
-        Effect.runPromise(sendSmtpMail(transportOptions(smtp), message)),
+        Effect.runPromise(sendSmtpMail(transportOptions(smtp, { timeoutMs: 20 }), message)),
       ).rejects.toMatchObject({ _tag: "EmailFailure" });
       expect(smtp.captured.auth).toEqual([]);
       expect(smtp.captured.commands.some((line) => line.startsWith("AUTH"))).toBe(false);
@@ -294,16 +294,34 @@ describe("mail relay SMTP client", () => {
     }
   });
 
-  it.each([
-    { name: "implicit TLS", implicitTls: true, secure: true },
-    { name: "STARTTLS", implicitTls: false, secure: false },
-  ])("verifies certificates by default for $name", async ({ implicitTls, secure }) => {
-    const smtp = await startSmtpServer({ implicitTls, advertiseStartTls: !implicitTls });
+  it("verifies certificates by default for implicit TLS", async () => {
+    const smtp = await startSmtpServer({ implicitTls: true, advertiseStartTls: false });
 
     try {
       await expect(
         Effect.runPromise(
-          sendSmtpMail(transportOptions(smtp, { secure, rejectUnauthorized: undefined }), message),
+          sendSmtpMail(
+            transportOptions(smtp, { secure: true, rejectUnauthorized: undefined }),
+            message,
+          ),
+        ),
+      ).rejects.toMatchObject({
+        _tag: "EmailFailure",
+        message: expect.stringMatching(/self-signed certificate|unable to verify/i),
+      });
+      expect(smtp.captured.auth).toEqual([]);
+    } finally {
+      await smtp.close();
+    }
+  });
+
+  it("verifies certificates by default for STARTTLS", async () => {
+    const smtp = await startSmtpServer();
+
+    try {
+      await expect(
+        Effect.runPromise(
+          sendSmtpMail(transportOptions(smtp, { rejectUnauthorized: undefined }), message),
         ),
       ).rejects.toMatchObject({
         _tag: "EmailFailure",
@@ -505,8 +523,11 @@ describe("mail relay MIME rendering", () => {
     expect(rendered).toContain('filename="report Bcc: evil@example.com.csv"');
   });
 
-  it("stuffs a leading dot so the terminator cannot be forged", () => {
+  it("stuffs a line that is only a dot", () => {
     expect(dotStuff("first\r\n.\r\nsecond")).toBe("first\r\n..\r\nsecond");
+  });
+
+  it("leaves a body without dots untouched", () => {
     expect(dotStuff("no dots")).toBe("no dots");
   });
 

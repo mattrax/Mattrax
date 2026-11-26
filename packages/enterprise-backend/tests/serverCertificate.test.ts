@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { createServer } from "node:https";
@@ -56,6 +56,24 @@ const makeServerCertificate = async (notAfter: Date) => {
     keyPem: pemEncode("PRIVATE KEY", await crypto.subtle.exportKey("pkcs8", keys.privateKey)),
   };
 };
+
+// Each certificate costs an RSA key generation. The tests only read the
+// material (the TLS servers are created per test), so build the three variants
+// once per file.
+type ServerCertificateSet = {
+  der: Awaited<ReturnType<typeof makeServerCertificate>>;
+  fresh: Awaited<ReturnType<typeof makeServerCertificate>>;
+  expired: Awaited<ReturnType<typeof makeServerCertificate>>;
+};
+let shared: ServerCertificateSet;
+
+beforeAll(async () => {
+  shared = {
+    der: await makeServerCertificate(daysFromNow(90)),
+    fresh: await makeServerCertificate(daysFromNow(60)),
+    expired: await makeServerCertificate(daysFromNow(-5)),
+  };
+});
 
 describe("serverCertificateInfo", () => {
   it("reports a missing observation as missing rather than healthy", () => {
@@ -123,7 +141,7 @@ describe("serverCertificateInfo", () => {
 
 describe("serverCertificatePeerFromDer", () => {
   it("reads subject, issuer, serial and expiry from DER", async () => {
-    const { certificate } = await makeServerCertificate(daysFromNow(90));
+    const { certificate } = shared.der;
     const der = new Uint8Array(certificate.toSchema().toBER(false));
 
     const peer = await serverCertificatePeerFromDer({
@@ -269,9 +287,7 @@ describe("probeServerCertificate", () => {
     server = undefined;
   });
 
-  const serve = async (notAfter: Date) => {
-    const material = await makeServerCertificate(notAfter);
-
+  const serve = async (material: Awaited<ReturnType<typeof makeServerCertificate>>) => {
     server = createServer({ key: material.keyPem, cert: material.certPem }, (_request, response) =>
       response.end("ok"),
     );
@@ -287,7 +303,7 @@ describe("probeServerCertificate", () => {
   };
 
   it("performs a real TLS handshake and reports the served certificate", async () => {
-    const origin = await serve(daysFromNow(60));
+    const origin = await serve(shared.fresh);
 
     const peer = await runEffect(probeServerCertificate({ origin, timeoutMs: 5_000 }));
 
@@ -301,7 +317,7 @@ describe("probeServerCertificate", () => {
   });
 
   it("observes an expired certificate rather than failing the probe", async () => {
-    const origin = await serve(daysFromNow(-5));
+    const origin = await serve(shared.expired);
 
     const peer = await runEffect(probeServerCertificate({ origin, timeoutMs: 5_000 }));
 

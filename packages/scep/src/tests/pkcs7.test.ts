@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
+
+const NOW = Date.parse("2026-11-01T00:00:00Z");
 import { Effect } from "effect";
 import * as pkijs from "pkijs";
 import * as asn1js from "asn1js";
@@ -98,7 +100,7 @@ async function createScepSignerCert(
   cert.issuer = name;
   cert.subject = name;
 
-  const now = new Date();
+  const now = new Date(NOW);
   cert.notBefore.value = now;
   cert.notAfter.value = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000);
 
@@ -435,8 +437,8 @@ describe("SCEP PKCS#7", () => {
         caCert,
         caKeyPair.privateKey,
         {
-          notBefore: new Date(),
-          notAfter: new Date(Date.now() + 86400000),
+          notBefore: new Date(NOW),
+          notAfter: new Date(NOW + 86400000),
         },
       );
 
@@ -455,8 +457,8 @@ describe("SCEP PKCS#7", () => {
         caCert,
         caKeyPair.privateKey,
         {
-          notBefore: new Date(),
-          notAfter: new Date(Date.now() + 86400000),
+          notBefore: new Date(NOW),
+          notAfter: new Date(NOW + 86400000),
         },
       );
 
@@ -638,7 +640,7 @@ describe("SCEP PKCS#7", () => {
         publicKey,
         caCert,
         caKeyPair.privateKey,
-        { notBefore: new Date(), notAfter: new Date(Date.now() + 86400000) },
+        { notBefore: new Date(NOW), notAfter: new Date(NOW + 86400000) },
       );
 
       // Build CertRep
@@ -727,8 +729,8 @@ describe("SCEP PKCS#7", () => {
         caCert,
         caKeyPair.privateKey,
         {
-          notBefore: new Date(),
-          notAfter: new Date(Date.now() + 86400000),
+          notBefore: new Date(NOW),
+          notAfter: new Date(NOW + 86400000),
         },
       );
 
@@ -759,8 +761,8 @@ describe("SCEP PKCS#7", () => {
         caCert,
         caKeyPair.privateKey,
         {
-          notBefore: new Date(),
-          notAfter: new Date(Date.now() + 86400000),
+          notBefore: new Date(NOW),
+          notAfter: new Date(NOW + 86400000),
         },
       );
 
@@ -790,8 +792,8 @@ describe("SCEP PKCS#7", () => {
         caCert,
         caKeyPair.privateKey,
         {
-          notBefore: new Date(),
-          notAfter: new Date(Date.now() + 86400000),
+          notBefore: new Date(NOW),
+          notAfter: new Date(NOW + 86400000),
         },
       );
 

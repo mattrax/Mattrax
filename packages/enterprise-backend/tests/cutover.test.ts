@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { decodeCutoverArchive, encodeCutoverArchive } from "@mattrax/enterprise-domain";
 import type { CutoverPayload } from "@mattrax/enterprise-domain";
 import { generateScepCa, openCaPrivateKey, sealCaPrivateKey } from "@mattrax/scep";
@@ -81,7 +81,7 @@ const seedOrganization = (db: Db, org: EnterpriseOrganization) => {
   db.store.group_policy.push({ groupId: "group-1", policyId: "policy-1" });
 };
 
-const buildSource = async () => {
+const buildSourceFixture = async () => {
   const db = makeDb();
   const org = organization({ id: "org-source", slug: "acme" });
   seedOrganization(db, org);
@@ -238,6 +238,72 @@ const buildSource = async () => {
   );
 
   return { db, org, owner, ca, archive };
+};
+
+// Building the source CA and encrypting the archive is the expensive part of
+// every test here. None of the tests mutate it: they read the archive and CA,
+// and the one that needs a writable source gets its own shallow copy of the
+// rows. Share the built fixture across the file and vary only the DB.
+let sourceFixture: Awaited<ReturnType<typeof buildSourceFixture>>;
+type TargetFixture = {
+  ca: Awaited<ReturnType<typeof generateScepCa>>;
+  sealed: string;
+  replacingCa: Awaited<ReturnType<typeof generateScepCa>>;
+  replacingSealed: string;
+};
+let targetFixture: TargetFixture;
+
+beforeAll(async () => {
+  sourceFixture = await buildSourceFixture();
+  const ca = await runEffect(generateScepCa("org-target", { now: at }));
+  const replacingCa = await runEffect(generateScepCa("org-replacing", { now: at }));
+
+  targetFixture = {
+    ca,
+    sealed: await sealCaPrivateKey(targetSecret, ca.privateKeyJwk),
+    replacingCa,
+    replacingSealed: await sealCaPrivateKey(targetSecret, replacingCa.privateKeyJwk),
+  };
+});
+
+const buildSource = async () => ({
+  ...sourceFixture,
+  db: makeDb(sourceFixture.db.store),
+});
+
+const seedConflictingTarget = () => {
+  const target = makeTarget();
+  const org = seedTargetTenant(target);
+
+  target.store.device.push({
+    id: "other-device",
+    organizationId: org.id,
+    proto: "apple",
+    status: "enrolled",
+    name: "Existing",
+    serial: "C02TEST",
+    enrolledAt: at,
+    lastSeenAt: at,
+  });
+
+  return { target, org };
+};
+
+const seedTargetCa = (
+  db: Db,
+  org: EnterpriseOrganization,
+  ca: typeof targetFixture.ca,
+  sealed: string,
+) => {
+  db.store.scep_ca.push({
+    id: 1,
+    organizationId: org.id,
+    certPem: ca.certPem,
+    privateKeyJwk: sealed,
+    source: "generated",
+    createdAt: at,
+    rotatedAt: null,
+  });
 };
 
 const actor = { accountId: "account-target", email: "target@example.com" };
@@ -573,7 +639,7 @@ describe("cutover import", () => {
     ).rejects.toMatchObject({ reason: "conflict" });
   });
 
-  it("rejects a wrong passphrase and a wrong confirmation without writing", async () => {
+  it("rejects a wrong passphrase without writing", async () => {
     const source = await buildSource();
     const target = makeTarget();
     const before = target.store.organization.length;
@@ -593,6 +659,14 @@ describe("cutover import", () => {
         }),
       ),
     ).rejects.toMatchObject({ reason: "invalid" });
+
+    expect(target.store.organization.length).toBe(before);
+  });
+
+  it("rejects a wrong confirmation without writing", async () => {
+    const source = await buildSource();
+    const target = makeTarget();
+    const before = target.store.organization.length;
 
     await expect(
       runEffect(
@@ -651,77 +725,73 @@ describe("cutover import", () => {
     expect(target.store.organization.some((row) => row.id === "imported")).toBe(false);
   });
 
-  it("fails on a duplicate serial by default and skips it on request", async () => {
+  it("fails on a duplicate serial by default", async () => {
     const source = await buildSource();
-    const target = makeTarget();
-    const org = seedTargetTenant(target);
-    target.store.device.push({
-      id: "other-device",
-      organizationId: org.id,
-      proto: "apple",
-      status: "enrolled",
-      name: "Existing",
-      serial: "C02TEST",
-      enrolledAt: at,
-      lastSeenAt: at,
-    });
+    const { target, org } = seedConflictingTarget();
 
-    const options = {
-      archive: source.archive.body,
-      passphrase,
-      confirm: "acme",
-      target: { kind: "existing" as const, organization: org },
-      actor,
-      targetDeploymentId: "dp_source",
-      targetOrigin,
-      authSecret: targetSecret,
-      replaceConfiguration: true,
-      now,
-    };
+    await expect(
+      runEffect(
+        importTenantCutover(target, {
+          archive: source.archive.body,
+          passphrase,
+          confirm: "acme",
+          target: { kind: "existing", organization: org },
+          actor,
+          targetDeploymentId: "dp_source",
+          targetOrigin,
+          authSecret: targetSecret,
+          replaceConfiguration: true,
+          now,
+        }),
+      ),
+    ).rejects.toMatchObject({ reason: "conflict" });
+  });
 
-    await expect(runEffect(importTenantCutover(target, options))).rejects.toMatchObject({
-      reason: "conflict",
-    });
+  it("skips a duplicate serial on request", async () => {
+    const source = await buildSource();
+    const { target, org } = seedConflictingTarget();
 
     const result = await runEffect(
-      importTenantCutover(target, { ...options, deviceConflicts: "skip" }),
+      importTenantCutover(target, {
+        archive: source.archive.body,
+        passphrase,
+        confirm: "acme",
+        target: { kind: "existing", organization: org },
+        actor,
+        targetDeploymentId: "dp_source",
+        targetOrigin,
+        authSecret: targetSecret,
+        replaceConfiguration: true,
+        deviceConflicts: "skip",
+        now,
+      }),
     );
 
     expect(result.skipped.devices).toBe(1);
     expect(target.store.device.find((row) => row.id === "other-device")).toBeTruthy();
   });
 
-  it("keeps the target CA as a trust anchor unless replacement is requested", async () => {
+  it("keeps the target CA as a trust anchor", async () => {
     const source = await buildSource();
     const target = makeTarget();
     const org = seedTargetTenant(target);
+    const { ca: targetCa, sealed } = targetFixture;
+    seedTargetCa(target, org, targetCa, sealed);
 
-    const targetCa = await runEffect(generateScepCa(org.id, { now: at }));
-    const sealed = await sealCaPrivateKey(targetSecret, targetCa.privateKeyJwk);
-    target.store.scep_ca.push({
-      id: 1,
-      organizationId: org.id,
-      certPem: targetCa.certPem,
-      privateKeyJwk: sealed,
-      source: "generated",
-      createdAt: at,
-      rotatedAt: null,
-    });
-
-    const options = {
-      archive: source.archive.body,
-      passphrase,
-      confirm: "acme",
-      target: { kind: "existing" as const, organization: org },
-      actor,
-      targetDeploymentId: "dp_source",
-      targetOrigin,
-      authSecret: targetSecret,
-      replaceConfiguration: true,
-      now,
-    };
-
-    await runEffect(importTenantCutover(target, options));
+    await runEffect(
+      importTenantCutover(target, {
+        archive: source.archive.body,
+        passphrase,
+        confirm: "acme",
+        target: { kind: "existing", organization: org },
+        actor,
+        targetDeploymentId: "dp_source",
+        targetOrigin,
+        authSecret: targetSecret,
+        replaceConfiguration: true,
+        now,
+      }),
+    );
 
     const current = target.store.scep_ca.find((row) => row.organizationId === org.id);
     expect(current?.certPem).toBe(targetCa.certPem);
@@ -730,35 +800,37 @@ describe("cutover import", () => {
         (row) => row.organizationId === org.id && row.certPem === source.ca.certPem,
       ),
     ).toBe(true);
+  });
 
-    // A second target, with replacement requested.
-    const replacing = makeTarget();
-    const replacingOrg = seedTargetTenant(replacing);
-    const replacingCa = await runEffect(generateScepCa(replacingOrg.id, { now: at }));
-    replacing.store.scep_ca.push({
-      id: 1,
-      organizationId: replacingOrg.id,
-      certPem: replacingCa.certPem,
-      privateKeyJwk: await sealCaPrivateKey(targetSecret, replacingCa.privateKeyJwk),
-      source: "generated",
-      createdAt: at,
-      rotatedAt: null,
-    });
+  it("replaces the target CA when requested", async () => {
+    const source = await buildSource();
+    const target = makeTarget();
+    const org = seedTargetTenant(target);
+    const { ca: replacingCa, replacingSealed } = targetFixture;
+    seedTargetCa(target, org, replacingCa, replacingSealed);
 
     await runEffect(
-      importTenantCutover(replacing, {
-        ...options,
-        target: { kind: "existing", organization: replacingOrg },
+      importTenantCutover(target, {
+        archive: source.archive.body,
+        passphrase,
+        confirm: "acme",
+        target: { kind: "existing", organization: org },
+        actor,
+        targetDeploymentId: "dp_source",
+        targetOrigin,
+        authSecret: targetSecret,
+        replaceConfiguration: true,
         replaceScepCa: true,
+        now,
       }),
     );
 
+    expect(target.store.scep_ca.find((row) => row.organizationId === org.id)?.certPem).toBe(
+      source.ca.certPem,
+    );
     expect(
-      replacing.store.scep_ca.find((row) => row.organizationId === replacingOrg.id)?.certPem,
-    ).toBe(source.ca.certPem);
-    expect(
-      replacing.store.scep_ca_trust.some(
-        (row) => row.organizationId === replacingOrg.id && row.certPem === replacingCa.certPem,
+      target.store.scep_ca_trust.some(
+        (row) => row.organizationId === org.id && row.certPem === replacingCa.certPem,
       ),
     ).toBe(true);
   });

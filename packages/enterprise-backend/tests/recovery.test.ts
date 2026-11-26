@@ -339,8 +339,7 @@ describe("break-glass recovery approval", () => {
       link.match(/recover\/complete\?token=([^\s]+)/)?.[1] ?? "",
     );
 
-    expect(completionToken).toEqual(expect.any(String));
-    expect(completionToken).not.toBe("");
+    expect(completionToken).toEqual(expect.stringMatching(/^[A-Za-z0-9_-]{43}$/));
 
     await expect(
       runEffect(redeemRecoveryToken(db, completionToken, new Date(start))),

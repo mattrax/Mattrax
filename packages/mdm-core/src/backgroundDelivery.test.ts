@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Deferred, Effect, Logger, Ref } from "effect";
+import { Deferred, Effect, Fiber, Logger, Ref } from "effect";
+import { TestClock } from "effect/testing";
 import {
   BackgroundDelivery,
   BackgroundDeliveryKeepAlive,
@@ -41,77 +42,125 @@ describe("background delivery", () => {
         } finally {
           yield* Deferred.succeed(release, undefined);
         }
-      }).pipe(Effect.provide(BackgroundDeliveryLive({ capacity: 1, concurrency: 1 }))),
+      }).pipe(
+        Effect.provide(BackgroundDeliveryLive({ capacity: 1, concurrency: 1 })),
+        Effect.provide(TestClock.layer()),
+      ),
     );
   });
 
   it("retries failed jobs with bounded exponential backoff", async () => {
-    await Effect.runPromise(
+    const attempts = await Effect.runPromise(
       Effect.gen(function* () {
         const attempts = yield* Ref.make(0);
         const done = yield* Deferred.make<void>();
         const delivery = yield* BackgroundDelivery;
 
-        yield* delivery.enqueue(
-          "retry",
+        const fiber = yield* Effect.forkChild(
           Effect.gen(function* () {
-            const attempt = yield* Ref.updateAndGet(attempts, (value) => value + 1);
+            yield* delivery.enqueue(
+              "retry",
+              Effect.gen(function* () {
+                const attempt = yield* Ref.updateAndGet(attempts, (value) => value + 1);
 
-            if (attempt < 3) return yield* Effect.fail(new Error("try again"));
-            yield* Deferred.succeed(done, undefined);
+                if (attempt < 3) return yield* Effect.fail(new Error("try again"));
+                yield* Deferred.succeed(done, undefined);
+              }),
+            );
+            yield* Deferred.await(done);
           }),
-        );
-        yield* Deferred.await(done).pipe(
-          Effect.timeoutOrElse({
-            duration: "1 second",
-            orElse: () => Effect.fail(new Error("job was not retried")),
-          }),
+          { startImmediately: true },
         );
 
-        expect(yield* Ref.get(attempts)).toBe(3);
+        // The worker schedules its exponential backoff on the Effect clock.
+        // Advance virtual time until the third attempt completes; no real
+        // millisecond is spent waiting for a timer.
+        for (let i = 0; i < 5 && !(yield* Deferred.isDone(done)); i++) {
+          yield* TestClock.adjust("10 millis");
+          yield* Effect.yieldNow;
+        }
+        yield* Fiber.join(fiber);
+
+        return yield* Ref.get(attempts);
       }).pipe(
         Effect.provide(BackgroundDeliveryLive({ concurrency: 1, maxAttempts: 3, retryDelayMs: 1 })),
+        Effect.provide(TestClock.layer()),
       ),
     );
+
+    expect(attempts).toBe(3);
   });
 
   it("drains queued jobs when its scope closes", async () => {
     const completed = await Effect.runPromise(
       Effect.gen(function* () {
         const count = yield* Ref.make(0);
+        const started = yield* Deferred.make<void>();
 
-        yield* Effect.scoped(
-          Effect.gen(function* () {
-            const delivery = yield* BackgroundDelivery;
-            yield* delivery.enqueue(
-              "drain",
-              Effect.sleep("10 millis").pipe(
-                Effect.andThen(Ref.update(count, (value) => value + 1)),
-              ),
-            );
-          }).pipe(Effect.provide(BackgroundDeliveryLive({ concurrency: 1 }))),
+        const fiber = yield* Effect.forkChild(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const delivery = yield* BackgroundDelivery;
+              yield* delivery.enqueue(
+                "drain",
+                Effect.gen(function* () {
+                  yield* Deferred.succeed(started, undefined);
+                  yield* Effect.sleep("10 millis");
+                  yield* Ref.update(count, (value) => value + 1);
+                }),
+              );
+            }).pipe(Effect.provide(BackgroundDeliveryLive({ concurrency: 1 }))),
+          ),
+          { startImmediately: true },
         );
 
+        yield* Deferred.await(started);
+        yield* TestClock.adjust("10 millis");
+        yield* Fiber.join(fiber);
+
         return yield* Ref.get(count);
-      }),
+      }).pipe(Effect.provide(TestClock.layer())),
     );
 
     expect(completed).toBe(1);
   });
 
   it("interrupts stuck workers after the shutdown grace period", async () => {
-    const started = Date.now();
+    const interrupted = await Effect.runPromise(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>();
+        const interrupted = yield* Deferred.make<void>();
 
-    await Effect.runPromise(
-      Effect.scoped(
-        Effect.gen(function* () {
-          const delivery = yield* BackgroundDelivery;
-          yield* delivery.enqueue("stuck", Effect.never);
-        }).pipe(Effect.provide(BackgroundDeliveryLive({ concurrency: 1, shutdownTimeoutMs: 20 }))),
-      ),
+        const fiber = yield* Effect.forkChild(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const delivery = yield* BackgroundDelivery;
+              yield* delivery.enqueue(
+                "stuck",
+                Effect.gen(function* () {
+                  yield* Deferred.succeed(started, undefined);
+                  return yield* Effect.never;
+                }).pipe(Effect.ensuring(Deferred.succeed(interrupted, undefined))),
+              );
+            }).pipe(
+              Effect.provide(BackgroundDeliveryLive({ concurrency: 1, shutdownTimeoutMs: 20 })),
+            ),
+          ),
+          { startImmediately: true },
+        );
+
+        yield* Deferred.await(started);
+        // The grace period is a virtual 20ms timer: advancing it must trigger
+        // the interrupt and let the scope close, with no elapsed-time check.
+        yield* TestClock.adjust("20 millis");
+        yield* Fiber.join(fiber);
+        yield* Deferred.await(interrupted);
+
+        return true;
+      }).pipe(Effect.provide(TestClock.layer())),
     );
 
-    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(interrupted).toBe(true);
   });
 
   it("starts no worker fibers until the first accepted job", async () => {
@@ -126,7 +175,10 @@ describe("background delivery", () => {
         const after = yield* delivery.workerCount;
 
         return { before, after };
-      }).pipe(Effect.provide(BackgroundDeliveryLive({ concurrency: 1 }))),
+      }).pipe(
+        Effect.provide(BackgroundDeliveryLive({ concurrency: 1 })),
+        Effect.provide(TestClock.layer()),
+      ),
     );
 
     expect(counts.before).toBe(0);
@@ -168,7 +220,10 @@ describe("background delivery", () => {
           yield* Effect.promise(() => tasks[0]!);
 
           return yield* Ref.get(count);
-        }).pipe(Effect.provide(BackgroundDeliveryLive({ concurrency: 1 }))),
+        }).pipe(
+          Effect.provide(BackgroundDeliveryLive({ concurrency: 1 })),
+          Effect.provide(TestClock.layer()),
+        ),
       ),
     );
 
@@ -206,7 +261,7 @@ describe("background delivery", () => {
 
           return { queued, rejected };
         }).pipe(Effect.provide(BackgroundDeliveryLive({ capacity: 1, concurrency: 1 }))),
-      ).pipe(Effect.provide(Logger.layer([logger]))),
+      ).pipe(Effect.provide(Logger.layer([logger])), Effect.provide(TestClock.layer())),
     );
 
     // One tenant's slow job occupies the single worker; another tenant's job
@@ -236,7 +291,10 @@ describe("background delivery", () => {
                 yield* Deferred.succeed(done, undefined);
               }),
             );
-          }).pipe(Effect.provide(SharedBackgroundDeliveryLive({ concurrency: 1 }))),
+          }).pipe(
+            Effect.provide(SharedBackgroundDeliveryLive({ concurrency: 1 })),
+            Effect.provide(TestClock.layer()),
+          ),
         ),
       );
 
@@ -256,12 +314,18 @@ describe("background delivery", () => {
       const first = await Effect.runPromise(
         Effect.gen(function* () {
           return yield* BackgroundDelivery;
-        }).pipe(Effect.provide(SharedBackgroundDeliveryLive({ concurrency: 1 }))),
+        }).pipe(
+          Effect.provide(SharedBackgroundDeliveryLive({ concurrency: 1 })),
+          Effect.provide(TestClock.layer()),
+        ),
       );
       const second = await Effect.runPromise(
         Effect.gen(function* () {
           return yield* BackgroundDelivery;
-        }).pipe(Effect.provide(SharedBackgroundDeliveryLive({ concurrency: 1 }))),
+        }).pipe(
+          Effect.provide(SharedBackgroundDeliveryLive({ concurrency: 1 })),
+          Effect.provide(TestClock.layer()),
+        ),
       );
 
       expect(second).toBe(first);

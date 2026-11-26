@@ -1,5 +1,6 @@
-import { Effect } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { Effect, Layer } from "effect";
+import { FetchHttpClient, HttpClient } from "effect/http";
+import { describe, expect, it } from "vitest";
 import { makeRemoteBillingService } from "@mattrax/enterprise-billing";
 
 const origin = "https://mdm.example.com";
@@ -23,43 +24,53 @@ const summary = {
   configured: true,
 };
 
-const service = (responses: ReadonlyArray<unknown>) => {
+const service = (responses: ReadonlyArray<unknown>, status = 200) => {
   const calls: Array<{ url: string; init: RequestInit }> = [];
 
-  const fetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+  const fetch: typeof globalThis.fetch = async (url, init) => {
     calls.push({ url: String(url), init: init ?? {} });
 
     const body = responses[calls.length - 1];
 
     return new Response(JSON.stringify(body), {
-      status: 200,
+      status,
       headers: { "content-type": "application/json" },
     });
-  });
+  };
+
+  // SAFETY: the fake fetch stands in for the platform fetch service; the
+  // shared client layer turns it into the HttpClient the billing client uses.
+  const transport: Layer.Layer<HttpClient.HttpClient> = FetchHttpClient.layer.pipe(
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+  );
+
+  // SAFETY: the transport layer discharges the HTTP requirement of these
+  // effects; the cast keeps the test call sites free of layer plumbing.
+  const run = <A, E>(effect: Effect.Effect<A, E, any>) =>
+    Effect.runPromise(effect.pipe(Effect.provide(transport)) as Effect.Effect<A, E, never>);
 
   return {
     calls,
+    run,
     billing: makeRemoteBillingService({
       url: "https://e.mattrax.app",
       licenseKey,
       origin,
-      // SAFETY: the fake implements the fetch surface the billing client uses.
-      fetch,
     }),
   };
 };
 
 describe("remote deployment billing", () => {
   it("forwards summary and usage to the cloud licence API", async () => {
-    const { billing, calls } = service([summary, { status: "ok" }, summary]);
+    const { billing, calls, run } = service([summary, { status: "ok" }, summary]);
 
-    const first = await Effect.runPromise(
+    const first = await run(
       billing.summary({ organizationId: "org-1", accountId: "user-1" } as never),
     );
 
     expect(first).toMatchObject({ plan: "device", billableDevices: 12, configured: true });
 
-    await Effect.runPromise(billing.reportUsage({ deviceCount: 15, tenantCount: 3 }));
+    await run(billing.reportUsage({ deviceCount: 15, tenantCount: 3 }));
 
     expect(calls[1].url).toBe("https://e.mattrax.app/api/platform/billing/usage");
     expect(calls[1].init.headers).toMatchObject({ authorization: `Bearer ${licenseKey}` });
@@ -71,11 +82,11 @@ describe("remote deployment billing", () => {
   });
 
   it("returns checkout URLs and quantities", async () => {
-    const { billing, calls } = service([
+    const { billing, calls, run } = service([
       { url: "https://checkout.stripe.test/cs_1", quantity: 12 },
     ]);
 
-    const result = await Effect.runPromise(
+    const result = await run(
       billing.checkout({
         tenantId: "tenant-1",
         organization: { id: "org-1", name: "Acme" },
@@ -89,20 +100,10 @@ describe("remote deployment billing", () => {
   });
 
   it("reports a rejected licence as a billing error", async () => {
-    const billing = makeRemoteBillingService({
-      url: "https://e.mattrax.app",
-      licenseKey,
-      origin,
-      // SAFETY: this fake returns a fetch Response, which is the billing client's contract.
-      fetch: async () =>
-        new Response(JSON.stringify({ message: "Licence origin does not match." }), {
-          status: 403,
-          headers: { "content-type": "application/json" },
-        }),
-    });
+    const { billing, run } = service([{ message: "Licence origin does not match." }], 403);
 
     await expect(
-      Effect.runPromise(billing.summary({ organizationId: "org-1", accountId: "user-1" } as never)),
+      run(billing.summary({ organizationId: "org-1", accountId: "user-1" } as never)),
     ).rejects.toMatchObject({
       _tag: "EnterpriseStripeError",
       message: "Licence origin does not match.",

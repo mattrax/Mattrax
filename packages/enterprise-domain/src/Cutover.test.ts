@@ -1,5 +1,5 @@
 import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { CutoverPayload } from "./Cutover.js";
 import {
   CUTOVER_FORMAT,
@@ -102,12 +102,19 @@ const reason = async <A>(run: () => Promise<A>): Promise<CutoverArchiveError["re
 };
 
 describe("cutover archive", () => {
-  it("round-trips an encrypted payload", async () => {
-    const encoded = await encodeCutoverArchive({
+  // The archive is read only; seal it once for the whole file.
+  let archive: Awaited<ReturnType<typeof encodeCutoverArchive>>;
+
+  beforeAll(async () => {
+    archive = await encodeCutoverArchive({
       payload: payload(),
       passphrase: "correct horse battery staple",
       iterations,
     });
+  });
+
+  it("round-trips an encrypted payload", async () => {
+    const encoded = archive;
 
     const decoded = await decodeCutoverArchive({
       archive: encoded.archive,
@@ -123,11 +130,7 @@ describe("cutover archive", () => {
   });
 
   it("never puts secrets in the plaintext manifest", async () => {
-    const encoded = await encodeCutoverArchive({
-      payload: payload(),
-      passphrase: "correct horse battery staple",
-      iterations,
-    });
+    const encoded = archive;
 
     // SAFETY: the encoder wrote this envelope; the test reads the plaintext
     // manifest back to prove it carries no secrets.
@@ -152,11 +155,7 @@ describe("cutover archive", () => {
   });
 
   it("reports a wrong passphrase without leaking key material", async () => {
-    const encoded = await encodeCutoverArchive({
-      payload: payload(),
-      passphrase: "correct horse battery staple",
-      iterations,
-    });
+    const encoded = archive;
 
     const failure = await (async () => {
       try {
@@ -171,86 +170,74 @@ describe("cutover archive", () => {
     expect(failure?.message).not.toContain("correct horse");
   });
 
-  it("rejects an edited ciphertext and an edited manifest", async () => {
-    const encoded = await encodeCutoverArchive({
-      payload: payload(),
-      passphrase: "correct horse battery staple",
-      iterations,
-    });
-
-    // SAFETY: reading back the envelope this test just encoded.
-    const envelope = JSON.parse(encoded.archive) as {
+  it("rejects an edited ciphertext", async () => {
+    const envelope = JSON.parse(archive.archive) as {
       payload: string;
       manifest: { payloadSha256: string; ciphertextSha256: string };
     };
-
     const index = Math.floor(envelope.payload.length / 2);
-
     const flipped =
       envelope.payload.slice(0, index) +
       (envelope.payload[index] === "A" ? "B" : "A") +
       envelope.payload.slice(index + 1);
 
-    const tamperedPayload = JSON.stringify({ ...envelope, payload: flipped });
-
     expect(
       await reason(() =>
         decodeCutoverArchive({
-          archive: tamperedPayload,
+          archive: JSON.stringify({ ...envelope, payload: flipped }),
           passphrase: "correct horse battery staple",
         }),
       ),
     ).toBe("tampered");
+  });
 
-    const editedManifest = JSON.stringify({
+  it("rejects an edited manifest", async () => {
+    const envelope = JSON.parse(archive.archive) as {
+      manifest: { payloadSha256: string };
+    };
+    const edited = JSON.stringify({
       ...envelope,
       manifest: { ...envelope.manifest, payloadSha256: "0".repeat(64) },
     });
 
     expect(
       await reason(() =>
-        decodeCutoverArchive({
-          archive: editedManifest,
-          passphrase: "correct horse battery staple",
-        }),
+        decodeCutoverArchive({ archive: edited, passphrase: "correct horse battery staple" }),
       ),
     ).toBe("tampered");
   });
 
-  it("rejects a different format and an unsupported version", async () => {
-    expect(await reason(() => Promise.resolve(decodeCutoverEnvelope("{}")))).toBe(
-      "invalid_archive",
-    );
+  it("rejects an envelope with a different format", async () => {
+    const envelope = JSON.parse(archive.archive) as { format: string };
 
-    const encoded = await encodeCutoverArchive({
-      payload: payload(),
-      passphrase: "correct horse battery staple",
-      iterations,
-    });
-
-    // SAFETY: reading back the envelope this test just encoded; only the two
-    // fields below are replaced.
-    const envelope = JSON.parse(encoded.archive) as { format: string; version: number };
-
-    expect(
-      await reason(() =>
+    await expect(
+      reason(() =>
         Promise.resolve(decodeCutoverEnvelope(JSON.stringify({ ...envelope, format: "other" }))),
       ),
-    ).toBe("invalid_archive");
+    ).resolves.toBe("invalid_archive");
+  });
 
-    expect(
-      await reason(() =>
+  it("rejects an unsupported envelope version", async () => {
+    const envelope = JSON.parse(archive.archive) as { version: number };
+
+    await expect(
+      reason(() =>
         Promise.resolve(decodeCutoverEnvelope(JSON.stringify({ ...envelope, version: 2 }))),
       ),
-    ).toBe("unsupported_version");
+    ).resolves.toBe("unsupported_version");
+  });
+
+  it("declares the documented archive format", () => {
     expect(CUTOVER_FORMAT).toBe("mattrax.cutover");
   });
 
-  it("refuses a short passphrase and an unsafe work factor", async () => {
+  it("refuses a short passphrase", async () => {
     expect(
       await reason(() => encodeCutoverArchive({ payload: payload(), passphrase: "short" })),
     ).toBe("invalid_passphrase");
+  });
 
+  it("refuses an unsafe encoding work factor", async () => {
     expect(
       await reason(() =>
         encodeCutoverArchive({
@@ -263,11 +250,7 @@ describe("cutover archive", () => {
   });
 
   it("rejects an envelope that claims an unsafe work factor", async () => {
-    const encoded = await encodeCutoverArchive({
-      payload: payload(),
-      passphrase: "correct horse battery staple",
-      iterations,
-    });
+    const encoded = archive;
 
     // SAFETY: reading back the envelope this test just encoded.
     const envelope = JSON.parse(encoded.archive) as {

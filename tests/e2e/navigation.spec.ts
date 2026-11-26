@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import {
   bootstrapTenant,
@@ -113,15 +114,16 @@ test.describe("top navigation", () => {
 
     expect(blocked).toBe(401);
 
-    const blockedCreate = await page.evaluate(async () => {
+    const slug = `blocked-${randomUUID().slice(0, 8)}`;
+    const blockedCreate = await page.evaluate(async (slug) => {
       const response = await fetch("/api/v1/tenants", {
         method: "POST",
         headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
-        body: JSON.stringify({ name: "Blocked", slug: `blocked-${Date.now()}` }),
+        body: JSON.stringify({ name: "Blocked", slug }),
       });
 
       return response.status;
-    });
+    }, slug);
 
     expect(blockedCreate).toBe(401);
 

@@ -1,15 +1,47 @@
+// @vitest-environment happy-dom
 import { QueryClient, QueryObserver } from "@tanstack/solid-query";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceRow, DeviceSearchRow, GroupRow } from "@mattrax/enterprise-domain/client";
 import {
   cacheEntityRows,
-  enterprise,
   enterpriseKeys,
   enterpriseQueries,
   entitySummaryPlaceholder,
 } from "~/lib/enterprise";
 
 const tenantId = "tenant-1";
+
+type CapturedRequest = { readonly method: string; readonly url: string };
+
+const transport = vi.hoisted(() => ({
+  requests: [] as Array<CapturedRequest>,
+  responses: [] as Array<unknown>,
+}));
+
+// Keep the real generated client and its decoders; swap only the transport
+// for a fake HttpClient layer (the webHttpClientLayer seam).
+vi.mock("~/lib/web-http", async () => {
+  const [{ Effect, Layer }, { HttpClient, HttpClientResponse }] = await Promise.all([
+    import("effect"),
+    import("effect/http"),
+  ]);
+
+  return {
+    webHttpClientLayer: Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make((request) =>
+        Effect.sync(() => {
+          transport.requests.push({ method: request.method, url: request.url });
+
+          return HttpClientResponse.fromWeb(
+            request,
+            Response.json(transport.responses.shift() ?? { status: "ok" }),
+          );
+        }),
+      ),
+    ),
+  };
+});
 
 const at = "2026-06-01T12:00:00.000Z";
 
@@ -56,8 +88,9 @@ const deferred = <A>() => {
   return { promise, resolve, reject };
 };
 
-afterEach(() => {
-  vi.restoreAllMocks();
+beforeEach(() => {
+  transport.requests.length = 0;
+  transport.responses.length = 0;
 });
 
 describe("entity summary cache", () => {
@@ -68,16 +101,18 @@ describe("entity summary cache", () => {
       groups: [],
       health: { level: "healthy", reasons: [], lastSeenAt: at, stale: false },
     };
-    const search = vi.spyOn(enterprise, "searchDevices").mockResolvedValue({
-      devices: [row],
-      total: 1,
-    });
+    transport.responses.push({ devices: [row], total: 1 });
 
     await client.fetchQuery(enterpriseQueries.deviceSearch(tenantId, { q: "Alice" }));
 
     const detailKey = enterpriseKeys.item(tenantId, "device", row.id);
     const full = deferred<DeviceRow>();
-    const queryFn = vi.fn(() => full.promise);
+    let detailCalls = 0;
+    const queryFn = () => {
+      detailCalls += 1;
+
+      return full.promise;
+    };
     const observer = new QueryObserver(client, {
       queryKey: detailKey,
       queryFn,
@@ -86,13 +121,17 @@ describe("entity summary cache", () => {
     });
     const unsubscribe = observer.subscribe(() => undefined);
 
-    expect(search).toHaveBeenCalledOnce();
+    expect(transport.requests).toHaveLength(1);
+    expect(transport.requests[0]?.method).toBe("GET");
+    expect(new URL(transport.requests[0]!.url, "https://dashboard.test").pathname).toBe(
+      "/api/v1/tenants/tenant-1/devices/search",
+    );
     expect(observer.getCurrentResult()).toMatchObject({
       status: "success",
       isPlaceholderData: true,
       data: row,
     });
-    expect(queryFn).toHaveBeenCalledOnce();
+    expect(detailCalls).toBe(1);
     // The partial row has its own query entry; it is never written as detail.
     expect(client.getQueryData(detailKey)).toBeUndefined();
 
@@ -103,13 +142,16 @@ describe("entity summary cache", () => {
     });
     full.resolve(authoritative);
 
-    await vi.waitFor(() => {
-      expect(observer.getCurrentResult()).toMatchObject({
-        status: "success",
-        isPlaceholderData: false,
-        data: authoritative,
-      });
-    });
+    await vi.waitFor(
+      () => {
+        expect(observer.getCurrentResult()).toMatchObject({
+          status: "success",
+          isPlaceholderData: false,
+          data: authoritative,
+        });
+      },
+      { interval: 1 },
+    );
     expect(client.getQueryData(detailKey)).toEqual(authoritative);
     expect(entitySummaryPlaceholder(client, tenantId, "device", row.id)).toEqual(row);
 
@@ -139,7 +181,9 @@ describe("entity summary cache", () => {
       data: row,
     });
 
-    await vi.waitFor(() => expect(observer.getCurrentResult().status).toBe("error"));
+    await vi.waitFor(() => expect(observer.getCurrentResult().status).toBe("error"), {
+      interval: 1,
+    });
     expect(observer.getCurrentResult().data).toBeUndefined();
     expect(client.getQueryData(detailKey)).toBeUndefined();
 
@@ -150,7 +194,7 @@ describe("entity summary cache", () => {
   it("normalises plain list rows into the same tenant/entity/id namespace", async () => {
     const client = makeClient();
     const row = groupRow();
-    vi.spyOn(enterprise, "list").mockResolvedValue({ rows: [row] });
+    transport.responses.push({ rows: [row] });
 
     await client.fetchQuery(enterpriseQueries.list(tenantId, "group"));
 

@@ -76,22 +76,16 @@ const withHandler = <A, E>(
   );
 
 describe("APNs relay routes", () => {
-  it("serves both relay paths and passes the decoded body to the transport", async () => {
+  it("serves the documented relay path and passes the decoded body to the transport", async () => {
     const inputs: Array<unknown> = [];
-    const pushTransport = transport((input) =>
-      Effect.sync(() => {
-        inputs.push(input);
-      }),
-    );
+    const pushTransport = transport((input) => Effect.sync(() => void inputs.push(input)));
 
     await withHandler(pushTransport, (handler) =>
       Effect.gen(function* () {
-        for (const path of ["/v1/apns/push", "/apns"]) {
-          const response = yield* Effect.promise(() =>
-            handler(signedRequest(body, timestamp, path)),
-          );
-          expect(response.status).toBe(204);
-        }
+        const response = yield* Effect.promise(() =>
+          handler(signedRequest(body, timestamp, "/v1/apns/push")),
+        );
+        expect(response.status).toBe(204);
       }),
     );
 
@@ -103,6 +97,23 @@ describe("APNs relay routes", () => {
         certPem: "certificate",
         privateKeyPem: "private-key",
       },
+    ]);
+  });
+
+  it("serves the compatibility relay path and passes the decoded body to the transport", async () => {
+    const inputs: Array<unknown> = [];
+    const pushTransport = transport((input) => Effect.sync(() => void inputs.push(input)));
+
+    await withHandler(pushTransport, (handler) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() =>
+          handler(signedRequest(body, timestamp, "/apns")),
+        );
+        expect(response.status).toBe(204);
+      }),
+    );
+
+    expect(inputs).toEqual([
       {
         pushToken: "abcd1234",
         pushMagic: "push-magic",
@@ -113,77 +124,175 @@ describe("APNs relay routes", () => {
     ]);
   });
 
-  it.each(["NaN", "Infinity", "-Infinity", "1700000000.5", "9007199254740992"])(
-    "rejects a correctly signed invalid timestamp %s before pushing",
-    async (invalidTimestamp) => {
-      let pushes = 0;
-      const pushTransport = transport(() =>
-        Effect.sync(() => {
-          pushes++;
-        }),
-      );
+  it("rejects a correctly signed NaN timestamp before pushing", async () => {
+    let pushes = 0;
+    const pushTransport = transport(() => Effect.sync(() => void pushes++));
 
-      await withHandler(pushTransport, (handler) =>
-        Effect.gen(function* () {
-          const response = yield* Effect.promise(() =>
-            handler(signedRequest(body, invalidTimestamp)),
-          );
-          expect(response.status).toBe(401);
-        }),
-      );
+    await withHandler(pushTransport, (handler) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() => handler(signedRequest(body, "NaN")));
+        expect(response.status).toBe(401);
+      }),
+    );
 
-      expect(pushes).toBe(0);
-    },
-  );
+    expect(pushes).toBe(0);
+  });
 
-  it("uses TestClock time for deterministic replay-window boundaries", async () => {
+  it("rejects a correctly signed Infinity timestamp before pushing", async () => {
+    let pushes = 0;
+    const pushTransport = transport(() => Effect.sync(() => void pushes++));
+
+    await withHandler(pushTransport, (handler) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() => handler(signedRequest(body, "Infinity")));
+        expect(response.status).toBe(401);
+      }),
+    );
+
+    expect(pushes).toBe(0);
+  });
+
+  it("rejects a correctly signed negative Infinity timestamp before pushing", async () => {
+    let pushes = 0;
+    const pushTransport = transport(() => Effect.sync(() => void pushes++));
+
+    await withHandler(pushTransport, (handler) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() => handler(signedRequest(body, "-Infinity")));
+        expect(response.status).toBe(401);
+      }),
+    );
+
+    expect(pushes).toBe(0);
+  });
+
+  it("rejects a correctly signed a fractional timestamp timestamp before pushing", async () => {
+    let pushes = 0;
+    const pushTransport = transport(() => Effect.sync(() => void pushes++));
+
+    await withHandler(pushTransport, (handler) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() => handler(signedRequest(body, "1700000000.5")));
+        expect(response.status).toBe(401);
+      }),
+    );
+
+    expect(pushes).toBe(0);
+  });
+
+  it("rejects a correctly signed a timestamp beyond the safe integer range timestamp before pushing", async () => {
+    let pushes = 0;
+    const pushTransport = transport(() => Effect.sync(() => void pushes++));
+
+    await withHandler(pushTransport, (handler) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() =>
+          handler(signedRequest(body, "9007199254740992")),
+        );
+        expect(response.status).toBe(401);
+      }),
+    );
+
+    expect(pushes).toBe(0);
+  });
+
+  it("answers 204 for a signed timestamp 300 seconds before now", async () => {
+    const timestamp = String(Math.floor(now / 1000) + -300);
+
     await withHandler(transport(), (handler, clock) =>
       Effect.gen(function* () {
-        for (const delta of [-300, 300]) {
-          const requestTimestamp = String(Math.floor(now / 1000) + delta);
-          yield* clock.setTime(now + 999);
-          const response = yield* Effect.promise(() =>
-            handler(signedRequest(body, requestTimestamp)),
-          );
-          expect(response.status).toBe(204);
-        }
-
-        for (const delta of [-301, 301]) {
-          const requestTimestamp = String(Math.floor(now / 1000) + delta);
-          yield* clock.setTime(now + 999);
-          const response = yield* Effect.promise(() =>
-            handler(signedRequest(body, requestTimestamp)),
-          );
-          expect(response.status).toBe(401);
-        }
+        yield* clock.setTime(now + 999);
+        const response = yield* Effect.promise(() => handler(signedRequest(body, timestamp)));
+        expect(response.status).toBe(204);
       }),
     );
   });
 
-  it.each(["null", "{", JSON.stringify({ pushToken: "abcd1234" })])(
-    "rejects signed malformed body %s without crashing or pushing",
-    async (malformedBody) => {
-      let pushes = 0;
-      const pushTransport = transport(() =>
-        Effect.sync(() => {
-          pushes++;
-        }),
-      );
+  it("answers 204 for a signed timestamp 300 seconds after now", async () => {
+    const timestamp = String(Math.floor(now / 1000) + 300);
 
-      await withHandler(pushTransport, (handler) =>
-        Effect.gen(function* () {
-          const response = yield* Effect.promise(() => handler(signedRequest(malformedBody)));
-          expect(response.status).toBe(400);
-          const parsed = yield* Effect.promise(() => response.json());
-          expect(parsed).toEqual({
-            message: "Invalid APNs request.",
-          });
-        }),
-      );
+    await withHandler(transport(), (handler, clock) =>
+      Effect.gen(function* () {
+        yield* clock.setTime(now + 999);
+        const response = yield* Effect.promise(() => handler(signedRequest(body, timestamp)));
+        expect(response.status).toBe(204);
+      }),
+    );
+  });
 
-      expect(pushes).toBe(0);
-    },
-  );
+  it("answers 401 for a signed timestamp 301 seconds before now", async () => {
+    const timestamp = String(Math.floor(now / 1000) + -301);
+
+    await withHandler(transport(), (handler, clock) =>
+      Effect.gen(function* () {
+        yield* clock.setTime(now + 999);
+        const response = yield* Effect.promise(() => handler(signedRequest(body, timestamp)));
+        expect(response.status).toBe(401);
+      }),
+    );
+  });
+
+  it("answers 401 for a signed timestamp 301 seconds after now", async () => {
+    const timestamp = String(Math.floor(now / 1000) + 301);
+
+    await withHandler(transport(), (handler, clock) =>
+      Effect.gen(function* () {
+        yield* clock.setTime(now + 999);
+        const response = yield* Effect.promise(() => handler(signedRequest(body, timestamp)));
+        expect(response.status).toBe(401);
+      }),
+    );
+  });
+
+  it("rejects signed malformed body the literal null without crashing or pushing", async () => {
+    let pushes = 0;
+    const pushTransport = transport(() => Effect.sync(() => void pushes++));
+
+    await withHandler(pushTransport, (handler) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() => handler(signedRequest("null")));
+        expect(response.status).toBe(400);
+        const parsed = yield* Effect.promise(() => response.json());
+        expect(parsed).toEqual({ message: "Invalid APNs request." });
+      }),
+    );
+
+    expect(pushes).toBe(0);
+  });
+
+  it("rejects signed malformed body a truncated JSON object without crashing or pushing", async () => {
+    let pushes = 0;
+    const pushTransport = transport(() => Effect.sync(() => void pushes++));
+
+    await withHandler(pushTransport, (handler) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() => handler(signedRequest("{")));
+        expect(response.status).toBe(400);
+        const parsed = yield* Effect.promise(() => response.json());
+        expect(parsed).toEqual({ message: "Invalid APNs request." });
+      }),
+    );
+
+    expect(pushes).toBe(0);
+  });
+
+  it("rejects signed malformed body an object missing the signature fields without crashing or pushing", async () => {
+    let pushes = 0;
+    const pushTransport = transport(() => Effect.sync(() => void pushes++));
+
+    await withHandler(pushTransport, (handler) =>
+      Effect.gen(function* () {
+        const response = yield* Effect.promise(() =>
+          handler(signedRequest('{"pushToken":"abcd1234"}')),
+        );
+        expect(response.status).toBe(400);
+        const parsed = yield* Effect.promise(() => response.json());
+        expect(parsed).toEqual({ message: "Invalid APNs request." });
+      }),
+    );
+
+    expect(pushes).toBe(0);
+  });
 
   it("preserves body-read failures instead of treating them as empty input", async () => {
     await withHandler(transport(), (handler) =>

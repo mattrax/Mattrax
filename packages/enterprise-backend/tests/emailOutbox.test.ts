@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Deferred, Effect, Fiber } from "effect";
 import { describe, expect, it } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import {
@@ -393,20 +393,34 @@ describe("email outbox drain", () => {
 
     let inFlight = 0;
     let peak = 0;
+    // Hold both workers at a barrier so the peak is observed deterministically
+    // without sleeping on a real timer.
+    const release = Deferred.makeUnsafe<void>();
+    const twoInFlight = Deferred.makeUnsafe<void>();
 
     const result = await runEffect(
-      drainEmailOutbox({
-        db,
-        concurrency: 2,
-        now: new Date(now.getTime() + MINUTE),
-        email: makeEmailTransport(async () => {
-          inFlight += 1;
-          peak = Math.max(peak, inFlight);
-          await new Promise((resolve) => {
-            setTimeout(resolve, 5);
-          });
-          inFlight -= 1;
-        }),
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          drainEmailOutbox({
+            db,
+            concurrency: 2,
+            now: new Date(now.getTime() + MINUTE),
+            email: makeEmailTransport(async () => {
+              inFlight += 1;
+              peak = Math.max(peak, inFlight);
+              if (inFlight === 2) await Effect.runPromise(Deferred.succeed(twoInFlight, undefined));
+              await Effect.runPromise(Deferred.await(release));
+              inFlight -= 1;
+            }),
+          }),
+          { startImmediately: true },
+        );
+
+        yield* Deferred.await(twoInFlight);
+        yield* Effect.yieldNow;
+        yield* Deferred.succeed(release, undefined);
+
+        return yield* Fiber.join(fiber);
       }),
     );
 

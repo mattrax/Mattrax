@@ -79,6 +79,12 @@ const submitEmail = (host: HTMLElement, email = "person@example.com") => {
   host.querySelector("form")!.requestSubmit();
 };
 
+/** Drain a resolved async continuation, then apply Solid's DOM updates. */
+const settleAfterResolution = async () => {
+  await Promise.resolve();
+  flush();
+};
+
 beforeEach(() => {
   state.params = {};
   state.startSso.mockReset();
@@ -208,10 +214,7 @@ describe("email-first sign-in", () => {
       kind: "redirect",
       url: "https://login.microsoftonline.com/tenant/authorize",
     });
-    await new Promise((done) => {
-      setTimeout(done, 0);
-    });
-    flush();
+    await settleAfterResolution();
 
     expect(state.redirect).not.toHaveBeenCalled();
     expect(host.querySelector("#email")).not.toBeNull();
@@ -244,10 +247,7 @@ describe("email-first sign-in", () => {
       kind: "redirect",
       url: "https://login.microsoftonline.com/stale/authorize",
     });
-    await new Promise((done) => {
-      setTimeout(done, 0);
-    });
-    flush();
+    await settleAfterResolution();
 
     expect(state.redirect).toHaveBeenCalledTimes(1);
     expect(state.redirect).not.toHaveBeenCalledWith(
@@ -294,10 +294,7 @@ describe("email-first sign-in", () => {
     button(host, /^change$/i)!.click();
     flush();
     resolve({ error: { tag: "PasskeyCancelled", message: "raw detail" } });
-    await new Promise((done) => {
-      setTimeout(done, 0);
-    });
-    flush();
+    await settleAfterResolution();
 
     expect(host.querySelector("#login-error")).toBeNull();
     expect(host.querySelector("#email")).not.toBeNull();
@@ -329,9 +326,8 @@ describe("email-first sign-in", () => {
     button(host, /^change$/i)!.click();
     flush();
     resolve({ data: { user: { id: "someone" } } });
-    await new Promise((done) => {
-      setTimeout(done, 0);
-    });
+    // signOut is the positive signal that the stale ceremony result was handled.
+    await vi.waitFor(() => expect(state.signOut).toHaveBeenCalledTimes(1));
     flush();
 
     expect(state.signOut).toHaveBeenCalledTimes(1);
@@ -483,10 +479,7 @@ describe("conditional passkey autofill", () => {
 
     await vi.waitFor(() => expect(state.passkey).toHaveBeenCalledTimes(1));
     resolve({ error: { tag: "PasskeyNotAllowed", message: "raw detail" } });
-    await new Promise((done) => {
-      setTimeout(done, 0);
-    });
-    flush();
+    await settleAfterResolution();
 
     expect(host.querySelector("#login-error")).toBeNull();
     expect(host.textContent).not.toContain("raw detail");
@@ -500,9 +493,8 @@ describe("conditional passkey autofill", () => {
     const host = mount();
 
     await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1));
-    await new Promise((done) => {
-      setTimeout(done, 0);
-    });
+    // The account preview appears only once the lookup has settled.
+    await vi.waitFor(() => expect(host.textContent).toContain("person@example.com"));
     flush();
 
     expect(state.passkey).not.toHaveBeenCalled();

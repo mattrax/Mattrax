@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 import type { BrowserContext, Page } from "@playwright/test";
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -30,20 +30,8 @@ export function totpCode(secret: string, offset = 0) {
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
-/** Wait until the current thirty-second step changes, then return its code. */
-export async function freshTotpCode(secret: string) {
-  const step = Math.floor(Date.now() / 30_000);
-
-  while (Math.floor(Date.now() / 30_000) === step)
-    await new Promise((resolve) => {
-      setTimeout(resolve, 500);
-    });
-
-  return totpCode(secret);
-}
-
 export function uniqueEmail(prefix = "e2e") {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+  return `${prefix}-${randomUUID()}@example.com`;
 }
 
 export async function register(page: Page, options: { name?: string; email?: string } = {}) {
@@ -253,7 +241,7 @@ export async function createTenant(page: Page, name: string) {
     .replaceAll(/[^a-z0-9]+/g, "-")
     .replaceAll(/^-|-$/g, "");
 
-  const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 8)}`;
+  const slug = `${baseSlug}-${randomUUID().slice(0, 8)}`;
   // `page.request` shares the context's cookie jar but does not need a loaded
   // document, so this works immediately after applying a stored session and
   // avoids paying for a navigation before the tenant API call.
@@ -283,12 +271,14 @@ export async function gotoHydrated(page: Page, path: string) {
   // The hydration flag is the real readiness signal: it is only set once the
   // client bundle has run and the router settled. `networkidle` would add a
   // fixed 500ms of idle on top, on every navigation.
-  await page.goto(path, { waitUntil: "domcontentloaded" });
+  const response = await page.goto(path, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     () => document.documentElement.dataset.hydrated === "true",
     undefined,
     { timeout: 20_000 },
   );
+
+  return response;
 }
 
 /** Where `session-setup.ts` leaves the run's one registered account. */
@@ -332,7 +322,7 @@ export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
   // A/B switch for measuring the shared session; CI never sets it.
   const session =
     process.env.E2E_PER_TEST_REGISTRATION === "1" ? undefined : await e2eSession();
-  const tenantName = `${name} ${Math.random().toString(36).slice(2, 6)}`;
+  const tenantName = `${name} ${randomUUID().slice(0, 4)}`;
   let tenant;
 
   if (session) {
@@ -482,8 +472,24 @@ export async function confirmStepUp(page: Page) {
   await dialog.getByRole("button", { name: /use passkey/i }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
   // The modal's dismiss layer lingers while it animates out; a press in that
-  // window is treated as an outside press and swallowed.
-  await page.waitForTimeout(350);
+  // window is treated as an outside press and swallowed. Wait for the
+  // animations themselves, not a guessed delay.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            document
+              .getAnimations()
+              .filter(
+                (animation) =>
+                  animation.playState === "running" &&
+                  animation.effect?.getComputedTiming().iterations !== Infinity,
+              ).length,
+        ),
+      { timeout: 5_000 },
+    )
+    .toBe(0);
 }
 
 /**

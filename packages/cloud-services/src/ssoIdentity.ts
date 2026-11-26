@@ -1,4 +1,5 @@
 import { Effect, Option, Schema } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { and, eq } from "drizzle-orm";
 import { authCredentials, schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
@@ -36,11 +37,8 @@ export type SsoOidc = {
   >;
 };
 
-export const safeEmail = (claims: {
-  email?: string;
-  preferred_username?: string;
-  upn?: string;
-}) => (claims.email ?? claims.preferred_username ?? claims.upn ?? "").trim().toLowerCase();
+export const safeEmail = (claims: { email?: string; preferred_username?: string; upn?: string }) =>
+  (claims.email ?? claims.preferred_username ?? claims.upn ?? "").trim().toLowerCase();
 
 export const ensureCredential = (db: EnterpriseDb, subjectId: string) =>
   Effect.gen(function* () {
@@ -101,6 +99,9 @@ export const exchangeSsoCode = (input: {
 
     if (!discovery?.token_endpoint) return yield* fail("idp_unavailable", "sso_rejected");
 
+    // The shared fetch port defaults to globalThis.fetch in production and can
+    // be replaced with a fake layer in tests without patching the global.
+    const fetch = yield* FetchHttpClient.Fetch;
     const tokenResponse = yield* Effect.tryPromise({
       try: () =>
         fetch(discovery.token_endpoint as string, {
@@ -134,9 +135,7 @@ export const exchangeSsoCode = (input: {
 
     const rawTokens = yield* Effect.tryPromise(() => tokenResponse.json()).pipe(
       Effect.catch((error) =>
-        Effect.logWarning("Azure SSO token response was not JSON", error).pipe(
-          Effect.as(null),
-        ),
+        Effect.logWarning("Azure SSO token response was not JSON", error).pipe(Effect.as(null)),
       ),
     );
     const tokens = Option.getOrUndefined(Schema.decodeUnknownOption(TokenResponse)(rawTokens));
@@ -150,8 +149,7 @@ export const exchangeSsoCode = (input: {
       })
       .pipe(Effect.catch(() => Effect.succeed(null)));
 
-    if (!claims)
-      yield* Effect.logWarning("Azure SSO ID token validation failed");
+    if (!claims) yield* Effect.logWarning("Azure SSO ID token validation failed");
 
     if (!claims) return yield* fail("idp_rejected", "sso_rejected");
 
@@ -191,11 +189,7 @@ export const resolveSsoAccount = (input: {
 > =>
   Effect.gen(function* () {
     const db = input.db;
-    const fail = (
-      code: SsoFailureCode,
-      reason: LoginAttemptFailure,
-      accountId?: string | null,
-    ) =>
+    const fail = (code: SsoFailureCode, reason: LoginAttemptFailure, accountId?: string | null) =>
       Effect.succeed({
         ok: false as const,
         failure: { code, reason, accountId: accountId ?? null, email: input.email },
@@ -258,8 +252,7 @@ export const resolveSsoAccount = (input: {
         createdAt: new Date(),
       });
     } else {
-      if (!input.autoProvision)
-        return yield* fail("provisioning_disabled", "unknown_account");
+      if (!input.autoProvision) return yield* fail("provisioning_disabled", "unknown_account");
 
       const accountId = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
       const timestamp = new Date();

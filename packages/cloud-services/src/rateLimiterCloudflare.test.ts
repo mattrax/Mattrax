@@ -59,37 +59,82 @@ describe("Cloudflare rate limiter", () => {
     expect((await runCheck(RateLimiterCloudflare({ bindings }), signIn())).limited).toBe(false);
   });
 
-  it("selects the matching bucket binding for MDM, SCIM, billing and SCEP", async () => {
+  it("selects the MDM bucket binding", async () => {
     const seen: string[] = [];
 
-    const bindingFor = (bucket: string) => ({
-      limit: async ({ key }: { key: string }) => {
-        seen.push(`${bucket}:${key}`);
-
-        return { success: true };
-      },
-    });
-
     const bindings: RateLimitBindings = {
-      mdm: bindingFor("mdm"),
-      scim: bindingFor("scim"),
-      billing: bindingFor("billing"),
-      scep: bindingFor("scep"),
+      mdm: {
+        limit: async ({ key }) => {
+          seen.push(key);
+
+          return { success: true };
+        },
+      },
     };
 
-    const layer = RateLimiterCloudflare({ bindings });
+    await runCheck(
+      RateLimiterCloudflare({ bindings }),
+      request("/mdm/apple/mdm", { method: "PUT" }),
+    );
 
-    await runCheck(layer, request("/mdm/apple/mdm", { method: "PUT" }));
-    await runCheck(layer, request("/scim/v2/org/Users"));
-    await runCheck(layer, request("/api/v1/billing/webhook", { method: "POST" }));
-    await runCheck(layer, request("/mdm/apple/scep"));
+    expect(seen).toEqual(["mdm:local"]);
+  });
 
-    expect(seen).toEqual([
-      "mdm:mdm:local",
-      "scim:scim:local",
-      "billing:billing:local",
-      "scep:scep:local",
-    ]);
+  it("selects the SCIM bucket binding", async () => {
+    const seen: string[] = [];
+
+    const bindings: RateLimitBindings = {
+      scim: {
+        limit: async ({ key }) => {
+          seen.push(key);
+
+          return { success: true };
+        },
+      },
+    };
+
+    await runCheck(RateLimiterCloudflare({ bindings }), request("/scim/v2/org/Users"));
+
+    expect(seen).toEqual(["scim:local"]);
+  });
+
+  it("selects the billing bucket binding", async () => {
+    const seen: string[] = [];
+
+    const bindings: RateLimitBindings = {
+      billing: {
+        limit: async ({ key }) => {
+          seen.push(key);
+
+          return { success: true };
+        },
+      },
+    };
+
+    await runCheck(
+      RateLimiterCloudflare({ bindings }),
+      request("/api/v1/billing/webhook", { method: "POST" }),
+    );
+
+    expect(seen).toEqual(["billing:local"]);
+  });
+
+  it("selects the SCEP bucket binding", async () => {
+    const seen: string[] = [];
+
+    const bindings: RateLimitBindings = {
+      scep: {
+        limit: async ({ key }) => {
+          seen.push(key);
+
+          return { success: true };
+        },
+      },
+    };
+
+    await runCheck(RateLimiterCloudflare({ bindings }), request("/mdm/apple/scep"));
+
+    expect(seen).toEqual(["scep:local"]);
   });
 
   it("falls back locally when the edge limiter throws", async () => {
@@ -161,17 +206,13 @@ describe("Cloudflare rate limiter", () => {
   });
 
   it("keeps the local ceiling for buckets with no namespace", async () => {
-    let now = 1_000;
+    const store: RateLimitStore = new Map([["auth:203.0.113.4", { count: 599, resetAt: 61_000 }]]);
 
     // Local development has no namespace at all; it must keep working up to
     // the documented per-isolate ceiling instead of failing open or closed.
-    const layer = RateLimiterCloudflare({ bindings: {}, now: () => now });
+    const layer = RateLimiterCloudflare({ bindings: {}, store, now: () => 1_000 });
 
-    for (let index = 0; index < 600; index++) {
-      expect((await runCheck(layer, signIn())).limited).toBe(false);
-      now += 10;
-    }
-
+    expect((await runCheck(layer, signIn())).limited).toBe(false);
     expect((await runCheck(layer, signIn())).limited).toBe(true);
   });
 });

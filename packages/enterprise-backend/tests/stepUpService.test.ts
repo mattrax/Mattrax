@@ -1,11 +1,14 @@
 import { Passkey, Totp } from "@yielded/auth";
 import { Effect, Layer } from "effect";
+import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import { StepUpService, StepUpUnavailable } from "@mattrax/enterprise-domain";
 import { stepUpServiceLayer } from "../src/Account/stepUp.ts";
 import { schema } from "../src/schema.ts";
 import { makeDb } from "./helpers.js";
+
+const NOW = Date.parse("2026-11-01T00:00:00Z");
 
 const unavailable = (message = "unavailable") =>
   Effect.fail(new StepUpUnavailable({ message, reason: "storage", retryable: true }));
@@ -111,7 +114,14 @@ const makeLayer = (
 const run = <A, E>(
   layer: Layer.Layer<StepUpService>,
   work: (service: StepUpService["Service"]) => Effect.Effect<A, E>,
-) => Effect.runPromise(Effect.flatMap(StepUpService, work).pipe(Effect.provide(layer)));
+) =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+
+      return yield* work(yield* StepUpService);
+    }).pipe(Effect.provide(layer), Effect.provide(TestClock.layer())),
+  );
 
 describe("step-up infrastructure failures", () => {
   it("reports factor discovery outages instead of absent factors", async () => {
@@ -251,7 +261,7 @@ describe("step-up TOTP failure admission", () => {
 
     expect(matches).toBe(5);
     expect(db.store.step_up_totp_state[0]).toMatchObject({ failures: 5 });
-    expect(db.store.step_up_totp_state[0]!.lockedUntil.getTime()).toBeGreaterThan(Date.now());
+    expect(db.store.step_up_totp_state[0]!.lockedUntil.getTime()).toBe(NOW + 15 * 60_000);
   });
 
   it("does not decrypt or match a code while the subject is locked", async () => {
@@ -263,8 +273,8 @@ describe("step-up TOTP failure admission", () => {
       subjectId: "user-1",
       lastAcceptedStep: 0,
       failures: 5,
-      lockedUntil: new Date(Date.now() + 60_000),
-      updatedAt: new Date(),
+      lockedUntil: new Date(NOW + 60_000),
+      updatedAt: new Date(NOW),
     });
 
     await expect(

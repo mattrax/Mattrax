@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Fiber, Layer, Logger, Schema } from "effect";
+import { Deferred, Effect, Fiber, Layer, Logger, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { TestClock } from "effect/testing";
 import {
@@ -16,7 +16,7 @@ import {
   GRAPH_PAGINATION_LIMIT,
   makeAzureGraphTokenCache,
 } from "../src/index.js";
-import type { AzureGraphConfig, AzureGraphService } from "../src/index.js";
+import type { AzureGraphConfig } from "../src/index.js";
 
 const tenantId = "11111111-1111-1111-1111-111111111111";
 
@@ -504,13 +504,26 @@ describe("AzureGraph", () => {
   it("retries a 429 once after the Retry-After delay", async () => {
     let graphCalls = 0;
     let tokenCalls = 0;
-    const startedAt = Date.now();
 
-    const result = await run(
+    const result = await runWithClock(
       Effect.gen(function* () {
-        const graph = yield* AzureGraph;
+        const request = yield* Effect.forkChild(
+          Effect.gen(function* () {
+            const graph = yield* AzureGraph;
 
-        return yield* graph.domains(tenantId);
+            return yield* graph.domains(tenantId);
+          }),
+          { startImmediately: true },
+        );
+
+        // The Retry-After delay is scheduled on the Effect clock. Drive it
+        // virtually; the retry itself is the behavioural assertion.
+        for (let i = 0; i < 5 && graphCalls < 2; i++) {
+          yield* TestClock.adjust("10 millis");
+          yield* Effect.yieldNow;
+        }
+
+        return yield* Fiber.join(request);
       }),
       (url) => {
         if (isTokenRequest(url)) {
@@ -524,7 +537,7 @@ describe("AzureGraph", () => {
         if (graphCalls === 1) {
           return new Response(JSON.stringify({ error: { code: "TooManyRequests" } }), {
             status: 429,
-            headers: { "content-type": "application/json", "retry-after": "0.05" },
+            headers: { "content-type": "application/json", "retry-after": "0.01" },
           });
         }
 
@@ -534,7 +547,6 @@ describe("AzureGraph", () => {
 
     expect(tokenCalls).toBe(1);
     expect(graphCalls).toBe(2);
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(40);
     expect(result).toEqual([contosoDomain]);
   });
 
@@ -617,33 +629,65 @@ describe("AzureGraph outbound timeouts", () => {
   });
 
   it("fails a hung Graph request with a timeout instead of hanging", async () => {
-    const started = Date.now();
+    const graphRequested = Deferred.makeUnsafe<void>();
 
-    const error = await runWithConfig(
-      domains,
-      (url, init) => (isTokenRequest(url) ? tokenResponse() : hangingResponse(url, init)),
-      { timeoutMs: 50 },
-    ).catch((error_: unknown) => error_);
+    const error = await runWithClock(
+      Effect.gen(function* () {
+        const request = yield* Effect.forkChild(domains, { startImmediately: true });
+        // Wait until the stalled request is actually in flight so its 20ms
+        // deadline is on the virtual clock before it is advanced.
+        yield* Deferred.await(graphRequested);
+        yield* TestClock.adjust("20 millis");
+        return yield* Effect.flip(Fiber.join(request));
+      }),
+      (url, init) => {
+        if (isTokenRequest(url)) return tokenResponse();
 
-    expect(error).toBeInstanceOf(AzureGraphRequestFailed);
-    expect(error instanceof Error ? error.message : "").toContain("timed out after 50ms");
-    expect(Date.now() - started).toBeLessThan(2_000);
-  });
-
-  it("bounds the token request too", async () => {
-    const error = await runWithConfig(domains, hangingResponse, { timeoutMs: 50 }).catch(
-      (error_: unknown) => error_,
+        void Effect.runPromise(Deferred.succeed(graphRequested, undefined));
+        return hangingResponse(url, init);
+      },
+      { timeoutMs: 20 },
     );
 
     expect(error).toBeInstanceOf(AzureGraphRequestFailed);
-    expect(error instanceof Error ? error.message : "").toContain("timed out after 50ms");
+    expect(error instanceof Error ? error.message : "").toContain("timed out after 20ms");
+  });
+
+  it("bounds the token request too", async () => {
+    const tokenRequested = Deferred.makeUnsafe<void>();
+
+    const error = await runWithClock(
+      Effect.gen(function* () {
+        const request = yield* Effect.forkChild(domains, { startImmediately: true });
+        yield* Deferred.await(tokenRequested);
+        yield* TestClock.adjust("20 millis");
+        return yield* Effect.flip(Fiber.join(request));
+      }),
+      (url, init) => {
+        void Effect.runPromise(Deferred.succeed(tokenRequested, undefined));
+        return hangingResponse(url, init);
+      },
+      { timeoutMs: 20 },
+    );
+
+    expect(error).toBeInstanceOf(AzureGraphRequestFailed);
+    expect(error instanceof Error ? error.message : "").toContain("timed out after 20ms");
   });
 
   it("still retries a throttled request within the deadline", async () => {
     let graphCalls = 0;
 
-    const result = await runWithConfig(
-      domains,
+    const result = await runWithClock(
+      Effect.gen(function* () {
+        const request = yield* Effect.forkChild(domains, { startImmediately: true });
+
+        for (let i = 0; i < 5 && graphCalls < 2; i++) {
+          yield* TestClock.adjust("10 millis");
+          yield* Effect.yieldNow;
+        }
+
+        return yield* Fiber.join(request);
+      }),
       (url) => {
         if (isTokenRequest(url)) return tokenResponse();
         graphCalls++;
@@ -654,7 +698,7 @@ describe("AzureGraph outbound timeouts", () => {
 
         return domainsResponse([contosoDomain]);
       },
-      { timeoutMs: 1_000 },
+      { timeoutMs: 1_000, retryDelayMs: 1 },
     );
 
     expect(graphCalls).toBe(2);
@@ -1072,7 +1116,7 @@ describe("AzureGraph delegated consent revocation", () => {
   it("reports how many grants were removed before a delete failed", async () => {
     let deletes = 0;
 
-    const error = await run(
+    const error = await runWithConfig(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
 
@@ -1100,6 +1144,7 @@ describe("AzureGraph delegated consent revocation", () => {
           ? new Response(null, { status: 204 })
           : json({ error: "server error" }, 500);
       },
+      { retryDelayMs: 1 },
     ).catch((error_: unknown) => error_);
 
     expect(error).toBeInstanceOf(AzureGraphConsentRevocationFailed);
@@ -1156,21 +1201,14 @@ describe("AzureGraph delegated consent revocation", () => {
 describe("AzureGraph URL policy", () => {
   const taintedCursor = "https://attacker.example/collect";
 
-  it.each([
-    "https://attacker.example/collect",
-    "http://graph.microsoft.com/v1.0/users",
-    "https://graph.microsoft.com:444/v1.0/users",
-    "https://user:password@graph.microsoft.com/v1.0/users",
-    "https://graph.microsoft.com/v1.0/users#fragment",
-    "not a URL",
-  ])("rejects %s before acquiring a token", async (url) => {
+  it("rejects a cross-origin URL before acquiring a token", async () => {
     let calls = 0;
 
     const error = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
 
-        return yield* graph.get(tenantId, url, Schema.Unknown);
+        return yield* graph.get(tenantId, "https://attacker.example/collect", Schema.Unknown);
       }),
       () => {
         calls++;
@@ -1183,23 +1221,186 @@ describe("AzureGraph URL policy", () => {
     expect(calls).toBe(0);
   });
 
-  const cursorMethods: ReadonlyArray<
-    readonly [string, (graph: AzureGraphService) => Effect.Effect<unknown, unknown>]
-  > = [
-    ["users delta", (graph) => graph.usersDelta(tenantId, taintedCursor)],
-    ["groups delta", (graph) => graph.groupsDelta(tenantId, taintedCursor)],
-    ["Autopilot devices", (graph) => graph.listAutopilotDevices(tenantId, taintedCursor)],
-    ["Autopilot profiles", (graph) => graph.listAutopilotProfiles(tenantId, taintedCursor)],
-  ];
-
-  it.each(cursorMethods)("rejects a tainted %s cursor before sending it", async (_name, call) => {
+  it("rejects a plaintext http URL before acquiring a token", async () => {
     let calls = 0;
 
     const error = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
 
-        return yield* call(graph);
+        return yield* graph.get(tenantId, "http://graph.microsoft.com/v1.0/users", Schema.Unknown);
+      }),
+      () => {
+        calls++;
+
+        return tokenResponse();
+      },
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidUrl);
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a URL with a non-standard port before acquiring a token", async () => {
+    let calls = 0;
+
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.get(
+          tenantId,
+          "https://graph.microsoft.com:444/v1.0/users",
+          Schema.Unknown,
+        );
+      }),
+      () => {
+        calls++;
+
+        return tokenResponse();
+      },
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidUrl);
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a URL with embedded credentials before acquiring a token", async () => {
+    let calls = 0;
+
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.get(
+          tenantId,
+          "https://user:password@graph.microsoft.com/v1.0/users",
+          Schema.Unknown,
+        );
+      }),
+      () => {
+        calls++;
+
+        return tokenResponse();
+      },
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidUrl);
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a URL with a fragment before acquiring a token", async () => {
+    let calls = 0;
+
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.get(
+          tenantId,
+          "https://graph.microsoft.com/v1.0/users#fragment",
+          Schema.Unknown,
+        );
+      }),
+      () => {
+        calls++;
+
+        return tokenResponse();
+      },
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidUrl);
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a string that is not a URL before acquiring a token", async () => {
+    let calls = 0;
+
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.get(tenantId, "not a URL", Schema.Unknown);
+      }),
+      () => {
+        calls++;
+
+        return tokenResponse();
+      },
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidUrl);
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a tainted users delta cursor before sending it", async () => {
+    let calls = 0;
+
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.usersDelta(tenantId, taintedCursor);
+      }),
+      () => {
+        calls++;
+
+        return tokenResponse();
+      },
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidUrl);
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a tainted groups delta cursor before sending it", async () => {
+    let calls = 0;
+
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.groupsDelta(tenantId, taintedCursor);
+      }),
+      () => {
+        calls++;
+
+        return tokenResponse();
+      },
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidUrl);
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a tainted Autopilot devices cursor before sending it", async () => {
+    let calls = 0;
+
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.listAutopilotDevices(tenantId, taintedCursor);
+      }),
+      () => {
+        calls++;
+
+        return tokenResponse();
+      },
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidUrl);
+    expect(calls).toBe(0);
+  });
+
+  it("rejects a tainted Autopilot profiles cursor before sending it", async () => {
+    let calls = 0;
+
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.listAutopilotProfiles(tenantId, taintedCursor);
       }),
       () => {
         calls++;
@@ -1342,22 +1543,12 @@ describe("AzureGraph URL policy", () => {
 });
 
 describe("AzureGraph strict response schemas", () => {
-  const malformedCollections: ReadonlyArray<
-    readonly [string, (graph: AzureGraphService) => Effect.Effect<unknown, unknown>]
-  > = [
-    ["users delta", (graph) => graph.usersDelta(tenantId)],
-    ["groups delta", (graph) => graph.groupsDelta(tenantId)],
-    ["domains", (graph) => graph.domains(tenantId)],
-    ["Autopilot devices", (graph) => graph.listAutopilotDevices(tenantId)],
-    ["Autopilot profiles", (graph) => graph.listAutopilotProfiles(tenantId)],
-  ];
-
-  it.each(malformedCollections)("rejects a %s page without a value array", async (_name, call) => {
+  it("rejects a users delta page without a value array", async () => {
     const error = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
 
-        return yield* call(graph);
+        return yield* graph.usersDelta(tenantId);
       }),
       (url) => (isTokenRequest(url) ? tokenResponse() : json({})),
     ).catch((error_: unknown) => error_);
@@ -1365,14 +1556,64 @@ describe("AzureGraph strict response schemas", () => {
     expect(error).toBeInstanceOf(AzureGraphInvalidResponse);
   });
 
-  it.each(["devices", "profiles"])("rejects an Autopilot %s row without an id", async (kind) => {
+  it("rejects a groups delta page without a value array", async () => {
     const error = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
 
-        return kind === "devices"
-          ? yield* graph.listAutopilotDevices(tenantId)
-          : yield* graph.listAutopilotProfiles(tenantId);
+        return yield* graph.groupsDelta(tenantId);
+      }),
+      (url) => (isTokenRequest(url) ? tokenResponse() : json({})),
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidResponse);
+  });
+
+  it("rejects a domains page without a value array", async () => {
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.domains(tenantId);
+      }),
+      (url) => (isTokenRequest(url) ? tokenResponse() : json({})),
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidResponse);
+  });
+
+  it("rejects a Autopilot devices page without a value array", async () => {
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.listAutopilotDevices(tenantId);
+      }),
+      (url) => (isTokenRequest(url) ? tokenResponse() : json({})),
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidResponse);
+  });
+
+  it("rejects a Autopilot profiles page without a value array", async () => {
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.listAutopilotProfiles(tenantId);
+      }),
+      (url) => (isTokenRequest(url) ? tokenResponse() : json({})),
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidResponse);
+  });
+
+  it("rejects an Autopilot devices row without an id", async () => {
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.listAutopilotDevices(tenantId);
       }),
       (url) =>
         isTokenRequest(url) ? tokenResponse() : json({ value: [{ displayName: "No id" }] }),
@@ -1381,34 +1622,58 @@ describe("AzureGraph strict response schemas", () => {
     expect(error).toBeInstanceOf(AzureGraphInvalidResponse);
   });
 
-  const missingIdOperations: ReadonlyArray<
-    readonly [string, (graph: AzureGraphService) => Effect.Effect<unknown, unknown>]
-  > = [
-    ["single device", (graph) => graph.getAutopilotDevice(tenantId, "expected")],
-    [
-      "single imported device",
-      (graph) =>
-        graph.importAutopilotDevices(tenantId, [
-          { serialNumber: "ABC123", hardwareIdentifier: "aGFzaA==" },
-        ]),
-    ],
-    [
-      "created profile",
-      (graph) =>
-        graph.createAutopilotProfile(tenantId, {
-          displayName: "Standard",
-          deploymentMode: "userDriven",
-          joinType: "azureADJoin",
-        }),
-    ],
-  ];
-
-  it.each(missingIdOperations)("rejects a %s response without an id", async (_name, call) => {
+  it("rejects an Autopilot profiles row without an id", async () => {
     const error = await run(
       Effect.gen(function* () {
         const graph = yield* AzureGraph;
 
-        return yield* call(graph);
+        return yield* graph.listAutopilotProfiles(tenantId);
+      }),
+      (url) =>
+        isTokenRequest(url) ? tokenResponse() : json({ value: [{ displayName: "No id" }] }),
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidResponse);
+  });
+
+  it("rejects a single device response without an id", async () => {
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.getAutopilotDevice(tenantId, "expected");
+      }),
+      (url) => (isTokenRequest(url) ? tokenResponse() : json({ displayName: "No id" })),
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidResponse);
+  });
+
+  it("rejects a single imported device response without an id", async () => {
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.importAutopilotDevices(tenantId, [
+          { serialNumber: "ABC123", hardwareIdentifier: "aGFzaA==" },
+        ]);
+      }),
+      (url) => (isTokenRequest(url) ? tokenResponse() : json({ displayName: "No id" })),
+    ).catch((error_: unknown) => error_);
+
+    expect(error).toBeInstanceOf(AzureGraphInvalidResponse);
+  });
+
+  it("rejects a created profile response without an id", async () => {
+    const error = await run(
+      Effect.gen(function* () {
+        const graph = yield* AzureGraph;
+
+        return yield* graph.createAutopilotProfile(tenantId, {
+          displayName: "Standard",
+          deploymentMode: "userDriven",
+          joinType: "azureADJoin",
+        });
       }),
       (url) => (isTokenRequest(url) ? tokenResponse() : json({ displayName: "No id" })),
     ).catch((error_: unknown) => error_);

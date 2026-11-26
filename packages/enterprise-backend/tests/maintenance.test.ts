@@ -1,6 +1,7 @@
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Layer } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { getTableName } from "drizzle-orm";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import * as pkijs from "pkijs";
 import { Db } from "@mattrax/enterprise-core";
 import { TestConsole } from "effect/testing";
@@ -19,6 +20,12 @@ import { makeDb, runEffect } from "./helpers.js";
 const DAY = 24 * 60 * 60 * 1000;
 
 const now = new Date("2026-11-10T12:00:00.000Z");
+
+// RSA key generation is paid by whichever test runs first under shuffle.
+// Warm the WebCrypto path once per file so no single test inherits the cost.
+beforeAll(async () => {
+  await runEffect(generateScepCa("warmup", { now }));
+});
 
 const run = (db: ReturnType<typeof makeDb>) =>
   runEffect(
@@ -288,7 +295,9 @@ describe("maintenance bounded retention", () => {
   it("keysets more than 500 expired sessions interspersed among live sessions", async () => {
     const db = makeDb();
     const queries = observeMaintenanceQueries(db);
-    const total = 1_501;
+    // The smallest alternating set with more than one full batch of expired
+    // sessions: 501 expired, 500 live.
+    const total = 2 * MAINTENANCE_DELETE_BATCH_SIZE + 1;
     const expiredCount = Math.ceil(total / 2);
     const sessionId = (index: number) =>
       "session-" + String((index * 7919) % 100_000).padStart(6, "0");
@@ -714,7 +723,12 @@ describe("maintenance webhook deliveries", () => {
   });
 
   it("retries a recent failed delivery with the sealed secret", async () => {
-    const fetch = vi.fn(async () => new Response("ok", { status: 200 }));
+    const calls: Array<string> = [];
+    const fetch: typeof globalThis.fetch = async (input) => {
+      calls.push(String(input));
+
+      return new Response("ok", { status: 200 });
+    };
     const db = makeDb();
     db.store.webhook_endpoint.push(await endpoint());
     db.store.webhook_delivery.push({
@@ -737,6 +751,11 @@ describe("maintenance webhook deliveries", () => {
       createdAt: new Date(now.getTime() - 60_000),
     });
 
+    // SAFETY: the fake fetch stands in for the platform fetch service; the
+    // shared client layer turns it into the HttpClient webhook delivery uses.
+    const transport = FetchHttpClient.layer.pipe(
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+    );
     const result = await runEffect(
       runMaintenance({
         now,
@@ -744,14 +763,13 @@ describe("maintenance webhook deliveries", () => {
         credentialAlerts: false,
         dynamicGroups: false,
         webhookAuthSecret: "maintenance-secret",
-        webhookFetch: fetch,
-      }).pipe(Effect.provideService(Db, db)),
+      }).pipe(Effect.provide(Layer.mergeAll(transport, Layer.succeed(Db, db as never)))),
     );
 
     expect(result.webhookRetries).toBe(1);
     expect(result.webhookRetrySucceeded).toBe(1);
     expect(result.webhookRetryFailed).toBe(0);
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["https://hooks.example.com/mattrax"]);
     expect(db.store.webhook_delivery[0]).toMatchObject({
       status: "succeeded",
       attempt: 2,
@@ -876,7 +894,12 @@ describe("maintenance origin certificate review", () => {
 
   it("probes on the scheduled run and reuses a fresh observation", async () => {
     const db = makeDb();
-    const probe = vi.fn(() => Effect.succeed(peer));
+    const calls: Array<number> = [];
+    const probe = () => {
+      calls.push(1);
+
+      return Effect.succeed(peer);
+    };
 
     const first = await runAt(db, now, probe);
     expect(first.serverCertificateChecked).toBe(1);
@@ -889,11 +912,11 @@ describe("maintenance origin certificate review", () => {
 
     const second = await runAt(db, new Date(now.getTime() + 30 * 60 * 1000), probe);
     expect(second.serverCertificateChecked).toBe(0);
-    expect(probe).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(1);
 
     const third = await runAt(db, new Date(now.getTime() + 61 * 60 * 1000), probe);
     expect(third.serverCertificateChecked).toBe(1);
-    expect(probe).toHaveBeenCalledTimes(2);
+    expect(calls).toHaveLength(2);
   });
 
   it("skips the probe when no origin is configured and never fails the run", async () => {
@@ -1309,7 +1332,12 @@ describe("maintenance credential issuance", () => {
 
   it("requests issuance for an origin whose probe returned no certificate", async () => {
     const db = makeDb();
-    const request = vi.fn(() => Effect.succeed(undefined));
+    const requests: Array<unknown> = [];
+    const request = (input: unknown) => {
+      requests.push(input);
+
+      return Effect.succeed(undefined);
+    };
 
     const result = await runIssuance(db, {
       serverCertificateOrigin: "https://e.mattrax.app",
@@ -1332,17 +1360,23 @@ describe("maintenance credential issuance", () => {
 
     expect(result.missingDomainCertificates).toBe(1);
     expect(result.domainCertificateRequests).toBe(1);
-    expect(request).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith({
-      origin: "https://e.mattrax.app",
-      hostname: "e.mattrax.app",
-      reason: "missing",
-    });
+    expect(requests).toEqual([
+      {
+        origin: "https://e.mattrax.app",
+        hostname: "e.mattrax.app",
+        reason: "missing",
+      },
+    ]);
   });
 
   it("does not request issuance when the origin certificate is healthy", async () => {
     const db = makeDb();
-    const request = vi.fn(() => Effect.succeed(undefined));
+    const requests: Array<unknown> = [];
+    const request = (input: unknown) => {
+      requests.push(input);
+
+      return Effect.succeed(undefined);
+    };
 
     const result = await runIssuance(db, {
       serverCertificateOrigin: "https://e.mattrax.app",
@@ -1365,12 +1399,17 @@ describe("maintenance credential issuance", () => {
 
     expect(result.missingDomainCertificates).toBe(0);
     expect(result.domainCertificateRequests).toBe(0);
-    expect(request).not.toHaveBeenCalled();
+    expect(requests).toEqual([]);
   });
 
   it("isolates a failing issuance hook and retries on the next run", async () => {
     const db = makeDb();
-    const request = vi.fn(() => Effect.fail(new Error("ACME unavailable")));
+    const requests: Array<unknown> = [];
+    const request = (input: unknown) => {
+      requests.push(input);
+
+      return Effect.fail(new Error("ACME unavailable"));
+    };
 
     const missingLeaf = () =>
       Effect.succeed({
@@ -1396,7 +1435,7 @@ describe("maintenance credential issuance", () => {
 
     expect(first.missingDomainCertificates).toBe(1);
     expect(first.domainCertificateRequests).toBe(0);
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(requests).toHaveLength(1);
 
     // A failed request leaves the observation missing, so the next run retries.
     await runIssuance(db, {
@@ -1405,12 +1444,17 @@ describe("maintenance credential issuance", () => {
       serverCertificateIntervalMinutes: 0,
       requestDomainCertificate: request,
     });
-    expect(request).toHaveBeenCalledTimes(2);
+    expect(requests).toHaveLength(2);
   });
 
   it("does not request issuance when the TLS probe itself failed", async () => {
     const db = makeDb();
-    const request = vi.fn(() => Effect.succeed(undefined));
+    const requests: Array<unknown> = [];
+    const request = (input: unknown) => {
+      requests.push(input);
+
+      return Effect.succeed(undefined);
+    };
 
     const result = await runIssuance(db, {
       serverCertificateOrigin: "https://e.mattrax.app",
@@ -1422,7 +1466,7 @@ describe("maintenance credential issuance", () => {
     expect(result.missingDomainCertificates).toBe(0);
     expect(result.domainCertificateProbeFailed).toBe(1);
     expect(result.domainCertificateRequests).toBe(0);
-    expect(request).not.toHaveBeenCalled();
+    expect(requests).toEqual([]);
   });
 });
 
@@ -1471,43 +1515,37 @@ describe("maintenance Apps and Books client", () => {
   it("logs and skips the sweep when the client chunk cannot be loaded", async () => {
     // The Apps and Books client is imported lazily by the daily sweep. A
     // rejected chunk must skip that step (and say so) instead of failing the
-    // rest of maintenance or surfacing as a defect.
-    vi.doMock("@mattrax/apple-business-manager", () => {
-      throw new Error("chunk load failed");
-    });
+    // rest of maintenance or surfacing as a defect. Inject a failing loader
+    // rather than mocking the module.
+    const db = makeDb();
 
-    try {
-      const db = makeDb();
+    const outcome = await Effect.runPromise(
+      Effect.gen(function* () {
+        const result = yield* runMaintenance({
+          now,
+          auditRetentionDays: 0,
+          credentialAlerts: false,
+          vppSync: true,
+          authSecret: "maintenance-test-secret",
+          vppClientLoader: () => Promise.reject(new Error("chunk load failed")),
+        }).pipe(Effect.provideService(Db, db));
 
-      const outcome = await Effect.runPromise(
-        Effect.gen(function* () {
-          const result = yield* runMaintenance({
-            now,
-            auditRetentionDays: 0,
-            credentialAlerts: false,
-            vppSync: true,
-            authSecret: "maintenance-test-secret",
-          }).pipe(Effect.provideService(Db, db));
+        const logs = yield* TestConsole.logLines;
+        const errors = yield* TestConsole.errorLines;
 
-          const logs = yield* TestConsole.logLines;
-          const errors = yield* TestConsole.errorLines;
+        return {
+          result,
+          lines: [...logs, ...errors].map((entry) =>
+            typeof entry === "string" ? entry : JSON.stringify(entry),
+          ),
+        };
+      }).pipe(Effect.provide(TestConsole.layer)),
+    );
 
-          return {
-            result,
-            lines: [...logs, ...errors].map((entry) =>
-              typeof entry === "string" ? entry : JSON.stringify(entry),
-            ),
-          };
-        }).pipe(Effect.provide(TestConsole.layer)),
-      );
-
-      // The sweep was skipped, the run still finished, and nothing died.
-      expect(outcome.result.vppSynced).toBe(0);
-      expect(outcome.result.vppFailed).toBe(0);
-      expect(outcome.lines.some((line) => line.includes(VPP_CLIENT_LOAD_FAILED))).toBe(true);
-    } finally {
-      vi.doUnmock("@mattrax/apple-business-manager");
-    }
+    // The sweep was skipped, the run still finished, and nothing died.
+    expect(outcome.result.vppSynced).toBe(0);
+    expect(outcome.result.vppFailed).toBe(0);
+    expect(outcome.lines.some((line) => line.includes(VPP_CLIENT_LOAD_FAILED))).toBe(true);
   });
 });
 

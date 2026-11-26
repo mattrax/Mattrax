@@ -1,3 +1,5 @@
+import { Clock, Effect } from "effect";
+
 /**
  * Cache policy for the signed-in account's shell payload (`/me`).
  *
@@ -34,6 +36,12 @@ export const meQueryCachePolicy = () => ({
   staleTime: ME_QUERY_STALE_TIME,
   gcTime: ME_QUERY_GC_TIME,
 });
+
+/**
+ * The clock behind cache-age decisions. Tests provide `TestClock` through
+ * Effect instead of stubbing the global `Date`.
+ */
+export const meQueryNow = (): Effect.Effect<number> => Clock.currentTimeMillis;
 
 export type EmailVerificationGateInput = {
   /** `/me` may be the stale pre-verification row while a refresh is in flight. */

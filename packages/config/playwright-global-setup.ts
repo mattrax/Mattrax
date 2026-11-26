@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync as nodeExecFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { normalizeE2EBaseUrl } from "./e2e-target.ts";
 
@@ -32,14 +32,26 @@ const migrationEnvironment = (): NodeJS.ProcessEnv => {
   return env;
 };
 
+/** The one child-process call setup makes, injected so tests never mock node:child_process. */
+export type GlobalSetupExec = (
+  command: string,
+  args: ReadonlyArray<string>,
+  options: { cwd: string; env: NodeJS.ProcessEnv; stdio: "inherit" },
+) => void;
+
 /** Keep local browser tests on the same schema as the checkout. */
-export default async function globalSetup(): Promise<void> {
+export const runGlobalSetup = async (exec: GlobalSetupExec = nodeExecFileSync): Promise<void> => {
   // An explicitly targeted deployment owns its migrations.
   if (normalizeE2EBaseUrl(process.env.E2E_BASE_URL)) return;
 
-  execFileSync("pnpm", ["cloud", "db:migrate"], {
+  exec("pnpm", ["cloud", "db:migrate"], {
     cwd: repository,
     env: migrationEnvironment(),
     stdio: "inherit",
   });
+};
+
+/** Playwright entry point; the real child process is the default port. */
+export default async function globalSetup(): Promise<void> {
+  await runGlobalSetup();
 }

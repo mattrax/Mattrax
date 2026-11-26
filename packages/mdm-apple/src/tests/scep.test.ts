@@ -8,6 +8,11 @@ import type { Row } from "./fake-db.js";
 
 const authSecret = "scep-test-secret";
 
+const NOW = Date.parse("2026-11-01T00:00:00Z");
+
+/** Challenge redemption compares against the real clock, so valid challenges use a fixed future base. */
+const CHALLENGE_BASE = NOW + 365 * 24 * 60 * 60 * 1000;
+
 type StoreDb = ReturnType<typeof makeStoreDb>;
 
 const enrollmentRow = (overrides: Row = {}): Row => ({
@@ -39,7 +44,7 @@ const issueChallenge = (
       authSecret: options.authSecret ?? authSecret,
       ttlSeconds: options.ttlSeconds ?? 7 * 24 * 60 * 60,
       referenceId: options.referenceId,
-      now: options.now,
+      now: options.now ?? CHALLENGE_BASE,
     }),
   );
 
@@ -121,7 +126,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
       Effect.runPromise(repository.authenticatePkcsReq(scope, request(wrong.challenge))),
     ).rejects.toMatchObject({ _tag: "ScepError" as const });
 
-    const now = Date.now() - 120_000;
+    const now = NOW - 120_000;
 
     const expired = await issueChallenge(db, { ttlSeconds: 60, now });
 
@@ -162,7 +167,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     // A long lifetime keeps the signed expiry valid, so only the persisted
     // row's `expiresAt` guard can reject it.
     const { challenge } = await issueChallenge(db);
-    db.store[tableName(schema.scepChallenge)][0].expiresAt = new Date(Date.now() - 1_000);
+    db.store[tableName(schema.scepChallenge)][0].expiresAt = new Date(NOW - 1_000);
 
     await expect(
       Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
@@ -265,16 +270,16 @@ const issuedCertificate = (overrides: Row = {}) => ({
   organizationId: "tenant-1",
   enrollmentId: null,
   deviceId: null,
-  notAfter: new Date(Date.now() + 86_400_000),
+  notAfter: new Date(NOW + 86_400_000),
   revokedAt: null,
-  createdAt: new Date(),
+  createdAt: new Date(NOW),
   ...overrides,
 });
 
 describe("ScepRepositoryLive identity revocation", () => {
   it("rejects renewal when the issued certificate was revoked", async () => {
     const repository = ScepRepositoryLive.make(
-      makeQueuedDb([[issuedCertificate({ revokedAt: new Date() })]]),
+      makeQueuedDb([[issuedCertificate({ revokedAt: new Date(NOW) })]]),
       { authSecret },
     );
 
@@ -351,8 +356,8 @@ const seedDevice = (db: ReturnType<typeof makeStoreDb>, overrides: Row = {}) =>
     status: "enrolled",
     name: "DESKTOP",
     dmIdentifier: "windows-device-id",
-    enrolledAt: new Date(),
-    lastSeenAt: new Date(),
+    enrolledAt: new Date(NOW),
+    lastSeenAt: new Date(NOW),
     __table: tableName(schema.device),
     ...overrides,
   });
@@ -416,7 +421,7 @@ describe("ScepRepositoryLive certificate recording", () => {
     organizationId: "tenant-1",
     enrollmentId: "enrollment-1",
     deviceId: "internal-device-1",
-    notAfter: new Date(Date.now() + 86_400_000),
+    notAfter: new Date(NOW + 86_400_000),
     ...overrides,
   });
 
@@ -580,8 +585,8 @@ describe("ScepRepositoryLive staged rotation", () => {
 
     const stored = await Effect.runPromise(
       repository.rotateCa(scope, candidate, {
-        retiredAt: new Date(),
-        trustUntil: new Date(),
+        retiredAt: new Date(NOW),
+        trustUntil: new Date(NOW),
       }),
     );
 
@@ -600,7 +605,7 @@ describe("ScepRepositoryLive issuing CA attribution", () => {
         serial: "0a",
         organizationId: "tenant-1",
         caFingerprintSha256: "f".repeat(64),
-        notAfter: new Date(Date.now() + 86_400_000),
+        notAfter: new Date(NOW + 86_400_000),
       }),
     );
 
@@ -615,7 +620,7 @@ describe("ScepRepositoryLive issuing CA attribution", () => {
         serial: "0a",
         organizationId: "tenant-1",
         caFingerprintSha256: "e".repeat(64),
-        notAfter: new Date(Date.now() + 172_800_000),
+        notAfter: new Date(NOW + 172_800_000),
       }),
     );
 

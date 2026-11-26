@@ -36,19 +36,22 @@ describe("auth envelope decoding", () => {
     ).toEqual({ value: grant, private: undefined });
   });
 
-  it.each([
-    undefined,
-    null,
-    "ok",
-    { status: "ok" },
-    { status: "ok", emailSent: "yes" },
-    { status: "failed", emailSent: true },
-    { _tag: "Success", value: { status: "ok" } },
-  ])("rejects malformed direct registration-verification success %#", (responseBody) => {
+  const rejectsMalformedRegistration = (responseBody: unknown) => {
     expect(() =>
       decodeAuthEnvelope(200, responseBody, BeginRegistrationVerificationResponse, directSuccess),
     ).toThrow(expect.objectContaining({ _tag: "AuthResponseError" }));
-  });
+  };
+
+  it("rejects no body", () => rejectsMalformedRegistration(undefined));
+  it("rejects a null body", () => rejectsMalformedRegistration(null));
+  it("rejects a bare string body", () => rejectsMalformedRegistration("ok"));
+  it("rejects a status-only body", () => rejectsMalformedRegistration({ status: "ok" }));
+  it("rejects a body with an invalid emailSent", () =>
+    rejectsMalformedRegistration({ status: "ok", emailSent: "yes" }));
+  it("rejects a failed status body", () =>
+    rejectsMalformedRegistration({ status: "failed", emailSent: true }));
+  it("rejects a success envelope around a direct payload", () =>
+    rejectsMalformedRegistration({ _tag: "Success", value: { status: "ok" } }));
 
   it("does not accept direct payloads for auth-envelope endpoints", () => {
     expect(() =>

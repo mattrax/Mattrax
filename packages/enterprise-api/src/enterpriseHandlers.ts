@@ -728,6 +728,7 @@ import {
   TenantCutoverError,
 } from "@mattrax/enterprise-backend";
 import type { CutoverTarget } from "@mattrax/enterprise-backend";
+import { AzureGraph } from "@mattrax/azure-graph";
 import type { AzureGraphService } from "@mattrax/azure-graph";
 import {
   appleInstallAssetExpiresAt,
@@ -897,8 +898,6 @@ export type EnterpriseHandlersConfig = {
    * Normalised, case-insensitive addresses; empty when unconfigured.
    */
   readonly superadmins?: ReadonlyArray<string>;
-  /** Injected fetch for outbound webhook deliveries (tests). */
-  readonly webhookFetch?: typeof globalThis.fetch;
   /** Per-attempt webhook delivery deadline. Defaults to 5s. */
   readonly webhookTimeoutMs?: number;
   /**
@@ -2303,7 +2302,6 @@ export const createEnterpriseService = ({
   azureClientId,
   entraConsentRevocationTimeoutMs: configuredEntraConsentRevocationTimeoutMs,
   windowsFederated,
-  webhookFetch,
   webhookTimeoutMs,
   planLimits,
   windowsFailureRetentionDays: configuredWindowsFailureRetentionDays,
@@ -2430,12 +2428,12 @@ export const createEnterpriseService = ({
     schema,
     apns,
     authSecret,
-    webhookFetch: webhookFetch ? webhookFetch : undefined,
   });
 
+  // Webhook delivery resolves the shared HttpClient from the Effect context;
+  // there is no per-service fetch seam to configure.
   const webhookOptions = {
     authSecret: authSecret ? authSecret : undefined,
-    fetch: webhookFetch ? webhookFetch : undefined,
     timeoutMs: webhookTimeoutMs !== undefined ? webhookTimeoutMs : undefined,
   };
 
@@ -3570,7 +3568,12 @@ export const createEnterpriseService = ({
           ),
         );
 
-      if (!azureGraph) {
+      // The Graph port is resolved from the Effect context so callers can
+      // provide a fake without threading it through the service constructor.
+      const providedGraph = Option.getOrUndefined(yield* Effect.serviceOption(AzureGraph));
+      const graph = providedGraph ?? azureGraph;
+
+      if (!graph) {
         const reason = "Microsoft Graph credentials are not configured.";
 
         yield* record("sso.consent_revocation_skipped", {
@@ -3600,7 +3603,8 @@ export const createEnterpriseService = ({
       // which must never turn a successful unlink into an error.
       // `suspend` also captures a synchronous throw (for example from a mock or
       // a future client refactor) as a defect for `catchCause` below.
-      const revoke = Effect.suspend(() => azureGraph.revokeDelegatedConsent(azureTenantId));
+      const client = graph;
+      const revoke = Effect.suspend(() => client.revokeDelegatedConsent(azureTenantId));
 
       const outcome = yield* revoke.pipe(
         Effect.map((revocation) => ({

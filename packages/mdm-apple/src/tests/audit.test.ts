@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
 import { ApnsService } from "@mattrax/apns";
 import { Db, schema } from "@mattrax/enterprise-core";
@@ -427,12 +428,14 @@ describe("scoped background delivery", () => {
     const releasePromise = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+    const calls: Array<string> = [];
+    const fetch: typeof globalThis.fetch = async (input) => {
+      calls.push(String(input));
       started();
       await releasePromise;
 
       return new Response("ok", { status: 200 });
-    });
+    };
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1", "first")],
       [tableName(schema.device)]: [device("device-1", "org-1")],
@@ -454,11 +457,15 @@ describe("scoped background delivery", () => {
         },
       ],
     });
+    // SAFETY: the fake fetch stands in for the platform fetch service; the
+    // shared client layer turns it into the HttpClient webhook delivery uses.
+    const transport = FetchHttpClient.layer.pipe(
+      Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+    );
     const layer = ManagementBackendEnterpriseLive.layer(origin, {
       authSecret,
-      webhookFetch: fetch,
       deliveryQueue: { concurrency: 1, shutdownTimeoutMs: 1_000 },
-    }).pipe(Layer.provideMerge(Layer.succeed(Db, db as never)));
+    }).pipe(Layer.provideMerge(Layer.succeed(Db, db as never)), Layer.merge(transport));
 
     await Effect.runPromise(
       Effect.scoped(
@@ -489,7 +496,7 @@ describe("scoped background delivery", () => {
       ),
     );
 
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(calls).toEqual(["https://hooks.example.com/mattrax"]);
     expect(dbRows(db, tableName(schema.webhookDelivery))[0]).toMatchObject({ status: "succeeded" });
   });
 
@@ -502,12 +509,15 @@ describe("scoped background delivery", () => {
     const releasePromise = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const push = vi.fn(() =>
-      Effect.gen(function* () {
-        started();
+    let pushCount = 0;
+    const push = () => {
+      pushCount += 1;
+      started();
+
+      return Effect.gen(function* () {
         yield* Effect.promise(() => releasePromise);
-      }),
-    );
+      });
+    };
     const apns = ApnsService.of({ available: true, transport: "test", push });
     const keyPair = await generateCaKeyPair();
     const privateKeyJwk = await exportPrivateKeyJwk(keyPair.privateKey);
@@ -567,7 +577,7 @@ describe("scoped background delivery", () => {
       ),
     );
 
-    expect(push).toHaveBeenCalledOnce();
+    expect(pushCount).toBe(1);
   });
 });
 

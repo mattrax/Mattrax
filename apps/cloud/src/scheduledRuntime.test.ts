@@ -1,9 +1,9 @@
 import { Db } from "@mattrax/enterprise-core";
-import { Effect, Exit, Layer } from "effect";
+import { Deferred, Effect, Exit, Fiber, Layer, Ref } from "effect";
 import { SqlClient } from "effect/sql";
 import { MysqlClient } from "@effect/sql-mysql2";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { runScheduledJobs, scheduledRuntimeLayer } from "./scheduledRuntime.js";
 
 describe("scheduled runtime", () => {
@@ -62,16 +62,19 @@ describe("scheduled runtime", () => {
   });
 
   it("runs independent jobs with bounded concurrency", async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const gate = await Effect.runPromise(Deferred.make<void>());
+    const threeStarted = await Effect.runPromise(Deferred.make<void>());
+    const startedCount = await Effect.runPromise(Ref.make(0));
     const started: number[] = [];
     const completed: number[] = [];
     const jobs = Array.from({ length: 6 }, (_, index) =>
       Effect.gen(function* () {
         started.push(index);
-        if (index < 3) yield* Effect.promise(() => gate);
+        if (index < 3) {
+          const count = yield* Ref.updateAndGet(startedCount, (value) => value + 1);
+          if (count === 3) yield* Deferred.succeed(threeStarted, undefined);
+          yield* Deferred.await(gate);
+        }
         completed.push(index);
       }),
     );
@@ -79,35 +82,44 @@ describe("scheduled runtime", () => {
       Layer.succeed(MysqlClient.MysqlClient, {} as MysqlClient.MysqlClient & SqlClient.SqlClient),
       Layer.succeed(SqlClient.SqlClient, {} as SqlClient.SqlClient),
     );
-    const running = Effect.runPromise(runScheduledJobs(jobs, scheduledRuntimeLayer(database)));
+    const running = Effect.runFork(runScheduledJobs(jobs, scheduledRuntimeLayer(database)));
 
-    try {
-      await vi.waitFor(() => expect(started).toEqual([0, 1, 2]));
-      expect(completed).toEqual([]);
-    } finally {
-      release();
-    }
+    // The barrier proves exactly three jobs are in flight; no polling or sleep.
+    await Effect.runPromise(Deferred.await(threeStarted));
+    expect(started).toEqual([0, 1, 2]);
+    expect(completed).toEqual([]);
 
-    await running;
+    await Effect.runPromise(Deferred.succeed(gate, undefined));
+    await Effect.runPromise(Fiber.join(running));
     expect(completed).toHaveLength(6);
     expect(new Set(completed)).toEqual(new Set([0, 1, 2, 3, 4, 5]));
   });
 
   it("finishes independent jobs before propagating a failure", async () => {
     const completed: string[] = [];
+    const slowGate = await Effect.runPromise(Deferred.make<void>());
+    const fastDone = await Effect.runPromise(Deferred.make<void>());
     const jobs = [
       Effect.fail("failed job"),
-      Effect.sleep("5 millis").pipe(Effect.andThen(Effect.sync(() => completed.push("slow")))),
-      Effect.sync(() => completed.push("fast")),
+      Deferred.await(slowGate).pipe(Effect.andThen(Effect.sync(() => void completed.push("slow")))),
+      Effect.sync(() => void completed.push("fast")).pipe(
+        Effect.andThen(Deferred.succeed(fastDone, undefined)),
+      ),
     ];
     const database = Layer.mergeAll(
       Layer.succeed(MysqlClient.MysqlClient, {} as MysqlClient.MysqlClient & SqlClient.SqlClient),
       Layer.succeed(SqlClient.SqlClient, {} as SqlClient.SqlClient),
     );
 
-    const result = await Effect.runPromiseExit(
-      runScheduledJobs(jobs, scheduledRuntimeLayer(database)),
-    );
+    const running = Effect.runFork(runScheduledJobs(jobs, scheduledRuntimeLayer(database)));
+
+    // The fast job finished while the slow one is still gated: the sibling
+    // failure must not cut the slow job short.
+    await Effect.runPromise(Deferred.await(fastDone));
+    expect(completed).toEqual(["fast"]);
+
+    await Effect.runPromise(Deferred.succeed(slowGate, undefined));
+    const result = await Effect.runPromise(Fiber.await(running));
 
     expect(Exit.isFailure(result)).toBe(true);
     expect(completed.sort()).toEqual(["fast", "slow"]);

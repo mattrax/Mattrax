@@ -128,7 +128,8 @@ describe("Apple Authenticate ADE profile", () => {
 
     const result = await run(backend.appleDeviceEvent(scope, authenticate()));
 
-    expect(result?.enrollmentProfile).toEqual(expect.any(String));
+    // The inline ADE profile is a base64-encoded signed plist.
+    expect(result?.enrollmentProfile).toEqual(expect.stringMatching(/^[A-Za-z0-9+/]+={0,2}$/));
 
     const profile = decode(result!.enrollmentProfile!);
     expect(new TextDecoder().decode(profile)).toContain("com.mattrax.ade.profile-1");
@@ -144,7 +145,8 @@ describe("Apple Authenticate ADE profile", () => {
 
     const result = await run(backend.appleDeviceEvent(scope, authenticate()));
 
-    expect(result?.enrollmentProfile).toEqual(expect.any(String));
+    // The inline ADE profile is a base64-encoded signed plist.
+    expect(result?.enrollmentProfile).toEqual(expect.stringMatching(/^[A-Za-z0-9+/]+={0,2}$/));
     expect(dbRows(db, tableName(schema.enterpriseEnrollment))).toHaveLength(1);
   });
 

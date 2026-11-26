@@ -65,7 +65,7 @@ test.describe("skew protection", () => {
     expect(await page.evaluate(() => window.name)).toBe("1");
 
     const failChunk = () =>
-      page.evaluate(() => {
+      page.evaluate(() =>
         window.dispatchEvent(
           new CustomEvent("vite:preloadError", {
             cancelable: true,
@@ -73,19 +73,20 @@ test.describe("skew protection", () => {
               `Failed to fetch dynamically imported module: ${location.origin}/assets/missing-chunk.js`,
             ),
           }),
-        );
-      });
+        ),
+      );
 
-    await failChunk();
+    // dispatchEvent reports whether the page handled the failure by reload.
+    expect(await failChunk()).toBe(false);
     await page.waitForFunction(() => window.name === "2", undefined, { timeout: 10_000 });
     await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
     await expect.poll(() => page.url()).not.toContain("__chunk_reload");
 
     // The reloaded document saw the marker, so a repeat failure must fail
     // closed instead of refreshing again.
-    await failChunk();
-    await page.waitForTimeout(2_000);
-
+    // The one-shot marker is already set, so the guard must leave this event
+    // unhandled: dispatchEvent returns true when nothing called preventDefault.
+    expect(await failChunk()).toBe(true);
     expect(await page.evaluate(() => window.name)).toBe("2");
   });
 });

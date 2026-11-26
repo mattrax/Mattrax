@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { createTenant, gotoHydrated, register, signIn } from "./helpers";
 
@@ -13,7 +14,7 @@ test.describe("authentication and onboarding", () => {
     await register(page, { name: "Onboard User" });
     await expect(page).toHaveURL(/\/tenants\/new/);
     await expect(page.getByRole("heading", { name: "Create tenant" })).toBeVisible();
-    const suffix = Math.random().toString(36).slice(2, 8);
+    const suffix = randomUUID().slice(0, 8);
     await page.locator("input").first().fill("Onboard Tenant");
     await page.locator("input").nth(1).fill(`onboard-tenant-${suffix}`);
     await page
@@ -85,7 +86,6 @@ test.describe("authentication and onboarding", () => {
     const { email } = await register(page);
     const tenant = await createTenant(page, "Session Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
-    await page.waitForTimeout(300);
 
     await page.getByRole("button", { name: "Account menu" }).click();
     await expect(page.locator("[data-slot=menu-content]")).toBeVisible();

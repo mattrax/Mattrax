@@ -1,5 +1,5 @@
-import { Effect, identity, Layer, Option, Schema } from "effect";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import { Effect, Option, Schema } from "effect";
+import { HttpClient, HttpClientRequest } from "effect/http";
 import {
   BillingInvoicesResponse,
   BillingSummary,
@@ -23,8 +23,6 @@ export type RemoteBillingOptions = {
   readonly licenseKey: string;
   /** Public origin of this deployment, used for Stripe return URLs. */
   readonly origin: string;
-  /** Injected fetch seam for tests; production uses the shared HttpClient. */
-  readonly fetch?: typeof globalThis.fetch;
   /** Shared Effect transport supplied by the composition root. */
   readonly httpClient?: HttpClient.HttpClient;
 };
@@ -46,14 +44,10 @@ const endpoint = (base: string, path: string) => {
   return url.toString();
 };
 
-const fetchClientLayer = (fetchImpl: typeof globalThis.fetch) =>
-  FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
-
 export const makeRemoteBillingService = ({
   url,
   licenseKey,
   origin,
-  fetch,
   httpClient,
 }: RemoteBillingOptions): BillingOperations => {
   const post = (
@@ -104,7 +98,7 @@ export const makeRemoteBillingService = ({
       }
 
       return safeJson(text);
-    }).pipe(fetch ? Effect.provide(fetchClientLayer(fetch)) : identity);
+    });
 
   const decode = <A>(schema: Schema.Decoder<A>, value: Schema.Json | undefined) =>
     Option.match(Schema.decodeUnknownOption(schema)(value), {

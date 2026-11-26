@@ -42,10 +42,17 @@ test("writes a readable session presence cookie and the me shell cache", async (
     /^v1\./,
   );
 
+  const me: { account: { id: string } } = await (await page.request.get("/api/v1/me")).json();
   const cache = await page.evaluate(() => window.localStorage.getItem("mattrax:me-cache:v1"));
   expect(cache).toBeTruthy();
-  expect(JSON.parse(cache!)).toMatchObject({
-    userId: expect.any(String),
-    data: { tenants: expect.arrayContaining([expect.objectContaining({ id: tenant.id })]) },
-  });
+  const cached: { userId: string; updatedAt: number; data: unknown } = JSON.parse(cache!);
+
+  expect(cached.userId).toBe(me.account.id);
+  // The cache stamps the time it was written; the browser owns that clock.
+  expect(cached.updatedAt).toEqual(expect.any(Number));
+  expect(cached.data).toEqual(
+    expect.objectContaining({
+      tenants: expect.arrayContaining([expect.objectContaining({ id: tenant.id })]),
+    }),
+  );
 });

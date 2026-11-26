@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   SESSION_PRESENCE_COOKIE,
   clearSessionPresence,
@@ -6,11 +6,19 @@ import {
   sessionPresenceSetCookie,
 } from "./session-presence";
 
-afterEach(() => vi.unstubAllGlobals());
+/** The production reader compares against the ambient clock, so pin it too. */
+const NOW = Date.parse("2026-06-01T12:00:00.000Z");
+
+beforeEach(() => vi.setSystemTime(new Date(NOW)));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 describe("session presence", () => {
   it("builds an active and cleared cookie", () => {
-    const expiresAt = Date.now() + 60_000;
+    const expiresAt = NOW + 60_000;
     expect(sessionPresenceSetCookie(expiresAt, false)).toContain(
       `${SESSION_PRESENCE_COOKIE}=v1.${expiresAt}`,
     );
@@ -19,14 +27,14 @@ describe("session presence", () => {
   });
 
   it("reads active, expired and missing states", () => {
-    const active = Date.now() + 60_000;
+    const active = NOW + 60_000;
     vi.stubGlobal("document", {
       cookie: `${SESSION_PRESENCE_COOKIE}=v1.${active}`,
     });
     expect(readSessionPresence()).toEqual({ state: "active", expiresAt: active });
 
     vi.stubGlobal("document", {
-      cookie: `${SESSION_PRESENCE_COOKIE}=v1.${Date.now() - 60_000}`,
+      cookie: `${SESSION_PRESENCE_COOKIE}=v1.${NOW - 60_000}`,
     });
     expect(readSessionPresence().state).toBe("expired");
 
@@ -35,18 +43,18 @@ describe("session presence", () => {
   });
 
   it("clears the readable cookie", () => {
-    const write = vi.fn();
+    const writes: string[] = [];
     vi.stubGlobal("location", { protocol: "https:" });
     vi.stubGlobal("document", {
       get cookie() {
         return "";
       },
       set cookie(value: string) {
-        write(value);
+        writes.push(value);
       },
     });
     clearSessionPresence();
-    expect(write).toHaveBeenCalledWith(expect.stringContaining("Max-Age=0"));
-    expect(write).toHaveBeenCalledWith(expect.stringContaining("Secure"));
+    expect(writes.some((value) => value.includes("Max-Age=0"))).toBe(true);
+    expect(writes.some((value) => value.includes("Secure"))).toBe(true);
   });
 });

@@ -1,12 +1,19 @@
-import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import rootConfig from "../../../playwright.config";
 import playwrightConfig from "../playwright.config";
-import globalSetup from "../playwright-global-setup";
+import { runGlobalSetup } from "../playwright-global-setup";
+import type { GlobalSetupExec } from "../playwright-global-setup";
 import { DEFAULT_E2E_BASE_URL, normalizeE2EBaseUrl } from "../e2e-target.ts";
 
-vi.mock("node:child_process", () => ({ execFileSync: vi.fn() }));
+/** Injected child-process boundary: a recording fake, not a module mock. */
+const execCalls: Array<Parameters<GlobalSetupExec>> = [];
+let execImpl: GlobalSetupExec = () => undefined;
+const exec: GlobalSetupExec = (command, args, options) => {
+  execCalls.push([command, args, options]);
+
+  return execImpl(command, args, options);
+};
 
 const environmentKeys = [
   "E2E_BASE_URL",
@@ -24,7 +31,7 @@ const repository = fileURLToPath(new URL("../../..", import.meta.url));
 const defaultDevDatabaseUrl = "mysql://mattrax:mattrax@127.0.0.1:3306/mattraxe";
 
 const migrationOptions = () =>
-  vi.mocked(execFileSync).mock.calls[0]?.[2] as {
+  execCalls[0]?.[2] as {
     cwd: string;
     env: NodeJS.ProcessEnv;
     stdio: "inherit";
@@ -32,7 +39,8 @@ const migrationOptions = () =>
 
 describe("Playwright database setup", () => {
   beforeEach(() => {
-    vi.mocked(execFileSync).mockReset();
+    execCalls.length = 0;
+    execImpl = () => undefined;
     for (const key of environmentKeys) delete process.env[key];
   });
 
@@ -88,13 +96,13 @@ describe("Playwright database setup", () => {
     process.env.DATABASE_PASSWORD = "secret";
     process.env.DATABASE_NAME = "mattraxe";
 
-    await globalSetup();
+    await runGlobalSetup(exec);
 
-    expect(execFileSync).toHaveBeenCalledWith(
+    expect(execCalls[0]).toEqual([
       "pnpm",
       ["cloud", "db:migrate"],
       expect.objectContaining({ cwd: repository, stdio: "inherit" }),
-    );
+    ]);
     expect(migrationOptions().env.DATABASE_URL).toBe(defaultDevDatabaseUrl);
     for (const key of environmentKeys.filter((key) => key.startsWith("DATABASE_")))
       if (key !== "DATABASE_URL") expect(migrationOptions().env[key]).toBeUndefined();
@@ -107,7 +115,7 @@ describe("Playwright database setup", () => {
     process.env.DATABASE_URL = "mysql://deploy:secret@db.production.example.com/mattraxe";
     process.env.DATABASE_HOST = "db.production.example.com";
 
-    await globalSetup();
+    await runGlobalSetup(exec);
 
     expect(migrationOptions().env.DATABASE_URL).toBe(databaseUrl);
     expect(migrationOptions().env.DATABASE_HOST).toBeUndefined();
@@ -117,8 +125,8 @@ describe("Playwright database setup", () => {
     process.env.MATTRAX_DEV_DATABASE_URL =
       "mysql://deploy:secret@db.production.example.com/mattraxe";
 
-    await expect(globalSetup()).rejects.toThrow(/non-local E2E database host/i);
-    expect(execFileSync).not.toHaveBeenCalled();
+    await expect(runGlobalSetup(exec)).rejects.toThrow(/non-local E2E database host/i);
+    expect(execCalls).toEqual([]);
   });
 
   it("allows a non-local dev database only with the explicit opt-in", async () => {
@@ -127,7 +135,7 @@ describe("Playwright database setup", () => {
     process.env.MATTRAX_DEV_DATABASE_URL = databaseUrl;
     process.env.E2E_ALLOW_REMOTE_DATABASE = "1";
 
-    await globalSetup();
+    await runGlobalSetup(exec);
 
     expect(migrationOptions().env.DATABASE_URL).toBe(databaseUrl);
   });
@@ -135,31 +143,31 @@ describe("Playwright database setup", () => {
   it("rejects malformed or non-MySQL dev database URLs", async () => {
     process.env.MATTRAX_DEV_DATABASE_URL = "https://localhost/mattraxe";
 
-    await expect(globalSetup()).rejects.toThrow(/MySQL URL with a database name/i);
-    expect(execFileSync).not.toHaveBeenCalled();
+    await expect(runGlobalSetup(exec)).rejects.toThrow(/MySQL URL with a database name/i);
+    expect(execCalls).toEqual([]);
   });
 
   it("leaves an explicitly targeted deployment alone", async () => {
     process.env.E2E_BASE_URL = "  https://staging.example.com  ";
 
-    await globalSetup();
+    await runGlobalSetup(exec);
 
-    expect(execFileSync).not.toHaveBeenCalled();
+    expect(execCalls).toEqual([]);
   });
 
   it("fails setup when migrations cannot be applied", async () => {
-    vi.mocked(execFileSync).mockImplementationOnce(() => {
+    execImpl = () => {
       throw new Error("migration failed");
-    });
+    };
 
-    await expect(globalSetup()).rejects.toThrow("migration failed");
+    await expect(runGlobalSetup(exec)).rejects.toThrow("migration failed");
   });
 
   it("treats a whitespace-only base URL as the default local target", async () => {
     process.env.E2E_BASE_URL = "  ";
 
-    await globalSetup();
+    await runGlobalSetup(exec);
 
-    expect(execFileSync).toHaveBeenCalledOnce();
+    expect(execCalls).toHaveLength(1);
   });
 });

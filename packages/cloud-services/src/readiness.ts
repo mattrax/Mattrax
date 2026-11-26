@@ -38,6 +38,18 @@ export type ReadinessResult = {
   readonly body: ReadinessBody;
 };
 
+/**
+ * A cancellable deadline. Production uses the global timer; tests inject a
+ * scheduler so a wedged dependency can be timed out without a real wait.
+ */
+export type ReadinessScheduler = (task: () => void, ms: number) => { readonly cancel: () => void };
+
+const defaultScheduler: ReadinessScheduler = (task, ms) => {
+  const handle = setTimeout(task, ms);
+
+  return { cancel: () => clearTimeout(handle) };
+};
+
 export type ReadinessOptions = {
   /** Runs the cheap dependency check; rejects when the dependency is down. */
   readonly checkDatabase: () => Promise<void>;
@@ -54,6 +66,8 @@ export type ReadinessOptions = {
   /** Per-check deadline. Defaults to 2s: enough for a warm hop, short enough to fail fast. */
   readonly timeoutMs?: number;
   readonly now?: () => number;
+  /** Injectable deadline source; defaults to the global timer. */
+  readonly schedule?: ReadinessScheduler;
 };
 
 const DEFAULT_TIMEOUT_MS = 2_000;
@@ -77,16 +91,17 @@ type CheckOutcome = {
 const runCheck = async (
   check: (() => Promise<ReadinessCheckState>) | undefined,
   timeoutMs: number,
+  schedule: ReadinessScheduler,
 ): Promise<CheckOutcome | undefined> => {
   if (!check) return undefined;
 
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancel: (() => void) | undefined;
 
   try {
     const status = await Promise.race([
       check(),
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("readiness check timed out")), timeoutMs);
+        cancel = schedule(() => reject(new Error("readiness check timed out")), timeoutMs).cancel;
       }),
     ]);
 
@@ -97,7 +112,7 @@ const runCheck = async (
       timedOut: error instanceof Error && error.message === "readiness check timed out",
     };
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    cancel?.();
   }
 };
 
@@ -109,17 +124,22 @@ export const checkReadiness = async ({
   deploymentId,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   now = Date.now,
+  schedule = defaultScheduler,
 }: ReadinessOptions): Promise<ReadinessResult> => {
   const startedAt = now();
 
   const [database, storage, mailer] = await Promise.all([
-    runCheck(async () => {
-      await checkDatabase();
+    runCheck(
+      async () => {
+        await checkDatabase();
 
-      return "ok" as const;
-    }, timeoutMs),
-    runCheck(checkStorage, timeoutMs),
-    runCheck(checkMailer, timeoutMs),
+        return "ok" as const;
+      },
+      timeoutMs,
+      schedule,
+    ),
+    runCheck(checkStorage, timeoutMs, schedule),
+    runCheck(checkMailer, timeoutMs, schedule),
   ]);
 
   const outcomes = [database, storage, mailer].filter(

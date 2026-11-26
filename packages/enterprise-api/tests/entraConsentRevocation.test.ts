@@ -1,8 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
-import { AzureGraphConsentRequired, AzureGraphConsentRevocationFailed } from "@mattrax/azure-graph";
+import {
+  AzureGraph,
+  AzureGraphConsentRequired,
+  AzureGraphConsentRevocationFailed,
+} from "@mattrax/azure-graph";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -13,13 +17,32 @@ type Revocation = {
   grantsRemoved: number;
 };
 
+type RevocationEffect = Effect.Effect<
+  Revocation,
+  AzureGraphConsentRequired | AzureGraphConsentRevocationFailed
+>;
+
+/** Fake Graph port with recorded calls, provided through the Effect context. */
+const revokingGraph = (result: RevocationEffect) => {
+  const calls: Array<string> = [];
+  // SAFETY: these tests only reach revokeDelegatedConsent; the fake omits the
+  // rest of the Graph surface, which the handler never calls here.
+  const graph = AzureGraph.of({
+    revokeDelegatedConsent: (tenantId: string) => {
+      calls.push(tenantId);
+
+      return result;
+    },
+  } as never);
+
+  return { calls, graph };
+};
+
+const withGraph = <A, E>(effect: Effect.Effect<A, E>, graph?: AzureGraph["Service"]) =>
+  Effect.runPromise(graph ? Effect.provideService(effect, AzureGraph, graph) : effect);
+
 const makeContext = (
   options: {
-    azureGraph?: {
-      revokeDelegatedConsent: (
-        tenantId: string,
-      ) => Effect.Effect<Revocation, AzureGraphConsentRequired | AzureGraphConsentRevocationFailed>;
-    };
     /** Omit the SSO row to exercise the "never linked" path. */
     linkedTenantId?: string | null;
     /** Skip the sync row that proves the link worked. */
@@ -97,8 +120,6 @@ const makeContext = (
     // SAFETY: the fake only implements the auth methods this test exercises.
     auth: auth as any,
     authSecret: "enterprise-test-secret",
-    // SAFETY: the fake only implements the Graph method this test exercises.
-    azureGraph: options.azureGraph as any,
     azureClientId: "client-id",
     entraConsentRevocationTimeoutMs: options.timeoutMs,
   });
@@ -108,24 +129,21 @@ const makeContext = (
 
 describe("Entra consent revocation on unlink", () => {
   it("revokes delegated consent after the local unlink and records it", async () => {
-    const revokeDelegatedConsent = vi.fn(() =>
+    const { calls, graph } = revokingGraph(
       Effect.succeed<Revocation>({ servicePrincipalId: "sp-1", grantsRemoved: 2 }),
     );
 
-    const { db, service, headers } = makeContext({
-      // SAFETY: this test only reaches `revokeDelegatedConsent`; the fake omits
-      // the rest of the Graph surface the service never calls here.
-      azureGraph: { revokeDelegatedConsent },
-    });
+    const { db, service, headers } = makeContext();
 
-    const result = await runEffect(
+    const result = await withGraph(
       service.patchSsoConfig(request(headers), "org-1", {
         enabled: false,
         azureTenantId: null,
       }),
+      graph,
     );
 
-    expect(revokeDelegatedConsent).toHaveBeenCalledWith(previousTenantId);
+    expect(calls).toEqual([previousTenantId]);
     expect(result).toMatchObject({
       enabled: false,
       azureTenantId: null,
@@ -144,45 +162,37 @@ describe("Entra consent revocation on unlink", () => {
   });
 
   it("treats consent that was already removed as a successful revocation", async () => {
-    const { service, headers } = makeContext({
-      // SAFETY: this test only reaches `revokeDelegatedConsent`; the fake omits
-      // the rest of the Graph surface the service never calls here.
-      azureGraph: {
-        revokeDelegatedConsent: () =>
-          Effect.succeed({ servicePrincipalId: null, grantsRemoved: 0 }),
-      },
-    });
+    const { graph } = revokingGraph(Effect.succeed({ servicePrincipalId: null, grantsRemoved: 0 }));
+    const { service, headers } = makeContext();
 
-    const result = await runEffect(
+    const result = await withGraph(
       service.patchSsoConfig(request(headers), "org-1", {
         enabled: false,
         azureTenantId: null,
       }),
+      graph,
     );
 
     expect(result.consentRevocation).toEqual({ status: "revoked", grantsRemoved: 0 });
   });
 
   it("keeps the unlink when Graph fails and reports a short reason", async () => {
-    const { db, service, headers } = makeContext({
-      // SAFETY: this test only reaches `revokeDelegatedConsent`; the fake omits
-      // the rest of the Graph surface the service never calls here.
-      azureGraph: {
-        revokeDelegatedConsent: () =>
-          Effect.fail(
-            new AzureGraphConsentRequired({
-              message: "Microsoft Graph request to /oauth2PermissionGrants requires admin consent",
-              status: 403,
-            }),
-          ),
-      },
-    });
+    const { graph } = revokingGraph(
+      Effect.fail(
+        new AzureGraphConsentRequired({
+          message: "Microsoft Graph request to /oauth2PermissionGrants requires admin consent",
+          status: 403,
+        }),
+      ),
+    );
+    const { db, service, headers } = makeContext();
 
-    const result = await runEffect(
+    const result = await withGraph(
       service.patchSsoConfig(request(headers), "org-1", {
         enabled: false,
         azureTenantId: null,
       }),
+      graph,
     );
 
     expect(db.store.sso_config[0]).toMatchObject({ enabled: false, azureTenantId: null });
@@ -209,7 +219,7 @@ describe("Entra consent revocation on unlink", () => {
   it("skips revocation when no Graph credentials are configured", async () => {
     const { db, service, headers } = makeContext();
 
-    const result = await runEffect(
+    const result = await withGraph(
       service.patchSsoConfig(request(headers), "org-1", {
         enabled: false,
         azureTenantId: null,
@@ -230,64 +240,53 @@ describe("Entra consent revocation on unlink", () => {
   });
 
   it("does not touch consent when the linked tenant is unchanged", async () => {
-    const revokeDelegatedConsent = vi.fn(() =>
+    const { calls, graph } = revokingGraph(
       Effect.succeed<Revocation>({ servicePrincipalId: "sp-1", grantsRemoved: 1 }),
     );
 
-    const { service, headers } = makeContext({
-      // SAFETY: this test only asserts the fake is never called; it omits the
-      // rest of the Graph surface, which the handler never reaches.
-      azureGraph: { revokeDelegatedConsent },
-    });
+    const { service, headers } = makeContext();
 
-    const result = await runEffect(
+    const result = await withGraph(
       service.patchSsoConfig(request(headers), "org-1", { autoProvision: false }),
+      graph,
     );
 
-    expect(revokeDelegatedConsent).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
     expect(result.consentRevocation).toBeUndefined();
   });
 
   it("does not revoke consent when no Entra tenant was ever linked", async () => {
-    const revokeDelegatedConsent = vi.fn(() =>
+    const { calls, graph } = revokingGraph(
       Effect.succeed<Revocation>({ servicePrincipalId: null, grantsRemoved: 0 }),
     );
 
-    const { service, headers } = makeContext({
-      // SAFETY: this test only asserts the fake is never called; it omits the
-      // rest of the Graph surface, which the handler never reaches.
-      azureGraph: { revokeDelegatedConsent },
-      linkedTenantId: null,
-    });
+    const { service, headers } = makeContext({ linkedTenantId: null });
 
-    const result = await runEffect(
+    const result = await withGraph(
       service.patchSsoConfig(request(headers), "org-1", { enabled: false }),
+      graph,
     );
 
-    expect(revokeDelegatedConsent).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
     expect(result.consentRevocation).toBeUndefined();
   });
 
   it("skips revocation when the link was never verified", async () => {
-    const revokeDelegatedConsent = vi.fn(() =>
+    const { calls, graph } = revokingGraph(
       Effect.succeed<Revocation>({ servicePrincipalId: "sp-1", grantsRemoved: 1 }),
     );
 
-    const { db, service, headers } = makeContext({
-      // SAFETY: this test only asserts the fake is never called; it omits the
-      // rest of the Graph surface, which the handler never reaches.
-      azureGraph: { revokeDelegatedConsent },
-      verified: false,
-    });
+    const { db, service, headers } = makeContext({ verified: false });
 
-    const result = await runEffect(
+    const result = await withGraph(
       service.patchSsoConfig(request(headers), "org-1", {
         enabled: false,
         azureTenantId: null,
       }),
+      graph,
     );
 
-    expect(revokeDelegatedConsent).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
     expect(db.store.sso_config[0]).toMatchObject({ enabled: false, azureTenantId: null });
     expect(result.consentRevocation).toEqual({
       status: "skipped",
@@ -306,41 +305,35 @@ describe("Entra consent revocation on unlink", () => {
   });
 
   it("does not revoke consent when only the tenant-id casing changes", async () => {
-    const revokeDelegatedConsent = vi.fn(() =>
+    const { calls, graph } = revokingGraph(
       Effect.succeed<Revocation>({ servicePrincipalId: "sp-1", grantsRemoved: 1 }),
     );
 
-    const { db, service, headers } = makeContext({
-      // SAFETY: this test only asserts the fake is never called; it omits the
-      // rest of the Graph surface, which the handler never reaches.
-      azureGraph: { revokeDelegatedConsent },
-    });
+    const { db, service, headers } = makeContext();
 
-    const result = await runEffect(
+    const result = await withGraph(
       service.patchSsoConfig(request(headers), "org-1", {
         azureTenantId: previousTenantId.toUpperCase(),
       }),
+      graph,
     );
 
-    expect(revokeDelegatedConsent).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
     expect(result.consentRevocation).toBeUndefined();
     expect(result.azureTenantId).toBe(previousTenantId);
     expect(db.store.sso_config[0].azureTenantId).toBe(previousTenantId);
   });
 
   it("times out Graph and still returns the committed unlink", async () => {
-    const { db, service, headers } = makeContext({
-      // SAFETY: this test only reaches `revokeDelegatedConsent`; the fake omits
-      // the rest of the Graph surface the service never calls here.
-      azureGraph: { revokeDelegatedConsent: () => Effect.never },
-      timeoutMs: 20,
-    });
+    const { graph } = revokingGraph(Effect.never);
+    const { db, service, headers } = makeContext({ timeoutMs: 20 });
 
-    const result = await runEffect(
+    const result = await withGraph(
       service.patchSsoConfig(request(headers), "org-1", {
         enabled: false,
         azureTenantId: null,
       }),
+      graph,
     );
 
     expect(db.store.sso_config[0]).toMatchObject({ enabled: false, azureTenantId: null });
@@ -352,29 +345,26 @@ describe("Entra consent revocation on unlink", () => {
   });
 
   it("reports grants already removed when a later delete fails", async () => {
-    const { db, service, headers } = makeContext({
-      // SAFETY: this test only reaches `revokeDelegatedConsent`; the fake omits
-      // the rest of the Graph surface the service never calls here.
-      azureGraph: {
-        revokeDelegatedConsent: () =>
-          Effect.fail(
-            new AzureGraphConsentRevocationFailed({
-              message: "Failed to remove delegated consent after 3 grants: HTTP 500",
-              servicePrincipalId: "sp-1",
-              grantsRemoved: 3,
-              phase: "delete",
-              resourceId: "grant-4",
-              status: 500,
-            }),
-          ),
-      },
-    });
+    const { graph } = revokingGraph(
+      Effect.fail(
+        new AzureGraphConsentRevocationFailed({
+          message: "Failed to remove delegated consent after 3 grants: HTTP 500",
+          servicePrincipalId: "sp-1",
+          grantsRemoved: 3,
+          phase: "delete",
+          resourceId: "grant-4",
+          status: 500,
+        }),
+      ),
+    );
+    const { db, service, headers } = makeContext();
 
-    const result = await runEffect(
+    const result = await withGraph(
       service.patchSsoConfig(request(headers), "org-1", {
         enabled: false,
         azureTenantId: null,
       }),
+      graph,
     );
 
     expect(result.consentRevocation).toMatchObject({

@@ -20,6 +20,12 @@ import {
 } from "../src/Account/recovery.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
+// signToken returns "<base64url payload>.<base64url HMAC-SHA256 signature>".
+const SIGNED_TOKEN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/;
+
+// Email-change links carry randomToken(): base64url of 32 random bytes.
+const RANDOM_TOKEN = /^[A-Za-z0-9_-]{43}$/;
+
 const origin = "https://enterprise.test";
 
 const authSecret = "enterprise-auth-test-secret";
@@ -461,7 +467,7 @@ describe("email verification", () => {
     expect(code).toMatch(/^\d{6}$/);
     // The code is also a header for mail-client autofill.
     expect(sent[0].headers).toEqual({ "OTP-Token": code });
-    expect(requested.challenge).toEqual(expect.any(String));
+    expect(requested.challenge).toEqual(expect.stringMatching(SIGNED_TOKEN));
     expect(sent[0].html).toContain('role="presentation"');
     expect(sent[0].html).toContain("email-code");
     expect(sent[0].html).toContain(code!);
@@ -492,7 +498,7 @@ describe("email verification", () => {
     expect(sent).toHaveLength(1);
     // ...and the row survives the failure for the cron to retry, which is what
     // lets the page tell the person the mail did not go out.
-    expect(requested.challenge).toEqual(expect.any(String));
+    expect(requested.challenge).toEqual(expect.stringMatching(SIGNED_TOKEN));
     expect(requested.emailSent).toBe(false);
     expect(db.store.email_outbox).toHaveLength(1);
     expect(db.store.email_outbox[0]).toMatchObject({
@@ -686,8 +692,8 @@ describe("email change ceremony", () => {
     expect(sent.find((message) => message.to === "owner@example.com")?.subject).toBe(
       "Your Mattrax email address is being changed",
     );
-    expect(linksFrom().confirm).toEqual(expect.any(String));
-    expect(linksFrom().cancel).toEqual(expect.any(String));
+    expect(linksFrom().confirm).toEqual(expect.stringMatching(RANDOM_TOKEN));
+    expect(linksFrom().cancel).toEqual(expect.stringMatching(RANDOM_TOKEN));
     expect(db.store.account_email_change).toHaveLength(1);
     expect(db.store.account_audit_log.map((row: any) => row.action)).toContain(
       "account.email_change_requested",

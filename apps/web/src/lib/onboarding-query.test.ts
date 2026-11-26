@@ -1,5 +1,5 @@
 import type { TenantOnboardingState } from "@mattrax/enterprise-domain/client";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   ONBOARDING_STALE_MILLIS,
   ONBOARDING_WRITE_PERMISSIONS,
@@ -47,13 +47,19 @@ describe("onboarding query access", () => {
 });
 
 describe("onboarding dismissal reload cache", () => {
+  /** A Storage-shaped fake with a record of removals, no Vitest mock needed. */
   const storage = () => {
     const values = new Map<string, string>();
+    const removed: string[] = [];
 
     return {
-      getItem: vi.fn((key: string) => values.get(key) ?? null),
-      setItem: vi.fn((key: string, value: string) => values.set(key, value)),
-      removeItem: vi.fn((key: string) => values.delete(key)),
+      removed,
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => void values.set(key, value),
+      removeItem: (key: string) => {
+        removed.push(key);
+        values.delete(key);
+      },
     };
   };
 
@@ -72,7 +78,7 @@ describe("onboarding dismissal reload cache", () => {
     writeOnboardingDismissal(browser, "account-1", "tenant-1", false);
 
     expect(readOnboardingDismissal(browser, "account-1", "tenant-1")).toBe(false);
-    expect(browser.removeItem).toHaveBeenCalledOnce();
+    expect(browser.removed).toHaveLength(1);
   });
 
   it("fails open when browser storage is unavailable", () => {

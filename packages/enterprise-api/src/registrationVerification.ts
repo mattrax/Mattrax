@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
 import { verifyEmailToken } from "email-verification-api";
 import type { VerifyEmailTokenInput } from "email-verification-api";
 
@@ -60,46 +60,64 @@ export const registrationTokenAttempted = (proof: RegistrationEmailProof): boole
   Boolean(proof.token && proof.nonce && proof.sessionNonce === proof.nonce);
 
 /**
- * Verify a browser token. Every failure — absent input, binding mismatch, an
- * invalid token, a timeout, an unreachable issuer — is `false` so the code
- * flow always remains available.
+ * Verify a browser token through the Effect context. Every failure — absent
+ * input, binding mismatch, an invalid token, a timeout, an unreachable issuer —
+ * is `false` so the code flow always remains available.
  *
- * `verify` is injectable so the handler's verified/absent/invalid paths can be
- * unit-tested without issuer or DNS traffic.
+ * The live verifier talks to the real issuer; tests provide a fake with
+ * `Effect.provideService(RegistrationTokenVerifier, ...)` rather than mocking
+ * the issuer module.
  */
-export type RegistrationTokenVerifier = (
-  input: VerifyEmailTokenInput,
-) => Promise<{ readonly ok: boolean }>;
+export class RegistrationTokenVerifier extends Context.Service<
+  RegistrationTokenVerifier,
+  RegistrationTokenVerifier.Service
+>()("@mattrax/enterprise-api/RegistrationTokenVerifier") {}
 
-export const proveRegistrationEmail = (
-  proof: RegistrationEmailProof,
-  verify: RegistrationTokenVerifier = verifyEmailToken,
-): Effect.Effect<boolean> => {
+export namespace RegistrationTokenVerifier {
+  export interface Service {
+    readonly verify: (input: VerifyEmailTokenInput) => Promise<{ readonly ok: boolean }>;
+  }
+
+  export const liveService = RegistrationTokenVerifier.of({
+    verify: (input) => verifyEmailToken(input),
+  });
+
+  export const live = Layer.succeed(RegistrationTokenVerifier, liveService);
+}
+
+export const proveRegistrationEmail = (proof: RegistrationEmailProof): Effect.Effect<boolean> => {
   if (!registrationTokenAttempted(proof) || !proof.token || !proof.nonce)
     return Effect.succeed(false);
 
-  return Effect.tryPromise(() =>
-    verify({
-      email: proof.email,
-      token: proof.token!,
-      nonce: proof.nonce!,
-      audience: proof.audience,
-      // The person is waiting on the sign-up button; never let issuer or DNS
-      // trouble stall it beyond an interactive budget.
-      timeoutMs: 10_000,
-      timeouts: {
-        resolveTxtMs: 2_000,
-        resolveHostMs: 2_000,
-        metadataFetchMs: 4_000,
-        jwksFetchMs: 4_000,
-      },
-    }),
-  ).pipe(
-    // The library's success is a discriminated `{ ok: true, value }` result;
-    // anything else (including a shape from a future version) is not proof.
-    Effect.map((result) => result.ok === true),
-    // A rejected promise (for example a DNS implementation missing on an
-    // unusual runtime) is a failed verification, never a failed sign-up.
-    Effect.catch(() => Effect.succeed(false)),
-  );
+  return Effect.gen(function* () {
+    // Deployments without an explicit layer keep the real issuer, so adding
+    // this port never changes production behaviour.
+    const provided = yield* Effect.serviceOption(RegistrationTokenVerifier);
+    const verifier = Option.getOrElse(provided, () => RegistrationTokenVerifier.liveService);
+
+    return yield* Effect.tryPromise(() =>
+      verifier.verify({
+        email: proof.email,
+        token: proof.token!,
+        nonce: proof.nonce!,
+        audience: proof.audience,
+        // The person is waiting on the sign-up button; never let issuer or DNS
+        // trouble stall it beyond an interactive budget.
+        timeoutMs: 10_000,
+        timeouts: {
+          resolveTxtMs: 2_000,
+          resolveHostMs: 2_000,
+          metadataFetchMs: 4_000,
+          jwksFetchMs: 4_000,
+        },
+      }),
+    ).pipe(
+      // The library's success is a discriminated `{ ok: true, value }` result;
+      // anything else (including a shape from a future version) is not proof.
+      Effect.map((result) => result.ok === true),
+      // A rejected promise (for example a DNS implementation missing on an
+      // unusual runtime) is a failed verification, never a failed sign-up.
+      Effect.catch(() => Effect.succeed(false)),
+    );
+  });
 };

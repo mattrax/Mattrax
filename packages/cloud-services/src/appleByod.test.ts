@@ -1,5 +1,6 @@
 import { Effect, Option } from "effect";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { FetchHttpClient } from "effect/http";
+import { describe, expect, it } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import { HttpServerResponse } from "effect/http";
 import type { Table } from "drizzle-orm";
@@ -14,9 +15,7 @@ import {
   appleRemotemanagementRedirect,
 } from "./appleByod.js";
 
-const claims = (
-  overrides: Record<string, string | number | boolean | null | undefined> = {},
-) => ({
+const claims = (overrides: Record<string, string | number | boolean | null | undefined> = {}) => ({
   email: "student@school.example",
   oid: "entra-object",
   nonce: "nonce-1",
@@ -38,9 +37,13 @@ const oidc = (options: {
       : Effect.succeed(options.claims ?? claims()),
 });
 
+const tokenFetch: typeof globalThis.fetch = async () =>
+  new Response(JSON.stringify({ id_token: "id-token" }), { status: 200 });
+
 const exchange = (options: {
   readonly oidc: ReturnType<typeof oidc>;
   readonly nonce?: string;
+  readonly fetch?: typeof globalThis.fetch;
 }) =>
   Effect.runPromise(
     exchangeSsoCode({
@@ -51,18 +54,11 @@ const exchange = (options: {
       redirectUri: "https://app.test/api/v1/sso/azure/callback",
       nonce: options.nonce ?? "nonce-1",
       oidc: options.oidc as never,
-    }),
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, options.fetch ?? tokenFetch)),
   );
 
 describe("BYOD SSO code exchange", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
   it("returns the IdP identity on a valid exchange", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ id_token: "id-token" }), { status: 200 })),
-    );
-
     await expect(exchange({ oidc: oidc({}) })).resolves.toMatchObject({
       ok: true,
       email: "student@school.example",
@@ -71,10 +67,6 @@ describe("BYOD SSO code exchange", () => {
   });
 
   it("validates the ID token against the tenant and client audience", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ id_token: "id-token" }), { status: 200 })),
-    );
     let seen: unknown;
     const capturing = {
       discovery: () => Effect.succeed({ token_endpoint: "https://idp.test/token" }),
@@ -97,20 +89,18 @@ describe("BYOD SSO code exchange", () => {
   });
 
   it("rejects a token endpoint failure", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => new Response("nope", { status: 400 })));
-
-    await expect(exchange({ oidc: oidc({}) })).resolves.toMatchObject({
+    await expect(
+      exchange({
+        oidc: oidc({}),
+        fetch: async () => new Response("nope", { status: 400 }),
+      }),
+    ).resolves.toMatchObject({
       ok: false,
       failure: { code: "idp_rejected" },
     });
   });
 
   it("rejects a nonce mismatch", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ id_token: "id-token" }), { status: 200 })),
-    );
-
     await expect(exchange({ oidc: oidc({}), nonce: "different-nonce" })).resolves.toMatchObject({
       ok: false,
       failure: { code: "idp_rejected" },
@@ -118,13 +108,12 @@ describe("BYOD SSO code exchange", () => {
   });
 
   it("rejects a validated token without an email", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ id_token: "id-token" }), { status: 200 })),
-    );
-
     await expect(
-      exchange({ oidc: oidc({ claims: claims({ email: undefined, preferred_username: undefined, upn: undefined }) }) }),
+      exchange({
+        oidc: oidc({
+          claims: claims({ email: undefined, preferred_username: undefined, upn: undefined }),
+        }),
+      }),
     ).resolves.toMatchObject({
       ok: false,
       failure: { code: "unknown_account" },
@@ -132,11 +121,6 @@ describe("BYOD SSO code exchange", () => {
   });
 
   it("rejects a validated token without an immutable external object id", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ id_token: "id-token" }), { status: 200 })),
-    );
-
     await expect(
       exchange({
         oidc: oidc({
@@ -191,11 +175,7 @@ const rows = (initial: Record<string, FakeRow[]>) => {
   };
 };
 
-const runAuthorize = (
-  db: ReturnType<typeof rows>["db"],
-  url: string,
-  host: string,
-) =>
+const runAuthorize = (db: ReturnType<typeof rows>["db"], url: string, host: string) =>
   Effect.runPromise(
     appleByodAuthorize(
       // SAFETY: the authorize path only reads the URL and headers.
@@ -346,9 +326,9 @@ const callbackDb = (rows: Record<string, FakeRow[]>) => {
 
           return Effect.void;
         },
-          ignore: () => ({
-            values: (value: FakeRow) => {
-              store[tableName(table)]?.push(value);
+        ignore: () => ({
+          values: (value: FakeRow) => {
+            store[tableName(table)]?.push(value);
 
             return Effect.void;
           },
@@ -442,19 +422,18 @@ const byodCallbackRows = () => ({
 });
 
 describe("BYOD callback security", () => {
-  afterEach(() => vi.unstubAllGlobals());
-
-  const stubExchange = () =>
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ id_token: "id-token" }), { status: 200 })),
+  // The callback's IdP exchange uses the shared fetch port, so a fake layer
+  // replaces the network without touching globalThis.
+  const runCallback = (input: unknown) =>
+    Effect.runPromise(
+      handleAppleByodSsoCallback(input as never).pipe(
+        Effect.provideService(FetchHttpClient.Fetch, tokenFetch),
+      ),
     );
 
   const completeCallback = async (rows: Record<string, FakeRow[]>) => {
     const { input, store } = callbackInput(rows);
-    const response = HttpServerResponse.toWeb(
-      await Effect.runPromise(handleAppleByodSsoCallback(input as never)),
-    );
+    const response = HttpServerResponse.toWeb(await runCallback(input));
 
     return { response, store, enrollment: store.appleByodEnrollment?.[0] };
   };
@@ -489,9 +468,7 @@ describe("BYOD callback security", () => {
         organizationId: "org-1",
         name: "Student",
         email: "student@school.example",
-        externalId: Object.hasOwn(overrides, "externalId")
-          ? overrides.externalId
-          : "entra-object",
+        externalId: Object.hasOwn(overrides, "externalId") ? overrides.externalId : "entra-object",
         source: "entra",
         disabled: false,
         createdAt: new Date(),
@@ -501,12 +478,9 @@ describe("BYOD callback security", () => {
   });
 
   it("refuses a directory person that directory sync has not imported", async () => {
-    stubExchange();
     const { input, store } = callbackInput(identityRows());
     store.user = [];
-    const response = HttpServerResponse.toWeb(
-      await Effect.runPromise(handleAppleByodSsoCallback(input as never)),
-    );
+    const response = HttpServerResponse.toWeb(await runCallback(input));
     const body = await response.text();
 
     expect(response.status).toBe(403);
@@ -519,7 +493,6 @@ describe("BYOD callback security", () => {
   });
 
   it("refuses an IdP address that is not the Managed Apple Account", async () => {
-    stubExchange();
     const { db, input } = callbackInput(byodCallbackRows());
     input.oidc.validateJwt = () =>
       Effect.succeed({
@@ -527,9 +500,7 @@ describe("BYOD callback security", () => {
         oid: "entra-object",
         nonce: "nonce-1",
       });
-    const response = HttpServerResponse.toWeb(
-      await Effect.runPromise(handleAppleByodSsoCallback({ ...input, db: db as never } as never)),
-    );
+    const response = HttpServerResponse.toWeb(await runCallback({ ...input, db: db as never }));
     const body = await response.text();
 
     expect(response.status).toBe(403);
@@ -537,7 +508,6 @@ describe("BYOD callback security", () => {
   });
 
   it("refuses an email-equal directory person with a different immutable external id", async () => {
-    stubExchange();
     const { response, enrollment } = await completeCallback(
       identityRows({ externalId: "different-entra-object" }),
     );
@@ -552,8 +522,6 @@ describe("BYOD callback security", () => {
   });
 
   it("refuses a directory person without an immutable external id", async () => {
-    stubExchange();
-
     for (const externalId of [undefined, null]) {
       const { response, enrollment } = await completeCallback(identityRows({ externalId }));
 
@@ -568,7 +536,6 @@ describe("BYOD callback security", () => {
   });
 
   it("refuses a disabled directory person with a matching immutable external id", async () => {
-    stubExchange();
     const rows = identityRows();
     rows.user[0]!.disabled = true;
 
@@ -584,7 +551,6 @@ describe("BYOD callback security", () => {
   });
 
   it("refuses an account that is not already linked to the immutable IdP object", async () => {
-    stubExchange();
     const rows = { ...identityRows(), ssoIdentity: [] };
     rows.ssoConfig = [{ ...rows.ssoConfig[0]!, autoProvision: true }];
 
@@ -602,7 +568,6 @@ describe("BYOD callback security", () => {
   });
 
   it("refuses a disabled object-bound account", async () => {
-    stubExchange();
     const rows = identityRows();
     rows.account[0]!.disabled = true;
 
@@ -618,7 +583,6 @@ describe("BYOD callback security", () => {
   });
 
   it("binds transitively linked identities through the immutable object id", async () => {
-    stubExchange();
     const { response, enrollment } = await completeCallback(identityRows());
 
     expect(response.status).toBe(308);
@@ -629,8 +593,7 @@ describe("BYOD callback security", () => {
       accountId: "account-1",
       directoryUserId: "directory-1",
     });
-    expect(enrollment?.tokenHash).toEqual(expect.any(String));
-    expect(enrollment?.tokenHash).not.toBe("");
+    expect(enrollment?.tokenHash).toEqual(expect.stringMatching(/^[0-9a-f]{64}$/));
     expect(enrollment?.authorizedAt).toBeInstanceOf(Date);
   });
 });

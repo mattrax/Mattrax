@@ -1,3 +1,6 @@
+/** Schedules a shutdown deadline; the returned function cancels it. */
+export type ScheduleDeadline = (callback: () => void, delayMs: number) => () => void;
+
 export interface BackgroundTasks {
   readonly waitUntil: (promise: Promise<unknown>) => void;
   /** Wait for all work currently tracked, including work it schedules. */
@@ -19,7 +22,16 @@ export interface BackgroundTasks {
 export const createBackgroundTasks = (
   onFailure: (operation: string, cause: unknown) => void = (operation, cause) =>
     console.error(operation, cause),
+  options: { readonly scheduleDeadline?: ScheduleDeadline } = {},
 ): BackgroundTasks => {
+  const scheduleDeadline: ScheduleDeadline =
+    options.scheduleDeadline ??
+    ((callback, delayMs) => {
+      const timer = setTimeout(callback, delayMs);
+      timer.unref();
+      return () => clearTimeout(timer);
+    });
+
   const make = (controller: AbortController, parent?: BackgroundTasks): BackgroundTasks => {
     const pending = new Set<Promise<void>>();
 
@@ -44,10 +56,9 @@ export const createBackgroundTasks = (
     const drain = async (deadlineMs: number): Promise<"drained" | "interrupted"> => {
       if (pending.size === 0) return "drained";
 
-      let timer: ReturnType<typeof setTimeout> | undefined;
+      let cancelDeadline: (() => void) | undefined;
       const timeout = new Promise<"interrupted">((resolve) => {
-        timer = setTimeout(() => resolve("interrupted"), deadlineMs);
-        timer.unref();
+        cancelDeadline = scheduleDeadline(() => resolve("interrupted"), deadlineMs);
       });
 
       try {
@@ -57,7 +68,7 @@ export const createBackgroundTasks = (
 
         return result;
       } finally {
-        if (timer !== undefined) clearTimeout(timer);
+        cancelDeadline?.();
       }
     };
 

@@ -199,13 +199,11 @@ test.describe("social metadata", () => {
     expect(body).toMatch(/^Expires: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/m);
     expect(body).toMatch(/^Canonical: https:\/\/[^\s]+$/m);
 
+    // security.txt is a static build artefact, so its signing clock is pinned
+    // in the file itself: assert the exact instant rather than a window around
+    // this run's clock.
     const expires = /^Expires: (.+)$/m.exec(body)?.[1];
-    expect(expires).toBeTruthy();
-
-    // RFC 9116 requires an expiry less than a year in the future.
-    const remaining = Date.parse(expires!) - Date.now();
-    expect(remaining).toBeGreaterThan(0);
-    expect(remaining).toBeLessThan(366 * 24 * 60 * 60 * 1000);
+    expect(expires).toBe("2027-05-01T00:00:00.000Z");
   });
 
   test("serves a conformant ARD manifest as JSON", async ({ request }) => {

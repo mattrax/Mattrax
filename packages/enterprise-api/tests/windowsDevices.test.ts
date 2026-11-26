@@ -133,7 +133,7 @@ describe("Windows device API", () => {
         bitLockerStatus: 4,
         tpmVersion: "1.2",
         secureBootState: 2,
-        updatedAt: expect.any(String),
+        updatedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
       },
       policy: {
         appliedUris: ["./Vendor/MSFT/Policy/Config/Defender/AllowRealtimeMonitoring"],

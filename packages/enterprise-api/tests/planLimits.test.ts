@@ -194,7 +194,7 @@ describe("enterprise service plan limits", () => {
 
     await expect(
       runEffect(service.createTenant(request(headers), { name: "Second", slug: "second" })),
-    ).resolves.toMatchObject({ id: expect.any(String) });
+    ).resolves.toMatchObject({ id: expect.stringMatching(/^[0-9a-f]{24}$/) });
   });
 
   it("downgrades a canceled subscription to the default plan", async () => {
