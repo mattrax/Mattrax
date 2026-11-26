@@ -6,7 +6,6 @@ import {
   installVirtualAuthenticator,
   register,
   setVirtualAuthenticatorPresence,
-  signIn,
   signOut,
 } from "./helpers";
 
@@ -33,13 +32,26 @@ test.describe("passkeys", () => {
 
     const card = page.locator("section", { hasText: "Passkeys" });
     await card.getByPlaceholder(/name this passkey/i).fill("E2E Passkey");
+    const enrolled = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/api/v1/completePasskeyEnrollment") &&
+        response.ok(),
+    );
     await card.getByRole("button", { name: /add a passkey/i }).click();
     await confirmStepUp(page);
+    await enrolled;
     await expect(card.getByText("E2E Passkey")).toBeVisible({ timeout: 30_000 });
 
     // Sign out, then use the passkey.
     await signOut(page);
-    await signIn(page, email);
+    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+    await page.locator("#email").fill(email);
+    await page.getByRole("button", { name: /^continue$/i }).click();
+    await page
+      .getByRole("button", { name: /passkey/i })
+      .first()
+      .click();
     await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
 
     // Removing the last passkey needs another step-up and signs this session out.

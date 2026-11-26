@@ -103,6 +103,16 @@ export async function register(page: Page, options: { name?: string; email?: str
   // finish the sign-in the same way a person would.
   if (page.url().includes("/login")) await signIn(page, email);
 
+  // The post-registration redirect can arrive after the first URL match. Let
+  // the router and its data settle so a caller cannot navigate account pages
+  // while the registration flow is about to move them to tenant onboarding.
+  await page.waitForLoadState("networkidle");
+  await page.waitForFunction(
+    () => document.documentElement.dataset.hydrated === "true",
+    undefined,
+    { timeout: 20_000 },
+  );
+
   return { email };
 }
 
