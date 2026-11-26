@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, createTenant, gotoHydrated, register, uniqueEmail } from "./helpers";
+import { api, bootstrapSession, createTenant, gotoHydrated, register, uniqueEmail } from "./helpers";
 
 const openPalette = async (page: import("@playwright/test").Page) => {
   // Global shortcuts register from `onSettled`, which can be later than first
@@ -71,7 +71,7 @@ test.describe("settings destination by role", () => {
     ["export only", ["tenant.export"], "migration/export", "migration/export"],
   ] as const) {
     test(`opens the first readable settings tab for a ${label} role`, async ({ page, context }) => {
-      const tenant = await bootstrapTenant(page, `Palette ${label}`);
+      const { tenant } = await bootstrapSession(page, `Palette ${label}`);
       const email = uniqueEmail(`palette-${label.replaceAll(" ", "-")}`);
 
       const role = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/roles`, {
@@ -119,7 +119,7 @@ test.describe("settings destination by role", () => {
 
 test.describe("command palette", () => {
   test("opens with Cmd+K, navigates, and remembers entities", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Palette Tenant");
+    const { tenant } = await bootstrapSession(page, "Palette Tenant");
     await createTenant(page, "Palette Extra");
 
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
@@ -155,7 +155,7 @@ test.describe("command palette", () => {
   });
 
   test("finds settings, people and constructs device queries", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Palette Discovery");
+    const { tenant } = await bootstrapSession(page, "Palette Discovery");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
     const input = await openPalette(page);
@@ -175,7 +175,7 @@ test.describe("command palette", () => {
   });
 
   test("exposes actions with keyboard shortcuts", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Palette Actions");
+    const { tenant } = await bootstrapSession(page, "Palette Actions");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
     await openPalette(page);
@@ -198,7 +198,7 @@ test.describe("command palette", () => {
   });
 
   test("navigates with sequence shortcuts", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Palette Sequences");
+    const { tenant } = await bootstrapSession(page, "Palette Sequences");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
     await pressUntilUrl(
@@ -212,7 +212,7 @@ test.describe("command palette", () => {
   });
 
   test("registers policy designer actions and removes them on unmount", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Palette Designer");
+    const { tenant } = await bootstrapSession(page, "Palette Designer");
 
     const policy = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/policies`, {
       method: "POST",

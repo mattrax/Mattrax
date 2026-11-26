@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { api, bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("dashboards", () => {
   test("builds a shared dashboard and uses it for Overview", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Dashboard Tenant");
+    const { tenant } = await bootstrapSession(page, "Dashboard Tenant");
     const base = `/t/${tenant.slug}`;
 
     await gotoHydrated(page, base);
@@ -38,7 +38,7 @@ test.describe("dashboards", () => {
   });
 
   test("pins a dashboard to the sidebar and keeps it there", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Pinned Tenant");
+    const { tenant } = await bootstrapSession(page, "Pinned Tenant");
     const dashboard = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/dashboards`, {
       method: "POST",
       body: JSON.stringify({ name: "Fleet ops" }),
@@ -66,7 +66,7 @@ test.describe("dashboards", () => {
   });
 
   test("creates a dashboard from the gallery dialog", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Gallery Tenant");
+    const { tenant } = await bootstrapSession(page, "Gallery Tenant");
     await gotoHydrated(page, `/t/${tenant.slug}/dashboards`);
 
     await page.getByRole("button", { name: "New dashboard" }).click();
@@ -80,7 +80,7 @@ test.describe("dashboards", () => {
   });
 
   test("keeps reports on a subpage and saves compact dashboard details", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Reports Tenant");
+    const { tenant } = await bootstrapSession(page, "Reports Tenant");
     const dashboard = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/dashboards`, {
       method: "POST",
       body: JSON.stringify({ name: "Fleet ops" }),
@@ -123,7 +123,7 @@ test.describe("dashboards", () => {
   });
 
   test("coalesces a drag and persists the same non-overlapping layout", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Drag Tenant");
+    const { tenant } = await bootstrapSession(page, "Drag Tenant");
     const dashboard = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/dashboards`, {
       method: "POST",
       body: JSON.stringify({ name: "Drag layout", template: "overview" }),
@@ -173,7 +173,7 @@ test.describe("dashboards", () => {
   });
 
   test("filters the device table with a shareable query", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Query Tenant");
+    const { tenant } = await bootstrapSession(page, "Query Tenant");
     const query = "platform is apple and staleDays at least 14";
     await gotoHydrated(page, `/t/${tenant.id}/devices?query=${encodeURIComponent(query)}`);
     await expect(page.getByRole("button", { name: /Query 2 conditions/ })).toBeVisible();

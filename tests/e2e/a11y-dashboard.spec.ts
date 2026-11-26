@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { api, bootstrapSession, gotoHydrated } from "./helpers";
 
 /**
  * Dashboard-wide accessibility checks.
@@ -139,7 +139,7 @@ test.describe("dashboard accessibility", () => {
   test.setTimeout(180_000);
 
   test("authenticated pages have no axe violations", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Axe Tenant");
+    const { tenant } = await bootstrapSession(page, "Axe Tenant");
     const base = `/t/${tenant.slug}`;
 
     // Seed every list surface so the scans exercise real rows, row links and
@@ -186,7 +186,7 @@ test.describe("dashboard accessibility", () => {
   });
 
   test("filter surfaces have no axe violations", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Axe Filters");
+    const { tenant } = await bootstrapSession(page, "Axe Filters");
     await gotoHydrated(page, `/t/${tenant.slug}/devices`);
 
     await page.getByRole("button", { name: "Filter", exact: true }).click();
@@ -213,7 +213,7 @@ test.describe("dashboard accessibility", () => {
   });
 
   test("overlay open states have no axe violations", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Axe Overlays");
+    const { tenant } = await bootstrapSession(page, "Axe Overlays");
     const base = `/t/${tenant.slug}`;
 
     const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
@@ -276,7 +276,7 @@ test.describe("dashboard accessibility", () => {
   });
 
   test("Escape closes overlays and restores focus", async ({ page }) => {
-    await bootstrapTenant(page, "Axe Keyboard");
+    await bootstrapSession(page, "Axe Keyboard");
 
     // Palette opened from the header search button.
     const search = page.getByRole("button", { name: /^Search/ });
@@ -304,7 +304,7 @@ test.describe("dashboard accessibility", () => {
   });
 
   test("route changes focus main and selection is announced", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Axe Navigation");
+    const { tenant } = await bootstrapSession(page, "Axe Navigation");
     await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
       body: JSON.stringify({ name: "Announce group" }),
@@ -338,7 +338,7 @@ test.describe("dashboard accessibility", () => {
   test("palette navigation focuses main without stealing focus for query-only changes", async ({
     page,
   }) => {
-    const tenant = await bootstrapTenant(page, "Axe Palette Navigation");
+    const { tenant } = await bootstrapSession(page, "Axe Palette Navigation");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
     const input = await openPalette(page);
@@ -383,7 +383,7 @@ test.describe("dashboard accessibility", () => {
   });
 
   test("palette announcements describe result changes", async ({ page }) => {
-    await bootstrapTenant(page, "Axe Announce");
+    await bootstrapSession(page, "Axe Announce");
 
     const input = await openPalette(page);
     await input.fill("this-command-does-not-exist");

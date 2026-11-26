@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 /**
  * The edge-verifiable SSR bootstrap. A signed-in HTML request must paint the
@@ -11,7 +11,7 @@ test.describe("SSR bootstrap token", () => {
     page,
     context,
   }) => {
-    const tenant = await bootstrapTenant(page, "SSR Boot");
+    const { tenant } = await bootstrapSession(page, "SSR Boot");
     const path = `/t/${tenant.id}/devices`;
 
     // Drop only the bootstrap pair so this navigation re-mints them and the

@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 const summary = {
   plan: "pro",
@@ -50,7 +50,7 @@ const mockBilling = async (page: Page) => {
 
 test.describe("billing settings", () => {
   test("makes device and tenant limits visible and accessible", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Billing Tenant");
+    const { tenant } = await bootstrapSession(page, "Billing Tenant");
     await mockBilling(page);
     await gotoHydrated(page, `/t/${tenant.id}/settings/billing`);
 

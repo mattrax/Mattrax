@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 test("keeps the beginning of a long policy title visible at 390px", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const tenant = await bootstrapTenant(page, "Narrow Policy Tenant");
+  const { tenant } = await bootstrapSession(page, "Narrow Policy Tenant");
   const name = "Policy QA Narrow 1795944429098-estg0";
 
   await page.goto(`/t/${tenant.id}/policies/new`);
@@ -61,7 +61,7 @@ test("keeps the beginning of a long policy title visible at 390px", async ({ pag
 
 test("renders the new-policy import form on a cold document load", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const tenant = await bootstrapTenant(page, "Cold Import Tenant");
+  const { tenant } = await bootstrapSession(page, "Cold Import Tenant");
 
   await gotoHydrated(page, `/t/${tenant.id}/policies/import`);
 
@@ -79,7 +79,7 @@ test("renders the new-policy import form on a cold document load", async ({ page
 });
 
 test("exposes policy and Wi-Fi validation state to assistive technology", async ({ page }) => {
-  const tenant = await bootstrapTenant(page, "Accessible Validation Tenant");
+  const { tenant } = await bootstrapSession(page, "Accessible Validation Tenant");
 
   await page.goto(`/t/${tenant.id}/policies/new`);
   const name = page.getByLabel("Name", { exact: true });

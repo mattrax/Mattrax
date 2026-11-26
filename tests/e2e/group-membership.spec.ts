@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { api, bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("group membership", () => {
   test("filters policies and adds every shown result", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Membership Tenant");
+    const { tenant } = await bootstrapSession(page, "Membership Tenant");
 
     const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
@@ -45,7 +45,7 @@ test.describe("group membership", () => {
   });
 
   test("pages device membership and searches serial and asset tag", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Membership Devices");
+    const { tenant } = await bootstrapSession(page, "Membership Devices");
 
     const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",

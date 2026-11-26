@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated, register, uniqueEmail } from "./helpers";
+import { api, bootstrapSession, gotoHydrated, register, uniqueEmail } from "./helpers";
 
 type DebugEmail = {
   readonly to: string;
@@ -120,7 +120,7 @@ const inviteThroughUi = async (page: Page, email: string, roleValue: string) => 
 
 test.describe("invitations", () => {
   test("an invited user joins the tenant through the invite link", async ({ page, browser }) => {
-    const tenant = await bootstrapTenant(page, "Invite Tenant");
+    const { tenant } = await bootstrapSession(page, "Invite Tenant");
     const email = `invitee-${randomUUID()}@example.com`;
 
     const invitation = await api<{ inviteUrl: string }>(
@@ -165,7 +165,7 @@ test.describe("invitations", () => {
     page,
     browser,
   }) => {
-    const tenant = await bootstrapTenant(page, "Invite UI");
+    const { tenant } = await bootstrapSession(page, "Invite UI");
     const name = await tenantName(page, tenant.id);
     const email = uniqueEmail("ui-invitee");
 
@@ -214,7 +214,7 @@ test.describe("invitations", () => {
     page,
     browser,
   }) => {
-    const tenant = await bootstrapTenant(page, "Invite Custom");
+    const { tenant } = await bootstrapSession(page, "Invite Custom");
     const name = await tenantName(page, tenant.id);
     const email = uniqueEmail("custom-invitee");
     const roleName = `Device reviewer ${randomUUID().slice(0, 6)}`;
@@ -268,7 +268,7 @@ test.describe("invitations", () => {
   });
 
   test("resend rotates the link and cancel invalidates it", async ({ page, browser }) => {
-    const tenant = await bootstrapTenant(page, "Invite Rotate");
+    const { tenant } = await bootstrapSession(page, "Invite Rotate");
     const email = uniqueEmail("rotate");
 
     const created = await api<{ inviteUrl: string }>(
@@ -342,7 +342,7 @@ test.describe("invitations", () => {
     page,
     browser,
   }) => {
-    const tenant = await bootstrapTenant(page, "Invite Preview");
+    const { tenant } = await bootstrapSession(page, "Invite Preview");
     const name = await tenantName(page, tenant.id);
     const email = uniqueEmail("preview-invitee");
 
@@ -394,7 +394,7 @@ test.describe("invitations", () => {
   });
 
   test("the invite form surfaces an existing-administrator conflict", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Invite Duplicate");
+    const { tenant } = await bootstrapSession(page, "Invite Duplicate");
     const me = await api<{ account: { email: string } }>(page, "/api/v1/me");
 
     await openAdministrators(page, tenant.id);
@@ -410,7 +410,7 @@ test.describe("invitations", () => {
   });
 
   test("a read-only administrator does not see the invite form", async ({ page, browser }) => {
-    const tenant = await bootstrapTenant(page, "Invite Gated");
+    const { tenant } = await bootstrapSession(page, "Invite Gated");
     const email = uniqueEmail("gated-member");
 
     const invitation = await api<{ inviteUrl: string }>(

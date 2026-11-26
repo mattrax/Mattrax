@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import rootConfig from "../../../playwright.config";
 import playwrightConfig from "../playwright.config";
-import { runGlobalSetup } from "../playwright-global-setup";
+import { createSharedSession, runGlobalSetup } from "../playwright-global-setup";
 import type { GlobalSetupExec } from "../playwright-global-setup";
 import { DEFAULT_E2E_BASE_URL, normalizeE2EBaseUrl } from "../e2e-target.ts";
 
@@ -17,6 +17,7 @@ const exec: GlobalSetupExec = (command, args, options) => {
 
 const environmentKeys = [
   "E2E_BASE_URL",
+  "E2E_ONLY_CHANGED",
   "E2E_ALLOW_REMOTE_DATABASE",
   "MATTRAX_DEV_DATABASE_URL",
   "DATABASE_URL",
@@ -168,5 +169,29 @@ describe("Playwright database setup", () => {
     await runGlobalSetup(exec);
 
     expect(execCalls).toHaveLength(1);
+  });
+});
+
+describe("Playwright shared-session setup", () => {
+  afterEach(() => {
+    delete process.env.E2E_ONLY_CHANGED;
+  });
+
+  it.each([
+    ["changed-only runs", "true", "http://localhost:9050"],
+    ["external deployments", undefined, "https://staging.example.com"],
+  ])("does not register a shared account for %s", async (_label, changedOnly, baseURL) => {
+    if (changedOnly) process.env.E2E_ONLY_CHANGED = changedOnly;
+
+    let launched = false;
+
+    const session = await createSharedSession(baseURL, async () => {
+      launched = true;
+
+      throw new Error("browser must not launch");
+    });
+
+    expect(session).toBeUndefined();
+    expect(launched).toBe(false);
   });
 });

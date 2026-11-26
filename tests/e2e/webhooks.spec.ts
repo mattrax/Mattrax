@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("tenant outbound webhooks", () => {
   test("creates, edits, rotates and deletes an endpoint", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Webhook Tenant");
+    const { tenant } = await bootstrapSession(page, "Webhook Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/integrations`);
 
     await expect(page.getByText("Outbound webhooks").first()).toBeVisible();
@@ -58,7 +58,7 @@ test.describe("tenant outbound webhooks", () => {
   });
 
   test("rejects private webhook URLs", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Webhook Guard Tenant");
+    const { tenant } = await bootstrapSession(page, "Webhook Guard Tenant");
 
     const response = await page.request.post(`/api/v1/tenants/${tenant.id}/webhooks`, {
       data: { url: "https://127.0.0.1/hooks", events: [] },

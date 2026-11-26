@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 const settingsNav = (page: Page) =>
@@ -50,7 +50,7 @@ const settingsRects = (page: Page) =>
 
 test.describe("dashboard shell layout", () => {
   test("fills the window at 1100 and ultrawide widths", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Frame Tenant");
+    const { tenant } = await bootstrapSession(page, "Frame Tenant");
 
     for (const viewport of [
       { width: 1100, height: 900 },
@@ -79,7 +79,7 @@ test.describe("dashboard shell layout", () => {
   });
 
   test("keeps the header and sidebar mounted while settings tabs change", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Stable Shell Tenant");
+    const { tenant } = await bootstrapSession(page, "Stable Shell Tenant");
     await gotoHydrated(page, `/t/${tenant.slug}/settings`);
 
     await page.evaluate(() => {
@@ -125,7 +125,7 @@ test.describe("dashboard shell layout", () => {
   });
 
   test("aligns and compacts the settings masthead with its content", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Settings Density Tenant");
+    const { tenant } = await bootstrapSession(page, "Settings Density Tenant");
     await page.setViewportSize({ width: 1440, height: 900 });
     await gotoHydrated(page, `/t/${tenant.slug}/settings/attributes`);
 
@@ -158,7 +158,7 @@ test.describe("dashboard shell layout", () => {
   test("keeps the settings masthead, rail and draft while a child chunk loads", async ({
     page,
   }) => {
-    const tenant = await bootstrapTenant(page, "Delayed Settings Tenant");
+    const { tenant } = await bootstrapSession(page, "Delayed Settings Tenant");
     await gotoHydrated(page, `/t/${tenant.slug}/settings`);
 
     await page.getByLabel(/^Name/).fill("Delayed Settings Draft");
@@ -217,7 +217,7 @@ test.describe("dashboard shell layout", () => {
   test("revalidates the cold preload once and does not refetch /me on navigation", async ({
     page,
   }) => {
-    await bootstrapTenant(page, "Me Navigation Tenant");
+    await bootstrapSession(page, "Me Navigation Tenant");
     await page.waitForLoadState("networkidle");
 
     let meRequests = 0;
@@ -245,7 +245,7 @@ test.describe("dashboard shell layout", () => {
   });
 
   test("keeps the shell usable from the mobile navigation sheet", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Mobile Shell Tenant");
+    const { tenant } = await bootstrapSession(page, "Mobile Shell Tenant");
     await page.setViewportSize({ width: 500, height: 900 });
     await gotoHydrated(page, `/t/${tenant.slug}/devices`);
 
@@ -268,7 +268,7 @@ test.describe("dashboard shell layout", () => {
   });
 
   test("moves Settings out of primary navigation and into the footer", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Settings Placement Tenant");
+    const { tenant } = await bootstrapSession(page, "Settings Placement Tenant");
     await gotoHydrated(page, `/t/${tenant.slug}/devices`);
 
     await expect(primaryNav(page).getByRole("link", { name: "Settings", exact: true })).toHaveCount(
@@ -288,7 +288,7 @@ test.describe("dashboard shell layout", () => {
 
 test.describe("help and account menu", () => {
   test("links help to documentation and the configured support destination", async ({ page }) => {
-    await bootstrapTenant(page, "Help Tenant");
+    await bootstrapSession(page, "Help Tenant");
 
     await page.getByRole("button", { name: "Help and documentation" }).click();
 
@@ -302,7 +302,7 @@ test.describe("help and account menu", () => {
   });
 
   test("drops the alpha item and names the account item Account", async ({ page }) => {
-    await bootstrapTenant(page, "Menu Copy Tenant");
+    await bootstrapSession(page, "Menu Copy Tenant");
 
     await page.getByRole("button", { name: "Account menu" }).click();
 
@@ -317,7 +317,7 @@ test.describe("help and account menu", () => {
 });
 
 test("routes /t to the default tenant and keeps the query string", async ({ page }) => {
-  const tenant = await bootstrapTenant(page, "Landing Tenant");
+  const { tenant } = await bootstrapSession(page, "Landing Tenant");
 
   await gotoHydrated(page, "/t?from=e2e");
 

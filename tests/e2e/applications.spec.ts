@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { api, bootstrapSession, gotoHydrated } from "./helpers";
 
 const contrastRatio = (foreground: string, background: string) => {
   const luminance = (colour: string) => {
@@ -52,7 +52,7 @@ type ApplicationMetadataPatch = {
 
 test.describe("application catalogue", () => {
   test("creates, edits and deletes an Apple application", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Apps Tenant");
+    const { tenant } = await bootstrapSession(page, "Apps Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/applications`);
     await expect(page.getByRole("heading", { name: "Applications", exact: true })).toBeVisible();
     await page
@@ -106,7 +106,7 @@ test.describe("application catalogue", () => {
     page,
   }) => {
     await page.emulateMedia({ colorScheme: "light" });
-    const tenant = await bootstrapTenant(page, "Assignment Integrity Tenant");
+    const { tenant } = await bootstrapSession(page, "Assignment Integrity Tenant");
     await page.evaluate(() => localStorage.setItem("mattrax:theme", "light"));
 
     const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
@@ -172,7 +172,7 @@ test.describe("application catalogue", () => {
   test("advances the stale-write base after an acknowledged storefront refresh", async ({
     page,
   }) => {
-    const tenant = await bootstrapTenant(page, "Storefront Integrity Tenant");
+    const { tenant } = await bootstrapSession(page, "Storefront Integrity Tenant");
     const created = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/applications`, {
       method: "POST",
       body: JSON.stringify({
@@ -283,7 +283,7 @@ test.describe("application catalogue", () => {
   });
 
   test("shows direct policy assignments", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Assignments Tenant");
+    const { tenant } = await bootstrapSession(page, "Assignments Tenant");
     await page.goto(`/t/${tenant.id}/policies/new`);
     await page.locator("form input").first().fill("Direct policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();

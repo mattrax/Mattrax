@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant } from "./helpers";
+import { bootstrapSession } from "./helpers";
 
 /**
  * Booted-worker regression tests for the Cloud API's protocol routes.
@@ -10,7 +10,7 @@ import { bootstrapTenant } from "./helpers";
  */
 test.describe("protocol routes", () => {
   test("serves SCEP GetCACaps from the tenant-scoped service layer", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "SCEP Tenant");
+    const { tenant } = await bootstrapSession(page, "SCEP Tenant");
 
     const response = await page.request.get(`/mdm/apple/scep/${tenant.id}?operation=GetCACaps`);
 

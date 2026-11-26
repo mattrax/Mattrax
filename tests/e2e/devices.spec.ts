@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Locator, Page, Route } from "@playwright/test";
-import { addFilter, api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { addFilter, api, bootstrapSession, gotoHydrated } from "./helpers";
 
 async function mockFleetSearch(page: Page, tenantId: string, rowCount: number, attributeCount = 0) {
   const attributes = Array.from({ length: attributeCount }, (_, index) => ({
@@ -259,7 +259,7 @@ async function mockDeviceDetail(
 
 test.describe("device fleet management", () => {
   test("searches, filters and exports the device list", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Fleet Tenant");
+    const { tenant } = await bootstrapSession(page, "Fleet Tenant");
 
     // The filter bar is rendered and paginates even with no devices.
     await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible();
@@ -333,7 +333,7 @@ test.describe("device fleet management", () => {
         .toBe(true);
     };
 
-    const tenant = await bootstrapTenant(page, "Keyboard Tenant");
+    const { tenant } = await bootstrapSession(page, "Keyboard Tenant");
 
     const alpha = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
@@ -385,7 +385,7 @@ test.describe("device fleet management", () => {
   });
 
   test("keeps arrow-focused rows visible in the default 50-row fleet table", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Fifty Row Fleet");
+    const { tenant } = await bootstrapSession(page, "Fifty Row Fleet");
 
     await mockFleetSearch(page, tenant.id, 50);
     await gotoHydrated(page, `/t/${tenant.slug}/devices`);
@@ -415,7 +415,7 @@ test.describe("device fleet management", () => {
     page,
   }) => {
     test.setTimeout(120_000);
-    const tenant = await bootstrapTenant(page, "Virtual Fleet");
+    const { tenant } = await bootstrapSession(page, "Virtual Fleet");
     await mockFleetSearch(page, tenant.id, 200, 24);
 
     await gotoHydrated(page, `/t/${tenant.slug}/devices?pageSize=200`);
@@ -635,7 +635,7 @@ test.describe("device fleet management", () => {
   });
 
   test("keeps typed device search and sends it to the search endpoint", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Search Tenant");
+    const { tenant } = await bootstrapSession(page, "Search Tenant");
     const search = page.getByPlaceholder(/search name/i);
 
     const request = page.waitForResponse((response) => {
@@ -709,7 +709,7 @@ test.describe("device fleet management", () => {
   });
 
   test("shows the tenant health rollup and exposes device health", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Health Tenant");
+    const { tenant } = await bootstrapSession(page, "Health Tenant");
 
     const summary = await api<{
       counts: {
@@ -827,7 +827,7 @@ test.describe("device fleet management", () => {
   });
 
   test("imports pre-registered devices from a CSV with preview validation", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Import Tenant");
+    const { tenant } = await bootstrapSession(page, "Import Tenant");
     await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
       body: JSON.stringify({ name: "Staff" }),
@@ -885,7 +885,7 @@ test.describe("device fleet management", () => {
         if (message.type() === "error") errors.push(message.text());
       });
 
-      const tenant = await bootstrapTenant(page, `Detail ${fixture.proto}`);
+      const { tenant } = await bootstrapSession(page, `Detail ${fixture.proto}`);
       const id = await mockDeviceDetail(page, tenant.id, fixture);
 
       await gotoHydrated(page, `/t/${tenant.id}/devices/${id}`);
@@ -937,7 +937,7 @@ test.describe("device fleet management", () => {
   test("a held Devices search keeps the heading and table loading state visible", async ({
     page,
   }) => {
-    const tenant = await bootstrapTenant(page, "Held Search");
+    const { tenant } = await bootstrapSession(page, "Held Search");
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;

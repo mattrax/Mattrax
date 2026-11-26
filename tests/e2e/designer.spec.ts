@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("policy designer", () => {
   test("switches platforms without a hydration or console error", async ({ page }) => {
@@ -52,7 +52,7 @@ test.describe("policy designer", () => {
       page.getByRole("button", { name: "Clear Apple settings", exact: true }),
     ).toBeDisabled();
 
-    const tenant = await bootstrapTenant(page, "Empty Designer Tenant");
+    const { tenant } = await bootstrapSession(page, "Empty Designer Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
     const policyName = page.getByRole("textbox", { name: /^Name/ });
     await policyName.fill("Empty designed policy");
@@ -107,7 +107,7 @@ test.describe("policy designer", () => {
   });
 
   test("saves the same designer draft into a tenant policy", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Designer Tenant");
+    const { tenant } = await bootstrapSession(page, "Designer Tenant");
     await page.goto(`/t/${tenant.id}/policies/new`);
     await page.locator("form input").first().fill("Designed policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();
@@ -128,7 +128,7 @@ test.describe("policy designer", () => {
   });
 
   test("deploys a public draft into a workspace in one flow", async ({ page }) => {
-    await bootstrapTenant(page, "Handoff Tenant");
+    await bootstrapSession(page, "Handoff Tenant");
     await gotoHydrated(page, "/designer");
     await page.getByRole("button", { name: /security baseline/i }).click();
     await page.getByRole("button", { name: /Deploy in Mattrax/ }).click();
@@ -143,7 +143,7 @@ test.describe("policy designer", () => {
   });
 
   test("saves an Android policy from the dashboard designer", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Android Designer Tenant");
+    const { tenant } = await bootstrapSession(page, "Android Designer Tenant");
     await page.goto(`/t/${tenant.id}/policies/new`);
     await page.locator("form input").first().fill("Android policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();
@@ -158,7 +158,7 @@ test.describe("policy designer", () => {
   });
 
   test("warns before replacing advanced-editor configurations", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Guard Tenant");
+    const { tenant } = await bootstrapSession(page, "Guard Tenant");
     await page.goto(`/t/${tenant.id}/policies/new`);
     await page.locator("form input").first().fill("Guarded policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();
@@ -269,7 +269,7 @@ test.describe("policy designer", () => {
   });
 
   test("saves a Windows baseline with only applicable OMA-URIs", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Windows Tenant");
+    const { tenant } = await bootstrapSession(page, "Windows Tenant");
     await page.goto(`/t/${tenant.id}/policies/new`);
     await page.locator("form input").first().fill("Windows policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();
@@ -287,7 +287,7 @@ test.describe("policy designer", () => {
   });
 
   test("saves and rehydrates an Apple DDM declaration", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Declaration Tenant");
+    const { tenant } = await bootstrapSession(page, "Declaration Tenant");
     await page.goto(`/t/${tenant.id}/policies/new`);
     await page.locator("form input").first().fill("Declaration policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();

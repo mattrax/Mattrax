@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { addFilter, api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { addFilter, api, bootstrapSession, gotoHydrated } from "./helpers";
 
 /**
  * Save the tenant profile and wait for the write. A follow-up read that races
@@ -20,7 +20,7 @@ const saveTenantSettings = async (page: Page) => {
 
 test.describe("tenant settings", () => {
   test("shows tenant audit events", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Audit Tenant");
+    const { tenant } = await bootstrapSession(page, "Audit Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/audit`);
     await expect(page.getByRole("heading", { name: "Audit log", exact: true })).toHaveCount(1);
     await expect(page.getByRole("heading", { name: "Audit log", exact: true })).toBeVisible();
@@ -29,7 +29,7 @@ test.describe("tenant settings", () => {
   });
 
   test("shows one Approvals title and keeps policy creation available", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Approvals Tenant");
+    const { tenant } = await bootstrapSession(page, "Approvals Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/approvals`);
 
     await expect(page.getByRole("heading", { name: "Approvals", exact: true })).toHaveCount(1);
@@ -39,7 +39,7 @@ test.describe("tenant settings", () => {
   });
 
   test("labels the attribute CSV picker and keeps validation inline", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Attribute Validation Tenant");
+    const { tenant } = await bootstrapSession(page, "Attribute Validation Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/attributes`);
 
     const csvFile = page.getByLabel("Import device values CSV");
@@ -86,7 +86,7 @@ test.describe("tenant settings", () => {
   });
 
   test("filters audit events and exports CSV", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Audit Export Tenant");
+    const { tenant } = await bootstrapSession(page, "Audit Export Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/audit`);
 
     await addFilter(page, "Action", "tenant.created");
@@ -113,7 +113,7 @@ test.describe("tenant settings", () => {
   });
 
   test("shows tenant storage usage by category", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Storage Tenant");
+    const { tenant } = await bootstrapSession(page, "Storage Tenant");
     const application = await api<{ id: string }>(
       page,
       `/api/v1/tenants/${tenant.id}/applications`,
@@ -151,7 +151,7 @@ test.describe("tenant settings", () => {
   });
 
   test("asks before discarding unsaved tenant profile edits", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Unsaved Tenant");
+    const { tenant } = await bootstrapSession(page, "Unsaved Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
 
     await page.getByLabel(/^Name/).fill("Unsaved Tenant Renamed");
@@ -179,7 +179,7 @@ test.describe("tenant settings", () => {
   });
 
   test("keeps a tenant draft across settings panes and saves from the bar", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Pane Draft Tenant");
+    const { tenant } = await bootstrapSession(page, "Pane Draft Tenant");
     await gotoHydrated(page, `/t/${tenant.slug}/settings`);
 
     await page.getByLabel(/^Name/).fill("Pane Draft Renamed");
@@ -200,7 +200,7 @@ test.describe("tenant settings", () => {
   });
 
   test("requires I understand before changing the tenant slug", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Slug Warning Tenant");
+    const { tenant } = await bootstrapSession(page, "Slug Warning Tenant");
     const nextSlug = `renamed-${randomUUID().slice(0, 8)}`;
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
 
@@ -225,7 +225,7 @@ test.describe("tenant settings", () => {
   });
 
   test("opens every settings tab and saves the tenant profile", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Settings Tenant");
+    const { tenant } = await bootstrapSession(page, "Settings Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
 
     const tabs = page.locator('nav[aria-label="Tenant settings sections"]');
@@ -258,7 +258,7 @@ test.describe("tenant settings", () => {
   });
 
   test("keeps migration in settings and offers it to empty fleets", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Migration Tenant");
+    const { tenant } = await bootstrapSession(page, "Migration Tenant");
     const base = `/t/${tenant.slug}`;
 
     await gotoHydrated(page, base);
@@ -287,7 +287,7 @@ test.describe("tenant settings", () => {
   });
 
   test("creates a migration cohort without leaving settings", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Cohort Tenant");
+    const { tenant } = await bootstrapSession(page, "Cohort Tenant");
     await gotoHydrated(page, `/t/${tenant.slug}/settings/migration`);
 
     await page.getByLabel("Name").fill("Q1 exit");
@@ -303,7 +303,7 @@ test.describe("tenant settings", () => {
   });
 
   test("links a standalone migration cohort back to the cohort list", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Standalone Cohort Tenant");
+    const { tenant } = await bootstrapSession(page, "Standalone Cohort Tenant");
     await gotoHydrated(page, `/t/${tenant.slug}/migration`);
 
     await page.getByLabel("Name").fill("Standalone exit");
@@ -323,7 +323,7 @@ test.describe("tenant settings", () => {
   });
 
   test("picks an App Store region on the globe", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Region Tenant");
+    const { tenant } = await bootstrapSession(page, "Region Tenant");
     await gotoHydrated(page, `/t/${tenant.slug}/settings`);
 
     const trigger = page.getByRole("button", { name: /App Store region/ });
@@ -354,7 +354,7 @@ test.describe("tenant settings", () => {
   });
 
   test("shows the auditor role in administrator settings", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Role Tenant");
+    const { tenant } = await bootstrapSession(page, "Role Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/administrators`);
     await expect(page.getByText("Invite an administrator")).toBeVisible();
     const inviteRole = page.getByLabel("Invitation role");
@@ -363,7 +363,7 @@ test.describe("tenant settings", () => {
   });
 
   test("creates a custom RBAC role", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "RBAC Tenant");
+    const { tenant } = await bootstrapSession(page, "RBAC Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/administrators`);
     await page.getByRole("button", { name: "Create role" }).first().click();
     await page.getByLabel("Name").fill("Helpdesk");
@@ -384,7 +384,7 @@ test.describe("tenant settings", () => {
   });
 
   test("edits tenant branding and previews it on the public enrollment page", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Branded Tenant");
+    const { tenant } = await bootstrapSession(page, "Branded Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
 
     await page.getByLabel("Display name").fill("Acme Corp");
@@ -425,7 +425,7 @@ test.describe("tenant settings", () => {
   });
 
   test("shows the APNs setup wizard and downloads a CSR", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "APNs Tenant");
+    const { tenant } = await bootstrapSession(page, "APNs Tenant");
     await page.goto(`/t/${tenant.id}/settings/management`);
     await expect(page.getByText("APNs setup required")).toBeVisible();
     await expect(page.getByText("Download a CSR")).toBeVisible();

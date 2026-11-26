@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { api, bootstrapSession, gotoHydrated } from "./helpers";
 
 const preview = (page: import("@playwright/test").Page) =>
   page.locator('[data-slot="hover-card-content"]:visible');
@@ -11,7 +11,7 @@ const preview = (page: import("@playwright/test").Page) =>
  */
 test.describe("entity hover cards", () => {
   test("a policy link previews scope, delivery and priority", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Preview Policies");
+    const { tenant } = await bootstrapSession(page, "Preview Policies");
 
     await api(page, `/api/v1/tenants/${tenant.id}/policies`, {
       method: "POST",
@@ -40,7 +40,7 @@ test.describe("entity hover cards", () => {
   });
 
   test("a group link previews membership and counts", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Preview Groups");
+    const { tenant } = await bootstrapSession(page, "Preview Groups");
 
     await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
@@ -59,7 +59,7 @@ test.describe("entity hover cards", () => {
   });
 
   test("a person previews role, access and join date", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Preview People");
+    const { tenant } = await bootstrapSession(page, "Preview People");
 
     await gotoHydrated(page, `/t/${tenant.slug}/settings/administrators`);
 
@@ -78,7 +78,7 @@ test.describe("entity hover cards", () => {
   test("keyboard focus opens the preview and Escape closes it without navigating", async ({
     page,
   }) => {
-    const tenant = await bootstrapTenant(page, "Preview Keyboard");
+    const { tenant } = await bootstrapSession(page, "Preview Keyboard");
 
     await api(page, `/api/v1/tenants/${tenant.id}/policies`, {
       method: "POST",
