@@ -147,9 +147,11 @@ describe("GET /api/v1/bootstrap", () => {
     });
     expect(result.me.tenants.map((tenant) => tenant.id)).toEqual(["tenant-a", "tenant-b"]);
 
-    expect(result.ssrToken).toEqual(expect.any(String));
+    expect(result.ssrToken).toEqual(expect.stringMatching(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/));
     expect(result.ssrTokenExpiresAt).toBeGreaterThan(Date.now());
-    expect(result.ssrRevision).toEqual(expect.any(String));
+    expect(result.ssrRevision).toEqual(
+      expect.stringMatching(/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/),
+    );
     expect(result.ssrRevisionExpiresAt).toBeGreaterThan(Date.now());
 
     const payload = await runEffect(verifySsrToken(authSecret, result.ssrToken!));

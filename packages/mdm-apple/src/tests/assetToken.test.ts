@@ -8,6 +8,11 @@ import { configurationAssetIdentifier } from "@mattrax/mdm-core";
 import { makeDb, tableName } from "./fake-db.js";
 import type { Store } from "./fake-db.js";
 
+const NOW = Date.parse("2026-11-01T00:00:00Z");
+
+/** The asset verifier reads the real clock, so valid tokens use a far-future fixed base. */
+const TOKEN_BASE = NOW + 365 * 24 * 60 * 60 * 1000;
+
 const origin = "https://enterprise.test";
 
 const authSecret = "asset-token-test-secret";
@@ -64,9 +69,7 @@ const setup = () => {
       device("device-unenrolled", "org-1", "unenrolled"),
       device("device-foreign", "org-2", "enrolled"),
     ],
-    [tableName(schema.devicePolicy)]: [
-      { deviceId: "device-enrolled", policyId, mode: "include" },
-    ],
+    [tableName(schema.devicePolicy)]: [{ deviceId: "device-enrolled", policyId, mode: "include" }],
     [tableName(schema.policyCertificateMaterial)]: [],
     [tableName(schema.deviceApple)]: [
       { deviceId: "device-enrolled", deviceToken: "token-enrolled" },
@@ -85,7 +88,7 @@ const setup = () => {
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
-const tokenFor = (deviceId: string, at = Date.now(), assetKind = kind) =>
+const tokenFor = (deviceId: string, at = TOKEN_BASE, assetKind = kind) =>
   signAppleAssetToken(authSecret, {
     policyId,
     kind: assetKind,
@@ -162,7 +165,7 @@ describe("DDM asset URLs", () => {
 
   it("rejects an expired token", async () => {
     const { backend } = setup();
-    const token = await tokenFor("device-enrolled", Date.now() - 2 * 60 * 60 * 1000);
+    const token = await tokenFor("device-enrolled", NOW - 2 * 60 * 60 * 1000);
 
     await expect(run(backend.getAppleAsset(undefined, identifier, token))).resolves.toBeNull();
   });
@@ -206,26 +209,30 @@ describe("DDM asset URLs", () => {
 
   it("requires the identity token to belong to an assigned, enrolled device", async () => {
     const { backend } = await setupIdentity();
-    const assigned = await tokenFor("device-enrolled", Date.now(), identityKind);
-    const unassigned = await tokenFor("device-unassigned", Date.now(), identityKind);
-    const foreign = await tokenFor("device-foreign", Date.now(), identityKind);
+    const assigned = await tokenFor("device-enrolled", TOKEN_BASE, identityKind);
+    const unassigned = await tokenFor("device-unassigned", TOKEN_BASE, identityKind);
+    const foreign = await tokenFor("device-foreign", TOKEN_BASE, identityKind);
 
-    await expect(run(backend.getAppleAsset(undefined, identityIdentifier, assigned))).resolves.toMatchObject({
+    await expect(
+      run(backend.getAppleAsset(undefined, identityIdentifier, assigned)),
+    ).resolves.toMatchObject({
       contentType: "application/json",
     });
-    await expect(run(backend.getAppleAsset(undefined, identityIdentifier, unassigned))).resolves.toBeNull();
-    await expect(run(backend.getAppleAsset(undefined, identityIdentifier, foreign))).resolves.toBeNull();
+    await expect(
+      run(backend.getAppleAsset(undefined, identityIdentifier, unassigned)),
+    ).resolves.toBeNull();
+    await expect(
+      run(backend.getAppleAsset(undefined, identityIdentifier, foreign)),
+    ).resolves.toBeNull();
   });
 
   it("rejects an expired identity token", async () => {
     const { backend } = await setupIdentity();
-    const expired = await tokenFor(
-      "device-enrolled",
-      Date.now() - 2 * 60 * 60 * 1000,
-      identityKind,
-    );
+    const expired = await tokenFor("device-enrolled", NOW - 2 * 60 * 60 * 1000, identityKind);
 
-    await expect(run(backend.getAppleAsset(undefined, identityIdentifier, expired))).resolves.toBeNull();
+    await expect(
+      run(backend.getAppleAsset(undefined, identityIdentifier, expired)),
+    ).resolves.toBeNull();
   });
 
   it("stops serving signed assets and profiles once the policy is disabled", async () => {

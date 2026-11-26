@@ -6,6 +6,7 @@ import type { DdmDeclarationItems } from "@mattrax/management-backend";
 import {
   ManagementBackendEnterpriseLive,
   OS_UPDATE_ENFORCEMENT_ACTIVATION_ID,
+  OS_UPDATE_ENFORCEMENT_ACTIVATION_SERVER_TOKEN,
   OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID,
 } from "@mattrax/mdm-apple";
 import { appleIdentityCertificate, makeDb, tableName } from "./fake-db.js";
@@ -131,7 +132,7 @@ describe("Apple DDM software-update enforcement delivery", () => {
     expect(activation).toEqual({
       Type: "com.apple.activation.simple",
       Identifier: OS_UPDATE_ENFORCEMENT_ACTIVATION_ID,
-      ServerToken: expect.any(String),
+      ServerToken: OS_UPDATE_ENFORCEMENT_ACTIVATION_SERVER_TOKEN,
       Payload: { StandardConfigurations: [OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID] },
     });
 

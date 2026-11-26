@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { parseMobileconfigPreview, payloadCategory } from "../src/Policy/mobileconfig.ts";
@@ -119,7 +119,11 @@ describe("mobileconfig preview", () => {
     expect(payloadCategory("com.example.custom")).toBe("com.example.custom");
   });
 
-  it("extracts the embedded plist from a PKCS#7 signed mobileconfig", async () => {
+  // Signing costs an RSA key generation. The signed bytes are read-only, so
+  // build them once per file and keep the test to the parse and assertions.
+  let signedMobileconfig: Uint8Array;
+
+  beforeAll(async () => {
     // SAFETY: WebCrypto returns a `CryptoKeyPair` for the RSA key pair it was
     // asked to generate; the DOM runtime type is wider than that overload.
     const keyPair = await crypto.subtle.generateKey(
@@ -188,15 +192,19 @@ describe("mobileconfig preview", () => {
     );
     await signedData.sign(keyPair.privateKey, 0, "SHA-256");
 
-    const der = new pkijs.ContentInfo({
-      contentType: pkijs.ContentInfo.SIGNED_DATA,
-      content: signedData.toSchema(),
-    })
-      .toSchema()
-      .toBER(false);
+    signedMobileconfig = new Uint8Array(
+      new pkijs.ContentInfo({
+        contentType: pkijs.ContentInfo.SIGNED_DATA,
+        content: signedData.toSchema(),
+      })
+        .toSchema()
+        .toBER(false),
+    );
+  });
 
+  it("extracts the embedded plist from a PKCS#7 signed mobileconfig", async () => {
     const preview = await parseMobileconfigPreview(
-      btoa(String.fromCharCode(...new Uint8Array(der))),
+      btoa(String.fromCharCode(...signedMobileconfig)),
     );
 
     expect(preview.displayName).toBe("Test Profile");

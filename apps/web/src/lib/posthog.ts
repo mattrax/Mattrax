@@ -1,4 +1,5 @@
 import { isServer } from "@solidjs/web";
+
 import { Option, Schema } from "effect";
 import type { RaisedFailure } from "~/lib/errors";
 import { registerPostHogReader } from "./posthog-context";
@@ -244,8 +245,8 @@ const describeFailure = (failure: RaisedFailure) => {
   return { type, value, stack };
 };
 
-const start = (): void => {
-  if (isServer || started) return;
+const start = (server = isServer): void => {
+  if (server || started) return;
   started = true;
 
   const injected = window.__MATTRAX_POSTHOG__;
@@ -308,8 +309,8 @@ const start = (): void => {
   });
 };
 
-export const initPostHog = (): Promise<boolean> => {
-  start();
+export const initPostHog = (server = isServer): Promise<boolean> => {
+  start(server);
 
   return Promise.resolve(ready);
 };

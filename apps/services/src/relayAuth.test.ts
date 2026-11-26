@@ -44,57 +44,122 @@ describe("services relay auth", () => {
     ).toBe("stale");
   });
 
-  it.each(["NaN", "Infinity", "-Infinity", "1700000000.5", "9007199254740992"])(
-    "rejects a correctly signed non-integer or non-finite timestamp %s",
-    (invalidTimestamp) => {
-      const signature = relaySignature(servicesToken, invalidTimestamp, body);
+  it("rejects a correctly signed NaN timestamp", () => {
+    const timestamp = "NaN";
+    const signature = relaySignature(servicesToken, timestamp, body);
 
-      expect(
-        verifyRelaySignature({
-          token: servicesToken,
-          timestamp: invalidTimestamp,
-          signature,
-          body,
-          now,
-        }),
-      ).toBe("invalid");
-    },
-  );
-
-  it("accepts both replay-window boundaries and rejects one second beyond them", () => {
-    for (const delta of [-300, 300]) {
-      const boundaryTimestamp = String(Math.floor(now / 1000) + delta);
-      const signature = relaySignature(servicesToken, boundaryTimestamp, body);
-
-      expect(
-        verifyRelaySignature({
-          token: servicesToken,
-          timestamp: boundaryTimestamp,
-          signature,
-          body,
-          now: now + 999,
-        }),
-      ).toBe("ok");
-    }
-
-    for (const delta of [-301, 301]) {
-      const staleTimestamp = String(Math.floor(now / 1000) + delta);
-      const signature = relaySignature(servicesToken, staleTimestamp, body);
-
-      expect(
-        verifyRelaySignature({
-          token: servicesToken,
-          timestamp: staleTimestamp,
-          signature,
-          body,
-          now: now + 999,
-        }),
-      ).toBe("stale");
-    }
+    expect(
+      verifyRelaySignature({
+        token: servicesToken,
+        timestamp,
+        signature,
+        body,
+        now,
+      }),
+    ).toBe("invalid");
   });
 
-  it("reports missing credentials", () => {
+  it("rejects a correctly signed Infinity timestamp", () => {
+    const timestamp = "Infinity";
+    const signature = relaySignature(servicesToken, timestamp, body);
+
+    expect(
+      verifyRelaySignature({
+        token: servicesToken,
+        timestamp,
+        signature,
+        body,
+        now,
+      }),
+    ).toBe("invalid");
+  });
+
+  it("rejects a correctly signed negative Infinity timestamp", () => {
+    const timestamp = "-Infinity";
+    const signature = relaySignature(servicesToken, timestamp, body);
+
+    expect(
+      verifyRelaySignature({
+        token: servicesToken,
+        timestamp,
+        signature,
+        body,
+        now,
+      }),
+    ).toBe("invalid");
+  });
+
+  it("rejects a correctly signed a fractional timestamp timestamp", () => {
+    const timestamp = "1700000000.5";
+    const signature = relaySignature(servicesToken, timestamp, body);
+
+    expect(
+      verifyRelaySignature({
+        token: servicesToken,
+        timestamp,
+        signature,
+        body,
+        now,
+      }),
+    ).toBe("invalid");
+  });
+
+  it("rejects a correctly signed a timestamp beyond the safe integer range timestamp", () => {
+    const timestamp = "9007199254740992";
+    const signature = relaySignature(servicesToken, timestamp, body);
+
+    expect(
+      verifyRelaySignature({
+        token: servicesToken,
+        timestamp,
+        signature,
+        body,
+        now,
+      }),
+    ).toBe("invalid");
+  });
+
+  it("accepts a signature 300 seconds before now", () => {
+    const timestamp = String(Math.floor(now / 1000) + -300);
+    const signature = relaySignature(servicesToken, timestamp, body);
+
+    expect(
+      verifyRelaySignature({ token: servicesToken, timestamp, signature, body, now: now + 999 }),
+    ).toBe("ok");
+  });
+
+  it("accepts a signature 300 seconds after now", () => {
+    const timestamp = String(Math.floor(now / 1000) + 300);
+    const signature = relaySignature(servicesToken, timestamp, body);
+
+    expect(
+      verifyRelaySignature({ token: servicesToken, timestamp, signature, body, now: now + 999 }),
+    ).toBe("ok");
+  });
+
+  it("rejects a stale signature 301 seconds before now", () => {
+    const timestamp = String(Math.floor(now / 1000) + -301);
+    const signature = relaySignature(servicesToken, timestamp, body);
+
+    expect(
+      verifyRelaySignature({ token: servicesToken, timestamp, signature, body, now: now + 999 }),
+    ).toBe("stale");
+  });
+
+  it("rejects a stale signature 301 seconds after now", () => {
+    const timestamp = String(Math.floor(now / 1000) + 301);
+    const signature = relaySignature(servicesToken, timestamp, body);
+
+    expect(
+      verifyRelaySignature({ token: servicesToken, timestamp, signature, body, now: now + 999 }),
+    ).toBe("stale");
+  });
+
+  it("reports missing credentials when the token is absent", () => {
     expect(verifyRelaySignature({ body, now })).toBe("missing");
+  });
+
+  it("reports missing credentials when the signature is absent", () => {
     expect(verifyRelaySignature({ token: servicesToken, body, now })).toBe("missing");
   });
 });

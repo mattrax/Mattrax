@@ -747,18 +747,20 @@ describe("dynamic groups referencing other groups", () => {
       },
     });
 
-    for (let index = 0; index < 2000; index++) {
+    // A fleet larger than one batch, with a blocked subset, is enough to
+    // prove the dependency order without paying for 2,000 fake-DB rows.
+    for (let index = 0; index < 1_000; index++) {
       const id = `device-${index}`;
       seedDevice(db, id);
       member(db, "fleet", id);
-      if (index < 500) member(db, "blocked", id);
+      if (index < 250) member(db, "blocked", id);
     }
 
     const results = await runEffect(syncDynamicGroupsForTenant(db, "org-1", { now }));
 
     expect(results.map((row) => row.groupId)).toEqual(["all-apple", "ring"]);
-    expect(results[0]).toMatchObject({ matched: 2000 });
-    expect(results[1]).toMatchObject({ matched: 1500 });
-    expect(db.store.group_device.filter((row) => row.groupId === "ring")).toHaveLength(1500);
+    expect(results[0]).toMatchObject({ matched: 1_000 });
+    expect(results[1]).toMatchObject({ matched: 750 });
+    expect(db.store.group_device.filter((row) => row.groupId === "ring")).toHaveLength(750);
   }, 20_000);
 });

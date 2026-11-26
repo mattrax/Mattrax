@@ -1,5 +1,5 @@
 import { Effect, Logger } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { exportPrivateKeyJwk, generateCaKeyPair, pemEncode, sealSecret } from "@mattrax/crypto";
@@ -57,6 +57,74 @@ const makeCertificate = async (notAfter: Date) => {
   return pemEncode("CERTIFICATE", certificate.toSchema(true).toBER(false));
 };
 
+const secret = "apns-health-test-secret";
+const topic = "com.apple.mgmt.External.acme";
+
+const makeApnsMaterial = async (options: { notAfter?: Date; uid?: string } = {}) => {
+  const keys = await generateCaKeyPair();
+
+  const attribute = (type: string, value: string) =>
+    new pkijs.AttributeTypeAndValue({ type, value: new asn1js.Utf8String({ value }) });
+
+  const certificate = new pkijs.Certificate();
+  certificate.version = 2;
+  certificate.serialNumber = new asn1js.Integer({ value: 7 });
+
+  const name = new pkijs.RelativeDistinguishedNames({
+    typesAndValues: [
+      attribute("2.5.4.3", "Acme APNs"),
+      attribute("0.9.2342.19200300.100.1.1", options.uid ?? topic),
+    ],
+  });
+
+  certificate.issuer = name;
+  certificate.subject = name;
+  certificate.notBefore.value = new Date(now.getTime() - 300 * DAY);
+  certificate.notAfter.value = options.notAfter ?? daysFromNow(60);
+  await certificate.subjectPublicKeyInfo.importKey(keys.publicKey);
+  await certificate.sign(keys.privateKey, "SHA-256");
+
+  return {
+    pem: pemEncode("CERTIFICATE", certificate.toSchema(true).toBER(false)),
+    jwk: await exportPrivateKeyJwk(keys.privateKey),
+  };
+};
+
+// Certificate generation is RSA key generation: by far the most expensive
+// setup here. None of the tests mutate a certificate or a key, so build them
+// once per file and hand every test its own database and sealed key.
+type CertificateSet = {
+  apnsA: string;
+  apnsB: string;
+  caA: string;
+  caB: string;
+  parseCert: string;
+};
+type ApnsMaterialSet = {
+  healthy: Awaited<ReturnType<typeof makeApnsMaterial>>;
+  other: Awaited<ReturnType<typeof makeApnsMaterial>>;
+  topicMismatch: Awaited<ReturnType<typeof makeApnsMaterial>>;
+  expired: Awaited<ReturnType<typeof makeApnsMaterial>>;
+};
+let certs: CertificateSet;
+let apnsMaterials: ApnsMaterialSet;
+
+beforeAll(async () => {
+  certs = {
+    apnsA: await makeCertificate(daysFromNow(10)),
+    apnsB: await makeCertificate(daysFromNow(90)),
+    caA: await makeCertificate(daysFromNow(5)),
+    caB: await makeCertificate(daysFromNow(5)),
+    parseCert: await makeCertificate(new Date("2027-04-01T00:00:00.000Z")),
+  };
+  apnsMaterials = {
+    healthy: await makeApnsMaterial(),
+    other: await makeApnsMaterial(),
+    topicMismatch: await makeApnsMaterial({ uid: "com.apple.mgmt.External.other" }),
+    expired: await makeApnsMaterial({ notAfter: daysFromNow(-1) }),
+  };
+});
+
 describe("daysUntilExpiry", () => {
   it("rounds up whole days and keeps the 30/7/0 boundaries", () => {
     expect(daysUntilExpiry(daysFromNow(CREDENTIAL_WARNING_DAYS), now)).toBe(30);
@@ -85,7 +153,7 @@ describe("credentialLevel", () => {
 describe("parseCertificateNotAfter", () => {
   it("reads notAfter from a PEM certificate", async () => {
     const notAfter = new Date("2027-04-01T00:00:00.000Z");
-    const parsed = await parseCertificateNotAfter(await makeCertificate(notAfter));
+    const parsed = await parseCertificateNotAfter(certs.parseCert);
     expect(parsed?.toISOString()).toBe(notAfter.toISOString());
   });
 
@@ -172,14 +240,14 @@ const build = async () => {
       organizationId: "org-a",
       email: "a@example.com",
       topic: "com.apple.mgmt.External.a",
-      certPem: await makeCertificate(daysFromNow(10)),
+      certPem: certs.apnsA,
       updatedAt: now,
     },
     {
       organizationId: "org-b",
       email: "b@example.com",
       topic: "com.apple.mgmt.External.b",
-      certPem: await makeCertificate(daysFromNow(90)),
+      certPem: certs.apnsB,
       updatedAt: now,
     },
   );
@@ -187,7 +255,7 @@ const build = async () => {
     {
       id: 1,
       organizationId: "org-a",
-      certPem: await makeCertificate(daysFromNow(5)),
+      certPem: certs.caA,
       privateKeyJwk: {},
       source: "generated",
       createdAt: now,
@@ -196,7 +264,7 @@ const build = async () => {
     {
       id: 2,
       organizationId: "org-b",
-      certPem: await makeCertificate(daysFromNow(5)),
+      certPem: certs.caB,
       privateKeyJwk: {},
       source: "generated",
       createdAt: now,
@@ -431,43 +499,10 @@ describe("credential expiry notifications", () => {
 });
 
 describe("apnsCredentialHealth", () => {
-  const secret = "apns-health-test-secret";
-  const topic = "com.apple.mgmt.External.acme";
-
-  const makeApnsMaterial = async (options: { notAfter?: Date; uid?: string } = {}) => {
-    const keys = await generateCaKeyPair();
-
-    const attribute = (type: string, value: string) =>
-      new pkijs.AttributeTypeAndValue({ type, value: new asn1js.Utf8String({ value }) });
-
-    const certificate = new pkijs.Certificate();
-    certificate.version = 2;
-    certificate.serialNumber = new asn1js.Integer({ value: 7 });
-
-    const name = new pkijs.RelativeDistinguishedNames({
-      typesAndValues: [
-        attribute("2.5.4.3", "Acme APNs"),
-        attribute("0.9.2342.19200300.100.1.1", options.uid ?? topic),
-      ],
-    });
-
-    certificate.issuer = name;
-    certificate.subject = name;
-    certificate.notBefore.value = new Date(now.getTime() - 300 * DAY);
-    certificate.notAfter.value = options.notAfter ?? daysFromNow(60);
-    await certificate.subjectPublicKeyInfo.importKey(keys.publicKey);
-    await certificate.sign(keys.privateKey, "SHA-256");
-
-    return {
-      pem: pemEncode("CERTIFICATE", certificate.toSchema(true).toBER(false)),
-      jwk: await exportPrivateKeyJwk(keys.privateKey),
-    };
-  };
-
   const encryptedKey = (jwk: JsonWebKey) => sealSecret(secret, JSON.stringify(jwk));
 
   it("reports expiry and a matching key/topic as healthy", async () => {
-    const material = await makeApnsMaterial();
+    const material = apnsMaterials.healthy;
 
     const health = await apnsCredentialHealth({
       certificatePem: material.pem,
@@ -491,8 +526,8 @@ describe("apnsCredentialHealth", () => {
   });
 
   it("escalates a certificate whose stored key does not match", async () => {
-    const material = await makeApnsMaterial();
-    const other = await makeApnsMaterial();
+    const material = apnsMaterials.healthy;
+    const other = apnsMaterials.other;
 
     const health = await apnsCredentialHealth({
       certificatePem: material.pem,
@@ -508,7 +543,7 @@ describe("apnsCredentialHealth", () => {
   });
 
   it("escalates a topic mismatch between the row and the certificate", async () => {
-    const material = await makeApnsMaterial({ uid: "com.apple.mgmt.External.other" });
+    const material = apnsMaterials.topicMismatch;
 
     const health = await apnsCredentialHealth({
       certificatePem: material.pem,
@@ -523,7 +558,7 @@ describe("apnsCredentialHealth", () => {
   });
 
   it("leaves the key comparison unknown when no key is stored", async () => {
-    const material = await makeApnsMaterial();
+    const material = apnsMaterials.healthy;
 
     const health = await apnsCredentialHealth({
       certificatePem: material.pem,
@@ -541,7 +576,7 @@ describe("apnsCredentialHealth", () => {
   });
 
   it("keeps an expired certificate expired even when the key matches", async () => {
-    const material = await makeApnsMaterial({ notAfter: daysFromNow(-1) });
+    const material = apnsMaterials.expired;
 
     const health = await apnsCredentialHealth({
       certificatePem: material.pem,

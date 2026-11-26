@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { AnalyticsClient } from "@mattrax/cloud-services/analytics";
 import { createRelayAnalytics, hashDeploymentId } from "./analytics.ts";
 
@@ -6,16 +6,19 @@ type Captured = Parameters<AnalyticsClient["capture"]>[0];
 
 const fakeClient = () => {
   const events: Captured[] = [];
+  const exceptions: Array<{ cause: unknown }> = [];
 
   const client: AnalyticsClient = {
     capture: (message) => {
       events.push(message);
     },
-    captureException: vi.fn(),
-    flush: vi.fn(async () => {}),
+    captureException: (cause) => {
+      exceptions.push({ cause });
+    },
+    flush: async () => {},
   };
 
-  return { client, events };
+  return { client, events, exceptions };
 };
 
 const licenseId = "mtx_lic_0123456789abcdef";
@@ -66,9 +69,15 @@ describe("APNs relay analytics", () => {
     expect(event?.properties?.deployment_id).toBeUndefined();
   });
 
-  it("hashes deployments deterministically and distinctly", () => {
+  it("hashes a deployment deterministically", () => {
     expect(hashDeploymentId(licenseId)).toBe(hashDeploymentId(licenseId));
+  });
+
+  it("hashes different deployments distinctly", () => {
     expect(hashDeploymentId(licenseId)).not.toBe(hashDeploymentId("mtx_lic_another"));
+  });
+
+  it("renders a deployment hash as a 32-byte hex digest", () => {
     expect(hashDeploymentId(licenseId)).toMatch(/^[0-9a-f]{64}$/);
   });
 });

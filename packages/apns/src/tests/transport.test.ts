@@ -1,11 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
-import { Effect, Fiber, Schema } from "effect";
+import { describe, expect, it } from "vitest";
+import { Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import { createHmac } from "node:crypto";
 import { EventEmitter } from "node:events";
-import http2 from "node:http2";
-import { createServer } from "node:net";
-import { pemEncode } from "@mattrax/crypto";
-import { createTestApnsCertificate, createTestApnsKeys } from "./helpers.js";
 import {
   ApnsError,
   MtlsPushTransport,
@@ -169,6 +166,26 @@ describe("APNs outbound timeouts", () => {
       ),
     );
 
+  /** Fetch-backed transports use an Effect deadline; drive it virtually. */
+  const pushWithClock = (transport: ReturnType<typeof MtlsPushTransport>) =>
+    Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          Effect.flip(
+            transport.push({
+              pushToken: "abcd",
+              pushMagic: "magic",
+              topic: "com.apple.mgmt.External.tenant",
+            }),
+          ),
+          { startImmediately: true },
+        );
+        yield* Effect.yieldNow;
+        yield* TestClock.adjust("25 millis");
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+
   it("aborts a hung mTLS fetch", async () => {
     let aborted: AbortSignal | undefined;
 
@@ -183,11 +200,9 @@ describe("APNs outbound timeouts", () => {
         }),
     });
 
-    const started = Date.now();
-    const error = await push(transport);
+    const error = await pushWithClock(transport);
     expect(error).toBeInstanceOf(ApnsError);
     expect(error.message).toContain("timed out");
-    expect(Date.now() - started).toBeLessThan(1_000);
     expect(aborted?.aborted).toBe(true);
   });
 
@@ -204,99 +219,76 @@ describe("APNs outbound timeouts", () => {
         }),
     });
 
-    const error = await push(transport);
+    const error = await pushWithClock(transport);
     expect(error).toBeInstanceOf(ApnsError);
     expect(error.message).toContain("timed out");
   });
 
   it("closes the HTTP/2 session when the connection stalls", async () => {
-    // A TCP server that accepts the connection but never completes the TLS
-    // handshake. Without a deadline this promise would never settle.
-    const sockets: Array<import("node:net").Socket> = [];
-
-    const server = createServer((socket) => {
-      sockets.push(socket);
+    // A stalled connect never emits a response, so only the session's deadline
+    // callback can settle the push. Firing it on the next microtask keeps the
+    // test deterministic and avoids a real socket and a generated key pair.
+    const request = Object.assign(new EventEmitter(), { end: () => {} });
+    let destroyed = 0;
+    const session = Object.assign(new EventEmitter(), {
+      close: () => {},
+      destroy: () => {
+        destroyed++;
+      },
+      setTimeout: (_ms: number, onStall: () => void) => {
+        queueMicrotask(onStall);
+      },
+      request: () => request,
     });
 
-    await new Promise<void>((resolve) => {
-      server.listen(0, "127.0.0.1", resolve);
-    });
-    const address = server.address();
-    const port = Schema.is(Schema.Struct({ port: Schema.Number }))(address) ? address.port : 0;
-
-    const keys = await createTestApnsKeys();
-
-    const certificate = await createTestApnsCertificate({
-      keyPair: keys,
-      topic: "com.apple.mgmt.External.tenant",
+    const transport = NodePushTransport({
+      certPem: "CERT",
+      privateKeyPem: "KEY",
+      timeoutMs: 25,
+      connect: () => session as never,
     });
 
-    const privateKeyPem = pemEncode(
-      "PRIVATE KEY",
-      await crypto.subtle.exportKey("pkcs8", keys.privateKey),
-    );
+    const error = await push(transport);
 
-    try {
-      const transport = NodePushTransport({
-        certPem: certificate.pem,
-        privateKeyPem,
-        timeoutMs: 150,
-        endpoint: `https://127.0.0.1:${port}`,
-      });
+    expect(error).toBeInstanceOf(ApnsError);
+    expect(error.message).toContain("timed out");
+    expect(destroyed).toBe(1);
+  });
 
-      const started = Date.now();
+  it("closes the HTTP/2 session when the parent fiber is interrupted", async () => {
+    const request = Object.assign(new EventEmitter(), { end: () => {} });
+    let destroyed = 0;
+    const session = Object.assign(new EventEmitter(), {
+      close: () => {},
+      destroy: () => {
+        destroyed++;
+      },
+      setTimeout: () => {},
+      request: () => request,
+    });
 
-      const error = await Effect.runPromise(
-        Effect.flip(
+    const transport = NodePushTransport({
+      certPem: "CERT",
+      privateKeyPem: "KEY",
+      connect: () => session as never,
+    });
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
           transport.push({
             pushToken: "abcd",
             pushMagic: "magic",
             topic: "com.apple.mgmt.External.tenant",
           }),
-        ),
-      );
+          { startImmediately: true },
+        );
 
-      expect(error).toBeInstanceOf(ApnsError);
-      expect(error.message).toContain("timed out");
-      expect(Date.now() - started).toBeLessThan(2_000);
-    } finally {
-      for (const socket of sockets) socket.destroy();
-      server.close();
-    }
-  });
+        yield* Fiber.interrupt(fiber);
+      }),
+    );
 
-  it("closes the HTTP/2 session when the parent fiber is interrupted", async () => {
-    const request = Object.assign(new EventEmitter(), { end: vi.fn() });
-    const session = Object.assign(new EventEmitter(), {
-      close: vi.fn(),
-      destroy: vi.fn(),
-      setTimeout: vi.fn(),
-      request: vi.fn(() => request),
-    });
-    const connect = vi.spyOn(http2, "connect").mockReturnValue(session as never);
-
-    try {
-      const transport = NodePushTransport({ certPem: "CERT", privateKeyPem: "KEY" });
-
-      await Effect.runPromise(
-        Effect.gen(function* () {
-          const fiber = yield* Effect.forkChild(
-            transport.push({
-              pushToken: "abcd",
-              pushMagic: "magic",
-              topic: "com.apple.mgmt.External.tenant",
-            }),
-            { startImmediately: true },
-          );
-
-          yield* Fiber.interrupt(fiber);
-        }),
-      );
-
-      expect(session.destroy).toHaveBeenCalledOnce();
-    } finally {
-      connect.mockRestore();
-    }
+    expect(destroyed).toBe(1);
   });
 });
 

@@ -15,11 +15,6 @@ const plistDocument = (body: string) => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">${body}</plist>`;
 
-const serializers = [
-  ["serializePlist", serializePlist],
-  ["serializePlistTrusted", serializePlistTrusted],
-] as const;
-
 describe("plist", () => {
   describe("parsePlist", () => {
     it("parses a simple string value", async () => {
@@ -106,8 +101,14 @@ describe("plist", () => {
       expect(parsed.Nested).toEqual({ key: "value" });
     });
 
-    it.each([null, undefined])("normalizes root %s to an empty string", async (value) => {
-      const result = await serializePlist(value).pipe(Effect.runPromise);
+    it("normalizes a root null to an empty string", async () => {
+      const result = await serializePlist(null).pipe(Effect.runPromise);
+
+      expect(result).toBe(plistDocument("<string></string>"));
+    });
+
+    it("normalizes a root undefined to an empty string", async () => {
+      const result = await serializePlist(undefined).pipe(Effect.runPromise);
 
       expect(result).toBe(plistDocument("<string></string>"));
     });
@@ -130,27 +131,56 @@ describe("plist", () => {
       expect(result).toBeInstanceOf(PlistParseError);
     });
 
-    it.each(["NaN", "Infinity", "-Infinity"])("rejects a non-finite <%s> real", async (value) => {
-      const xml = `<plist version="1.0"><real>${value}</real></plist>`;
+    it("rejects a non-finite <NaN> real", async () => {
+      const xml = `<plist version="1.0"><real>NaN</real></plist>`;
       const result = await parsePlist(xml).pipe(Effect.flip, Effect.runPromise);
 
       expect(result).toBeInstanceOf(PlistParseError);
     });
 
-    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
-      "rejects a non-finite number before serialization (%s)",
-      async (value) => {
-        const result = await serializePlist({ nested: [value] }).pipe(
-          Effect.flip,
-          Effect.runPromise,
-        );
+    it("rejects a non-finite <Infinity> real", async () => {
+      const xml = `<plist version="1.0"><real>Infinity</real></plist>`;
+      const result = await parsePlist(xml).pipe(Effect.flip, Effect.runPromise);
 
-        expect(result).toBeInstanceOf(PlistSerializeError);
-      },
-    );
+      expect(result).toBeInstanceOf(PlistParseError);
+    });
+
+    it("rejects a non-finite <-Infinity> real", async () => {
+      const xml = `<plist version="1.0"><real>-Infinity</real></plist>`;
+      const result = await parsePlist(xml).pipe(Effect.flip, Effect.runPromise);
+
+      expect(result).toBeInstanceOf(PlistParseError);
+    });
+
+    it("rejects NaN before serialization", async () => {
+      const result = await serializePlist({ nested: [Number.NaN] }).pipe(
+        Effect.flip,
+        Effect.runPromise,
+      );
+
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
+
+    it("rejects positive infinity before serialization", async () => {
+      const result = await serializePlist({ nested: [Number.POSITIVE_INFINITY] }).pipe(
+        Effect.flip,
+        Effect.runPromise,
+      );
+
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
+
+    it("rejects negative infinity before serialization", async () => {
+      const result = await serializePlist({ nested: [Number.NEGATIVE_INFINITY] }).pipe(
+        Effect.flip,
+        Effect.runPromise,
+      );
+
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
   });
 
-  describe.each(serializers)("%s", (_name, serialize) => {
+  const serializerCases = (serialize: typeof serializePlist) => {
     it("preserves exact XML for every supported value", async () => {
       const bytes = new Uint8Array([0, 1, 127, 128, 255]);
       const value: PlistValue = {
@@ -196,21 +226,50 @@ describe("plist", () => {
       );
     });
 
-    it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
-      "rejects a nested non-finite number (%s)",
-      async (value) => {
-        const result = await serialize({ nested: [value] }).pipe(Effect.flip, Effect.runPromise);
+    it("rejects a nested NaN", async () => {
+      const result = await serialize({ nested: [Number.NaN] }).pipe(Effect.flip, Effect.runPromise);
 
-        expect(result).toBeInstanceOf(PlistSerializeError);
-      },
-    );
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
 
-    it.each([
-      ["bigint", 1n],
-      ["symbol", Symbol("unsupported")],
-      ["function", () => "unsupported"],
-    ] as const)("rejects an unsupported %s leaf", async (_kind, value) => {
-      const result = await serialize({ nested: [value] } as never).pipe(
+    it("rejects a nested positive infinity", async () => {
+      const result = await serialize({ nested: [Number.POSITIVE_INFINITY] }).pipe(
+        Effect.flip,
+        Effect.runPromise,
+      );
+
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
+
+    it("rejects a nested negative infinity", async () => {
+      const result = await serialize({ nested: [Number.NEGATIVE_INFINITY] }).pipe(
+        Effect.flip,
+        Effect.runPromise,
+      );
+
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
+
+    it("rejects an unsupported a bigint leaf", async () => {
+      const result = await serialize({ nested: [1n] } as never).pipe(
+        Effect.flip,
+        Effect.runPromise,
+      );
+
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
+
+    it("rejects an unsupported a symbol leaf", async () => {
+      const result = await serialize({ nested: [Symbol("unsupported")] } as never).pipe(
+        Effect.flip,
+        Effect.runPromise,
+      );
+
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
+
+    it("rejects an unsupported a function leaf", async () => {
+      const result = await serialize({ nested: [() => "unsupported"] } as never).pipe(
         Effect.flip,
         Effect.runPromise,
       );
@@ -280,11 +339,26 @@ describe("plist", () => {
         "<key>item-4999</key><dict><key>index</key><integer>4999</integer><key>values</key><array><string>label-4999</string><false/></array></dict>",
       );
     });
+  };
+
+  describe("serializePlist", () => {
+    serializerCases(serializePlist);
   });
 
   describe("serializePlistTrusted", () => {
-    it.each([null, undefined])("does not normalize an unvalidated %s", async (value) => {
-      const result = await serializePlistTrusted(value as never).pipe(
+    serializerCases(serializePlistTrusted);
+
+    it("does not normalize an unvalidated null", async () => {
+      const result = await serializePlistTrusted(null as never).pipe(
+        Effect.flip,
+        Effect.runPromise,
+      );
+
+      expect(result).toBeInstanceOf(PlistSerializeError);
+    });
+
+    it("does not normalize an unvalidated undefined", async () => {
+      const result = await serializePlistTrusted(undefined as never).pipe(
         Effect.flip,
         Effect.runPromise,
       );

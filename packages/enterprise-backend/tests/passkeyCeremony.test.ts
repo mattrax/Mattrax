@@ -1,4 +1,5 @@
 import { Effect, Layer, Redacted, Result, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import * as Base64Url from "effect/encoding/Base64Url";
 import { describe, expect, it } from "vitest";
 import { Passkey } from "@yielded/auth";
@@ -13,6 +14,8 @@ import { passkeyProfile } from "../src/Account/auth.ts";
  */
 
 const origin = "https://mattrax.example.com";
+
+const NOW = Date.parse("2026-11-01T00:00:00Z");
 
 const profile = yieldedProfile();
 
@@ -40,6 +43,16 @@ const protocol = () =>
     Effect.provide(
       PasskeyServer.layer.pipe(Layer.provide(Passkey.PasskeyConfig.layer({ profiles: [profile] }))),
     ),
+  );
+
+/** Every verifier reads the Effect clock, so pin it to the fixture factory's NOW. */
+const run = <A>(effect: Effect.Effect<A, any, any>): Promise<A> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      yield* TestClock.setTime(NOW);
+
+      return yield* effect;
+    }).pipe(Effect.provide(TestClock.layer())),
   );
 
 const b64 = (bytes: Uint8Array) => Base64Url.encode(bytes);
@@ -133,9 +146,9 @@ const registrationCeremony = (challenge: string) => ({
   profile,
   challenge,
   requestBindingVerifier: "binding-verifier",
-  requestBindingExpiresAtMillis: Date.now() + 60_000,
-  issuedAtMillis: Date.now(),
-  expiresAtMillis: Date.now() + 60_000,
+  requestBindingExpiresAtMillis: NOW + 60_000,
+  issuedAtMillis: NOW,
+  expiresAtMillis: NOW + 60_000,
   allowedCredentials: [],
   context: {
     _tag: "Registration" as const,
@@ -154,9 +167,9 @@ const stepUpCeremony = (challenge: string, credentialId: string) => ({
   profile,
   challenge,
   requestBindingVerifier: "binding-verifier",
-  requestBindingExpiresAtMillis: Date.now() + 60_000,
-  issuedAtMillis: Date.now(),
-  expiresAtMillis: Date.now() + 60_000,
+  requestBindingExpiresAtMillis: NOW + 60_000,
+  issuedAtMillis: NOW,
+  expiresAtMillis: NOW + 60_000,
   allowedCredentials: [{ type: "public-key" as const, id: credentialId as never }],
   context: {
     _tag: "StepUp" as const,
@@ -171,20 +184,20 @@ const stepUpCeremony = (challenge: string, credentialId: string) => ({
         securityRevision: "revision-1",
         credentials: [{ credentialId: "credential-1", revision: "revision-1" }],
       },
-      expiresAtMillis: Date.now() + 60_000,
+      expiresAtMillis: NOW + 60_000,
     },
   },
 });
 
 describe("WebAuthn ceremonies", () => {
   it("verifies a registration response", async () => {
-    const verifier = await Effect.runPromise(protocol());
+    const verifier = await run(protocol());
     const challenge = b64(crypto.getRandomValues(new Uint8Array(32)));
     const ceremony = registrationCeremony(challenge);
 
     // SAFETY: the fixture's user handle is opaque to this test; the verifier
     // accepts any opaque bytes and echoes them in the challenge.
-    const started = await Effect.runPromise(
+    const started = await run(
       verifier.prepareRegistration({
         profile,
         challenge,
@@ -228,7 +241,7 @@ describe("WebAuthn ceremonies", () => {
 
     // SAFETY: the fixture ceremony is the exact object prepared above; its
     // runtime shape matches what the verifier issued.
-    const verified = await Effect.runPromise(
+    const verified = await run(
       verifier.verifyRegistration({
         ceremony: ceremony as never,
         response: Redacted.make(
@@ -251,12 +264,12 @@ describe("WebAuthn ceremonies", () => {
   });
 
   it("verifies a step-up assertion", async () => {
-    const verifier = await Effect.runPromise(protocol());
+    const verifier = await run(protocol());
     const challenge = b64(crypto.getRandomValues(new Uint8Array(32)));
     const credentialId = b64(crypto.getRandomValues(new Uint8Array(32)));
     const ceremony = stepUpCeremony(challenge, credentialId);
 
-    const started = await Effect.runPromise(
+    const started = await run(
       verifier.prepareAuthentication({
         profile,
         challenge,
@@ -286,7 +299,7 @@ describe("WebAuthn ceremonies", () => {
       ),
     );
 
-    const credential = await Effect.runPromise(
+    const credential = await run(
       Schema.decodeUnknownEffect(Passkey.PasskeyCredential)({
         requirement: {
           alternatives: [
@@ -322,7 +335,7 @@ describe("WebAuthn ceremonies", () => {
 
     // SAFETY: the fixture ceremony is the exact object prepared above; its
     // runtime shape matches what the verifier issued.
-    const verified = await Effect.runPromise(
+    const verified = await run(
       verifier.verifyAuthentication({
         ceremony: ceremony as never,
         credential,
@@ -347,7 +360,7 @@ describe("WebAuthn ceremonies", () => {
   });
 
   it("rejects an assertion for a different challenge", async () => {
-    const verifier = await Effect.runPromise(protocol());
+    const verifier = await run(protocol());
     const challenge = b64(crypto.getRandomValues(new Uint8Array(32)));
     const credentialId = b64(crypto.getRandomValues(new Uint8Array(32)));
     const ceremony = stepUpCeremony(challenge, credentialId);
@@ -379,7 +392,7 @@ describe("WebAuthn ceremonies", () => {
       ),
     );
 
-    const credential = await Effect.runPromise(
+    const credential = await run(
       Schema.decodeUnknownEffect(Passkey.PasskeyCredential)({
         requirement: {
           alternatives: [
@@ -415,7 +428,7 @@ describe("WebAuthn ceremonies", () => {
 
     // SAFETY: the fixture ceremony was prepared by this same verifier above.
     await expect(
-      Effect.runPromise(
+      run(
         verifier.verifyAuthentication({
           ceremony: ceremony as never,
           credential,

@@ -23,8 +23,11 @@ describe("MDM compliance suite", () => {
     expect(filterChecks(allChecks, { platforms: [], categories: [] })).toHaveLength(
       allChecks.length,
     );
-    expect(
-      filterChecks(allChecks, { platforms: ["scep"] }).every((check) => check.platform === "scep"),
-    ).toBe(true);
+  });
+
+  it("filters checks by platform", () => {
+    const filtered = filterChecks(allChecks, { platforms: ["scep"] });
+
+    expect(filtered.every((check) => check.platform === "scep")).toBe(true);
   });
 });

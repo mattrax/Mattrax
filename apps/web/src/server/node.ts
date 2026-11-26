@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { stat as nodeStat } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
@@ -193,7 +193,16 @@ const isDynamicPage = (pathname: string): boolean => {
   );
 };
 
-const isFile = async (file: string) => {
+/** The slice of `Stats` the asset probe needs, kept structural for injected fakes. */
+export type StaticFileStat = {
+  readonly isFile: () => boolean;
+  readonly size: number;
+};
+
+/** `stat` seam: production uses `node:fs/promises`, tests inject a fake. */
+export type StaticFileProbe = (file: string) => Promise<StaticFileStat>;
+
+const isFile = async (stat: StaticFileProbe, file: string) => {
   try {
     const stats = await stat(file);
 
@@ -302,10 +311,11 @@ const sendStatic = async (
  */
 export const findStaticFile = async (
   pathname: string,
+  stat: StaticFileProbe = nodeStat,
 ): Promise<{ path: string; size: number } | undefined> => {
   const candidates = staticFiles(pathname);
   const probed = await Promise.all(
-    candidates.map(async (candidate) => ({ candidate, stats: await isFile(candidate) })),
+    candidates.map(async (candidate) => ({ candidate, stats: await isFile(stat, candidate) })),
   );
   const match = probed.find(({ stats }) => stats !== undefined);
 

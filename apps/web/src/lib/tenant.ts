@@ -1,6 +1,15 @@
 import { Context, Layer } from "effect";
 import { getRequestEvent, isServer } from "@solidjs/web";
 
+/** The SSR/browser context this module reads; tests pass their own explicitly. */
+export type TenantEnvironment = {
+  readonly isServer: boolean;
+  readonly getRequestEvent: () => { readonly request: Request } | undefined;
+};
+
+/** Immutable production environment: Solid's real SSR flags. */
+const solidEnvironment: TenantEnvironment = Object.freeze({ isServer, getRequestEvent });
+
 /**
  * A tenant as the shell knows it. The API addresses tenants by id, but the
  * dashboard addresses them by slug so links survive exports/imports and match
@@ -102,9 +111,10 @@ export const clearBrowserTenantDirectory = (): void => {
 export const rememberTenants = (
   tenants: readonly TenantKey[] | undefined,
   identity?: string,
+  environment: TenantEnvironment = solidEnvironment,
 ): void => {
-  if (isServer) {
-    const event = getRequestEvent();
+  if (environment.isServer) {
+    const event = environment.getRequestEvent();
 
     if (event) setRequestTenantDirectory(event.request, tenants);
 
@@ -116,8 +126,13 @@ export const rememberTenants = (
   browserTenants = snapshot(tenants);
 };
 
-export const rememberTenantAlias = (slug: string, id: string, identity?: string): void => {
-  if (isServer || !slug) return;
+export const rememberTenantAlias = (
+  slug: string,
+  id: string,
+  identity?: string,
+  environment: TenantEnvironment = solidEnvironment,
+): void => {
+  if (environment.isServer || !slug) return;
   if (identity !== undefined && identity !== browserIdentity) {
     browserAliases.clear();
     browserTenants = [];
@@ -128,9 +143,11 @@ export const rememberTenantAlias = (slug: string, id: string, identity?: string)
 };
 
 /** Resolve the immutable directory for the current SSR request or browser account. */
-export const currentTenantDirectory = (): TenantRoutingDirectory => {
-  if (isServer) {
-    const event = getRequestEvent();
+export const currentTenantDirectory = (
+  environment: TenantEnvironment = solidEnvironment,
+): TenantRoutingDirectory => {
+  if (environment.isServer) {
+    const event = environment.getRequestEvent();
 
     return event ? getRequestTenantDirectory(event.request) : emptyDirectory;
   }
@@ -223,7 +240,8 @@ export function tenantLandingHref(
 /** Translate a route segment to an API id, preserving unknown-id pass-through. */
 export function resolveTenantId(
   value: string | undefined,
-  directory: TenantRoutingDirectory = currentTenantDirectory(),
+  directory: TenantRoutingDirectory | undefined = undefined,
+  environment: TenantEnvironment = solidEnvironment,
 ): string | undefined {
-  return directory.resolveId(value);
+  return (directory ?? currentTenantDirectory(environment)).resolveId(value);
 }

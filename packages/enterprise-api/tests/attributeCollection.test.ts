@@ -456,7 +456,10 @@ describe("collect now", () => {
         .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );
 
-    expect(blocked).toMatchObject({ code: "approval_required", requestId: expect.any(String) });
+    expect(blocked).toMatchObject({
+      code: "approval_required",
+      requestId: expect.stringMatching(/^[0-9a-f]{24}$/),
+    });
     expect(db.store.script_execution).toHaveLength(0);
     expect(db.store.approval_request).toHaveLength(1);
   });

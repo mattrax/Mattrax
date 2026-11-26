@@ -124,8 +124,6 @@ export type ApplePushOptions = {
   readonly pushConcurrency?: number;
   /** Items scheduled together; defaults to twice the concurrency. */
   readonly pushChunkSize?: number;
-  /** Injected fetch used by outbound webhook deliveries (tests). */
-  readonly webhookFetch?: typeof globalThis.fetch;
 };
 
 type MutableApplePushBatchResult = {
@@ -164,7 +162,6 @@ export const applePushService = ({
   pushTimeoutMs,
   pushConcurrency = 12,
   pushChunkSize,
-  webhookFetch,
 }: ApplePushOptions) => {
   const backstopMs = pushTimeoutMs ?? APNS_PUSH_BACKSTOP_MS;
   const concurrency = Math.max(1, Math.floor(pushConcurrency));
@@ -237,7 +234,7 @@ export const applePushService = ({
             targetId: deviceId,
             metadata: { previousCode: apple.lastPushErrorCode ?? null },
           },
-          { authSecret, webhookFetch },
+          { authSecret },
         );
     }).pipe(
       Effect.catchCause((cause) =>

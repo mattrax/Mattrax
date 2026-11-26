@@ -14,8 +14,23 @@ test.describe("SSR bootstrap token", () => {
     const tenant = await bootstrapTenant(page, "SSR Boot");
     const path = `/t/${tenant.id}/devices`;
 
-    await gotoHydrated(page, path);
+    // Drop only the bootstrap pair so this navigation re-mints them and the
+    // response carries the raw Set-Cookie header. The cookie jar exposes an
+    // absolute expiry computed from the signing clock, but the header's
+    // Max-Age is the exact contract and needs no clock comparison.
+    await context.clearCookies({ name: "__Host-mattrax_ssr" });
+    await context.clearCookies({ name: "__Host-mattrax_ssr_rev" });
+    const bootstrap = await gotoHydrated(page, path);
     await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+
+    const bootstrapSetCookies = bootstrap ? await bootstrap.headersArray() : [];
+    const ssrSetCookie = bootstrapSetCookies
+      .filter(({ name }) => name.toLowerCase() === "set-cookie")
+      .find(({ value }) => value.startsWith("__Host-mattrax_ssr="))?.value;
+
+    expect(ssrSetCookie).toMatch(
+      /^__Host-mattrax_ssr=[^;]+; HttpOnly; Secure; SameSite=Lax; Path=\/; Max-Age=300$/,
+    );
 
     const ssr = (await context.cookies()).find((cookie) => cookie.name === "__Host-mattrax_ssr");
 
@@ -33,13 +48,6 @@ test.describe("SSR bootstrap token", () => {
     expect(revision, "the bootstrap miss should set the SSR revision").toBeDefined();
     expect(revision?.httpOnly).toBe(true);
     expect(revision?.secure).toBe(true);
-
-    // Max-Age=300: allow a few seconds of clock skew between signing and the
-    // cookie snapshot but never accept a longer-lived token.
-    const remaining = (ssr?.expires ?? 0) - Date.now() / 1_000;
-
-    expect(remaining).toBeGreaterThan(240);
-    expect(remaining).toBeLessThanOrEqual(300);
 
     // Raw server HTML (no hydration) already contains the tenant shell.
     const response = await page.request.get(path, { headers: { accept: "text/html" } });

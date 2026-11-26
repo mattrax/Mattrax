@@ -1,5 +1,8 @@
 import { parseCertificateMetadata } from "@mattrax/apns";
 
+/** Injectable parser seam; production uses the shared APNs parser. */
+export type ParseCertificateMetadata = typeof parseCertificateMetadata;
+
 /**
  * Parsed topics are keyed by the certificate PEM itself. A rotated certificate
  * is a different key, so rotation takes effect immediately without a TTL, while
@@ -21,7 +24,10 @@ export const resetAppleTopicCache = (): void => {
  * The cache is module-wide (configuration scope), not service-instance scope:
  * the hosted Worker rebuilds its Effect graph per request.
  */
-export function extractTopicFromCertPem(pem: string): Promise<string | null> {
+export function extractTopicFromCertPem(
+  pem: string,
+  parse: ParseCertificateMetadata = parseCertificateMetadata,
+): Promise<string | null> {
   const key = pem.trim();
   const cached = topicCache.get(key);
 
@@ -33,7 +39,7 @@ export function extractTopicFromCertPem(pem: string): Promise<string | null> {
     return cached;
   }
 
-  const parsed = parseTopic(pem);
+  const parsed = parseTopic(pem, parse);
   topicCache.set(key, parsed);
 
   while (topicCache.size > MAX_CACHED_CERTIFICATES) {
@@ -46,9 +52,9 @@ export function extractTopicFromCertPem(pem: string): Promise<string | null> {
   return parsed;
 }
 
-async function parseTopic(pem: string): Promise<string | null> {
+async function parseTopic(pem: string, parse: ParseCertificateMetadata): Promise<string | null> {
   try {
-    const metadata = await parseCertificateMetadata(pem);
+    const metadata = await parse(pem);
 
     return metadata.topic ?? metadata.commonName;
   } catch {

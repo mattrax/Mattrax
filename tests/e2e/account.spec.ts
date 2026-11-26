@@ -38,7 +38,6 @@ test.describe("account", () => {
     await confirmStepUp(page);
     await expect(page.getByText("Copy this token now")).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    await page.waitForTimeout(350);
     await expect(page.getByText("E2E token").first()).toBeVisible();
     await expect(page.getByText(/All permissions · All tenants/)).toBeVisible();
 

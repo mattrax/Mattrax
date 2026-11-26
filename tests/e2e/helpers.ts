@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 
 type DebugEmail = { readonly to: string; readonly text: string };
 
@@ -27,20 +27,8 @@ export function totpCode(secret: string, offset = 0) {
   return String(binary % 1_000_000).padStart(6, "0");
 }
 
-/** Wait until the current thirty-second step changes, then return its code. */
-export async function freshTotpCode(secret: string) {
-  const step = Math.floor(Date.now() / 30_000);
-
-  while (Math.floor(Date.now() / 30_000) === step)
-    await new Promise((resolve) => {
-      setTimeout(resolve, 500);
-    });
-
-  return totpCode(secret);
-}
-
 export function uniqueEmail(prefix = "e2e") {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.com`;
+  return `${prefix}-${randomUUID()}@example.com`;
 }
 
 export async function register(page: Page, options: { name?: string; email?: string } = {}) {
@@ -250,7 +238,7 @@ export async function createTenant(page: Page, name: string) {
     .replaceAll(/[^a-z0-9]+/g, "-")
     .replaceAll(/^-|-$/g, "");
 
-  const slug = `${baseSlug}-${Math.random().toString(36).slice(2, 8)}`;
+  const slug = `${baseSlug}-${randomUUID().slice(0, 8)}`;
 
   const id = await page.evaluate(
     async ({ name, slug }) => {
@@ -276,17 +264,19 @@ export async function gotoHydrated(page: Page, path: string) {
   // The hydration flag is the real readiness signal: it is only set once the
   // client bundle has run and the router settled. `networkidle` would add a
   // fixed 500ms of idle on top, on every navigation.
-  await page.goto(path, { waitUntil: "domcontentloaded" });
+  const response = await page.goto(path, { waitUntil: "domcontentloaded" });
   await page.waitForFunction(
     () => document.documentElement.dataset.hydrated === "true",
     undefined,
     { timeout: 20_000 },
   );
+
+  return response;
 }
 
 export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
   await register(page);
-  const tenant = await createTenant(page, `${name} ${Math.random().toString(36).slice(2, 6)}`);
+  const tenant = await createTenant(page, `${name} ${randomUUID().slice(0, 4)}`);
   await gotoHydrated(page, `/t/${tenant.slug}/devices`);
   await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
 
@@ -396,8 +386,24 @@ export async function confirmStepUp(page: Page) {
   await dialog.getByRole("button", { name: /use passkey/i }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
   // The modal's dismiss layer lingers while it animates out; a press in that
-  // window is treated as an outside press and swallowed.
-  await page.waitForTimeout(350);
+  // window is treated as an outside press and swallowed. Wait for the
+  // animations themselves, not a guessed delay.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            document
+              .getAnimations()
+              .filter(
+                (animation) =>
+                  animation.playState === "running" &&
+                  animation.effect?.getComputedTiming().iterations !== Infinity,
+              ).length,
+        ),
+      { timeout: 5_000 },
+    )
+    .toBe(0);
 }
 
 /**

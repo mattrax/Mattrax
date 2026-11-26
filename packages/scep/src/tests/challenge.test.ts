@@ -134,16 +134,38 @@ describe("SCEP challenge", () => {
     ).resolves.toBeNull();
   });
 
-  it.each([
-    ["a one-part value", "enrollment-1"],
-    ["a two-part value with an empty signature", "enrollment-1."],
-    ["a three-part value with a non-numeric expiry", "enrollment-1.not-a-number.signature"],
-    ["a three-part value with an empty expiry", "enrollment-1.."],
-    ["a four-part value", `enrollment-1.${1_700_000_000}.signature.extra`],
-    ["a four-part value with an empty nonce", `enrollment-1.${1_700_000_000}..signature`],
-    ["an empty value", ""],
-  ])("rejects %s", async (_name, challenge) => {
-    await expect(verifyScepChallenge(challenge, SECRET)).resolves.toBeNull();
+  it("rejects a one-part value", async () => {
+    await expect(verifyScepChallenge("enrollment-1", SECRET)).resolves.toBeNull();
+  });
+
+  it("rejects a two-part value with an empty signature", async () => {
+    await expect(verifyScepChallenge("enrollment-1.", SECRET)).resolves.toBeNull();
+  });
+
+  it("rejects a three-part value with a non-numeric expiry", async () => {
+    await expect(
+      verifyScepChallenge("enrollment-1.not-a-number.signature", SECRET),
+    ).resolves.toBeNull();
+  });
+
+  it("rejects a three-part value with an empty expiry", async () => {
+    await expect(verifyScepChallenge("enrollment-1..", SECRET)).resolves.toBeNull();
+  });
+
+  it("rejects a four-part value", async () => {
+    await expect(
+      verifyScepChallenge("enrollment-1.1700000000.signature.extra", SECRET),
+    ).resolves.toBeNull();
+  });
+
+  it("rejects a four-part value with an empty nonce", async () => {
+    await expect(
+      verifyScepChallenge("enrollment-1.1700000000..signature", SECRET),
+    ).resolves.toBeNull();
+  });
+
+  it("rejects an empty value", async () => {
+    await expect(verifyScepChallenge("", SECRET)).resolves.toBeNull();
   });
 
   // Characterisation: this helper is deliberately stateless, so it can only

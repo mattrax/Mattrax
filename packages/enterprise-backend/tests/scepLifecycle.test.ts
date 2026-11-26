@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import * as pkijs from "pkijs";
 import { generateScepCa, sealCaPrivateKey, describeScepCa } from "@mattrax/scep";
 import {
@@ -40,6 +40,30 @@ const makeCa = async (options: { lifetimeDays?: number; generatedAt?: Date } = {
 
   return { ca, description, sealed };
 };
+
+// CA generation is RSA key generation. Every test only reads these CAs and
+// writes their fields into its own fake DB, so build the five variants once.
+type CaSet = {
+  long: Awaited<ReturnType<typeof makeCa>>;
+  medium: Awaited<ReturnType<typeof makeCa>>;
+  aged: Awaited<ReturnType<typeof makeCa>>;
+  short: Awaited<ReturnType<typeof makeCa>>;
+  normal: Awaited<ReturnType<typeof makeCa>>;
+};
+let cas: CaSet;
+
+beforeAll(async () => {
+  cas = {
+    long: await makeCa({ lifetimeDays: 1000 }),
+    medium: await makeCa({ lifetimeDays: 500 }),
+    aged: await makeCa({
+      generatedAt: new Date(now.getTime() - 300 * DAY),
+      lifetimeDays: 500,
+    }),
+    short: await makeCa({ lifetimeDays: 10 }),
+    normal: await makeCa({ lifetimeDays: 300 }),
+  };
+});
 
 const caRow = (input: {
   ca: { certPem: string; privateKeyJwk: JsonWebKey };
@@ -130,8 +154,8 @@ describe("loadScepCaState", () => {
     const db = makeDb();
     db.store.organization.push({ id: "org-a", name: "Acme" }, { id: "org-b", name: "Beta" });
 
-    const current = await makeCa({ lifetimeDays: 1000 });
-    const retired = await makeCa({ lifetimeDays: 500 });
+    const current = cas.long;
+    const retired = cas.medium;
 
     db.store.scep_ca.push(caRow({ ca: current.ca, sealed: current.sealed }), {
       ...caRow({ ca: retired.ca, sealed: retired.sealed }),
@@ -194,10 +218,7 @@ describe("rotateDueScepCas", () => {
 
     // Written 300 days ago with a 500-day lifetime: inside the 400-day
     // rotation window, but not yet expired.
-    const previous = await makeCa({
-      generatedAt: new Date(now.getTime() - 300 * DAY),
-      lifetimeDays: 500,
-    });
+    const previous = cas.aged;
 
     db.store.scep_ca.push(
       caRow({
@@ -293,7 +314,7 @@ describe("rotateDueScepCas", () => {
   it("leaves a CA alone while it is outside the rotation window", async () => {
     const db = makeDb();
     db.store.organization.push({ id: "org-a", name: "Acme" });
-    const fresh = await makeCa({ lifetimeDays: 1000 });
+    const fresh = cas.long;
     db.store.scep_ca.push(caRow({ ca: fresh.ca, sealed: fresh.sealed }));
 
     await expect(runEffect(rotateDueScepCas(db, { now, authSecret }))).resolves.toEqual({
@@ -340,8 +361,8 @@ describe("rotateDueScepCas", () => {
 describe("purgeExpiredScepCaTrust", () => {
   it("drops anchors whose trust window has closed and keeps live ones", async () => {
     const db = makeDb();
-    const expired = await makeCa({ lifetimeDays: 10 });
-    const live = await makeCa({ lifetimeDays: 300 });
+    const expired = cas.short;
+    const live = cas.normal;
 
     db.store.scep_ca_trust.push(
       {

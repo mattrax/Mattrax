@@ -67,23 +67,50 @@ describe("securityHeaders", () => {
     expect(headers.vary).toBe("Cookie");
   });
 
-  it.each(["/", "/privacy", "/terms"])(
-    "lets the shared cache keep the signed-out shell for %s",
-    (pathname) => {
-      const headers = securityHeaders({
-        ...httpsHtml,
-        url: `https://e.mattrax.app${pathname}`,
-      });
+  it('lets the shared cache keep the signed-out shell for "/"', () => {
+    const pathname = "/";
 
-      expect(headers["cache-control"]).toBe(
-        "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
-      );
-      expect(headers["cdn-cache-control"]).toBe(
-        "public, max-age=300, stale-while-revalidate=86400",
-      );
-      expect(headers.vary).toBe("Accept-Encoding");
-    },
-  );
+    const headers = securityHeaders({
+      ...httpsHtml,
+      url: `https://e.mattrax.app${pathname}`,
+    });
+
+    expect(headers["cache-control"]).toBe(
+      "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+    );
+    expect(headers["cdn-cache-control"]).toBe("public, max-age=300, stale-while-revalidate=86400");
+    expect(headers.vary).toBe("Accept-Encoding");
+  });
+
+  it('lets the shared cache keep the signed-out shell for "/privacy"', () => {
+    const pathname = "/privacy";
+
+    const headers = securityHeaders({
+      ...httpsHtml,
+      url: `https://e.mattrax.app${pathname}`,
+    });
+
+    expect(headers["cache-control"]).toBe(
+      "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+    );
+    expect(headers["cdn-cache-control"]).toBe("public, max-age=300, stale-while-revalidate=86400");
+    expect(headers.vary).toBe("Accept-Encoding");
+  });
+
+  it('lets the shared cache keep the signed-out shell for "/terms"', () => {
+    const pathname = "/terms";
+
+    const headers = securityHeaders({
+      ...httpsHtml,
+      url: `https://e.mattrax.app${pathname}`,
+    });
+
+    expect(headers["cache-control"]).toBe(
+      "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
+    );
+    expect(headers["cdn-cache-control"]).toBe("public, max-age=300, stale-while-revalidate=86400");
+    expect(headers.vary).toBe("Accept-Encoding");
+  });
 
   it("does not cache a public path that sets a cookie", () => {
     const headers = securityHeaders({
@@ -127,20 +154,87 @@ describe("securityHeaders", () => {
 });
 
 describe("normalisePath", () => {
-  it.each([
-    ["/api/v1/bootstrap", "/api/v1/bootstrap"],
-    ["/api/v1/bootstrap/", "/api/v1/bootstrap"],
-    ["/api//v1//bootstrap", "/api/v1/bootstrap"],
-    ["//api/v1/bootstrap", "/api/v1/bootstrap"],
-    ["/API/V1/BOOTSTRAP", "/api/v1/bootstrap"],
-    ["/api/v1/%62ootstrap", "/api/v1/bootstrap"],
-    ["/api%2Fv1%2Fbootstrap", "/api/v1/bootstrap"],
-    ["/api/v1/bootstrap%2F", "/api/v1/bootstrap"],
-    ["/api/v1/bootstrap/;jsessionid=abc", "/api/v1/bootstrap"],
-    ["/%61pi/v1/bootstrap", "/api/v1/bootstrap"],
-    ["/", "/"],
-    ["/docs/", "/docs"],
-  ])("normalises %s", (pathname, expected) => {
+  it('normalises "/api/v1/bootstrap"', () => {
+    const pathname = "/api/v1/bootstrap";
+    const expected = "/api/v1/bootstrap";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "/api/v1/bootstrap/"', () => {
+    const pathname = "/api/v1/bootstrap/";
+    const expected = "/api/v1/bootstrap";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "/api//v1//bootstrap"', () => {
+    const pathname = "/api//v1//bootstrap";
+    const expected = "/api/v1/bootstrap";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "//api/v1/bootstrap"', () => {
+    const pathname = "//api/v1/bootstrap";
+    const expected = "/api/v1/bootstrap";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "/API/V1/BOOTSTRAP"', () => {
+    const pathname = "/API/V1/BOOTSTRAP";
+    const expected = "/api/v1/bootstrap";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "/api/v1/%62ootstrap"', () => {
+    const pathname = "/api/v1/%62ootstrap";
+    const expected = "/api/v1/bootstrap";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "/api%2Fv1%2Fbootstrap"', () => {
+    const pathname = "/api%2Fv1%2Fbootstrap";
+    const expected = "/api/v1/bootstrap";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "/api/v1/bootstrap%2F"', () => {
+    const pathname = "/api/v1/bootstrap%2F";
+    const expected = "/api/v1/bootstrap";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "/api/v1/bootstrap/;jsessionid=abc"', () => {
+    const pathname = "/api/v1/bootstrap/;jsessionid=abc";
+    const expected = "/api/v1/bootstrap";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "/%61pi/v1/bootstrap"', () => {
+    const pathname = "/%61pi/v1/bootstrap";
+    const expected = "/api/v1/bootstrap";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "/"', () => {
+    const pathname = "/";
+    const expected = "/";
+
+    expect(normalisePath(pathname)).toBe(expected);
+  });
+
+  it('normalises "/docs/"', () => {
+    const pathname = "/docs/";
+    const expected = "/docs";
+
     expect(normalisePath(pathname)).toBe(expected);
   });
 
@@ -148,42 +242,131 @@ describe("normalisePath", () => {
     expect(normalisePath("/api/v1/%E0%A4%A")).toBe("/api/v1/%e0%a4%a");
   });
 
-  it.each([
-    "/api/v1/bootstrap",
-    "/api/v1/bootstrap/",
-    "/api//v1/bootstrap",
-    "/api/v1/%62ootstrap",
-    "/API/V1/BOOTSTRAP",
-    "/api%2Fv1%2Fbootstrap",
-  ])("recognises %s as the bootstrap endpoint", (pathname) => {
+  it('recognises "/api/v1/bootstrap" as the bootstrap endpoint', () => {
+    const pathname = "/api/v1/bootstrap";
+
     expect(isBootstrapPath(pathname)).toBe(true);
   });
 
-  it.each(["/api/v1/me", "/api/v1/bootstrap/x", "/apifoo/v1/bootstrap", "/bootstrap"])(
-    "does not treat %s as the bootstrap endpoint",
-    (pathname) => {
-      expect(isBootstrapPath(pathname)).toBe(false);
-    },
-  );
+  it('recognises "/api/v1/bootstrap/" as the bootstrap endpoint', () => {
+    const pathname = "/api/v1/bootstrap/";
 
-  it.each([
-    "/api/v1/me",
-    "/api/v1/me/",
-    "/api//v1//me",
-    "/API/V1/ME",
-    "/api/v1/%6de",
-    "/api%2Fv1%2Fme",
-    "/api/v1/me/;jsessionid=abc",
-  ])("recognises %s as the profile update endpoint", (pathname) => {
+    expect(isBootstrapPath(pathname)).toBe(true);
+  });
+
+  it('recognises "/api//v1/bootstrap" as the bootstrap endpoint', () => {
+    const pathname = "/api//v1/bootstrap";
+
+    expect(isBootstrapPath(pathname)).toBe(true);
+  });
+
+  it('recognises "/api/v1/%62ootstrap" as the bootstrap endpoint', () => {
+    const pathname = "/api/v1/%62ootstrap";
+
+    expect(isBootstrapPath(pathname)).toBe(true);
+  });
+
+  it('recognises "/API/V1/BOOTSTRAP" as the bootstrap endpoint', () => {
+    const pathname = "/API/V1/BOOTSTRAP";
+
+    expect(isBootstrapPath(pathname)).toBe(true);
+  });
+
+  it('recognises "/api%2Fv1%2Fbootstrap" as the bootstrap endpoint', () => {
+    const pathname = "/api%2Fv1%2Fbootstrap";
+
+    expect(isBootstrapPath(pathname)).toBe(true);
+  });
+
+  it('does not treat "/api/v1/me" as the bootstrap endpoint', () => {
+    const pathname = "/api/v1/me";
+
+    expect(isBootstrapPath(pathname)).toBe(false);
+  });
+
+  it('does not treat "/api/v1/bootstrap/x" as the bootstrap endpoint', () => {
+    const pathname = "/api/v1/bootstrap/x";
+
+    expect(isBootstrapPath(pathname)).toBe(false);
+  });
+
+  it('does not treat "/apifoo/v1/bootstrap" as the bootstrap endpoint', () => {
+    const pathname = "/apifoo/v1/bootstrap";
+
+    expect(isBootstrapPath(pathname)).toBe(false);
+  });
+
+  it('does not treat "/bootstrap" as the bootstrap endpoint', () => {
+    const pathname = "/bootstrap";
+
+    expect(isBootstrapPath(pathname)).toBe(false);
+  });
+
+  it('recognises "/api/v1/me" as the profile update endpoint', () => {
+    const pathname = "/api/v1/me";
+
     expect(isProfileUpdatePath(pathname)).toBe(true);
   });
 
-  it.each(["/api/v1/me/email", "/api/v1/members", "/apifoo/v1/me", "/me"])(
-    "does not treat %s as the profile update endpoint",
-    (pathname) => {
-      expect(isProfileUpdatePath(pathname)).toBe(false);
-    },
-  );
+  it('recognises "/api/v1/me/" as the profile update endpoint', () => {
+    const pathname = "/api/v1/me/";
+
+    expect(isProfileUpdatePath(pathname)).toBe(true);
+  });
+
+  it('recognises "/api//v1//me" as the profile update endpoint', () => {
+    const pathname = "/api//v1//me";
+
+    expect(isProfileUpdatePath(pathname)).toBe(true);
+  });
+
+  it('recognises "/API/V1/ME" as the profile update endpoint', () => {
+    const pathname = "/API/V1/ME";
+
+    expect(isProfileUpdatePath(pathname)).toBe(true);
+  });
+
+  it('recognises "/api/v1/%6de" as the profile update endpoint', () => {
+    const pathname = "/api/v1/%6de";
+
+    expect(isProfileUpdatePath(pathname)).toBe(true);
+  });
+
+  it('recognises "/api%2Fv1%2Fme" as the profile update endpoint', () => {
+    const pathname = "/api%2Fv1%2Fme";
+
+    expect(isProfileUpdatePath(pathname)).toBe(true);
+  });
+
+  it('recognises "/api/v1/me/;jsessionid=abc" as the profile update endpoint', () => {
+    const pathname = "/api/v1/me/;jsessionid=abc";
+
+    expect(isProfileUpdatePath(pathname)).toBe(true);
+  });
+
+  it('does not treat "/api/v1/me/email" as the profile update endpoint', () => {
+    const pathname = "/api/v1/me/email";
+
+    expect(isProfileUpdatePath(pathname)).toBe(false);
+  });
+
+  it('does not treat "/api/v1/members" as the profile update endpoint', () => {
+    const pathname = "/api/v1/members";
+
+    expect(isProfileUpdatePath(pathname)).toBe(false);
+  });
+
+  it('does not treat "/apifoo/v1/me" as the profile update endpoint', () => {
+    const pathname = "/apifoo/v1/me";
+
+    expect(isProfileUpdatePath(pathname)).toBe(false);
+  });
+
+  it('does not treat "/me" as the profile update endpoint', () => {
+    const pathname = "/me";
+
+    expect(isProfileUpdatePath(pathname)).toBe(false);
+  });
 });
 
 describe("mergeVary", () => {
@@ -216,45 +399,195 @@ describe("withSecurityHeaders", () => {
 });
 
 describe("guardPath", () => {
-  it.each([
-    "//evil.example/",
-    "/%2F%2Fevil.example/",
-    "/.git/config",
-    "/.env",
-    "/.svn/entries",
-    "/.DS_Store",
-    "/%2eenv",
-    "/wp-admin",
-    "/wp-admin/setup.php",
-    "/wp-login.php",
-    "/xmlrpc.php",
-    "/phpmyadmin",
-    "/phpmyadmin/index.php",
-    "/docs",
-    "/docs/",
-    "/docs/missing-page",
-    "/docs/assets/app.js",
-    "/%E0%A4%A",
-  ])("rejects %s", (pathname) => {
+  it('rejects "//evil.example/"', () => {
+    const pathname = "//evil.example/";
+
     expect(guardPath(pathname)).toBe("not-found");
   });
 
-  it.each([
-    "/",
-    "/dashboard",
-    "/login",
-    "/t/acme/devices",
-    "/assets/brand/logo.png",
-    "/favicon.ico",
-    "/api/health",
-    "/api",
-    "/mdm/apple/scep",
-    "/scim/v2/Users",
-    "/mcp",
-    "/cdn-cgi/trace",
-    "/.well-known/oauth-authorization-server",
-    "/.well-known/oauth-protected-resource/mcp",
-  ])("allows %s", (pathname) => {
+  it('rejects "/%2F%2Fevil.example/"', () => {
+    const pathname = "/%2F%2Fevil.example/";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/.git/config"', () => {
+    const pathname = "/.git/config";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/.env"', () => {
+    const pathname = "/.env";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/.svn/entries"', () => {
+    const pathname = "/.svn/entries";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/.DS_Store"', () => {
+    const pathname = "/.DS_Store";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/%2eenv"', () => {
+    const pathname = "/%2eenv";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/wp-admin"', () => {
+    const pathname = "/wp-admin";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/wp-admin/setup.php"', () => {
+    const pathname = "/wp-admin/setup.php";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/wp-login.php"', () => {
+    const pathname = "/wp-login.php";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/xmlrpc.php"', () => {
+    const pathname = "/xmlrpc.php";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/phpmyadmin"', () => {
+    const pathname = "/phpmyadmin";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/phpmyadmin/index.php"', () => {
+    const pathname = "/phpmyadmin/index.php";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/docs"', () => {
+    const pathname = "/docs";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/docs/"', () => {
+    const pathname = "/docs/";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/docs/missing-page"', () => {
+    const pathname = "/docs/missing-page";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/docs/assets/app.js"', () => {
+    const pathname = "/docs/assets/app.js";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('rejects "/%E0%A4%A"', () => {
+    const pathname = "/%E0%A4%A";
+
+    expect(guardPath(pathname)).toBe("not-found");
+  });
+
+  it('allows "/"', () => {
+    const pathname = "/";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/dashboard"', () => {
+    const pathname = "/dashboard";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/login"', () => {
+    const pathname = "/login";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/t/acme/devices"', () => {
+    const pathname = "/t/acme/devices";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/assets/brand/logo.png"', () => {
+    const pathname = "/assets/brand/logo.png";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/favicon.ico"', () => {
+    const pathname = "/favicon.ico";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/api/health"', () => {
+    const pathname = "/api/health";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/api"', () => {
+    const pathname = "/api";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/mdm/apple/scep"', () => {
+    const pathname = "/mdm/apple/scep";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/scim/v2/Users"', () => {
+    const pathname = "/scim/v2/Users";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/mcp"', () => {
+    const pathname = "/mcp";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/cdn-cgi/trace"', () => {
+    const pathname = "/cdn-cgi/trace";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/.well-known/oauth-authorization-server"', () => {
+    const pathname = "/.well-known/oauth-authorization-server";
+
+    expect(guardPath(pathname)).toBe("allow");
+  });
+
+  it('allows "/.well-known/oauth-protected-resource/mcp"', () => {
+    const pathname = "/.well-known/oauth-protected-resource/mcp";
+
     expect(guardPath(pathname)).toBe("allow");
   });
 

@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { sealSecret } from "@mattrax/crypto";
 import { createEscrowCertificate, encryptCmsEnvelopedData, pemEncode } from "@mattrax/scep";
 import {
@@ -7,6 +7,7 @@ import {
   EnterprisePermissionDenied,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
+import { generateTenantEscrowKey } from "@mattrax/enterprise-backend";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
@@ -451,6 +452,62 @@ const seedCmsSecret = async (
   });
 };
 
+/**
+ * RSA key generation and CMS wrapping cost tens of milliseconds each. Build
+ * the escrow key rows, the foreign certificate, the CMS payloads and the
+ * upload pairs once per file: every test still gets its own database, and all
+ * of these fixtures are read-only inputs.
+ */
+const fixtureDb = () => makeDb();
+let escrowFixture: Awaited<ReturnType<typeof generateTenantEscrowKey>>;
+let wrappedForFixture: string;
+let wrappedForForeign: string;
+let uploadPair: Awaited<ReturnType<typeof escrowKeyPair>>;
+let otherUploadPair: Awaited<ReturnType<typeof escrowKeyPair>>;
+
+beforeAll(async () => {
+  const [fixture, foreign] = await Promise.all([
+    runEffect(
+      generateTenantEscrowKey({
+        db: fixtureDb(),
+        organizationId: "fixture-escrow",
+        organizationName: "Fixture",
+        authSecret,
+      }),
+    ),
+    runEffect(
+      generateTenantEscrowKey({
+        db: fixtureDb(),
+        organizationId: "fixture-foreign",
+        organizationName: "Foreign",
+        authSecret,
+      }),
+    ),
+  ]);
+
+  escrowFixture = fixture;
+  [uploadPair, otherUploadPair] = await Promise.all([
+    escrowKeyPair("Uploaded escrow"),
+    escrowKeyPair("Other escrow"),
+  ]);
+  [wrappedForFixture, wrappedForForeign] = await Promise.all([
+    cmsWrappedKey(fixture.certificatePem, key),
+    cmsWrappedKey(foreign.certificatePem, key),
+  ]);
+});
+
+/** Seed the shared escrow row into a test's own database under its tenant. */
+const seedEscrowFixture = (db: ReturnType<typeof makeDb>, organizationId: string) => {
+  const at = new Date();
+
+  db.store.apple_fde_escrow_key.push({
+    ...escrowFixture,
+    organizationId,
+    createdAt: at,
+    updatedAt: at,
+  });
+};
+
 describe("FileVault escrow key lifecycle", () => {
   it("generates a tenant escrow key and reports only the certificate", async () => {
     const { db, service, headers } = await makeContext();
@@ -478,10 +535,9 @@ describe("FileVault escrow key lifecycle", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const info = await runEffect(service.generateAppleFdeEscrowKey(request(headers), tenant.id));
-
+    seedEscrowFixture(db, tenant.id);
     db.store.device.push(deviceRow("device-1", tenant.id));
-    await seedCmsSecret(db, "device-1", tenant.id, await cmsWrappedKey(info.certificatePem!, key));
+    await seedCmsSecret(db, "device-1", tenant.id, wrappedForFixture);
 
     const revealed = await runEffect(
       service.getDeviceRecoveryKey(request(headers), tenant.id, "device-1"),
@@ -500,51 +556,50 @@ describe("FileVault escrow key lifecycle", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    await runEffect(service.generateAppleFdeEscrowKey(request(headers), tenant.id));
-
-    const foreign = await escrowKeyPair("Foreign escrow");
+    seedEscrowFixture(db, tenant.id);
     db.store.device.push(deviceRow("device-1", tenant.id));
-    await seedCmsSecret(
-      db,
-      "device-1",
-      tenant.id,
-      await cmsWrappedKey(foreign.certificatePem, key),
-    );
+    await seedCmsSecret(db, "device-1", tenant.id, wrappedForForeign);
 
     await expect(
       runEffect(service.getDeviceRecoveryKey(request(headers), tenant.id, "device-1")),
     ).rejects.toMatchObject({ message: expect.stringContaining("could not be decrypted") });
   });
 
-  it("accepts only a matching certificate/key pair on upload", async () => {
+  it("accepts a matching certificate/key pair on upload", async () => {
     const { db, service, headers } = await makeContext();
 
     const tenant = await runEffect(
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const pair = await escrowKeyPair("Uploaded escrow");
-    const other = await escrowKeyPair("Other escrow");
-
     const uploaded = await runEffect(
       service.uploadAppleFdeEscrowKey(request(headers), tenant.id, {
-        certificatePem: pair.certificatePem,
-        privateKeyPem: pair.privateKeyPem,
+        certificatePem: uploadPair.certificatePem,
+        privateKeyPem: uploadPair.privateKeyPem,
       }),
     );
 
     expect(uploaded.source).toBe("uploaded");
     expect(uploaded.subject).toBe("Uploaded escrow");
     expect(db.store.apple_fde_escrow_key).toHaveLength(1);
+  });
+
+  it("rejects a private key that does not match the uploaded certificate", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
 
     await expect(
       runEffect(
         service.uploadAppleFdeEscrowKey(request(headers), tenant.id, {
-          certificatePem: pair.certificatePem,
-          privateKeyPem: other.privateKeyPem,
+          certificatePem: uploadPair.certificatePem,
+          privateKeyPem: otherUploadPair.privateKeyPem,
         }),
       ),
     ).rejects.toMatchObject({ message: expect.stringContaining("do not match") });
+    expect(db.store.apple_fde_escrow_key).toHaveLength(0);
   });
 });
 
@@ -640,7 +695,7 @@ describe("erase flags and Recovery Lock", () => {
 
     expect(erase?.payload).toMatchObject({
       ObliterationBehavior: "Default",
-      PIN: expect.any(String),
+      PIN: expect.stringMatching(/^\d{6}$/),
     });
     expect(erase?.payload).not.toHaveProperty("DisallowProximitySetup");
   });
@@ -760,8 +815,7 @@ describe("erase flags and Recovery Lock", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const info = await runEffect(service.generateAppleFdeEscrowKey(request(headers), tenant.id));
-
+    seedEscrowFixture(db, tenant.id);
     db.store.device.push(deviceRow("device-1", tenant.id));
     await seedSecret(db, "device-1", tenant.id);
 
@@ -786,8 +840,8 @@ describe("erase flags and Recovery Lock", () => {
       ? payload.ReplyEncryptionCertificate
       : undefined;
 
-    expect(replyCertificate).toEqual(expect.any(String));
-    expect(info.certificatePem).toContain("BEGIN CERTIFICATE");
+    expect(replyCertificate).toEqual(expect.stringMatching(/^[A-Za-z0-9+/]+={0,2}$/));
+    expect(escrowFixture.certificatePem).toContain("BEGIN CERTIFICATE");
   });
 
   it("explains why a rotation cannot run without an escrow key", async () => {

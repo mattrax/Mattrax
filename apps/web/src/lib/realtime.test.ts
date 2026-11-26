@@ -1,6 +1,6 @@
-import { Effect } from "effect";
+import { Effect, Layer } from "effect";
 import { TestClock } from "effect/testing";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { RealtimeEvent } from "@mattrax/enterprise-domain/client";
 import { enterpriseKeys } from "~/lib/enterprise";
 import {
@@ -8,6 +8,7 @@ import {
   REALTIME_RETRY_MAX_MS,
   collectRealtimeTargets,
   RealtimeInvalidatorService,
+  RealtimeQueryCacheService,
   realtimeInvalidatorLayer,
   startTenantRealtimeEffect,
   decodeRealtimeEvent,
@@ -29,11 +30,22 @@ const event = (overrides: Partial<RealtimeEvent> = {}): RealtimeEvent => ({
   ...overrides,
 });
 
-const fakeClient = () => ({
-  invalidateQueries: vi.fn(
-    async (_input: { queryKey?: readonly unknown[]; refetchType?: string }) => undefined,
-  ),
-});
+type InvalidateInput = { readonly queryKey?: readonly unknown[]; readonly refetchType?: string };
+
+const fakeClient = () => {
+  const calls: Array<InvalidateInput> = [];
+
+  return {
+    calls,
+    invalidateQueries: async (input: InvalidateInput) => {
+      calls.push(input);
+    },
+  };
+};
+
+/** QueryCache tag layer with a recording fake, instead of a client spy. */
+const cacheLayer = (client: RealtimeQueryCache) =>
+  Layer.succeed(RealtimeQueryCacheService, RealtimeQueryCacheService.of(client));
 
 describe("realtimeRetryDelay", () => {
   it("starts at 0.5–1s and grows", () => {
@@ -140,11 +152,11 @@ describe("createRealtimeInvalidator", () => {
         const invalidator = yield* RealtimeInvalidatorService;
 
         for (let index = 0; index < 25; index++) yield* invalidator.push(event({ seq: index + 1 }));
-        expect(client.invalidateQueries).not.toHaveBeenCalled();
+        expect(client.calls).toEqual([]);
 
         yield* TestClock.adjust(100);
         yield* Effect.yieldNow;
-        const calls = client.invalidateQueries.mock.calls.map(([input]) => input);
+        const calls = client.calls;
         expect(calls).toContainEqual({
           queryKey: enterpriseKeys.item(tenantId, "device", "device-a"),
           refetchType: "active",
@@ -157,7 +169,8 @@ describe("createRealtimeInvalidator", () => {
           ),
         ).toHaveLength(1);
       }).pipe(
-        Effect.provide(realtimeInvalidatorLayer(client, tenantId, { debounceMs: 100 })),
+        Effect.provide(realtimeInvalidatorLayer(tenantId, { debounceMs: 100 })),
+        Effect.provide(cacheLayer(client)),
         Effect.provide(TestClock.layer()),
         Effect.scoped,
       ),
@@ -169,17 +182,25 @@ describe("createRealtimeInvalidator", () => {
 
     await Effect.runPromise(
       Effect.gen(function* () {
-        const invalidator = yield* RealtimeInvalidatorService;
-        yield* invalidator.push(event());
+        // The debounce fiber belongs to this inner scope; closing it interrupts
+        // the sleep before the shared clock is advanced.
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const invalidator = yield* RealtimeInvalidatorService;
+            yield* invalidator.push(event());
+            yield* Effect.yieldNow;
+          }).pipe(
+            Effect.provide(realtimeInvalidatorLayer(tenantId, { debounceMs: 100 })),
+            Effect.provide(cacheLayer(client)),
+          ),
+        );
+
+        // Advance the clock the service actually slept on, not a fresh one.
+        yield* TestClock.adjust(1_000);
         yield* Effect.yieldNow;
-      }).pipe(
-        Effect.provide(realtimeInvalidatorLayer(client, tenantId, { debounceMs: 100 })),
-        Effect.provide(TestClock.layer()),
-        Effect.scoped,
-      ),
+      }).pipe(Effect.provide(TestClock.layer())),
     );
-    await Effect.runPromise(TestClock.adjust(1_000).pipe(Effect.provide(TestClock.layer())));
-    expect(client.invalidateQueries).not.toHaveBeenCalled();
+    expect(client.calls).toEqual([]);
   });
 
   it("invalidateAll refreshes every realtime family once", async () => {
@@ -190,7 +211,7 @@ describe("createRealtimeInvalidator", () => {
         const invalidator = yield* RealtimeInvalidatorService;
         yield* invalidator.invalidateAll;
         yield* Effect.yieldNow;
-        const calls = client.invalidateQueries.mock.calls.map(([input]) => input);
+        const calls = client.calls;
         expect(calls).toContainEqual({
           queryKey: enterpriseKeys.deviceSearchPrefix(tenantId),
           refetchType: "active",
@@ -204,7 +225,8 @@ describe("createRealtimeInvalidator", () => {
           refetchType: "active",
         });
       }).pipe(
-        Effect.provide(realtimeInvalidatorLayer(client, tenantId)),
+        Effect.provide(realtimeInvalidatorLayer(tenantId)),
+        Effect.provide(cacheLayer(client)),
         Effect.provide(TestClock.layer()),
         Effect.scoped,
       ),
@@ -298,7 +320,8 @@ describe("startTenantRealtimeEffect", () => {
 
   const provide = <A, E, R>(effect: Effect.Effect<A, E, R>, client: RealtimeQueryCache) =>
     effect.pipe(
-      Effect.provide(realtimeInvalidatorLayer(client, tenantId, { debounceMs: 10 })),
+      Effect.provide(realtimeInvalidatorLayer(tenantId, { debounceMs: 10 })),
+      Effect.provide(cacheLayer(client)),
       Effect.provide(TestClock.layer()),
       Effect.scoped,
     );
@@ -378,7 +401,7 @@ describe("startTenantRealtimeEffect", () => {
           expect(yield* handle.status).toBe("polling");
           yield* TestClock.adjust(1_000);
           yield* Effect.yieldNow;
-          expect(client.invalidateQueries).toHaveBeenCalled();
+          expect(client.calls.length).toBeGreaterThan(0);
         }),
         client,
       ),
@@ -440,7 +463,7 @@ describe("startTenantRealtimeEffect", () => {
           yield* TestClock.adjust(1_000);
           yield* Effect.yieldNow;
           expect(yield* handle.status).toBe("polling");
-          expect(client.invalidateQueries).toHaveBeenCalled();
+          expect(client.calls.length).toBeGreaterThan(0);
         }),
         client,
       ),

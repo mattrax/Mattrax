@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { checkReadiness } from "./readiness.js";
+import type { ReadinessScheduler } from "./readiness.js";
 
 const base = { version: "1.2.3", deploymentId: "deploy-1" };
+
+/** A scheduler that records deadlines instead of starting real timers. */
+const manualScheduler = () => {
+  const deadlines: Array<() => void> = [];
+  const schedule: ReadinessScheduler = (task) => {
+    deadlines.push(task);
+
+    return { cancel: () => {} };
+  };
+
+  return { schedule, deadlines };
+};
 
 describe("readiness probe", () => {
   it("returns 200 when the database check succeeds", async () => {
@@ -44,15 +57,19 @@ describe("readiness probe", () => {
   });
 
   it("returns 503 instead of hanging when the check never settles", async () => {
-    const started = Date.now();
+    const { schedule, deadlines } = manualScheduler();
 
-    const result = await checkReadiness({
+    const pending = checkReadiness({
       ...base,
       timeoutMs: 10,
       checkDatabase: () => new Promise<void>(() => {}),
+      schedule,
     });
 
-    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(deadlines).toHaveLength(1);
+    deadlines[0]!();
+
+    const result = await pending;
     expect(result.httpStatus).toBe(503);
     expect(result.body.reason).toBe("timeout");
   });
@@ -131,17 +148,23 @@ describe("readiness probe", () => {
   });
 
   it("bounds each check independently", async () => {
-    const started = Date.now();
+    const { schedule, deadlines } = manualScheduler();
 
-    const result = await checkReadiness({
+    const pending = checkReadiness({
       ...base,
       timeoutMs: 10,
       checkDatabase: async () => {},
       checkStorage: async () => "ok",
       checkMailer: () => new Promise<"ok">(() => {}),
+      schedule,
     });
 
-    expect(Date.now() - started).toBeLessThan(500);
+    // Only the mailer's deadline expires; the other two checks still settle
+    // normally, so they must not be reported as failures.
+    expect(deadlines).toHaveLength(3);
+    deadlines[2]!();
+
+    const result = await pending;
     expect(result.httpStatus).toBe(503);
     expect(result.body.reason).toBe("timeout");
     expect(result.body.checks).toMatchObject({ database: "ok", storage: "ok", mailer: "error" });

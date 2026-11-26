@@ -228,31 +228,11 @@ const jsonHeaders = (headers: Record<string, string>) => ({
   "content-type": "application/json",
 });
 
-const createTokenAliases = [
-  "/api/v1/account/api-tokens",
-  "/API/V1/ACCOUNT/API-TOKENS",
-  "/api//v1//account//api-tokens",
-  "/api/v1/account/api-tokens/",
-  "/api/v1/%61ccount/api-tokens",
-  "/api/%76%31/%41CCOUNT/API-TOKENS/",
-  "/api/v1/account/api-tokens;jsessionid=dummy",
-];
-
-const deleteAliases = [
-  "/api/v1/me",
-  "/API/V1/ME",
-  "/api//v1//me",
-  "/api/v1/me/",
-  "/api/v1/%6De",
-  "/api/%76%31/ME/",
-  "/api/v1/me;jsessionid=dummy",
-];
-
 describe("native-router account authentication", () => {
-  it.each(createTokenAliases)("denies OAuth API-token creation through %s", async (path) => {
+  it("denies OAuth API-token creation through canonical path", async () => {
     const { handler, db, rawOAuthToken } = await makeAuthHandler({ credential: "oauth" });
     const response = await handler(
-      new Request(`http://localhost${path}`, {
+      new Request(`http://localhost/api/v1/account/api-tokens`, {
         method: "POST",
         headers: jsonHeaders(bearerHeaders(rawOAuthToken)),
         body: JSON.stringify({ name: "Escalated token" }),
@@ -264,10 +244,196 @@ describe("native-router account authentication", () => {
     expect(db.store.account_api_token).toHaveLength(0);
   });
 
-  it.each(deleteAliases)("denies a read-only token deletion through %s", async (path) => {
+  it("denies OAuth API-token creation through uppercase path", async () => {
+    const { handler, db, rawOAuthToken } = await makeAuthHandler({ credential: "oauth" });
+    const response = await handler(
+      new Request(`http://localhost/API/V1/ACCOUNT/API-TOKENS`, {
+        method: "POST",
+        headers: jsonHeaders(bearerHeaders(rawOAuthToken)),
+        body: JSON.stringify({ name: "Escalated token" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account_api_token).toHaveLength(0);
+  });
+
+  it("denies OAuth API-token creation through doubled slashes", async () => {
+    const { handler, db, rawOAuthToken } = await makeAuthHandler({ credential: "oauth" });
+    const response = await handler(
+      new Request(`http://localhost/api//v1//account//api-tokens`, {
+        method: "POST",
+        headers: jsonHeaders(bearerHeaders(rawOAuthToken)),
+        body: JSON.stringify({ name: "Escalated token" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account_api_token).toHaveLength(0);
+  });
+
+  it("denies OAuth API-token creation through trailing slash", async () => {
+    const { handler, db, rawOAuthToken } = await makeAuthHandler({ credential: "oauth" });
+    const response = await handler(
+      new Request(`http://localhost/api/v1/account/api-tokens/`, {
+        method: "POST",
+        headers: jsonHeaders(bearerHeaders(rawOAuthToken)),
+        body: JSON.stringify({ name: "Escalated token" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account_api_token).toHaveLength(0);
+  });
+
+  it("denies OAuth API-token creation through a percent-encoded segment", async () => {
+    const { handler, db, rawOAuthToken } = await makeAuthHandler({ credential: "oauth" });
+    const response = await handler(
+      new Request(`http://localhost/api/v1/%61ccount/api-tokens`, {
+        method: "POST",
+        headers: jsonHeaders(bearerHeaders(rawOAuthToken)),
+        body: JSON.stringify({ name: "Escalated token" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account_api_token).toHaveLength(0);
+  });
+
+  it("denies OAuth API-token creation through percent-encoded uppercase segments", async () => {
+    const { handler, db, rawOAuthToken } = await makeAuthHandler({ credential: "oauth" });
+    const response = await handler(
+      new Request(`http://localhost/api/%76%31/%41CCOUNT/API-TOKENS/`, {
+        method: "POST",
+        headers: jsonHeaders(bearerHeaders(rawOAuthToken)),
+        body: JSON.stringify({ name: "Escalated token" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account_api_token).toHaveLength(0);
+  });
+
+  it("denies OAuth API-token creation through a matrix-parameter suffix", async () => {
+    const { handler, db, rawOAuthToken } = await makeAuthHandler({ credential: "oauth" });
+    const response = await handler(
+      new Request(`http://localhost/api/v1/account/api-tokens;jsessionid=dummy`, {
+        method: "POST",
+        headers: jsonHeaders(bearerHeaders(rawOAuthToken)),
+        body: JSON.stringify({ name: "Escalated token" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account_api_token).toHaveLength(0);
+  });
+
+  it("denies a read-only token deletion through canonical path", async () => {
     const { handler, db, rawToken } = await makeAuthHandler({ credential: "read-token" });
     const response = await handler(
-      new Request(`http://localhost${path}`, {
+      new Request(`http://localhost/api/v1/me`, {
+        method: "DELETE",
+        headers: jsonHeaders(bearerHeaders(rawToken)),
+        body: JSON.stringify({ confirmEmail: email }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.account_api_token[0]).toMatchObject({ revokedAt: null });
+  });
+
+  it("denies a read-only token deletion through uppercase path", async () => {
+    const { handler, db, rawToken } = await makeAuthHandler({ credential: "read-token" });
+    const response = await handler(
+      new Request(`http://localhost/API/V1/ME`, {
+        method: "DELETE",
+        headers: jsonHeaders(bearerHeaders(rawToken)),
+        body: JSON.stringify({ confirmEmail: email }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.account_api_token[0]).toMatchObject({ revokedAt: null });
+  });
+
+  it("denies a read-only token deletion through doubled slashes", async () => {
+    const { handler, db, rawToken } = await makeAuthHandler({ credential: "read-token" });
+    const response = await handler(
+      new Request(`http://localhost/api//v1//me`, {
+        method: "DELETE",
+        headers: jsonHeaders(bearerHeaders(rawToken)),
+        body: JSON.stringify({ confirmEmail: email }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.account_api_token[0]).toMatchObject({ revokedAt: null });
+  });
+
+  it("denies a read-only token deletion through trailing slash", async () => {
+    const { handler, db, rawToken } = await makeAuthHandler({ credential: "read-token" });
+    const response = await handler(
+      new Request(`http://localhost/api/v1/me/`, {
+        method: "DELETE",
+        headers: jsonHeaders(bearerHeaders(rawToken)),
+        body: JSON.stringify({ confirmEmail: email }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.account_api_token[0]).toMatchObject({ revokedAt: null });
+  });
+
+  it("denies a read-only token deletion through a percent-encoded segment", async () => {
+    const { handler, db, rawToken } = await makeAuthHandler({ credential: "read-token" });
+    const response = await handler(
+      new Request(`http://localhost/api/v1/%6De`, {
+        method: "DELETE",
+        headers: jsonHeaders(bearerHeaders(rawToken)),
+        body: JSON.stringify({ confirmEmail: email }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.account_api_token[0]).toMatchObject({ revokedAt: null });
+  });
+
+  it("denies a read-only token deletion through percent-encoded uppercase segments", async () => {
+    const { handler, db, rawToken } = await makeAuthHandler({ credential: "read-token" });
+    const response = await handler(
+      new Request(`http://localhost/api/%76%31/ME/`, {
+        method: "DELETE",
+        headers: jsonHeaders(bearerHeaders(rawToken)),
+        body: JSON.stringify({ confirmEmail: email }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ _tag: "EnterpriseForbidden" });
+    expect(db.store.account).toHaveLength(1);
+    expect(db.store.account_api_token[0]).toMatchObject({ revokedAt: null });
+  });
+
+  it("denies a read-only token deletion through a matrix-parameter suffix", async () => {
+    const { handler, db, rawToken } = await makeAuthHandler({ credential: "read-token" });
+    const response = await handler(
+      new Request(`http://localhost/api/v1/me;jsessionid=dummy`, {
         method: "DELETE",
         headers: jsonHeaders(bearerHeaders(rawToken)),
         body: JSON.stringify({ confirmEmail: email }),

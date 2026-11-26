@@ -79,7 +79,6 @@ describe("services Node HTTP server", () => {
             method: "POST",
             body: requestBody,
             duplex: "half",
-            signal: AbortSignal.timeout(2_000),
           } as RequestInit);
 
           expect(response.status).toBe(413);
@@ -250,17 +249,23 @@ describe("services Node HTTP server", () => {
         );
         yield* Deferred.await(handlerStarted);
 
-        const shutdownStarted = Date.now();
-        yield* Fiber.interrupt(serverFiber);
-        expect(Date.now() - shutdownStarted).toBeLessThan(2_000);
+        // The grace period is now-driven: advance virtual time while the
+        // interrupt (forked so it does not block the clock) awaits it.
+        const interrupting = yield* Effect.forkChild(Fiber.interrupt(serverFiber));
+        yield* TestClock.adjust("50 millis");
+        yield* Fiber.join(interrupting);
         expect(handlerInterrupted).toBe(true);
 
         yield* Fiber.interrupt(requestFiber);
-      }),
+      }).pipe(Effect.provide(TestClock.layer())),
     );
   });
 
   it("aborts a failed streamed response without appending an error body", async () => {
+    let releasePrefix!: () => void;
+    const prefixObserved = new Promise<void>((resolve) => {
+      releasePrefix = resolve;
+    });
     const app = Layer.mergeAll(
       HttpRouter.add(
         "GET",
@@ -268,7 +273,9 @@ describe("services Node HTTP server", () => {
         Effect.succeed(
           HttpServerResponse.stream(
             Stream.make(new TextEncoder().encode("partial")).pipe(
-              Stream.concat(Stream.fromEffect(Effect.sleep("50 millis")).pipe(Stream.drain)),
+              Stream.concat(
+                Stream.fromEffect(Effect.promise(() => prefixObserved)).pipe(Stream.drain),
+              ),
               Stream.concat(Stream.fail(new Error("stream failed"))),
             ),
           ),
@@ -288,10 +295,15 @@ describe("services Node HTTP server", () => {
         const reader = response.body!.getReader();
         const decoder = new TextDecoder();
 
+        let firstChunk = true;
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           received += decoder.decode(value, { stream: true });
+          if (firstChunk) {
+            firstChunk = false;
+            releasePrefix();
+          }
         }
       } catch {
         readFailed = true;

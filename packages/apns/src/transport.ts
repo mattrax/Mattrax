@@ -77,9 +77,12 @@ export function NodePushTransport(defaults?: {
   readonly timeoutMs?: number;
   /** Override the Apple endpoint (tests, or an APNs proxy). */
   readonly endpoint?: string;
+  /** Injectable connect seam; defaults to node:http2.connect. */
+  readonly connect?: typeof http2.connect;
 }): ApnsPushTransport {
   const timeoutMs = defaults?.timeoutMs ?? APNS_REQUEST_TIMEOUT_MS;
   const endpoint = defaults?.endpoint ?? APNS_PRODUCTION_ENDPOINT;
+  const connect = defaults?.connect ?? http2.connect;
 
   return {
     name: "node",
@@ -101,7 +104,7 @@ export function NodePushTransport(defaults?: {
           const url = new URL(request.url);
           const body = Buffer.from(request.body);
 
-          const client = http2.connect(url.origin, {
+          const client = connect(url.origin, {
             cert: certPem,
             key: privateKeyPem,
           });

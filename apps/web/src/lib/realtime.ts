@@ -248,6 +248,12 @@ export type RealtimeQueryCache = {
   }) => Promise<void>;
 };
 
+/** Injectable query-cache port; tests provide a fake, no client spying. */
+export class RealtimeQueryCacheService extends Context.Service<
+  RealtimeQueryCacheService,
+  RealtimeQueryCache
+>()("mattraxe/web/RealtimeQueryCache") {}
+
 export type RealtimeInvalidator = {
   /** Queue events; they are flushed after the debounce window. */
   readonly push: (event: RealtimeEvent) => void;
@@ -277,13 +283,13 @@ const invalidateKeys = (queryClient: RealtimeQueryCache, keys: ReadonlyArray<rea
   );
 
 export const realtimeInvalidatorLayer = (
-  queryClient: RealtimeQueryCache,
   tenantId: string,
   options: { readonly debounceMs?: number; readonly maxDevices?: number } = {},
-): Layer.Layer<RealtimeInvalidatorService> =>
+): Layer.Layer<RealtimeInvalidatorService, never, RealtimeQueryCacheService> =>
   Layer.effect(
     RealtimeInvalidatorService,
     Effect.gen(function* () {
+      const queryClient = yield* RealtimeQueryCacheService;
       const debounceMs = options.debounceMs ?? REALTIME_DEBOUNCE_MS;
       const maxDevices = options.maxDevices ?? REALTIME_MAX_DEVICES_PER_FLUSH;
       const scope = yield* Scope.Scope;
@@ -328,7 +334,13 @@ export const createRealtimeInvalidator = (
   options: { readonly debounceMs?: number; readonly maxDevices?: number } = {},
 ): RealtimeInvalidator => {
   let service: RealtimeInvalidatorService["Service"] | undefined;
-  const runtime = ManagedRuntime.make(realtimeInvalidatorLayer(queryClient, tenantId, options));
+  const runtime = ManagedRuntime.make(
+    realtimeInvalidatorLayer(tenantId, options).pipe(
+      Layer.provide(
+        Layer.succeed(RealtimeQueryCacheService, RealtimeQueryCacheService.of(queryClient)),
+      ),
+    ),
+  );
 
   runtime.runSync(
     Effect.gen(function* () {
@@ -642,7 +654,16 @@ export const startTenantRealtime = (options: TenantRealtimeOptions): TenantRealt
           }),
         ),
       ),
-    ).pipe(Layer.provide(realtimeInvalidatorLayer(options.queryClient, options.tenantId, options))),
+    )
+      .pipe(Layer.provide(realtimeInvalidatorLayer(options.tenantId, options)))
+      .pipe(
+        Layer.provide(
+          Layer.succeed(
+            RealtimeQueryCacheService,
+            RealtimeQueryCacheService.of(options.queryClient),
+          ),
+        ),
+      ),
   );
 
   runtime.runSync(Effect.void);

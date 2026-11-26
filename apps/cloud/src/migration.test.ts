@@ -4,14 +4,28 @@ import { describe, expect, it } from "vitest";
 
 const migrationsDir = join(import.meta.dirname, "..", "migrations");
 
+let cachedNames: string[] | undefined;
+
 const migrationNames = () =>
-  readdirSync(migrationsDir, { withFileTypes: true })
+  (cachedNames ??= readdirSync(migrationsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
-    .sort();
+    .sort());
 
-const readMigration = (name: string) =>
-  readFileSync(join(migrationsDir, name, "migration.sql"), "utf8");
+// Every test only reads these files. Cache them per file so the repeated
+// scans of all migrations do not pay for filesystem reads each time.
+const migrationSql = new Map<string, string>();
+
+const readMigration = (name: string) => {
+  let sql = migrationSql.get(name);
+
+  if (sql === undefined) {
+    sql = readFileSync(join(migrationsDir, name, "migration.sql"), "utf8");
+    migrationSql.set(name, sql);
+  }
+
+  return sql;
+};
 
 type MigrationDdlEntry = {
   readonly entityType?: string;
@@ -32,8 +46,18 @@ type MigrationSnapshot = {
   readonly ddl: ReadonlyArray<MigrationDdlEntry>;
 };
 
-const readSnapshot = (name: string): MigrationSnapshot =>
-  JSON.parse(readFileSync(join(migrationsDir, name, "snapshot.json"), "utf8"));
+const snapshotCache = new Map<string, MigrationSnapshot>();
+
+const readSnapshot = (name: string): MigrationSnapshot => {
+  let snapshot = snapshotCache.get(name);
+
+  if (snapshot === undefined) {
+    snapshot = JSON.parse(readFileSync(join(migrationsDir, name, "snapshot.json"), "utf8"));
+    snapshotCache.set(name, snapshot);
+  }
+
+  return snapshot;
+};
 
 const DEVICE_INVENTORY_COLUMNS = [
   "filevault_enabled",

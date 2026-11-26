@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import jsQR from "jsqr";
 import {
@@ -182,10 +183,7 @@ test.describe("device enrollment", () => {
   }) => {
     const tenant = await bootstrapTenant(page, "Windows Tenant");
 
-    const other = await createTenant(
-      page,
-      `Windows Other ${Math.random().toString(36).slice(2, 8)}`,
-    );
+    const other = await createTenant(page, `Windows Other ${randomUUID().slice(0, 8)}`);
 
     await api(page, `/api/v1/tenants/${tenant.id}/enrollment`, {
       method: "PATCH",

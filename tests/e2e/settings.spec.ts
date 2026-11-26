@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { addFilter, api, bootstrapTenant, gotoHydrated } from "./helpers";
@@ -200,7 +201,7 @@ test.describe("tenant settings", () => {
 
   test("requires I understand before changing the tenant slug", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Slug Warning Tenant");
-    const nextSlug = `renamed-${Math.random().toString(36).slice(2, 8)}`;
+    const nextSlug = `renamed-${randomUUID().slice(0, 8)}`;
     await gotoHydrated(page, `/t/${tenant.id}/settings`);
 
     await page.getByLabel(/^Slug/).fill(nextSlug);
@@ -340,10 +341,8 @@ test.describe("tenant settings", () => {
     await expect(result).toHaveCount(0);
     await dialog.getByRole("button", { name: "Use JP" }).click();
     await expect(dialog).toBeHidden({ timeout: 15_000 });
-    // The dialog's dismiss layer lingers while it animates out; a click in that
-    // window is treated as an outside press and swallowed.
-    await page.waitForTimeout(350);
-
+    // toContainText retries until the picker has committed and the dialog's
+    // dismiss layer has finished animating out.
     await expect(trigger).toContainText("Japan");
     await saveTenantSettings(page);
 

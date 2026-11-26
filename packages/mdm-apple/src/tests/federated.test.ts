@@ -11,6 +11,8 @@ import {
 } from "@mattrax/mdm-windows";
 import type { FederatedJsonWebKeySet } from "@mattrax/mdm-windows";
 
+const NOW = Date.parse("2026-11-01T00:00:00Z");
+
 const tenantId = "11111111-1111-1111-1111-111111111111";
 
 const audience = "22222222-2222-2222-2222-222222222222";
@@ -94,9 +96,11 @@ const claims = (overrides: Schema.JsonObject = {}) =>
       sub: "subject-1",
       oid: "object-1",
       preferred_username: "user@contoso.com",
-      exp: Math.floor(Date.now() / 1000) + 3_600,
-      nbf: Math.floor(Date.now() / 1000) - 10,
-      iat: Math.floor(Date.now() / 1000) - 10,
+      // The JOSE verifier checks exp against the real clock; keep valid tokens
+      // far-future there while the explicit TTL checks use the injected NOW.
+      exp: Math.floor(NOW / 1000) + 365 * 24 * 60 * 60,
+      nbf: Math.floor(NOW / 1000) - 10,
+      iat: Math.floor(NOW / 1000) - 10,
     },
     overrides,
   );
@@ -111,6 +115,7 @@ const validate = async (
     tenantId,
     audience,
     jwks: key.jwks,
+    now: NOW,
     ...overrides,
   });
 
@@ -188,7 +193,7 @@ describe("federated Entra token validation", () => {
 
   it("rejects an expired token", async () => {
     const key = await makeKey();
-    const token = await signToken(key, claims({ exp: Math.floor(Date.now() / 1000) - 3_600 }));
+    const token = await signToken(key, claims({ exp: Math.floor(NOW / 1000) - 3_600 }));
     const result = await validate(token, key);
 
     expect(result).toMatchObject({ ok: false, reason: "expired" });
@@ -196,7 +201,7 @@ describe("federated Entra token validation", () => {
 
   it("rejects a token that is not valid yet", async () => {
     const key = await makeKey();
-    const token = await signToken(key, claims({ nbf: Math.floor(Date.now() / 1000) + 3_600 }));
+    const token = await signToken(key, claims({ nbf: Math.floor(NOW / 1000) + 3_600 }));
     const result = await validate(token, key);
 
     expect(result).toMatchObject({ ok: false, reason: "not_yet_valid" });

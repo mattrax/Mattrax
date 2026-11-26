@@ -432,28 +432,30 @@ function androidDeviceRow() {
   };
 }
 
+// Every describe below signs with this key, so prepare it once for the file
+// rather than inside the first describe: shuffle can start with any describe.
+beforeAll(async () => {
+  // SAFETY: WebCrypto returns a `CryptoKeyPair` for the RSA key pair it was
+  // asked to generate; the DOM runtime type is wider than that overload.
+  const pair = await crypto.subtle.generateKey(
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      hash: "SHA-256",
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+    },
+    true,
+    ["sign", "verify"],
+  );
+
+  privateKey = pair.privateKey;
+  publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  publicJwk.kid = kid;
+  publicJwk.alg = "RS256";
+  publicJwk.use = "sig";
+});
+
 describe("Android Enterprise delivery", () => {
-  beforeAll(async () => {
-    // SAFETY: WebCrypto returns a `CryptoKeyPair` for the RSA key pair it was
-    // asked to generate; the DOM runtime type is wider than that overload.
-    const pair = await crypto.subtle.generateKey(
-      {
-        name: "RSASSA-PKCS1-v1_5",
-        hash: "SHA-256",
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]),
-      },
-      true,
-      ["sign", "verify"],
-    );
-
-    privateKey = pair.privateKey;
-    publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
-    publicJwk.kid = kid;
-    publicJwk.alg = "RS256";
-    publicJwk.use = "sig";
-  });
-
   it("reports unconfigured tenants and fails closed", async () => {
     const db = makeDb({
       organization: [organizationRow(organizationId, "Acme")],
@@ -1656,7 +1658,12 @@ describe("Android remote actions", () => {
     expect(calls.commands[0]).toMatchObject({
       deviceName,
       type: "START_LOST_MODE",
-      startLostModeParams: { lostMessage: { defaultMessage: expect.any(String) } },
+      startLostModeParams: {
+        lostMessage: {
+          defaultMessage:
+            "This device has been reported lost. Please return it to your organisation.",
+        },
+      },
     });
 
     await provideAndroid(
@@ -1775,7 +1782,9 @@ describe("Android remote actions", () => {
     expect(sent.newPassword).toMatch(/[0-9]/);
     expect(result).toEqual({
       operationName: expect.stringContaining("op-1"),
-      commandId: expect.any(String),
+      commandId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      ),
     });
     expect(JSON.stringify(result)).not.toContain(sent.newPassword!);
     expect(JSON.stringify(db.store.device_command![0])).not.toContain(sent.newPassword!);

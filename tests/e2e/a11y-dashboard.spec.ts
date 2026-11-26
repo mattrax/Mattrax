@@ -76,23 +76,19 @@ const expectNoViolations = async (
   context: string,
   options: { include?: string; allow?: Allow } = {},
 ) => {
-  let violations;
+  // Entrance animations and delayed transitions change contrast while they
+  // run. Poll the scan itself: the assertion retries on the thing it cares
+  // about instead of guessing how long the page needs to settle.
+  await expect
+    .poll(
+      async () => {
+        const violations = await violationsFor(page, options.include, options.allow);
 
-  try {
-    violations = await violationsFor(page, options.include, options.allow);
-  } catch (error) {
-    throw new Error(
-      `${context}: axe could not scan ${options.include ?? "the page"}: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
-  }
-
-  expect(violations, `${context}: ${JSON.stringify(violations, null, 2)}`).toEqual([]);
-};
-
-/** Let entrance animations finish: axe blends text against mid-animation opacity. */
-const settle = async (page: Page, ms = 450) => {
-  await page.waitForTimeout(ms);
+        return { context, violations };
+      },
+      { timeout: 15_000 },
+    )
+    .toEqual({ context, violations: [] });
 };
 
 /**
@@ -116,9 +112,22 @@ const openMenu = async (page: Page, trigger: import("@playwright/test").Locator)
 };
 
 const openPalette = async (page: Page) => {
-  await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
   const input = page.locator('input[role="combobox"]');
 
+  // A press right after navigation can arrive before the shortcut listener is
+  // attached. Retry the press until the palette's own input shows up.
+  await expect
+    .poll(
+      async () => {
+        if ((await input.count()) > 0) return 1;
+
+        await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
+
+        return input.count();
+      },
+      { timeout: 8_000 },
+    )
+    .toBeGreaterThan(0);
   await expect(input).toBeVisible();
 
   return input;
@@ -155,7 +164,6 @@ test.describe("dashboard accessibility", () => {
       [`${base}/settings/storage`, "storage"],
     ] as const) {
       await gotoHydrated(page, path);
-      await settle(page);
       await expectNoViolations(page, label, { allow: knownContrast });
     }
 
@@ -166,7 +174,6 @@ test.describe("dashboard accessibility", () => {
 
     if (devices.devices.length > 0) {
       await gotoHydrated(page, `${base}/devices/${devices.devices[0].id}`);
-      await settle(page);
       await expectNoViolations(page, "device detail");
     } else {
       test.info().annotations.push({
@@ -179,10 +186,8 @@ test.describe("dashboard accessibility", () => {
   test("filter surfaces have no axe violations", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Axe Filters");
     await gotoHydrated(page, `/t/${tenant.slug}/devices`);
-    await settle(page);
 
     await page.getByRole("button", { name: "Filter", exact: true }).click();
-    await settle(page, 250);
     await expectNoViolations(page, "filter field picker", {
       include: '[data-slot="popover-content"]',
     });
@@ -191,7 +196,6 @@ test.describe("dashboard accessibility", () => {
       .getByRole("listbox", { name: "Filter by" })
       .getByRole("option", { name: "Status", exact: true })
       .click();
-    await settle(page, 250);
     await expectNoViolations(page, "filter value picker", {
       include: '[data-slot="popover-content"]',
     });
@@ -200,7 +204,6 @@ test.describe("dashboard accessibility", () => {
       .getByRole("listbox", { name: "Status value" })
       .getByRole("option", { name: "Enrolled", exact: true })
       .click();
-    await settle(page, 350);
     await expectNoViolations(page, "device filters applied", { allow: knownContrast });
 
     await page.getByRole("button", { name: "Remove Status filter" }).click();
@@ -216,46 +219,36 @@ test.describe("dashboard accessibility", () => {
       body: JSON.stringify({ name: "Overlay group" }),
     });
 
-    await page.waitForTimeout(1000);
-
     // Command palette.
     const paletteInput = await openPalette(page);
-    await settle(page, 300);
     await expectNoViolations(page, "command palette open", {
       include: '[data-slot="command-palette"]',
     });
     await paletteInput.fill("settings");
-    await settle(page, 600);
     await expectNoViolations(page, "command palette with results", {
       include: '[data-slot="command-palette"]',
     });
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="command-palette"]')).toHaveCount(0);
-    await settle(page);
 
     // Tenant switcher.
     await openMenu(page, page.getByRole("button", { name: /Switch tenant/ }));
-    await settle(page, 450);
     await expectNoViolations(page, "tenant switcher open", {
       include: '[data-slot="menu-content"]',
     });
     await page.keyboard.press("Escape");
-    await settle(page);
 
     // User menu.
     await openMenu(page, page.getByRole("button", { name: /account menu/i }));
-    await settle(page, 450);
     await expectNoViolations(page, "user menu open", {
       include: '[data-slot="menu-content"]',
     });
     await page.keyboard.press("Escape");
-    await settle(page);
 
     // Column picker.
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
     await page.getByRole("button", { name: "Choose visible columns" }).click();
     await expect(page.locator('[data-slot="menu-content"]')).toBeVisible();
-    await settle(page, 300);
     await expectNoViolations(page, "column picker open", {
       include: '[data-slot="menu-content"]',
     });
@@ -263,11 +256,9 @@ test.describe("dashboard accessibility", () => {
 
     // Destructive confirmation dialog, opened from the bulk selection bar.
     await gotoHydrated(page, `${base}/groups`);
-    await settle(page, 600);
     await page.getByLabel("Select Overlay group").check();
     await page.getByRole("button", { name: /^Delete 1 group/ }).click();
     await expect(page.locator('[data-slot="dialog-content"]')).toBeVisible();
-    await settle(page, 400);
     await expectNoViolations(page, "confirm dialog open", {
       include: '[data-slot="dialog-content"]',
     });
@@ -284,7 +275,6 @@ test.describe("dashboard accessibility", () => {
 
   test("Escape closes overlays and restores focus", async ({ page }) => {
     await bootstrapTenant(page, "Axe Keyboard");
-    await page.waitForTimeout(1000);
 
     // Palette opened from the header search button.
     const search = page.getByRole("button", { name: /^Search/ });
@@ -295,21 +285,17 @@ test.describe("dashboard accessibility", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="command-palette"]')).toHaveCount(0);
     await expect(search).toBeFocused();
-    await settle(page);
 
     // User menu.
     const account = page.getByRole("button", { name: /account menu/i });
     await openMenu(page, account);
-    await settle(page, 250);
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="menu-content"]')).toHaveCount(0);
     await expect(account).toBeFocused();
-    await settle(page);
 
     // Column picker.
     const columns = page.getByRole("button", { name: "Choose visible columns" });
     await openMenu(page, columns);
-    await settle(page, 250);
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="menu-content"]')).toHaveCount(0);
     await expect(columns).toBeFocused();
@@ -352,7 +338,6 @@ test.describe("dashboard accessibility", () => {
   }) => {
     const tenant = await bootstrapTenant(page, "Axe Palette Navigation");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
-    await page.waitForTimeout(900);
 
     const input = await openPalette(page);
     await input.fill("Applications");
@@ -365,11 +350,24 @@ test.describe("dashboard accessibility", () => {
     await expect(page.locator("#main")).toBeFocused();
 
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
-    await page.waitForTimeout(900);
 
     const search = page.getByRole("button", { name: "Search", exact: true });
-    await search.click();
     const queryInput = page.locator('[data-slot="command-palette"] input[role="combobox"]');
+
+    // The route's dismiss layer can swallow the first press after navigation;
+    // retry the click until the palette's input is actually mounted.
+    await expect
+      .poll(
+        async () => {
+          if ((await queryInput.count()) > 0) return 1;
+
+          await search.click();
+
+          return queryInput.count();
+        },
+        { timeout: 8_000 },
+      )
+      .toBeGreaterThan(0);
     await expect(queryInput).toBeFocused();
     await queryInput.fill("devices critical");
     await expect(page.getByRole("option", { name: /^Show devices: critical/ })).toHaveAttribute(
@@ -384,7 +382,6 @@ test.describe("dashboard accessibility", () => {
 
   test("palette announcements describe result changes", async ({ page }) => {
     await bootstrapTenant(page, "Axe Announce");
-    await page.waitForTimeout(1000);
 
     const input = await openPalette(page);
     await input.fill("this-command-does-not-exist");
