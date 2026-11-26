@@ -241,45 +241,47 @@ function LoadedOverview(props: {
 
   return (
     <Page>
-      <OverviewHeader
-        name={dashboard.data?.name ?? props.summary.name}
-        description={dashboard.data?.description ?? props.summary.description}
-        isDefault={dashboard.data?.isDefault ?? props.summary.isDefault}
-        dashboardId={props.summary.id}
-        tenantId={props.tenantId}
-        create={props.create}
-        creating={props.creating}
-        error={props.error}
-      />
-      <MigrationBanner tenantId={props.tenantId} />
-      <MissingDevicesBanner tenantId={props.tenantId} />
-      <SoftwareUpdatesBanner tenantId={props.tenantId} />
-      <OnboardingChecklist tenantId={props.tenantId} />
-      <OsComplianceSummary tenantId={props.tenantId} />
-      <QueryError error={dashboard.error} onRetry={() => void dashboard.refetch()} />
-      <Show
-        when={(dashboard.data?.widgets.length ?? 0) > 0}
-        fallback={
-          <UIEmptyState
-            class="my-10"
-            title="This dashboard is empty"
-            description="Add widgets from the dashboard editor to share tables, charts and notes."
-            action={
-              <Show when={can("dashboards.write")}>
-                <Button
-                  as="a"
-                  href={routes.tenant(props.tenantId).dashboard(props.summary.id, { edit: "1" })}
-                  size="sm"
-                >
-                  Edit dashboard
-                </Button>
-              </Show>
-            }
-          />
-        }
-      >
-        <WidgetGrid widgets={dashboard.data?.widgets ?? []} tenantId={props.tenantId} />
-      </Show>
+      <div class="dashboard-reveal flex flex-col gap-5">
+        <OverviewHeader
+          name={dashboard.data?.name ?? props.summary.name}
+          description={dashboard.data?.description ?? props.summary.description}
+          isDefault={dashboard.data?.isDefault ?? props.summary.isDefault}
+          dashboardId={props.summary.id}
+          tenantId={props.tenantId}
+          create={props.create}
+          creating={props.creating}
+          error={props.error}
+        />
+        <MigrationBanner tenantId={props.tenantId} />
+        <MissingDevicesBanner tenantId={props.tenantId} />
+        <SoftwareUpdatesBanner tenantId={props.tenantId} />
+        <OnboardingChecklist tenantId={props.tenantId} />
+        <OsComplianceSummary tenantId={props.tenantId} />
+        <QueryError error={dashboard.error} onRetry={() => void dashboard.refetch()} />
+        <Show
+          when={(dashboard.data?.widgets.length ?? 0) > 0}
+          fallback={
+            <UIEmptyState
+              class="my-10"
+              title="This dashboard is empty"
+              description="Add widgets from the dashboard editor to share tables, charts and notes."
+              action={
+                <Show when={can("dashboards.write")}>
+                  <Button
+                    as="a"
+                    href={routes.tenant(props.tenantId).dashboard(props.summary.id, { edit: "1" })}
+                    size="sm"
+                  >
+                    Edit dashboard
+                  </Button>
+                </Show>
+              }
+            />
+          }
+        >
+          <WidgetGrid widgets={dashboard.data?.widgets ?? []} tenantId={props.tenantId} />
+        </Show>
+      </div>
     </Page>
   );
 }
@@ -295,30 +297,32 @@ function PreviewOverview(props: {
 
   return (
     <Page>
-      <OverviewHeader
-        name="Fleet overview"
-        preview
-        tenantId={props.tenantId}
-        create={props.create}
-        creating={props.creating}
-        error={props.error}
-      />
-      <MigrationBanner tenantId={props.tenantId} />
-      <MissingDevicesBanner tenantId={props.tenantId} />
-      <SoftwareUpdatesBanner tenantId={props.tenantId} />
-      <OnboardingChecklist tenantId={props.tenantId} />
-      <OsComplianceSummary tenantId={props.tenantId} />
-      <WidgetGrid widgets={widgets()} tenantId={props.tenantId} />
-      <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border-strong bg-card px-3.5 py-3">
-        <p class="text-xs text-muted-foreground">
-          This is the built-in overview. Create a dashboard to add widgets, write team notes and
-          share a layout with everyone.
-        </p>
-        <Show when={can("dashboards.write")}>
-          <Button size="sm" disabled={props.creating} onClick={props.create}>
-            {props.creating ? "Creating…" : "Create from this layout"}
-          </Button>
-        </Show>
+      <div class="dashboard-reveal flex flex-col gap-5">
+        <OverviewHeader
+          name="Fleet overview"
+          preview
+          tenantId={props.tenantId}
+          create={props.create}
+          creating={props.creating}
+          error={props.error}
+        />
+        <MigrationBanner tenantId={props.tenantId} />
+        <MissingDevicesBanner tenantId={props.tenantId} />
+        <SoftwareUpdatesBanner tenantId={props.tenantId} />
+        <OnboardingChecklist tenantId={props.tenantId} />
+        <OsComplianceSummary tenantId={props.tenantId} />
+        <WidgetGrid widgets={widgets()} tenantId={props.tenantId} />
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border-strong bg-card px-3.5 py-3">
+          <p class="text-xs text-muted-foreground">
+            This is the built-in overview. Create a dashboard to add widgets, write team notes and
+            share a layout with everyone.
+          </p>
+          <Show when={can("dashboards.write")}>
+            <Button size="sm" disabled={props.creating} onClick={props.create}>
+              {props.creating ? "Creating…" : "Create from this layout"}
+            </Button>
+          </Show>
+        </div>
       </div>
     </Page>
   );

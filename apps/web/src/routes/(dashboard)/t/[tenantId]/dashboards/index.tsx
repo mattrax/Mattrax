@@ -253,313 +253,318 @@ export default function DashboardsPage() {
 
   return (
     <Page>
-      <PageHeader
-        eyebrow="Shared views"
-        title="Dashboards"
-        description="Build shared views of your fleet. The default dashboard is what everyone sees on Overview."
-        meta={
-          <Show when={dashboards.data}>
-            <span class="tabular-nums">
-              {counts().all} dashboard{counts().all === 1 ? "" : "s"}
-              <Show when={counts().pinned > 0}>
-                <span class="px-1.5 text-subtle-foreground/40">·</span>
-                {counts().pinned} pinned
-              </Show>
-            </span>
-          </Show>
-        }
-        actions={
-          <>
-            <Button
-              as="a"
-              href={routes.tenant(params.tenantId).overview()}
-              size="sm"
-              variant="outline"
-            >
-              Open overview
-            </Button>
-            <Show when={writable()}>
-              <Button size="sm" onClick={openCreate}>
-                <Plus class="size-3.5" />
-                New dashboard
-              </Button>
+      <div class="dashboard-reveal flex flex-col gap-5">
+        <PageHeader
+          eyebrow="Shared views"
+          title="Dashboards"
+          description="Build shared views of your fleet. The default dashboard is what everyone sees on Overview."
+          meta={
+            <Show when={dashboards.data}>
+              <span class="tabular-nums">
+                {counts().all} dashboard{counts().all === 1 ? "" : "s"}
+                <Show when={counts().pinned > 0}>
+                  <span class="px-1.5 text-subtle-foreground/40">·</span>
+                  {counts().pinned} pinned
+                </Show>
+              </span>
             </Show>
-          </>
-        }
-      />
-
-      <QueryError error={dashboards.error} onRetry={() => void dashboards.refetch()} />
-
-      <Show when={makeDefaultError() || removeError()}>
-        <div class="space-y-2">
-          <ErrorText error={makeDefaultError()} />
-          <ErrorText error={removeError()} />
-        </div>
-      </Show>
-
-      <Show
-        when={dashboards.data}
-        fallback={
-          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <For each={[0, 1, 2, 3, 4, 5]}>
-              {() => (
-                <div class="overflow-hidden rounded-xl border border-border bg-card">
-                  <div class="h-42 animate-pulse border-b border-border bg-surface/60" />
-                  <div class="space-y-2 p-4">
-                    <span class="block h-2 w-16 animate-pulse rounded-full bg-hover" />
-                    <span class="block h-3 w-2/3 animate-pulse rounded-full bg-hover" />
-                    <span class="block h-2 w-full animate-pulse rounded-full bg-hover" />
-                  </div>
-                </div>
-              )}
-            </For>
-          </div>
-        }
-      >
-        <Show
-          when={counts().all > 0}
-          fallback={
-            <EmptyState
-              icon={LayoutDashboard}
-              title="No dashboards yet"
-              description="Create a dashboard to build shared tables, charts and team notes. The first one becomes the Overview."
-            />
           }
-        >
-          <div class="flex flex-wrap items-center gap-2">
-            <div class="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 shadow-card">
-              <For each={Object.keys(FILTER_LABELS) as Filter[]}>
-                {(value) => (
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant={filter() === value ? "secondary" : "ghost"}
-                    onClick={() => setFilter(value)}
-                    aria-pressed={filter() === value ? "true" : "false"}
-                  >
-                    {FILTER_LABELS[value]}
-                    <span class="tabular-nums text-xs text-subtle-foreground">
-                      {counts()[value]}
-                    </span>
-                  </Button>
+          actions={
+            <>
+              <Button
+                as="a"
+                href={routes.tenant(params.tenantId).overview()}
+                size="sm"
+                variant="outline"
+              >
+                Open overview
+              </Button>
+              <Show when={writable()}>
+                <Button size="sm" onClick={openCreate}>
+                  <Plus class="size-3.5" />
+                  New dashboard
+                </Button>
+              </Show>
+            </>
+          }
+        />
+
+        <QueryError error={dashboards.error} onRetry={() => void dashboards.refetch()} />
+
+        <Show when={makeDefaultError() || removeError()}>
+          <div class="space-y-2">
+            <ErrorText error={makeDefaultError()} />
+            <ErrorText error={removeError()} />
+          </div>
+        </Show>
+
+        <Show
+          when={dashboards.data}
+          fallback={
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <For each={[0, 1, 2, 3, 4, 5]}>
+                {() => (
+                  <div class="overflow-hidden rounded-xl border border-border bg-card">
+                    <div class="h-42 animate-pulse border-b border-border bg-surface/60" />
+                    <div class="space-y-2 p-4">
+                      <span class="block h-2 w-16 animate-pulse rounded-full bg-hover" />
+                      <span class="block h-3 w-2/3 animate-pulse rounded-full bg-hover" />
+                      <span class="block h-2 w-full animate-pulse rounded-full bg-hover" />
+                    </div>
+                  </div>
                 )}
               </For>
             </div>
-
-            <div class="relative min-w-52 flex-1 sm:max-w-xs">
-              <Input
-                value={search()}
-                onInput={(event) => setSearch(event.currentTarget.value)}
-                placeholder="Search dashboards"
-                class="h-7"
-                aria-label="Search dashboards"
-              />
-              <span class="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 text-muted-foreground">
-                <Search class="size-3.5" aria-hidden="true" />
-              </span>
-            </div>
-
-            <div class="ml-auto">
-              <DropdownMenu placement="bottom-end">
-                <span class="inline-flex rounded-md border border-border bg-card px-2.5 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-within:ring-2 focus-within:ring-ring/60">
-                  <DropdownMenuTrigger class="flex h-7 items-center">
-                    Sort: {sort() === "name" ? "Name" : sort() === "recent" ? "Recent" : "Widgets"}
-                    <ChevronDown class="ml-1.5 size-3.5" />
-                  </DropdownMenuTrigger>
-                </span>
-                <DropdownMenuContent class="w-40">
-                  <DropdownMenuRadioGroup
-                    value={sort()}
-                    onValueChange={(value) => setSort(value as Sort)}
-                  >
-                    <DropdownMenuRadioItem value="name" indicator="check">
-                      Name
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="recent" indicator="check">
-                      Recently updated
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="widgets" indicator="check">
-                      Most widgets
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-
+          }
+        >
           <Show
-            when={visible().length > 0}
+            when={counts().all > 0}
             fallback={
               <EmptyState
-                icon={Search}
-                title="No dashboards match"
-                description={
-                  filter() !== "all" || search().trim()
-                    ? "Try a different filter or search term."
-                    : "Create a dashboard to get started."
-                }
+                icon={LayoutDashboard}
+                title="No dashboards yet"
+                description="Create a dashboard to build shared tables, charts and team notes. The first one becomes the Overview."
               />
             }
           >
-            <DashboardWidgetBatchProvider widgets={previewWidgets()} tenantId={tenantId()}>
-              <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <For each={visible()}>
-                  {(dashboard) => (
-                    <article class="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card transition duration-150 ease-swift hover:border-border-strong hover:shadow-card">
-                      <a
-                        href={routes.tenant(params.tenantId).dashboard(dashboard.id)}
-                        class="block outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                        aria-label={`Open ${dashboard.name}`}
-                      >
-                        <DashboardPreview
-                          widgets={dashboard.previewWidgets}
-                          widgetCount={dashboard.widgetCount}
-                        />
-                      </a>
-
-                      <div class="flex flex-1 flex-col p-4">
-                        <div class="flex min-w-0 items-center gap-2">
-                          <span class="label-caps inline-flex items-center gap-1 rounded-full border border-border bg-surface px-1.5 py-0.5 text-xs">
-                            <Show when={dashboard.isDefault}>
-                              <Star class="size-2.5" />
-                            </Show>
-                            {dashboard.isDefault ? "Overview" : "Custom"}
-                          </span>
-                          <span class="tabular-nums text-xs text-muted-foreground">
-                            {dashboard.widgetCount} widget
-                            {dashboard.widgetCount === 1 ? "" : "s"}
-                          </span>
-                          <Show when={isDashboardPinned(tenantId(), dashboard.id)}>
-                            <span class="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
-                              <span class="inline-flex fill-current"><Pin class="size-3" /></span>
-                              Pinned
-                            </span>
-                          </Show>
-                        </div>
-
-                        <a
-                          href={routes.tenant(params.tenantId).dashboard(dashboard.id)}
-                          class="mt-2.5 rounded-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                        >
-                          <h2 class="truncate text-sm font-semibold tracking-tight text-foreground group-hover:underline">
-                            {dashboard.name}
-                          </h2>
-                          <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                            {dashboard.description?.trim() || "No description yet."}
-                          </p>
-                        </a>
-
-                        <div class="mt-auto flex items-center justify-between gap-2 pt-4">
-                          <span class="truncate text-xs text-muted-foreground">
-                            Updated {relativeTime(dashboard.updatedAt)}
-                          </span>
-                          <DashboardCardMenu
-                            dashboard={dashboard}
-                            tenantId={tenantId()}
-                            writable={writable()}
-                            pendingDefault={makeDefault.isPending}
-                            pendingDelete={remove.isPending}
-                            onOpen={() =>
-                              navigate(routes.tenant(params.tenantId).dashboard(dashboard.id))
-                            }
-                            onEdit={() =>
-                              navigate(
-                                routes
-                                  .tenant(params.tenantId)
-                                  .dashboard(dashboard.id, { edit: "1" }),
-                              )
-                            }
-                            onPin={() => pin(dashboard)}
-                            onSetDefault={() => makeDefault.mutate(dashboard.id)}
-                            onDelete={() =>
-                              setRemoveTarget({ id: dashboard.id, name: dashboard.name })
-                            }
-                          />
-                        </div>
-                      </div>
-                    </article>
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="inline-flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5 shadow-card">
+                <For each={Object.keys(FILTER_LABELS) as Filter[]}>
+                  {(value) => (
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant={filter() === value ? "secondary" : "ghost"}
+                      onClick={() => setFilter(value)}
+                      aria-pressed={filter() === value ? "true" : "false"}
+                    >
+                      {FILTER_LABELS[value]}
+                      <span class="tabular-nums text-xs text-subtle-foreground">
+                        {counts()[value]}
+                      </span>
+                    </Button>
                   )}
                 </For>
               </div>
-            </DashboardWidgetBatchProvider>
+
+              <div class="relative min-w-52 flex-1 sm:max-w-xs">
+                <Input
+                  value={search()}
+                  onInput={(event) => setSearch(event.currentTarget.value)}
+                  placeholder="Search dashboards"
+                  class="h-7"
+                  aria-label="Search dashboards"
+                />
+                <span class="pointer-events-none absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 text-muted-foreground">
+                  <Search class="size-3.5" aria-hidden="true" />
+                </span>
+              </div>
+
+              <div class="ml-auto">
+                <DropdownMenu placement="bottom-end">
+                  <span class="inline-flex rounded-md border border-border bg-card px-2.5 text-muted-foreground transition-colors hover:bg-hover hover:text-foreground focus-within:ring-2 focus-within:ring-ring/60">
+                    <DropdownMenuTrigger class="flex h-7 items-center">
+                      Sort:{" "}
+                      {sort() === "name" ? "Name" : sort() === "recent" ? "Recent" : "Widgets"}
+                      <ChevronDown class="ml-1.5 size-3.5" />
+                    </DropdownMenuTrigger>
+                  </span>
+                  <DropdownMenuContent class="w-40">
+                    <DropdownMenuRadioGroup
+                      value={sort()}
+                      onValueChange={(value) => setSort(value as Sort)}
+                    >
+                      <DropdownMenuRadioItem value="name" indicator="check">
+                        Name
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="recent" indicator="check">
+                        Recently updated
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="widgets" indicator="check">
+                        Most widgets
+                      </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+
+            <Show
+              when={visible().length > 0}
+              fallback={
+                <EmptyState
+                  icon={Search}
+                  title="No dashboards match"
+                  description={
+                    filter() !== "all" || search().trim()
+                      ? "Try a different filter or search term."
+                      : "Create a dashboard to get started."
+                  }
+                />
+              }
+            >
+              <DashboardWidgetBatchProvider widgets={previewWidgets()} tenantId={tenantId()}>
+                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <For each={visible()}>
+                    {(dashboard) => (
+                      <article class="pressable group flex min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card hover:border-border-strong hover:shadow-card">
+                        <a
+                          href={routes.tenant(params.tenantId).dashboard(dashboard.id)}
+                          class="block outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                          aria-label={`Open ${dashboard.name}`}
+                        >
+                          <DashboardPreview
+                            widgets={dashboard.previewWidgets}
+                            widgetCount={dashboard.widgetCount}
+                          />
+                        </a>
+
+                        <div class="flex flex-1 flex-col p-4">
+                          <div class="flex min-w-0 items-center gap-2">
+                            <span class="label-caps inline-flex items-center gap-1 rounded-full border border-border bg-surface px-1.5 py-0.5 text-xs">
+                              <Show when={dashboard.isDefault}>
+                                <Star class="size-2.5" />
+                              </Show>
+                              {dashboard.isDefault ? "Overview" : "Custom"}
+                            </span>
+                            <span class="tabular-nums text-xs text-muted-foreground">
+                              {dashboard.widgetCount} widget
+                              {dashboard.widgetCount === 1 ? "" : "s"}
+                            </span>
+                            <Show when={isDashboardPinned(tenantId(), dashboard.id)}>
+                              <span class="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                <span class="inline-flex fill-current">
+                                  <Pin class="size-3" />
+                                </span>
+                                Pinned
+                              </span>
+                            </Show>
+                          </div>
+
+                          <a
+                            href={routes.tenant(params.tenantId).dashboard(dashboard.id)}
+                            class="mt-2.5 rounded-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                          >
+                            <h2 class="truncate text-sm font-semibold tracking-tight text-foreground group-hover:underline">
+                              {dashboard.name}
+                            </h2>
+                            <p class="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                              {dashboard.description?.trim() || "No description yet."}
+                            </p>
+                          </a>
+
+                          <div class="mt-auto flex items-center justify-between gap-2 pt-4">
+                            <span class="truncate text-xs text-muted-foreground">
+                              Updated {relativeTime(dashboard.updatedAt)}
+                            </span>
+                            <DashboardCardMenu
+                              dashboard={dashboard}
+                              tenantId={tenantId()}
+                              writable={writable()}
+                              pendingDefault={makeDefault.isPending}
+                              pendingDelete={remove.isPending}
+                              onOpen={() =>
+                                navigate(routes.tenant(params.tenantId).dashboard(dashboard.id))
+                              }
+                              onEdit={() =>
+                                navigate(
+                                  routes
+                                    .tenant(params.tenantId)
+                                    .dashboard(dashboard.id, { edit: "1" }),
+                                )
+                              }
+                              onPin={() => pin(dashboard)}
+                              onSetDefault={() => makeDefault.mutate(dashboard.id)}
+                              onDelete={() =>
+                                setRemoveTarget({ id: dashboard.id, name: dashboard.name })
+                              }
+                            />
+                          </div>
+                        </div>
+                      </article>
+                    )}
+                  </For>
+                </div>
+              </DashboardWidgetBatchProvider>
+            </Show>
           </Show>
         </Show>
-      </Show>
 
-      <Dialog
-        open={createOpen()}
-        onOpenChange={(open) => {
-          setCreateOpen(open);
+        <Dialog
+          open={createOpen()}
+          onOpenChange={(open) => {
+            setCreateOpen(open);
 
-          if (!open) {
-            setName("");
-            setError(null);
-          }
-        }}
-      >
-        <DialogContent class="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>New dashboard</DialogTitle>
-            <DialogDescription>
-              Start empty, then add tables, charts, counts and markdown notes.
-            </DialogDescription>
-          </DialogHeader>
-          <label class="mt-1 block">
-            <span class="mb-1 block text-xs font-medium text-muted-foreground">Name</span>
-            <Input
-              value={name()}
-              onInput={(event) => setName(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (isSubmitEnter(event) && name().trim() && !create.isPending) {
-                  event.preventDefault();
-                  create.mutate();
-                }
-              }}
-              placeholder="Fleet operations"
-              autofocus
+            if (!open) {
+              setName("");
+              setError(null);
+            }
+          }}
+        >
+          <DialogContent class="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>New dashboard</DialogTitle>
+              <DialogDescription>
+                Start empty, then add tables, charts, counts and markdown notes.
+              </DialogDescription>
+            </DialogHeader>
+            <label class="mt-1 block">
+              <span class="mb-1 block text-xs font-medium text-muted-foreground">Name</span>
+              <Input
+                value={name()}
+                onInput={(event) => setName(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (isSubmitEnter(event) && name().trim() && !create.isPending) {
+                    event.preventDefault();
+                    create.mutate();
+                  }
+                }}
+                placeholder="Fleet operations"
+                autofocus
+              />
+            </label>
+            <ScopeTagSelect
+              tenantId={params.tenantId!}
+              value={scopeTags()}
+              onChange={setScopeTags}
             />
-          </label>
-          <ScopeTagSelect
-            tenantId={params.tenantId!}
-            value={scopeTags()}
-            onChange={setScopeTags}
-          />
-          <Show when={error()}>
-            <p role="alert" class="text-xs text-destructive">
-              {error()}
-            </p>
-          </Show>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={create.isPending || !name().trim()}
-              onClick={() => create.mutate()}
-            >
-              {create.isPending ? "Creating…" : "Create dashboard"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <Show when={error()}>
+              <p role="alert" class="text-xs text-destructive">
+                {error()}
+              </p>
+            </Show>
+            <DialogFooter>
+              <Button variant="outline" size="sm" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={create.isPending || !name().trim()}
+                onClick={() => create.mutate()}
+              >
+                {create.isPending ? "Creating…" : "Create dashboard"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      <ConfirmDialog
-        open={removeTarget() !== null}
-        onOpenChange={(open) => {
-          if (!open) setRemoveTarget(null);
-        }}
-        title={`Delete “${removeTarget()?.name ?? "this dashboard"}”?`}
-        description="This removes the dashboard and its layout. This cannot be undone."
-        confirmLabel="Delete dashboard"
-        destructive
-        pending={remove.isPending}
-        onConfirm={() => {
-          const target = removeTarget();
+        <ConfirmDialog
+          open={removeTarget() !== null}
+          onOpenChange={(open) => {
+            if (!open) setRemoveTarget(null);
+          }}
+          title={`Delete “${removeTarget()?.name ?? "this dashboard"}”?`}
+          description="This removes the dashboard and its layout. This cannot be undone."
+          confirmLabel="Delete dashboard"
+          destructive
+          pending={remove.isPending}
+          onConfirm={() => {
+            const target = removeTarget();
 
-          if (target) remove.mutate(target.id);
-        }}
-      />
+            if (target) remove.mutate(target.id);
+          }}
+        />
+      </div>
     </Page>
   );
 }
