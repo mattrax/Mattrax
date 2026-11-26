@@ -18,7 +18,7 @@ import type {
   DeviceViewQuery,
   DynamicGroupRules,
 } from "@mattrax/enterprise-domain";
-import { defineRelations, sql } from "drizzle-orm";
+import { defineRelations, desc, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import {
   bigint,
@@ -219,6 +219,32 @@ export const authPasskeyFlows = mysqlTable(
   ],
 );
 
+/**
+ * Session storage mirrors the managed auth layout, with one application-owned
+ * retention index added. The persistence library has no index-extension hook,
+ * so supplying this table through `tables.sessions` keeps the generated column
+ * contract while making `(expires_at, session_id)` visible to Drizzle Kit.
+ */
+const authSessionsTable = mysqlTable(
+  "auth_sessions",
+  {
+    sessionId: varchar("session_id", { length: 191 }).notNull(),
+    subjectId: varchar("subject_id", { length: 191 }).notNull(),
+    digest: varchar("digest", { length: 191 }).notNull(),
+    securityRevision: varchar("security_revision", { length: 191 }).notNull(),
+    issuedAt: bigint("issued_at", { mode: "number" }).notNull(),
+    expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
+    absoluteExpiresAt: bigint("absolute_expires_at", { mode: "number" }).notNull(),
+    record: text("record").notNull(),
+  },
+  (table) => [
+    uniqueIndex("auth_sessions_key_0").on(table.sessionId),
+    uniqueIndex("auth_sessions_key_1").on(table.digest),
+    index("auth_sessions_index_0").on(table.subjectId, table.securityRevision, table.sessionId),
+    index("auth_sessions_expires_session_idx").on(table.expiresAt, table.sessionId),
+  ],
+);
+
 /* oxlint-disable typescript/no-explicit-any -- The persistence library erases its
  * generated table and layout types to `MySqlTable<TableConfig>`, so the concrete
  * drizzle column type is only available from the value itself. Annotating these
@@ -240,7 +266,7 @@ export const authStorage: any = AuthPersistenceConfig.managed({
     // authenticator code on top of a passkey step-up.
     actionRequirements: () => Effect.succeed(authRequirement),
   },
-  tables: { passkeyFlows: authPasskeyFlows },
+  tables: { passkeyFlows: authPasskeyFlows, sessions: authSessionsTable },
   prefix: "auth",
 });
 
@@ -644,7 +670,7 @@ export const passkeyRegistrationMapping: any = {
       displayName: value.name,
     }),
     eligible: (value: typeof Registration.Type) =>
-      sql`not exists(select 1 from ${account} where ${account.email} = ${value.email})`,
+      sql`not exists(select 1 from ${account} where ${account.email} = ${value.email}) and exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${value.email} and ${registrationVerification.grant} = ${value.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.verifiedAt} <= current_timestamp(3) and ${registrationVerification.expiresAt} > current_timestamp(3))`,
     finalEligibility: ({
       registration,
       subjectId,
@@ -652,7 +678,7 @@ export const passkeyRegistrationMapping: any = {
       registration: typeof Registration.Type;
       subjectId: string;
     }) =>
-      sql`exists(select 1 from ${account} where ${account.id} = ${subjectId} and ${account.email} = ${registration.email} and ${account.disabled} = false)`,
+      sql`exists(select 1 from ${account} where ${account.id} = ${subjectId} and ${account.email} = ${registration.email} and ${account.emailVerified} = true and ${account.disabled} = false) and exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.verifiedAt} <= current_timestamp(3) and ${registrationVerification.expiresAt} > current_timestamp(3))`,
     subject: ({
       registration,
       marker,
@@ -669,11 +695,9 @@ export const passkeyRegistrationMapping: any = {
           id: subjectId,
           name: registration.name,
           email: registration.email,
-          // A guest proves the address with a code before the passkey prompt;
-          // the grant it received is checked here, in the same insert.
-          emailVerified: registration.grant
-            ? sql`exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.expiresAt} > current_timestamp(3))`
-            : false,
+          // The grant is mandatory and is rechecked at eligibility, in this
+          // insert, and by finalEligibility before the credential commits.
+          emailVerified: sql`exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.verifiedAt} <= current_timestamp(3) and ${registrationVerification.expiresAt} > current_timestamp(3))`,
           image: null,
           disabled: false,
           source: "manual",
@@ -748,6 +772,10 @@ export const organization = mysqlTable(
      */
     billingPlan: shortText("billing_plan"),
     billingStatus: varchar("billing_status", { length: 32 }),
+    /** Newest billing entitlement revision applied to this cached projection. */
+    billingEntitlementRevision: bigint("billing_entitlement_revision", { mode: "number" })
+      .notNull()
+      .default(0),
     /**
      * When the once-per-tenant onboarding follow-up was claimed and sent.
      * Claiming is a conditional update, so repeated sweeps are idempotent.
@@ -1966,7 +1994,28 @@ export const auditLog = mysqlTable(
   },
   (table) => [
     index("audit_log_organization_created_idx").on(table.organizationId, table.createdAt),
-    index("audit_log_organization_action_idx").on(table.organizationId, table.action),
+    // Search/export add one equality filter before paging newest-first. The
+    // descending keys match the query exactly: MySQL otherwise prefers the
+    // unfiltered tenant index for deep keyset ranges. The action index replaces
+    // its narrower prefix rather than maintaining both on every audit insert.
+    index("audit_log_organization_category_created_idx").on(
+      table.organizationId,
+      table.category,
+      desc(table.createdAt),
+      desc(table.id),
+    ),
+    index("audit_log_organization_action_created_idx").on(
+      table.organizationId,
+      table.action,
+      desc(table.createdAt),
+      desc(table.id),
+    ),
+    index("audit_log_organization_protocol_created_idx").on(
+      table.organizationId,
+      table.protocol,
+      desc(table.createdAt),
+      desc(table.id),
+    ),
     // Device activity reads one target's newest entries; without this the
     // query scans the tenant's whole stream before filtering the target.
     index("audit_log_organization_target_created_idx").on(
@@ -2098,7 +2147,15 @@ export const webhookDelivery = mysqlTable(
   (table) => [
     index("webhook_delivery_endpoint_created_idx").on(table.endpointId, table.createdAt),
     index("webhook_delivery_organization_created_idx").on(table.organizationId, table.createdAt),
-    index("webhook_delivery_status_attempt_idx").on(table.status, table.attempt),
+    // The retry queue filters failed rows below the attempt cap and reads
+    // oldest-first. Creation time precedes the residual attempt predicate so
+    // the index supplies the order without a filesort; no other query uses the
+    // old status/attempt prefix.
+    index("webhook_delivery_status_created_attempt_idx").on(
+      table.status,
+      table.createdAt,
+      table.attempt,
+    ),
     // Retention deletes by age across every endpoint; the endpoint- and
     // organisation-leading indexes cannot serve that prune.
     index("webhook_delivery_created_idx").on(table.createdAt),
@@ -2615,6 +2672,9 @@ export const device = mysqlTable(
     // needed.
     index("device_organization_name_idx").on(table.organizationId, table.name),
     index("device_organization_last_seen_idx").on(table.organizationId, table.lastSeenAt),
+    // Daily maintenance scans every tenant for enrolled devices that stopped
+    // checking in. Tenant-leading indexes cannot serve that global sweep.
+    index("device_status_last_seen_idx").on(table.status, table.lastSeenAt),
     index("device_organization_status_idx").on(table.organizationId, table.status, table.name),
     // `sort=enrolledAt` (ascending by default) pages by `enrolled_at, id`; the
     // composite supplies that order through the implicit primary-key suffix.

@@ -1,5 +1,4 @@
 import { useParams } from "@solidjs/router";
-import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Page, PageHeader, Panel, QueryError, formatDate } from "~/components/mdm/common";
@@ -23,19 +22,8 @@ import {
   restrictedSoftwareProblem,
 } from "@mattrax/enterprise-domain/client";
 import { useNavigate } from "~/lib/navigation";
-import { preloadPage } from "~/lib/page-data";
 import { AccessDenied, useCan } from "~/lib/permissions";
-import { queryClient } from "~/lib/query-client";
-
-export const route = {
-  preload: ({ params, intent }: RoutePreloadFuncArgs) => {
-    if (intent === "initial") return;
-
-    return preloadPage([
-      () => queryClient.ensureQueryData(enterpriseQueries.restrictedSoftware(params.tenantId)),
-    ]);
-  },
-};
+import { restrictedSoftwareQueryAccess } from "./query-access";
 
 type Draft = {
   name: string;
@@ -71,9 +59,33 @@ const draftFrom = (detail: RestrictedSoftwareDetail): Draft => ({
 });
 
 const selectClass =
-  "h-9 w-full rounded-md border border-border bg-surface px-3 text-[12.5px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+/**
+ * The editor creates queries and effects as soon as it mounts. A reader without
+ * `restricted_software.read` must be refused before any of that runs, otherwise
+ * a disabled (pending) query read replaces the access-denied page with a
+ * loading state.
+ */
+/** Read query data only after success so a pending query cannot suspend the page. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
 
 export default function RestrictedSoftwareEditorPage() {
+  const { can } = useCan();
+
+  return (
+    <Show when={can("restricted_software.read")} fallback={<AccessDenied />}>
+      <RestrictedSoftwareEditor />
+    </Show>
+  );
+}
+
+function RestrictedSoftwareEditor() {
   const params = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -81,11 +93,29 @@ export default function RestrictedSoftwareEditorPage() {
   const writable = () => can("restricted_software.write");
   const isNew = () => params.ruleId === "new";
 
-  const detail = useQuery(() => ({
-    ...enterpriseQueries.restrictedSoftwareRule(params.tenantId, isNew() ? "" : params.ruleId),
-    enabled: !isNew() && Boolean(params.ruleId),
-  }));
-  const targets = useQuery(() => enterpriseQueries.restrictedSoftwareTargets(params.tenantId));
+  const queryAccess = () =>
+    restrictedSoftwareQueryAccess({
+      read: can("restricted_software.read"),
+      write: writable(),
+      isNew: isNew(),
+      violationsView: false,
+    });
+  const detail = useQuery(() => {
+    const options = enterpriseQueries.restrictedSoftwareRule(
+      params.tenantId,
+      isNew() ? "" : params.ruleId,
+    );
+
+    return {
+      ...options,
+      enabled: options.enabled && queryAccess().detail && Boolean(params.ruleId),
+    };
+  });
+  const targets = useQuery(() => {
+    const options = enterpriseQueries.restrictedSoftwareTargets(params.tenantId);
+
+    return { ...options, enabled: options.enabled && queryAccess().targets };
+  });
 
   const [draft, setDraft] = createSignal<Draft>(emptyDraft());
   const [assignments, setAssignments] = createSignal<RestrictedSoftwareAssignmentInfo[]>([]);
@@ -97,7 +127,7 @@ export default function RestrictedSoftwareEditorPage() {
   const [targetMode, setTargetMode] = createSignal<"include" | "exclude">("include");
 
   createEffect(
-    () => detail.data,
+    () => settledQueryData(detail),
     (data) => {
       if (!data) return;
 
@@ -122,7 +152,7 @@ export default function RestrictedSoftwareEditorPage() {
   );
 
   const targetOptions = createMemo(() => {
-    const data = targets.data;
+    const data = settledQueryData(targets);
 
     if (!data) return [];
 
@@ -185,7 +215,7 @@ export default function RestrictedSoftwareEditorPage() {
         return created.id;
       }
 
-      const current = detail.data;
+      const current = settledQueryData(detail);
 
       if (!current) throw new Error("The rule could not be loaded.");
 
@@ -301,8 +331,8 @@ export default function RestrictedSoftwareEditorPage() {
           title={isNew() ? "New rule" : draft().name || "Restricted software rule"}
           description="Detect an application in the inventory and act on it where the platform supports enforcement."
           meta={
-            <Show when={!isNew() && detail.data}>
-              <span>{formatDate(detail.data!.rule.updatedAt)}</span>
+            <Show when={!isNew() && settledQueryData(detail)}>
+              <span>{formatDate(settledQueryData(detail)!.rule.updatedAt)}</span>
             </Show>
           }
           actions={
@@ -380,7 +410,7 @@ export default function RestrictedSoftwareEditorPage() {
                 </select>
               </div>
 
-              <div class="sm:col-span-2">
+              <div class="font-mono sm:col-span-2">
                 <Label for="rs-match-value">
                   {RESTRICTED_SOFTWARE_MATCH_LABELS[
                     draft().matchType as keyof typeof RESTRICTED_SOFTWARE_MATCH_LABELS
@@ -388,7 +418,6 @@ export default function RestrictedSoftwareEditorPage() {
                 </Label>
                 <Input
                   id="rs-match-value"
-                  class="font-mono"
                   value={draft().matchValue}
                   disabled={!writable()}
                   onInput={(event) => update("matchValue", event.currentTarget.value)}
@@ -420,9 +449,10 @@ export default function RestrictedSoftwareEditorPage() {
               </div>
 
               <div class="flex items-end">
-                <label class="flex items-center gap-2 text-[12.5px] text-foreground">
-                  <input
+                <label class="flex items-center gap-2 text-xs text-foreground">
+                  <Input
                     type="checkbox"
+                    class="size-3.5 shrink-0"
                     checked={draft().enabled}
                     disabled={!writable()}
                     onChange={(event) => update("enabled", event.currentTarget.checked)}
@@ -452,7 +482,7 @@ export default function RestrictedSoftwareEditorPage() {
                   onInput={(event) => update("notificationEmails", event.currentTarget.value)}
                   placeholder="security@example.com, it@example.com"
                 />
-                <p class="mt-1 text-[11px] text-muted-foreground">
+                <p class="mt-1 text-xs text-muted-foreground">
                   Up to {RESTRICTED_SOFTWARE_LIMITS.maxNotificationEmails} addresses. The
                   <code class="font-mono"> restricted_software.violation </code>
                   webhook is sent regardless.
@@ -460,21 +490,20 @@ export default function RestrictedSoftwareEditorPage() {
               </div>
             </div>
 
-            <div class="mt-4 rounded-md border border-border bg-surface-muted/50 p-3">
+            <div class="mt-4 rounded-md border border-border bg-surface p-3">
               <div class="flex flex-wrap items-center gap-2">
                 <Badge
-                  variant="outline"
-                  class={
+                  variant={
                     capability().mode === "detection-only"
-                      ? "border-warning/30 text-warning-foreground"
+                      ? "warning"
                       : capability().mode === "policy"
-                        ? "border-success/30 text-success-foreground"
-                        : "border-brand/30 text-brand-foreground"
+                        ? "success"
+                        : "brand"
                   }
                 >
                   {capability().label}
                 </Badge>
-                <span class="text-[11.5px] text-muted-foreground">
+                <span class="text-xs text-muted-foreground">
                   {
                     RESTRICTED_SOFTWARE_PLATFORM_LABELS[
                       draft().platform as keyof typeof RESTRICTED_SOFTWARE_PLATFORM_LABELS
@@ -488,11 +517,11 @@ export default function RestrictedSoftwareEditorPage() {
                   }
                 </span>
               </div>
-              <p class="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+              <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
                 {capability().detail}
               </p>
               <Show when={draft().platform === "apple"}>
-                <p class="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                   Apple rules also match inventory on iPhone and iPad. Those devices have no
                   mattraxd agent, so the match is recorded as detection-only there.
                 </p>
@@ -500,7 +529,7 @@ export default function RestrictedSoftwareEditorPage() {
             </div>
 
             <Show when={validation()}>
-              {(problem) => <p class="mt-3 text-[12px] text-destructive">{problem()}</p>}
+              {(problem) => <p class="mt-3 text-xs text-destructive">{problem()}</p>}
             </Show>
 
             <Show when={writable()}>
@@ -535,7 +564,7 @@ export default function RestrictedSoftwareEditorPage() {
               <Show
                 when={assignments().length > 0}
                 fallback={
-                  <p class="text-[12.5px] text-muted-foreground">
+                  <p class="text-xs text-muted-foreground">
                     Not scoped yet. Add at least one device or group for the rule to apply.
                   </p>
                 }
@@ -543,7 +572,7 @@ export default function RestrictedSoftwareEditorPage() {
                 <ul class="divide-y divide-border">
                   <For each={assignments()}>
                     {(assignment) => (
-                      <li class="flex flex-wrap items-center justify-between gap-2 py-2 text-[12.5px]">
+                      <li class="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
                         <span class="flex min-w-0 items-center gap-2">
                           <Badge variant="outline">
                             {assignment.targetType === "device" ? "Device" : "Group"}
@@ -551,7 +580,7 @@ export default function RestrictedSoftwareEditorPage() {
                           <span class="truncate text-foreground">{assignment.name}</span>
                         </span>
                         <span class="flex items-center gap-2">
-                          <span class="text-[11px] uppercase tracking-wide text-muted-foreground">
+                          <span class="text-xs uppercase tracking-wide text-muted-foreground">
                             {assignment.mode}
                           </span>
                           <Show when={writable()}>
@@ -581,38 +610,44 @@ export default function RestrictedSoftwareEditorPage() {
               </Show>
 
               <Show when={writable()}>
-                <div class="mt-4 grid gap-2 sm:grid-cols-[130px_1fr_120px_auto]">
-                  <select
-                    class={selectClass}
-                    value={targetType()}
-                    onChange={(event) => {
-                      setTargetType(event.currentTarget.value as "device" | "group");
-                      setTargetId("");
-                    }}
-                  >
-                    <option value="device">Device</option>
-                    <option value="group">Group</option>
-                  </select>
-                  <select
-                    class={selectClass}
-                    value={targetId()}
-                    onChange={(event) => setTargetId(event.currentTarget.value)}
-                  >
-                    <option value="">Select a {targetType()}…</option>
-                    <For each={targetOptions()}>
-                      {(option) => <option value={option.id}>{option.name}</option>}
-                    </For>
-                  </select>
-                  <select
-                    class={selectClass}
-                    value={targetMode()}
-                    onChange={(event) =>
-                      setTargetMode(event.currentTarget.value as "include" | "exclude")
-                    }
-                  >
-                    <option value="include">Include</option>
-                    <option value="exclude">Exclude</option>
-                  </select>
+                <div class="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <div class="sm:w-32">
+                    <select
+                      class={selectClass}
+                      value={targetType()}
+                      onChange={(event) => {
+                        setTargetType(event.currentTarget.value as "device" | "group");
+                        setTargetId("");
+                      }}
+                    >
+                      <option value="device">Device</option>
+                      <option value="group">Group</option>
+                    </select>
+                  </div>
+                  <div class="min-w-0 sm:flex-1">
+                    <select
+                      class={selectClass}
+                      value={targetId()}
+                      onChange={(event) => setTargetId(event.currentTarget.value)}
+                    >
+                      <option value="">Select a {targetType()}…</option>
+                      <For each={targetOptions()}>
+                        {(option) => <option value={option.id}>{option.name}</option>}
+                      </For>
+                    </select>
+                  </div>
+                  <div class="sm:w-30">
+                    <select
+                      class={selectClass}
+                      value={targetMode()}
+                      onChange={(event) =>
+                        setTargetMode(event.currentTarget.value as "include" | "exclude")
+                      }
+                    >
+                      <option value="include">Include</option>
+                      <option value="exclude">Exclude</option>
+                    </select>
+                  </div>
                   <Button variant="outline" onClick={addTarget} disabled={!targetId()}>
                     Add
                   </Button>
@@ -620,18 +655,18 @@ export default function RestrictedSoftwareEditorPage() {
               </Show>
             </Panel>
 
-            <Show when={detail.data && detail.data.rule.openViolationCount > 0}>
+            <Show when={(settledQueryData(detail)?.rule.openViolationCount ?? 0) > 0}>
               <Panel
                 title="Violations"
                 description="Open violations are listed on the fleet view and the device timeline."
               >
-                <p class="text-[12.5px] text-muted-foreground">
-                  {detail.data?.rule.openViolationCount} open violation
-                  {detail.data?.rule.openViolationCount === 1 ? "" : "s"}.
+                <p class="text-xs text-muted-foreground">
+                  {settledQueryData(detail)?.rule.openViolationCount} open violation
+                  {settledQueryData(detail)?.rule.openViolationCount === 1 ? "" : "s"}.
                 </p>
                 <a
                   href={`/t/${params.tenantId}/restricted-software?rule=${params.ruleId}`}
-                  class="mt-2 inline-block text-[12px] text-brand-foreground hover:underline"
+                  class="mt-2 inline-block text-xs text-brand-foreground hover:underline"
                 >
                   Open the violations view
                 </a>

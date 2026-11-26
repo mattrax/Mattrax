@@ -182,6 +182,8 @@ export const resolveSsoAccount = (input: {
   readonly email: string;
   readonly objectId: string;
   readonly name?: string;
+  /** Fail closed unless this tenant already links the exact IdP object to an account. */
+  readonly requireExistingIdentity?: boolean;
 }): Effect.Effect<
   | { readonly ok: true; readonly user: AccountRow }
   | { readonly ok: false; readonly failure: SsoIdentityFailure },
@@ -202,6 +204,9 @@ export const resolveSsoAccount = (input: {
     const identity = yield* db.query.ssoIdentity.findFirst({
       where: { organizationId: input.tenantId, objectId: input.objectId },
     });
+
+    if (!identity && input.requireExistingIdentity)
+      return yield* fail("unknown_account", "unknown_account");
 
     let user = identity
       ? yield* db.query.account.findFirst({ where: { id: identity.accountId } })

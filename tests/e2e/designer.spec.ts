@@ -43,6 +43,31 @@ test.describe("policy designer", () => {
     expect(errors).toEqual([]);
   });
 
+  test("disables Clear Apple settings in empty public and dashboard designers", async ({
+    page,
+  }) => {
+    await gotoHydrated(page, "/designer");
+    await expect(page.getByText(/0 platforms\s*·\s*0 collections/).first()).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Clear Apple settings", exact: true }),
+    ).toBeDisabled();
+
+    const tenant = await bootstrapTenant(page, "Empty Designer Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
+    const policyName = page.getByRole("textbox", { name: /^Name/ });
+    await policyName.fill("Empty designed policy");
+    await expect(policyName).toHaveValue("Empty designed policy");
+    await page.getByRole("button", { name: /^create policy$/i }).click();
+    await expect(page).toHaveURL(/\/editor$/);
+    const policyUrl = page.url().replace(/\/editor$/, "");
+
+    await gotoHydrated(page, `${policyUrl}/design`);
+    await expect(page.getByText(/0 platforms\s*·\s*0 collections/).first()).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Clear Apple settings", exact: true }),
+    ).toBeDisabled();
+  });
+
   test("browses the catalogue, applies a template and exports a SyncML artifact", async ({
     page,
   }) => {

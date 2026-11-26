@@ -3,11 +3,11 @@ import type { PolicyProgressSegment } from "~/lib/policy-delivery";
 
 /** A segmented delivery bar; the shared primitive handles zero totals and the
  * accessible summary. */
-export function PolicyProgressBar(props: {
+export default function PolicyProgressBar(props: {
   segments: ReadonlyArray<PolicyProgressSegment>;
   class?: string;
 }) {
   return (
-    <SegmentedProgress segments={props.segments} label="Policy delivery" class={props.class} />
+    <div class={props.class}><SegmentedProgress segments={props.segments} label="Policy delivery" /></div>
   );
 }

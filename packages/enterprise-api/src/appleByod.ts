@@ -4,6 +4,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
 import { EnterpriseService } from "@mattrax/enterprise-domain";
 import { appleByodTokenProblem } from "./appleByodDocument.js";
+import { createAppleByodRateLimiter } from "./appleByodRateLimit.js";
 
 /**
  * Account-driven Apple User Enrollment (BYOD) endpoints.
@@ -30,31 +31,7 @@ import { appleByodTokenProblem } from "./appleByodDocument.js";
 const MAX_ENROLLMENT_BODY_BYTES = 64 * 1024;
 
 const CHALLENGE_TTL_MILLIS = 10 * 60 * 1000;
-const BYOD_WINDOW_MILLIS = 60_000;
-const BYOD_PER_IP_LIMIT = 30;
-const byodWindows = new Map<string, { count: number; resetAt: number }>();
-
-/** Cheap per-isolate limiter, matching the public mobileconfig endpoint. */
-const allowByodRequest = (ip: string | null | undefined) => {
-  const key = ip?.trim() || "local";
-  const timestamp = Date.now();
-  const entry = byodWindows.get(key);
-
-  if (!entry || entry.resetAt <= timestamp) {
-    byodWindows.set(key, { count: 1, resetAt: timestamp + BYOD_WINDOW_MILLIS });
-
-    if (byodWindows.size > 10_000) {
-      for (const [candidate, value] of byodWindows)
-        if (value.resetAt <= timestamp) byodWindows.delete(candidate);
-    }
-
-    return true;
-  }
-
-  entry.count += 1;
-
-  return entry.count <= BYOD_PER_IP_LIMIT;
-};
+const byodRateLimiter = createAppleByodRateLimiter();
 
 const hex = (bytes: Uint8Array) =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -225,11 +202,7 @@ export const appleByodRoutes = Layer.mergeAll(
 
       if (!organizationId) return text("Unknown tenant.", 404);
 
-      if (
-        !allowByodRequest(
-          request.headers["cf-connecting-ip"] ?? request.headers["x-forwarded-for"],
-        )
-      )
+      if (!byodRateLimiter.allow(request.headers))
         return text("Too many enrollment attempts. Wait a minute and try again.", 429);
 
       const bounded = yield* readBoundedBody(request, MAX_ENROLLMENT_BODY_BYTES);

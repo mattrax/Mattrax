@@ -13,14 +13,14 @@ import {
   Switch,
 } from "solid-js";
 import { ErrorText, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
-import { DocumentationLink } from "~/components/mdm/documentation-link";
-import { NativeSelect } from "@mattrax/ui";
+import DocumentationLink from "~/components/mdm/documentation-link";
+import { NativeSelect , Checkbox } from "@mattrax/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { ChevronDown } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { CertificateEditor, MailEditor } from "~/components/mdm/policy-certificates";
-import { StaleWriteBanner } from "~/components/stale-write-banner";
+import StaleWriteBanner from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
 import { chord, useCommands } from "~/lib/commands";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
@@ -66,7 +66,6 @@ const decodePolicyRow = Schema.decodeUnknownOption(PolicyRow);
 
 const decodeCustomProfile = Schema.decodeUnknownOption(CustomProfile);
 
-
 const decodeDeviceConfig = Schema.decodeUnknownOption(DeviceConfig);
 
 const decodeWindowsConfig = Schema.decodeUnknownOption(WindowsConfig);
@@ -74,7 +73,7 @@ const decodeWindowsConfig = Schema.decodeUnknownOption(WindowsConfig);
 const isCustomProfileKind = (kind: string) => /^mttx\.apple\.custom\.[^.]+$/.test(kind);
 
 const textareaClass =
-  "min-h-24 w-full rounded-lg border border-input bg-transparent p-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "min-h-24 w-full rounded-lg border border-input bg-transparent p-2.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 /** Apple's page for the restrictions payload this section edits. */
 const APPLE_RESTRICTIONS_DOCS = appleDocumentationUrl({
@@ -92,7 +91,7 @@ const sections = [
   { id: "raw", label: "JSON", hint: "Raw" },
 ] as const;
 
-export function PolicyConfigurationEditor() {
+export default function PolicyConfigurationEditor() {
   const params = useParams();
   const queryClient = useQueryClient();
   const { can } = useCan();
@@ -109,6 +108,7 @@ export function PolicyConfigurationEditor() {
   }));
 
   const row = () => Option.getOrUndefined(decodePolicyRow(policy.data));
+  const seededPolicyId = createMemo(() => row()?.id);
   const guard = createStaleWriteGuard(() => row()?.updatedAt);
   const [canEdit, setCanEdit] = createSignal(false);
   /** Bumped by "Reload latest" to reseed the form from the refetched policy. */
@@ -139,9 +139,9 @@ export function PolicyConfigurationEditor() {
   };
 
   // Seed per policy, and again only when the operator explicitly reloads the
-  // latest version. A background refetch after a 412 must keep the draft.
+  // latest version. The memo keeps same-policy refetches from changing the key.
   createEffect(
-    () => `${row()?.id ?? ""}:${reseed()}`,
+    () => `${seededPolicyId() ?? ""}:${reseed()}`,
     () => seedFromRow(),
   );
 
@@ -316,7 +316,7 @@ export function PolicyConfigurationEditor() {
       {unsaved.prompt}
       <a
         href={`/t/${params.tenantId}/policies/${params.policyId}`}
-        class="inline-flex w-fit items-center gap-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+        class="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         ← Back to policy
       </a>
@@ -325,7 +325,7 @@ export function PolicyConfigurationEditor() {
         description="Review and edit the configurations stored on this policy."
         meta={
           <Show when={row()}>
-            <Badge variant="outline" class="gap-1.5 text-muted-foreground">
+            <Badge variant="outline">
               {configuredKinds()} configuration{configuredKinds() === 1 ? "" : "s"}
             </Badge>
             <Show when={dirty()}>
@@ -377,7 +377,7 @@ export function PolicyConfigurationEditor() {
           Your role can view this policy's configuration but not edit it.
         </ReadOnlyNotice>
       </Show>
-      <div class="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start">
+      <div class="grid gap-5 lg:grid-cols-2 lg:items-start">
         <EditorNav active={active()} setActive={setActive} canEdit={canEdit()} />
         <Panel
           title={activeTitle(active())}
@@ -385,8 +385,7 @@ export function PolicyConfigurationEditor() {
           actions={
             <Show when={dirty()}>
               <Badge
-                variant="outline"
-                class="border-warning/30 bg-warning/10 text-warning-foreground"
+                variant="warning"
               >
                 Unsaved
               </Badge>
@@ -423,20 +422,20 @@ export function PolicyConfigurationEditor() {
               </Match>
               <Match when={active() === "raw"}>
                 <div class="space-y-3">
-                  <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                  <p class="text-xs leading-relaxed text-muted-foreground">
                     Edit the raw configuration map. Values use Mattrax configuration kinds.
                   </p>
                   <Show when={scopeableKinds().length > 0}>
                     <div class="space-y-1.5 rounded-lg border border-border bg-muted/15 px-3 py-2">
                       <p class="label-caps">Delivery scope</p>
-                      <p class="text-[11px] leading-relaxed text-muted-foreground">
+                      <p class="text-xs leading-relaxed text-muted-foreground">
                         Device scope reaches every user of the device. User scope is delivered only
                         on a linked, identity-verified Apple user channel.
                       </p>
                       <For each={scopeableKinds()}>
                         {(kind) => (
                           <div class="flex items-center justify-between gap-3">
-                            <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+                            <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
                               {kind}
                             </span>
                             <ScopeSelect kind={kind} scopes={scopes()} setScope={setScope} />
@@ -446,7 +445,7 @@ export function PolicyConfigurationEditor() {
                     </div>
                   </Show>
                   <textarea
-                    class={`${textareaClass} min-h-80 font-mono text-[11px] leading-relaxed`}
+                    class={`${textareaClass} min-h-80 font-mono text-xs leading-relaxed`}
                     value={raw()}
                     onInput={(event) => setRaw(event.currentTarget.value)}
                     onChange={(event) => {
@@ -477,7 +476,7 @@ export function PolicyConfigurationEditor() {
                     }}
                   />
                   <Show when={rawError()}>
-                    <p role="alert" class="text-[12px] text-destructive">
+                    <p role="alert" class="text-xs text-destructive">
                       {rawError()}
                     </p>
                   </Show>
@@ -543,27 +542,27 @@ function EditorNav(props: {
               aria-pressed={current() ? "true" : "false"}
               aria-label={section.label}
               onClick={() => props.setActive(section.id)}
-              class="shrink-0 justify-between gap-2 px-2.5 lg:w-full"
+              class="shrink-0 justify-between lg:w-full"
             >
               <span class="flex min-w-0 items-center gap-2">
                 <span
                   class={
                     current()
-                      ? "truncate text-[12.5px] font-medium text-foreground"
-                      : "truncate text-[12.5px] text-muted-foreground"
+                      ? "truncate text-xs font-medium text-foreground"
+                      : "truncate text-xs text-muted-foreground"
                   }
                 >
                   {section.label}
                 </span>
               </span>
-              <span class="shrink-0 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+              <span class="shrink-0 text-xs font-medium uppercase tracking-widest text-muted-foreground">
                 {section.hint}
               </span>
             </Button>
           );
         })}
         <Show when={!props.canEdit}>
-          <p class="hidden px-2 py-1 text-[10.5px] leading-relaxed text-muted-foreground lg:block">
+          <p class="hidden px-2 py-1 text-xs leading-relaxed text-muted-foreground lg:block">
             Choose Edit to change these settings.
           </p>
         </Show>
@@ -584,10 +583,10 @@ function ScopeSelect(props: {
   class?: string;
 }) {
   return (
-    <label class={`flex items-center gap-2 text-[11px] text-muted-foreground ${props.class ?? ""}`}>
+    <label class={`flex items-center gap-2 text-xs text-muted-foreground ${props.class ?? ""}`}>
       <span>Scope</span>
       <NativeSelect
-        class="h-7 w-auto text-[11.5px]"
+        class="h-7 w-auto"
         value={props.scopes[props.kind] ?? "device"}
         onChange={(event) =>
           props.setScope(props.kind, event.currentTarget.value === "user" ? "user" : "device")
@@ -600,7 +599,6 @@ function ScopeSelect(props: {
   );
 }
 
-
 function DeviceSection(props: {
   config: PolicyConfiguration;
   setKey: (key: string, value: Schema.Json) => void;
@@ -611,7 +609,7 @@ function DeviceSection(props: {
   return (
     <div class="space-y-4">
       <div class="flex flex-wrap items-start justify-between gap-2">
-        <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p class="text-xs leading-relaxed text-muted-foreground">
           Basic restrictions applied to the device channel, so every user on a managed device
           receives them.
         </p>
@@ -621,19 +619,18 @@ function DeviceSection(props: {
           subject="the Restrictions payload"
         />
       </div>
-      <label class="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/15 p-3 text-[13px] transition-colors hover:bg-muted/30">
+      <label class="flex items-center justify-between gap-4 rounded-lg border border-border bg-muted/15 p-3 text-xs transition-colors hover:bg-muted/30">
         <span>
           <strong class="block font-medium text-foreground">Allow camera</strong>
-          <span class="text-[11.5px] text-muted-foreground">
+          <span class="text-xs text-muted-foreground">
             Disable the camera on managed devices.
           </span>
         </span>
-        <input
-          type="checkbox"
-          class="size-4 shrink-0 accent-[var(--brand-solid)]"
+        <Checkbox
+          class="size-4 shrink-0"
           checked={device().camera !== false}
-          onChange={(event) =>
-            props.setKey(keys.device, { ...device(), camera: event.currentTarget.checked })
+          onCheckedChange={(checked) =>
+            props.setKey(keys.device, { ...device(), camera: checked === true })
           }
         />
       </label>
@@ -652,9 +649,9 @@ function WindowsSection(props: {
   return (
     <div class="space-y-4">
       <div class="flex flex-wrap items-start justify-between gap-2">
-        <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+        <p class="text-xs leading-relaxed text-muted-foreground">
           Deploy a Windows MDM OMA-URI. The value is delivered on the device's next SyncML check-in.
-          User scope requires a <code class="font-mono text-[11.5px]">./User/</code> CSP path and is
+          User scope requires a <code class="font-mono text-xs">./User/</code> CSP path and is
           accepted for every user on the device: Windows has no per-login policy channel.
         </p>
         <DocumentationLink
@@ -670,7 +667,7 @@ function WindowsSection(props: {
         class="justify-between rounded-lg border border-border bg-muted/15 px-3 py-2"
       />
       <label class="space-y-1.5 text-sm">
-        <span class="text-[12.5px] font-medium text-foreground/90">OMA-URI</span>
+        <span class="text-xs font-medium text-foreground/90">OMA-URI</span>
         <Input
           placeholder="./Vendor/MSFT/Policy/Config/..."
           value={current()?.omaUri ?? ""}
@@ -683,7 +680,7 @@ function WindowsSection(props: {
         />
       </label>
       <label class="space-y-1.5 text-sm">
-        <span class="text-[12.5px] font-medium text-foreground/90">Value</span>
+        <span class="text-xs font-medium text-foreground/90">Value</span>
         <Input
           placeholder="1"
           value={current()?.value ?? ""}
@@ -781,10 +778,10 @@ function CustomSection(props: {
     <div class="space-y-4">
       <div class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/20 px-4 py-3">
         <div class="min-w-0 flex-1">
-          <p class="text-[13px] font-medium text-foreground">Existing profiles</p>
-          <p class="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+          <p class="text-xs font-medium text-foreground">Existing profiles</p>
+          <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
             Signed profiles keep their signature and deploy byte-for-byte. User-scoped profiles must
-            declare <code class="font-mono text-[11.5px]">PayloadScope User</code> and are delivered
+            declare <code class="font-mono text-xs">PayloadScope User</code> and are delivered
             on the Apple user channel; device-scoped profiles stay on the device channel.
           </p>
         </div>
@@ -801,7 +798,7 @@ function CustomSection(props: {
       <Show
         when={profiles().length > 0}
         fallback={
-          <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+          <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-xs text-muted-foreground">
             No profiles uploaded yet.
           </p>
         }
@@ -812,14 +809,13 @@ function CustomSection(props: {
               return (
                 <div class="overflow-hidden rounded-lg border border-border">
                   <div class="flex flex-wrap items-center gap-2 border-b border-border bg-muted/20 px-3 py-2">
-                    <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+                    <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
                       {kind}
                     </span>
                     <ScopeSelect kind={kind} scopes={props.scopes} setScope={props.setScope} />
                     <Show when={profile.signed}>
                       <Badge
-                        variant="outline"
-                        class="border-success/25 bg-success/10 text-success-foreground"
+                        variant="success"
                       >
                         Signed · read-only
                       </Badge>
@@ -840,7 +836,7 @@ function CustomSection(props: {
                   </div>
                   <div class="p-3">
                     <Show when={kind === "mttx.apple.custom.designer"}>
-                      <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                      <p class="text-xs leading-relaxed text-muted-foreground">
                         This profile is generated by the designer. Edit it there so the draft and
                         the compiled profile stay in sync.
                       </p>
@@ -849,7 +845,7 @@ function CustomSection(props: {
                       when={!profile.signed && kind !== "mttx.apple.custom.designer"}
                       fallback={
                         <Show when={kind !== "mttx.apple.custom.designer"}>
-                          <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                          <p class="text-xs leading-relaxed text-muted-foreground">
                             {profile.fileName ?? "Uploaded profile"} is deployed unchanged. Devices
                             verify its signature with the certificate it already trusts.
                           </p>
@@ -857,11 +853,11 @@ function CustomSection(props: {
                       }
                     >
                       <label class="space-y-1.5">
-                        <span class="text-[12px] font-medium text-foreground/90">
+                        <span class="text-xs font-medium text-foreground/90">
                           Profile plist
                         </span>
                         <textarea
-                          class={`${textareaClass} min-h-56 font-mono text-[11px] leading-relaxed`}
+                          class={`${textareaClass} min-h-56 font-mono text-xs leading-relaxed`}
                           value={decodeText(profile.content)}
                           onInput={(event) => {
                             props.setKey(kind, {
@@ -901,13 +897,13 @@ function VariableHints(props: {
   notes: ReadonlyArray<string>;
 }) {
   return (
-    <details class="mt-4 rounded-lg border border-border bg-surface/60 px-3 py-2.5 text-[12px]">
+    <details class="mt-4 rounded-lg border border-border bg-surface/60 px-3 py-2.5 text-xs">
       <summary class="flex cursor-pointer list-none items-center gap-2 font-medium text-foreground">
         <span class="min-w-0">
           Policy variables{" "}
           <span class="font-normal text-muted-foreground">(resolved per device at delivery)</span>
         </span>
-        <ChevronDown class="disclosure-chevron ml-auto size-3.5 shrink-0 text-muted-foreground" />
+        <span class="disclosure-chevron ml-auto text-muted-foreground"><ChevronDown class="size-3.5 shrink-0" /></span>
       </summary>
       <Show
         when={!props.loading}
@@ -917,10 +913,10 @@ function VariableHints(props: {
           <For each={props.variables}>
             {(variable) => (
               <li class="min-w-0">
-                <code class="break-all font-mono text-[11.5px] text-foreground">
+                <code class="break-all font-mono text-xs text-foreground">
                   {variable.name}
                 </code>
-                <p class="text-[11px] leading-relaxed text-muted-foreground">
+                <p class="text-xs leading-relaxed text-muted-foreground">
                   {variable.description}
                 </p>
               </li>
@@ -928,7 +924,7 @@ function VariableHints(props: {
           </For>
         </ul>
         <Show when={props.notes.length > 0}>
-          <ul class="mt-2 space-y-1 border-t border-border pt-2 text-[11px] leading-relaxed text-muted-foreground">
+          <ul class="mt-2 space-y-1 border-t border-border pt-2 text-xs leading-relaxed text-muted-foreground">
             <For each={props.notes}>{(note) => <li>{note}</li>}</For>
           </ul>
         </Show>

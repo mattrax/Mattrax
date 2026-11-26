@@ -32,6 +32,7 @@ const ROUTE_LABELS = new Map<string, string>([
   ["reports", "Reports"],
   ["software", "Software"],
   ["enrollment", "Enrollment"],
+  ["migration", "Migration"],
   ["settings", "Settings"],
   ["identity", "Identity"],
   ["domains", "Domains"],

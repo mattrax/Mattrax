@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { Cause, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect";
 import {
   EnterpriseAuth,
@@ -18,7 +18,9 @@ import {
   credentialPermissions,
   hasAnyWritePermission,
   hasUnrestrictedCredential,
+  normalisePath,
   normalizeCredentialPermissions,
+  permissionLabel,
 } from "@mattrax/enterprise-domain";
 import type {
   EnterpriseAuthFailure,
@@ -380,6 +382,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             readonly subject: string;
             readonly text: string;
             readonly html: string;
+            /** Extra MIME headers (for example `OTP-Token`). */
+            readonly headers?: Readonly<Record<string, string>>;
           };
         },
         recipient: string,
@@ -601,11 +605,22 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const apiToken = session ? undefined : yield* resolveApiToken(request);
           const oauth = session || apiToken ? undefined : yield* resolveOAuthToken(request);
 
+          // The OAuth consent page submits a plain HTML form, which cannot
+          // attach the custom CSRF header, and its handler performs the same
+          // Origin check itself before it resolves the session (it rejects a
+          // cross-origin `Origin` and treats a missing one as a non-browser
+          // client). Exempting exactly this route keeps the consent button
+          // working without weakening the guard anywhere else.
+          const originCheckedConsent =
+            request.method.toUpperCase() === "POST" &&
+            normalisePath(new URL(request.url).pathname) === "/api/oauth/authorize";
+
           // Cookie-authenticated mutations need the same Origin + CSRF guard
           // the library applies to its own routes. Bearer tokens are exempt:
           // they are not attached automatically by a browser.
           if (
             session &&
+            !originCheckedConsent &&
             request.method.toUpperCase() !== "GET" &&
             request.method.toUpperCase() !== "HEAD"
           ) {
@@ -624,11 +639,15 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               );
           }
 
-          const path = new URL(request.url).pathname;
+          // Authorize the same canonical path the router matched, not the raw
+          // URL spelling. Static-segment escapes, case, duplicate slashes,
+          // trailing slashes and matrix parameters are router-equivalent.
+          const path = normalisePath(new URL(request.url).pathname);
           const method = request.method.toUpperCase();
 
           const accountPath =
-            path.startsWith("/api/v1/account") ||
+            path === "/api/v1/account" ||
+            path.startsWith("/api/v1/account/") ||
             (path === "/api/v1/me" && method !== "GET") ||
             path.includes("email-change") ||
             path.includes("email-verification") ||
@@ -745,18 +764,61 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               }),
             );
           const revokedAt = DateTime.toDate(yield* DateTime.now);
-          yield* db
-            .update(schema.mcpOAuthConnection)
-            .set({ revokedAt })
-            .where(eq(schema.mcpOAuthConnection.id, connection.id));
-          yield* db
-            .update(schema.mcpOAuthToken)
-            .set({ revokedAt })
-            .where(eq(schema.mcpOAuthToken.connectionId, connection.id));
-          yield* db
-            .update(schema.mcpOAuthCode)
-            .set({ consumedAt: revokedAt })
-            .where(eq(schema.mcpOAuthCode.connectionId, connection.id));
+
+          yield* db.transaction((tx) =>
+            Effect.gen(function* () {
+              const revoked = yield* tx
+                .update(schema.mcpOAuthConnection)
+                .set({ revokedAt })
+                .where(
+                  and(
+                    eq(schema.mcpOAuthConnection.id, connection.id),
+                    eq(schema.mcpOAuthConnection.accountId, user.id),
+                    isNull(schema.mcpOAuthConnection.revokedAt),
+                  ),
+                );
+
+              if (!revoked || revoked.affectedRows === 0) return;
+
+              yield* tx
+                .update(schema.mcpOAuthToken)
+                .set({ revokedAt })
+                .where(eq(schema.mcpOAuthToken.connectionId, connection.id));
+              yield* tx
+                .update(schema.mcpOAuthCode)
+                .set({ consumedAt: revokedAt })
+                .where(eq(schema.mcpOAuthCode.connectionId, connection.id));
+
+              const client = yield* tx.query.mcpOAuthClient.findFirst({
+                where: { id: connection.clientId },
+              });
+              const scopes = (parseStoredCredentialScopes(connection.scopes) ?? ["mcp"]).slice(
+                0,
+                64,
+              );
+
+              yield* recordAccountAudit(tx, {
+                subjectAccountId: user.id,
+                subjectEmail: user.email,
+                action: ACCOUNT_AUDIT.mcpOAuthRevoked,
+                targetType: "mcp_oauth_connection",
+                targetId: connection.id,
+                metadata: {
+                  clientId: connection.clientId,
+                  clientName: client?.name.slice(0, 160) ?? connection.clientId,
+                  connectionId: connection.id,
+                  scopes: [...scopes],
+                  // Legacy `mcp` is an unrestricted grant; expanding it into
+                  // every permission label would bloat the audit row without
+                  // making the grant clearer.
+                  permissions: scopes.includes("mcp")
+                    ? ["mcp"]
+                    : [...credentialPermissions(scopes)].map(permissionLabel),
+                },
+                at: revokedAt,
+              });
+            }),
+          );
 
           return { status: "ok" as const };
         });
@@ -975,7 +1037,20 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         },
       ) =>
         Effect.gen(function* () {
-          const { user, apiToken } = yield* requireStepUp(request, "api-token-create");
+          const { user, apiToken, oauth } = yield* requireStepUp(request, "api-token-create");
+
+          // This invariant does not depend on request spelling or on a caller
+          // remembering the account-path guard: MCP OAuth can never mint an
+          // independently revocable account API token.
+          if (oauth)
+            return yield* Effect.fail(
+              diagnoseError(
+                new EnterpriseForbidden({
+                  message: "MCP tokens cannot manage account settings.",
+                }),
+                { code: "mcp_account_scope", reason: "api_token_create" },
+              ),
+            );
 
           if (!user.emailVerified)
             return yield* Effect.fail(
@@ -1396,8 +1471,10 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               message: {
                 to: user.email,
                 subject: "Your Mattrax verification code",
-                text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
+                // Keep the digits alone on a line for "Copy code" heuristics.
+                text: `Your Mattrax verification code is:\n\n${code}\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
                 html: verificationHtml,
+                headers: { "OTP-Token": code },
               },
             },
             user.email,
@@ -1585,6 +1662,23 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                     new EnterpriseConflict({
                       message: "That email address was registered by someone else. Try another.",
                     }),
+                  );
+
+                // Recovery proves control of the address stored at issuance.
+                // Rotating the recovery channel invalidates every live
+                // ceremony atomically with the account update.
+                yield* tx
+                  .update(schema.accountRecovery)
+                  .set({ status: "cancelled", cancelledAt: now, updatedAt: now })
+                  .where(
+                    and(
+                      eq(schema.accountRecovery.accountId, user.id),
+                      inArray(schema.accountRecovery.status, [
+                        "pending_proof",
+                        "pending_approval",
+                        "ready",
+                      ]),
+                    ),
                   );
 
                 yield* tx

@@ -1,10 +1,11 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/http";
+import { eq } from "drizzle-orm";
 import { Db } from "@mattrax/enterprise-core";
 import { EnterpriseService } from "@mattrax/enterprise-domain";
 import { describe, expect, it } from "vitest";
 import { mcpOAuthRoutes, validRedirectUri } from "@mattrax/enterprise-api";
-import { makeDb } from "./helpers.js";
+import { makeDb, runEffect, schema } from "./helpers.js";
 
 const origin = "https://app.test";
 
@@ -437,6 +438,170 @@ describe("MCP OAuth authorization request", () => {
     expect(db.store.mcp_oauth_connection[0]!.scopes).toEqual(["devices.read", "devices.write"]);
   });
 
+  it("audits OAuth grants and scope changes without storing authorization secrets", async () => {
+    const db = makeDb();
+    const handler = makeHandler(db);
+    const clientId = "mcp_client_audit";
+    const redirectUri = "https://client.example/callback";
+    addClient(db, clientId, [redirectUri], "Fleet assistant");
+    const approve = async (permission: string) => {
+      const { challenge } = await pkce();
+
+      return postForm(handler, "/api/oauth/authorize", {
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        decision: "approve",
+        permissions_field: "1",
+        permission,
+      });
+    };
+
+    expect((await approve("devices.read")).status).toBe(302);
+    const connectionId = db.store.mcp_oauth_connection[0]!.id;
+    expect((await approve("devices.write")).status).toBe(302);
+
+    expect(db.store.mcp_oauth_connection).toHaveLength(1);
+    expect(db.store.mcp_oauth_connection[0]).toMatchObject({
+      id: connectionId,
+      scopes: ["devices.read", "devices.write"],
+    });
+    expect(db.store.account_audit_log).toMatchObject([
+      {
+        action: "account.mcp_oauth_granted",
+        subjectAccountId: "account-1",
+        actorAccountId: "account-1",
+        targetType: "mcp_oauth_connection",
+        targetId: connectionId,
+        metadata: {
+          clientId,
+          clientName: "Fleet assistant",
+          scopes: ["devices.read"],
+          permissions: ["View devices"],
+        },
+      },
+      {
+        action: "account.mcp_oauth_scopes_changed",
+        targetId: connectionId,
+        metadata: {
+          clientName: "Fleet assistant",
+          previousScopes: ["devices.read"],
+          previousPermissions: ["View devices"],
+          scopes: ["devices.read", "devices.write"],
+          permissions: ["View devices", "Manage devices"],
+        },
+      },
+    ]);
+    const audit = JSON.stringify(db.store.account_audit_log);
+    expect(audit).not.toContain("mcp_code_");
+    expect(audit).not.toContain("codeHash");
+    expect(audit).not.toContain("code_challenge");
+  });
+
+  it("re-consents to the same scopes without treating affectedRows 0 as revocation", async () => {
+    const db = makeDb();
+    const handler = makeHandler(db);
+    const clientId = "mcp_client_reconsent";
+    const redirectUri = "https://client.example/callback";
+    addClient(db, clientId, [redirectUri], "Fleet assistant");
+    const approve = async () => {
+      const { challenge } = await pkce();
+
+      return postForm(handler, "/api/oauth/authorize", {
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        decision: "approve",
+        permissions_field: "1",
+        permission: "devices.read",
+      });
+    };
+
+    expect((await approve()).status).toBe(302);
+    const connectionId = db.store.mcp_oauth_connection[0]!.id;
+
+    // MySQL (and the fake) count changed rows, so assigning the same scopes
+    // reports affectedRows: 0 even though the connection is alive.
+    await expect(
+      runEffect(
+        db
+          .update(schema.mcpOAuthConnection)
+          .set({ scopes: ["devices.read"] })
+          .where(eq(schema.mcpOAuthConnection.id, connectionId)),
+      ),
+    ).resolves.toMatchObject({ affectedRows: 0 });
+
+    expect((await approve()).status).toBe(302);
+    expect(db.store.mcp_oauth_connection).toHaveLength(1);
+    expect(db.store.mcp_oauth_connection[0]).toMatchObject({
+      id: connectionId,
+      scopes: ["devices.read"],
+    });
+    expect(db.store.mcp_oauth_code).toHaveLength(2);
+    expect(db.store.account_audit_log.map((row: any) => row.action)).toEqual([
+      "account.mcp_oauth_granted",
+      "account.mcp_oauth_granted",
+    ]);
+  });
+  it("rolls back a grant when its account audit cannot be written", async () => {
+    const db = makeDb();
+    const handler = makeHandler(db);
+    const { challenge } = await pkce();
+    addClient(db, "mcp_client_audit_rollback", ["https://client.example/callback"]);
+    db.failNextWrite("insert", "account_audit_log");
+
+    const response = await postForm(handler, "/api/oauth/authorize", {
+      client_id: "mcp_client_audit_rollback",
+      redirect_uri: "https://client.example/callback",
+      response_type: "code",
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      decision: "approve",
+      permissions_field: "1",
+      permission: "devices.read",
+    });
+
+    expect(response.status).toBe(500);
+    expect(db.store.mcp_oauth_connection).toHaveLength(0);
+    expect(db.store.mcp_oauth_code).toHaveLength(0);
+    expect(db.store.account_audit_log).toHaveLength(0);
+  });
+
+  it("rolls back a scope change when its account audit cannot be written", async () => {
+    const db = makeDb();
+    const handler = makeHandler(db);
+    const clientId = "mcp_client_scope_rollback";
+    const redirectUri = "https://client.example/callback";
+    addClient(db, clientId, [redirectUri]);
+    const approve = async (permission: string) => {
+      const { challenge } = await pkce();
+
+      return postForm(handler, "/api/oauth/authorize", {
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+        decision: "approve",
+        permissions_field: "1",
+        permission,
+      });
+    };
+
+    expect((await approve("devices.read")).status).toBe(302);
+    db.failNextWrite("insert", "account_audit_log");
+    expect((await approve("devices.write")).status).toBe(500);
+
+    expect(db.store.mcp_oauth_connection[0]!.scopes).toEqual(["devices.read"]);
+    expect(db.store.mcp_oauth_code).toHaveLength(1);
+    expect(db.store.account_audit_log.map((row: any) => row.action)).toEqual([
+      "account.mcp_oauth_granted",
+    ]);
+  });
   it("rejects a cross-origin consent decision", async () => {
     const db = makeDb();
     const handler = makeHandler(db);
@@ -472,6 +637,12 @@ describe("MCP OAuth authorization request", () => {
 
     expect(handler).toBeDefined();
     expect(db.store.mcp_oauth_connection[0]!.scopes).toEqual(["mcp"]);
+    // An unrestricted legacy grant stays one short label in the audit row
+    // instead of expanding into every permission name.
+    expect(db.store.account_audit_log[0]).toMatchObject({
+      action: "account.mcp_oauth_granted",
+      metadata: { scopes: ["mcp"], permissions: ["mcp"] },
+    });
   });
 
   it("rejects a tampered form and an unsupported challenge method", async () => {

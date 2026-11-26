@@ -49,7 +49,7 @@ function Progress(props: ProgressProps) {
   return (
     <div class={cn("w-full", local.class)}>
       <Show when={local.showValue}>
-        <div class="mb-1 flex items-baseline justify-between gap-2 text-[10.5px] text-muted-foreground">
+        <div class="mb-1 flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
           <span class="truncate">{local.label}</span>
           <span class="shrink-0 font-mono tabular-nums">
             {local.valueLabel ?? `${Math.round(percent())}%`}
@@ -68,10 +68,10 @@ function Progress(props: ProgressProps) {
       >
         <div
           class={cn(
-            "h-full rounded-full transition-[width] duration-[var(--duration-panel)] ease-swift",
+            "h-full rounded-full w-(--progress-width) transition-all duration-200 ease-out",
             toneClass[local.tone ?? "brand"],
           )}
-          style={{ width: `${percent()}%` }}
+          style={{ "--progress-width": `${percent()}%` }}
         />
       </div>
     </div>
@@ -121,8 +121,8 @@ function SegmentedProgress(props: SegmentedProgressProps) {
         <For each={visible()}>
           {(segment) => (
             <span
-              class={cn("h-full first:rounded-l-full last:rounded-r-full", segment.class)}
-              style={{ width: `${(segment.value / total()) * 100}%` }}
+              class={cn("h-full w-(--segment-width) first:rounded-l-full last:rounded-r-full", segment.class)}
+              style={{ "--segment-width": `${(segment.value / total()) * 100}%` }}
             />
           )}
         </For>
@@ -149,7 +149,7 @@ function IndeterminateBar(props: IndeterminateBarProps) {
       data-slot="indeterminate-bar"
       class={cn("h-0.5 w-full overflow-hidden rounded-full bg-border", local.class)}
     >
-      <div class="mt-indeterminate h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
+      <div class="animate-pulse h-full w-2/5 bg-gradient-to-r from-brand/0 via-brand to-brand/0" />
     </div>
   );
 }

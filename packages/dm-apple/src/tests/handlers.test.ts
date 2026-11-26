@@ -429,6 +429,40 @@ describe("Apple MDM handlers", () => {
       expect(event && "_tag" in event ? event._tag : null).toBe("TokenUpdate");
     });
 
+    it("rejects a user-channel GetBootstrapToken before reading escrow", async () => {
+      let bootstrapReads = 0;
+      const backend = mockManagementBackend({
+        getAppleBootstrapToken: () =>
+          Effect.sync(() => {
+            bootstrapReads += 1;
+            return btoa("dummy-bootstrap-token");
+          }),
+      });
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>MessageType</key><string>GetBootstrapToken</string>
+  <key>UDID</key><string>udid-user-bootstrap</string>
+  <key>UserID</key><string>FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF</string>
+  <key>UserShortName</key><string>victim@example.test</string>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(bootstrapReads).toBe(0);
+    });
+
     it("polls the user channel for the user's own commands", async () => {
       let scope: CheckinScope | undefined;
 

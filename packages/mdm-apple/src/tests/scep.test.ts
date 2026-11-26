@@ -27,6 +27,7 @@ const issueChallenge = (
     ttlSeconds?: number;
     now?: number;
     authSecret?: string;
+    referenceId?: string;
   } = {},
 ) =>
   Effect.runPromise(
@@ -37,6 +38,7 @@ const issueChallenge = (
       organizationId: options.organizationId ?? "tenant-1",
       authSecret: options.authSecret ?? authSecret,
       ttlSeconds: options.ttlSeconds ?? 7 * 24 * 60 * 60,
+      referenceId: options.referenceId,
       now: options.now,
     }),
   );
@@ -60,11 +62,20 @@ describe("ScepRepositoryLive challenge authentication", () => {
     const { challenge, expiresAt } = await issueChallenge(db);
 
     const repository = makeRepository(db);
+    const queryStart = db.queries.length;
 
     await expect(
       Effect.runPromise(repository.authenticatePkcsReq(scope, request(challenge))),
     ).resolves.toEqual({ organizationalUnit: "tenant-1", enrollmentId: "enrollment-1" });
 
+    expect(db.queries.slice(queryStart)).toMatchObject([
+      {
+        operation: "select",
+        table: tableName(schema.enterpriseEnrollment),
+        joins: [tableName(schema.scepChallenge)],
+      },
+      { operation: "update", table: tableName(schema.scepChallenge) },
+    ]);
     expect(challengeRows(db)).toMatchObject([
       {
         organizationId: "tenant-1",
@@ -72,6 +83,29 @@ describe("ScepRepositoryLive challenge authentication", () => {
         expiresAt,
         consumedAt: expect.any(Date),
       },
+    ]);
+  });
+
+  it("carries the BYOD reference from the joined challenge read without reading it again", async () => {
+    const db = makeScepDb();
+    const { challenge } = await issueChallenge(db, { referenceId: "byod-1" });
+    const repository = makeRepository(db);
+    const queryStart = db.queries.length;
+
+    await expect(
+      Effect.runPromise(repository.authenticatePkcsReq(scope, request(challenge))),
+    ).resolves.toEqual({
+      organizationalUnit: "tenant-1",
+      enrollmentId: "enrollment-1",
+      referenceId: "byod-1",
+    });
+    expect(db.queries.slice(queryStart)).toMatchObject([
+      {
+        operation: "select",
+        table: tableName(schema.enterpriseEnrollment),
+        joins: [tableName(schema.scepChallenge)],
+      },
+      { operation: "update", table: tableName(schema.scepChallenge) },
     ]);
   });
 

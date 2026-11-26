@@ -1,5 +1,5 @@
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from "@tanstack/solid-query";
-import type { InfiniteData } from "@tanstack/solid-query";
+import type { InfiniteData, QueryClient, QueryFunctionContext } from "@tanstack/solid-query";
 import type {
   AdminAccountsQuery,
   AppleUserActionName,
@@ -24,6 +24,7 @@ import {
 } from "~/lib/approval-retry";
 import type { ApprovalRetryInput } from "~/lib/approval-retry";
 import { webHttpClientLayer } from "~/lib/web-http";
+import { enterpriseSecurityHeaders } from "~/lib/enterprise-headers";
 import { ME_QUERY_KEY } from "~/lib/me-keys";
 import { buildMeQueryOptions } from "~/lib/me-options";
 import { currentTenantDirectory, resolveTenant, resolveTenantId } from "~/lib/tenant";
@@ -43,6 +44,9 @@ import {
   makeEnterpriseClient,
   restrictedSoftwareHttpApi,
   scriptHttpApi,
+  DeviceRow,
+  GroupRow,
+  PolicyRow,
   formatDeviceQueryText,
   parseDeviceQueryText,
 } from "@mattrax/enterprise-domain/client";
@@ -79,7 +83,6 @@ import type {
   CreateAutopilotProfileRequest,
   DevicePreRegistrationImportRequest,
   DeviceHandoverRequest,
-  DeviceRow,
   DeviceSearchQuery,
   DeviceViewQuery,
   DashboardQueryRequest,
@@ -93,10 +96,8 @@ import type {
   DynamicGroupRules,
   Entity,
   GroupNode,
-  GroupRow,
   GroupSearchQuery,
   GroupSearchResponse,
-  PolicyRow,
   PolicySearchQuery,
   PolicySearchResponse,
   RowFor,
@@ -401,12 +402,20 @@ type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["Sc
  */
 const migrationClientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return HttpApiClient.make(fleetMigrationHttpApi, {
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
@@ -433,6 +442,94 @@ export type {
 const keyTenant = (tenantId: RouteParam) =>
   tenantId ? (resolveTenantId(tenantId) ?? tenantId) : "";
 
+/**
+ * A row normalised from a list or search response. Summaries live in their own
+ * cache entries so a partial or permission-filtered row can never be mistaken
+ * for the authoritative detail response.
+ */
+export type EntitySummary<E extends Entity = Entity> = {
+  readonly tenantId: string;
+  readonly entity: E;
+  readonly id: string;
+  readonly row: RowFor<E>;
+};
+
+type EntitySummaryQueryCache = Pick<QueryClient, "getQueryData" | "getQueryState" | "setQueryData">;
+
+const isEntityRow = <E extends Entity>(entity: E, value: unknown): value is RowFor<E> => {
+  // SAFETY: each branch validates against the schema selected by `entity`, so
+  // the predicate is exactly the conditional `RowFor<E>` mapping.
+  switch (entity) {
+    case "device":
+      return Schema.is(DeviceRow)(value);
+    case "group":
+      return Schema.is(GroupRow)(value);
+    case "policy":
+      return Schema.is(PolicyRow)(value);
+  }
+};
+
+/** Cache only complete row shapes, under an identity separate from detail data. */
+export const cacheEntityRows = <E extends Entity>(
+  queryClient: EntitySummaryQueryCache,
+  tenantId: RouteParam,
+  entity: E,
+  rows: readonly unknown[],
+): void => {
+  const tenant = keyTenant(tenantId);
+
+  if (!tenant) return;
+
+  for (const value of rows) {
+    if (!isEntityRow(entity, value) || value.id.length === 0) continue;
+
+    const summary: EntitySummary<E> = {
+      tenantId: tenant,
+      entity,
+      id: value.id,
+      // Detach the top-level row from the list response. Nested values are
+      // immutable domain data and are never written to by summary consumers.
+      row: { ...value },
+    };
+
+    queryClient.setQueryData(enterpriseKeys.entitySummary(tenant, entity, value.id), summary);
+  }
+};
+
+/**
+ * Read a summary for a detail query's `placeholderData`. Invalidated summaries
+ * are ignored until a fresh list/search response replaces them, and the stored
+ * identity is rechecked so a malformed or cross-tenant entry is never rendered.
+ */
+export const entitySummaryPlaceholder = <E extends Entity>(
+  queryClient: EntitySummaryQueryCache,
+  tenantId: RouteParam,
+  entity: E,
+  id: RouteParam,
+): RowFor<E> | undefined => {
+  const tenant = keyTenant(tenantId);
+
+  if (!tenant || !id) return undefined;
+
+  const queryKey = enterpriseKeys.entitySummary(tenant, entity, id);
+
+  if (queryClient.getQueryState(queryKey)?.isInvalidated) return undefined;
+
+  const summary = queryClient.getQueryData<EntitySummary<E>>(queryKey);
+
+  if (
+    !summary ||
+    summary.tenantId !== tenant ||
+    summary.entity !== entity ||
+    summary.id !== id ||
+    !isEntityRow(entity, summary.row) ||
+    summary.row.id !== id
+  )
+    return undefined;
+
+  return summary.row;
+};
+
 export const enterpriseKeys = {
   me: () => ME_QUERY_KEY,
   accountDeletion: () => ["enterprise", "account-deletion"] as const,
@@ -444,6 +541,12 @@ export const enterpriseKeys = {
     ["enterprise", "list", keyTenant(tenantId), entity] as const,
   list: (tenantId: RouteParam, entity: Entity, group?: string) =>
     ["enterprise", "list", keyTenant(tenantId), entity, group ?? ""] as const,
+  summaryPrefix: (tenantId: RouteParam) =>
+    ["enterprise", "entity-summary", keyTenant(tenantId)] as const,
+  entitySummaryPrefix: (tenantId: RouteParam, entity: Entity) =>
+    [...enterpriseKeys.summaryPrefix(tenantId), entity] as const,
+  entitySummary: (tenantId: RouteParam, entity: Entity, id: RouteParam) =>
+    [...enterpriseKeys.entitySummaryPrefix(tenantId, entity), id ?? ""] as const,
   /** Every cached page of one entity's server-paginated list. */
   entitySearchPrefix: (tenantId: RouteParam, entity: Entity | "application") =>
     ["enterprise", "entity-search", keyTenant(tenantId), entity] as const,
@@ -480,8 +583,7 @@ export const enterpriseKeys = {
   accounts: (tenantId: RouteParam) =>
     ["enterprise", "tenant-accounts", keyTenant(tenantId)] as const,
   roles: (tenantId: RouteParam) => ["enterprise", "tenant-roles", keyTenant(tenantId)] as const,
-  scopeTags: (tenantId: RouteParam) =>
-    ["enterprise", "scope-tags", keyTenant(tenantId)] as const,
+  scopeTags: (tenantId: RouteParam) => ["enterprise", "scope-tags", keyTenant(tenantId)] as const,
   scopeTagAssignmentsPrefix: (tenantId: RouteParam) =>
     ["enterprise", "scope-tag-assignments", keyTenant(tenantId)] as const,
   scopeTagAssignments: (tenantId: RouteParam, resourceType: string, resourceIds?: string) =>
@@ -687,14 +789,28 @@ const required = (value: RouteParam, name: string) => {
   return name === "tenantId" ? (resolveTenantId(value) ?? value) : value;
 };
 
+const enterpriseRequestOrigin = () => {
+  const event = isServer ? getRequestEvent() : undefined;
+
+  return event ? new URL(event.request.url).origin : undefined;
+};
+
 const clientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return makeEnterpriseClient({
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
@@ -704,24 +820,40 @@ const clientEffect = (headers: Readonly<Record<string, string>>) => {
  */
 const scriptClientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return HttpApiClient.make(scriptHttpApi, {
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
 /** Restricted software is its own contract for the same declaration-size reason. */
 const restrictedSoftwareClientEffect = (headers: Readonly<Record<string, string>>) => {
   const event = isServer ? getRequestEvent() : undefined;
-  const baseUrl = event ? new URL("/", event.request.url).toString() : "/";
+  const origin = enterpriseRequestOrigin();
+  const baseUrl = event
+    ? new URL("/", event.request.url).toString()
+    : (globalThis.location?.origin ?? "/");
 
   return HttpApiClient.make(restrictedSoftwareHttpApi, {
     baseUrl,
     transformClient: (client) =>
-      HttpClient.mapRequest((request) => HttpClientRequest.setHeaders(request, headers))(client),
+      HttpClient.mapRequest((request) =>
+        HttpClientRequest.setHeaders(request, {
+          ...headers,
+          ...enterpriseSecurityHeaders(request.method, origin),
+        }),
+      )(client),
   });
 };
 
@@ -853,9 +985,14 @@ const download = (
             ? cause
             : new EnterpriseBadRequest({ message: "Invalid download parameters" }),
       });
+      const method = options.method ?? "GET";
       const response = yield* client.execute(
-        HttpClientRequest.make(options.method ?? "GET")(requestPath, {
-          headers: { ...enterpriseRequestHeaders(grant, approval), ...options.headers },
+        HttpClientRequest.make(method)(requestPath, {
+          headers: {
+            ...enterpriseRequestHeaders(grant, approval),
+            ...options.headers,
+            ...enterpriseSecurityHeaders(method, enterpriseRequestOrigin()),
+          },
           ...(options.body === undefined ? {} : { body: HttpBody.jsonUnsafe(options.body) }),
         }),
       );
@@ -1068,7 +1205,9 @@ const enterpriseQueryOptions = <
   TQueryKey extends readonly unknown[],
 >(options: {
   queryKey: TQueryKey;
-  queryFn: () => T;
+  queryFn: (context: QueryFunctionContext<TQueryKey>) => T;
+  /** Best-effort cache hydration from a successful endpoint response. */
+  onData?: (data: EndpointData<T>, client: QueryClient) => void;
   enabled?: boolean;
   /** Leave endpoint failures in state instead of throwing to the error boundary. */
   throwOnError?: boolean;
@@ -1078,17 +1217,19 @@ const enterpriseQueryOptions = <
   refetchOnMount?: boolean | "always";
 }) =>
   queryOptions<EndpointData<T>, EndpointError<T>, EndpointData<T>, TQueryKey>({
-    // SAFETY: `T` is the endpoint promise for this key; its resolved value is
-    // `EndpointData<T>` and the phantom `__error` field never exists at runtime.
-    ...(options as {
-      queryKey: TQueryKey;
-      queryFn: () => Promise<EndpointData<T>>;
-      enabled?: boolean;
-      throwOnError?: boolean;
-      suspense?: boolean;
-      staleTime?: number;
-      refetchOnMount?: boolean | "always";
-    }),
+    queryKey: options.queryKey,
+    queryFn: async (context) => {
+      // SAFETY: awaiting the endpoint promise removes its phantom error field;
+      // its resolved value is exactly `EndpointData<T>`.
+      const data = (await options.queryFn(context)) as EndpointData<T>;
+      options.onData?.(data, context.client);
+
+      return data;
+    },
+    throwOnError: options.throwOnError,
+    ...(options.suspense === undefined ? {} : { suspense: options.suspense }),
+    staleTime: options.staleTime,
+    refetchOnMount: options.refetchOnMount,
     // The API Worker authenticates with the browser's cookie; a server render
     // has no reliable way to forward it through every endpoint. Keep all
     // endpoint queries idle during SSR and let hydration fetch them.
@@ -3428,13 +3569,8 @@ export const enterprise = {
       api.listTenantRoles({ params: { tenantId: required(tenantId, "tenantId") } }),
     ),
   listScopeTags: (tenantId: RouteParam) =>
-    endpoint((api) =>
-      api.listScopeTags({ params: { tenantId: required(tenantId, "tenantId") } }),
-    ),
-  createScopeTag: (
-    tenantId: RouteParam,
-    payload: { name: string; description?: string | null },
-  ) =>
+    endpoint((api) => api.listScopeTags({ params: { tenantId: required(tenantId, "tenantId") } })),
+  createScopeTag: (tenantId: RouteParam, payload: { name: string; description?: string | null }) =>
     endpoint((api) =>
       api.createScopeTag({
         params: { tenantId: required(tenantId, "tenantId") },
@@ -3474,9 +3610,7 @@ export const enterprise = {
         params: { tenantId: required(tenantId, "tenantId") },
         query: {
           resourceType,
-          ...(resourceIds && resourceIds.length > 0
-            ? { resourceIds: resourceIds.join(",") }
-            : {}),
+          ...(resourceIds && resourceIds.length > 0 ? { resourceIds: resourceIds.join(",") } : {}),
         },
       }),
     ),
@@ -3712,6 +3846,14 @@ export const enterpriseQueries = {
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.list(tenantId, entity, group),
       queryFn: () => enterprise.list(tenantId, entity, group),
+      onData: (data, client) => cacheEntityRows(client, tenantId, entity, data.rows),
+      enabled: Boolean(tenantId),
+    }),
+  deviceSearch: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.deviceSearch(tenantId, query),
+      queryFn: () => enterprise.searchDevices(tenantId, query),
+      onData: (data, client) => cacheEntityRows(client, tenantId, "device", data.devices),
       enabled: Boolean(tenantId),
     }),
   mcpConnections: () =>
@@ -4040,8 +4182,12 @@ export const enterpriseQueries = {
       number
     >({
       queryKey: enterpriseKeys.entitySearch(tenantId, "group", filters),
-      queryFn: ({ pageParam }) =>
-        enterprise.searchGroups(tenantId, { ...filters, offset: pageParam }),
+      queryFn: async ({ client, pageParam }) => {
+        const page = await enterprise.searchGroups(tenantId, { ...filters, offset: pageParam });
+        cacheEntityRows(client, tenantId, "group", page.groups);
+
+        return page;
+      },
       initialPageParam: 0,
       getNextPageParam: (_last, pages) => {
         const loaded = pages.reduce((count, page) => count + page.groups.length, 0);
@@ -4062,8 +4208,12 @@ export const enterpriseQueries = {
       number
     >({
       queryKey: enterpriseKeys.entitySearch(tenantId, "policy", filters),
-      queryFn: ({ pageParam }) =>
-        enterprise.searchPolicies(tenantId, { ...filters, offset: pageParam }),
+      queryFn: async ({ client, pageParam }) => {
+        const page = await enterprise.searchPolicies(tenantId, { ...filters, offset: pageParam });
+        cacheEntityRows(client, tenantId, "policy", page.policies);
+
+        return page;
+      },
       initialPageParam: 0,
       getNextPageParam: (_last, pages) => {
         const loaded = pages.reduce((count, page) => count + page.policies.length, 0);
@@ -4144,11 +4294,7 @@ export const enterpriseQueries = {
     resourceIds?: ReadonlyArray<string>,
   ) =>
     enterpriseQueryOptions({
-      queryKey: enterpriseKeys.scopeTagAssignments(
-        tenantId,
-        resourceType,
-        resourceIds?.join(","),
-      ),
+      queryKey: enterpriseKeys.scopeTagAssignments(tenantId, resourceType, resourceIds?.join(",")),
       queryFn: async () => {
         if (!resourceIds || resourceIds.length === 0)
           return enterprise.listScopeTagAssignments(tenantId, resourceType);
@@ -4168,8 +4314,7 @@ export const enterpriseQueries = {
           for (const assignment of page.assignments) {
             const tags = byResource.get(assignment.resourceId) ?? [];
 
-            for (const tagId of assignment.tagIds)
-              if (!tags.includes(tagId)) tags.push(tagId);
+            for (const tagId of assignment.tagIds) if (!tags.includes(tagId)) tags.push(tagId);
             byResource.set(assignment.resourceId, tags);
           }
         }

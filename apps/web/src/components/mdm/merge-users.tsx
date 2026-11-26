@@ -1,3 +1,4 @@
+import { Checkbox } from "@mattrax/ui";
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show, createMemo, createSignal, createUniqueId } from "solid-js";
@@ -59,7 +60,7 @@ export const formatMergeCounts = (counts: UserMergeCounts): string => {
 const UserLabel = (props: { user: DirectoryUserRef }) => (
   <span class="flex min-w-0 flex-col">
     <span class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-      <span class="truncate text-[12.5px] font-medium text-foreground">{props.user.name}</span>
+      <span class="truncate text-xs font-medium text-foreground">{props.user.name}</span>
       <Show when={props.user.disabled}>
         <Badge variant="outline">Disabled</Badge>
       </Show>
@@ -67,7 +68,7 @@ const UserLabel = (props: { user: DirectoryUserRef }) => (
         <Badge variant="brand">SSO linked</Badge>
       </Show>
     </span>
-    <span class="truncate text-[11px] text-muted-foreground">
+    <span class="truncate text-xs text-muted-foreground">
       {props.user.email} · {SOURCE_LABELS[props.user.source]}
     </span>
   </span>
@@ -84,18 +85,17 @@ function SourceRow(props: {
 }) {
   return (
     <li class="flex items-start gap-2.5 px-3 py-2">
-      <input
+      <Checkbox
         id={props.id}
-        type="checkbox"
-        class="mt-0.5 size-3.5 shrink-0 accent-[var(--brand-solid)]"
+        class="mt-0.5 size-3.5 shrink-0"
         checked={props.checked}
         disabled={props.disabled}
-        onChange={(event) => props.onToggle(event.currentTarget.checked)}
+        onCheckedChange={(checked) => props.onToggle(checked === true)}
       />
       <label for={props.id} class="min-w-0 flex-1 cursor-pointer">
         <UserLabel user={props.user} />
         <Show when={props.hint}>
-          <span class="mt-0.5 block text-[11px] text-muted-foreground">{props.hint}</span>
+          <span class="mt-0.5 block text-xs text-muted-foreground">{props.hint}</span>
         </Show>
         <Show when={(props.reasons?.length ?? 0) > 0}>
           <span class="mt-1 flex flex-wrap gap-1">
@@ -117,7 +117,7 @@ function PreviewSummary(props: { preview: DirectoryUserMergePreview }) {
           {(source) => (
             <li class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 px-3 py-2">
               <UserLabel user={source.user} />
-              <span class="text-[11px] tabular-nums text-muted-foreground">
+              <span class="text-xs tabular-nums text-muted-foreground">
                 {formatMergeCounts(source.counts)}
               </span>
             </li>
@@ -125,7 +125,7 @@ function PreviewSummary(props: { preview: DirectoryUserMergePreview }) {
         </For>
       </ul>
 
-      <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+      <p class="text-xs leading-relaxed text-muted-foreground">
         Moving to <span class="font-medium text-foreground">{props.preview.target.name}</span>:{" "}
         {formatMergeCounts(props.preview.totals)}.
         <Show when={Object.values(props.preview.deduplicated).some((value) => value > 0)}>
@@ -136,7 +136,7 @@ function PreviewSummary(props: { preview: DirectoryUserMergePreview }) {
       </p>
 
       <Show when={props.preview.warnings.length > 0}>
-        <ul class="space-y-1 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-[11.5px] leading-relaxed text-warning-foreground">
+        <ul class="space-y-1 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-xs leading-relaxed text-warning-foreground">
           <For each={props.preview.warnings}>{(warning) => <li>{warning}</li>}</For>
         </ul>
       </Show>
@@ -286,13 +286,13 @@ export function MergeUsersDialog(props: {
         props.onOpenChange(open);
       }}
     >
-      <DialogContent class="max-h-[88vh] max-w-2xl overflow-y-auto rounded-xl p-5">
+      <DialogContent class="max-h-9/10 max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle class="flex items-center gap-2 text-base">
-            <GitMerge class="size-4 text-brand" />
+          <DialogTitle class="flex items-center">
+            <GitMerge class="size-4" />
             Merge duplicate directory people
           </DialogTitle>
-          <DialogDescription class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+          <DialogDescription>
             Choose the directory records that describe the same person as{" "}
             <span class="font-medium text-foreground">{props.target.name}</span>. Their device
             links, group memberships, policy assignments and exclusions move to this person, then
@@ -302,11 +302,11 @@ export function MergeUsersDialog(props: {
 
         <div class="mt-4 space-y-4">
           <section>
-            <h3 class="text-[12px] font-medium text-foreground">Likely duplicates</h3>
+            <h3 class="text-xs font-medium text-foreground">Likely duplicates</h3>
             <Show
               when={!candidates.isPending}
               fallback={
-                <p class="mt-1 text-[11.5px] text-muted-foreground">Looking for matches…</p>
+                <p class="mt-1 text-xs text-muted-foreground">Looking for matches…</p>
               }
             >
               <Show
@@ -352,14 +352,14 @@ export function MergeUsersDialog(props: {
 
           <Show when={otherUsers() > 0}>
             <section>
-              <h3 class="text-[12px] font-medium text-foreground">Other directory people</h3>
+              <h3 class="text-xs font-medium text-foreground">Other directory people</h3>
               <div class="relative mt-2">
-                <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
                 <Input
                   value={search()}
                   onInput={(event) => setSearch(event.currentTarget.value)}
                   placeholder="Search by name, email or external id…"
-                  class="pl-8"
+                  class="w-full"
                   aria-label="Search directory people to merge"
                 />
               </div>
@@ -367,7 +367,7 @@ export function MergeUsersDialog(props: {
                 <Show
                   when={searchResults().length > 0}
                   fallback={
-                    <p class="mt-2 text-[11.5px] text-muted-foreground">
+                    <p class="mt-2 text-xs text-muted-foreground">
                       No other directory person matches “{search().trim()}”.
                     </p>
                   }
@@ -400,11 +400,11 @@ export function MergeUsersDialog(props: {
 
           <Show when={selectedIds().length > 0}>
             <section>
-              <h3 class="text-[12px] font-medium text-foreground">What will move</h3>
+              <h3 class="text-xs font-medium text-foreground">What will move</h3>
               <div class="mt-2">
                 <Show
                   when={!preview.isPending}
-                  fallback={<p class="text-[11.5px] text-muted-foreground">Building preview…</p>}
+                  fallback={<p class="text-xs text-muted-foreground">Building preview…</p>}
                 >
                   <>
                     <Show when={preview.data}>
@@ -418,12 +418,11 @@ export function MergeUsersDialog(props: {
               </div>
 
               <Show when={preview.data?.requiresExternalIdConfirmation}>
-                <label class="mt-2 flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-[11.5px] leading-relaxed text-foreground">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5 size-3.5 accent-[var(--brand-solid)]"
+                <label class="mt-2 flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-foreground">
+                  <Checkbox
+                    class="mt-0.5 size-3.5"
                     checked={confirmed()}
-                    onChange={(event) => setConfirmed(event.currentTarget.checked)}
+                    onCheckedChange={(checked) => setConfirmed(checked === true)}
                   />
                   <span>
                     I understand these records report different directory object ids. They describe
@@ -432,7 +431,7 @@ export function MergeUsersDialog(props: {
                 </label>
               </Show>
 
-              <p class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
                 Directory sync may recreate the duplicate it no longer sees. The merge still
                 completes; the recreated record then appears under “Likely duplicates” so it can be
                 merged again.
@@ -443,7 +442,7 @@ export function MergeUsersDialog(props: {
           <ErrorText error={merge.error} />
         </div>
 
-        <DialogFooter class="mt-4 flex-row justify-end gap-2 bg-transparent p-0">
+        <DialogFooter class="mt-4 flex-row justify-end">
           <Button
             type="button"
             variant="outline"
@@ -473,14 +472,14 @@ export function MergeDuplicateNotice(props: {
   return (
     <div class="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-brand/25 bg-brand/[0.06] px-4 py-3">
       <div class="flex min-w-0 items-start gap-2">
-        <GitMerge class="mt-0.5 size-4 shrink-0 text-brand" />
+        <GitMerge class="mt-0.5 size-4 shrink-0" />
         <div class="min-w-0">
-          <p class="text-[12px] font-medium text-foreground">
+          <p class="text-xs font-medium text-foreground">
             {props.candidates.length === 1
               ? "A directory record likely duplicates this person"
               : `${props.candidates.length} directory records likely duplicate this person`}
           </p>
-          <p class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
             {props.candidates
               .slice(0, 3)
               .map((candidate) => candidate.user.name)
