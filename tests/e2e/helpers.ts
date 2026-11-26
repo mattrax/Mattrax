@@ -133,7 +133,7 @@ export async function verificationCode(page: Page, email: string) {
         for (const message of messages) {
           if (message.to !== email) continue;
 
-          const match = message.text.match(/code is (\d{6})/);
+          const match = message.text.match(/code is:?\s+(\d{6})/);
 
           if (match?.[1]) {
             code = match[1];

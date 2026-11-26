@@ -118,17 +118,25 @@ export default function TenantSettingsLayout(props: ParentProps) {
 
   return (
     <TenantProfileDraftContext value={draft}>
-      <div class="grid h-full min-h-0 w-full flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)] [grid-template-areas:'masthead'_'nav'_'content'] overflow-hidden bg-page xl:grid-cols-[248px_minmax(0,1fr)] xl:grid-rows-[auto_minmax(0,1fr)] xl:[grid-template-areas:'nav_masthead'_'nav_content']">
+      <div
+        class="grid h-full min-h-0 w-full flex-1 grid-cols-(--settings-cols) grid-rows-(--settings-rows) overflow-hidden bg-page xl:grid-cols-(--settings-xl-cols) xl:grid-rows-(--settings-xl-rows)"
+        style={{
+          "--settings-cols": "minmax(0, 1fr)",
+          "--settings-rows": "auto auto minmax(0, 1fr)",
+          "--settings-xl-cols": "248px minmax(0, 1fr)",
+          "--settings-xl-rows": "auto minmax(0, 1fr)",
+        }}
+      >
         <header
           data-slot="settings-masthead"
-          class="[grid-area:masthead] flex flex-col gap-1.5 border-b border-border px-8 py-3 sm:px-10 sm:py-4 xl:px-12"
+          class="row-start-1 flex flex-col xl:col-start-2 xl:row-start-1 gap-1.5 border-b border-border px-8 py-3 sm:px-10 sm:py-4 xl:px-12"
         >
           <div class="label-caps">Settings</div>
           <div class="flex flex-col gap-1">
-            <h1 class="text-[22px] font-[580] leading-[1.15] tracking-[-0.03em] text-foreground">
+            <h1 class="text-xl font-semibold leading-tight tracking-tight text-foreground">
               {section().label}
             </h1>
-            <p class="max-w-[70ch] text-[12.5px] leading-5 text-muted-foreground">
+            <p class="max-w-prose text-xs leading-5 text-muted-foreground">
               {section().description}
             </p>
           </div>
@@ -139,14 +147,14 @@ export default function TenantSettingsLayout(props: ParentProps) {
             tabNav = element;
           }}
           data-slot="settings-navigation"
-          class="no-scrollbar [grid-area:nav] flex min-h-0 gap-1 overflow-x-auto border-b border-border px-3 py-2.5 xl:block xl:overflow-y-auto xl:overflow-x-hidden xl:border-b-0 xl:border-r xl:px-3 xl:py-5"
+          class="no-scrollbar row-start-2 flex min-h-0 gap-1 overflow-x-auto border-b border-border px-3 py-2.5 xl:col-start-1 xl:row-span-2 xl:row-start-1 xl:block xl:overflow-y-auto xl:overflow-x-hidden xl:border-b-0 xl:border-r xl:px-3 xl:py-5"
           aria-label="Tenant settings sections"
         >
           <For each={groups()}>
             {(entry) => (
               <div class="contents xl:mb-5 xl:block xl:last:mb-0">
                 <div class="label-caps hidden px-2.5 pb-2 xl:block">{entry.group}</div>
-                <ul class="contents xl:block xl:space-y-[2px]">
+                <ul class="contents xl:block xl:space-y-0.5">
                   <For each={entry.tabs}>
                     {(tab) => {
                       const href = hrefFor(tab.id);
@@ -157,7 +165,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
                           <a
                             href={href}
                             class={cn(
-                              "group flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-2.5 text-[12px] font-[500] transition-colors duration-[var(--duration-hover)] ease-swift xl:h-9 xl:w-full xl:gap-2.5 xl:rounded-lg xl:px-2.5 xl:text-[13px]",
+                              "group flex h-7 shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-2.5 text-xs font-medium transition-colors duration-150 ease-swift xl:h-9 xl:w-full xl:gap-2.5 xl:rounded-lg xl:px-2.5 xl:text-xs",
                               isActive()
                                 ? "bg-active text-foreground"
                                 : "text-muted-foreground hover:bg-hover hover:text-foreground",
@@ -191,7 +199,7 @@ export default function TenantSettingsLayout(props: ParentProps) {
           }}
           data-slot="settings-content"
           class={cn(
-            "settings-sections [grid-area:content] min-h-0 min-w-0 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4 xl:px-8 xl:py-4",
+            "settings-sections row-start-3 min-h-0 min-w-0 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4 xl:col-start-2 xl:row-start-2 xl:px-8 xl:py-4",
             (draft.dirty() || draft.saving() || draft.saved()) && "pb-28",
           )}
         >

@@ -25,8 +25,8 @@ function SelectTriggerBox(props: ComponentProps<typeof SelectTrigger> & { class?
   return (
     <SelectTrigger
       class={cn(
-        "flex h-8 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-2.5 text-[13px] text-foreground outline-none transition-[border-color,box-shadow]",
-        "hover:border-border-strong focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-8 w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none transition",
+        "hover:border-border-strong focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50",
         local.class,
       )}
       {...others}
@@ -55,8 +55,8 @@ function SelectContentBox(props: ComponentProps<typeof SelectContent> & { class?
     <SelectContent
       sideOffset={6}
       class={cn(
-        "z-[75] max-h-72 min-w-[var(--ui-anchor-width,10rem)] overflow-y-auto rounded-[10px] border border-border bg-popover p-1 text-popover-foreground shadow-popover outline-none",
-        "data-[side=bottom]:origin-top data-[side=top]:origin-bottom data-[side=left]:origin-right data-[side=right]:origin-left transition-[opacity,transform] duration-[var(--duration-popover)] ease-swift data-[starting-style]:scale-[0.98] data-[starting-style]:opacity-0 data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0",
+        "z-50 max-h-72 min-w-(--ui-anchor-width,10rem) overflow-y-auto rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover outline-none",
+        "data-[side=bottom]:origin-top data-[side=top]:origin-bottom data-[side=left]:origin-right data-[side=right]:origin-left transition duration-150 ease-out data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-95 data-[ending-style]:opacity-0",
         local.class,
       )}
       {...others}
@@ -70,7 +70,7 @@ function SelectItemBox(props: ComponentProps<typeof SelectItem> & { class?: stri
   return (
     <SelectItem
       class={cn(
-        "relative flex h-8 cursor-default select-none items-center gap-2 rounded-[6px] px-2 pl-7 text-[12.5px] outline-none transition-colors duration-[var(--duration-press)]",
+        "relative flex h-8 cursor-default select-none items-center gap-2 rounded-md px-2 pl-7 text-xs outline-none transition-colors duration-100",
         "data-highlighted:bg-hover data-disabled:pointer-events-none data-disabled:opacity-45",
         local.class,
       )}
@@ -93,7 +93,7 @@ function SelectLabelBox(props: ComponentProps<typeof SelectLabel> & { class?: st
   const [local, others] = splitProps(props, ["class"]);
 
   return (
-    <SelectLabel class={cn("label-caps flex h-7 items-center px-2", local.class)} {...others} />
+    <SelectLabel class={cn("text-xs font-semibold uppercase tracking-wider text-muted-foreground flex h-7 items-center px-2", local.class)} {...others} />
   );
 }
 
@@ -113,8 +113,8 @@ function NativeSelect(props: ComponentProps<"select">) {
       <select
         data-slot="native-select"
         class={cn(
-          "h-8 w-full appearance-none rounded-md border border-input bg-card pl-2.5 pr-7 text-[12.5px] text-foreground outline-none transition-[border-color,box-shadow]",
-          "hover:border-border-strong focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50",
+          "h-8 w-full appearance-none rounded-md border border-input bg-card pl-2.5 pr-7 text-xs text-foreground outline-none transition",
+          "hover:border-border-strong focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50",
           local.class,
         )}
         {...others}

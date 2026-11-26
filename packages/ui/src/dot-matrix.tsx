@@ -3,6 +3,8 @@ import { cn } from "./lib/cn";
 import { splitProps } from "./lib/solid";
 
 export type DotMatrixPattern = "wave" | "spiral" | "rain" | "ripple" | "snake" | "scan";
+/** Pixel widths the dot field is designed for. */
+export type DotMatrixSize = 12 | 16 | 18 | 20 | 24 | 28 | 34;
 export type DotMatrixState = "loading" | "success" | "error";
 
 const COLS = 6;
@@ -54,7 +56,7 @@ export type DotMatrixProps = Omit<ComponentProps<"span">, "children"> & {
   /** Percentage, 0–100. Turns the loader into a determinate fill. */
   value?: number;
   /** Width in pixels; the field keeps its 6:5 aspect ratio. */
-  size?: number;
+  size?: DotMatrixSize;
   label?: string;
   /** Drop the live-region semantics when a parent already announces the state. */
   decorative?: boolean;
@@ -67,7 +69,7 @@ export type DotMatrixProps = Omit<ComponentProps<"span">, "children"> & {
  * into a check or a cross. The drawing is decoration; the live region lives on
  * the root unless `decorative` is set.
  */
-function DotMatrix(props: DotMatrixProps) {
+export default function DotMatrix(props: DotMatrixProps) {
   const [local, others] = splitProps(props, [
     "pattern",
     "state",
@@ -102,7 +104,7 @@ function DotMatrix(props: DotMatrixProps) {
 
   const dotClass = (row: number, col: number) =>
     cn(
-      "justify-self-center self-center rounded-full transition-[background-color,opacity] duration-[var(--duration-hover)] ease-swift",
+      "justify-self-center self-center rounded-full transition duration-150 ease-out w-(--dm-dot-width) aspect-square",
       tone(row, col),
       lit(row, col) ? "opacity-100" : "opacity-30",
     );
@@ -130,12 +132,15 @@ function DotMatrix(props: DotMatrixProps) {
       aria-valuemax={!local.decorative && determinate() ? 100 : undefined}
       aria-valuenow={!local.decorative && determinate() ? Math.round(percent()) : undefined}
       aria-hidden={local.decorative ? "true" : undefined}
-      class={cn("inline-grid shrink-0 place-items-center", local.class)}
+      class={cn(
+        "inline-grid shrink-0 place-items-center grid-cols-(--dm-cols) grid-rows-(--dm-rows) w-(--dm-width) h-(--dm-height)",
+        local.class,
+      )}
       style={{
-        "grid-template-columns": `repeat(${COLS}, 1fr)`,
-        "grid-template-rows": `repeat(${ROWS}, 1fr)`,
-        width: `${width()}px`,
-        height: `${(width() * ROWS) / COLS}px`,
+        "--dm-cols": `repeat(${COLS}, 1fr)`,
+        "--dm-rows": `repeat(${ROWS}, 1fr)`,
+        "--dm-width": `${width()}px`,
+        "--dm-height": `${(width() * ROWS) / COLS}px`,
       }}
       {...others}
     >
@@ -146,14 +151,11 @@ function DotMatrix(props: DotMatrixProps) {
           data-enter={state() === "loading" ? "false" : "true"}
           class={dotClass(row, col)}
           style={{
-            width: "58%",
-            "aspect-ratio": "1",
-            "animation-delay": `${delayFor(pattern(), row, col)}s`,
+            "--dm-dot-width": "58%",
+            "--mt-dot-delay": `${delayFor(pattern(), row, col)}s`,
           }}
         />
       ))}
     </span>
   );
 }
-
-export { DotMatrix };

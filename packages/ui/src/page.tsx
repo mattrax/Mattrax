@@ -35,7 +35,7 @@ function PageTitle(props: ComponentProps<"h1">) {
     <h1
       data-slot="page-title"
       class={cn(
-        "min-w-0 max-w-full text-[22px] font-[580] leading-[1.15] tracking-[-0.028em] text-balance wrap-anywhere",
+        "min-w-0 max-w-full text-xl font-semibold leading-tight tracking-tight text-balance wrap-anywhere",
         local.class,
       )}
       {...others}
@@ -51,7 +51,7 @@ function PageDescription(props: ComponentProps<"p">) {
   return (
     <p
       data-slot="page-description"
-      class={cn("mt-1.5 max-w-2xl text-[12.5px] leading-5 text-muted-foreground", local.class)}
+      class={cn("mt-1.5 max-w-2xl text-xs leading-5 text-muted-foreground", local.class)}
       {...others}
     />
   );
@@ -78,7 +78,7 @@ function Page(props: ComponentProps<"div"> & { wide?: boolean }) {
       data-slot="page"
       class={cn(
         "mx-auto flex w-full flex-col gap-5 px-5 py-5 sm:px-7 sm:py-6",
-        local.wide ? "max-w-none" : "max-w-[1560px]",
+        local.wide ? "max-w-none" : "max-w-390",
         local.class,
       )}
       {...others}
@@ -100,15 +100,15 @@ function Stat(props: {
 
   return (
     <div data-slot="stat" class={cn("min-w-0", local.class)}>
-      <div class="label-caps truncate">{local.label}</div>
+      <div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate">{local.label}</div>
       <div class="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span data-numeric class="text-[19px] font-[560] leading-none tracking-[-0.025em]">
+        <span data-numeric class="text-lg font-semibold leading-none tracking-tight">
           {local.value}
         </span>
         {local.trend ? (
           <span
             class={cn(
-              "inline-flex items-center gap-0.5 text-[11px] font-[550]",
+              "inline-flex items-center gap-0.5 text-xs font-medium",
               local.trend.direction === "up" && "text-success",
               local.trend.direction === "down" && "text-destructive",
               local.trend.direction === "flat" && "text-muted-foreground",
@@ -120,7 +120,7 @@ function Stat(props: {
         ) : null}
       </div>
       {local.hint ? (
-        <div class="mt-1 truncate text-[11.5px] text-muted-foreground">{local.hint}</div>
+        <div class="mt-1 truncate text-xs text-muted-foreground">{local.hint}</div>
       ) : null}
     </div>
   );

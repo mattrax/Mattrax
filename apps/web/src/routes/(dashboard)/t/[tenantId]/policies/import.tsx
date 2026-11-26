@@ -49,7 +49,7 @@ const ImportTargetSchema = Schema.Struct({
 const decodeTarget = Schema.decodeUnknownOption(ImportTargetSchema);
 
 const textareaClass =
-  "min-h-36 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-[11.5px] leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "min-h-36 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30";
 
 const MOBILECONFIG_EXTENSION = /\.(mobileconfig|plist)$/i;
 
@@ -78,6 +78,14 @@ type ParsedSource =
       readonly scope?: "device" | "user";
     };
 
+/** Read query data only after success so a pending or disabled query cannot suspend the page. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function ImportPolicyPage() {
   const params = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -98,7 +106,7 @@ export default function ImportPolicyPage() {
   }));
 
   const row = (): PolicyImportTarget | undefined =>
-    Option.getOrUndefined(decodeTarget(target.data));
+    Option.getOrUndefined(decodeTarget(settledQueryData(target)));
 
   /** A `?policy=` that has not loaded is not an invitation to create a policy. */
   const targetPending = () => Boolean(targetId()) && target.isPending;
@@ -323,7 +331,7 @@ export default function ImportPolicyPage() {
       <Page>
         <a
           href={backHref()}
-          class="inline-flex w-fit items-center gap-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+          class="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
           ← {row() ? "Back to policy" : "Back to policies"}
         </a>
@@ -361,7 +369,7 @@ export default function ImportPolicyPage() {
                 when={targetPending()}
                 fallback={
                   <div class="space-y-3">
-                    <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                    <p class="text-xs leading-relaxed text-muted-foreground">
                       Nothing has been created. Reload the page to retry, or start a new policy
                       explicitly.
                     </p>
@@ -376,7 +384,10 @@ export default function ImportPolicyPage() {
             </Panel>
           }
         >
-          <div class="grid max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+          <div
+          class="grid max-w-5xl gap-5 lg:grid-cols-(--import-grid) lg:items-start"
+          style={{ "--import-grid": "minmax(0,1fr) 320px" }}
+        >
             <div class="space-y-5">
               <Panel
                 title="Source"
@@ -387,7 +398,7 @@ export default function ImportPolicyPage() {
                     <input
                       type="file"
                       accept=".mobileconfig,.plist,.json,.yaml,.yml,application/json"
-                      class="block w-full cursor-pointer rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-[12.5px] text-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-[12px] file:text-foreground"
+                      class="block w-full cursor-pointer rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-xs text-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:text-foreground"
                       onChange={(event) => {
                         const file = event.currentTarget.files?.[0];
 
@@ -434,7 +445,7 @@ export default function ImportPolicyPage() {
 
                   <Show when={error()}>
                     {(message) => (
-                      <p role="alert" class="text-[12.5px] leading-relaxed text-destructive">
+                      <p role="alert" class="text-xs leading-relaxed text-destructive">
                         {message()}
                       </p>
                     )}
@@ -443,25 +454,23 @@ export default function ImportPolicyPage() {
                   <Show when={row()}>
                     <div class="space-y-2 rounded-lg border border-border bg-muted/15 px-3 py-2.5">
                       <p class="label-caps">Existing configurations</p>
-                      <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                      <p class="text-xs leading-relaxed text-muted-foreground">
                         A kind the policy already has is kept unless you choose to replace it.
                       </p>
-                      <div class="flex flex-col gap-1.5 text-[12px] text-muted-foreground">
+                      <div class="flex flex-col gap-1.5 text-xs text-muted-foreground">
                         <label class="flex items-center gap-2">
-                          <input
+                          <Input
                             type="radio"
                             name="conflict"
-                            class="accent-[var(--brand-solid)]"
                             checked={conflict() === "skip"}
                             onChange={() => setConflict("skip")}
                           />
                           Skip existing kinds
                         </label>
                         <label class="flex items-center gap-2">
-                          <input
+                          <Input
                             type="radio"
                             name="conflict"
-                            class="accent-[var(--brand-solid)]"
                             checked={conflict() === "overwrite"}
                             onChange={() => setConflict("overwrite")}
                           />
@@ -479,7 +488,7 @@ export default function ImportPolicyPage() {
                     title="Preview"
                     description="Nothing is saved until you import, and the server validates every configuration before writing."
                     actions={
-                      <Badge variant="outline" class="gap-1.5 text-muted-foreground">
+                      <Badge variant="outline">
                         <Info class="size-3" />
                         {value().source === "mobileconfig" ? "mobileconfig" : "policy document"}
                       </Badge>
@@ -487,7 +496,10 @@ export default function ImportPolicyPage() {
                   >
                     <div class="space-y-4">
                       <Show when={!row()}>
-                        <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+                        <div
+                        class="grid gap-3 sm:grid-cols-(--import-row-grid)"
+                        style={{ "--import-row-grid": "minmax(0,1fr) 120px" }}
+                      >
                           <Field label="Policy name">
                             <Input
                               value={name()}
@@ -506,31 +518,31 @@ export default function ImportPolicyPage() {
                         </div>
                         <Field label="Notes" hint="Optional.">
                           <textarea
-                            class={`${textareaClass} min-h-20 font-sans text-[13px]`}
+                            class={`${textareaClass} min-h-20 font-sans text-xs`}
                             value={notes()}
                             onInput={(event) => setNotes(event.currentTarget.value)}
                           />
                         </Field>
                       </Show>
 
-                      <div class="flex flex-wrap items-center gap-1.5 text-[12px]">
+                      <div class="flex flex-wrap items-center gap-1.5 text-xs">
                         <Show when={counts().added > 0}>
-                          <Badge variant="success" class="tabular-nums">
+                          <Badge variant="success">
                             {counts().added} added
                           </Badge>
                         </Show>
                         <Show when={counts().replaced > 0}>
-                          <Badge variant="warning" class="tabular-nums">
+                          <Badge variant="warning">
                             {counts().replaced} replaced
                           </Badge>
                         </Show>
                         <Show when={counts().unchanged > 0}>
-                          <Badge variant="outline" class="tabular-nums">
+                          <Badge variant="outline">
                             {counts().unchanged} unchanged
                           </Badge>
                         </Show>
                         <Show when={counts().skipped > 0}>
-                          <Badge variant="outline" class="tabular-nums">
+                          <Badge variant="outline">
                             {counts().skipped} skipped
                           </Badge>
                         </Show>
@@ -539,7 +551,7 @@ export default function ImportPolicyPage() {
                       <Show
                         when={value().configurations.length > 0}
                         fallback={
-                          <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+                          <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-xs text-muted-foreground">
                             The document does not contain configurations. Use the editor to add them
                             manually.
                           </p>
@@ -549,16 +561,13 @@ export default function ImportPolicyPage() {
                           <For each={value().configurations}>
                             {(entry) => (
                               <div class="flex flex-wrap items-center gap-2 bg-muted/10 px-3 py-2.5">
-                                <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+                                <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">
                                   {entry.kind}
                                 </span>
-                                <Badge variant="outline" class="text-[10px]">
+                                <Badge variant="outline">
                                   {entry.scope === "user" ? "User channel" : "Device channel"}
                                 </Badge>
-                                <Badge
-                                  variant={importActionVariant(entry.action)}
-                                  class="text-[10px]"
-                                >
+                                <Badge variant={importActionVariant(entry.action)}>
                                   {policyImportActionLabel(entry.action)}
                                 </Badge>
                               </div>
@@ -571,7 +580,7 @@ export default function ImportPolicyPage() {
                         <ul class="space-y-1.5">
                           <For each={value().warnings}>
                             {(warning) => (
-                              <li class="flex items-start gap-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                              <li class="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
                                 <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
                                 <span>{warning}</span>
                               </li>
@@ -583,7 +592,7 @@ export default function ImportPolicyPage() {
                       <Show when={value().blocked}>
                         <p
                           role="alert"
-                          class="rounded-lg border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-[12px] leading-relaxed text-destructive"
+                          class="rounded-lg border border-destructive/25 bg-destructive/[0.06] px-3 py-2 text-xs leading-relaxed text-destructive"
                         >
                           This import cannot be saved. Use an unsigned profile if it must be
                           delivered on the user channel.
@@ -621,16 +630,16 @@ export default function ImportPolicyPage() {
               <div class="flex size-8 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
                 <CheckCircle2 class="size-4" />
               </div>
-              <h2 class="mt-3 text-[13px] font-semibold text-foreground">What is imported</h2>
-              <ul class="mt-2 space-y-2 text-[12px] leading-relaxed text-muted-foreground">
+              <h2 class="mt-3 text-xs font-semibold text-foreground">What is imported</h2>
+              <ul class="mt-2 space-y-2 text-xs leading-relaxed text-muted-foreground">
                 <li>
                   <span class="font-medium text-foreground">Policy document</span> — the format
-                  written by <code class="font-mono text-[11px]">mattrax policies export</code>. It
+                  written by <code class="font-mono text-xs">mattrax policies export</code>. It
                   is versioned, accepts YAML or JSON, and holds one policy per import.
                 </li>
                 <li>
                   <span class="font-medium text-foreground">.mobileconfig</span> — stored as
-                  <code class="ml-1 font-mono text-[11px]">mttx.apple.custom.imported</code>. A
+                  <code class="ml-1 font-mono text-xs">mttx.apple.custom.imported</code>. A
                   signed profile is kept byte-for-byte.
                 </li>
                 <li>

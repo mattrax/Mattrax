@@ -446,15 +446,21 @@ describe("email verification", () => {
   });
 
   it("verifies a six-digit code and consumes it", async () => {
-    const sent: Array<{ text: string; html?: string }> = [];
+    const sent: Array<{
+      text: string;
+      html?: string;
+      headers?: Readonly<Record<string, string>>;
+    }> = [];
 
     const { db, run } = makeContext(unverified(), {
       email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
-    const code = sent[0].text.match(/code is (\d{6})/)?.[1];
+    const code = sent[0].text.match(/code is:?\s+(\d{6})/)?.[1];
     expect(code).toMatch(/^\d{6}$/);
+    // The code is also a header for mail-client autofill.
+    expect(sent[0].headers).toEqual({ "OTP-Token": code });
     expect(requested.challenge).toEqual(expect.any(String));
     expect(sent[0].html).toContain('role="presentation"');
     expect(sent[0].html).toContain("email-code");
@@ -540,7 +546,7 @@ describe("email verification", () => {
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
-    const code = sent[0].text.match(/code is (\d{6})/)?.[1];
+    const code = sent[0].text.match(/code is:?\s+(\d{6})/)?.[1];
     expect(code).toMatch(/^\d{6}$/);
 
     await run((auth) => auth.verifyEmail(session(), { code, challenge: requested.challenge }));
@@ -586,7 +592,7 @@ describe("email verification", () => {
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
-    const code = sent[0].text.match(/code is (\d{6})/)?.[1];
+    const code = sent[0].text.match(/code is:?\s+(\d{6})/)?.[1];
     const wrong = String(Number(code) === 0 ? 1 : 0).padStart(6, "0");
     await expect(
       run((auth) => auth.verifyEmail(session(), { code: wrong, challenge: requested.challenge })),

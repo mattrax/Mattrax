@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated, register, uniqueEmail } from "./helpers";
+import { api, bootstrapTenant, gotoHydrated, register, stepUpGrant, uniqueEmail } from "./helpers";
 
 type InvitePayload = { email: string; role?: string; roleId?: string };
 
@@ -15,11 +15,15 @@ test.describe("restricted software query gating", () => {
     context,
   }) => {
     const tenant = await bootstrapTenant(page, "Restricted Reader");
+    // Writing a rule is a sensitive action: the API requires a fresh step-up
+    // grant, so the owner completes the ceremony before seeding the rule.
+    const grant = await stepUpGrant(page, "restricted-software-change");
     const rule = await api<{ id: string }>(
       page,
       `/api/v1/tenants/${tenant.id}/restricted-software`,
       {
         method: "POST",
+        headers: { "x-mattrax-step-up": grant },
         body: JSON.stringify({
           name: "Blocked suite",
           platform: "apple",

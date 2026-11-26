@@ -382,6 +382,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             readonly subject: string;
             readonly text: string;
             readonly html: string;
+            /** Extra MIME headers (for example `OTP-Token`). */
+            readonly headers?: Readonly<Record<string, string>>;
           };
         },
         recipient: string,
@@ -603,11 +605,22 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const apiToken = session ? undefined : yield* resolveApiToken(request);
           const oauth = session || apiToken ? undefined : yield* resolveOAuthToken(request);
 
+          // The OAuth consent page submits a plain HTML form, which cannot
+          // attach the custom CSRF header, and its handler performs the same
+          // Origin check itself before it resolves the session (it rejects a
+          // cross-origin `Origin` and treats a missing one as a non-browser
+          // client). Exempting exactly this route keeps the consent button
+          // working without weakening the guard anywhere else.
+          const originCheckedConsent =
+            request.method.toUpperCase() === "POST" &&
+            normalisePath(new URL(request.url).pathname) === "/api/oauth/authorize";
+
           // Cookie-authenticated mutations need the same Origin + CSRF guard
           // the library applies to its own routes. Bearer tokens are exempt:
           // they are not attached automatically by a browser.
           if (
             session &&
+            !originCheckedConsent &&
             request.method.toUpperCase() !== "GET" &&
             request.method.toUpperCase() !== "HEAD"
           ) {
@@ -1458,8 +1471,10 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               message: {
                 to: user.email,
                 subject: "Your Mattrax verification code",
-                text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
+                // Keep the digits alone on a line for "Copy code" heuristics.
+                text: `Your Mattrax verification code is:\n\n${code}\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
                 html: verificationHtml,
+                headers: { "OTP-Token": code },
               },
             },
             user.email,

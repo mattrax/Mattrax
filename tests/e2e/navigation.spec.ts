@@ -204,6 +204,11 @@ test.describe("mobile navigation", () => {
       tenants.push(await createTenant(page, `Tenant ${String(index).padStart(2, "0")}`));
     }
 
+    // `createTenant` calls the API directly rather than going through the
+    // dashboard's mutation, so the already-fetched account cache still knows
+    // only the first tenant. Reload to read the switcher from a fresh cache.
+    await gotoHydrated(page, "/dashboard");
+
     await page.getByRole("button", { name: "Open navigation" }).click();
     await page.getByRole("button", { name: /Switch tenant/ }).click();
 

@@ -8,7 +8,7 @@ import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise"
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
-import { StatusChip as Chip } from "~/components/settings/status-chip";
+import Chip from "~/components/settings/status-chip";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -56,14 +56,14 @@ export default function DomainsPage() {
         when={(domains.data?.domains.length ?? 0) > 0}
         fallback={
           <div class="px-4 py-8 text-center sm:px-5">
-            <p class="text-[13px] font-medium text-foreground">No verified domains yet</p>
-            <p class="mx-auto mt-1 max-w-md text-[12.5px] leading-relaxed text-muted-foreground">
+            <p class="text-xs font-medium text-foreground">No verified domains yet</p>
+            <p class="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
               Domains are imported from Microsoft Entra. Connect SSO, grant Graph consent, then
               refresh. Users can still sign in with a passkey until a domain is verified.
             </p>
             <a
               href={`/t/${params.tenantId}/settings/identity`}
-              class="mt-3 inline-flex min-h-9 items-center rounded-lg border border-border px-3 text-[12.5px] font-medium text-foreground transition-colors hover:bg-hover"
+              class="mt-3 inline-flex min-h-9 items-center rounded-lg border border-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-hover"
             >
               Open SSO settings
             </a>
@@ -74,7 +74,7 @@ export default function DomainsPage() {
           <For each={domains.data?.domains ?? []}>
             {(domain) => (
               <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 sm:px-5">
-                <span class="min-w-0 break-all text-[13px] font-medium text-foreground">
+                <span class="min-w-0 break-all text-xs font-medium text-foreground">
                   {domain.domain}
                 </span>
                 <span class="flex shrink-0 items-center gap-2">

@@ -105,7 +105,7 @@ vi.mock("~/components/mdm/table", () => ({
   ),
 }));
 vi.mock("~/components/entity-hover-card", () => ({
-  EntityHoverCard: (props: { href: string; children?: JSX.Element }) => (
+  default: (props: { href: string; children?: JSX.Element }) => (
     <a href={props.href}>{props.children}</a>
   ),
 }));
@@ -118,9 +118,9 @@ vi.mock("~/components/mdm/device-handover-dialog", () => ({
   DeviceHandoverDialog: () => null,
   deviceHandoverSecretSummary: (kinds: ReadonlyArray<string>) => kinds.join(", "),
 }));
-vi.mock("~/components/dashboard/markdown", () => ({ Markdown: () => null }));
+vi.mock("~/components/dashboard/markdown", () => ({ default: () => null }));
 vi.mock("~/components/software-update-badge", () => ({ SoftwareUpdateTag: () => null }));
-vi.mock("~/components/os-compliance-badge", () => ({ OsComplianceTag: () => null }));
+vi.mock("~/components/os-compliance-badge", () => ({ default: () => null }));
 vi.mock("~/components/ui/dialog", () => ({
   Dialog: (props: { open?: boolean; children?: JSX.Element }) => (
     <>{props.open ? <div role="dialog">{props.children}</div> : null}</>
