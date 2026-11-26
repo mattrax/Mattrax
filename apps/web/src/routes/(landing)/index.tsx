@@ -1,23 +1,19 @@
-import Capabilities from "~/components/landing/capabilities";
+import Capabilities from "~/components/landing-redesign/capabilities";
+import Hero from "~/components/landing-redesign/hero";
+import Platforms from "~/components/landing-redesign/platforms";
+import Product from "~/components/landing-redesign/product";
+import Trust from "~/components/landing-redesign/trust";
 import { Closing, Faq, Pricing } from "~/components/landing/convert";
-import Hero from "~/components/landing/hero";
-import Manifesto from "~/components/landing/manifesto";
-import Platforms from "~/components/landing/platforms";
-import Prove from "~/components/landing/prove";
-import Story from "~/components/landing/story";
-import Trust from "~/components/landing/trust";
 import { installReveals } from "~/lib/landing-motion";
 
 export default function Page() {
   installReveals();
 
   return (
-    <main id="main-content" class="bg-background text-foreground" tabindex="-1">
+    <main id="main-content" class="lr-page lx-page" tabindex="-1">
       <Hero />
-      <Manifesto />
-      <Story />
-      <Prove />
       <Platforms />
+      <Product />
       <Capabilities />
       <Trust />
       <Pricing />

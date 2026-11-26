@@ -3,10 +3,9 @@ import { cn } from "~/lib/utils";
 /**
  * The Mattrax wordmark in both theme variants.
  *
- * The brand ships a white and a dark lockup. Rendering both and letting the
- * theme class pick one keeps the logo correct under an explicit light/dark
- * choice, which `prefers-color-scheme` media queries cannot express. Only one
- * copy is rendered at a time, so both carry the same accessible name.
+ * One source image keeps the logo visible from first paint in either theme;
+ * the dark variant inverts the black lockup instead of mounting a second,
+ * initially hidden image that can become a late Largest Contentful Paint.
  */
 export default function BrandLogo(props: { class?: string; mark?: boolean }) {
   const sizing = () => props.class ?? "h-4";
@@ -29,18 +28,11 @@ export default function BrandLogo(props: { class?: string; mark?: boolean }) {
       <img
         src="/assets/brand/mattrax.png"
         alt="Mattrax"
-        width="208"
-        height="32"
+        width={208}
+        height={32}
         decoding="async"
-        class={cn("w-auto dark:hidden", sizing())}
-      />
-      <img
-        src="/assets/brand/mattrax-white-208.png"
-        alt="Mattrax"
-        width="208"
-        height="32"
-        decoding="async"
-        class={cn("hidden w-auto dark:block", sizing())}
+        fetchpriority="high"
+        class={cn("w-auto dark:invert", sizing())}
       />
     </span>
   );

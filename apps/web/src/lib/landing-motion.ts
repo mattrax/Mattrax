@@ -254,7 +254,7 @@ export function installReveals(): void {
           if (entry.isIntersecting) reveal(entry.target);
         }
       },
-      { rootMargin: "0px 0px -12% 0px", threshold: 0.35 },
+      { rootMargin: "0px 0px -8% 0px", threshold: 0.05 },
     );
 
     for (const element of root.querySelectorAll<HTMLElement>(REVEAL_SELECTOR)) {

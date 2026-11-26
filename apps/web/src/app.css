@@ -4,6 +4,9 @@
 /* The landing page's `lx-*` selectors live here so the Tailwind theme graph
    knows them; they are real CSS classes, not generated utilities. */
 @import "./landing.css";
+/* The landing redesign adds its own component classes; importing the sheet
+   keeps Tailwind's class graph aware of the selectors it styles. */
+@import "./landing-redesign.css";
 /* The Latin subset is served from `public/` and preloaded by the document, so
    the first paint already uses the real metrics. Do not import the fontsource
    CSS as well: its `swap` faces would race this `optional` face and reintroduce

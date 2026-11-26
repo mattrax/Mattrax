@@ -56,10 +56,11 @@ client-ext.cnf
 # Local dev TLS certificates
 apps/web/.certs
 
-# Playwright
+# Playwright and CDP reports
 /test-results/
 /playwright-report/
 /blob-report/
+/.cdp-report/
 
 # Rolldown perf-kit build artifacts
 **/perf-kit.vite.config.ts
@@ -83,3 +84,7 @@ apps/mattraxd/build/
 
 # Local dumps from apps/cloud/scripts/db-backup.sh
 .backups/
+
+# CDP (Chrome DevTools Protocol) artifacts
+.cdp/
+.cdp-report/
