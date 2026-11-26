@@ -9,8 +9,8 @@ import {
   PageHeader,
   relativeTime,
 } from "~/components/mdm/common";
-import { EntityHoverCard } from "~/components/entity-hover-card";
-import { EntityActions } from "~/components/mdm/entity-actions";
+import EntityHoverCard from "~/components/entity-hover-card";
+import EntityActions from "~/components/mdm/entity-actions";
 import { EntityQueryBar, formatEntityQuery, parseEntityQuery } from "~/components/mdm/entity-query";
 import type { EntityCondition, EntityField } from "~/components/mdm/entity-query";
 import { MdmTable } from "~/components/mdm/table";
@@ -42,17 +42,18 @@ const configurationCount = (row: PolicyRow) =>
 function PolicyCountCell(props: { count: number | undefined; label: string; description: string }) {
   return (
     <Tooltip>
-      <TooltipTrigger
-        as="span"
-        tabindex={0}
-        aria-label={`${props.label}. ${props.description}`}
-        class="inline-flex cursor-default rounded-[5px] tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-      >
-        <span class={props.count && props.count > 0 ? undefined : "text-muted-foreground"}>
-          {props.count ?? "—"}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent class="max-w-[260px]">{props.description}</TooltipContent>
+      <span class="inline-flex cursor-default rounded-xs tabular-nums outline-none focus-within:outline-none focus-within:ring-2 focus-within:ring-ring/40">
+        <TooltipTrigger
+          as="span"
+          tabindex={0}
+          aria-label={`${props.label}. ${props.description}`}
+        >
+          <span class={props.count && props.count > 0 ? undefined : "text-muted-foreground"}>
+            {props.count ?? "—"}
+          </span>
+        </TooltipTrigger>
+      </span>
+      <TooltipContent class="max-w-65">{props.description}</TooltipContent>
     </Tooltip>
   );
 }
@@ -74,19 +75,20 @@ function PolicyDeliveryCell(props: { row: PolicyRow }) {
     >
       {(info) => (
         <Tooltip>
-          <TooltipTrigger
-            as="span"
-            tabindex={0}
-            aria-label={`${info().label}. ${info().description}`}
-            class="inline-flex cursor-default rounded-[5px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <Badge variant={info().tone} dot={info().dot}>
-              {info().label}
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent class="max-w-[280px]">
-            <p class="text-[11px] font-medium">{info().label}</p>
-            <p class="mt-1 text-[11.5px] leading-relaxed">{info().description}</p>
+          <span class="inline-flex cursor-default rounded-xs outline-none focus-within:outline-none focus-within:ring-2 focus-within:ring-ring/40">
+            <TooltipTrigger
+              as="span"
+              tabindex={0}
+              aria-label={`${info().label}. ${info().description}`}
+            >
+              <Badge variant={info().tone} dot={info().dot}>
+                {info().label}
+              </Badge>
+            </TooltipTrigger>
+          </span>
+          <TooltipContent class="max-w-70">
+            <p class="text-xs font-medium">{info().label}</p>
+            <p class="mt-1 text-xs leading-relaxed">{info().description}</p>
           </TooltipContent>
         </Tooltip>
       )}
@@ -281,7 +283,7 @@ export default function PoliciesPage() {
             <p
               role="status"
               aria-live="polite"
-              class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-[12px] text-muted-foreground"
+              class="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-muted-foreground"
             >
               Filters changed — loading results. The rows below are from the previous filter until
               this finishes.
@@ -293,14 +295,14 @@ export default function PoliciesPage() {
             <span
               role="status"
               aria-live="polite"
-              class="text-[12px] tabular-nums text-muted-foreground"
+              class="text-xs tabular-nums text-muted-foreground"
             >
               {rows().length} of {total()} policy{total() === 1 ? "" : "s"} loaded
             </span>
             <Show
               when={policies.hasNextPage}
               fallback={
-                <span class="text-[12px] text-muted-foreground">
+                <span class="text-xs text-muted-foreground">
                   All matching policies are loaded.
                 </span>
               }
@@ -377,7 +379,10 @@ export default function PoliciesPage() {
                   </Show>
                 </span>
                 <Show when={row.notes}>
-                  <span class="mt-0.5 block max-w-[38ch] truncate text-[11px] text-muted-foreground">
+                  <span
+                  class="mt-0.5 block max-w-(--notes-width) truncate text-xs text-muted-foreground"
+                  style={{ "--notes-width": "38ch" }}
+                >
                     {row.notes}
                   </span>
                 </Show>
@@ -393,13 +398,12 @@ export default function PoliciesPage() {
 
               return (
                 <span class="inline-flex items-center gap-1.5">
-                  <Badge variant={count > 0 ? "secondary" : "outline"} class="tabular-nums">
+                  <Badge variant={count > 0 ? "secondary" : "outline"}>
                     {count}
                   </Badge>
                   <Show when={(row.userConfigurationCount ?? 0) > 0}>
                     <Badge
                       variant="outline"
-                      class="tabular-nums"
                       title="Configurations delivered on the Apple user channel"
                     >
                       {row.userConfigurationCount} user
@@ -467,10 +471,10 @@ export default function PoliciesPage() {
             sortId: "updatedAt",
             cell: (row) => (
               <span class="block min-w-0">
-                <span class="block whitespace-nowrap text-[12.5px]">
+                <span class="block whitespace-nowrap text-xs">
                   {relativeTime(row.updatedAt)}
                 </span>
-                <span class="block truncate text-[11px] text-muted-foreground">
+                <span class="block truncate text-xs text-muted-foreground">
                   {formatDate(row.updatedAt)}
                 </span>
               </span>
@@ -483,7 +487,7 @@ export default function PoliciesPage() {
             sort: (row) => row.createdAt,
             sortId: "createdAt",
             cell: (row) => (
-              <span class="whitespace-nowrap text-[12.5px] text-muted-foreground">
+              <span class="whitespace-nowrap text-xs text-muted-foreground">
                 {formatDate(row.createdAt)}
               </span>
             ),

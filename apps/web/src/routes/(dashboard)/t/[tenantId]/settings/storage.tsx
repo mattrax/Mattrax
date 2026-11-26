@@ -20,6 +20,14 @@ const categoryTone = (id: string) => {
   return "bg-muted-foreground/40";
 };
 
+/** Quantised bar width so the share stays expressible with scale utilities. */
+const shareWidthClass = (percent: number) => {
+  if (percent <= 0) return "w-0";
+  if (percent < 25) return "w-1/4";
+  if (percent < 50) return "w-1/2";
+  if (percent < 75) return "w-3/4";
+  return "w-full";
+};
 const categoryLabel = (categories: ReadonlyArray<StorageCategory>, id: string) =>
   categories.find((category) => category.id === id)?.label ?? id;
 
@@ -84,11 +92,9 @@ export default function StorageSettingsPage() {
             disabled={usage.isFetching}
             onClick={() => void usage.refetch()}
           >
-            <RefreshCw
-              class={
-                usage.isFetching ? "size-3.5 animate-spin motion-reduce:animate-none" : "size-3.5"
-              }
-            />
+            <span class={usage.isFetching ? "inline-flex animate-spin motion-reduce:animate-none" : "inline-flex"}>
+              <RefreshCw class="size-3.5" />
+            </span>
             {usage.isFetching ? "Refreshing…" : "Refresh"}
           </Button>
         }
@@ -102,15 +108,15 @@ export default function StorageSettingsPage() {
               <div class="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <div class="label-caps">Total stored</div>
-                  <p class="mt-1 text-[28px] font-[580] leading-none tracking-[-0.03em] tabular-nums text-foreground">
+                  <p class="mt-1 text-3xl font-semibold leading-none tracking-tight tabular-nums text-foreground">
                     {formatBytes(data().usedBytes)}
                   </p>
-                  <p class="mt-1.5 text-[11.5px] text-muted-foreground">
+                  <p class="mt-1.5 text-xs text-muted-foreground">
                     {data().objectCount} object{data().objectCount === 1 ? "" : "s"}
                     <Show when={computedAt()}> · scanned at {computedAt()}</Show>
                   </p>
                 </div>
-                <div class="flex items-center gap-2 rounded-lg border border-border bg-surface/50 px-3 py-2 text-[11px] text-muted-foreground">
+                <div class="flex items-center gap-2 rounded-lg border border-border bg-surface/50 px-3 py-2 text-xs text-muted-foreground">
                   <HardDrive class="size-3.5" />
                   Object storage
                 </div>
@@ -128,7 +134,7 @@ export default function StorageSettingsPage() {
               <div class="mt-3 flex flex-wrap gap-x-5 gap-y-2">
                 <For each={categories()}>
                   {(category) => (
-                    <div class="flex items-center gap-2 text-[11.5px]">
+                    <div class="flex items-center gap-2 text-xs">
                       <span class={`size-2 shrink-0 rounded-full ${categoryTone(category.id)}`} />
                       <span class="text-muted-foreground">{category.label}</span>
                       <span class="font-mono tabular-nums text-foreground">
@@ -145,14 +151,14 @@ export default function StorageSettingsPage() {
               <Show when={data().truncated}>
                 <p
                   role="status"
-                  class="mt-4 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-[11.5px] text-warning-foreground"
+                  class="mt-4 rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-xs text-warning-foreground"
                 >
                   The scan stopped at 20,000 objects. Totals may be incomplete for a tenant this
                   large.
                 </p>
               </Show>
 
-              <p class="mt-4 border-t border-border pt-3 text-[11.5px] leading-5 text-muted-foreground">
+              <p class="mt-4 border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
                 Storage counts toward the deployment's object-storage bill. Removing unused
                 installers or old backups is the fastest way to reduce it.
               </p>
@@ -167,12 +173,12 @@ export default function StorageSettingsPage() {
       >
         <Show
           when={categories().length > 0}
-          fallback={<p class="text-[12.5px] text-muted-foreground">No storage categories yet.</p>}
+          fallback={<p class="text-xs text-muted-foreground">No storage categories yet.</p>}
         >
           <div class="overflow-x-auto">
-            <table class="w-full min-w-[40rem] text-left text-[12px]">
+            <table class="w-full min-w-160 text-left text-xs">
               <thead>
-                <tr class="border-b border-border text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground">
+                <tr class="border-b border-border text-xs uppercase tracking-widest text-muted-foreground">
                   <th scope="col" class="py-2 pr-3 font-medium">
                     Category
                   </th>
@@ -202,7 +208,7 @@ export default function StorageSettingsPage() {
                           <span
                             class={`size-2 shrink-0 rounded-full ${categoryTone(category.id)}`}
                           />
-                          <span class="font-[500] text-foreground">{category.label}</span>
+                          <span class="font-medium text-foreground">{category.label}</span>
                         </span>
                       </td>
                       <td class="py-2.5 pr-3 text-right font-mono tabular-nums text-muted-foreground">
@@ -218,8 +224,7 @@ export default function StorageSettingsPage() {
                           </span>
                           <span class="h-1 w-16 overflow-hidden rounded-full bg-muted">
                             <span
-                              class={`block h-full rounded-full ${categoryTone(category.id)}`}
-                              style={{ width: `${sharePercent(category.bytes, total())}%` }}
+                              class={`block h-full rounded-full ${categoryTone(category.id)} ${shareWidthClass(sharePercent(category.bytes, total()))}`}
                             />
                           </span>
                         </span>
@@ -232,14 +237,14 @@ export default function StorageSettingsPage() {
                           <span class="font-mono tabular-nums text-foreground">
                             +{formatBytes(category.growthBytes)}
                           </span>
-                          <span class="ml-1.5 text-[10px] text-subtle-foreground">
+                          <span class="ml-1.5 text-xs text-subtle-foreground">
                             +{category.growthObjects} obj
                           </span>
                         </Show>
                       </td>
                       <td class="py-2.5 text-right">
                         <a
-                          class="inline-flex items-center gap-1 text-[11.5px] font-medium text-brand hover:underline"
+                          class="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
                           href={manageHref(category.id)}
                         >
                           Manage
@@ -276,9 +281,9 @@ export default function StorageSettingsPage() {
           }
         >
           <div class="overflow-x-auto">
-            <table class="w-full min-w-[36rem] text-left text-[12px]">
+            <table class="w-full min-w-144 text-left text-xs">
               <thead>
-                <tr class="border-b border-border text-[9.5px] uppercase tracking-[0.12em] text-muted-foreground">
+                <tr class="border-b border-border text-xs uppercase tracking-widest text-muted-foreground">
                   <th scope="col" class="py-2 pr-3 font-medium">
                     Object
                   </th>
@@ -298,9 +303,9 @@ export default function StorageSettingsPage() {
                 <For each={usage.data?.largest ?? []}>
                   {(object) => (
                     <tr>
-                      <td class="max-w-[22rem] py-2.5 pr-3">
+                      <td class="max-w-88 py-2.5 pr-3">
                         <span
-                          class="block truncate font-mono text-[11.5px] text-foreground"
+                          class="block truncate font-mono text-xs text-foreground"
                           title={object.key}
                         >
                           {objectLabel(object)}
@@ -317,7 +322,7 @@ export default function StorageSettingsPage() {
                       </td>
                       <td class="py-2.5 text-right">
                         <a
-                          class="inline-flex items-center gap-1 text-[11.5px] font-medium text-brand hover:underline"
+                          class="inline-flex items-center gap-1 text-xs font-medium text-brand hover:underline"
                           href={manageHref(object.category)}
                         >
                           Manage

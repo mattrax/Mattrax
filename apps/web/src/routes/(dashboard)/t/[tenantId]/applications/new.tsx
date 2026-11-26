@@ -12,10 +12,10 @@ import { AccessDenied, useCan } from "~/lib/permissions";
 import { ScopeTagSelect } from "~/components/scope-tags/scope-tag-select";
 
 const selectClass =
-  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 const textareaClass =
-  "min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 const manifestSourceLabel = (platform: "apple" | "win" | "android"): string => {
   switch (platform) {
@@ -132,13 +132,13 @@ export default function NewApplicationPage() {
           description="Catalogue an app and assign it after saving."
         />
         <form
-          class="grid max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start"
+          class="grid max-w-5xl gap-5 lg:grid-cols-4 lg:items-start"
           onSubmit={(event) => {
             event.preventDefault();
             create.mutate();
           }}
         >
-          <Panel title="Application details" description="Metadata devices and admins will see.">
+          <Panel class="lg:col-span-3" title="Application details" description="Metadata devices and admins will see.">
             <div class="space-y-4">
               <Field label="Name">
                 <Input
@@ -226,7 +226,7 @@ export default function NewApplicationPage() {
                 </Field>
               </Show>
               <Show when={source() === "upload"}>
-                <p class="rounded-lg border border-border bg-surface px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+                <p class="rounded-lg border border-border bg-surface px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
                   Save the application first, then upload the installer from its detail page. Apple
                   installs a signed .pkg on Macs or a signed .ipa on iPhone and iPad; Windows and
                   Android use the installer URL or the Managed Google Play package instead.
@@ -266,15 +266,15 @@ export default function NewApplicationPage() {
               <div class="flex size-8 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
                 <Package class="size-4" />
               </div>
-              <h2 class="mt-3 text-[13px] font-semibold text-foreground">Delivery</h2>
-              <p class="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+              <h2 class="mt-3 text-xs font-semibold text-foreground">Delivery</h2>
+              <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                 Apple installs a manifest, App Store, uploaded .pkg (macOS) or .ipa (iOS/iPadOS) app
                 on assigned devices. Windows queues an MSI install through the MDM channel, and
                 Android adds assigned apps to the Managed Google Play policy.
               </p>
             </Panel>
             <Panel title="Sources">
-              <dl class="space-y-2.5 text-[12px]">
+              <dl class="space-y-2.5 text-xs">
                 <div>
                   <dt class="font-medium text-foreground">Manifest / MSI URL</dt>
                   <dd class="text-muted-foreground">

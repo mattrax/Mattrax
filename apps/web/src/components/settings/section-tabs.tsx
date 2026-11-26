@@ -1,6 +1,7 @@
 import { createEffect, createSignal, flush, For, onSettled, Show } from "solid-js";
 import { cn } from "~/lib/utils";
 import { activateSectionTabAnchor, sectionTabTarget } from "./section-tabs-nav";
+import { Button } from "~/components/ui/button";
 
 export type SectionTab = {
   readonly id: string;
@@ -21,7 +22,7 @@ export type SectionTab = {
  * underline is measured from the active label instead of animating a border on
  * each tab, so it slides between options and keeps the bar's edge straight.
  */
-export function SectionTabs(props: {
+export default function SectionTabs(props: {
   label: string;
   tabs: ReadonlyArray<SectionTab>;
   active: string;
@@ -79,7 +80,7 @@ export function SectionTabs(props: {
 
   const itemClass = (id: string) =>
     cn(
-      "inline-flex h-10 shrink-0 items-center px-0.5 text-[12.5px] font-[500] whitespace-nowrap outline-none transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:ring-ring/40",
+      "inline-flex h-10 shrink-0 items-center px-0.5 text-xs font-medium whitespace-nowrap outline-none transition-colors duration-150 ease-swift focus-visible:ring-2 focus-visible:ring-ring/40",
       activeId() === id ? "text-foreground" : "text-muted-foreground hover:text-foreground",
     );
 
@@ -135,9 +136,9 @@ export function SectionTabs(props: {
           <Show
             when={tab.href ?? props.hrefFor?.(tab.id)}
             fallback={
-              <button
+              <Button
                 type="button"
-                ref={(element) => {
+                ref={(element: HTMLElement) => {
                   anchors.set(tab.id, element);
                 }}
                 id={tab.elementId}
@@ -149,15 +150,16 @@ export function SectionTabs(props: {
                   tab.panelId && props.panelMounted?.(tab.id) ? tab.panelId : undefined
                 }
                 onClick={() => props.onSelect?.(tab.id)}
-                class={itemClass(tab.id)}
+                variant={activeId() === tab.id ? "secondary" : "ghost"}
+                class="h-10"
               >
                 {tab.label}
-              </button>
+              </Button>
             }
           >
             {(href) => (
               <a
-                ref={(element) => {
+                ref={(element: HTMLElement) => {
                   anchors.set(tab.id, element);
                 }}
                 href={href()}
@@ -184,8 +186,8 @@ export function SectionTabs(props: {
       <span
         aria-hidden="true"
         data-measured={measured() ? "true" : "false"}
-        class="pointer-events-none absolute -bottom-px left-0 h-0.5 bg-foreground transition-[left,width] duration-[var(--duration-popover)] ease-swift data-[measured=false]:transition-none motion-reduce:transition-none"
-        style={{ left: `${indicator().left}px`, width: `${indicator().width}px` }}
+        class="pointer-events-none absolute -bottom-px left-(--tab-left) h-0.5 w-(--tab-width) bg-foreground transition-all duration-150 ease-swift data-[measured=false]:transition-none motion-reduce:transition-none"
+        style={{ "--tab-left": `${indicator().left}px`, "--tab-width": `${indicator().width}px` }}
       />
     </nav>
   );
