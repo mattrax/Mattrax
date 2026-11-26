@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 /**
  * Delivery scope is authored in the policy editor. The API validates it, so the
@@ -7,7 +7,7 @@ import { bootstrapTenant, gotoHydrated } from "./helpers";
  * living in component state.
  */
 test("marks a configuration as user scope and keeps it across reloads", async ({ page }) => {
-  const tenant = await bootstrapTenant(page, "User Scope Tenant");
+  const { tenant } = await bootstrapSession(page, "User Scope Tenant");
 
   await page.goto(`/t/${tenant.id}/policies/new`);
   await page.getByLabel("Name").fill("User settings");
@@ -49,7 +49,7 @@ test("marks a configuration as user scope and keeps it across reloads", async ({
 });
 
 test("rejects a user-scoped setting the platform cannot deliver", async ({ page }) => {
-  const tenant = await bootstrapTenant(page, "Scope Validation Tenant");
+  const { tenant } = await bootstrapSession(page, "Scope Validation Tenant");
 
   await page.goto(`/t/${tenant.id}/policies/new`);
   await page.getByLabel("Name").fill("Invalid scope");
@@ -78,7 +78,7 @@ test("rejects a user-scoped setting the platform cannot deliver", async ({ page 
 test("keeps Windows scope after an invalid URI so correcting only the URI succeeds", async ({
   page,
 }) => {
-  const tenant = await bootstrapTenant(page, "Windows Scope Recovery Tenant");
+  const { tenant } = await bootstrapSession(page, "Windows Scope Recovery Tenant");
 
   await page.goto(`/t/${tenant.id}/policies/new`);
   await page.getByLabel("Name").fill("Windows scope recovery");

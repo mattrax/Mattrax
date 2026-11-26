@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant } from "./helpers";
+import { api, bootstrapSession } from "./helpers";
 
 const mobileconfig = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -26,7 +26,7 @@ const mobileconfig = `<?xml version="1.0" encoding="UTF-8"?>
 
 test.describe("mobileconfig preview", () => {
   test("parses a plist and reports friendly payload categories", async ({ page }) => {
-    await bootstrapTenant(page, "Preview Tenant");
+    await bootstrapSession(page, "Preview Tenant");
     const encoded = Buffer.from(mobileconfig).toString("base64");
 
     const preview = await api<{

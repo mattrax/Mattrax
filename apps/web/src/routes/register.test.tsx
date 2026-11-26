@@ -2,45 +2,62 @@
 import { render } from "@solidjs/web";
 import { flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { recorder } from "../../../../packages/config/testing/recorder.ts";
+import type { authClient } from "~/lib/auth";
+import type { rememberRegistrationNonce } from "~/lib/registration-nonce";
+import RegisterPage from "./register";
+import type { RegisterPageDeps } from "./register";
 
-const state = vi.hoisted(() => ({
-  requestCode: vi.fn(),
-  verifyCode: vi.fn(),
-  register: vi.fn(),
-  requestEmailVerification: vi.fn(),
-  navigate: vi.fn(),
-  signOut: vi.fn(),
-}));
+/** Fakes are rebuilt each test so no implementation or call leaks into another. */
+const makeState = () => ({
+  requestCode: recorder<
+    Parameters<typeof authClient.requestRegistrationCode>,
+    ReturnType<typeof authClient.requestRegistrationCode>
+  >(),
+  verifyCode: recorder<
+    Parameters<typeof authClient.verifyRegistrationCode>,
+    ReturnType<typeof authClient.verifyRegistrationCode>
+  >(),
+  register: recorder<
+    Parameters<typeof authClient.register>,
+    ReturnType<typeof authClient.register>
+  >(),
+  requestEmailVerification: recorder<
+    Parameters<typeof authClient.requestEmailVerification>,
+    ReturnType<typeof authClient.requestEmailVerification>
+  >(async () => ({ data: { status: "ok" } })),
+  navigate: recorder<[href: string, options?: { readonly replace?: boolean }], void>(),
+  signOut: recorder<[], ReturnType<typeof authClient.signOut>>(async () => ({
+    data: { status: "ok" },
+  })),
+  session: recorder<[], ReturnType<typeof authClient.session>>(async () => ({ data: null })),
+  rememberNonce: recorder<Parameters<typeof rememberRegistrationNonce>, void>(),
+});
 
-vi.mock("@solidjs/router", () => ({
-  useSearchParams: () => [{}, vi.fn()],
-}));
-vi.mock("~/lib/navigation", () => ({ useNavigate: () => state.navigate }));
-vi.mock("~/lib/registration-nonce", () => ({
-  readRegistrationNonce: () => "nonce-1",
-  rememberRegistrationNonce: vi.fn(),
-}));
-vi.mock("~/lib/auth", () => ({
-  authClient: {
-    useSession: () => () => ({ data: { user: undefined }, isPending: false }),
+let state = makeState();
+
+/** Dependencies live on the page's props instead of replacing imported modules. */
+const deps = (): RegisterPageDeps => ({
+  searchParams: {},
+  navigate: state.navigate,
+  session: () => ({ data: { user: undefined }, isPending: false }),
+  auth: {
     requestRegistrationCode: state.requestCode,
     verifyRegistrationCode: state.verifyCode,
     register: state.register,
     requestEmailVerification: state.requestEmailVerification,
-    session: vi.fn().mockResolvedValue({ data: null }),
+    session: state.session,
     signOut: state.signOut,
   },
-}));
-vi.mock("~/components/brand-logo", () => ({ default: () => null }));
-
-import RegisterPage from "./register";
+  registrationNonce: { read: () => "nonce-1", remember: state.rememberNonce },
+});
 
 const cleanups: Array<() => void> = [];
 
 const mount = () => {
   const host = document.createElement("div");
   document.body.append(host);
-  const dispose = render(() => <RegisterPage />, host);
+  const dispose = render(() => <RegisterPage deps={deps()} />, host);
 
   cleanups.push(dispose);
 
@@ -62,18 +79,12 @@ const fillIdentity = (host: HTMLElement) => {
 };
 
 beforeEach(() => {
-  state.requestCode.mockReset();
-  state.verifyCode.mockReset();
-  state.register.mockReset();
-  state.requestEmailVerification.mockReset().mockResolvedValue({ data: { status: "ok" } });
-  state.navigate.mockReset();
-  state.signOut.mockReset().mockResolvedValue(undefined);
+  state = makeState();
 });
 
 afterEach(() => {
   for (const dispose of cleanups.splice(0)) dispose();
   document.body.replaceChildren();
-  vi.clearAllMocks();
 });
 
 describe("sign-up Email Verification API", () => {
@@ -97,13 +108,15 @@ describe("sign-up Email Verification API", () => {
     input(host, 'input[name="token"]').value = "evt-token";
     host.querySelector("form")!.requestSubmit();
 
-    await vi.waitFor(() =>
-      expect(state.requestCode).toHaveBeenCalledWith({
-        name: "Ada Lovelace",
-        email: "ada@example.com",
-        token: "evt-token",
-        nonce: "nonce-1",
-      }),
+    await vi.waitFor(
+      () =>
+        expect(state.requestCode).toHaveBeenCalledWith({
+          name: "Ada Lovelace",
+          email: "ada@example.com",
+          token: "evt-token",
+          nonce: "nonce-1",
+        }),
+      { interval: 1 },
     );
   });
 
@@ -124,12 +137,14 @@ describe("sign-up Email Verification API", () => {
     input(host, 'input[name="token"]').value = "evt-token";
     host.querySelector("form")!.requestSubmit();
 
-    await vi.waitFor(() =>
-      expect(state.register).toHaveBeenCalledWith({
-        name: "Ada Lovelace",
-        email: "ada@example.com",
-        grant: "grant-1",
-      }),
+    await vi.waitFor(
+      () =>
+        expect(state.register).toHaveBeenCalledWith({
+          name: "Ada Lovelace",
+          email: "ada@example.com",
+          grant: "grant-1",
+        }),
+      { interval: 1 },
     );
     expect(host.querySelector("#verification-code")).toBeNull();
     expect(input(host, 'input[name="token"]').getAttribute("nonce")).toBe("nonce-2");
@@ -142,7 +157,9 @@ describe("sign-up Email Verification API", () => {
     fillIdentity(host);
     host.querySelector("form")!.requestSubmit();
 
-    await vi.waitFor(() => expect(host.querySelector("#verification-code")).not.toBeNull());
+    await vi.waitFor(() => expect(host.querySelector("#verification-code")).not.toBeNull(), {
+      interval: 1,
+    });
     expect(state.requestCode).toHaveBeenCalledWith({
       name: "Ada Lovelace",
       email: "ada@example.com",
@@ -161,7 +178,9 @@ describe("sign-up Email Verification API", () => {
     token.value = "stale-token";
     host.querySelector("form")!.requestSubmit();
 
-    await vi.waitFor(() => expect(host.querySelector("#verification-code")).not.toBeNull());
+    await vi.waitFor(() => expect(host.querySelector("#verification-code")).not.toBeNull(), {
+      interval: 1,
+    });
     expect(token.getAttribute("nonce")).toBe("nonce-2");
     // A consumed token cannot ride into the resend with the old nonce.
     expect(token.value).toBe("");

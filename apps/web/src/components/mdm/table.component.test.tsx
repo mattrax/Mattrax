@@ -2,13 +2,13 @@
 
 import { render } from "@solidjs/web";
 import { createSignal, Errored, flush } from "solid-js";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Navigator } from "@solidjs/router";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { installGlobals } from "../../../../../packages/config/testing/globals.ts";
+import { asFake, recorder } from "../../../../../packages/config/testing/recorder.ts";
+import { NavigateContext } from "~/lib/navigation";
 import { MdmTable } from "./table";
 import type { MdmColumn } from "./table";
-
-vi.mock("~/lib/navigation", () => ({
-  useNavigate: () => () => {},
-}));
 
 type Row = { id: string; name: string };
 
@@ -19,9 +19,9 @@ class ResizeObserverMock {
     ResizeObserverMock.instances.push(this);
   }
 
-  observe = vi.fn();
-  unobserve = vi.fn();
-  disconnect = vi.fn();
+  observe = recorder<[Element], void>();
+  unobserve = recorder<[Element], void>();
+  disconnect = recorder<[], void>();
 }
 
 const makeRows = (count: number): Row[] =>
@@ -35,33 +35,39 @@ const makeColumns = (count: number): MdmColumn<Row>[] =>
   }));
 
 let dispose: (() => void) | undefined;
+let restoreGlobals: (() => void) | undefined;
 
 /** A MediaQueryList double whose listener bookkeeping the assertions can inspect. */
-const createMediaQueryList = (query: string): MediaQueryList => {
+const createMediaQueryList = (query: string) => {
   const listeners = new Set<EventListenerOrEventListenerObject>();
   const media = {
     media: query,
     matches: query.includes("min-width") || query.includes("prefers-reduced-motion"),
     onchange: null,
-    addEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
-      if (type === "change") listeners.add(listener);
-    }),
-    removeEventListener: vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
-      if (type === "change") listeners.delete(listener);
-    }),
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    dispatchEvent: vi.fn(() => true),
-  } satisfies MediaQueryList;
+    addEventListener: recorder(
+      (type: string, listener: EventListenerOrEventListenerObject | null) => {
+        if (type === "change" && listener) listeners.add(listener);
+      },
+    ),
+    removeEventListener: recorder(
+      (type: string, listener: EventListenerOrEventListenerObject | null) => {
+        if (type === "change" && listener) listeners.delete(listener);
+      },
+    ),
+    addListener: recorder<[EventListenerOrEventListenerObject | null], void>(),
+    removeListener: recorder<[EventListenerOrEventListenerObject | null], void>(),
+    dispatchEvent: recorder(() => true),
+  };
 
   return media;
 };
 
+type MediaQueryListFake = ReturnType<typeof createMediaQueryList>;
+
 /** Browser APIs the table touches. Frame callbacks never run, so no animation starts. */
 const installTableGlobals = () => {
-  const mediaQueries = new Map<string, MediaQueryList>();
-
-  const matchMedia = vi.spyOn(window, "matchMedia").mockImplementation((query) => {
+  const mediaQueries = new Map<string, MediaQueryListFake>();
+  const matchMedia = recorder((query: string): MediaQueryList => {
     let media = mediaQueries.get(query);
 
     if (!media) {
@@ -69,16 +75,23 @@ const installTableGlobals = () => {
       mediaQueries.set(query, media);
     }
 
-    return media;
+    return media as MediaQueryList;
   });
-  vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+
   // The Checkbox indicator schedules its check animation through these APIs.
-  // No-op spies keep it from starting while leaving the APIs callable.
-  vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
-  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  // No-op fakes keep it from starting while leaving the APIs callable.
+  restoreGlobals = installGlobals({
+    matchMedia,
+    ResizeObserver: ResizeObserverMock,
+    requestAnimationFrame: recorder(() => 1),
+    cancelAnimationFrame: recorder(),
+  });
 
   return { mediaQueries, matchMedia };
 };
+
+/** Navigation is injected; the table no longer needs a Router root in tests. */
+const navigate = asFake<Navigator>(recorder((_to: string | number) => {}));
 
 beforeEach(() => {
   ResizeObserverMock.instances = [];
@@ -87,9 +100,9 @@ beforeEach(() => {
 afterEach(() => {
   dispose?.();
   dispose = undefined;
+  restoreGlobals?.();
+  restoreGlobals = undefined;
   ResizeObserverMock.instances = [];
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
   document.body.replaceChildren();
 });
 
@@ -113,14 +126,16 @@ describe("MdmTable cleanup ownership", () => {
             return <div data-testid="table-error">{String(error())}</div>;
           }}
         >
-          <MdmTable
-            rows={rows()}
-            columns={columns()}
-            empty={<div>No rows</div>}
-            isFetching={isFetching()}
-            caption={caption()}
-            rowHref={(row) => `/devices/${row.id}`}
-          />
+          <NavigateContext value={navigate}>
+            <MdmTable
+              rows={rows()}
+              columns={columns()}
+              empty={<div>No rows</div>}
+              isFetching={isFetching()}
+              caption={caption()}
+              rowHref={(row) => `/devices/${row.id}`}
+            />
+          </NavigateContext>
         </Errored>
       ),
       container,
@@ -148,10 +163,10 @@ describe("MdmTable cleanup ownership", () => {
     )!;
     const viewport = container.querySelector<HTMLDivElement>('div[role="region"][tabindex="0"]')!;
     const rowObserver = ResizeObserverMock.instances.find((observer) =>
-      observer.observe.mock.calls.some(([element]) => element === firstRow),
+      observer.observe.calls.some(([element]) => element === firstRow),
     )!;
     const viewportObserver = ResizeObserverMock.instances.find((observer) =>
-      observer.observe.mock.calls.some(([element]) => element === viewport),
+      observer.observe.calls.some(([element]) => element === viewport),
     )!;
 
     expect(rowObserver).toBeDefined();
@@ -215,7 +230,7 @@ describe("MdmTable cleanup ownership", () => {
       'div[role="region"][tabindex="0"]',
     )!;
     const nextViewportObserver = ResizeObserverMock.instances.find((observer) =>
-      observer.observe.mock.calls.some(([element]) => element === nextViewport),
+      observer.observe.calls.some(([element]) => element === nextViewport),
     )!;
     expect(nextViewportObserver).toBeDefined();
     expect(nextViewportObserver).not.toBe(viewportObserver);
@@ -223,7 +238,7 @@ describe("MdmTable cleanup ownership", () => {
     expect(errors).toEqual([]);
 
     const responsiveMedia = mediaQueries.get("(min-width: 640px)")!;
-    const addedListener = vi.mocked(responsiveMedia.addEventListener).mock.calls[0]?.[1];
+    const addedListener = responsiveMedia.addEventListener.calls[0]?.[1];
     expect(addedListener).toBeDefined();
     expect(responsiveMedia.addEventListener).toHaveBeenCalledTimes(1);
     expect(responsiveMedia.removeEventListener).not.toHaveBeenCalled();
@@ -250,7 +265,9 @@ describe("MdmTable cleanup ownership", () => {
             return <div data-testid="table-error">{String(error())}</div>;
           }}
         >
-          <MdmTable rows={makeRows(80)} columns={makeColumns(13)} empty={<div>No rows</div>} />
+          <NavigateContext value={navigate}>
+            <MdmTable rows={makeRows(80)} columns={makeColumns(13)} empty={<div>No rows</div>} />
+          </NavigateContext>
         </Errored>
       ),
       container,

@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("delivery metrics", () => {
   test("keeps all five cards half-width at 390px", async ({ page }) => {
     await page.emulateMedia({ colorScheme: "dark" });
     await page.setViewportSize({ width: 390, height: 844 });
-    const tenant = await bootstrapTenant(page, "Delivery Metrics");
+    const { tenant } = await bootstrapSession(page, "Delivery Metrics");
     await gotoHydrated(page, `/t/${tenant.slug}/settings/delivery`);
 
     const panel = page.getByRole("region", { name: "Apple push delivery" });

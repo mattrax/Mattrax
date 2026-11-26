@@ -2,45 +2,66 @@
 import { render } from "@solidjs/web";
 import { flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { recorder } from "../../../../packages/config/testing/recorder.ts";
+import type { PasskeyFlowOptions, authClient } from "~/lib/auth";
+import type { redirectToProvider, startOrganisationSso } from "~/lib/sso-start";
+import LoginPage from "./login";
+import type { LoginPageDeps } from "./login";
 
-const state = vi.hoisted(() => ({
+type SsoResult = Awaited<ReturnType<typeof startOrganisationSso>>;
+type PasskeyResult = Awaited<ReturnType<typeof authClient.passkeySignIn>>;
+
+const deferred = <A,>() => {
+  let resolve!: (value: A) => void;
+  const promise = new Promise<A>((done) => {
+    resolve = done;
+  });
+
+  return { promise, resolve };
+};
+
+const signedIn = (id: string): PasskeyResult => ({
+  data: { user: { id, name: "Person", email: "person@example.com", emailVerified: true } },
+});
+
+/** Fakes are rebuilt each test so no implementation or call leaks into another. */
+const makeState = () => ({
   params: {} as Record<string, string | string[] | undefined>,
-  startSso: vi.fn(),
-  redirect: vi.fn(),
-  passkey: vi.fn(),
-  session: vi.fn(),
-  signOut: vi.fn(),
-  navigate: vi.fn(),
-}));
+  startSso: recorder<[email: string, returnTo?: string], ReturnType<typeof startOrganisationSso>>(
+    async () => ({ kind: "unavailable" }),
+  ),
+  redirect: recorder<Parameters<typeof redirectToProvider>, void>(),
+  passkey: recorder<[options?: PasskeyFlowOptions], ReturnType<typeof authClient.passkeySignIn>>(
+    async () => ({ error: { tag: "PasskeyUnsupported" } }),
+  ),
+  session: recorder<[], ReturnType<typeof authClient.session>>(async () => ({ data: null })),
+  signOut: recorder<[], ReturnType<typeof authClient.signOut>>(async () => ({
+    data: { status: "ok" },
+  })),
+  navigate: recorder<[href: string, options?: { readonly replace?: boolean }], void>(),
+});
 
-vi.mock("@solidjs/router", () => ({
-  useSearchParams: () => [state.params, vi.fn()],
-}));
-vi.mock("~/lib/navigation", () => ({ useNavigate: () => state.navigate }));
-vi.mock("~/lib/auth", () => ({
-  authClient: {
-    useSession: () => () => ({ data: { user: undefined }, isPending: false }),
+let state = makeState();
+
+/** Dependencies live on the page's props instead of replacing imported modules. */
+const deps = (): LoginPageDeps => ({
+  searchParams: state.params,
+  navigate: state.navigate,
+  session: () => ({ data: { user: undefined }, isPending: false }),
+  auth: {
+    passkeySignIn: state.passkey,
     session: state.session,
     signOut: state.signOut,
-    passkeySignIn: state.passkey,
   },
-}));
-vi.mock("~/lib/sso-start", () => ({
-  startOrganisationSso: state.startSso,
-  redirectToProvider: state.redirect,
-}));
-vi.mock("~/components/mfa-pending", () => ({ default: () => <div>MFA required</div> }));
-vi.mock("~/components/brand-logo", () => ({ default: () => null }));
-vi.mock("~/components/ui/icons", () => ({ KeyRound: () => null }));
-
-import LoginPage from "./login";
+  sso: { start: state.startSso, redirect: state.redirect },
+});
 
 const cleanups: Array<() => void> = [];
 
 const mount = () => {
   const host = document.createElement("div");
   document.body.append(host);
-  const dispose = render(() => <LoginPage />, host);
+  const dispose = render(() => <LoginPage deps={deps()} />, host);
 
   cleanups.push(dispose);
 
@@ -60,7 +81,7 @@ const stubConditionalPasskey = () => {
   });
   Object.defineProperty(navigator, "credentials", {
     configurable: true,
-    value: { get: vi.fn() },
+    value: { get: recorder() },
   });
 };
 
@@ -86,20 +107,13 @@ const settleAfterResolution = async () => {
 };
 
 beforeEach(() => {
-  state.params = {};
-  state.startSso.mockReset();
-  state.redirect.mockReset();
-  state.passkey.mockReset();
-  state.session.mockReset();
-  state.signOut.mockReset().mockResolvedValue(undefined);
-  state.navigate.mockReset();
+  state = makeState();
 });
 
 afterEach(() => {
   for (const dispose of cleanups.splice(0)) dispose();
   document.body.replaceChildren();
   restoreConditionalPasskey();
-  vi.clearAllMocks();
 });
 
 describe("email-first sign-in", () => {
@@ -112,10 +126,12 @@ describe("email-first sign-in", () => {
 
     submitEmail(host, "ada@acme.com");
 
-    await vi.waitFor(() =>
-      expect(state.redirect).toHaveBeenCalledWith(
-        "https://login.microsoftonline.com/tenant/authorize",
-      ),
+    await vi.waitFor(
+      () =>
+        expect(state.redirect).toHaveBeenCalledWith(
+          "https://login.microsoftonline.com/tenant/authorize",
+        ),
+      { interval: 1 },
     );
     expect(state.startSso).toHaveBeenCalledWith("ada@acme.com", undefined);
     expect(host.textContent).toContain("Redirecting to your organisation");
@@ -130,17 +146,13 @@ describe("email-first sign-in", () => {
     });
     mount();
 
-    await vi.waitFor(() => expect(state.redirect).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.redirect).toHaveBeenCalledTimes(1), { interval: 1 });
     expect(state.startSso).toHaveBeenCalledWith("ada@acme.com", undefined);
   });
 
   it("never starts a second redirect for a duplicated submit", async () => {
-    let resolve!: (value: unknown) => void;
-    state.startSso.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    const lookup = deferred<SsoResult>();
+    state.startSso.mockReturnValue(lookup.promise);
     const host = mount();
 
     // Two submits land before the first lookup settles.
@@ -149,11 +161,11 @@ describe("email-first sign-in", () => {
 
     expect(state.startSso).toHaveBeenCalledTimes(1);
 
-    resolve({
+    lookup.resolve({
       kind: "redirect",
       url: "https://login.microsoftonline.com/tenant/authorize",
     });
-    await vi.waitFor(() => expect(state.redirect).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.redirect).toHaveBeenCalledTimes(1), { interval: 1 });
 
     expect(state.startSso).toHaveBeenCalledTimes(1);
     expect(state.redirect).toHaveBeenCalledTimes(1);
@@ -165,7 +177,7 @@ describe("email-first sign-in", () => {
 
     submitEmail(host, "person@example.com");
 
-    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined());
+    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined(), { interval: 1 });
     expect(state.redirect).not.toHaveBeenCalled();
     expect(button(host, /sign in with your organisation/i)).toBeUndefined();
     expect(button(host, /use a passkey instead/i)).toBeUndefined();
@@ -186,31 +198,29 @@ describe("email-first sign-in", () => {
 
     submitEmail(host, "ada@acme.com");
 
-    await vi.waitFor(() => expect(host.querySelector("#sso-error")).not.toBeNull());
+    await vi.waitFor(() => expect(host.querySelector("#sso-error")).not.toBeNull(), {
+      interval: 1,
+    });
     expect(host.querySelector("#sso-error")?.textContent).toContain("Check your connection");
     expect(button(host, /try organisation sign-in again/i)).toBeDefined();
     expect(button(host, /use a passkey instead/i)).toBeDefined();
     expect(state.redirect).not.toHaveBeenCalled();
 
     button(host, /try organisation sign-in again/i)!.click();
-    await vi.waitFor(() => expect(state.redirect).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.redirect).toHaveBeenCalledTimes(1), { interval: 1 });
   });
 
   it("ignores a stale SSO lookup after the email is changed", async () => {
-    let resolve!: (value: unknown) => void;
+    const lookup = deferred<SsoResult>();
     state.params = { email: "ada@acme.com", created: "1" };
-    state.startSso.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    state.startSso.mockReturnValue(lookup.promise);
     const host = mount();
 
-    await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1), { interval: 1 });
     button(host, /^change$/i)!.click();
     flush();
 
-    resolve({
+    lookup.resolve({
       kind: "redirect",
       url: "https://login.microsoftonline.com/tenant/authorize",
     });
@@ -222,28 +232,22 @@ describe("email-first sign-in", () => {
   });
 
   it("ignores a stale lookup that resolves after the first redirect", async () => {
-    let resolveFirst!: (value: unknown) => void;
+    const first = deferred<SsoResult>();
     state.params = { email: "ada@acme.com", created: "1" };
-    state.startSso
-      .mockReturnValueOnce(
-        new Promise((done) => {
-          resolveFirst = done;
-        }),
-      )
-      .mockResolvedValue({
-        kind: "redirect",
-        url: "https://login.microsoftonline.com/tenant/authorize",
-      });
+    state.startSso.mockReturnValueOnce(first.promise).mockResolvedValue({
+      kind: "redirect",
+      url: "https://login.microsoftonline.com/tenant/authorize",
+    });
     const host = mount();
 
-    await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1), { interval: 1 });
     button(host, /^change$/i)!.click();
     flush();
     submitEmail(host, "ada@acme.com");
 
-    await vi.waitFor(() => expect(state.redirect).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.redirect).toHaveBeenCalledTimes(1), { interval: 1 });
 
-    resolveFirst({
+    first.resolve({
       kind: "redirect",
       url: "https://login.microsoftonline.com/stale/authorize",
     });
@@ -266,7 +270,9 @@ describe("email-first sign-in", () => {
 
     submitEmail(host, "ada@acme.com");
 
-    await vi.waitFor(() => expect(host.textContent).toContain("Redirecting to your organisation"));
+    await vi.waitFor(() => expect(host.textContent).toContain("Redirecting to your organisation"), {
+      interval: 1,
+    });
     expect(button(host, /cancel and change email/i)).toBeDefined();
 
     button(host, /cancel and change email/i)!.click();
@@ -277,23 +283,21 @@ describe("email-first sign-in", () => {
   });
 
   it("ignores a passkey result after the email is changed", async () => {
-    let resolve!: (value: unknown) => void;
+    const ceremony = deferred<PasskeyResult>();
     state.startSso.mockResolvedValue({ kind: "unavailable" });
-    state.passkey.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    state.passkey.mockReturnValue(ceremony.promise);
     const host = mount();
 
     submitEmail(host, "person@example.com");
-    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined());
+    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined(), { interval: 1 });
     button(host, /sign in with a passkey/i)!.click();
-    await vi.waitFor(() => expect(host.textContent).toContain("Waiting for your device"));
+    await vi.waitFor(() => expect(host.textContent).toContain("Waiting for your device"), {
+      interval: 1,
+    });
 
     button(host, /^change$/i)!.click();
     flush();
-    resolve({ error: { tag: "PasskeyCancelled", message: "raw detail" } });
+    ceremony.resolve({ error: { tag: "PasskeyCancelled", message: "raw detail" } });
     await settleAfterResolution();
 
     expect(host.querySelector("#login-error")).toBeNull();
@@ -304,30 +308,30 @@ describe("email-first sign-in", () => {
     // The invalidated ceremony must not leave the next passkey attempt stuck
     // in its pending/disabled state.
     submitEmail(host, "person@example.com");
-    await vi.waitFor(() => expect(button(host, /sign in with a passkey/i)).toBeDefined());
+    await vi.waitFor(() => expect(button(host, /sign in with a passkey/i)).toBeDefined(), {
+      interval: 1,
+    });
     expect(button(host, /sign in with a passkey/i)!.disabled).toBe(false);
   });
 
   it("signs out a stale passkey success instead of navigating", async () => {
-    let resolve!: (value: unknown) => void;
+    const ceremony = deferred<PasskeyResult>();
     state.startSso.mockResolvedValue({ kind: "unavailable" });
-    state.passkey.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    state.passkey.mockReturnValue(ceremony.promise);
     const host = mount();
 
     submitEmail(host, "person@example.com");
-    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined());
+    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined(), { interval: 1 });
     button(host, /sign in with a passkey/i)!.click();
-    await vi.waitFor(() => expect(host.textContent).toContain("Waiting for your device"));
+    await vi.waitFor(() => expect(host.textContent).toContain("Waiting for your device"), {
+      interval: 1,
+    });
 
     button(host, /^change$/i)!.click();
     flush();
-    resolve({ data: { user: { id: "someone" } } });
+    ceremony.resolve(signedIn("someone"));
     // signOut is the positive signal that the stale ceremony result was handled.
-    await vi.waitFor(() => expect(state.signOut).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.signOut).toHaveBeenCalledTimes(1), { interval: 1 });
     flush();
 
     expect(state.signOut).toHaveBeenCalledTimes(1);
@@ -348,12 +352,14 @@ describe("email-first sign-in", () => {
     const host = mount();
 
     submitEmail(host, "person@example.com");
-    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined());
+    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined(), { interval: 1 });
     flush();
 
     button(host, /passkey/i)!.click();
 
-    await vi.waitFor(() => expect(host.querySelector("#login-error")).not.toBeNull());
+    await vi.waitFor(() => expect(host.querySelector("#login-error")).not.toBeNull(), {
+      interval: 1,
+    });
     expect(host.querySelector("#login-error")?.textContent).toMatch(copy);
     expect(host.textContent).not.toContain("raw detail");
     expect(button(host, /try passkey again/i)).toBeDefined();
@@ -365,63 +371,57 @@ describe("email-first sign-in", () => {
 
 describe("sign-in progress", () => {
   it("shows one loading indicator while the organisation lookup is in flight", async () => {
-    let resolve!: (value: unknown) => void;
-    state.startSso.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    const lookup = deferred<SsoResult>();
+    state.startSso.mockReturnValue(lookup.promise);
     const host = mount();
 
     submitEmail(host, "ada@acme.com");
 
-    await vi.waitFor(() => expect(button(host, /checking/i)).toBeDefined());
+    await vi.waitFor(() => expect(button(host, /checking/i)).toBeDefined(), { interval: 1 });
     expect(host.querySelectorAll('[role="status"]')).toHaveLength(1);
     expect(host.querySelectorAll('[data-slot="spinner"]')).toHaveLength(1);
     expect(host.textContent).not.toContain("Checking your organisation");
 
-    resolve({ kind: "unavailable" });
-    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined());
+    lookup.resolve({ kind: "unavailable" });
+    await vi.waitFor(() => expect(button(host, /passkey/i)).toBeDefined(), { interval: 1 });
   });
 
   it("shows the account preview only once the lookup has settled", async () => {
+    const lookup = deferred<SsoResult>();
     state.params = { email: "ada@acme.com", created: "1" };
-    let resolve!: (value: unknown) => void;
-    state.startSso.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    state.startSso.mockReturnValue(lookup.promise);
     const host = mount();
 
-    await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1), { interval: 1 });
     expect(host.textContent).not.toContain("ada@acme.com");
     expect(button(host, /^change$/i)).toBeDefined();
 
-    resolve({ kind: "unavailable" });
-    await vi.waitFor(() => expect(host.textContent).toContain("ada@acme.com"));
+    lookup.resolve({ kind: "unavailable" });
+    await vi.waitFor(() => expect(host.textContent).toContain("ada@acme.com"), { interval: 1 });
   });
 
   it("hides the account preview while a passkey sign-in is pending", async () => {
-    let resolve!: (value: unknown) => void;
+    const ceremony = deferred<PasskeyResult>();
     state.startSso.mockResolvedValue({ kind: "unavailable" });
-    state.passkey.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    state.passkey.mockReturnValue(ceremony.promise);
     const host = mount();
 
     submitEmail(host, "person@example.com");
-    await vi.waitFor(() => expect(button(host, /sign in with a passkey/i)).toBeDefined());
+    await vi.waitFor(() => expect(button(host, /sign in with a passkey/i)).toBeDefined(), {
+      interval: 1,
+    });
     expect(host.textContent).toContain("person@example.com");
 
     button(host, /sign in with a passkey/i)!.click();
-    await vi.waitFor(() => expect(host.textContent).toContain("Waiting for your device"));
+    await vi.waitFor(() => expect(host.textContent).toContain("Waiting for your device"), {
+      interval: 1,
+    });
     expect(host.textContent).not.toContain("person@example.com");
 
-    resolve({ error: { tag: "PasskeyCancelled" } });
-    await vi.waitFor(() => expect(host.textContent).toContain("person@example.com"));
+    ceremony.resolve({ error: { tag: "PasskeyCancelled" } });
+    await vi.waitFor(() => expect(host.textContent).toContain("person@example.com"), {
+      interval: 1,
+    });
     expect(host.querySelector("#login-error")).not.toBeNull();
   });
 });
@@ -429,34 +429,31 @@ describe("sign-in progress", () => {
 describe("conditional passkey autofill", () => {
   it("starts on the email step and completes a chosen passkey", async () => {
     stubConditionalPasskey();
-    let resolve!: (value: unknown) => void;
-    state.passkey.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    const ceremony = deferred<PasskeyResult>();
+    state.passkey.mockReturnValue(ceremony.promise);
     const host = mount();
 
-    await vi.waitFor(() => expect(state.passkey).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.passkey).toHaveBeenCalledTimes(1), { interval: 1 });
     const { conditional } = state.passkey.mock.calls[0]![0] as { conditional: AbortSignal };
 
     expect(conditional).toBeInstanceOf(AbortSignal);
     expect(conditional.aborted).toBe(false);
 
-    resolve({ data: { user: { id: "person" } } });
+    ceremony.resolve(signedIn("person"));
 
-    await vi.waitFor(() =>
-      expect(state.navigate).toHaveBeenCalledWith("/dashboard", { replace: true }),
+    await vi.waitFor(
+      () => expect(state.navigate).toHaveBeenCalledWith("/dashboard", { replace: true }),
+      { interval: 1 },
     );
     expect(host.querySelector("#login-error")).toBeNull();
   });
 
   it("aborts the inline request when the email changes", async () => {
     stubConditionalPasskey();
-    state.passkey.mockReturnValue(new Promise(() => {}));
+    state.passkey.mockReturnValue(new Promise<PasskeyResult>(() => {}));
     const host = mount();
 
-    await vi.waitFor(() => expect(state.passkey).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.passkey).toHaveBeenCalledTimes(1), { interval: 1 });
     const { conditional } = state.passkey.mock.calls[0]![0] as { conditional: AbortSignal };
     const input = host.querySelector<HTMLInputElement>("#email")!;
 
@@ -469,16 +466,12 @@ describe("conditional passkey autofill", () => {
 
   it("stays quiet when the inline passkey sheet is dismissed", async () => {
     stubConditionalPasskey();
-    let resolve!: (value: unknown) => void;
-    state.passkey.mockReturnValue(
-      new Promise((done) => {
-        resolve = done;
-      }),
-    );
+    const ceremony = deferred<PasskeyResult>();
+    state.passkey.mockReturnValue(ceremony.promise);
     const host = mount();
 
-    await vi.waitFor(() => expect(state.passkey).toHaveBeenCalledTimes(1));
-    resolve({ error: { tag: "PasskeyNotAllowed", message: "raw detail" } });
+    await vi.waitFor(() => expect(state.passkey).toHaveBeenCalledTimes(1), { interval: 1 });
+    ceremony.resolve({ error: { tag: "PasskeyNotAllowed", message: "raw detail" } });
     await settleAfterResolution();
 
     expect(host.querySelector("#login-error")).toBeNull();
@@ -492,9 +485,11 @@ describe("conditional passkey autofill", () => {
     state.startSso.mockResolvedValue({ kind: "unavailable" });
     const host = mount();
 
-    await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(state.startSso).toHaveBeenCalledTimes(1), { interval: 1 });
     // The account preview appears only once the lookup has settled.
-    await vi.waitFor(() => expect(host.textContent).toContain("person@example.com"));
+    await vi.waitFor(() => expect(host.textContent).toContain("person@example.com"), {
+      interval: 1,
+    });
     flush();
 
     expect(state.passkey).not.toHaveBeenCalled();

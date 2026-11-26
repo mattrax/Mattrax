@@ -1,5 +1,13 @@
 import { useNavigate as useRouterNavigate } from "@solidjs/router";
 import type { NavigateOptions, Navigator, TypedPath } from "@solidjs/router";
+import { createContext, useContext } from "solid-js";
+
+/**
+ * Injectable navigator. Solid Router's `useNavigate` needs a Router root, so
+ * screens rendered in isolation (tests, design previews) provide a navigator
+ * here instead of replacing the module.
+ */
+export const NavigateContext = createContext<Navigator | null>(null);
 
 /**
  * Programmatic navigation that survives a same-tick state write.
@@ -11,7 +19,10 @@ import type { NavigateOptions, Navigator, TypedPath } from "@solidjs/router";
  * are synchronous because they are not transitions.
  */
 export function useNavigate(): ReturnType<typeof useRouterNavigate> {
-  const navigate = useRouterNavigate();
+  // Only reach for the Router when nothing was injected; the context lookup is
+  // safe outside a Router, so isolated screens can supply their own navigator.
+  const injected = useContext(NavigateContext);
+  const navigate = injected ?? useRouterNavigate();
 
   const isDelta = (value: string | TypedPath | number): value is number =>
     typeof value === "number";

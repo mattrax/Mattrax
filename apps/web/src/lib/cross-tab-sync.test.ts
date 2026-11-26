@@ -1,4 +1,5 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
+import { asFake, recorder } from "../../../../packages/config/testing/recorder.ts";
 import {
   applyCrossTabMessage,
   CROSS_TAB_MAX_KEYS,
@@ -28,12 +29,15 @@ const invalidate = (keys: (readonly unknown[])[] = []): CrossTabMessage => ({
 
 /** Only the methods the sync module calls; the rest of QueryClient is unused. */
 const fakeClient = () => {
-  const invalidateQueries = vi.fn();
-  const removeQueries = vi.fn();
-  const setQueryData = vi.fn();
-  const clear = vi.fn();
+  const invalidateQueries = recorder<
+    Parameters<CrossTabCache["invalidateQueries"]>,
+    Promise<void>
+  >();
+  const removeQueries = recorder<Parameters<CrossTabCache["removeQueries"]>, void>();
+  const setQueryData = recorder<Parameters<CrossTabCache["setQueryData"]>, unknown>();
+  const clear = recorder<Parameters<CrossTabCache["clear"]>, void>();
 
-  const client: CrossTabCache = { invalidateQueries, removeQueries, setQueryData, clear };
+  const client = asFake<CrossTabCache>({ invalidateQueries, removeQueries, setQueryData, clear });
 
   return { client, invalidateQueries, removeQueries, setQueryData, clear };
 };

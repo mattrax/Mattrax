@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { api, bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("software inventory and device security", () => {
   test("shows the tenant software inventory and scopes API results", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Software Tenant");
+    const { tenant } = await bootstrapSession(page, "Software Tenant");
 
     // The old Software destination now points at the application catalogue;
     // per-device software is a projection on the device page and dashboards.

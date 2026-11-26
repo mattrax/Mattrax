@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 test("wraps OS-version enforcement copy inside the card at 390px", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  const tenant = await bootstrapTenant(page, "Narrow OS Versions Tenant");
+  const { tenant } = await bootstrapSession(page, "Narrow OS Versions Tenant");
 
   await page.evaluate(() => localStorage.setItem("mattrax:theme", "dark"));
   await gotoHydrated(page, `/t/${tenant.id}/os-versions`);

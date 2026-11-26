@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { createTenant, gotoHydrated, register } from "./helpers";
+import { createTenant, gotoHydrated, sharedSession } from "./helpers";
 
 const settingsNav = (page: Page) =>
   page.getByRole("navigation", { name: "Tenant settings sections" });
@@ -9,7 +9,7 @@ test.describe("settings breadcrumbs", () => {
   test("labels cold fresh-tenant deep links without waiting for tenant data", async ({ page }) => {
     test.setTimeout(120_000);
 
-    await register(page);
+    await sharedSession(page);
     const tenant = await createTenant(page, "Settings Breadcrumb Tenant");
     const base = `/t/${tenant.slug}/settings`;
     const sections = [

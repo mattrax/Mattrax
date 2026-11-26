@@ -1,12 +1,18 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { installGlobal } from "../../../../../packages/config/testing/globals.ts";
 import { Option } from "effect";
 import { readTableColumnVisibility } from "~/lib/table-column-visibility";
 import { decodePolicyConfiguration } from "~/lib/policy-config";
 
-afterEach(() => vi.unstubAllGlobals());
+let restoreGlobals = () => {};
+
+afterEach(() => {
+  restoreGlobals();
+  restoreGlobals = () => {};
+});
 
 const store = (value: string | null) => {
-  vi.stubGlobal("localStorage", {
+  restoreGlobals = installGlobal("localStorage", {
     getItem: () => value,
   });
 };

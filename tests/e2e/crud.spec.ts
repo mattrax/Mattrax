@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated } from "./helpers";
+import { api, bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("groups and policies", () => {
   test("creates, edits, duplicates, and deletes a group", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "CRUD Tenant");
+    const { tenant } = await bootstrapSession(page, "CRUD Tenant");
     await page.goto(`/t/${tenant.id}/groups`);
     await page
       .getByRole("link", { name: /create group/i })
@@ -21,9 +21,12 @@ test.describe("groups and policies", () => {
     await expect(page.getByRole("heading", { name: "Field Operations" })).toBeVisible();
 
     await page.getByRole("button", { name: /duplicate/i }).click();
-    await expect(
-      page.getByRole("heading", { name: /Field Operations \[duplicated\]/ }),
-    ).toBeVisible();
+    await expect
+      .poll(
+        () => page.getByRole("heading", { name: /Field Operations \[duplicated\]/ }).count(),
+        { timeout: 30_000 },
+      )
+      .toBe(1);
 
     await page.getByRole("button", { name: /^delete$/i }).click();
     await page.locator('[data-slot="dialog-content"] input').fill("Field Operations [duplicated]");
@@ -35,7 +38,7 @@ test.describe("groups and policies", () => {
   });
 
   test("creates a dynamic group and shows its rule-based membership", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Dynamic Tenant");
+    const { tenant } = await bootstrapSession(page, "Dynamic Tenant");
 
     const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
@@ -84,7 +87,7 @@ test.describe("groups and policies", () => {
   });
 
   test("creates a policy and configures a device restriction", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Policy Tenant");
+    const { tenant } = await bootstrapSession(page, "Policy Tenant");
     await page.goto(`/t/${tenant.id}/policies`);
     await page
       .getByRole("link", { name: /create policy/i })

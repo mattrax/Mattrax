@@ -5,6 +5,6 @@
     "outDir": "./dist",
     "rootDir": "."
   },
-  "include": ["*.ts"],
+  "include": ["*.ts", "testing/recorder.ts", "testing/globals.ts", "testing/isolated-tests.ts"],
   "exclude": ["node_modules", "dist"]
 }

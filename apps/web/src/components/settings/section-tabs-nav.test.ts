@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { recorder } from "../../../../../packages/config/testing/recorder.ts";
 import { activateSectionTabAnchor, sectionTabTarget } from "./section-tabs-nav";
 
 const tabs = ["endpoints", "deliveries"] as const;
@@ -58,7 +59,7 @@ describe("section tab anchor activation", () => {
 
   it("clicks a navigation tab after the current event settles", () => {
     vi.useFakeTimers();
-    const click = vi.fn();
+    const click = recorder();
 
     activateSectionTabAnchor({ click });
 

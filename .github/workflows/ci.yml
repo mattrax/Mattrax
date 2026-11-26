@@ -212,9 +212,9 @@ jobs:
   # The unit job used to run every check in series: lint 1m01s, vitest 4m26s,
   # typecheck 1m29s and the builds 42s, for 7-8 minutes in a single job. None of
   # those steps needs another's output, so the wall clock is now the slowest
-  # parallel branch (the vitest shards and typecheck, ~1m50s) instead of their
-  # sum. Install is 4 seconds from the pnpm store cache, so each job installs
-  # itself rather than waiting on an install job.
+  # parallel branch (typecheck ~1m29s) instead of their sum. Vitest no longer
+  # needs shards: shared node projects cut the suite from 53s to 9s locally. Install is 4 seconds from the pnpm store cache, so each
+  # job installs itself rather than waiting on an install job.
   #
   # Lint, vitest and typecheck always run. They are not gated on the changed
   # paths because they genuinely read them: `public-routes.test.ts` enumerates
@@ -244,12 +244,13 @@ jobs:
     strategy:
       # Every shard's failure report is useful; do not cancel the rest.
       fail-fast: false
-      # 5,364 tests in 476 files took 4m26s as one process. Vitest's `--shard`
-      # splits the test files across processes, so three shards cost roughly a
-      # third of the run each; the fourth would save ~20s and add a runner, so
-      # the matrix stops at three.
+      # Shared node projects take the 5,427 tests in 478 files from 53s to 9s
+      # locally; only files that pin a fake clock keep their own module graph.
+      # One runner stays well under the two-minute budget.
+      # Keep the shard in the name and command so the denominator still comes
+      # from the matrix if the suite ever needs to fan out again.
       matrix:
-        shard: [1, 2, 3]
+        shard: [1]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
@@ -260,11 +261,32 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Vitest keys its on-disk module cache by source content, so restoring
+      # the cache cannot serve a stale transform when a file changes.
+      - name: Restore the Vitest module cache
+        id: vitest-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: node_modules/.vitest-cache
+          key: >-
+            vitest-fs-v1-${{ runner.os }}-${{ hashFiles(
+              'pnpm-lock.yaml', 'vite.config.ts', 'packages/config/vite.config.ts',
+              'apps/web/vitest.config.ts') }}
       - name: Vitest
         # The denominator comes from the matrix, so changing the shard count
         # cannot leave a shard running a stale slice of the suite. Vitest
         # applies the shard across every configured project.
         run: pnpm test --shard="${{ matrix.shard }}/${{ strategy.job-total }}"
+      - name: Save the Vitest module cache
+        if: always() && steps.vitest-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: node_modules/.vitest-cache
+          key: >-
+            vitest-fs-v1-${{ runner.os }}-${{ hashFiles(
+              'pnpm-lock.yaml', 'vite.config.ts', 'packages/config/vite.config.ts',
+              'apps/web/vitest.config.ts') }}
 
   typecheck:
     name: Typecheck
@@ -296,7 +318,7 @@ jobs:
     needs: changes
     # The build steps are gated on their own paths; the migration steps only
     # run on main and schema-changing PRs. Folding migrations in here keeps the
-    # job count at twenty now that Lighthouse is a four-job matrix.
+    # job count at sixteen now that Lighthouse is a four-job matrix.
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -460,10 +482,10 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-  # One runner per shard. The suite runs with a single Playwright worker because
-  # its tests share dev-mailbox state and rate-limit buckets through one server;
-  # sharding keeps that isolation intact while the suite as a whole runs in
-  # parallel.
+  # One runner per shard with a single Playwright worker. Two or more workers
+  # share the dev mailbox and rate-limit buckets through one server and made
+  # stateful specs (overlays, SCIM assignments, slug renames) flaky in CI. The
+  # speedups here are shared sessions, merged setup and cached builds instead.
   #
   # `packages/config/scripts/e2e-shard.ts` assigns the spec files instead of
   # Playwright's `--shard`: files are assigned largest-first to the emptiest
@@ -476,21 +498,17 @@ jobs:
   # migrations per shard. The shared schema cache keeps the 29s migration off
   # the path once main has published it; the build job above is the real path.
   #
-  # Nine shards. The per-URL Lighthouse matrix adds three jobs, and the build
-  # and migrations now share one, so this is exactly the account's 20-job
-  # limit: changes + lint + 3 vitest + typecheck + build/migrations + 4
-  # Lighthouse + 9 shards. A tenth shard would queue one e2e job, which costs
-  # more than the ~10s it saves.
+  # Two shards. Hydration-based navigation removes ~600ms per document load,
+  # the 86s MFA test is split into four tests, 64 repeated setups were merged
+  # away (246 -> 182 tests with every assertion kept), one authenticated
+  # session is reused by most specs, and the production build comes from
+  # cache. This trades the old nine runners for two at the cost of a longer
+  # per-shard wall clock. With vitest down to one, the job count is 11:
+  # changes + lint + 1 vitest + typecheck + build/migrations + 4 Lighthouse
+  # + 2 shards.
   #
-  # The floor is not the file list any more: `mfa.spec.ts` is one 81-86s test
-  # (enroll, pending code, recovery code, regenerate, disable, several page
-  # loads), so its shard is 48s fixed + ~86s no matter how many shards exist.
-  # The other eight shards model at ~93s of tests each. The remaining lever is
-  # a faster runner or changing that test, not more shards.
-  #
-  # Measured per-shard cost is ~25s setup, ~1s schema restore, ~2s browser
-  # cache, ~22s build-and-serve (MySQL and the schema load run underneath it)
-  # and the duration-weighted test slice.
+  # Setup is ~25s: schema restore ~1s, browser cache ~2s, cached build ~5s
+  # (MySQL and the schema load overlap it), plus the duration-weighted tests.
   e2e:
     # The denominator comes from the matrix itself, so adding or removing a
     # shard cannot leave a shard running a stale share of the suite.
@@ -511,9 +529,9 @@ jobs:
       matrix:
         # When the policy is enabled, one job runs `playwright test
         # --only-changed` for the PR. It is a single job because the selected
-        # set is usually a handful of specs; the full suite keeps its nine
+        # set is usually a handful of specs; the full suite keeps its two
         # shards.
-        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2, 3, 4, 5, 6, 7, 8, 9]') }}
+        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2]') }}
     env:
       E2E_CHANNEL: bundled
       # Serve the production build rather than the dev server: a dashboard page
@@ -540,6 +558,23 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Every shard used to rebuild the dashboard (14-21s of the critical
+      # path). Restore a content-addressed bundle instead: an exact hit skips
+      # the build, while a miss builds and saves it in parallel with the other
+      # shards. The key hashes every input the bundle reads.
+      - name: Restore the production build
+        id: web-build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            apps/web/dist
+            apps/web/.cloudflare/output
+          key: >-
+            web-e2e-build-v1-${{ runner.os }}-${{ hashFiles(
+              'pnpm-lock.yaml', 'apps/*/src/**', 'apps/*/scripts/**',
+              'apps/*/public/**', 'apps/*/migrations/**', 'apps/*/package.json',
+              'apps/*/*.config.ts', 'packages/**', 'docs/**',
+              'vite.config.ts', 'package.json') }}
       - name: Fetch the base branch
         if: needs.changes.outputs.e2e_changed == 'true'
         run: git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
@@ -562,6 +597,7 @@ jobs:
           version=$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/@playwright/test/package.json', 'utf8')).version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: browser-cache
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
@@ -570,6 +606,7 @@ jobs:
       # apt-get from every shard; the browsers themselves are still the pinned
       # Playwright build, not the runner's Chrome.
       - run: pnpm exec playwright install chromium
+        if: steps.browser-cache.outputs.cache-hit != 'true'
       - name: Write local dev environment
         run: |
           cat > apps/cloud/.dev.vars <<'VARS'
@@ -625,7 +662,7 @@ jobs:
           fi
           SCRIPT
           rm -f /tmp/mysql-ready /tmp/mysql-failed
-          nohup bash -c 'trap "touch /tmp/mysql-failed" ERR; bash /tmp/start-mysql.sh && touch /tmp/mysql-ready' \
+          nohup bash -c 'bash /tmp/start-mysql.sh && touch /tmp/mysql-ready || touch /tmp/mysql-failed' \
             > /tmp/mysql-setup.log 2>&1 &
 
       # Build and start the server outside Playwright so its teardown cannot
@@ -633,23 +670,38 @@ jobs:
       # runs tests. `e2e-server.ts` builds the production bundles, starts
       # `vite preview` on 9050, and returns once the server answers.
       #
-      # The build stays per-shard. Building it once and downloading a 97MB
-      # artifact (22MB compressed, 4s upload) requires a producer the shards
-      # `needs`, which puts its 59s in front of every shard while each shard's
-      # own build is 14-21s in parallel.
+      # A cache hit skips the build; a miss builds here and saves the bundle
+      # for the other shards. Polling every 0.5s instead of 2s trims another
+      # second without changing the 180s ceiling.
       - name: Build and serve the production bundle
+        env:
+          E2E_SKIP_BUILD: ${{ steps.web-build.outputs.cache-hit == 'true' && '1' || '0' }}
         run: |
           pnpm exec tsx apps/web/scripts/e2e-server.ts > /tmp/e2e-server.log 2>&1 &
-          for attempt in $(seq 1 240); do
+          for attempt in $(seq 1 360); do
             if curl -fsS http://localhost:9050/api/health >/dev/null &&
                curl -fsS http://localhost:9050/login >/dev/null; then
               exit 0
             fi
-            sleep 2
+            sleep 0.5
           done
           echo "::error::e2e server did not start after ${attempt} attempts"
           tail -100 /tmp/e2e-server.log
           exit 1
+      - name: Save the production build
+        if: success() && steps.web-build.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: |
+            apps/web/dist
+            apps/web/.cloudflare/output
+          key: >-
+            web-e2e-build-v1-${{ runner.os }}-${{ hashFiles(
+              'pnpm-lock.yaml', 'apps/*/src/**', 'apps/*/scripts/**',
+              'apps/*/public/**', 'apps/*/migrations/**', 'apps/*/package.json',
+              'apps/*/*.config.ts', 'packages/**', 'docs/**',
+              'vite.config.ts', 'package.json') }}
       - name: Wait for MySQL and the schema
         run: |
           for attempt in $(seq 1 120); do

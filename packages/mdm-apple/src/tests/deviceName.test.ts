@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { AppleDeviceEvent, MdmOrigin } from "@mattrax/management-backend";
@@ -12,6 +12,12 @@ const authSecret = "enterprise-test-secret";
 const mdmOrigin = new MdmOrigin({ url: origin });
 
 const now = new Date("2026-11-23T10:00:00.000Z");
+
+// Commands queued during enrollment must predate those queued by check-in.
+// Without a pinned clock both can share a millisecond, and delivery breaks
+// createdAt ties by random UUID, making "queued vs sent" nondeterministic.
+beforeEach(() => vi.setSystemTime(now));
+afterEach(() => vi.useRealTimers());
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
@@ -89,6 +95,9 @@ const audits = (db: ReturnType<typeof setup>["db"]) =>
 const enroll = async (backend: ReturnType<typeof setup>["backend"]) => {
   await run(backend.appleDeviceEvent(scope, authenticate()));
   await run(backend.appleDeviceEvent(scope, tokenUpdate()));
+  // Advance past the enrollment commands so the next check-in's commands sort
+  // strictly after them instead of tying on createdAt.
+  vi.setSystemTime(new Date(now.getTime() + 60_000));
 };
 
 describe("Apple device name check-in", () => {

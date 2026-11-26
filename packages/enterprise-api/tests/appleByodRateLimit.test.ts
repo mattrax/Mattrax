@@ -1,6 +1,22 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { recorder } from "../../config/testing/recorder.ts";
 import { createAppleByodRateLimiter } from "../src/appleByodRateLimit.js";
 import type { AppleByodRateLimiterOptions } from "../src/appleByodRateLimit.js";
+
+/** Delegate to the original Map method while recording calls for assertions. */
+const recordMapMethod = <Args extends unknown[], R>(
+  original: (this: Map<any, any>, ...args: Args) => R,
+) => {
+  let receiver: Map<any, any>;
+  const record = recorder<Args, R>((...args) => original.apply(receiver, args));
+  const spy = function (this: Map<any, any>, ...args: Args): R {
+    receiver = this;
+
+    return record(...args);
+  };
+
+  return Object.assign(spy, { calls: record.calls });
+};
 
 const makeLimiter = (options: Omit<AppleByodRateLimiterOptions, "now"> = {}) => {
   let time = 1_000_000;
@@ -92,9 +108,16 @@ describe("Apple BYOD rate limiter", () => {
 
   it("bounds memory and expires whole buckets without iterating client maps", () => {
     const { limiter, advance } = makeLimiter({ limit: 1 });
-    const mapIterator = vi.spyOn(Map.prototype, Symbol.iterator);
-    const mapKeys = vi.spyOn(Map.prototype, "keys");
-    const mapForEach = vi.spyOn(Map.prototype, "forEach");
+    const originalIterator = Map.prototype[Symbol.iterator];
+    const originalKeys = Map.prototype.keys;
+    const originalForEach = Map.prototype.forEach;
+    const mapIterator = recordMapMethod(originalIterator);
+    const mapKeys = recordMapMethod(originalKeys);
+    const mapForEach = recordMapMethod(originalForEach);
+
+    Map.prototype[Symbol.iterator] = mapIterator as typeof originalIterator;
+    Map.prototype.keys = mapKeys as typeof originalKeys;
+    Map.prototype.forEach = mapForEach as typeof originalForEach;
     let sizeAtCap = 0;
     let overflowAllowed = true;
     let sizeAfterExpiry = 0;
@@ -114,9 +137,9 @@ describe("Apple BYOD rate limiter", () => {
       allowedAfterExpiry = limiter.allow(verifiedHeaders("203.0.113.200", "198.51.100.200"));
       sizeAfterExpiry = limiter.size();
     } finally {
-      mapIterator.mockRestore();
-      mapKeys.mockRestore();
-      mapForEach.mockRestore();
+      Map.prototype[Symbol.iterator] = originalIterator;
+      Map.prototype.keys = originalKeys;
+      Map.prototype.forEach = originalForEach;
     }
 
     expect(allAllowed).toBe(true);
@@ -124,9 +147,9 @@ describe("Apple BYOD rate limiter", () => {
     expect(overflowAllowed).toBe(false);
     expect(allowedAfterExpiry).toBe(true);
     expect(sizeAfterExpiry).toBe(1);
-    expect(mapIterator).not.toHaveBeenCalled();
-    expect(mapKeys).not.toHaveBeenCalled();
-    expect(mapForEach).not.toHaveBeenCalled();
+    expect(mapIterator.calls).toHaveLength(0);
+    expect(mapKeys.calls).toHaveLength(0);
+    expect(mapForEach.calls).toHaveLength(0);
   });
 
   it("counts concurrent requests exactly once up to the limit", async () => {

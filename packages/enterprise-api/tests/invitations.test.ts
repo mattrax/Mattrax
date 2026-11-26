@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   EnterpriseBadRequest,
   EnterpriseConflict,
@@ -612,11 +612,14 @@ describe("tenant invitations", () => {
   it("queues the invitation even while the provider is down", async () => {
     const logged: string[] = [];
 
-    const spies = (["log", "warn", "error"] as const).map((method) =>
-      vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
+    const methods = ["log", "warn", "error"] as const;
+    const originals = methods.map((method) => console[method]);
+
+    for (const method of methods) {
+      console[method] = (...args: unknown[]) => {
         logged.push(args.map(String).join(" "));
-      }),
-    );
+      };
+    }
 
     try {
       const owner = makeContext({
@@ -640,7 +643,9 @@ describe("tenant invitations", () => {
       expect(owner.db.store.email_outbox).toHaveLength(1);
       expect(logged.join("\n")).not.toContain(token);
     } finally {
-      for (const spy of spies) spy.mockRestore();
+      methods.forEach((method, index) => {
+        console[method] = originals[index]!;
+      });
     }
   });
 

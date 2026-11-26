@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { installGlobal } from "../../../../packages/config/testing/globals.ts";
 import type { MeResponse } from "@mattrax/enterprise-domain/client";
 import { clearMeCache, readMeCache, writeMeCache } from "./me-cache";
 
@@ -36,11 +37,16 @@ const fakeStorage = () => {
   };
 };
 
-afterEach(() => vi.unstubAllGlobals());
+let restoreGlobals = () => {};
+
+afterEach(() => {
+  restoreGlobals();
+  restoreGlobals = () => {};
+});
 
 describe("me cache", () => {
   it("round-trips an account's shell data", () => {
-    vi.stubGlobal("localStorage", fakeStorage());
+    restoreGlobals = installGlobal("localStorage", fakeStorage());
     writeMeCache(data);
     expect(readMeCache("user-1")?.data).toEqual(data);
     expect(readMeCache("user-2")).toBeUndefined();
@@ -50,7 +56,7 @@ describe("me cache", () => {
 
   it("returns the same parsed entry until storage changes", () => {
     const storage = fakeStorage();
-    vi.stubGlobal("localStorage", storage);
+    restoreGlobals = installGlobal("localStorage", storage);
     writeMeCache(data);
 
     const first = readMeCache("user-1");
@@ -68,7 +74,7 @@ describe("me cache", () => {
   it("ignores corrupt or mismatched cache entries", () => {
     const storage = fakeStorage();
     storage.setItem("mattrax:me-cache:v1", '{"userId":"user-2","updatedAt":0,"data":{}}');
-    vi.stubGlobal("localStorage", storage);
+    restoreGlobals = installGlobal("localStorage", storage);
     expect(readMeCache("user-1")).toBeUndefined();
     storage.setItem("mattrax:me-cache:v1", "{broken");
     expect(readMeCache("user-1")).toBeUndefined();

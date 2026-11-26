@@ -400,9 +400,12 @@ type ScriptApiClient = Effect.Success<ReturnType<typeof scriptClientEffect>>["Sc
  * Migration cohorts are their own HttpApi, like scripts, so the main contract's
  * generated client type stays within TypeScript's declaration-size limit.
  */
-const migrationClientEffect = (headers: Readonly<Record<string, string>>) => {
-  const event = isServer ? getRequestEvent() : undefined;
-  const origin = enterpriseRequestOrigin();
+const migrationClientEffect = (
+  headers: Readonly<Record<string, string>>,
+  context: EnterpriseRequestContext = {},
+) => {
+  const event = requestEventOf(context);
+  const origin = enterpriseRequestOrigin(context);
   const baseUrl = event
     ? new URL("/", event.request.url).toString()
     : (globalThis.location?.origin ?? "/");
@@ -789,15 +792,18 @@ const required = (value: RouteParam, name: string) => {
   return name === "tenantId" ? (resolveTenantId(value) ?? value) : value;
 };
 
-const enterpriseRequestOrigin = () => {
-  const event = isServer ? getRequestEvent() : undefined;
+const enterpriseRequestOrigin = (context: EnterpriseRequestContext = {}) => {
+  const event = requestEventOf(context);
 
   return event ? new URL(event.request.url).origin : undefined;
 };
 
-const clientEffect = (headers: Readonly<Record<string, string>>) => {
-  const event = isServer ? getRequestEvent() : undefined;
-  const origin = enterpriseRequestOrigin();
+const clientEffect = (
+  headers: Readonly<Record<string, string>>,
+  context: EnterpriseRequestContext = {},
+) => {
+  const event = requestEventOf(context);
+  const origin = enterpriseRequestOrigin(context);
   const baseUrl = event
     ? new URL("/", event.request.url).toString()
     : (globalThis.location?.origin ?? "/");
@@ -818,9 +824,12 @@ const clientEffect = (headers: Readonly<Record<string, string>>) => {
  * Scripts are their own HttpApi so the main contract's generated client type
  * stays within TypeScript's declaration-size limit.
  */
-const scriptClientEffect = (headers: Readonly<Record<string, string>>) => {
-  const event = isServer ? getRequestEvent() : undefined;
-  const origin = enterpriseRequestOrigin();
+const scriptClientEffect = (
+  headers: Readonly<Record<string, string>>,
+  context: EnterpriseRequestContext = {},
+) => {
+  const event = requestEventOf(context);
+  const origin = enterpriseRequestOrigin(context);
   const baseUrl = event
     ? new URL("/", event.request.url).toString()
     : (globalThis.location?.origin ?? "/");
@@ -838,9 +847,12 @@ const scriptClientEffect = (headers: Readonly<Record<string, string>>) => {
 };
 
 /** Restricted software is its own contract for the same declaration-size reason. */
-const restrictedSoftwareClientEffect = (headers: Readonly<Record<string, string>>) => {
-  const event = isServer ? getRequestEvent() : undefined;
-  const origin = enterpriseRequestOrigin();
+const restrictedSoftwareClientEffect = (
+  headers: Readonly<Record<string, string>>,
+  context: EnterpriseRequestContext = {},
+) => {
+  const event = requestEventOf(context);
+  const origin = enterpriseRequestOrigin(context);
   const baseUrl = event
     ? new URL("/", event.request.url).toString()
     : (globalThis.location?.origin ?? "/");
@@ -857,16 +869,33 @@ const restrictedSoftwareClientEffect = (headers: Readonly<Record<string, string>
   });
 };
 
-type EndpointStepUp = {
+/**
+ * Per-call request seams. Production callers omit both; tests provide a fake
+ * transport and, for SSR header assertions, a request event. Unlike a module
+ * mock this stays local to one call, so the shared module graph is unaffected.
+ */
+export type EnterpriseRequestContext = {
+  readonly transport?: typeof webHttpClientLayer;
+  readonly event?: { readonly request: Request };
+};
+
+/** Solid's SSR event for this call, unless a test supplied one explicitly. */
+const requestEventOf = (context: EnterpriseRequestContext) =>
+  context.event ?? (isServer ? getRequestEvent() : undefined);
+
+type EndpointStepUp = EnterpriseRequestContext & {
   /** The action this endpoint requires a recent step-up for. */
-  readonly stepUp: StepUpAction | false;
+  readonly stepUp?: StepUpAction | false;
   /** Approval-page action name when it differs from the step-up action. */
   readonly approvalAction?: string;
 };
 
-const enterpriseRequestHeaders = (grant?: string, approval?: ApprovalRetryInput) => {
-  const event = isServer ? getRequestEvent() : undefined;
-  const cookie = event?.request.headers.get("cookie");
+const enterpriseRequestHeaders = (
+  grant: string | undefined,
+  approval: ApprovalRetryInput | undefined,
+  context: EnterpriseRequestContext = {},
+) => {
+  const cookie = requestEventOf(context)?.request.headers.get("cookie");
   return {
     ...approvalHeaders(approval),
     ...(grant ? { "x-mattrax-step-up": grant } : {}),
@@ -938,12 +967,13 @@ const runEndpoint = <A>(
 function endpointWith<Client, A, E>(
   makeClient: (
     headers: Readonly<Record<string, string>>,
+    context: EnterpriseRequestContext,
   ) => Effect.Effect<Client, never, HttpClient.HttpClient>,
   call: (api: Client) => Effect.Effect<A, E, never>,
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   const attempt = (grant?: string, approval?: ApprovalRetryInput) => {
-    const effect = makeClient(enterpriseRequestHeaders(grant, approval)).pipe(
+    const effect = makeClient(enterpriseRequestHeaders(grant, approval, options), options).pipe(
       Effect.flatMap((api) =>
         Effect.try({
           try: () => call(api),
@@ -956,7 +986,9 @@ function endpointWith<Client, A, E>(
     );
 
     // SAFETY: the assertion restores the generic success type the client erases.
-    return Effect.runPromise(effect.pipe(Effect.provide(webHttpClientLayer))) as Promise<A>;
+    return Effect.runPromise(
+      effect.pipe(Effect.provide(options.transport ?? webHttpClientLayer)),
+    ) as Promise<A>;
   };
 
   return runEndpoint(attempt, options) as EndpointPromise<A, E | EnterpriseBadRequest>;
@@ -989,9 +1021,9 @@ const download = (
       const response = yield* client.execute(
         HttpClientRequest.make(method)(requestPath, {
           headers: {
-            ...enterpriseRequestHeaders(grant, approval),
+            ...enterpriseRequestHeaders(grant, approval, options),
             ...options.headers,
-            ...enterpriseSecurityHeaders(method, enterpriseRequestOrigin()),
+            ...enterpriseSecurityHeaders(method, enterpriseRequestOrigin(options)),
           },
           ...(options.body === undefined ? {} : { body: HttpBody.jsonUnsafe(options.body) }),
         }),
@@ -1019,7 +1051,7 @@ const download = (
       return web;
     });
 
-    return Effect.runPromise(effect.pipe(Effect.provide(webHttpClientLayer)));
+    return Effect.runPromise(effect.pipe(Effect.provide(options.transport ?? webHttpClientLayer)));
   }, options);
 
 function endpoint<A, E>(
@@ -1027,8 +1059,8 @@ function endpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) =>
-      Effect.map(clientEffect(headers), (client) => ({
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => ({
         ...client.EnterpriseApi,
         ...client.EnterpriseApplication,
         ...client.EnterpriseSoftwareCatalogue,
@@ -1050,7 +1082,8 @@ function accountEndpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseAccount),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseAccount),
     call,
     options,
   );
@@ -1060,7 +1093,8 @@ function adminEndpoint<A, E>(
   call: (api: EnterpriseAdminClient) => Effect.Effect<A, E, never>,
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseAdmin),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseAdmin),
     call,
   );
 }
@@ -1070,7 +1104,8 @@ function attributeEndpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseAttribute),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseAttribute),
     call,
     options,
   );
@@ -1080,7 +1115,8 @@ function dashboardEndpoint<A, E>(
   call: (api: EnterpriseDashboardClient) => Effect.Effect<A, E, never>,
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseDashboard),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseDashboard),
     call,
   );
 }
@@ -1090,7 +1126,8 @@ function userEndpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseUser),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseUser),
     call,
     options,
   );
@@ -1101,7 +1138,8 @@ function identityEndpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseIdentity),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseIdentity),
     call,
     options,
   );
@@ -1111,7 +1149,8 @@ function softwareUpdateEndpoint<A, E>(
   call: (api: EnterpriseSoftwareUpdateClient) => Effect.Effect<A, E, never>,
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseSoftwareUpdate),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseSoftwareUpdate),
     call,
   );
 }
@@ -1121,7 +1160,8 @@ function osPolicyEndpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseOsPolicy),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseOsPolicy),
     call,
     options,
   );
@@ -1132,7 +1172,8 @@ function cutoverEndpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseCutover),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseCutover),
     call,
     options,
   );
@@ -1142,7 +1183,8 @@ function listEndpoint<A, E>(
   call: (api: EnterpriseListClient) => Effect.Effect<A, E, never>,
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseList),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseList),
     call,
   );
 }
@@ -1151,7 +1193,8 @@ function windowsEndpoint<A, E>(
   call: (api: EnterpriseWindowsClient) => Effect.Effect<A, E, never>,
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(clientEffect(headers), (client) => client.EnterpriseWindows),
+    (headers, context) =>
+      Effect.map(clientEffect(headers, context), (client) => client.EnterpriseWindows),
     call,
   );
 }
@@ -1161,7 +1204,8 @@ function migrationEndpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(migrationClientEffect(headers), (client) => client.FleetMigration),
+    (headers, context) =>
+      Effect.map(migrationClientEffect(headers, context), (client) => client.FleetMigration),
     call,
     options,
   );
@@ -1176,8 +1220,11 @@ function restrictedSoftwareEndpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) =>
-      Effect.map(restrictedSoftwareClientEffect(headers), (client) => client.RestrictedSoftwareApi),
+    (headers, context) =>
+      Effect.map(
+        restrictedSoftwareClientEffect(headers, context),
+        (client) => client.RestrictedSoftwareApi,
+      ),
     call,
     options,
   );
@@ -1188,7 +1235,8 @@ function scriptEndpoint<A, E>(
   options: EndpointStepUp = { stepUp: false },
 ): EndpointPromise<A, E | EnterpriseBadRequest> {
   return endpointWith(
-    (headers) => Effect.map(scriptClientEffect(headers), (client) => client.ScriptApi),
+    (headers, context) =>
+      Effect.map(scriptClientEffect(headers, context), (client) => client.ScriptApi),
     call,
     options,
   );
@@ -1263,10 +1311,11 @@ export const enterprise = {
    * typed address and the ownership/membership rules, so the result is not
    * trusted from the preview alone.
    */
-  deleteAccount: (payload: { confirmEmail: string }) =>
-    accountEndpoint((api) => api.deleteMe({ payload })),
+  deleteAccount: (payload: { confirmEmail: string }, context: EnterpriseRequestContext = {}) =>
+    accountEndpoint((api) => api.deleteMe({ payload }), { ...context }),
   /** Account-level profile fields, including the default landing tenant. */
-  updateMe: (payload: UpdateMeRequest) => accountEndpoint((api) => api.updateMe({ payload })),
+  updateMe: (payload: UpdateMeRequest, context: EnterpriseRequestContext = {}) =>
+    accountEndpoint((api) => api.updateMe({ payload }), { ...context }),
   /** Platform operator catalogue; the API rejects non-superadmins. */
   listAdminAccounts: (query: AdminAccountsQuery = {}) =>
     adminEndpoint((api) => api.listAdminAccounts({ query })),
@@ -1279,7 +1328,8 @@ export const enterprise = {
     ),
   getEnrollment: (id: RouteParam, code?: string) =>
     endpoint((api) => api.getEnrollment({ params: { id: required(id, "id") }, query: { code } })),
-  listTenants: () => endpoint((api) => api.listTenants({})),
+  listTenants: (context: EnterpriseRequestContext = {}) =>
+    endpoint((api) => api.listTenants({}), { ...context }),
   createTenant: (payload: {
     name: string;
     slug: string;
@@ -1393,16 +1443,23 @@ export const enterprise = {
     ),
   getTenant: (tenantId: RouteParam) =>
     endpoint((api) => api.getTenant({ params: { tenantId: required(tenantId, "tenantId") } })),
-  getTenantOnboarding: (tenantId: RouteParam) =>
-    endpoint((api) =>
-      api.getTenantOnboarding({ params: { tenantId: required(tenantId, "tenantId") } }),
+  getTenantOnboarding: (tenantId: RouteParam, context: EnterpriseRequestContext = {}) =>
+    endpoint(
+      (api) => api.getTenantOnboarding({ params: { tenantId: required(tenantId, "tenantId") } }),
+      { ...context },
     ),
-  patchTenantOnboarding: (tenantId: RouteParam, dismissed: boolean) =>
-    endpoint((api) =>
-      api.patchTenantOnboarding({
-        params: { tenantId: required(tenantId, "tenantId") },
-        payload: { dismissed },
-      }),
+  patchTenantOnboarding: (
+    tenantId: RouteParam,
+    dismissed: boolean,
+    context: EnterpriseRequestContext = {},
+  ) =>
+    endpoint(
+      (api) =>
+        api.patchTenantOnboarding({
+          params: { tenantId: required(tenantId, "tenantId") },
+          payload: { dismissed },
+        }),
+      { ...context },
     ),
   patchTenant: (
     tenantId: RouteParam,
@@ -1425,42 +1482,55 @@ export const enterprise = {
     endpoint((api) => api.deleteTenant({ params: { tenantId: required(tenantId, "tenantId") } }), {
       stepUp: "tenant-delete",
     }),
-  list: <E extends Entity>(tenantId: RouteParam, entity: E, _group?: string) =>
-    endpoint((api) => {
-      const params = { tenantId: required(tenantId, "tenantId") };
+  list: <E extends Entity>(
+    tenantId: RouteParam,
+    entity: E,
+    _group?: string,
+    context: EnterpriseRequestContext = {},
+  ) =>
+    endpoint(
+      (api) => {
+        const params = { tenantId: required(tenantId, "tenantId") };
 
-      if (entity === "device")
-        // SAFETY: the `"device"` branch selects the device endpoint, so its rows
+        if (entity === "device")
+          // SAFETY: the `"device"` branch selects the device endpoint, so its rows
+          // are exactly `RowFor<E>` for the caller's entity type parameter.
+          return api.listDevices({ params }) as Effect.Effect<
+            { rows: RowFor<E>[] },
+            Effect.Error<ReturnType<typeof api.listDevices>>,
+            never
+          >;
+
+        if (entity === "group")
+          // SAFETY: the `"group"` branch selects the group endpoint, so its rows
+          // are exactly `RowFor<E>` for the caller's entity type parameter.
+          return api.listGroups({ params }) as Effect.Effect<
+            { rows: RowFor<E>[] },
+            Effect.Error<ReturnType<typeof api.listGroups>>,
+            never
+          >;
+
+        // SAFETY: the remaining branch selects the policy endpoint, so its rows
         // are exactly `RowFor<E>` for the caller's entity type parameter.
-        return api.listDevices({ params }) as Effect.Effect<
+        return api.listPolicies({ params }) as Effect.Effect<
           { rows: RowFor<E>[] },
-          Effect.Error<ReturnType<typeof api.listDevices>>,
+          Effect.Error<ReturnType<typeof api.listPolicies>>,
           never
         >;
-
-      if (entity === "group")
-        // SAFETY: the `"group"` branch selects the group endpoint, so its rows
-        // are exactly `RowFor<E>` for the caller's entity type parameter.
-        return api.listGroups({ params }) as Effect.Effect<
-          { rows: RowFor<E>[] },
-          Effect.Error<ReturnType<typeof api.listGroups>>,
-          never
-        >;
-
-      // SAFETY: the remaining branch selects the policy endpoint, so its rows
-      // are exactly `RowFor<E>` for the caller's entity type parameter.
-      return api.listPolicies({ params }) as Effect.Effect<
-        { rows: RowFor<E>[] },
-        Effect.Error<ReturnType<typeof api.listPolicies>>,
-        never
-      >;
-    }),
+      },
+      { ...context },
+    ),
   /** Tenant-scoped device/group/policy search used by the command palette. */
   search: (tenantId: RouteParam, query: { q?: string; limit?: number } = {}) =>
     endpoint((api) => api.search({ params: { tenantId: required(tenantId, "tenantId") }, query })),
-  searchDevices: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
-    endpoint((api) =>
-      api.searchDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+  searchDevices: (
+    tenantId: RouteParam,
+    query: DeviceSearchQuery = {},
+    context: EnterpriseRequestContext = {},
+  ) =>
+    endpoint(
+      (api) => api.searchDevices({ params: { tenantId: required(tenantId, "tenantId") }, query }),
+      { ...context },
     ),
   /** Named device-list views visible to the caller, including their default. */
   listDeviceViews: (tenantId: RouteParam) =>
@@ -3799,7 +3869,10 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.listAdminAccounts(query),
     }),
   tenants: () =>
-    enterpriseQueryOptions({ queryKey: enterpriseKeys.tenants(), queryFn: enterprise.listTenants }),
+    enterpriseQueryOptions({
+      queryKey: enterpriseKeys.tenants(),
+      queryFn: () => enterprise.listTenants(),
+    }),
   tenant: (tenantId: RouteParam) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.tenant(tenantId),
@@ -3842,17 +3915,26 @@ export const enterpriseQueries = {
       queryFn: () => enterprise.getPolicyVariables(tenantId),
       enabled: Boolean(tenantId),
     }),
-  list: <E extends Entity>(tenantId: RouteParam, entity: E, group?: string) =>
+  list: <E extends Entity>(
+    tenantId: RouteParam,
+    entity: E,
+    group?: string,
+    context: EnterpriseRequestContext = {},
+  ) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.list(tenantId, entity, group),
-      queryFn: () => enterprise.list(tenantId, entity, group),
+      queryFn: () => enterprise.list(tenantId, entity, group, context),
       onData: (data, client) => cacheEntityRows(client, tenantId, entity, data.rows),
       enabled: Boolean(tenantId),
     }),
-  deviceSearch: (tenantId: RouteParam, query: DeviceSearchQuery = {}) =>
+  deviceSearch: (
+    tenantId: RouteParam,
+    query: DeviceSearchQuery = {},
+    context: EnterpriseRequestContext = {},
+  ) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.deviceSearch(tenantId, query),
-      queryFn: () => enterprise.searchDevices(tenantId, query),
+      queryFn: () => enterprise.searchDevices(tenantId, query, context),
       onData: (data, client) => cacheEntityRows(client, tenantId, "device", data.devices),
       enabled: Boolean(tenantId),
     }),
@@ -3873,10 +3955,10 @@ export const enterpriseQueries = {
    * kept fresh on every mount because the steps are derived from resources the
    * user may have just created on another page.
    */
-  onboarding: (tenantId: RouteParam) =>
+  onboarding: (tenantId: RouteParam, context: EnterpriseRequestContext = {}) =>
     enterpriseQueryOptions({
       queryKey: enterpriseKeys.onboarding(tenantId),
-      queryFn: () => enterprise.getTenantOnboarding(tenantId),
+      queryFn: () => enterprise.getTenantOnboarding(tenantId, context),
       enabled: Boolean(tenantId) && !isServer,
       staleTime: 0,
       refetchOnMount: "always",

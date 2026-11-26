@@ -1,4 +1,4 @@
-import { Effect, Exit, Fiber, Layer, Schema } from "effect";
+import { Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { TestClock } from "effect/testing";
 import { describe, expect, it } from "vitest";
@@ -69,13 +69,20 @@ describe("ApiClient", () => {
   });
 
   it("times out an injected transport with TestClock", async () => {
-    const client = HttpClient.make(() => Effect.never);
+    // Gate the clock on the transport actually starting. A fork plus TestClock's
+    // internal yield is not a reliable barrier under CPU contention: the 15s
+    // deadline might not be installed before virtual time is advanced.
+    const started = Deferred.makeUnsafe<void>();
+    const client = HttpClient.make(() =>
+      Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+    );
     const program = Effect.gen(function* () {
       const fiber = yield* Effect.forkChild(
         ApiClient.pipe(
           Effect.flatMap((api) => api.execute(HttpClientRequest.get("https://api.test/slow"))),
         ),
       );
+      yield* Deferred.await(started);
       yield* TestClock.adjust(API_TIMEOUT_MILLIS);
       const exit = yield* Fiber.await(fiber);
 

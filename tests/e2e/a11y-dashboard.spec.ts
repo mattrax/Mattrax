@@ -78,13 +78,30 @@ const expectNoViolations = async (
 ) => {
   // Entrance animations and delayed transitions change contrast while they
   // run. Poll the scan itself: the assertion retries on the thing it cares
-  // about instead of guessing how long the page needs to settle.
+  // about instead of guessing how long the page needs to settle. An include
+  // selector must exist before axe runs or the scan throws instead of retrying.
+  if (options.include) await expect(page.locator(options.include).first()).toBeVisible();
   await expect
     .poll(
       async () => {
-        const violations = await violationsFor(page, options.include, options.allow);
+        try {
+          const violations = await violationsFor(page, options.include, options.allow);
 
-        return { context, violations };
+          return { context, violations };
+        } catch (error) {
+          // An overlay can close between the visibility wait and axe's scan.
+          // Re-open it on the next poll instead of failing the whole test.
+          if (String(error).includes("No elements found for include")) {
+            if (options.include) await expect(page.locator(options.include).first()).toBeVisible();
+
+            return {
+              context,
+              violations: [{ rule: "__overlay_not_ready__", impact: null, help: "", targets: [] }],
+            };
+          }
+
+          throw error;
+        }
       },
       { timeout: 15_000 },
     )
@@ -324,10 +341,20 @@ test.describe("dashboard accessibility", () => {
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/policies$`));
     await expect(page.locator("#main")).toBeFocused();
 
-    // Selection changes are announced from the bulk action bar.
+    // Selection changes are announced from the bulk action bar. Wait for the
+    // table to finish loading first: a late row refresh overwrites the live
+    // region with its own count and would hide the selection announcement.
     await gotoHydrated(page, `/t/${tenant.id}/groups`);
-    await page.getByLabel("Select Announce group").check();
-    await expect(page.getByRole("status").filter({ hasText: "1 selected" })).toBeVisible();
+    const statusTexts = () => page.getByRole("status").allTextContents();
+    await expect
+      .poll(statusTexts)
+      .toEqual(expect.arrayContaining([expect.stringMatching(/rows? shown/)]));
+    const select = page.getByLabel("Select Announce group");
+    await select.check();
+    await expect(select).toBeChecked();
+    await expect
+      .poll(statusTexts)
+      .toEqual(expect.arrayContaining([expect.stringMatching(/1 selected/)]));
 
     // The document title names the page and the tenant.
     await expect(page).toHaveTitle(/Groups · .+ · Mattrax/);

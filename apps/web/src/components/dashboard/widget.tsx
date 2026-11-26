@@ -1,5 +1,6 @@
 import { useQueries, useQuery } from "@tanstack/solid-query";
 import type {
+  DashboardQueryBatchResponse,
   DashboardQueryRequest,
   DashboardQueryResponse,
   DashboardQueryRow,
@@ -283,6 +284,34 @@ type DashboardWidgetBatchContextValue = {
 const DashboardWidgetBatchContext = createContext<DashboardWidgetBatchContextValue>();
 
 /**
+ * Injectable widget query dependencies. Rendering a widget in isolation
+ * (tests, design previews) should not require a QueryClient or an API; provide
+ * fakes here instead of replacing the query or enterprise modules.
+ */
+export type DashboardWidgetServices = {
+  readonly useQueries: typeof useQueries;
+  readonly useQuery: typeof useQuery;
+  readonly queryDashboard: (
+    tenantId: string,
+    request: DashboardQueryRequest,
+  ) => Promise<DashboardQueryResponse>;
+  readonly queryDashboardBatch: (
+    tenantId: string,
+    requests: ReadonlyArray<DashboardQueryRequest>,
+  ) => Promise<DashboardQueryBatchResponse>;
+};
+
+const defaultWidgetServices: DashboardWidgetServices = {
+  useQueries,
+  useQuery,
+  queryDashboard: (tenantId, request) => enterprise.queryDashboard(tenantId, request),
+  queryDashboardBatch: (tenantId, requests) => enterprise.queryDashboardBatch(tenantId, requests),
+};
+
+/** Provider for the widget query seams; defaults to the live implementations. */
+export const DashboardWidgetServicesProvider = createContext(defaultWidgetServices);
+
+/**
  * Fetch every widget on a dashboard with one request.
  *
  * The provider is rendered only once the dashboard itself has loaded, so its
@@ -315,10 +344,11 @@ export function DashboardWidgetBatchProvider(props: {
     ...(previewRequested() ? groupsFor("preview", { preview: true }) : []),
   ]);
 
-  const batches = useQueries(() => ({
+  const services = useContext(DashboardWidgetServicesProvider);
+  const batches = services.useQueries(() => ({
     queries: activeGroups().map(({ queries }) => ({
       queryKey: enterpriseKeys.dashboardQueryBatch(props.tenantId, queries),
-      queryFn: () => enterprise.queryDashboardBatch(props.tenantId, queries),
+      queryFn: () => services.queryDashboardBatch(props.tenantId, queries),
     })),
   }));
 
@@ -412,9 +442,10 @@ export function DashboardWidgetView(props: {
     return configured && configured.length > 0 ? configured : defaultColumns(dataset());
   });
 
-  const result = useQuery(() => ({
+  const services = useContext(DashboardWidgetServicesProvider);
+  const result = services.useQuery(() => ({
     queryKey: enterpriseKeys.dashboardQuery(props.tenantId, queryRequest()),
-    queryFn: () => enterprise.queryDashboard(props.tenantId, queryRequest()),
+    queryFn: () => services.queryDashboard(props.tenantId, queryRequest()),
     enabled: !isServer && !props.batch && props.widget.type !== "markdown",
   }));
 
@@ -445,11 +476,7 @@ export function DashboardWidgetView(props: {
               <p class="mt-0.5 text-muted-foreground">
                 {errorPresentation(raisedFailure(error())).message}
               </p>
-              <Button
-                type="button"
-                class="mt-2"
-                onClick={() => retry()}
-              >
+              <Button type="button" class="mt-2" onClick={() => retry()}>
                 Try again
               </Button>
             </div>
@@ -467,9 +494,7 @@ export function DashboardWidgetView(props: {
                     <p class="mt-1.5 text-xs text-muted-foreground">
                       {config().label ?? datasetNoun(dataset())}
                     </p>
-                    <p class="mt-0.5 text-xs text-muted-foreground">
-                      {datasetCaption(dataset())}
-                    </p>
+                    <p class="mt-0.5 text-xs text-muted-foreground">{datasetCaption(dataset())}</p>
                   </div>
                 }
               >
@@ -594,9 +619,7 @@ function PieBuckets(props: {
         >
           <div class="absolute inset-1/4 flex flex-col items-center justify-center rounded-full bg-card">
             <span class="text-lg font-semibold leading-none tabular-nums">{props.total}</span>
-            <span class="mt-0.5 text-xs uppercase tracking-wide text-muted-foreground">
-              total
-            </span>
+            <span class="mt-0.5 text-xs uppercase tracking-wide text-muted-foreground">total</span>
           </div>
         </div>
         <div class="min-w-0 flex-1 space-y-1.5">

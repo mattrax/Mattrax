@@ -1,63 +1,134 @@
 // @vitest-environment happy-dom
 import { render } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
-import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  keepPreviousData,
+  queryOptions,
+} from "@tanstack/solid-query";
 import { flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceRow } from "@mattrax/enterprise-domain/client";
-import { enterpriseKeys } from "~/lib/enterprise";
+import {
+  enterprise as realEnterprise,
+  enterpriseKeys,
+  enterpriseQueries as realEnterpriseQueries,
+} from "~/lib/enterprise";
+import { asFake, recorder } from "../../../../../../../../packages/config/testing/recorder.ts";
 import DeviceDetailPage from "./[deviceId]";
 import DevicesPage from "./index";
+import { DevicePageDepsProvider } from "./device-page-deps";
+import type { DevicePageDeps } from "./device-page-deps";
 
-const api = vi.hoisted(() => ({
-  getDevice: vi.fn(),
-  searchDevices: vi.fn(),
-  list: vi.fn(),
-  deviceHandoverImpact: vi.fn(),
-  listDeviceCommands: vi.fn(),
-  getDeviceHealth: vi.fn(),
-  getDeviceActivity: vi.fn(),
-  getDeviceWindowsSecurity: vi.fn(),
-  listDeviceDiagnostics: vi.fn(),
-  listWindowsFailures: vi.fn(),
-  listAttributes: vi.fn(),
-  listDeviceAttributeCollection: vi.fn(),
-  listDirectory: vi.fn(),
-  getDeviceUsers: vi.fn(),
-  listDeviceAppleUsers: vi.fn(),
-  getAppleBusinessManager: vi.fn(),
-  getAbmDevice: vi.fn(),
-  getDeviceEffectivePolicy: vi.fn(),
-  listDeviceApplications: vi.fn(),
-  getDeviceRestrictedSoftware: vi.fn(),
-  patchGroupMembers: vi.fn(),
-  listScopeTags: vi.fn(),
-  listScopeTagAssignments: vi.fn(),
-}));
+const at = "2026-11-24T12:00:00.000Z";
 
-const params = vi.hoisted(() => ({ tenantId: "tenant-1", deviceId: "device-1" }));
+// Recorders replace test spies; every fake is rebuilt per test so no call or
+// implementation leaks into another case.
+const makeApi = () => ({
+  getDevice: recorder<unknown[], Promise<DeviceRow>>(),
+  searchDevices: recorder<unknown[], Promise<{ devices: DeviceRow[]; total: number }>>(
+    async () => ({ devices: [], total: 0 }),
+  ),
+  list: recorder<unknown[], Promise<{ rows: unknown[] }>>(async () => ({ rows: [] })),
+  deviceHandoverImpact: recorder<unknown[], Promise<{ devices: unknown[]; canExport: boolean }>>(
+    async () => ({ devices: [], canExport: true }),
+  ),
+  listDeviceCommands: recorder<unknown[], Promise<{ commands: unknown[] }>>(async () => ({
+    commands: [],
+  })),
+  getDeviceHealth: recorder<unknown[], Promise<unknown>>(async () => ({
+    health: { level: "healthy", reasons: [], lastSeenAt: at, stale: false },
+    declarations: [],
+    certificates: [],
+    managedCertificates: [],
+    push: { configured: false, consecutiveFailures: 0, invalidToken: false },
+  })),
+  getDeviceActivity: recorder<unknown[], Promise<{ events: unknown[]; hasMore: boolean }>>(
+    async () => ({ events: [], hasMore: false }),
+  ),
+  getDeviceWindowsSecurity: recorder<unknown[], Promise<unknown>>(async () => ({
+    platformSupported: true,
+    laps: { supported: true, configured: false, retrievable: false },
+    bitlocker: {
+      encrypted: false,
+      joined: false,
+      rotationInProgress: false,
+      keys: [],
+      escrowMissing: false,
+    },
+  })),
+  listDeviceDiagnostics: recorder<unknown[], Promise<{ supported: boolean; archives: unknown[] }>>(
+    async () => ({ supported: true, archives: [] }),
+  ),
+  listWindowsFailures: recorder<
+    unknown[],
+    Promise<{ retentionDays: number; count: number; failures: unknown[] }>
+  >(async () => ({ retentionDays: 30, count: 0, failures: [] })),
+  listAttributes: recorder<unknown[], Promise<{ rows: unknown[] }>>(async () => ({ rows: [] })),
+  listDeviceAttributeCollection: recorder<unknown[], Promise<{ collection: object }>>(async () => ({
+    collection: {},
+  })),
+  listDirectory: recorder<unknown[], Promise<{ users: unknown[]; groups: unknown[] }>>(
+    async () => ({ users: [], groups: [] }),
+  ),
+  getDeviceUsers: recorder<unknown[], Promise<{ users: unknown[] }>>(async () => ({ users: [] })),
+  listDeviceAppleUsers: recorder<unknown[], Promise<{ users: unknown[]; enrollmentMode: string }>>(
+    async () => ({ users: [], enrollmentMode: "device" }),
+  ),
+  getAppleBusinessManager: recorder<
+    unknown[],
+    Promise<{
+      configured: boolean;
+      status: string;
+      deviceCount: number;
+      assignedCount: number;
+    }>
+  >(async () => ({
+    configured: false,
+    status: "unconfigured",
+    deviceCount: 0,
+    assignedCount: 0,
+  })),
+  getAbmDevice: recorder<unknown[], Promise<unknown>>(async () => {
+    throw new Error("ABM is not configured");
+  }),
+  getDeviceEffectivePolicy: recorder<
+    unknown[],
+    Promise<{
+      configurations: unknown[];
+      policies: unknown[];
+      overridden: unknown[];
+      exclusions: unknown[];
+    }>
+  >(async () => ({ configurations: [], policies: [], overridden: [], exclusions: [] })),
+  listDeviceApplications: recorder<unknown[], Promise<{ applications: unknown[] }>>(async () => ({
+    applications: [],
+  })),
+  getDeviceRestrictedSoftware: recorder<
+    unknown[],
+    Promise<{ violations: unknown[]; rules: unknown[] }>
+  >(async () => ({ violations: [], rules: [] })),
+  patchGroupMembers: recorder<unknown[], Promise<unknown>>(async () => undefined),
+  listScopeTags: recorder<unknown[], Promise<{ tags: unknown[] }>>(async () => ({ tags: [] })),
+  listScopeTagAssignments: recorder<unknown[], Promise<{ assignments: unknown[] }>>(async () => ({
+    assignments: [],
+  })),
+});
 
-vi.mock("@solidjs/router", () => ({
-  useParams: () => params,
-  useSearchParams: () => [() => ({}), vi.fn()],
-  useBeforeLeave: vi.fn(),
-}));
+let api = makeApi();
+let params = { tenantId: "tenant-1", deviceId: "device-1" };
 
-vi.mock("~/lib/navigation", () => ({ useNavigate: () => vi.fn() }));
-vi.mock("~/lib/page-data", () => ({ preloadPage: vi.fn() }));
-vi.mock("~/lib/query-client", () => ({ queryClient: { ensureQueryData: vi.fn() } }));
-vi.mock("~/lib/permissions", () => ({
-  useCan: () => ({ can: () => true, canAny: () => true, canAll: () => true }),
-  ReadOnlyNotice: (props: { children?: JSX.Element }) => <div>{props.children}</div>,
-}));
-vi.mock("~/lib/unsaved-changes", () => ({
-  useUnsavedChanges: () => ({ prompt: null, confirm: (run: () => void) => run() }),
-}));
-vi.mock("~/components/toast", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
-  announce: vi.fn(),
-}));
-vi.mock("~/components/mdm/common", () => ({
+const settled = <T,>(key: readonly unknown[], data: T) =>
+  queryOptions({
+    queryKey: key,
+    queryFn: async () => data,
+    initialData: data,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+// The fake components keep the same DOM shapes the assertions rely on.
+const common = {
   Page: (props: { children?: JSX.Element }) => <main>{props.children}</main>,
   PageHeader: (props: { title: string; children?: JSX.Element }) => (
     <header>
@@ -88,40 +159,23 @@ vi.mock("~/components/mdm/common", () => ({
   formatDate: (value: string) => value,
   relativeTime: (value: string) => value,
   usePresenceNow: () => () => Date.now(),
-}));
-vi.mock("~/components/mdm/table", () => ({
-  MdmTable: (props: {
-    rows?: ReadonlyArray<{ id: string; name?: string }>;
-    loading?: boolean;
-    empty?: JSX.Element;
-  }) => (
-    <div data-testid="devices-table" data-loading={props.loading ? "true" : "false"}>
-      {props.loading
-        ? "Loading rows…"
-        : (props.rows?.length ?? 0) > 0
-          ? props.rows!.map((row) => <div>{row.name}</div>)
-          : props.empty}
-    </div>
-  ),
-}));
-vi.mock("~/components/entity-hover-card", () => ({
-  default: (props: { href: string; children?: JSX.Element }) => (
-    <a href={props.href}>{props.children}</a>
-  ),
-}));
-vi.mock("~/components/mdm/entity-actions", () => ({ EntityActions: () => null }));
-vi.mock("~/components/dashboard/query-builder", () => ({ DeviceQueryBuilder: () => null }));
-vi.mock("~/components/scope-tags/scope-tag-select", () => ({
-  ScopeTagAssignmentEditor: () => <div>Scope tag assignment</div>,
-}));
-vi.mock("~/components/mdm/device-handover-dialog", () => ({
-  DeviceHandoverDialog: () => null,
-  deviceHandoverSecretSummary: (kinds: ReadonlyArray<string>) => kinds.join(", "),
-}));
-vi.mock("~/components/dashboard/markdown", () => ({ default: () => null }));
-vi.mock("~/components/software-update-badge", () => ({ SoftwareUpdateTag: () => null }));
-vi.mock("~/components/os-compliance-badge", () => ({ default: () => null }));
-vi.mock("~/components/ui/dialog", () => ({
+};
+
+const MdmTable = (props: {
+  rows?: ReadonlyArray<{ id: string; name?: string }>;
+  loading?: boolean;
+  empty?: JSX.Element;
+}) => (
+  <div data-testid="devices-table" data-loading={props.loading ? "true" : "false"}>
+    {props.loading
+      ? "Loading rows…"
+      : (props.rows?.length ?? 0) > 0
+        ? props.rows!.map((row) => <div>{row.name}</div>)
+        : props.empty}
+  </div>
+);
+
+const dialogParts = {
   Dialog: (props: { open?: boolean; children?: JSX.Element }) => (
     <>{props.open ? <div role="dialog">{props.children}</div> : null}</>
   ),
@@ -130,38 +184,61 @@ vi.mock("~/components/ui/dialog", () => ({
   DialogFooter: (props: { children?: JSX.Element }) => <footer>{props.children}</footer>,
   DialogHeader: (props: { children?: JSX.Element }) => <header>{props.children}</header>,
   DialogTitle: (props: { children?: JSX.Element }) => <h2>{props.children}</h2>,
-}));
-vi.mock("~/components/ui/sheet", () => ({
-  Sheet: (props: { open?: boolean; children?: JSX.Element }) => (
-    <>{props.open ? <div role="dialog">{props.children}</div> : null}</>
-  ),
-  SheetContent: (props: { children?: JSX.Element }) => <div>{props.children}</div>,
-  SheetDescription: (props: { children?: JSX.Element }) => <p>{props.children}</p>,
-  SheetFooter: (props: { children?: JSX.Element }) => <footer>{props.children}</footer>,
-  SheetHeader: (props: { children?: JSX.Element }) => <header>{props.children}</header>,
-  SheetTitle: (props: { children?: JSX.Element }) => <h2>{props.children}</h2>,
-}));
-vi.mock("~/components/ui/tooltip", () => ({
+};
+
+const sheetParts = {
+  Sheet: dialogParts.Dialog,
+  SheetContent: dialogParts.DialogContent,
+  SheetDescription: dialogParts.DialogDescription,
+  SheetFooter: dialogParts.DialogFooter,
+  SheetHeader: dialogParts.DialogHeader,
+  SheetTitle: dialogParts.DialogTitle,
+};
+
+const tooltipParts = {
   Tooltip: (props: { children?: JSX.Element }) => <>{props.children}</>,
   TooltipTrigger: (props: { children?: JSX.Element }) => <>{props.children}</>,
   TooltipContent: (props: { children?: JSX.Element }) => <>{props.children}</>,
-}));
+};
 
-vi.mock("~/lib/enterprise", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("~/lib/enterprise")>();
-  const { keepPreviousData, queryOptions } = await import("@tanstack/solid-query");
-  const settled = <T,>(key: readonly unknown[], data: T) =>
-    queryOptions({
-      queryKey: key,
-      queryFn: async () => data,
-      initialData: data,
-      staleTime: Number.POSITIVE_INFINITY,
-    });
-
-  return {
-    ...actual,
+/** Dependencies are injected through context, not by intercepting modules. */
+const makeDeps = (): DevicePageDeps =>
+  asFake<DevicePageDeps>({
+    router: {
+      useParams: () => params,
+      useSearchParams: () => [() => ({}), () => undefined],
+      useNavigate: () => recorder(),
+    },
+    preloadPage: () => [],
+    queryClient: { ensureQueryData: recorder() },
+    permissions: {
+      useCan: () => ({ can: () => true, canAny: () => true, canAll: () => true }),
+      ReadOnlyNotice: (props: { children?: JSX.Element }) => <div>{props.children}</div>,
+    },
+    unsavedChanges: {
+      useUnsavedChanges: () => ({ prompt: null, confirm: (run: () => void) => run() }),
+    },
+    toast: { success: recorder(), error: recorder(), warning: recorder() },
+    common,
+    table: { MdmTable },
+    hoverCard: (props: { href: string; children?: JSX.Element }) => (
+      <a href={props.href}>{props.children}</a>
+    ),
+    entityActions: () => null,
+    queryBuilder: { DeviceQueryBuilder: () => null },
+    scopeTags: { ScopeTagAssignmentEditor: () => <div>Scope tag assignment</div> },
+    handover: {
+      DeviceHandoverDialog: () => null,
+      deviceHandoverSecretSummary: (kinds: ReadonlyArray<string>) => kinds.join(", "),
+    },
+    markdown: () => null,
+    softwareUpdate: { SoftwareUpdateTag: () => null },
+    osCompliance: () => null,
+    dialog: dialogParts,
+    sheet: sheetParts,
+    tooltip: tooltipParts,
     enterprise: {
-      ...actual.enterprise,
+      ...realEnterprise,
       get: api.getDevice,
       searchDevices: api.searchDevices,
       list: api.list,
@@ -187,40 +264,38 @@ vi.mock("~/lib/enterprise", async (importOriginal) => {
       listScopeTagAssignments: api.listScopeTagAssignments,
     },
     enterpriseQueries: {
-      ...actual.enterpriseQueries,
+      ...realEnterpriseQueries,
       deviceSearch: (
         tenantId: string | undefined,
-        query: Parameters<typeof actual.enterpriseQueries.deviceSearch>[1] = {},
+        query: Parameters<typeof realEnterpriseQueries.deviceSearch>[1] = {},
       ) =>
         queryOptions({
-          queryKey: actual.enterpriseKeys.deviceSearch(tenantId, query),
+          queryKey: enterpriseKeys.deviceSearch(tenantId, query),
           queryFn: () => api.searchDevices(tenantId, query),
           enabled: Boolean(tenantId),
           placeholderData: keepPreviousData,
         }),
-      list: (
-        tenantId: string | undefined,
-        entity: Parameters<typeof actual.enterpriseKeys.list>[1],
-      ) => settled(actual.enterpriseKeys.list(tenantId, entity), { rows: [] }),
+      list: (tenantId: string | undefined, entity: Parameters<typeof enterpriseKeys.list>[1]) =>
+        settled(enterpriseKeys.list(tenantId, entity), { rows: [] }),
       attributes: (tenantId: string | undefined) =>
-        settled(actual.enterpriseKeys.attributes(tenantId), { rows: [] }),
+        settled(enterpriseKeys.attributes(tenantId), { rows: [] }),
       deviceUsers: (tenantId: string | undefined, deviceId: string | undefined) =>
-        settled(actual.enterpriseKeys.deviceUsers(tenantId, deviceId), { users: [] }),
+        settled(enterpriseKeys.deviceUsers(tenantId, deviceId), { users: [] }),
       directory: (tenantId: string | undefined) =>
-        settled(actual.enterpriseKeys.directory(tenantId), { users: [], groups: [] }),
+        settled(enterpriseKeys.directory(tenantId), { users: [], groups: [] }),
       deviceAppleUsers: (tenantId: string | undefined, deviceId: string | undefined) =>
-        settled(actual.enterpriseKeys.deviceAppleUsers(tenantId, deviceId), {
+        settled(enterpriseKeys.deviceAppleUsers(tenantId, deviceId), {
           users: [],
           enrollmentMode: "device",
         }),
       deviceWindowsFailures: (tenantId: string | undefined, deviceId: string | undefined) =>
         queryOptions({
-          queryKey: actual.enterpriseKeys.windowsFailures(tenantId, deviceId),
+          queryKey: enterpriseKeys.windowsFailures(tenantId, deviceId),
           queryFn: () => api.listWindowsFailures(tenantId, { deviceId, limit: 5 }),
           enabled: Boolean(tenantId && deviceId),
         }),
       deviceEffectivePolicy: (tenantId: string | undefined, deviceId: string | undefined) =>
-        settled(actual.enterpriseKeys.deviceEffectivePolicy(tenantId, deviceId), {
+        settled(enterpriseKeys.deviceEffectivePolicy(tenantId, deviceId), {
           deviceId: deviceId ?? "",
           configurations: [],
           policies: [],
@@ -228,42 +303,37 @@ vi.mock("~/lib/enterprise", async (importOriginal) => {
           exclusions: [],
         }),
       deviceApplications: (tenantId: string | undefined, deviceId: string | undefined) =>
-        settled(actual.enterpriseKeys.deviceApplications(tenantId, deviceId), {
-          applications: [],
-        }),
+        settled(enterpriseKeys.deviceApplications(tenantId, deviceId), { applications: [] }),
       deviceRestrictedSoftware: (tenantId: string | undefined, deviceId: string | undefined) =>
-        settled(actual.enterpriseKeys.deviceRestrictedSoftware(tenantId, deviceId), {
+        settled(enterpriseKeys.deviceRestrictedSoftware(tenantId, deviceId), {
           violations: [],
           rules: [],
         }),
       scopeTags: (tenantId: string | undefined) =>
-        settled(actual.enterpriseKeys.scopeTags(tenantId), { tags: [] }),
+        settled(enterpriseKeys.scopeTags(tenantId), { tags: [] }),
       scopeTagAssignments: (
         tenantId: string | undefined,
         resourceType: string,
         resourceIds?: ReadonlyArray<string>,
       ) =>
         settled(
-          actual.enterpriseKeys.scopeTagAssignments(tenantId, resourceType, resourceIds?.join(",")),
+          enterpriseKeys.scopeTagAssignments(tenantId, resourceType, resourceIds?.join(",")),
           { assignments: [] },
         ),
       abmDevice: (tenantId: string | undefined, serial: string | undefined) =>
         queryOptions({
-          queryKey: actual.enterpriseKeys.abmDevice(tenantId, serial),
+          queryKey: enterpriseKeys.abmDevice(tenantId, serial),
           queryFn: api.getAbmDevice,
           enabled: false,
         }),
       abm: (tenantId: string | undefined) =>
         queryOptions({
-          queryKey: actual.enterpriseKeys.abm(tenantId),
+          queryKey: enterpriseKeys.abm(tenantId),
           queryFn: () => api.getAppleBusinessManager(tenantId),
           enabled: Boolean(tenantId),
         }),
     },
-  };
-});
-
-const at = "2026-11-24T12:00:00.000Z";
+  });
 
 const deferred = <A,>() => {
   let resolve!: (value: A) => void;
@@ -283,6 +353,8 @@ const makeClient = () =>
     },
   });
 
+const cleanups: Array<() => void> = [];
+
 const mount = (node: () => JSX.Element, client: QueryClient) => {
   cleanups.push(() => {
     dispose();
@@ -292,14 +364,16 @@ const mount = (node: () => JSX.Element, client: QueryClient) => {
   const host = document.createElement("div");
   document.body.append(host);
   const dispose = render(
-    () => <QueryClientProvider client={client}>{node()}</QueryClientProvider>,
+    () => (
+      <QueryClientProvider client={client}>
+        <DevicePageDepsProvider value={makeDeps()}>{node()}</DevicePageDepsProvider>
+      </QueryClientProvider>
+    ),
     host,
   );
 
   return { host, dispose };
 };
-
-const cleanups: Array<() => void> = [];
 
 const seedDeviceSummary = (client: QueryClient, row: DeviceRow) => {
   client.setQueryData(enterpriseKeys.entitySummary(params.tenantId, "device", row.id), {
@@ -314,67 +388,13 @@ const textButton = (host: HTMLElement, label: string) =>
   [...host.querySelectorAll("button")].find((button) => button.textContent?.trim() === label);
 
 beforeEach(() => {
-  params.tenantId = "tenant-1";
-  params.deviceId = "device-1";
-  api.getDevice.mockReset();
-  api.searchDevices.mockReset().mockResolvedValue({ devices: [], total: 0 });
-  api.list.mockReset().mockResolvedValue({ rows: [] });
-  api.deviceHandoverImpact.mockResolvedValue({ devices: [], canExport: true });
-  api.listDeviceCommands.mockResolvedValue({ commands: [] });
-  api.getDeviceHealth.mockResolvedValue({
-    health: { level: "healthy", reasons: [], lastSeenAt: at, stale: false },
-    declarations: [],
-    certificates: [],
-    managedCertificates: [],
-    push: {
-      configured: false,
-      consecutiveFailures: 0,
-      invalidToken: false,
-    },
-  });
-  api.getDeviceActivity.mockResolvedValue({ events: [], hasMore: false });
-  api.getDeviceWindowsSecurity.mockResolvedValue({
-    platformSupported: true,
-    laps: { supported: true, configured: false, retrievable: false },
-    bitlocker: {
-      encrypted: false,
-      joined: false,
-      rotationInProgress: false,
-      keys: [],
-      escrowMissing: false,
-    },
-  });
-  api.listDeviceDiagnostics.mockResolvedValue({ supported: true, archives: [] });
-  api.listWindowsFailures.mockResolvedValue({ retentionDays: 30, count: 0, failures: [] });
-  api.listAttributes.mockResolvedValue({ rows: [] });
-  api.listDeviceAttributeCollection.mockResolvedValue({ collection: {} });
-  api.listDirectory.mockResolvedValue({ users: [], groups: [] });
-  api.getDeviceUsers.mockResolvedValue({ users: [] });
-  api.listDeviceAppleUsers.mockResolvedValue({ users: [], enrollmentMode: "device" });
-  api.getAppleBusinessManager.mockResolvedValue({
-    configured: false,
-    status: "unconfigured",
-    deviceCount: 0,
-    assignedCount: 0,
-  });
-  api.getAbmDevice.mockRejectedValue(new Error("ABM is not configured"));
-  api.getDeviceEffectivePolicy.mockResolvedValue({
-    configurations: [],
-    policies: [],
-    overridden: [],
-    exclusions: [],
-  });
-  api.listDeviceApplications.mockResolvedValue({ applications: [] });
-  api.getDeviceRestrictedSoftware.mockResolvedValue({ violations: [], rules: [] });
-  api.patchGroupMembers.mockReset().mockResolvedValue(undefined);
-  api.listScopeTags.mockResolvedValue({ tags: [] });
-  api.listScopeTagAssignments.mockResolvedValue({ assignments: [] });
+  params = { tenantId: "tenant-1", deviceId: "device-1" };
+  api = makeApi();
 });
 
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
   document.body.replaceChildren();
-  vi.clearAllMocks();
 });
 
 describe("device detail async boundary", () => {
@@ -588,7 +608,9 @@ describe("device detail async boundary", () => {
       "groups",
       "MEMBERSHIP-SERIAL",
     ] as const;
-    api.patchGroupMembers.mockImplementationOnce(() => {
+    // The two deferred calls above used one-shot return values; the recorder's
+    // persistent implementation now handles this final, fast rejection.
+    api.patchGroupMembers.mockImplementation(() => {
       const current = client.getQueryData<{
         groups: ReadonlyArray<{ id: string }>;
       }>(membershipKey);

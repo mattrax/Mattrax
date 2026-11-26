@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 const settingsNav = (page: import("@playwright/test").Page) =>
   page.getByRole("navigation", { name: "Tenant settings sections" });
@@ -32,7 +32,7 @@ async function expectWebhookView(page: Page, view: "endpoints" | "deliveries") {
 
 test.describe("settings pane scrolling", () => {
   test("resets the content scroll and keeps the masthead fixed", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Settings Scroll");
+    const { tenant } = await bootstrapSession(page, "Settings Scroll");
     const base = `/t/${tenant.slug}`;
 
     await gotoHydrated(page, `${base}/settings/legal`);
@@ -61,7 +61,7 @@ test.describe("settings pane scrolling", () => {
 
 test.describe("settings section tabs", () => {
   test("activates Endpoints and Deliveries on click", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Settings Tabs");
+    const { tenant } = await bootstrapSession(page, "Settings Tabs");
     await gotoHydrated(page, `/t/${tenant.slug}/settings/integrations`);
 
     const tablist = page.getByRole("tablist", { name: "Webhook views" });
@@ -76,7 +76,7 @@ test.describe("settings section tabs", () => {
   });
 
   test("automatically activates tabs with arrows, Home and End", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Settings Tabs Keyboard");
+    const { tenant } = await bootstrapSession(page, "Settings Tabs Keyboard");
     await gotoHydrated(page, `/t/${tenant.slug}/settings/integrations`);
 
     const tablist = page.getByRole("tablist", { name: "Webhook views" });
@@ -110,7 +110,7 @@ test.describe("settings section tabs", () => {
   });
 
   test("restores the Deliveries view from its URL", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Settings Tabs URL");
+    const { tenant } = await bootstrapSession(page, "Settings Tabs URL");
     await gotoHydrated(page, `/t/${tenant.slug}/settings/integrations?view=deliveries`);
 
     await expectWebhookView(page, "deliveries");

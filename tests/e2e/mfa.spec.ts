@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import {
   bootstrapTenant,
   confirmStepUp,
@@ -80,9 +81,14 @@ test.describe("authenticator MFA", () => {
     expect(body.backups[0]?.retention).toBe("default");
   });
 
-  test("enrolls, requires a pending code, accepts a recovery code, and disables", async ({
-    page,
-  }) => {
+  type EnrolledAccount = {
+    readonly email: string;
+    readonly manualKey: string;
+    readonly recoveryCodes: string[];
+  };
+
+  /** Enroll a fresh account on its own page, so every test owns its state. */
+  async function enrollAuthenticator(page: Page): Promise<EnrolledAccount> {
     const { email } = await register(page);
     await gotoHydrated(page, "/account");
 
@@ -100,7 +106,13 @@ test.describe("authenticator MFA", () => {
     const recoveryCodes = await card.getByText(/^rc1-/).allInnerTexts();
     expect(recoveryCodes.length).toBeGreaterThan(5);
 
+    return { email, manualKey, recoveryCodes };
+  }
+
+  /** Clear the pending TOTP step so a fresh session can use the account. */
+  async function signInWithTotp(page: Page, email: string, manualKey: string) {
     // Enrollment rotates the security revision, so the current session is gone.
+    const card = page.locator("section", { hasText: "Authenticator app" });
     await card.getByRole("button", { name: /sign in again/i }).click();
     await expect(page).toHaveURL(/\/login/);
     await signIn(page, email);
@@ -138,13 +150,32 @@ test.describe("authenticator MFA", () => {
     }
 
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
+  }
 
-    // A recovery code completes the same pending flow and is single use.
+  test("enrolls an authenticator app and lists one-time recovery codes", async ({ page }) => {
+    // enrollAuthenticator checks the manual key format and the recovery-code
+    // list; this test isolates that half of the old single MFA journey.
+    await enrollAuthenticator(page);
+  });
+
+  test("requires a pending TOTP code and retries after a replay boundary", async ({ page }) => {
+    const { email, manualKey } = await enrollAuthenticator(page);
+
+    // signInWithTotp checks the pending prompt, the 401 on /api/v1/me, and the
+    // replay-safe retry before the account reaches a signed-in URL.
+    await signInWithTotp(page, email, manualKey);
+  });
+
+  test("accepts a one-time recovery code in the pending MFA flow", async ({ page }) => {
+    const { email, manualKey, recoveryCodes } = await enrollAuthenticator(page);
+    await signInWithTotp(page, email, manualKey);
+
     await page.getByRole("button", { name: "Account menu" }).click();
     await expect(page.locator("[data-slot=menu-content]")).toBeVisible();
     await page.getByRole("menuitem", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login/);
     await signIn(page, email);
+    // A recovery code completes the same pending flow and is single use.
     await page.getByRole("button", { name: /recovery code/i }).click();
     await page.locator("#mfa-code").fill(recoveryCodes[0]);
     await page.getByRole("button", { name: /^continue$/i }).click();
@@ -165,6 +196,13 @@ test.describe("authenticator MFA", () => {
     }
 
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
+  });
+
+  test("regenerates recovery codes, disables MFA, and signs in without a second factor", async ({
+    page,
+  }) => {
+    const { email, manualKey } = await enrollAuthenticator(page);
+    await signInWithTotp(page, email, manualKey);
 
     // Regenerating and disabling confirm with a passkey and a fresh code.
     await gotoHydrated(page, "/account");
@@ -189,7 +227,8 @@ test.describe("authenticator MFA", () => {
     await confirmStepUp(page);
     await expect(disableCard.getByText(/security settings updated/i)).toBeVisible();
 
-    await page.goto("/login", { waitUntil: "networkidle" });
+    // signIn navigates to /login itself; a separate goto here only adds a
+    // network-idle wait on a page about to be replaced.
     await signIn(page, email);
     await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
     await expect(page.getByText(/two-factor authentication required/i)).toHaveCount(0);

@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installGlobals } from "../../../../packages/config/testing/globals.ts";
 
 const STORAGE_KEY = "mattrax.posthog";
+
+let restoreBrowser = () => {};
 
 /**
  * Browser globals are the thing under test here (pagehide, visibilitychange,
@@ -42,16 +45,19 @@ const setupBrowser = () => {
     return nextFetch?.() ?? Promise.resolve({ ok: true } as Response);
   };
 
-  vi.stubGlobal("localStorage", localStorage);
-  vi.stubGlobal("window", window);
-  vi.stubGlobal("document", document);
-  vi.stubGlobal("location", {
-    href: "https://mattrax.example/t/tenant-1",
-    pathname: "/t/tenant-1",
-    origin: "https://mattrax.example",
+  restoreBrowser();
+  restoreBrowser = installGlobals({
+    localStorage,
+    window,
+    document,
+    location: {
+      href: "https://mattrax.example/t/tenant-1",
+      pathname: "/t/tenant-1",
+      origin: "https://mattrax.example",
+    },
+    navigator: { sendBeacon },
+    fetch,
   });
-  vi.stubGlobal("navigator", { sendBeacon });
-  vi.stubGlobal("fetch", fetch);
 
   return {
     stored,
@@ -80,7 +86,8 @@ describe("PostHog persistence and lifecycle delivery", () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.unstubAllGlobals();
+    restoreBrowser();
+    restoreBrowser = () => {};
   });
 
   it("coalesces event-time writes and flushes the latest session on pagehide", async () => {

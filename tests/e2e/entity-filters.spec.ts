@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { addTextFilter, api, bootstrapTenant, gotoHydrated, removeFilter } from "./helpers";
+import { addTextFilter, api, bootstrapSession, gotoHydrated, removeFilter } from "./helpers";
 
 test.describe("entity table filters", () => {
   test("filters groups from a shareable URL query", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Entity Filter Tenant");
+    const { tenant } = await bootstrapSession(page, "Entity Filter Tenant");
     await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
       body: JSON.stringify({ name: "Alpha Ops" }),
@@ -24,7 +24,7 @@ test.describe("entity table filters", () => {
   });
 
   test("sorts from a column header", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Header Sort Tenant");
+    const { tenant } = await bootstrapSession(page, "Header Sort Tenant");
 
     for (const name of ["Alpha Ops", "Beta Ops"]) {
       await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
@@ -45,7 +45,7 @@ test.describe("entity table filters", () => {
   });
 
   test("searches and selects a large option list with the keyboard", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Virtual Filter Tenant");
+    const { tenant } = await bootstrapSession(page, "Virtual Filter Tenant");
     const options = Array.from(
       { length: 100 },
       (_, index) => `env-${String(index).padStart(2, "0")}`,
@@ -103,7 +103,7 @@ test.describe("entity table filters", () => {
   });
 
   test("adds, edits and removes a filter from the bar", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Filter Bar Tenant");
+    const { tenant } = await bootstrapSession(page, "Filter Bar Tenant");
     await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
       method: "POST",
       body: JSON.stringify({ name: "Alpha Ops" }),

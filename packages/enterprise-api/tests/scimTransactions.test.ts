@@ -1,13 +1,17 @@
 import { Effect, Exit } from "effect";
 import { HttpServerResponse } from "effect/http";
 import { TestClock } from "effect/testing";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { recorder } from "../../config/testing/recorder.ts";
 import { Db } from "@mattrax/enterprise-core";
 import { ScimMembershipNotifier, scimHandler } from "@mattrax/enterprise-api";
 import { makeDb, runEffect } from "./helpers.js";
 
 const tenantId = "tenant-acme";
 const token = "directory-token";
+
+const makeNotifier = () =>
+  recorder((_request: unknown, _response: unknown, _ids: ReadonlyArray<string>) => Effect.void);
 
 const sha256Hex = async (value: string) => {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -165,9 +169,7 @@ describe("SCIM atomic mutations", () => {
     const db = await makeScimDb();
     const user = await createUser(db, "ada@example.com");
     const group = await createGroup(db, [{ value: user.id }]);
-    const notifier = vi.fn(
-      (_request: any, _response: any, _ids: ReadonlyArray<string>) => Effect.void,
-    );
+    const notifier = makeNotifier();
 
     db.failNextWrite("delete", "user_group_member");
 
@@ -184,7 +186,7 @@ describe("SCIM atomic mutations", () => {
     expect(response.status).toBe(500);
     expect(db.store.user.find((row: any) => row.id === user.id)?.disabled).toBe(false);
     expect(db.store.user_group_member).toEqual([{ groupId: group.id, userId: user.id }]);
-    expect(notifier).not.toHaveBeenCalled();
+    expect(notifier.calls).toHaveLength(0);
   });
 
   it("rolls back a failed group insert before members are written", async () => {
@@ -280,9 +282,7 @@ describe("SCIM atomic mutations", () => {
     const first = await createUser(db, "ada@example.com");
     const second = await createUser(db, "bob@example.com");
     const group = await createGroup(db, [{ value: first.id }]);
-    const notifier = vi.fn(
-      (_request: any, _response: any, _ids: ReadonlyArray<string>) => Effect.void,
-    );
+    const notifier = makeNotifier();
     db.failNextWrite("delete", "user_group_member");
 
     const response = await callScim(
@@ -302,7 +302,7 @@ describe("SCIM atomic mutations", () => {
 
     expect(response.status).toBe(500);
     expect(db.store.user_group_member).toEqual([{ groupId: group.id, userId: first.id }]);
-    expect(notifier).not.toHaveBeenCalled();
+    expect(notifier.calls).toHaveLength(0);
   });
 
   it("rolls back a failed membership insert", async () => {
@@ -343,9 +343,7 @@ describe("SCIM atomic mutations", () => {
     const db = await makeScimDb();
     const user = await createUser(db, "ada@example.com");
     const group = await createGroup(db, [{ value: user.id }]);
-    const notifier = vi.fn(
-      (_request: any, _response: any, _ids: ReadonlyArray<string>) => Effect.void,
-    );
+    const notifier = makeNotifier();
 
     db.failNextWrite("delete", "user");
     expect(
@@ -359,7 +357,7 @@ describe("SCIM atomic mutations", () => {
 
     expect(db.store.user.map((row: any) => row.id)).toContain(user.id);
     expect(db.store.user_group.map((row: any) => row.id)).toContain(group.id);
-    expect(notifier).not.toHaveBeenCalled();
+    expect(notifier.calls).toHaveLength(0);
   });
 
   it("notifies only after a membership mutation commits", async () => {
@@ -367,9 +365,7 @@ describe("SCIM atomic mutations", () => {
     const first = await createUser(db, "ada@example.com");
     const second = await createUser(db, "bob@example.com");
     const group = await createGroup(db, [{ value: first.id }]);
-    const notifier = vi.fn(
-      (_request: any, _response: any, _ids: ReadonlyArray<string>) => Effect.void,
-    );
+    const notifier = makeNotifier();
 
     const response = await callScim(
       db,
@@ -382,7 +378,7 @@ describe("SCIM atomic mutations", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(notifier).toHaveBeenCalledTimes(1);
+    expect(notifier.calls).toHaveLength(1);
     expect(notifier.mock.calls[0]?.[2]).toEqual([second.id]);
     expect(db.store.user_group_member).toHaveLength(2);
   });

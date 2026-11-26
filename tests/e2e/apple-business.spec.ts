@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("Apple Business Manager and Apps and Books", () => {
   test("shows unconfigured ABM/VPP state and rejects an invalid ABM token", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Apple Business Tenant");
+    const { tenant } = await bootstrapSession(page, "Apple Business Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/management`);
 
     await expect(page.getByText("Apple Business Manager", { exact: true })).toBeVisible();

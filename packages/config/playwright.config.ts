@@ -24,6 +24,9 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
+  // The suite shares a dev mailbox and rate-limit buckets through one server.
+  // Two workers made stateful specs (overlays, SCIM assignments, slug renames)
+  // flaky in CI, so keep one worker and get parallelism from shards instead.
   workers: 1,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",

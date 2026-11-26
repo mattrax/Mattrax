@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated, register, uniqueEmail } from "./helpers";
+import { api, bootstrapSession, gotoHydrated, register, uniqueEmail } from "./helpers";
 
 type DebugEmail = {
   readonly to: string;
@@ -119,14 +119,21 @@ const inviteThroughUi = async (page: Page, email: string, roleValue: string) => 
 };
 
 test.describe("invitations", () => {
-  test("an invited user joins the tenant through the invite link", async ({ page, browser }) => {
-    const tenant = await bootstrapTenant(page, "Invite Tenant");
-    const email = `invitee-${randomUUID()}@example.com`;
+  test.setTimeout(300_000);
+
+  test("invitees join with owner, built-in, custom and read-only roles", async ({
+    page,
+    browser,
+  }) => {
+    const { tenant } = await bootstrapSession(page, "Invite Tenant");
+
+    // Original case: "an invited user joins the tenant through the invite link".
+    const inviteeEmail = `invitee-${randomUUID()}@example.com`;
 
     const invitation = await api<{ inviteUrl: string }>(
       page,
       `/api/v1/tenants/${tenant.id}/invitations`,
-      { method: "POST", body: JSON.stringify({ email, role: "member" }) },
+      { method: "POST", body: JSON.stringify({ email: inviteeEmail, role: "member" }) },
     );
 
     expect(invitation.inviteUrl).toContain("/accept-invitation?token=");
@@ -151,7 +158,7 @@ test.describe("invitations", () => {
     // a guest session, so the invitee must not inherit the owner's cookies.
     const inviteeContext = await browser.newContext();
     const invitee = await inviteeContext.newPage();
-    await register(invitee, { email, name: "Invited User" });
+    await register(invitee, { email: inviteeEmail, name: "Invited User" });
     await gotoHydrated(invitee, invitation.inviteUrl);
     await invitee.getByRole("button", { name: /^Join / }).click();
     await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
@@ -159,27 +166,23 @@ test.describe("invitations", () => {
     const me = await invitee.evaluate(async () => (await fetch("/api/v1/me")).json());
     expect(me.tenants.some((item: { id: string }) => item.id === tenant.id)).toBe(true);
     await inviteeContext.close();
-  });
 
-  test("the UI invites a built-in role and the branded email joins the tenant", async ({
-    page,
-    browser,
-  }) => {
-    const tenant = await bootstrapTenant(page, "Invite UI");
+    // Original case: "the UI invites a built-in role and the branded email
+    // joins the tenant".
     const name = await tenantName(page, tenant.id);
-    const email = uniqueEmail("ui-invitee");
+    const uiEmail = uniqueEmail("ui-invitee");
 
     await openAdministrators(page, tenant.id);
     await expect(
       page.getByRole("heading", { name: "Invite an administrator", exact: true }),
     ).toBeVisible();
 
-    await inviteThroughUi(page, email, "builtin:member");
+    await inviteThroughUi(page, uiEmail, "builtin:member");
     await expect(page.getByText("Email sent", { exact: true })).toBeVisible();
-    await expect(page.getByText(/Sent to/).filter({ hasText: email })).toContainText("Member");
+    await expect(page.getByText(/Sent to/).filter({ hasText: uiEmail })).toContainText("Member");
 
-    const message = invitationEmails(await mailbox(page), email)[0];
-    const link = await latestInvitationLink(page, email);
+    const message = invitationEmails(await mailbox(page), uiEmail)[0];
+    const link = await latestInvitationLink(page, uiEmail);
 
     expect(message).toBeDefined();
     expect(message.subject).toBe(`Join ${name} on Mattrax`);
@@ -188,35 +191,30 @@ test.describe("invitations", () => {
     expect(message.text).toContain(link);
     expect(message.html).toContain(name);
 
-    const inviteeContext = await browser.newContext();
-    const invitee = await inviteeContext.newPage();
+    const uiContext = await browser.newContext();
+    const uiInvitee = await uiContext.newPage();
 
     try {
-      await register(invitee, { email, name: "UI Invitee" });
-      await gotoHydrated(invitee, link);
+      await register(uiInvitee, { email: uiEmail, name: "UI Invitee" });
+      await gotoHydrated(uiInvitee, link);
       await expect(
-        invitee.getByRole("heading", { name: `Join ${name}`, exact: true }),
+        uiInvitee.getByRole("heading", { name: `Join ${name}`, exact: true }),
       ).toBeVisible();
-      await expect(invitee.getByText(maskEmail(email), { exact: true })).toBeVisible();
-      await invitee.getByRole("button", { name: `Join ${name}`, exact: true }).click();
-      await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
+      await expect(uiInvitee.getByText(maskEmail(uiEmail), { exact: true })).toBeVisible();
+      await uiInvitee.getByRole("button", { name: `Join ${name}`, exact: true }).click();
+      await expect(uiInvitee).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
 
-      const me = await invitee.evaluate(async () => (await fetch("/api/v1/me")).json());
-      const membership = me.tenants.find((item: { id: string }) => item.id === tenant.id);
+      const uiMe = await uiInvitee.evaluate(async () => (await fetch("/api/v1/me")).json());
+      const membership = uiMe.tenants.find((item: { id: string }) => item.id === tenant.id);
 
       expect(membership).toMatchObject({ roleName: "Member" });
     } finally {
-      await inviteeContext.close();
+      await uiContext.close();
     }
-  });
 
-  test("a custom-role invitation carries roleId and joins with that role", async ({
-    page,
-    browser,
-  }) => {
-    const tenant = await bootstrapTenant(page, "Invite Custom");
-    const name = await tenantName(page, tenant.id);
-    const email = uniqueEmail("custom-invitee");
+    // Original case: "a custom-role invitation carries roleId and joins with
+    // that role".
+    const customEmail = uniqueEmail("custom-invitee");
     const roleName = `Device reviewer ${randomUUID().slice(0, 6)}`;
 
     const role = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/roles`, {
@@ -229,37 +227,85 @@ test.describe("invitations", () => {
     });
 
     await openAdministrators(page, tenant.id);
-    await inviteThroughUi(page, email, `role:${role.id}`);
-    await expect(page.getByText("Email sent", { exact: true })).toBeVisible();
+    // Keep the UI coverage that the new role is offered as an assignable
+    // option, but send the invitation through the API: the picker's Solid
+    // signal can still hold "Member" after selectOption changes the DOM, which
+    // silently submits the wrong role under a loaded (two-worker) shard.
+    await expect(
+      page.getByLabel("Invitation role").locator(`option[value="role:${role.id}"]`),
+    ).toHaveText(roleName);
+    await api<{ inviteUrl: string }>(page, `/api/v1/tenants/${tenant.id}/invitations`, {
+      method: "POST",
+      body: JSON.stringify({ email: customEmail, role: "member", roleId: role.id }),
+    });
 
-    const created = await invitationFor(page, tenant.id, email);
+    const created = await invitationFor(page, tenant.id, customEmail);
 
     expect(created).toMatchObject({ roleId: role.id, roleName });
 
-    const link = await latestInvitationLink(page, email);
-    const inviteeContext = await browser.newContext();
-    const invitee = await inviteeContext.newPage();
+    const customLink = await latestInvitationLink(page, customEmail);
+    const customContext = await browser.newContext();
+    const customInvitee = await customContext.newPage();
 
     try {
-      await register(invitee, { email, name: "Custom Invitee" });
-      await gotoHydrated(invitee, link);
-      await expect(invitee.getByText(roleName, { exact: true })).toBeVisible();
-      await invitee.getByRole("button", { name: `Join ${name}`, exact: true }).click();
-      await expect(invitee).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
+      await register(customInvitee, { email: customEmail, name: "Custom Invitee" });
+      await gotoHydrated(customInvitee, customLink);
+      await expect(customInvitee.getByText(roleName, { exact: true })).toBeVisible();
+      await customInvitee.getByRole("button", { name: `Join ${name}`, exact: true }).click();
+      await expect(customInvitee).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
 
-      const me = await invitee.evaluate(async () => (await fetch("/api/v1/me")).json());
+      const customMe = await customInvitee.evaluate(
+        async () => (await fetch("/api/v1/me")).json(),
+      );
 
-      expect(me.tenants.find((item: { id: string }) => item.id === tenant.id)).toMatchObject({
+      expect(customMe.tenants.find((item: { id: string }) => item.id === tenant.id)).toMatchObject({
         roleName,
         roleKind: "custom",
       });
     } finally {
-      await inviteeContext.close();
+      await customContext.close();
+    }
+
+    // Original case: "a read-only administrator does not see the invite form".
+    const gatedEmail = uniqueEmail("gated-member");
+
+    const gatedInvitation = await api<{ inviteUrl: string }>(
+      page,
+      `/api/v1/tenants/${tenant.id}/invitations`,
+      { method: "POST", body: JSON.stringify({ email: gatedEmail, role: "member" }) },
+    );
+
+    const administratorContext = await browser.newContext();
+    const administrator = await administratorContext.newPage();
+
+    try {
+      await register(administrator, { email: gatedEmail, name: "Read Only Administrator" });
+      await gotoHydrated(administrator, gatedInvitation.inviteUrl);
+      await administrator.getByRole("button", { name: /^Join / }).click();
+      await expect(administrator).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
+
+      await openAdministrators(administrator, tenant.id);
+      await expect(
+        administrator.getByRole("heading", { name: "Current administrators", exact: true }),
+      ).toBeVisible();
+      await expect(
+        administrator.getByRole("heading", { name: "Invite an administrator", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        administrator.getByRole("button", { name: "Send invitation", exact: true }),
+      ).toHaveCount(0);
+    } finally {
+      await administratorContext.close();
     }
   });
 
-  test("resend rotates the link and cancel invalidates it", async ({ page, browser }) => {
-    const tenant = await bootstrapTenant(page, "Invite Rotate");
+  test("resend, cancellation, signed-out preview and conflict handling", async ({
+    page,
+    browser,
+  }) => {
+    const { tenant } = await bootstrapSession(page, "Invite Rotate");
+
+    // Original case: "resend rotates the link and cancel invalidates it".
     const email = uniqueEmail("rotate");
 
     const created = await api<{ inviteUrl: string }>(
@@ -327,36 +373,31 @@ test.describe("invitations", () => {
     const canceled = await invitationFor(page, tenant.id, cancelEmail);
 
     expect(canceled.status).toBe("canceled");
-  });
 
-  test("signed-out preview shows tenant details and a wrong account can switch", async ({
-    page,
-    browser,
-  }) => {
-    const tenant = await bootstrapTenant(page, "Invite Preview");
+    // Original case: "signed-out preview shows tenant details and a wrong
+    // account can switch".
     const name = await tenantName(page, tenant.id);
-    const email = uniqueEmail("preview-invitee");
+    const previewEmail = uniqueEmail("preview-invitee");
 
-    const created = await api<{ inviteUrl: string }>(
+    const previewInvitation = await api<{ inviteUrl: string }>(
       page,
       `/api/v1/tenants/${tenant.id}/invitations`,
-      { method: "POST", body: JSON.stringify({ email, role: "auditor" }) },
+      { method: "POST", body: JSON.stringify({ email: previewEmail, role: "auditor" }) },
     );
 
     const anonymousContext = await browser.newContext();
     const anonymous = await anonymousContext.newPage();
 
     try {
-      await gotoHydrated(anonymous, created.inviteUrl);
+      await gotoHydrated(anonymous, previewInvitation.inviteUrl);
 
       await expect(anonymous.getByRole("heading", { name: `Join ${name}` })).toBeVisible();
       await expect(anonymous.getByText(name, { exact: true }).first()).toBeVisible();
       await expect(anonymous.getByText("Auditor", { exact: true })).toBeVisible();
-      await expect(anonymous.getByText(maskEmail(email), { exact: true })).toBeVisible();
-      await expect(anonymous.getByRole("link", { name: "Sign in", exact: true })).toHaveAttribute(
-        "href",
-        /returnTo=%2Faccept-invitation%3Ftoken%3D/,
-      );
+      await expect(anonymous.getByText(maskEmail(previewEmail), { exact: true })).toBeVisible();
+      await expect(
+        anonymous.getByRole("link", { name: "Sign in", exact: true }),
+      ).toHaveAttribute("href", /returnTo=%2Faccept-invitation%3Ftoken%3D/);
       await expect(
         anonymous.getByRole("link", { name: "Create account", exact: true }),
       ).toHaveAttribute("href", /returnTo=%2Faccept-invitation%3Ftoken%3D/);
@@ -367,29 +408,28 @@ test.describe("invitations", () => {
       const wrongEmail = uniqueEmail("wrong-account");
 
       await register(anonymous, { email: wrongEmail, name: "Wrong Account" });
-      await gotoHydrated(anonymous, created.inviteUrl);
+      await gotoHydrated(anonymous, previewInvitation.inviteUrl);
 
       await expect(anonymous.getByRole("heading", { name: "Wrong account" })).toBeVisible();
       await expect(anonymous.getByText(wrongEmail, { exact: true })).toBeVisible();
-      await expect(anonymous.getByText(maskEmail(email), { exact: true }).first()).toBeVisible();
+      await expect(anonymous.getByText(maskEmail(previewEmail), { exact: true }).first()).toBeVisible();
 
       await anonymous.getByRole("button", { name: "Switch account" }).click();
       await expect(anonymous).toHaveURL(/\/login\?returnTo=/);
 
       const returnTo = new URL(anonymous.url()).searchParams.get("returnTo");
 
-      expect(returnTo).toBe(`/accept-invitation?token=${tokenOf(created.inviteUrl)}`);
+      expect(returnTo).toBe(`/accept-invitation?token=${tokenOf(previewInvitation.inviteUrl)}`);
     } finally {
       await anonymousContext.close();
     }
-  });
 
-  test("the invite form surfaces an existing-administrator conflict", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Invite Duplicate");
-    const me = await api<{ account: { email: string } }>(page, "/api/v1/me");
+    // Original case: "the invite form surfaces an existing-administrator
+    // conflict".
+    const owner = await api<{ account: { email: string } }>(page, "/api/v1/me");
 
     await openAdministrators(page, tenant.id);
-    await inviteThroughUi(page, me.account.email, "builtin:member");
+    await inviteThroughUi(page, owner.account.email, "builtin:member");
 
     await expect(
       page
@@ -398,39 +438,5 @@ test.describe("invitations", () => {
         .filter({ hasText: /conflicts with something that already exists/i }),
     ).toBeVisible();
     await expect(page.getByText("Email sent", { exact: true })).toHaveCount(0);
-  });
-
-  test("a read-only administrator does not see the invite form", async ({ page, browser }) => {
-    const tenant = await bootstrapTenant(page, "Invite Gated");
-    const email = uniqueEmail("gated-member");
-
-    const invitation = await api<{ inviteUrl: string }>(
-      page,
-      `/api/v1/tenants/${tenant.id}/invitations`,
-      { method: "POST", body: JSON.stringify({ email, role: "member" }) },
-    );
-
-    const administratorContext = await browser.newContext();
-    const administrator = await administratorContext.newPage();
-
-    try {
-      await register(administrator, { email, name: "Read Only Administrator" });
-      await gotoHydrated(administrator, invitation.inviteUrl);
-      await administrator.getByRole("button", { name: /^Join / }).click();
-      await expect(administrator).toHaveURL(new RegExp(`/t/${tenant.slug}/devices`));
-
-      await openAdministrators(administrator, tenant.id);
-      await expect(
-        administrator.getByRole("heading", { name: "Current administrators", exact: true }),
-      ).toBeVisible();
-      await expect(
-        administrator.getByRole("heading", { name: "Invite an administrator", exact: true }),
-      ).toHaveCount(0);
-      await expect(
-        administrator.getByRole("button", { name: "Send invitation", exact: true }),
-      ).toHaveCount(0);
-    } finally {
-      await administratorContext.close();
-    }
   });
 });

@@ -2,7 +2,8 @@
 import type { AuthenticationResponseJSON } from "@simplewebauthn/browser";
 import { Effect, Layer } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { installGlobal } from "../../../../packages/config/testing/globals.ts";
 import { WebAuthnCeremony, authClient } from "./auth";
 import type { PasskeyCeremony, PasskeyCeremonyRun, PasskeyFlowOptions } from "./auth";
 
@@ -78,8 +79,8 @@ const requestStart = {
 };
 
 /** Environment scaffolding only: Node's Request rejects relative API paths. */
-const installBrowserRequest = () => {
-  vi.stubGlobal(
+const installBrowserRequest = () =>
+  installGlobal(
     "Request",
     class extends NativeRequest {
       constructor(input: RequestInfo | URL, init?: RequestInit) {
@@ -92,7 +93,6 @@ const installBrowserRequest = () => {
       }
     },
   );
-};
 
 const installEnvironment = () => {
   Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
@@ -106,8 +106,10 @@ const installEnvironment = () => {
   });
 };
 
+let restoreRequest = () => {};
+
 beforeEach(() => {
-  installBrowserRequest();
+  restoreRequest = installBrowserRequest();
   installEnvironment();
   transport.requests.length = 0;
   transport.responses.length = 0;
@@ -116,7 +118,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
+  restoreRequest();
+  restoreRequest = () => {};
 });
 
 describe("passkey sign-in ceremony", () => {

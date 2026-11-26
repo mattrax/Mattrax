@@ -1,6 +1,8 @@
 import { Effect, Layer } from "effect";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { installGlobal } from "../../config/testing/globals.ts";
+import { recorder } from "../../config/testing/recorder.ts";
 import { Db } from "@mattrax/enterprise-core";
 import { EnterpriseService as EnterpriseServiceTag } from "@mattrax/enterprise-domain";
 import {
@@ -19,8 +21,6 @@ import { makeDb, request, runEffect, schema } from "./helpers.js";
 const origin = "https://app.test";
 
 const now = new Date("2026-11-24T10:00:00.000Z");
-
-afterEach(() => vi.unstubAllGlobals());
 
 const makeService = (initial: Parameters<typeof makeDb>[0] = {}) => {
   const db = makeDb(initial);
@@ -92,8 +92,9 @@ describe("Apple BYOD discovery document", () => {
       ],
     });
 
-    expect(JSON.parse(appleByodDocumentJson({ organizationId: "org-1", domain: "school.example" })))
-      .toEqual(document);
+    expect(
+      JSON.parse(appleByodDocumentJson({ organizationId: "org-1", domain: "school.example" })),
+    ).toEqual(document);
   });
 
   it("normalises domains and rejects schemes, paths and single labels", () => {
@@ -124,13 +125,11 @@ describe("Apple BYOD token policy", () => {
     expect(appleByodTokenProblem({ ...base, storedOrganizationId: "org-2" })).toBe(
       "tenant_mismatch",
     );
-    expect(appleByodTokenProblem({ ...base, storedRequestHash: "other" })).toBe(
-      "request_mismatch",
-    );
+    expect(appleByodTokenProblem({ ...base, storedRequestHash: "other" })).toBe("request_mismatch");
     expect(appleByodTokenProblem({ ...base, managedAppleAccount: null })).toBe("account_missing");
-    expect(
-      appleByodTokenProblem({ ...base, tokenExpiresAt: new Date(now.getTime() - 1) }),
-    ).toBe("expired");
+    expect(appleByodTokenProblem({ ...base, tokenExpiresAt: new Date(now.getTime() - 1) })).toBe(
+      "expired",
+    );
     expect(appleByodTokenProblem({ ...base, tokenConsumedAt: now })).toBe("used");
   });
 
@@ -383,15 +382,13 @@ describe("Apple BYOD setup blockers", () => {
         { domain: "a.example", organizationId: "org-1", isVerified: true },
         { domain: "b.example", organizationId: "org-1", isVerified: true },
       ],
-      apple_byod_config: [
-        byodConfig({ domain: "a.example", validatedAt: saved }),
-      ],
+      apple_byod_config: [byodConfig({ domain: "a.example", validatedAt: saved })],
     });
     let requested = "";
 
-    vi.stubGlobal(
+    const restoreFetch = installGlobal(
       "fetch",
-      vi.fn(async (url: URL) => {
+      recorder(async (url: URL) => {
         requested = url.toString();
 
         return new Response(
@@ -401,14 +398,18 @@ describe("Apple BYOD setup blockers", () => {
       }),
     );
 
-    const result = await runEffect(
-      service.testAppleByodConfig(request(), "org-1", { domain: "b.example" }),
-    );
+    try {
+      const result = await runEffect(
+        service.testAppleByodConfig(request(), "org-1", { domain: "b.example" }),
+      );
 
-    expect(result.ok).toBe(true);
-    expect(requested).toContain("https://b.example/");
-    // Testing an unsaved selection must not stamp the saved domain.
-    expect(db.store.apple_byod_config[0]?.validatedAt).toBe(saved);
+      expect(result.ok).toBe(true);
+      expect(requested).toContain("https://b.example/");
+      // Testing an unsaved selection must not stamp the saved domain.
+      expect(db.store.apple_byod_config[0]?.validatedAt).toBe(saved);
+    } finally {
+      restoreFetch();
+    }
   });
 });
 
@@ -445,10 +446,7 @@ type RouteService = {
   }) => Effect.Effect<{ profile: Uint8Array; filename: string }>;
 };
 
-const makeRouteHandler = (
-  db: ReturnType<typeof makeDb>,
-  service: RouteService,
-) =>
+const makeRouteHandler = (db: ReturnType<typeof makeDb>, service: RouteService) =>
   HttpRouter.toWebHandler(
     appleByodRoutes.pipe(
       Layer.provideMerge(Layer.succeed(EnterpriseServiceTag, service as never)),

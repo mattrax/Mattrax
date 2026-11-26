@@ -33,8 +33,7 @@ test.describe("authentication and onboarding", () => {
   });
 
   test("starts with an email and offers a passkey, without password fields", async ({ page }) => {
-    await page.goto("/login", { waitUntil: "networkidle" });
-    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+    await gotoHydrated(page, "/login");
 
     const email = page.locator("#email");
     await expect(email).toBeVisible();
@@ -49,8 +48,7 @@ test.describe("authentication and onboarding", () => {
   });
 
   test("registration has no password fields", async ({ page }) => {
-    await page.goto("/register", { waitUntil: "networkidle" });
-    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+    await gotoHydrated(page, "/register");
 
     await expect(page.getByRole("button", { name: /^continue$/i })).toBeVisible();
     await expect(page.locator("#email")).toBeVisible();
@@ -72,8 +70,7 @@ test.describe("authentication and onboarding", () => {
       });
     });
 
-    await page.goto("/login?returnTo=%2Ft%2Fexample%2Fdevices", { waitUntil: "networkidle" });
-    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+    await gotoHydrated(page, "/login?returnTo=%2Ft%2Fexample%2Fdevices");
     await page.locator("#email").fill("person@acme.com");
     await page.getByRole("button", { name: /^continue$/i }).click();
     await expect(page).toHaveURL(/sso=started/);

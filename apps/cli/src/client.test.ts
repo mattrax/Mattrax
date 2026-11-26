@@ -132,10 +132,17 @@ describe("Mattrax HttpClient", () => {
   });
 
   it("times out requests that never receive a response", async () => {
-    const client = HttpClient.make(() => Effect.never);
+    // Gate the clock on the transport actually starting: under CPU contention a
+    // fork plus TestClock's own yield is not a reliable scheduling barrier, so
+    // the 30s deadline may not be installed before virtual time is advanced.
+    const started = Deferred.makeUnsafe<void>();
+    const client = HttpClient.make(() =>
+      Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+    );
     const error = await Effect.runPromise(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkChild(createHttpApi(client, origin, token).listTenants());
+        yield* Deferred.await(started);
         yield* TestClock.adjust("31 seconds");
 
         const exit = yield* Fiber.await(fiber);

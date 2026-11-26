@@ -25,7 +25,7 @@
     "../docs-api/*.ts",
     "../../apps/*/scripts/**/*.ts",
     "../../apps/*/vite.config.ts",
-    "../../apps/*/vitest.config.ts",
+    "../../apps/web/vitest.config.ts",
     "../../apps/*/cloudflare.config.ts",
     "../../apps/*/drizzle.config.ts",
     "../../apps/*/playwright.config.ts"

@@ -1,4 +1,3 @@
-import { useParams, useSearchParams } from "@solidjs/router";
 import type { JSX } from "@solidjs/web";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/solid-query";
 import {
@@ -12,24 +11,6 @@ import {
   untrack,
 } from "solid-js";
 import { Match, Option, Schema } from "effect";
-import {
-  devicePresence,
-  ErrorText,
-  formatDeviceDate,
-  LinkButton,
-  Page,
-  PageHeader,
-  PlatformBadge,
-  PlatformMark,
-  PresenceDot,
-  QueryError,
-  relativeTime,
-  usePresenceNow,
-} from "~/components/mdm/common";
-import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
-import EntityHoverCard from "~/components/entity-hover-card";
-import EntityActions from "~/components/mdm/entity-actions";
-import { MdmTable } from "~/components/mdm/table";
 import type { MdmColumn, MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
 import { Badge, EmptyState, FilterBar, Skeleton } from "@mattrax/ui";
@@ -53,22 +34,7 @@ import {
   Wifi,
   X,
 } from "~/components/ui/icons";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "~/components/ui/dialog";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  formatDeviceQueryText,
-  parseDeviceQueryText,
-} from "~/lib/enterprise";
+import { enterpriseKeys, formatDeviceQueryText, parseDeviceQueryText } from "~/lib/enterprise";
 import type { DeviceHealthFilter, DeviceQuery, DeviceRow } from "~/lib/enterprise";
 import {
   DEVICE_IMPORT_MAX_ROWS,
@@ -82,12 +48,10 @@ import { decodeSoftwareUpdate } from "~/lib/software-updates";
 import { readDeviceSearchParams, routes } from "~/lib/routes";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { collectAllMatching } from "~/lib/bulk-selection";
-import { useCan } from "~/lib/permissions";
 import { downloadBlob } from "~/lib/download";
 import { deviceFilterConditions, staleDaysValue } from "~/lib/device-view-query";
 import { resolveTenantId } from "~/lib/tenant";
-import { preloadPage } from "~/lib/page-data";
-import { queryClient } from "~/lib/query-client";
+import { useDevicePageDeps } from "./device-page-deps";
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -189,6 +153,10 @@ export const route = {
       return value !== undefined && value !== "" && !(Array.isArray(value) && value.length === 0);
     });
 
+    // Preload runs outside a component tree, so the context supplies the
+    // production defaults here.
+    const { preloadPage, queryClient, enterprise, enterpriseQueries } = useDevicePageDeps();
+
     return preloadPage([
       ...(filtered
         ? []
@@ -278,6 +246,8 @@ function DeviceStatusTag(props: { status: string }) {
 }
 
 function DeviceHealthTag(props: { level: string; reasons?: ReadonlyArray<HealthReason> }) {
+  // Test seam: presentational tooltip primitives come from the page deps.
+  const { Tooltip, TooltipContent, TooltipTrigger } = useDevicePageDeps().tooltip;
   const meta = () => (isHealthLevel(props.level) ? healthMeta[props.level] : healthMeta.unknown);
 
   const badge = () => (
@@ -339,9 +309,32 @@ const decodeRowGroups = Schema.decodeUnknownOption(RowGroups);
 const rowGroups = (row: DeviceRow) => Option.getOrUndefined(decodeRowGroups(row))?.groups ?? [];
 
 export default function DevicesPage() {
-  const params = useParams();
-  const { can, canAny } = useCan();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const deps = useDevicePageDeps();
+  const params = deps.router.useParams();
+  const { can, canAny } = deps.permissions.useCan();
+  const [searchParams, setSearchParams] = deps.router.useSearchParams();
+  const { enterprise, enterpriseQueries } = deps;
+  const {
+    devicePresence,
+    ErrorText,
+    formatDeviceDate,
+    LinkButton,
+    Page,
+    PageHeader,
+    PlatformBadge,
+    PlatformMark,
+    PresenceDot,
+    QueryError,
+    relativeTime,
+    usePresenceNow,
+  } = deps.common;
+  const { MdmTable } = deps.table;
+  const DeviceQueryBuilder = deps.queryBuilder.DeviceQueryBuilder;
+  const EntityHoverCard = deps.hoverCard;
+  const EntityActions = deps.entityActions;
+  const { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } =
+    deps.dialog;
+  const { Tooltip, TooltipContent, TooltipTrigger } = deps.tooltip;
   // One clock for every row; presence flips to offline with time, not only
   // when a new query arrives.
   const presenceNow = usePresenceNow();
@@ -1454,7 +1447,9 @@ export default function DevicesPage() {
                 {exporting() ? "Exporting…" : "Export CSV"}
               </Button>
             </div>
-            <Show when={can("enrollment.write") && !emptyFleet() && (devices.isSuccess || hasFilters())}>
+            <Show
+              when={can("enrollment.write") && !emptyFleet() && (devices.isSuccess || hasFilters())}
+            >
               <Button
                 as="a"
                 href={routes.tenant(params.tenantId).settingsTab("enrollment")}
@@ -1481,11 +1476,7 @@ export default function DevicesPage() {
             The export reached the {10_000}-row limit and was truncated. Narrow the filters to
             export the rest.
           </span>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => setExportTruncated(false)}
-          >
+          <Button variant="ghost" size="xs" onClick={() => setExportTruncated(false)}>
             Dismiss
           </Button>
         </div>

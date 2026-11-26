@@ -13,10 +13,15 @@ const primaryNav = (page: import("@playwright/test").Page) =>
   page.getByRole("navigation", { name: "Primary" });
 
 test.describe("top navigation", () => {
-  test("navigates between every tenant section", async ({ page }) => {
+  // Four cases share one registration, tenant and shell session.
+  test("navigates tenant sections, keeps one shell, collapses the sidebar and guards unknown tenants", async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
     const tenant = await bootstrapTenant(page, "Nav Tenant");
     const base = `/t/${tenant.slug}`;
 
+    // Original: "navigates between every tenant section"
     for (const [label, path, heading] of [
       ["Overview", base, "Fleet overview"],
       ["Dashboards", `${base}/dashboards`, "Dashboards"],
@@ -44,10 +49,8 @@ test.describe("top navigation", () => {
       .click();
     await expect(page).toHaveURL(new RegExp(`${base}/settings$`));
     await expect(page.getByRole("heading", { name: "General", exact: true }).first()).toBeVisible();
-  });
 
-  test("mounts exactly one application shell", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Shell Tenant");
+    // Original: "mounts exactly one application shell"
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
     await expect(page.locator("header")).toHaveCount(1);
     await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(1);
@@ -58,10 +61,8 @@ test.describe("top navigation", () => {
 
     await page.reload();
     await expect(page.locator("header")).toHaveCount(1);
-  });
 
-  test("collapses the sidebar to icons and remembers the choice", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Collapsed Nav Tenant");
+    // Original: "collapses the sidebar to icons and remembers the choice"
     await gotoHydrated(page, `/t/${tenant.slug}/devices`);
 
     const aside = page.locator("aside");
@@ -80,10 +81,9 @@ test.describe("top navigation", () => {
 
     await page.getByRole("button", { name: "Expand sidebar" }).click();
     await expect(aside).toHaveCSS("width", "244px");
-  });
 
-  test("sends an unknown tenant back to the dashboard", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Unknown Tenant");
+    // Original: "sends an unknown tenant back to the dashboard". The shared
+    // tenant is the remembered one, so the guard redirects back to it.
     await gotoHydrated(page, "/t/not-a-tenant/devices");
 
     // The tenant guard replaces the invalid URL with /dashboard, which then
@@ -97,12 +97,12 @@ test.describe("top navigation", () => {
     await expect(page.getByRole("alert")).toHaveCount(0);
   });
 
+  // Verification is a distinct identity flow, so it keeps the original setup.
   test("refuses tenant work until the email code is verified", async ({ page }) => {
     const email = uniqueEmail("unverified");
 
     await installVirtualAuthenticator(page);
-    await page.goto("/register", { waitUntil: "networkidle" });
-    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
+    await gotoHydrated(page, "/register");
     await page.locator("#name").fill("Unverified User");
     await page.locator("#email").fill(email);
     await page.getByRole("button", { name: /^continue$/i }).click();
@@ -149,10 +149,13 @@ test.describe("top navigation", () => {
     expect(allowed).toBe(200);
   });
 
-  test("opens the tenant switcher from an unscoped page", async ({ page }) => {
+  // Both switcher cases use the same session and two tenants.
+  test("opens the tenant switcher and remembers the last tenant", async ({ page }) => {
+    test.setTimeout(120_000);
     const tenant = await bootstrapTenant(page, "Switch Tenant");
     const second = await createTenant(page, "Second Tenant");
 
+    // Original: "opens the tenant switcher from an unscoped page"
     await gotoHydrated(page, "/account");
     await page.getByRole("button", { name: "Switch tenant" }).click();
     const item = page.getByRole("menuitemradio", { name: /Second Tenant/i });
@@ -167,18 +170,14 @@ test.describe("top navigation", () => {
     const me = await page.evaluate(async () => (await fetch("/api/v1/me")).json());
     expect(me.tenants.some((entry: { id: string }) => entry.id === tenant.id)).toBe(true);
     expect(me.tenants.some((entry: { id: string }) => entry.id === second.id)).toBe(true);
-  });
 
-  test("remembers the last tenant from the switcher", async ({ page }) => {
-    const first = await bootstrapTenant(page, "Remember One");
-    const second = await createTenant(page, "Remember Two");
-
+    // Original: "remembers the last tenant from the switcher"
     await gotoHydrated(page, `/t/${second.id}/devices`);
     await gotoHydrated(page, "/dashboard");
     await page.getByRole("button", { name: "Switch tenant" }).click();
-    await expect(page.getByRole("menuitemradio", { name: /Remember One/i })).toBeVisible();
-    await page.getByRole("menuitemradio", { name: /Remember One/i }).click();
-    await expect(page).toHaveURL(new RegExp(`/t/${first.slug}`));
+    await expect(page.getByRole("menuitemradio", { name: /Switch Tenant/i })).toBeVisible();
+    await page.getByRole("menuitemradio", { name: /Switch Tenant/i }).click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}`));
   });
 });
 

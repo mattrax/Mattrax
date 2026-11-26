@@ -16,16 +16,40 @@ const feedbackEnter = "page-enter";
 const looksLikeEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
 /**
+ * Test seam for browser and service dependencies. Production callers omit it;
+ * tests inject fakes instead of replacing modules in the shared graph.
+ */
+export type LoginPageDeps = {
+  readonly searchParams?: Readonly<Record<string, string | string[] | undefined>>;
+  readonly navigate?: (href: string, options?: { readonly replace?: boolean }) => void;
+  readonly session?: () => {
+    readonly data?: { readonly user?: { readonly id?: string } };
+    readonly isPending: boolean;
+  };
+  readonly auth?: Pick<typeof authClient, "passkeySignIn" | "session" | "signOut">;
+  readonly sso?: {
+    readonly start: typeof startOrganisationSso;
+    readonly redirect: typeof redirectToProvider;
+  };
+};
+
+/**
  * Email-first sign-in. The address decides which credential the account uses:
  * an organisation with SSO continues at its identity provider, everything else
  * uses the passkey saved on the device. A passkey ceremony is discoverable, so
  * the signed-in identity is checked against the address the person typed before
  * the session is used.
  */
-export default function LoginPage() {
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const session = authClient.useSession();
+export default function LoginPage(props: { readonly deps?: LoginPageDeps }) {
+  const deps = props.deps ?? {};
+  const searchParams = deps.searchParams ?? useSearchParams()[0];
+  const navigate = deps.navigate ?? useNavigate();
+  const session = deps.session ?? authClient.useSession();
+  const passkeySignIn = deps.auth?.passkeySignIn ?? authClient.passkeySignIn;
+  const readSession = deps.auth?.session ?? authClient.session;
+  const signOut = deps.auth?.signOut ?? authClient.signOut;
+  const startSso = deps.sso?.start ?? startOrganisationSso;
+  const redirect = deps.sso?.redirect ?? redirectToProvider;
   const signedIn = () => Boolean(session().data?.user);
 
   // A one-off seed for the field, not a reactive dependency: read it outside
@@ -83,13 +107,13 @@ export default function LoginPage() {
     // site. Hold the ceremony to the address that was typed so a mixed-up
     // device does not silently sign in as somebody else.
     if (typed) {
-      const current = await authClient.session();
+      const current = await readSession();
 
       if (!isCurrent()) return;
       const actual = current.data?.claims.email?.trim().toLowerCase();
 
       if (actual && actual !== typed) {
-        await authClient.signOut().catch(() => undefined);
+        await signOut().catch(() => undefined);
 
         if (!isCurrent()) return;
         setMfaPending(false);
@@ -131,7 +155,7 @@ export default function LoginPage() {
     const lookup = ++emailLookup;
 
     try {
-      const result = await startOrganisationSso(value, returnTo());
+      const result = await startSso(value, returnTo());
 
       // A stale lookup must never replace a newer email step or launch a
       // second navigation after the first redirect has started.
@@ -145,7 +169,7 @@ export default function LoginPage() {
         setStep("choose");
 
         try {
-          redirectToProvider(result.url);
+          redirect(result.url);
         } catch {
           redirectStarted = false;
           setRedirecting(false);
@@ -201,13 +225,12 @@ export default function LoginPage() {
     setPasskeyPending(true);
 
     try {
-      const result = await authClient.passkeySignIn();
+      const result = await passkeySignIn();
 
       // Changing the email during a ceremony must invalidate its result before
       // any alert, MFA state or navigation can replace the newer step.
       if (!current()) {
-        if (!result.error && !result.data?.pending)
-          await authClient.signOut().catch(() => undefined);
+        if (!result.error && !result.data?.pending) await signOut().catch(() => undefined);
 
         return;
       }
@@ -272,12 +295,12 @@ export default function LoginPage() {
 
     conditionalAbort = controller;
 
-    const result = await authClient.passkeySignIn({ conditional: controller.signal });
+    const result = await passkeySignIn({ conditional: controller.signal });
 
     // A changed email, unmount or newer ceremony owns the screen now. Throw
     // away a late success rather than signing in as the wrong person.
     if (controller.signal.aborted || conditionalAbort !== controller) {
-      if (!result.error && !result.data?.pending) await authClient.signOut().catch(() => undefined);
+      if (!result.error && !result.data?.pending) await signOut().catch(() => undefined);
 
       return;
     }
@@ -390,12 +413,7 @@ export default function LoginPage() {
                   </p>
                   <p class="text-center text-xs text-subtle-foreground">
                     Taking too long?{" "}
-                    <Button
-                      type="button"
-                      variant="link"
-                      size="xs"
-                      onClick={changeEmail}
-                    >
+                    <Button type="button" variant="link" size="xs" onClick={changeEmail}>
                       Cancel and change email
                     </Button>
                   </p>

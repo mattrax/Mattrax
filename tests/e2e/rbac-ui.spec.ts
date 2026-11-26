@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { api, bootstrapTenant, gotoHydrated, register, uniqueEmail } from "./helpers";
+import { api, bootstrapSession, gotoHydrated, register, uniqueEmail } from "./helpers";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 
@@ -19,7 +19,7 @@ const acceptInvitation = async (page: Page, inviteUrl: string) => {
 
 test.describe("RBAC UI gating", () => {
   test("an owner keeps every mutation control", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "RBAC Owner");
+    const { tenant } = await bootstrapSession(page, "RBAC Owner");
     const base = `/t/${tenant.slug}`;
 
     await gotoHydrated(page, `${base}/devices`);
@@ -57,7 +57,7 @@ test.describe("RBAC UI gating", () => {
     page,
     context,
   }) => {
-    const tenant = await bootstrapTenant(page, "RBAC Member");
+    const { tenant } = await bootstrapSession(page, "RBAC Member");
     const email = uniqueEmail("rbac-member");
     const invitation = await invite(page, tenant.id, { email, role: "member" });
 
@@ -131,7 +131,7 @@ test.describe("RBAC UI gating", () => {
     page,
     context,
   }) => {
-    const tenant = await bootstrapTenant(page, "RBAC Custom");
+    const { tenant } = await bootstrapSession(page, "RBAC Custom");
     const email = uniqueEmail("rbac-custom");
 
     const role = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/roles`, {

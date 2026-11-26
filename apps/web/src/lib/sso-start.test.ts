@@ -125,8 +125,13 @@ describe("email-first SSO start", () => {
   });
 
   it("aborts a lookup after ten seconds and offers a retry", async () => {
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
     fetchImpl = (_input, init) =>
       new Promise((_resolve, reject) => {
+        markStarted();
         init?.signal?.addEventListener("abort", () =>
           reject(new DOMException("Aborted", "AbortError")),
         );
@@ -135,7 +140,10 @@ describe("email-first SSO start", () => {
     const result = await Effect.runPromise(
       Effect.gen(function* () {
         const fiber = yield* Effect.forkScoped(startOrganisationSsoEffect("ada@acme.com"));
-        yield* Effect.yieldNow;
+        // Wait for the fetch before advancing the virtual clock: the 10s
+        // deadline fiber is forked just before the fetch, and a single yieldNow
+        // is not a reliable scheduling gate under load.
+        yield* Effect.promise(() => started);
         yield* TestClock.adjust(10_000);
         return yield* Fiber.join(fiber);
       }).pipe(

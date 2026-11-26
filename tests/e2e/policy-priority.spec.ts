@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("policy precedence", () => {
   test("edits priority and explains assignment precedence", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Precedence Tenant");
+    const { tenant } = await bootstrapSession(page, "Precedence Tenant");
     await page.goto(`/t/${tenant.id}/policies/new`);
     await page.getByLabel("Name").fill("Precedence policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();
@@ -25,7 +25,7 @@ test.describe("policy precedence", () => {
   });
 
   test("sets a group policy assignment to exclude", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Group Mode Tenant");
+    const { tenant } = await bootstrapSession(page, "Group Mode Tenant");
     await page.goto(`/t/${tenant.id}/policies/new`);
     await page.getByLabel("Name").fill("Mode policy");
     await page.getByRole("button", { name: /^create policy$/i }).click();

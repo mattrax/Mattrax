@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
+import { recorder } from "../../../../packages/config/testing/recorder.ts";
 import { AnalyticsQueue, AnalyticsStorageQueue } from "./analytics-queue";
 
 const controlledClock = () => {
   let run: (() => void) | undefined;
-  const cancel = vi.fn();
+  const cancel = recorder();
 
   return {
     schedule: (next: () => void) => {
@@ -19,7 +20,7 @@ const controlledClock = () => {
 describe("AnalyticsStorageQueue", () => {
   it("coalesces rapid snapshots into one write of the latest value", () => {
     const clock = controlledClock();
-    const persist = vi.fn();
+    const persist = recorder();
     const queue = new AnalyticsStorageQueue<number>({
       delay: 5_000,
       persist,
@@ -38,7 +39,7 @@ describe("AnalyticsStorageQueue", () => {
 
   it("flushes the latest snapshot on demand and starts a fresh window", () => {
     const clock = controlledClock();
-    const persist = vi.fn();
+    const persist = recorder();
     const queue = new AnalyticsStorageQueue<string>({
       delay: 5_000,
       persist,
@@ -60,7 +61,7 @@ describe("AnalyticsStorageQueue", () => {
 
   it("does not lose a pending snapshot when disposed", () => {
     const clock = controlledClock();
-    const persist = vi.fn();
+    const persist = recorder();
     const queue = new AnalyticsStorageQueue<number>({
       delay: 5_000,
       persist,
@@ -80,7 +81,7 @@ describe("AnalyticsQueue", () => {
   it("serializes flushes and schedules events queued during a send", async () => {
     const clock = controlledClock();
     let finish: (() => void) | undefined;
-    const send = vi.fn(
+    const send = recorder(
       (_batch: ReadonlyArray<number>) =>
         new Promise<void>((resolve) => {
           finish = resolve;
@@ -108,16 +109,19 @@ describe("AnalyticsQueue", () => {
   it("delivers a lifecycle batch while a normal send is in flight", async () => {
     const clock = controlledClock();
     let rejectNormal: ((error: Error) => void) | undefined;
-    const send = vi
-      .fn()
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((_resolve, reject) => {
-            rejectNormal = reject;
-          }),
-      )
-      .mockResolvedValue(undefined);
-    const beacon = vi.fn().mockResolvedValue(undefined);
+    let firstSend = true;
+    const send = recorder<[ReadonlyArray<string>], Promise<void>>(() => {
+      if (firstSend) {
+        firstSend = false;
+
+        return new Promise<void>((_resolve, reject) => {
+          rejectNormal = reject;
+        });
+      }
+
+      return Promise.resolve(undefined);
+    });
+    const beacon = recorder<[ReadonlyArray<string>], Promise<void>>().mockResolvedValue(undefined);
     const queue = new AnalyticsQueue<string>({ delay: 100, send, schedule: clock.schedule });
 
     queue.push("normal");
@@ -140,7 +144,9 @@ describe("AnalyticsQueue", () => {
 
   it("requeues a failed batch instead of dropping it", async () => {
     const clock = controlledClock();
-    const send = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
+    const send = recorder<[ReadonlyArray<string>], Promise<void>>()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(undefined);
     const queue = new AnalyticsQueue<string>({ delay: 100, send, schedule: clock.schedule });
 
     queue.push("pageview");

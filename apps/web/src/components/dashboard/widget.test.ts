@@ -3,59 +3,78 @@ import { createComponent, flush } from "solid-js";
 import { render } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
 import { Option } from "effect";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { dashboardQueryForWidget } from "@mattrax/enterprise-domain/client";
 import type {
   DashboardQueryBatchResponse,
   DashboardQueryRequest,
   DashboardWidget,
 } from "@mattrax/enterprise-domain/client";
-
-const mocks = vi.hoisted(() => ({
-  useQueries: vi.fn(),
-  useQuery: vi.fn(),
-  queryDashboard: vi.fn(),
-  queryDashboardBatch: vi.fn(),
-}));
-
-vi.mock("@tanstack/solid-query", () => ({
-  useQueries: mocks.useQueries,
-  useQuery: mocks.useQuery,
-}));
-
-vi.mock("~/lib/enterprise", () => ({
-  enterprise: {
-    queryDashboard: mocks.queryDashboard,
-    queryDashboardBatch: mocks.queryDashboardBatch,
-  },
-  enterpriseKeys: {
-    dashboardQuery: (tenantId: string, request: DashboardQueryRequest) =>
-      ["dashboard-query", tenantId, request] as const,
-    dashboardQueryBatch: (tenantId: string, requests: ReadonlyArray<DashboardQueryRequest>) =>
-      ["dashboard-query-batch", tenantId, requests] as const,
-  },
-}));
-
-vi.mock("~/components/mdm/common", () => ({
-  relativeTime: (value: string) => value,
-}));
-
-vi.mock("~/components/dashboard/markdown", () => ({
-  default: (props: { content: string }) => props.content,
-}));
-
-vi.mock("~/lib/errors", () => ({
-  errorPresentation: () => ({ title: "Error", message: "Could not load widget data." }),
-  raisedFailure: (error: unknown) => error,
-}));
+import { asFake, recorder } from "../../../../../packages/config/testing/recorder.ts";
+import {
+  createDashboardWidgetConfigResolver,
+  DashboardWidgetBatchProvider,
+  DashboardWidgetServicesProvider,
+  DashboardWidgetView,
+  dashboardPreviewQueryRequest,
+  dashboardWidgetQueryRequest,
+  dashboardWidgetRequestChunks,
+  useDashboardWidgetBatch,
+} from "./widget";
+import type { DashboardWidgetServices } from "./widget";
 
 type CapturedQuery = {
-  queryKey: readonly [string, string, ReadonlyArray<DashboardQueryRequest>];
+  queryKey: readonly [
+    "enterprise",
+    "dashboard-query-batch",
+    string,
+    ReadonlyArray<DashboardQueryRequest>,
+  ];
   queryFn: () => Promise<DashboardQueryBatchResponse>;
 };
 
 let queriesOptions: (() => { queries: CapturedQuery[] }) | undefined;
 const cleanups: Array<() => void> = [];
+
+/** Fakes supplied through the widget's injectable query seams. */
+const useQueries = recorder((options: () => { queries: CapturedQuery[] }) => {
+  queriesOptions = options;
+
+  return [];
+});
+
+const useQuery = recorder(() => ({
+  data: undefined,
+  isSuccess: false,
+  isPending: true,
+  error: undefined,
+  refetch: recorder(),
+}));
+
+const queryDashboard = recorder(async (_tenantId: string, _request: DashboardQueryRequest) => ({
+  total: 0,
+  rows: [],
+  buckets: [],
+}));
+
+const queryDashboardBatch = recorder(
+  async (_tenantId: string, _requests: ReadonlyArray<DashboardQueryRequest>) => ({ results: [] }),
+);
+
+const services: DashboardWidgetServices = {
+  useQueries: asFake<DashboardWidgetServices["useQueries"]>(useQueries),
+  useQuery: asFake<DashboardWidgetServices["useQuery"]>(useQuery),
+  queryDashboard,
+  queryDashboardBatch,
+};
+
+const withServices = (child: () => JSX.Element) =>
+  createComponent(DashboardWidgetServicesProvider, {
+    value: services,
+    get children() {
+      return child();
+    },
+  });
 
 const renderHtml = (view: () => JSX.Element) => {
   const container = document.createElement("div");
@@ -66,16 +85,6 @@ const renderHtml = (view: () => JSX.Element) => {
 
   return { html: container.innerHTML, text: container.textContent ?? "" };
 };
-
-const {
-  createDashboardWidgetConfigResolver,
-  dashboardPreviewQueryRequest,
-  dashboardWidgetQueryRequest,
-  dashboardWidgetRequestChunks,
-  DashboardWidgetBatchProvider,
-  DashboardWidgetView,
-  useDashboardWidgetBatch,
-} = await import("./widget");
 
 const COLUMNS = [
   "name",
@@ -148,7 +157,7 @@ const batch = {
   data: { total: 200, rows, buckets: [] },
   pending: false,
   error: undefined,
-  retry: vi.fn(),
+  retry: recorder(),
 };
 
 function ModeConsumer(props: { preview?: boolean }) {
@@ -169,13 +178,15 @@ function FullWidgetConsumer(props: { widget: DashboardWidget; tenantId: string }
 
 const renderProvider = (widgets: ReadonlyArray<DashboardWidget>, preview: boolean) =>
   renderHtml(() =>
-    createComponent(DashboardWidgetBatchProvider, {
-      widgets,
-      tenantId: "tenant-1",
-      get children() {
-        return createComponent(ModeConsumer, { preview });
-      },
-    }),
+    withServices(() =>
+      createComponent(DashboardWidgetBatchProvider, {
+        widgets,
+        tenantId: "tenant-1",
+        get children() {
+          return createComponent(ModeConsumer, { preview });
+        },
+      }),
+    ),
   );
 
 const capturedRequests = () => {
@@ -183,25 +194,17 @@ const capturedRequests = () => {
 
   if (!options) throw new Error("Expected useQueries options to be captured");
 
-  return options.queries.map((query) => query.queryKey[2]);
+  return options.queries.map((query) => query.queryKey[3]);
 };
 
 beforeEach(() => {
-  vi.clearAllMocks();
   queriesOptions = undefined;
-  mocks.queryDashboard.mockResolvedValue({ total: 0, rows: [], buckets: [] });
-  mocks.queryDashboardBatch.mockResolvedValue({ results: [] });
-  mocks.useQuery.mockReturnValue({
-    data: undefined,
-    isPending: true,
-    error: undefined,
-    refetch: vi.fn(),
-  });
-  mocks.useQueries.mockImplementation((options: () => { queries: CapturedQuery[] }) => {
-    queriesOptions = options;
-
-    return [];
-  });
+  useQueries.mockClear();
+  useQuery.mockClear();
+  queryDashboard.mockClear();
+  queryDashboardBatch.mockClear();
+  queryDashboard.mockResolvedValue({ total: 0, rows: [], buckets: [] });
+  queryDashboardBatch.mockResolvedValue({ results: [] });
 });
 
 afterEach(() => {
@@ -212,7 +215,7 @@ afterEach(() => {
 
 describe("dashboard widget config decoding", () => {
   it("decodes an immutable config once and decodes a new version again", () => {
-    const decode = vi.fn((_config: unknown) => Option.some({}));
+    const decode = recorder((_config: unknown) => Option.some({}));
     const resolve = createDashboardWidgetConfigResolver(decode);
     const first = { limit: 200 };
     const second = { limit: 100 };
@@ -234,11 +237,13 @@ describe("dashboard widget config decoding", () => {
 
     const { config, accesses } = countedConfig();
     const { html, text } = renderHtml(() =>
-      createComponent(DashboardWidgetView, {
-        widget: widget({ config }),
-        tenantId: "tenant-1",
-        batch,
-      }),
+      withServices(() =>
+        createComponent(DashboardWidgetView, {
+          widget: widget({ config }),
+          tenantId: "tenant-1",
+          batch,
+        }),
+      ),
     );
 
     expect(html.match(/<td/g)).toHaveLength(1_800);
@@ -257,16 +262,18 @@ describe("dashboard widget config decoding", () => {
     const device = widget({ config });
 
     renderHtml(() =>
-      createComponent(DashboardWidgetBatchProvider, {
-        widgets: [device],
-        tenantId: "tenant-1",
-        get children() {
-          return createComponent(FullWidgetConsumer, {
-            widget: device,
-            tenantId: "tenant-1",
-          });
-        },
-      }),
+      withServices(() =>
+        createComponent(DashboardWidgetBatchProvider, {
+          widgets: [device],
+          tenantId: "tenant-1",
+          get children() {
+            return createComponent(FullWidgetConsumer, {
+              widget: device,
+              tenantId: "tenant-1",
+            });
+          },
+        }),
+      ),
     );
 
     expect(accesses).toEqual(probe.accesses);

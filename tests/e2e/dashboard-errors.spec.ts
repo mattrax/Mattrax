@@ -1,12 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("dashboard query failures", () => {
   test("a failed device search shows an error instead of a blank page", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
 
-    const tenant = await bootstrapTenant(page, "Error Tenant");
+    const { tenant } = await bootstrapSession(page, "Error Tenant");
     await page.route("**/api/v1/tenants/*/devices/search*", (route) =>
       route.fulfill({ status: 500, contentType: "application/json", body: '{"message":"boom"}' }),
     );
@@ -18,7 +18,7 @@ test.describe("dashboard query failures", () => {
   });
 
   test("a failed policy list shows an error instead of a blank page", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Policy Error Tenant");
+    const { tenant } = await bootstrapSession(page, "Policy Error Tenant");
     await page.route("**/api/v1/tenants/*/policies/search*", (route) =>
       route.fulfill({ status: 500, contentType: "application/json", body: '{"message":"boom"}' }),
     );

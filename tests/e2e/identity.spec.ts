@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 test.describe("identity directory pages", () => {
   test("shows SSO, directory sync and domain subpages", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Identity Tenant");
+    const { tenant } = await bootstrapSession(page, "Identity Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/identity`);
     await expect(page.getByText("Single sign-on", { exact: true })).toBeVisible();
 

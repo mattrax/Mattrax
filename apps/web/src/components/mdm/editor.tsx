@@ -531,7 +531,7 @@ function EditorNav(props: {
   canEdit: boolean;
 }) {
   return (
-    <Panel class="lg:sticky lg:top-20" flush>
+    <Panel class="min-w-0 lg:sticky lg:top-20" flush>
       <nav aria-label="Editor sections" class="no-scrollbar flex gap-1 overflow-x-auto p-2 lg:grid">
         {sections.map((section) => {
           const current = () => props.active === section.id;

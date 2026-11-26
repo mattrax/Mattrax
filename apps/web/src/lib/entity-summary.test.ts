@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { QueryClient, QueryObserver } from "@tanstack/solid-query";
+import { Effect, Layer } from "effect";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeviceRow, DeviceSearchRow, GroupRow } from "@mattrax/enterprise-domain/client";
 import {
@@ -8,40 +10,33 @@ import {
   enterpriseQueries,
   entitySummaryPlaceholder,
 } from "~/lib/enterprise";
+import type { EnterpriseRequestContext } from "~/lib/enterprise";
 
 const tenantId = "tenant-1";
 
 type CapturedRequest = { readonly method: string; readonly url: string };
 
-const transport = vi.hoisted(() => ({
+const transportState = {
   requests: [] as Array<CapturedRequest>,
   responses: [] as Array<unknown>,
-}));
+};
 
-// Keep the real generated client and its decoders; swap only the transport
-// for a fake HttpClient layer (the webHttpClientLayer seam).
-vi.mock("~/lib/web-http", async () => {
-  const [{ Effect, Layer }, { HttpClient, HttpClientResponse }] = await Promise.all([
-    import("effect"),
-    import("effect/http"),
-  ]);
+/** A recording HttpClient layer supplied through the query's transport seam. */
+const recordingTransport = Layer.succeed(
+  HttpClient.HttpClient,
+  HttpClient.make((request) =>
+    Effect.sync(() => {
+      transportState.requests.push({ method: request.method, url: request.url });
 
-  return {
-    webHttpClientLayer: Layer.succeed(
-      HttpClient.HttpClient,
-      HttpClient.make((request) =>
-        Effect.sync(() => {
-          transport.requests.push({ method: request.method, url: request.url });
+      return HttpClientResponse.fromWeb(
+        request,
+        Response.json(transportState.responses.shift() ?? { status: "ok" }),
+      );
+    }),
+  ),
+);
 
-          return HttpClientResponse.fromWeb(
-            request,
-            Response.json(transport.responses.shift() ?? { status: "ok" }),
-          );
-        }),
-      ),
-    ),
-  };
-});
+const context: EnterpriseRequestContext = { transport: recordingTransport };
 
 const at = "2026-06-01T12:00:00.000Z";
 
@@ -89,8 +84,8 @@ const deferred = <A>() => {
 };
 
 beforeEach(() => {
-  transport.requests.length = 0;
-  transport.responses.length = 0;
+  transportState.requests.length = 0;
+  transportState.responses.length = 0;
 });
 
 describe("entity summary cache", () => {
@@ -101,9 +96,9 @@ describe("entity summary cache", () => {
       groups: [],
       health: { level: "healthy", reasons: [], lastSeenAt: at, stale: false },
     };
-    transport.responses.push({ devices: [row], total: 1 });
+    transportState.responses.push({ devices: [row], total: 1 });
 
-    await client.fetchQuery(enterpriseQueries.deviceSearch(tenantId, { q: "Alice" }));
+    await client.fetchQuery(enterpriseQueries.deviceSearch(tenantId, { q: "Alice" }, context));
 
     const detailKey = enterpriseKeys.item(tenantId, "device", row.id);
     const full = deferred<DeviceRow>();
@@ -121,9 +116,9 @@ describe("entity summary cache", () => {
     });
     const unsubscribe = observer.subscribe(() => undefined);
 
-    expect(transport.requests).toHaveLength(1);
-    expect(transport.requests[0]?.method).toBe("GET");
-    expect(new URL(transport.requests[0]!.url, "https://dashboard.test").pathname).toBe(
+    expect(transportState.requests).toHaveLength(1);
+    expect(transportState.requests[0]?.method).toBe("GET");
+    expect(new URL(transportState.requests[0]!.url, "https://dashboard.test").pathname).toBe(
       "/api/v1/tenants/tenant-1/devices/search",
     );
     expect(observer.getCurrentResult()).toMatchObject({
@@ -194,9 +189,9 @@ describe("entity summary cache", () => {
   it("normalises plain list rows into the same tenant/entity/id namespace", async () => {
     const client = makeClient();
     const row = groupRow();
-    transport.responses.push({ rows: [row] });
+    transportState.responses.push({ rows: [row] });
 
-    await client.fetchQuery(enterpriseQueries.list(tenantId, "group"));
+    await client.fetchQuery(enterpriseQueries.list(tenantId, "group", undefined, context));
 
     expect(client.getQueryData(enterpriseKeys.entitySummary(tenantId, "group", row.id))).toEqual({
       tenantId,

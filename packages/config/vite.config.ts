@@ -1,9 +1,13 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
 import { lintConfig } from "./oxlint.config.ts";
+import { isolatedTestFiles } from "./testing/isolated-tests.ts";
 
 /** Workspace commands run from the repository root, not this package. */
 const repository = fileURLToPath(new URL("../..", import.meta.url));
+
+/** Node tests that replace modules or pin time need their own module graph. */
+const nodeIsolatedTests = isolatedTestFiles.filter((file) => !file.startsWith("apps/web/"));
 
 export default defineConfig({
   fmt: {
@@ -37,9 +41,48 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: false },
   },
   test: {
+    // Content-addressed on-disk transform cache; CI restores it between runs.
+    fsModuleCache: true,
+    // Tests inject dependencies through Effect layers instead of mocking
+    // imports, so a fresh module graph per file is wasted work. Measured on
+    // the full suite with 4 workers: 53s with isolation, 9s without. Keep new
+    // tests free of module-level state that leaks between files in a worker.
+    isolate: false,
     projects: [
-      `${repository}/apps/*/vitest.config.ts`,
-      `${repository}/packages/*/vitest.config.ts`,
+      // One project for all node tests replaces 34 near-identical per-package
+      // configs. It also picks up src tests that a stale include glob used to
+      // skip (packages/dm-android/src/policy.test.ts).
+      {
+        extends: true,
+        test: {
+          name: "node",
+          globals: true,
+          environment: "node",
+          setupFiles: [`${repository}/packages/enterprise-domain/src/admx/test-dom.ts`],
+          include: [
+            "apps/*/src/**/*.test.ts",
+            "apps/*/tests/**/*.test.ts",
+            "packages/*/src/**/*.test.ts",
+            "packages/*/tests/**/*.test.ts",
+          ],
+          exclude: ["apps/web/**", ...nodeIsolatedTests, "**/node_modules/**", "**/dist/**"],
+        },
+      },
+      // Mocks and fake clocks leak through a shared module graph, so these
+      // tests keep their own environment. Derived from source, not a list.
+      {
+        extends: true,
+        test: {
+          name: "node-isolated",
+          globals: true,
+          environment: "node",
+          isolate: true,
+          setupFiles: [`${repository}/packages/enterprise-domain/src/admx/test-dom.ts`],
+          include: nodeIsolatedTests,
+        },
+      },
+      // The web app needs the Solid plugin and two module-condition variants.
+      `${repository}/apps/web/vitest.config.ts`,
     ],
   },
 });

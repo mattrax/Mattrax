@@ -1,6 +1,7 @@
 import { expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { createHmac, randomUUID } from "node:crypto";
+import { readSharedSession } from "../../packages/config/e2e-shared-session.ts";
 
 type DebugEmail = { readonly to: string; readonly text: string };
 
@@ -193,12 +194,7 @@ export async function signIn(page: Page, email: string) {
       // Older browser builds without the capability already skip conditional UI.
     }
   });
-  await page.goto("/login", { waitUntil: "networkidle" });
-  await page.waitForFunction(
-    () => document.documentElement.dataset.hydrated === "true",
-    undefined,
-    { timeout: 20_000 },
-  );
+  await gotoHydrated(page, "/login");
 
   // Sign-in is email-first: the address decides whether SSO applies, and the
   // passkey ceremony follows on the next step.
@@ -281,6 +277,52 @@ export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
   await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
 
   return tenant;
+}
+
+/**
+ * Put a page into an already-authenticated session. Global setup creates one
+ * account through the real registration UI; specs that need a brand-new
+ * identity (registration, invitees, passkeys) keep using register() instead.
+ */
+export async function sharedSession(page: Page) {
+  const shared = readSharedSession();
+
+  // Each spec owns a context; clear anyway so a reused page cannot inherit
+  // cookies from a session that ended earlier in the run.
+  await page.context().clearCookies();
+
+  if (shared) {
+    try {
+      await page.context().addCookies(shared.state.cookies);
+      const me = await page.request.get("/api/v1/me");
+
+      if (me.ok()) {
+        const profile: { account?: { email?: string } } = await me.json();
+        // createTenant() and other helpers run fetch() from the page, so put
+        // it on our origin before the caller uses them. register() already
+        // navigates as part of its flow.
+        await gotoHydrated(page, "/dashboard");
+
+        return { email: profile.account?.email ?? shared.email };
+      }
+    } catch {
+      // Stale session or cookie rejected by the browser: fall through to the
+      // full flow so a cached state file can never make a test less honest.
+      await page.context().clearCookies();
+    }
+  }
+
+  return register(page);
+}
+
+/** Share an authenticated session, then create a uniquely named tenant. */
+export async function bootstrapSession(page: Page, name = "E2E Tenant") {
+  const { email } = await sharedSession(page);
+  const tenant = await createTenant(page, `${name} ${randomUUID().slice(0, 4)}`);
+  await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+  await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+
+  return { email, tenant };
 }
 
 /**

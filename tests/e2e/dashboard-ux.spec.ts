@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, gotoHydrated } from "./helpers";
+import { bootstrapSession, gotoHydrated } from "./helpers";
 
 test("keeps the dashboard stable and tracks the active nav item", async ({ page }) => {
-  const tenant = await bootstrapTenant(page, "UX Tenant");
+  const { tenant } = await bootstrapSession(page, "UX Tenant");
   await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
   const gutter = await page.evaluate(
@@ -34,7 +34,7 @@ test("keeps the dashboard stable and tracks the active nav item", async ({ page 
 });
 
 test("writes a readable session presence cookie and the me shell cache", async ({ page }) => {
-  const tenant = await bootstrapTenant(page, "Cache Tenant");
+  const { tenant } = await bootstrapSession(page, "Cache Tenant");
   await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
   const cookies = await page.context().cookies();
