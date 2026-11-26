@@ -345,11 +345,16 @@ test.describe("dashboard accessibility", () => {
     // table to finish loading first: a late row refresh overwrites the live
     // region with its own count and would hide the selection announcement.
     await gotoHydrated(page, `/t/${tenant.id}/groups`);
-    await expect(page.getByRole("status")).toHaveText(/rows? shown/);
+    const statusTexts = () => page.getByRole("status").allTextContents();
+    await expect
+      .poll(statusTexts)
+      .toEqual(expect.arrayContaining([expect.stringMatching(/rows? shown/)]));
     const select = page.getByLabel("Select Announce group");
     await select.check();
     await expect(select).toBeChecked();
-    await expect(page.getByRole("status")).toHaveText(/1 selected/);
+    await expect
+      .poll(statusTexts)
+      .toEqual(expect.arrayContaining([expect.stringMatching(/1 selected/)]));
 
     // The document title names the page and the tenant.
     await expect(page).toHaveTitle(/Groups · .+ · Mattrax/);
