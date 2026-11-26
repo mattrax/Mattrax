@@ -28,7 +28,7 @@ export default defineConfig({
   // recipient, so different files can run in parallel safely. Keep one worker
   // locally for readable failures; CI uses two to fit the suite in fewer
   // shards.
-  workers: process.env.CI ? 2 : 1,
+  workers: process.env.CI ? 4 : 1,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {

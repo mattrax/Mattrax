@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Schema } from "effect";
-import { Effect } from "effect";
+import { Deferred, Effect, Fiber } from "effect";
+import { TestClock } from "effect/testing";
 import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
 import { makeApplePush } from "../src/Device/push.ts";
@@ -217,12 +218,27 @@ describe("makeApplePush outbound backstop", () => {
 
   it("gives up on a transport that never settles and records delivery_failed", async () => {
     const captured: PushCapture = {};
+    const started = Deferred.makeUnsafe<void>();
 
-    const apple = makePush(makeFakeDb(sealedKey, captured), () => Effect.never, 5);
+    const apple = makePush(
+      makeFakeDb(sealedKey, captured),
+      () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+      5,
+    );
 
-    const started = Date.now();
-    await Effect.runPromise(apple.pushAppleDevice("device-1"));
-    expect(Date.now() - started).toBeLessThan(2_000);
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(apple.pushAppleDevice("device-1"), {
+          startImmediately: true,
+        });
+        // Gate virtual time on the transport starting so the 5ms backstop is
+        // installed before the clock is advanced.
+        yield* Deferred.await(started);
+        yield* TestClock.adjust("5 millis");
+        yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+
     expect(captured.patch).toMatchObject({ lastPushErrorCode: "delivery_failed" });
     expect(String(captured.patch?.lastPushError)).toContain("timed out");
   });
@@ -232,9 +248,12 @@ describe("makeApplePush outbound backstop", () => {
 
     const apple = makePush(makeFakeDb(sealedKey, captured), () => Effect.void, 5_000);
 
-    const started = Date.now();
-    await Effect.runPromise(apple.pushAppleDevice("device-1"));
-    expect(Date.now() - started).toBeLessThan(1_000);
+    // On virtual time, completion itself proves the 5s backstop never had to
+    // fire, so no wall-clock budget is asserted.
+    await Effect.runPromise(
+      apple.pushAppleDevice("device-1").pipe(Effect.provide(TestClock.layer())),
+    );
+
     expect(captured.patch).toMatchObject({ consecutivePushFailures: 0 });
   });
 

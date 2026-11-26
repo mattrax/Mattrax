@@ -203,11 +203,13 @@ const trackBackground = () => {
 };
 
 /** Run an effect whose only timer is the fetch deadline on a virtual clock. */
-const runWithClock = <A>(effect: Effect.Effect<A>) =>
+const runWithClock = <A>(effect: Effect.Effect<A>, started: Effect.Effect<void>) =>
   Effect.runPromise(
     Effect.gen(function* () {
       const fiber = yield* Effect.forkChild(effect, { startImmediately: true });
-      yield* Effect.yieldNow;
+      // Do not advance the clock before the operation has installed its virtual
+      // deadline. A single yieldNow is not a reliable gate under CPU load.
+      yield* started;
       yield* TestClock.adjust("100 millis");
       return yield* Fiber.join(fiber);
     }).pipe(Effect.provide(TestClock.layer())),
@@ -528,7 +530,12 @@ describe("software update feed cache", () => {
   it("times out without throwing", async () => {
     const { db, rows } = makeFeedDb();
 
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
     const fetchImpl = ((_: RequestInfo | URL, init?: RequestInit) => {
+      markStarted();
       const signal = init?.signal;
 
       return new Promise<Response>((_, reject) => {
@@ -550,6 +557,7 @@ describe("software update feed cache", () => {
 
     const state = await runWithClock(
       loadSoftwareUpdateCatalog(optionsFor(db, clientForFetch(fetchImpl), { timeoutMs: 1 })),
+      Effect.promise(() => started),
     );
 
     expect(state.error).toBe("timeout");
