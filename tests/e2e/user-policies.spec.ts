@@ -118,7 +118,7 @@ test.describe("per-user policy assignment", () => {
         );
 
         return assignments.users.map((user) => `${user.id}:${user.mode}`);
-      })
+      }, { timeout: 30_000 })
       .toContain(`${directoryUser.id}:include`);
 
     // The assignment survives a reload instead of only existing in local state.

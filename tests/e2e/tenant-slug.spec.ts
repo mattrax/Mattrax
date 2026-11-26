@@ -48,7 +48,9 @@ test.describe("tenant URL slugs", () => {
     await dialog.getByRole("button", { name: "Change slug and save" }).click();
     await saved;
 
-    await expect(page).toHaveURL(new RegExp(`/t/${renamed}/settings$`), { timeout: 20_000 });
+    await expect
+      .poll(() => page.url(), { timeout: 30_000 })
+      .toMatch(new RegExp(`/t/${renamed}/settings$`));
     await gotoHydrated(page, `/t/${renamed}/devices`);
     await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
   });

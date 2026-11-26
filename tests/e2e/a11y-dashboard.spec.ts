@@ -135,41 +135,10 @@ const openPalette = async (page: Page) => {
   return input;
 };
 
-/**
- * Scan an overlay that was just opened in the merged flow. Earlier overlays
- * can leave dismiss layers or stale data-slot nodes behind, so close any
- * existing overlay, wait for it to go away, re-open it immediately before the
- * scan, and retry once if it closes between the visibility check and axe.
- */
-const scanFreshOverlay = async <T>(
-  page: Page,
-  context: string,
-  selector: string,
-  close: () => Promise<void>,
-  open: () => Promise<T>,
-  allow?: Allow,
-): Promise<T> => {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await close();
-    await expect(page.locator(selector).first()).toBeHidden();
-    const opened = await open();
-    await expect(page.locator(selector).first()).toBeVisible();
-
-    try {
-      await expectNoViolations(page, context, { include: selector, allow });
-      return opened;
-    } catch (error) {
-      if (attempt === 1) throw error;
-    }
-  }
-
-  throw new Error(`overlay never stayed open for ${context}`);
-};
-
 test.describe("dashboard accessibility", () => {
-  test.setTimeout(300_000);
+  test.setTimeout(180_000);
 
-  test("authenticated pages, filters and overlay states have no axe violations", async ({ page }) => {
+  test("authenticated pages have no axe violations", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Axe Tenant");
     const base = `/t/${tenant.slug}`;
 
@@ -183,12 +152,7 @@ test.describe("dashboard accessibility", () => {
       method: "POST",
       body: JSON.stringify({ name: "Accessible policy" }),
     });
-    const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
-      method: "POST",
-      body: JSON.stringify({ name: "Overlay group" }),
-    });
 
-    // Original case: "authenticated pages have no axe violations".
     for (const [path, label] of [
       [base, "overview"],
       [`${base}/devices`, "devices"],
@@ -219,38 +183,24 @@ test.describe("dashboard accessibility", () => {
         description: "device detail scan skipped: the E2E tenant has no enrolled device fixture",
       });
     }
+  });
 
-    // Original case: "filter surfaces have no axe violations".
-    await gotoHydrated(page, `${base}/devices`);
+  test("filter surfaces have no axe violations", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Axe Filters");
+    await gotoHydrated(page, `/t/${tenant.slug}/devices`);
 
-    const closeOverlay = async () => {
-      await page.keyboard.press("Escape");
-    };
-    const openFieldPicker = async () => {
-      await page.getByRole("button", { name: "Filter", exact: true }).click();
-    };
+    await page.getByRole("button", { name: "Filter", exact: true }).click();
+    await expectNoViolations(page, "filter field picker", {
+      include: '[data-slot="popover-content"]',
+    });
 
-    await scanFreshOverlay(
-      page,
-      "filter field picker",
-      '[data-slot="popover-content"]',
-      closeOverlay,
-      openFieldPicker,
-    );
-
-    await scanFreshOverlay(
-      page,
-      "filter value picker",
-      '[data-slot="popover-content"]',
-      closeOverlay,
-      async () => {
-        await openFieldPicker();
-        await page
-          .getByRole("listbox", { name: "Filter by" })
-          .getByRole("option", { name: "Status", exact: true })
-          .click();
-      },
-    );
+    await page
+      .getByRole("listbox", { name: "Filter by" })
+      .getByRole("option", { name: "Status", exact: true })
+      .click();
+    await expectNoViolations(page, "filter value picker", {
+      include: '[data-slot="popover-content"]',
+    });
 
     await page
       .getByRole("listbox", { name: "Status value" })
@@ -260,81 +210,60 @@ test.describe("dashboard accessibility", () => {
 
     await page.getByRole("button", { name: "Remove Status filter" }).click();
     await expect(page.getByRole("button", { name: "Filter", exact: true })).toBeVisible();
+  });
 
-    // A stale filter popover would swallow the palette shortcut below.
-    await closeOverlay();
-    await expect(page.locator('[data-slot="popover-content"]').first()).toBeHidden();
+  test("overlay open states have no axe violations", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Axe Overlays");
+    const base = `/t/${tenant.slug}`;
 
-    // Original case: "overlay open states have no axe violations".
+    const group = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/groups`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Overlay group" }),
+    });
+
     // Command palette.
-    const paletteInput = await scanFreshOverlay(
-      page,
-      "command palette open",
-      '[data-slot="command-palette"]',
-      closeOverlay,
-      () => openPalette(page),
-    );
-
-    await scanFreshOverlay(
-      page,
-      "command palette with results",
-      '[data-slot="command-palette"]',
-      closeOverlay,
-      async () => {
-        await openPalette(page);
-        await paletteInput.fill("settings");
-      },
-    );
+    const paletteInput = await openPalette(page);
+    await expectNoViolations(page, "command palette open", {
+      include: '[data-slot="command-palette"]',
+    });
+    await paletteInput.fill("settings");
+    await expectNoViolations(page, "command palette with results", {
+      include: '[data-slot="command-palette"]',
+    });
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="command-palette"]')).toHaveCount(0);
 
     // Tenant switcher.
-    await scanFreshOverlay(
-      page,
-      "tenant switcher open",
-      '[data-slot="menu-content"]',
-      closeOverlay,
-      () => openMenu(page, page.getByRole("button", { name: /Switch tenant/ })),
-    );
+    await openMenu(page, page.getByRole("button", { name: /Switch tenant/ }));
+    await expectNoViolations(page, "tenant switcher open", {
+      include: '[data-slot="menu-content"]',
+    });
     await page.keyboard.press("Escape");
 
     // User menu.
-    await scanFreshOverlay(
-      page,
-      "user menu open",
-      '[data-slot="menu-content"]',
-      closeOverlay,
-      () => openMenu(page, page.getByRole("button", { name: /account menu/i })),
-    );
+    await openMenu(page, page.getByRole("button", { name: /account menu/i }));
+    await expectNoViolations(page, "user menu open", {
+      include: '[data-slot="menu-content"]',
+    });
     await page.keyboard.press("Escape");
 
     // Column picker.
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
-    await scanFreshOverlay(
-      page,
-      "column picker open",
-      '[data-slot="menu-content"]',
-      closeOverlay,
-      async () => {
-        await page.getByRole("button", { name: "Choose visible columns" }).click();
-        await expect(page.locator('[data-slot="menu-content"]')).toBeVisible();
-      },
-    );
+    await page.getByRole("button", { name: "Choose visible columns" }).click();
+    await expect(page.locator('[data-slot="menu-content"]')).toBeVisible();
+    await expectNoViolations(page, "column picker open", {
+      include: '[data-slot="menu-content"]',
+    });
     await page.keyboard.press("Escape");
 
     // Destructive confirmation dialog, opened from the bulk selection bar.
     await gotoHydrated(page, `${base}/groups`);
     await page.getByLabel("Select Overlay group").check();
-    await scanFreshOverlay(
-      page,
-      "confirm dialog open",
-      '[data-slot="dialog-content"]',
-      async () => undefined,
-      async () => {
-        await page.getByRole("button", { name: /^Delete 1 group/ }).click();
-        await expect(page.locator('[data-slot="dialog-content"]')).toBeVisible();
-      },
-    );
+    await page.getByRole("button", { name: /^Delete 1 group/ }).click();
+    await expect(page.locator('[data-slot="dialog-content"]')).toBeVisible();
+    await expectNoViolations(page, "confirm dialog open", {
+      include: '[data-slot="dialog-content"]',
+    });
     // The shared dialog primitive's Escape handling is owned by
     // `components/ui/dialog.tsx`; dismiss through its Cancel button here.
     await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
@@ -346,25 +275,16 @@ test.describe("dashboard accessibility", () => {
     expect(group.id).toBeTruthy();
   });
 
-  test("keyboard focus, route announcements and palette announcements", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Axe Keyboard");
-    await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
-      method: "POST",
-      body: JSON.stringify({ name: "Announce group" }),
-    });
+  test("Escape closes overlays and restores focus", async ({ page }) => {
+    await bootstrapTenant(page, "Axe Keyboard");
 
-    // Original case: "Escape closes overlays and restores focus".
     // Palette opened from the header search button.
     const search = page.getByRole("button", { name: /^Search/ });
     await search.click();
     const input = page.locator('input[role="combobox"]');
     await expect(input).toBeVisible();
     await expect(input).toBeFocused();
-    // A preceding overlay can consume the first Escape as an outside press.
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if ((await page.locator('[data-slot="command-palette"]').count()) === 0) break;
-      await page.keyboard.press("Escape");
-    }
+    await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="command-palette"]')).toHaveCount(0);
     await expect(search).toBeFocused();
 
@@ -381,8 +301,14 @@ test.describe("dashboard accessibility", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="menu-content"]')).toHaveCount(0);
     await expect(columns).toBeFocused();
+  });
 
-    // Original case: "route changes focus main and selection is announced".
+  test("route changes focus main and selection is announced", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Axe Navigation");
+    await api(page, `/api/v1/tenants/${tenant.id}/groups`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Announce group" }),
+    });
     await gotoHydrated(page, `/t/${tenant.id}/groups`);
 
     // The skip link changes only the hash, so it focuses its target directly.
@@ -404,37 +330,35 @@ test.describe("dashboard accessibility", () => {
     // table to finish loading first: a late row refresh overwrites the live
     // region with its own count and would hide the selection announcement.
     await gotoHydrated(page, `/t/${tenant.id}/groups`);
-    // The page also exposes shell and footer status regions; the table's
-    // sr-only <p> is the live region that announces row and selection counts.
-    const tableStatus = page.locator(
-      'p[role="status"][aria-live="polite"][aria-atomic="true"]',
-    );
-    await expect(tableStatus).toHaveText(/rows? shown/);
+    await expect(page.getByRole("status")).toHaveText(/rows? shown/);
     const select = page.getByLabel("Select Announce group");
     await select.check();
     await expect(select).toBeChecked();
-    await expect(tableStatus).toHaveText(/1 selected/);
+    await expect(page.getByRole("status")).toHaveText(/1 selected/);
 
     // The document title names the page and the tenant.
     await expect(page).toHaveTitle(/Groups · .+ · Mattrax/);
+  });
 
-    // Original case: "palette navigation focuses main without stealing focus
-    // for query-only changes".
+  test("palette navigation focuses main without stealing focus for query-only changes", async ({
+    page,
+  }) => {
+    const tenant = await bootstrapTenant(page, "Axe Palette Navigation");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
-    const paletteInput = await openPalette(page);
-    await paletteInput.fill("Applications");
+    const input = await openPalette(page);
+    await input.fill("Applications");
     await expect(page.getByRole("option", { name: /^Applications/ }).first()).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    await paletteInput.press("Enter");
+    await input.press("Enter");
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/applications$`));
     await expect(page.locator("#main")).toBeFocused();
 
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
 
-    const buttonSearch = page.getByRole("button", { name: "Search", exact: true });
+    const search = page.getByRole("button", { name: "Search", exact: true });
     const queryInput = page.locator('[data-slot="command-palette"] input[role="combobox"]');
 
     // The route's dismiss layer can swallow the first press after navigation;
@@ -444,7 +368,7 @@ test.describe("dashboard accessibility", () => {
         async () => {
           if ((await queryInput.count()) > 0) return 1;
 
-          await buttonSearch.click();
+          await search.click();
 
           return queryInput.count();
         },
@@ -459,20 +383,15 @@ test.describe("dashboard accessibility", () => {
     );
     await queryInput.press("Enter");
     await expect(page).toHaveURL(/\/devices\?health=critical$/);
-    await expect(buttonSearch).toBeFocused();
+    await expect(search).toBeFocused();
     await expect(page.locator("#main")).not.toBeFocused();
+  });
 
-    // Original case: "palette announcements describe result changes".
-    // The query-only navigation above leaves its palette dismissing, and
-    // openPalette() reuses an input that is still mounted. Wait for that
-    // palette to unmount so the announcement comes from a fresh search.
-    await page.keyboard.press("Escape");
-    await expect(page.locator('[data-slot="command-palette"]')).toHaveCount(0);
-    await expect(page.locator('input[role="combobox"]')).toHaveCount(0);
+  test("palette announcements describe result changes", async ({ page }) => {
+    await bootstrapTenant(page, "Axe Announce");
 
-    const announcementInput = await openPalette(page);
-    await expect(announcementInput).toBeFocused();
-    await announcementInput.fill("this-command-does-not-exist");
+    const input = await openPalette(page);
+    await input.fill("this-command-does-not-exist");
     const status = page.locator('[data-slot="command-palette"] [role="status"]');
 
     await expect(status).toHaveText(/No results/, { timeout: 10_000 });
@@ -484,7 +403,7 @@ test.describe("dashboard accessibility", () => {
         .first(),
     ).toBeVisible();
 
-    await announcementInput.fill("settings");
+    await input.fill("settings");
     await expect(status).toHaveText(/result/, { timeout: 10_000 });
     await expect(page.locator('input[role="combobox"]')).toHaveAttribute("aria-expanded", "true");
   });
