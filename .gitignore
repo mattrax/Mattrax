@@ -68,3 +68,7 @@ dist-attrib/
 # Lighthouse CI reports
 /.lighthouseci/
 /.lighthouse-prod/
+
+# CDP (Chrome DevTools Protocol) artifacts
+.cdp/
+.cdp-report/
