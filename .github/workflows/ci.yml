@@ -213,8 +213,7 @@ jobs:
   # typecheck 1m29s and the builds 42s, for 7-8 minutes in a single job. None of
   # those steps needs another's output, so the wall clock is now the slowest
   # parallel branch (typecheck ~1m29s) instead of their sum. Vitest no longer
-  # needs shards: one node project and shared module graphs cut the suite from
-  # 53s to 9s locally. Install is 4 seconds from the pnpm store cache, so each
+  # needs shards: shared node projects cut the suite from 53s to 9s locally. Install is 4 seconds from the pnpm store cache, so each
   # job installs itself rather than waiting on an install job.
   #
   # Lint, vitest and typecheck always run. They are not gated on the changed
@@ -245,9 +244,9 @@ jobs:
     strategy:
       # Every shard's failure report is useful; do not cancel the rest.
       fail-fast: false
-      # A single node project and no per-file module isolation take the 5,427
-      # tests in 478 files from 53s to 9s locally. One runner therefore stays
-      # well under the two-minute budget, so the three-way matrix is gone.
+      # Shared node projects take the 5,427 tests in 478 files from 53s to 9s
+      # locally; only files that still mock imports keep their own module
+      # graph. One runner stays well under the two-minute budget.
       # Keep the shard in the name and command so the denominator still comes
       # from the matrix if the suite ever needs to fan out again.
       matrix:
@@ -298,7 +297,7 @@ jobs:
     needs: changes
     # The build steps are gated on their own paths; the migration steps only
     # run on main and schema-changing PRs. Folding migrations in here keeps the
-    # job count at twenty now that Lighthouse is a four-job matrix.
+    # job count at sixteen now that Lighthouse is a four-job matrix.
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -481,16 +480,17 @@ jobs:
   # the path once main has published it; the build job above is the real path.
   #
   # Seven shards. Two workers per shard and hydration-based navigation (no
-  # network-idle wait) bring the heaviest modeled shard to ~110s including the
-  # ~48s setup, so the suite stays under two minutes with two fewer runners.
-  # With the vitest job also down to one, the account job count falls from 20
-  # to 16: changes + lint + 1 vitest + typecheck + build/migrations + 4
-  # Lighthouse + 7 shards.
+  # network-idle wait) put the other shards around ~120s including the ~48s
+  # setup. The `mfa.spec.ts` shard is the floor at ~150s: one 81-86s test
+  # enrolls, requires a pending code, uses a recovery code, regenerates and
+  # disables, and a single test cannot be split across workers. That floor was
+  # already the suite's wall clock with nine shards, so dropping to seven saves
+  # two runners without adding time. Only splitting that test would bring the
+  # browser suite itself under two minutes.
   #
-  # `mfa.spec.ts` is still the longest file — one 81-86s test that enrolls,
-  # requires a pending code, uses a recovery code, regenerates and disables —
-  # but it is no longer the floor: two workers keep its shard inside the same
-  # budget as the others.
+  # With vitest also down to one, the account job count falls from 20 to 16:
+  # changes + lint + 1 vitest + typecheck + build/migrations + 4 Lighthouse + 7
+  # shards.
   #
   # Measured per-shard cost is ~25s setup, ~1s schema restore, ~2s browser
   # cache, ~22s build-and-serve (MySQL and the schema load run underneath it)

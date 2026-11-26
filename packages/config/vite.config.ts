@@ -1,9 +1,13 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite-plus";
 import { lintConfig } from "./oxlint.config.ts";
+import { isolatedTestFiles } from "./testing/isolated-tests.ts";
 
 /** Workspace commands run from the repository root, not this package. */
 const repository = fileURLToPath(new URL("../..", import.meta.url));
+
+/** Node tests that replace modules or pin time need their own module graph. */
+const nodeIsolatedTests = isolatedTestFiles.filter((file) => !file.startsWith("apps/web/"));
 
 export default defineConfig({
   fmt: {
@@ -61,38 +65,23 @@ export default defineConfig({
           ],
           exclude: [
             "apps/web/**",
-            "apps/docker/src/cron.test.ts",
-            "packages/config/tests/no-vitest-mocking.test.ts",
-            "packages/enterprise-api/tests/appleByod.test.ts",
-            "packages/enterprise-api/tests/appleByodRateLimit.test.ts",
-            "packages/enterprise-api/tests/invitations.test.ts",
-            "packages/enterprise-backend/tests/storageValidationCache.test.ts",
-            "packages/enterprise-tokens/src/tokens.test.ts",
-            "packages/plist/src/tests/plist.test.ts",
+            ...nodeIsolatedTests,
             "**/node_modules/**",
             "**/dist/**",
           ],
         },
       },
-      // The handful of node files that still use vi.mock/spyOn need a fresh
-      // module graph so one file's replacement cannot leak into the next.
+      // Mocks and fake clocks leak through a shared module graph, so these
+      // tests keep their own environment. Derived from source, not a list.
       {
+        extends: true,
         test: {
           name: "node-isolated",
           globals: true,
           environment: "node",
           isolate: true,
           setupFiles: [`${repository}/packages/enterprise-domain/src/admx/test-dom.ts`],
-          include: [
-            "apps/docker/src/cron.test.ts",
-            "packages/config/tests/no-vitest-mocking.test.ts",
-            "packages/enterprise-api/tests/appleByod.test.ts",
-            "packages/enterprise-api/tests/appleByodRateLimit.test.ts",
-            "packages/enterprise-api/tests/invitations.test.ts",
-            "packages/enterprise-backend/tests/storageValidationCache.test.ts",
-            "packages/enterprise-tokens/src/tokens.test.ts",
-            "packages/plist/src/tests/plist.test.ts",
-          ],
+          include: nodeIsolatedTests,
         },
       },
       // The web app needs the Solid plugin and two module-condition variants.
