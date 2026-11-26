@@ -7,7 +7,7 @@ import type {
   PlatformEnrollment,
   WindowsEnrollment,
 } from "~/lib/enterprise";
-import { EnrollmentOptions } from "./enrollment-platforms";
+import EnrollmentOptions from "./enrollment-platforms";
 
 const enrollment = (input: {
   apple?: PlatformEnrollment;
@@ -55,9 +55,12 @@ describe("enrollment platform panels", () => {
   });
 
   it("uses dark text on a light tenant brand colour", () => {
-    expect(
-      renderOptions(enrollment({ apple: { profile: "plist" }, brandColor: "#facc15" })),
-    ).toContain("color:black");
+    const html = renderOptions(
+      enrollment({ apple: { profile: "plist" }, brandColor: "#facc15" }),
+    );
+
+    expect(html).toContain("--enroll-button-bg:#facc15");
+    expect(html).toContain("--enroll-button-fg:black");
   });
 
   it("renders an enabled Windows discovery link and setup steps", () => {

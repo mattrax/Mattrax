@@ -10,8 +10,8 @@ function Kbd(props: ComponentProps<"kbd">) {
     <kbd
       data-slot="kbd"
       class={cn(
-        "inline-flex h-5 min-w-5 items-center justify-center rounded-[4px] border border-border bg-surface px-1",
-        "font-sans text-[10.5px] font-[560] leading-none text-muted-foreground shadow-[0_1px_0_rgb(24_24_22/0.04)]",
+        "inline-flex h-5 min-w-5 items-center justify-center rounded-sm border border-border bg-surface px-1",
+        "font-sans text-xs font-semibold leading-none text-muted-foreground shadow-card",
         local.class,
       )}
       {...others}
@@ -26,7 +26,7 @@ function Skeleton(props: Omit<ComponentProps<"div">, "style">) {
     <div
       data-slot="skeleton"
       aria-hidden="true"
-      class={cn("mt-skeleton rounded-md", local.class)}
+      class={cn("animate-pulse bg-muted rounded-md", local.class)}
       {...others}
     />
   );
@@ -60,8 +60,8 @@ function Avatar(props: Omit<ComponentProps<"span">, "style"> & { size?: "sm" | "
       data-slot="avatar"
       data-size={local.size ?? "default"}
       class={cn(
-        "inline-flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-muted-foreground ring-1 ring-inset ring-border",
-        "data-[size=sm]:size-5 data-[size=sm]:text-[9px] data-[size=lg]:size-9 data-[size=lg]:text-[12px]",
+        "inline-flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-hover text-xs font-semibold text-muted-foreground ring-1 ring-inset ring-border",
+        "data-[size=sm]:size-5 data-[size=sm]:text-xs data-[size=lg]:size-9 data-[size=lg]:text-xs",
         local.class,
       )}
       {...others}

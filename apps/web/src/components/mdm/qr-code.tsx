@@ -7,11 +7,11 @@ import { qrPath } from "~/lib/qr";
  * `<img>` data URI) so it prints and screenshots correctly and inherits the
  * surrounding card's sizing.
  */
-export function QrCode(props: { value: string; label?: string; class?: string; size?: number }) {
+export default function QrCode(props: { value: string; label?: string; class?: string; size?: number }) {
   const qr = createMemo(() => (props.value ? qrPath(props.value) : null));
-  // The fixed light background keeps the code scannable everywhere; a caller
-  // that frames it can still override the surface through `cn` merging.
-  const classes = () => cn("block h-auto max-w-full bg-[var(--qr-background)]", props.class);
+  // The SVG's own rect paints the fixed light background, so the root only
+  // needs layout classes; a caller can still style the frame via `cn`.
+  const classes = () => cn("block h-auto max-w-full", props.class);
 
   return (
     <Show when={qr()}>
