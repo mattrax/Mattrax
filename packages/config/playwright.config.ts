@@ -24,7 +24,11 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
-  workers: 1,
+  // Specs use unique emails/tenants and the dev mailbox looks codes up by
+  // recipient, so different files can run in parallel safely. Keep one worker
+  // locally for readable failures; CI uses two to fit the suite in fewer
+  // shards.
+  workers: process.env.CI ? 2 : 1,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {

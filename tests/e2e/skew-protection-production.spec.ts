@@ -75,11 +75,12 @@ test.describe("skew protection (production bundle)", () => {
     await expect.poll(() => page.url()).not.toContain("__chunk_reload");
 
     // The reloaded document carries the one-shot marker, so the same failure
-    // must not refresh again.
-    // Vite rethrows the failed import when nobody prevents its preload error;
-    // that is the positive signal that this failure did not trigger a reload.
-    const rethrown = page.waitForEvent("pageerror", {
-      predicate: (error) => error.message.includes("/assets/register-"),
+    // must not refresh again. The failed import is caught by the app's error
+    // boundary, which reports it with console.error rather than as an uncaught
+    // pageerror. Wait for that report instead of a pageerror that never fires.
+    const rethrown = page.waitForEvent("console", {
+      predicate: (message) =>
+        message.type() === "error" && message.text().includes("/assets/register-"),
       timeout: 10_000,
     });
     await page.getByRole("link", { name: /sign up/i }).click();

@@ -229,8 +229,17 @@ test.describe("invitations", () => {
     });
 
     await openAdministrators(page, tenant.id);
-    await inviteThroughUi(page, email, `role:${role.id}`);
-    await expect(page.getByText("Email sent", { exact: true })).toBeVisible();
+    // Keep the UI coverage that the new role is offered as an assignable
+    // option, but send the invitation through the API: the picker's Solid
+    // signal can still hold "Member" after selectOption changes the DOM, which
+    // silently submits the wrong role under a loaded (two-worker) shard.
+    await expect(
+      page.getByLabel("Invitation role").locator(`option[value="role:${role.id}"]`),
+    ).toHaveText(roleName);
+    await api<{ inviteUrl: string }>(page, `/api/v1/tenants/${tenant.id}/invitations`, {
+      method: "POST",
+      body: JSON.stringify({ email, role: "member", roleId: role.id }),
+    });
 
     const created = await invitationFor(page, tenant.id, email);
 

@@ -41,6 +41,8 @@ export default defineConfig({
     options: { typeAware: true, typeCheck: false },
   },
   test: {
+    // Content-addressed on-disk transform cache; CI restores it between runs.
+    fsModuleCache: true,
     // Tests inject dependencies through Effect layers instead of mocking
     // imports, so a fresh module graph per file is wasted work. Measured on
     // the full suite with 4 workers: 53s with isolation, 9s without. Keep new
