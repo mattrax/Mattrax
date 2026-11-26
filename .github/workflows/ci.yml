@@ -612,7 +612,12 @@ jobs:
           set -euo pipefail
           printf '[mysqld]\nmysql_native_password=ON\n' |
             sudo tee /etc/mysql/mysql.conf.d/zz-ci-native.cnf >/dev/null
-          sudo systemctl start mysql.service
+          if ! sudo systemctl start mysql.service; then
+            sudo systemctl status mysql.service || true
+            sudo journalctl -xeu mysql.service || true
+            sudo tail -100 /var/log/mysql/error.log || true
+            exit 1
+          fi
           ready=""
           for attempt in $(seq 1 30); do
             if mysqladmin -h127.0.0.1 -uroot -proot ping >/dev/null 2>&1; then
