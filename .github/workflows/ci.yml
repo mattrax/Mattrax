@@ -370,8 +370,6 @@ jobs:
           needs.changes.result != 'success' ||
           needs.changes.outputs.schema == 'true'
         run: |
-          printf '[mysqld]\nmysql_native_password=ON\n' |
-            sudo tee /etc/mysql/mysql.conf.d/zz-ci-native.cnf >/dev/null
           if ! sudo systemctl start mysql.service; then
             sudo systemctl status mysql.service || true
             sudo journalctl -xeu mysql.service || true
@@ -392,8 +390,8 @@ jobs:
           fi
           mysql -uroot -proot <<'SQL'
           CREATE DATABASE IF NOT EXISTS mattraxe;
-          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
-          ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
+          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED BY 'mattrax';
+          ALTER USER 'mattrax'@'%' IDENTIFIED BY 'mattrax';
           GRANT ALL ON mattraxe.* TO 'mattrax'@'%';
           SQL
       - name: Apply every migration from scratch
@@ -519,7 +517,7 @@ jobs:
     timeout-minutes: 30
     env:
       E2E_CHANNEL: bundled
-      E2E_WORKERS: 6
+      E2E_WORKERS: 4
       # Serve the production build rather than the dev server: a dashboard page
       # hydrates in ~70ms from built bundles against ~650ms in dev mode, and
       # every test loads several documents.

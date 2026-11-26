@@ -6,6 +6,7 @@ import {
   installVirtualAuthenticator,
   register,
   setVirtualAuthenticatorPresence,
+  signIn,
   signOut,
 } from "./helpers";
 
@@ -38,14 +39,7 @@ test.describe("passkeys", () => {
 
     // Sign out, then use the passkey.
     await signOut(page);
-
-    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
-    await page.locator("#email").fill(email);
-    await page.getByRole("button", { name: /^continue$/i }).click();
-    await page
-      .getByRole("button", { name: /passkey/i })
-      .first()
-      .click();
+    await signIn(page, email);
     await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
 
     // Removing the last passkey needs another step-up and signs this session out.
