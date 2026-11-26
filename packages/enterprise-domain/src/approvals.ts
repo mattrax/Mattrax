@@ -11,6 +11,7 @@ import type { BuiltInTenantRole } from "./rbac.js";
  */
 export const APPROVAL_ACTIONS = [
   "device.wipe",
+  "device.fresh-start",
   "tenant.delete",
   "tenant.export",
   "policy.delete",
@@ -26,6 +27,7 @@ export const ApprovalAction = Schema.Literals(APPROVAL_ACTIONS);
 
 export const APPROVAL_ACTION_LABELS: Record<ApprovalAction, string> = {
   "device.wipe": "Wipe a device",
+  "device.fresh-start": "Run Windows Fresh Start",
   "tenant.delete": "Delete the tenant",
   "tenant.export": "Export tenant data",
   "policy.delete": "Delete policies or restore a backup",
@@ -49,6 +51,7 @@ export const ApprovalScopeType = Schema.Literals(APPROVAL_SCOPE_TYPES);
  */
 export const APPROVAL_SCOPED_ACTIONS: ReadonlySet<ApprovalAction> = new Set([
   "device.wipe",
+  "device.fresh-start",
   "script.run",
 ]);
 

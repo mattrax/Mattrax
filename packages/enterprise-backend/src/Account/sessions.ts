@@ -1,5 +1,5 @@
 import { and, eq, gt, inArray } from "drizzle-orm";
-import { Effect, Option, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 import { authSessions } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import type { ClientDescriptor } from "./accountAudit.ts";
@@ -141,10 +141,11 @@ export const listUserSessions = (
   currentSessionId?: string,
 ): Effect.Effect<Array<AccountSession>> =>
   Effect.gen(function* () {
+    const now = DateTime.toEpochMillis(yield* DateTime.now);
     const rows = yield* db
       .select()
       .from(authSessions)
-      .where(and(eq(authSessions.subjectId, accountId), gt(authSessions.expiresAt, Date.now())));
+      .where(and(eq(authSessions.subjectId, accountId), gt(authSessions.expiresAt, now)));
 
     const sessions = rows.map((row) => Schema.decodeUnknownSync(SessionRow)(row));
 

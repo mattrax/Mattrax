@@ -4,9 +4,11 @@ import { useNavigate } from "~/lib/navigation";
 import { Match, Option, Schema } from "effect";
 import { ApplicationNode } from "@mattrax/enterprise-domain/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { Checkbox } from "@mattrax/ui";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { StaleWriteBanner } from "~/components/stale-write-banner";
+import StaleWriteBanner from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import {
   ErrorText,
   Field,
@@ -20,7 +22,7 @@ import {
 } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
 import { CircleAlert } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
@@ -56,10 +58,10 @@ export const route = {
 };
 
 const textareaClass =
-  "min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "min-h-24 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 const selectClass =
-  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 type StorefrontDraft = {
   region: string;
@@ -77,6 +79,73 @@ type InstallerDraft = {
   minOsVersion: string;
   requiredCapability: string;
   priority: string;
+};
+
+type ApplicationAssignmentPatch = {
+  assign: { groups: string[]; userGroups: string[]; devices: string[] };
+  unassign: { groups: string[]; userGroups: string[]; devices: string[] };
+};
+
+/** Diff against the loaded row before an optimistic write can hide the change. */
+const applicationAssignmentDiff = (
+  current:
+    | {
+        readonly groups: ReadonlyArray<{ readonly id: string }>;
+        readonly userGroups: ReadonlyArray<{ readonly id: string }>;
+        readonly devices: ReadonlyArray<{ readonly id: string }>;
+      }
+    | undefined,
+  next: {
+    readonly groups: ReadonlySet<string>;
+    readonly userGroups: ReadonlySet<string>;
+    readonly devices: ReadonlySet<string>;
+  },
+): ApplicationAssignmentPatch | undefined => {
+  const oldGroups = current?.groups.map((group) => group.id) ?? [];
+  const oldUserGroups = current?.userGroups.map((group) => group.id) ?? [];
+  const oldDevices = current?.devices.map((device) => device.id) ?? [];
+  const assignGroups = [...next.groups].filter((id) => !oldGroups.includes(id));
+  const assignUserGroups = [...next.userGroups].filter((id) => !oldUserGroups.includes(id));
+  const assignDevices = [...next.devices].filter((id) => !oldDevices.includes(id));
+  const unassignGroups = oldGroups.filter((id) => !next.groups.has(id));
+  const unassignUserGroups = oldUserGroups.filter((id) => !next.userGroups.has(id));
+  const unassignDevices = oldDevices.filter((id) => !next.devices.has(id));
+
+  if (
+    assignGroups.length +
+      assignUserGroups.length +
+      assignDevices.length +
+      unassignGroups.length +
+      unassignUserGroups.length +
+      unassignDevices.length ===
+    0
+  )
+    return undefined;
+
+  return {
+    assign: {
+      groups: assignGroups,
+      userGroups: assignUserGroups,
+      devices: assignDevices,
+    },
+    unassign: {
+      groups: unassignGroups,
+      userGroups: unassignUserGroups,
+      devices: unassignDevices,
+    },
+  };
+};
+
+type ApplicationSaveDraft = {
+  name: string;
+  notes: string | null;
+  removeOnUnassign: boolean;
+  expectedUpdatedAt?: string;
+  installers: InstallerDraft[];
+  groups: ApplicationNode["groups"];
+  userGroups: ApplicationNode["userGroups"];
+  devices: ApplicationNode["devices"];
+  assignmentPatch?: ApplicationAssignmentPatch;
 };
 
 const installerDraft = (value: ApplicationNode["installers"][number]): InstallerDraft => ({
@@ -175,6 +244,14 @@ const formatBytes = (value?: number | null) => {
   return `${amount.toFixed(amount >= 10 ? 0 : 1)} ${units[unit]}`;
 };
 
+/** Read secondary query data only after success so pending async values never throw during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export default function ApplicationDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -192,7 +269,8 @@ export default function ApplicationDetailPage() {
   const vpp = useQuery(() => enterpriseQueries.vpp(params.tenantId));
   const vppAssets = useQuery(() => enterpriseQueries.vppAssets(params.tenantId));
 
-  const row = () => Option.getOrUndefined(Schema.decodeUnknownOption(ApplicationNode)(app.data));
+  const row = () =>
+    Option.getOrUndefined(Schema.decodeUnknownOption(ApplicationNode)(settledQueryData(app)));
   const guard = createStaleWriteGuard(() => row()?.updatedAt);
   /** Bumped after our own save and by "Reload latest" to reseed the form. */
   const [seedEpoch, setSeedEpoch] = createSignal(0);
@@ -238,20 +316,38 @@ export default function ApplicationDetailPage() {
     },
   );
 
+  /**
+   * Refetch the record and return the version the server just confirmed.
+   *
+   * Reading `row()` after this resolves is not enough: the query cache has the
+   * new body, but Solid's projection can still expose the previous value for a
+   * tick, which would arm the next save with the pre-refresh `updatedAt` and
+   * lose the precondition check. Returning the fetched timestamp gives callers
+   * a value that cannot lag behind the network.
+   */
   const invalidate = async () => {
-    await qc.invalidateQueries({
-      queryKey: enterpriseKeys.application(params.tenantId, params.applicationId),
-    });
+    const latest = await qc
+      .fetchQuery({
+        ...enterpriseQueries.application(params.tenantId, params.applicationId),
+        staleTime: 0,
+      })
+      // A refresh that cannot be fetched must not turn an already-successful
+      // save into an error; the guard falls back to the reactive row.
+      .catch(() => undefined);
     await qc.invalidateQueries({ queryKey: enterpriseKeys.applications(params.tenantId) });
     await qc.invalidateQueries({
       queryKey: enterpriseKeys.entitySearchPrefix(params.tenantId, "application"),
     });
+
+    return Option.getOrUndefined(Schema.decodeUnknownOption(ApplicationNode)(latest))?.updatedAt;
   };
 
   /** Group relations for the checkboxes, named from the cached group list. */
   const optimisticGroups = () => {
     const names = new Map(
-      (groups.data?.rows ?? []).map((group: GroupRow) => [group.id, group.name] as const),
+      (settledQueryData(groups)?.rows ?? []).map(
+        (group: GroupRow) => [group.id, group.name] as const,
+      ),
     );
 
     for (const group of row()?.groups ?? [])
@@ -263,7 +359,7 @@ export default function ApplicationDetailPage() {
   /** Directory group relations for the checkboxes, named from the directory. */
   const optimisticUserGroups = () => {
     const names = new Map(
-      (directory.data?.groups ?? []).map((group) => [group.id, group.name] as const),
+      (settledQueryData(directory)?.groups ?? []).map((group) => [group.id, group.name] as const),
     );
 
     for (const group of row()?.userGroups ?? [])
@@ -275,7 +371,9 @@ export default function ApplicationDetailPage() {
   /** Device relations for the checkboxes, named from the cached device list. */
   const optimisticDevices = () => {
     const names = new Map(
-      (devices.data?.rows ?? []).map((device: DeviceRow) => [device.id, device.name] as const),
+      (settledQueryData(devices)?.rows ?? []).map(
+        (device: DeviceRow) => [device.id, device.name] as const,
+      ),
     );
 
     for (const device of row()?.devices ?? [])
@@ -288,13 +386,13 @@ export default function ApplicationDetailPage() {
 
   const save = useMutation(() => ({
     meta: { inlineError: true },
-    mutationFn: async () => {
+    mutationFn: async (draft: ApplicationSaveDraft) => {
       await enterprise.patchApplication(params.tenantId, params.applicationId, {
-        name: name(),
-        notes: notes() || null,
-        removeOnUnassign: removeOnUnassign(),
-        expectedUpdatedAt: guard.expectedUpdatedAt(),
-        installers: installers().map((installer) => ({
+        name: draft.name,
+        notes: draft.notes,
+        removeOnUnassign: draft.removeOnUnassign,
+        expectedUpdatedAt: draft.expectedUpdatedAt,
+        installers: draft.installers.map((installer) => ({
           id: installer.id,
           platform: installer.platform,
           source: installer.source,
@@ -307,60 +405,36 @@ export default function ApplicationDetailPage() {
           priority: Number(installer.priority) || 0,
         })),
       });
-      const oldGroups = row()?.groups.map((group) => group.id) ?? [];
-      const oldUserGroups = row()?.userGroups.map((group) => group.id) ?? [];
-      const oldDevices = row()?.devices.map((device) => device.id) ?? [];
-      const assignGroups = [...groupIds()].filter((id) => !oldGroups.includes(id));
-      const assignUserGroups = [...userGroupIds()].filter((id) => !oldUserGroups.includes(id));
-      const assignDevices = [...deviceIds()].filter((id) => !oldDevices.includes(id));
-      const unassignGroups = oldGroups.filter((id) => !groupIds().has(id));
-      const unassignUserGroups = oldUserGroups.filter((id) => !userGroupIds().has(id));
-      const unassignDevices = oldDevices.filter((id) => !deviceIds().has(id));
 
-      if (
-        assignGroups.length +
-          assignUserGroups.length +
-          assignDevices.length +
-          unassignGroups.length +
-          unassignUserGroups.length +
-          unassignDevices.length >
-        0
-      )
-        await enterprise.patchApplicationAssignments(params.tenantId, params.applicationId, {
-          assign: {
-            groups: assignGroups,
-            userGroups: assignUserGroups,
-            devices: assignDevices,
-          },
-          unassign: {
-            groups: unassignGroups,
-            userGroups: unassignUserGroups,
-            devices: unassignDevices,
-          },
-        });
+      if (draft.assignmentPatch)
+        await enterprise.patchApplicationAssignments(
+          params.tenantId,
+          params.applicationId,
+          draft.assignmentPatch,
+        );
     },
-    onMutate: async () => {
+    onMutate: async (draft: ApplicationSaveDraft) => {
       const restores = await Promise.all([
         optimisticUpdate<ApplicationNode>(
           qc,
           enterpriseKeys.application(params.tenantId, params.applicationId),
           (current) => ({
             ...current,
-            name: name(),
-            notes: notes() || null,
-            removeOnUnassign: removeOnUnassign(),
-            installers: installers().map((draft, index) =>
+            name: draft.name,
+            notes: draft.notes,
+            removeOnUnassign: draft.removeOnUnassign,
+            installers: draft.installers.map((installer, index) =>
               installerFromDraft(
-                draft,
+                installer,
                 index,
-                current.installers.find((installer) => installer.id === draft.id),
+                current.installers.find((existing) => existing.id === installer.id),
               ),
             ),
-            groups: optimisticGroups(),
-            userGroups: optimisticUserGroups(),
-            devices: optimisticDevices(),
-            groupsCount: groupIds().size,
-            devicesCount: deviceIds().size,
+            groups: draft.groups,
+            userGroups: draft.userGroups,
+            devices: draft.devices,
+            groupsCount: draft.groups.length,
+            devicesCount: draft.devices.length,
           }),
         ),
         optimisticallyUpdateCollection(
@@ -372,9 +446,9 @@ export default function ApplicationDetailPage() {
               row.id === params.applicationId
                 ? {
                     ...row,
-                    name: name(),
-                    groupsCount: groupIds().size,
-                    devicesCount: deviceIds().size,
+                    name: draft.name,
+                    groupsCount: draft.groups.length,
+                    devicesCount: draft.devices.length,
                   }
                 : row,
             ),
@@ -413,6 +487,28 @@ export default function ApplicationDetailPage() {
       }
     },
   }));
+
+  const saveDraft = () => {
+    const current = row();
+
+    if (!current) return;
+
+    save.mutate({
+      name: name(),
+      notes: notes() || null,
+      removeOnUnassign: removeOnUnassign(),
+      expectedUpdatedAt: guard.expectedUpdatedAt(),
+      installers: installers().map((installer) => ({ ...installer })),
+      groups: optimisticGroups(),
+      userGroups: optimisticUserGroups(),
+      devices: optimisticDevices(),
+      assignmentPatch: applicationAssignmentDiff(current, {
+        groups: groupIds(),
+        userGroups: userGroupIds(),
+        devices: deviceIds(),
+      }),
+    });
+  };
 
   const [installNotice, setInstallNotice] = createSignal<
     { tone: "success" | "warning"; text: string } | undefined
@@ -485,7 +581,8 @@ export default function ApplicationDetailPage() {
           ? "Storefronts saved. No storefront carries this app, so it is marked unavailable."
           : "Storefront mapping saved.",
       );
-      await invalidate();
+      const refreshedAt = await invalidate();
+      guard.markRefreshed(refreshedAt);
     },
   }));
 
@@ -507,7 +604,8 @@ export default function ApplicationDetailPage() {
           ? `Checked ${result.storefronts.length} storefront(s); the app was not found in any of them.${unlinked}${errors}`
           : `Checked ${result.storefronts.length} storefront(s); the app is available.${errors}`,
       );
-      await invalidate();
+      const refreshedAt = await invalidate();
+      guard.markRefreshed(refreshedAt);
     },
   }));
 
@@ -635,7 +733,7 @@ export default function ApplicationDetailPage() {
     "";
 
   const vppAsset = createMemo(() =>
-    (vppAssets.data?.assets ?? []).find((asset) => asset.adamId === storeId()),
+    (settledQueryData(vppAssets)?.assets ?? []).find((asset) => asset.adamId === storeId()),
   );
 
   const reloadLatest = async () => {
@@ -660,14 +758,14 @@ export default function ApplicationDetailPage() {
         meta={
           <Show when={row()}>
             <PlatformBadge proto={row()!.platform} />
-            <Badge variant="outline" class="text-muted-foreground">
+            <Badge variant="outline">
               {sourceLabel(row()!.source)}
             </Badge>
             <Show when={row()?.version}>
-              <span class="font-mono text-[11.5px] text-muted-foreground">v{row()!.version}</span>
+              <span class="font-mono text-xs text-muted-foreground">v{row()!.version}</span>
             </Show>
             <Show when={row()?.bundleId}>
-              <span class="max-w-[24ch] truncate font-mono text-[11.5px] text-muted-foreground">
+              <span class="max-w-44 truncate font-mono text-xs text-muted-foreground">
                 {row()!.bundleId}
               </span>
             </Show>
@@ -699,8 +797,7 @@ export default function ApplicationDetailPage() {
                 })}
               </Button>
               <Button
-                variant="outline"
-                class="text-destructive-foreground"
+                variant="destructive"
                 disabled={uninstall.isPending || uninstallDisabledReason() !== undefined}
                 title={uninstallDisabledReason()}
                 onClick={() => setConfirmUninstall(true)}
@@ -731,27 +828,27 @@ export default function ApplicationDetailPage() {
         }
       >
         {(application) => (
-          <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px] xl:items-start">
-            <div class="space-y-5">
+          <div class="grid gap-5 xl:grid-cols-4 xl:items-start">
+            <div class="space-y-5 xl:col-span-3">
               <Show when={application().availability === "unavailable"}>
                 <section
                   role="alert"
-                  class="rounded-xl border border-warning/25 bg-warning/[0.07] p-3.5"
+                  class="rounded-xl border border-warning/25 bg-warning/[0.07] p-3.5 text-warning-foreground"
                 >
                   <div class="flex items-start gap-2.5">
-                    <CircleAlert class="mt-0.5 size-4 shrink-0 text-warning-foreground" />
+                    <CircleAlert class="mt-0.5 size-4 shrink-0" />
                     <div class="min-w-0">
-                      <h2 class="text-[13px] font-semibold text-warning-foreground">
+                      <h2 class="text-xs font-semibold text-warning-foreground">
                         Unavailable in the App Store
                       </h2>
-                      <p class="mt-1 text-[12px] leading-relaxed text-warning-foreground">
+                      <p class="mt-1 text-xs leading-relaxed text-warning-foreground">
                         {application().availabilityReason ??
                           "No configured App Store storefront currently lists this app."}
                         <Show when={application().lastSeenAt}>
                           {(lastSeen) => <> Last seen {relativeTime(lastSeen())}.</>}
                         </Show>
                       </p>
-                      <p class="mt-1 text-[11.5px] leading-relaxed text-warning-foreground/80">
+                      <p class="mt-1 text-xs leading-relaxed text-warning-foreground/80">
                         New installs are not queued for assigned devices. Devices that already
                         installed the app keep their inventory; unlinking only removes the
                         assignments.
@@ -781,20 +878,20 @@ export default function ApplicationDetailPage() {
                       Your role can view this application but not change it.
                     </ReadOnlyNotice>
                   </Show>
-                  <div class="flex flex-wrap items-center gap-2 text-[12px]">
+                  <div class="flex flex-wrap items-center gap-2 text-xs">
                     <PlatformBadge proto={application().platform} />
-                    <Badge variant="outline" class="text-muted-foreground">
+                    <Badge variant="outline">
                       {sourceLabel(application().source)}
                     </Badge>
                     <Show when={application().sha256}>
                       {(sha) => (
-                        <span class="truncate font-mono text-[11px] text-muted-foreground">
+                        <span class="truncate font-mono text-xs text-muted-foreground">
                           sha256 {sha().slice(0, 16)}…
                         </span>
                       )}
                     </Show>
                     <Show when={application().size}>
-                      <span class="text-[11px] tabular-nums text-muted-foreground">
+                      <span class="text-xs tabular-nums text-muted-foreground">
                         {formatBytes(application().size)}
                       </span>
                     </Show>
@@ -807,23 +904,23 @@ export default function ApplicationDetailPage() {
                     {(asset) => (
                       <div class="rounded-lg border border-border bg-surface p-3">
                         <div class="flex flex-wrap items-center gap-2">
-                          <Badge class="text-[10px]">VPP</Badge>
-                          <span class="text-[13px] font-medium text-foreground">
+                          <Badge variant="secondary">VPP</Badge>
+                          <span class="text-xs font-medium text-foreground">
                             {asset().name}
                           </span>
                           <Show when={asset().bundleId}>
-                            <span class="font-mono text-[11px] text-muted-foreground">
+                            <span class="font-mono text-xs text-muted-foreground">
                               {asset().bundleId}
                             </span>
                           </Show>
                         </div>
-                        <p class="mt-1 text-[11.5px] text-muted-foreground">
+                        <p class="mt-1 text-xs text-muted-foreground">
                           {asset().availableLicenses} of {asset().totalLicenses} licence
                           {asset().totalLicenses === 1 ? "" : "s"} available ·{" "}
                           {asset().assignedLicenses} assigned
                         </p>
                         <Show when={asset().availableLicenses === 0}>
-                          <p class="mt-1 text-[11.5px] text-warning-foreground">
+                          <p class="mt-1 text-xs text-warning-foreground">
                             No licences are available. Installs will be skipped until a licence is
                             returned or purchased.
                           </p>
@@ -835,12 +932,12 @@ export default function ApplicationDetailPage() {
                   <Show
                     when={
                       platform() === "apple" &&
-                      vpp.data?.configured &&
-                      vppAssets.data &&
+                      settledQueryData(vpp)?.configured &&
+                      settledQueryData(vppAssets) &&
                       !vppAsset()
                     }
                   >
-                    <p class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[11.5px] leading-relaxed text-warning-foreground">
+                    <p class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-xs leading-relaxed text-warning-foreground">
                       <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
                       <span>
                         Apps and Books is configured, but no licence pool exists for this App Store
@@ -858,7 +955,7 @@ export default function ApplicationDetailPage() {
                   </Field>
                   <div class="space-y-3">
                     <div class="flex items-center justify-between gap-2">
-                      <p class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                      <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Installers
                       </p>
                       <Show when={writable()}>
@@ -888,7 +985,7 @@ export default function ApplicationDetailPage() {
                     <Show
                       when={installers().length > 0}
                       fallback={
-                        <p class="text-[12px] text-muted-foreground">
+                        <p class="text-xs text-muted-foreground">
                           This application has no installers.
                         </p>
                       }
@@ -897,7 +994,7 @@ export default function ApplicationDetailPage() {
                         {(installer, index) => (
                           <div class="space-y-3 rounded-lg border border-border bg-surface p-3">
                             <div class="flex items-center justify-between gap-2">
-                              <span class="text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                              <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                                 Installer {index() + 1}
                               </span>
                               <Show when={writable()}>
@@ -1094,7 +1191,7 @@ export default function ApplicationDetailPage() {
                                         : "Save before uploading"}
                                   </Button>
                                 </Show>
-                                <span class="text-[11px] text-muted-foreground">
+                                <span class="text-xs text-muted-foreground">
                                   {application().installers.find((item) => item.id === installer.id)
                                     ?.sha256
                                     ? `sha256 ${application()
@@ -1110,7 +1207,7 @@ export default function ApplicationDetailPage() {
                                 }
                               >
                                 {(expiresAt) => (
-                                  <p class="text-[11px] leading-relaxed text-muted-foreground">
+                                  <p class="text-xs leading-relaxed text-muted-foreground">
                                     The embedded provisioning profile expires{" "}
                                     {relativeTime(expiresAt())}. Mattrax does not re-sign the
                                     upload; renew the enterprise or ad-hoc profile and upload the
@@ -1133,18 +1230,17 @@ export default function ApplicationDetailPage() {
                     />
                   </Field>
                   <label class="flex items-start gap-2.5 rounded-lg border border-border bg-surface p-3">
-                    <input
-                      type="checkbox"
-                      class="mt-0.5 size-3.5 shrink-0 accent-[var(--brand-solid)]"
+                    <Checkbox
+                      class="mt-0.5 size-3.5"
                       checked={removeOnUnassign()}
                       disabled={!writable()}
-                      onChange={(event) => setRemoveOnUnassign(event.currentTarget.checked)}
+                      onCheckedChange={(checked) => setRemoveOnUnassign(checked === true)}
                     />
                     <span class="min-w-0">
-                      <span class="block text-[12.5px] font-medium text-foreground">
+                      <span class="block text-xs font-medium text-foreground">
                         Remove from devices when unassigned
                       </span>
-                      <span class="mt-0.5 block text-[11.5px] leading-relaxed text-muted-foreground">
+                      <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
                         When this app's assignment is removed, Mattrax queues a removal on devices
                         where it recorded installing it. Apple devices also apply the rule at every
                         check-in, covering group membership changes. The device is only reported
@@ -1155,7 +1251,7 @@ export default function ApplicationDetailPage() {
                   </label>
                   <div class="flex flex-wrap items-center gap-2 pt-1">
                     <Show when={writable()}>
-                      <Button disabled={save.isPending} onClick={() => save.mutate()}>
+                      <Button disabled={save.isPending} onClick={saveDraft}>
                         {save.isPending ? "Saving…" : "Save changes"}
                       </Button>
                       <Button
@@ -1193,7 +1289,7 @@ export default function ApplicationDetailPage() {
                     {(text) => (
                       <p
                         role="status"
-                        class="animate-in rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground motion-reduce:animate-none fade-in-0 duration-[var(--duration-hover)] ease-swift"
+                        class="animate-in rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-xs text-success-foreground motion-reduce:animate-none fade-in-0 duration-150 ease-swift"
                       >
                         {text()}
                       </p>
@@ -1205,8 +1301,8 @@ export default function ApplicationDetailPage() {
                         role="status"
                         class={
                           notice().tone === "success"
-                            ? "animate-in rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-[12.5px] text-success-foreground motion-reduce:animate-none fade-in-0 duration-[var(--duration-hover)] ease-swift"
-                            : "animate-in rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-[12.5px] text-warning-foreground motion-reduce:animate-none fade-in-0 duration-[var(--duration-hover)] ease-swift"
+                            ? "animate-in rounded-lg border border-success/25 bg-success/[0.07] px-3 py-2 text-xs text-success-foreground motion-reduce:animate-none fade-in-0 duration-150 ease-swift"
+                            : "animate-in rounded-lg border border-warning/25 bg-warning/[0.07] px-3 py-2 text-xs text-warning-foreground motion-reduce:animate-none fade-in-0 duration-150 ease-swift"
                         }
                       >
                         {notice().text}
@@ -1214,7 +1310,7 @@ export default function ApplicationDetailPage() {
                     )}
                   </Show>
                   <Show when={application().source === "upload"}>
-                    <p class="rounded-lg border border-border bg-muted/20 px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                    <p class="rounded-lg border border-border bg-muted/20 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                       {application().platform === "apple"
                         ? "Upload a signed .pkg for Macs or a signed .ipa for iPhone and iPad. Mattrax serves the file through a signed, expiring, device-bound URL: Macs install with InstallEnterpriseApplication and iOS/iPadOS install with InstallApplication against an OTA manifest Mattrax generates. The upload keeps its own provisioning profile; Mattrax does not re-sign it."
                         : "Uploaded files are kept for download; Windows installs from the MSI URL and Android installs from Managed Google Play."}
@@ -1229,31 +1325,30 @@ export default function ApplicationDetailPage() {
                 title="Assignments"
                 description="Saved with the form above."
                 actions={
-                  <Badge variant="secondary" class="tabular-nums">
+                  <Badge variant="secondary">
                     {assignedCount()}
                   </Badge>
                 }
               >
                 <div class="space-y-4">
                   <div>
-                    <p class="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    <p class="mb-1.5 flex items-center justify-between gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       <span>Groups</span>
                       <span class="tabular-nums">{groupIds().size}</span>
                     </p>
                     <Show
-                      when={(groups.data?.rows.length ?? 0) > 0}
-                      fallback={<p class="text-[12px] text-muted-foreground">No groups yet.</p>}
+                      when={(settledQueryData(groups)?.rows.length ?? 0) > 0}
+                      fallback={<p class="text-xs text-muted-foreground">No groups yet.</p>}
                     >
                       <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
-                        <For each={groups.data?.rows ?? []}>
+                        <For each={settledQueryData(groups)?.rows ?? []}>
                           {(group: GroupRow) => (
-                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
-                              <input
-                                type="checkbox"
-                                class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
+                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors duration-150 ease-swift hover:bg-muted/30">
+                              <Checkbox
+                                class="size-3.5"
                                 checked={groupIds().has(group.id)}
                                 disabled={!writable()}
-                                onChange={() => toggle(groupIds, setGroupIds, group.id)}
+                                onCheckedChange={() => toggle(groupIds, setGroupIds, group.id)}
                               />
                               <span class="min-w-0 truncate">{group.name}</span>
                             </label>
@@ -1263,31 +1358,30 @@ export default function ApplicationDetailPage() {
                     </Show>
                   </div>
                   <div>
-                    <p class="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    <p class="mb-1.5 flex items-center justify-between gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       <span>Directory groups</span>
                       <span class="tabular-nums">{userGroupIds().size}</span>
                     </p>
                     <Show
-                      when={(directory.data?.groups.length ?? 0) > 0}
+                      when={(settledQueryData(directory)?.groups.length ?? 0) > 0}
                       fallback={
-                        <p class="text-[12px] text-muted-foreground">
+                        <p class="text-xs text-muted-foreground">
                           No directory groups synced yet.
                         </p>
                       }
                     >
                       <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
-                        <For each={directory.data?.groups ?? []}>
+                        <For each={settledQueryData(directory)?.groups ?? []}>
                           {(group) => (
-                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
-                              <input
-                                type="checkbox"
-                                class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
+                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors duration-150 ease-swift hover:bg-muted/30">
+                              <Checkbox
+                                class="size-3.5"
                                 checked={userGroupIds().has(group.id)}
                                 disabled={!writable()}
-                                onChange={() => toggle(userGroupIds, setUserGroupIds, group.id)}
+                                onCheckedChange={() => toggle(userGroupIds, setUserGroupIds, group.id)}
                               />
                               <span class="min-w-0 flex-1 truncate">{group.name}</span>
-                              <span class="shrink-0 text-[10.5px] tabular-nums text-muted-foreground">
+                              <span class="shrink-0 text-xs tabular-nums text-muted-foreground">
                                 {group.memberCount}
                               </span>
                             </label>
@@ -1295,35 +1389,34 @@ export default function ApplicationDetailPage() {
                         </For>
                       </div>
                     </Show>
-                    <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                    <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                       Members' linked devices receive the application. Directory group membership
                       follows the IdP.
                     </p>
                   </div>
                   <div>
-                    <p class="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                    <p class="mb-1.5 flex items-center justify-between gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       <span>Devices</span>
                       <span class="tabular-nums">{deviceIds().size}</span>
                     </p>
                     <Show
-                      when={(devices.data?.rows.length ?? 0) > 0}
+                      when={(settledQueryData(devices)?.rows.length ?? 0) > 0}
                       fallback={
-                        <p class="text-[12px] text-muted-foreground">No devices enrolled yet.</p>
+                        <p class="text-xs text-muted-foreground">No devices enrolled yet.</p>
                       }
                     >
                       <div class="max-h-48 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
-                        <For each={devices.data?.rows ?? []}>
+                        <For each={settledQueryData(devices)?.rows ?? []}>
                           {(device: DeviceRow) => (
-                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
-                              <input
-                                type="checkbox"
-                                class="size-3.5 shrink-0 accent-[var(--brand-solid)]"
+                            <label class="flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors duration-150 ease-swift hover:bg-muted/30">
+                              <Checkbox
+                                class="size-3.5"
                                 checked={deviceIds().has(device.id)}
                                 disabled={!writable()}
-                                onChange={() => toggle(deviceIds, setDeviceIds, device.id)}
+                                onCheckedChange={() => toggle(deviceIds, setDeviceIds, device.id)}
                               />
                               <span class="min-w-0 flex-1 truncate">{device.name}</span>
-                              <span class="shrink-0 text-[10.5px] uppercase tracking-[0.08em] text-muted-foreground">
+                              <span class="shrink-0 text-xs uppercase tracking-wide text-muted-foreground">
                                 {device.proto}
                               </span>
                             </label>
@@ -1332,7 +1425,7 @@ export default function ApplicationDetailPage() {
                       </div>
                     </Show>
                   </div>
-                  <p class="text-[11px] leading-relaxed text-muted-foreground">
+                  <p class="text-xs leading-relaxed text-muted-foreground">
                     Assignments are saved with the form. Apple installs are queued on the next
                     check-in; Windows runs the MSI on its next SyncML check-in; Android repushes the
                     Managed Google Play policy.
@@ -1341,7 +1434,7 @@ export default function ApplicationDetailPage() {
               </Panel>
 
               <Panel title="Delivery" description="Where this installer resolves from.">
-                <dl class="space-y-2 text-[12px]">
+                <dl class="space-y-2 text-xs">
                   <div class="flex items-center justify-between gap-3">
                     <dt class="text-muted-foreground">Resolved devices</dt>
                     <dd class="tabular-nums text-foreground">
@@ -1361,7 +1454,7 @@ export default function ApplicationDetailPage() {
                   <Show when={application().manifestUrl}>
                     <div class="min-w-0">
                       <dt class="text-muted-foreground">Manifest</dt>
-                      <dd class="truncate font-mono text-[11px] text-foreground">
+                      <dd class="truncate font-mono text-xs text-foreground">
                         {application().manifestUrl}
                       </dd>
                     </div>
@@ -1369,16 +1462,27 @@ export default function ApplicationDetailPage() {
                   <Show when={application().storeId}>
                     <div class="flex items-center justify-between gap-3">
                       <dt class="text-muted-foreground">Store ID</dt>
-                      <dd class="font-mono text-[11px] text-foreground">{application().storeId}</dd>
+                      <dd class="font-mono text-xs text-foreground">{application().storeId}</dd>
                     </div>
                   </Show>
                   <div class="flex items-center justify-between gap-3">
                     <dt class="text-muted-foreground">Install</dt>
-                    <dd class="text-[11.5px] text-foreground">
+                    <dd class="text-xs text-foreground">
                       {installMechanismLabel(application().platform)}
                     </dd>
                   </div>
                 </dl>
+              </Panel>
+
+              <Panel
+                title="Scope tags"
+                description="Limit which delegated administrators can see and change this application."
+              >
+                <ScopeTagAssignmentEditor
+                  tenantId={params.tenantId!}
+                  resourceType="application"
+                  resourceIds={[params.applicationId!]}
+                />
               </Panel>
 
               <Show when={application().platform === "apple" || storefronts().length > 0}>
@@ -1386,7 +1490,7 @@ export default function ApplicationDetailPage() {
                   title="App Store regions"
                   description="Storefront-specific ids and availability. The tenant's default region is preferred when resolving an id for a device."
                   actions={
-                    <Badge variant="secondary" class="tabular-nums">
+                    <Badge variant="secondary">
                       {storefronts().length}
                     </Badge>
                   }
@@ -1395,7 +1499,7 @@ export default function ApplicationDetailPage() {
                     <Show
                       when={storefronts().length > 0}
                       fallback={
-                        <p class="rounded-lg border border-border bg-surface px-3 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+                        <p class="rounded-lg border border-border bg-surface px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
                           No storefronts recorded. Refresh availability to check the tenant's
                           default storefront, or add a region with its App Store ID.
                         </p>
@@ -1416,7 +1520,7 @@ export default function ApplicationDetailPage() {
                                   <Show
                                     when={server()}
                                     fallback={
-                                      <Badge variant="outline" class="text-muted-foreground">
+                                      <Badge variant="outline">
                                         Not checked
                                       </Badge>
                                     }
@@ -1432,7 +1536,7 @@ export default function ApplicationDetailPage() {
                                   </Show>
                                   <Show when={server()}>
                                     {(storefront) => (
-                                      <span class="font-mono text-[10.5px] text-muted-foreground">
+                                      <span class="font-mono text-xs text-muted-foreground">
                                         {storefront().source === "lookup"
                                           ? "Apple lookup"
                                           : "Manual"}
@@ -1454,7 +1558,7 @@ export default function ApplicationDetailPage() {
                                   </Button>
                                 </Show>
                               </div>
-                              <div class="grid gap-2 sm:grid-cols-[88px_minmax(0,1fr)]">
+                              <div class="grid gap-2 sm:grid-cols-2">
                                 <Field label="Region">
                                   <Input
                                     disabled={!writable()}
@@ -1485,7 +1589,7 @@ export default function ApplicationDetailPage() {
                               </div>
                               <Show when={server()}>
                                 {(storefront) => (
-                                  <p class="text-[11px] leading-relaxed text-muted-foreground">
+                                  <p class="text-xs leading-relaxed text-muted-foreground">
                                     <Show
                                       when={storefront().lastSeenAt}
                                       fallback={<>Not seen in this storefront yet.</>}
@@ -1538,7 +1642,7 @@ export default function ApplicationDetailPage() {
                       {(notice) => (
                         <p
                           role="status"
-                          class="rounded-lg border border-border bg-surface px-3 py-2 text-[12px] leading-relaxed text-muted-foreground"
+                          class="rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted-foreground"
                         >
                           {notice()}
                         </p>

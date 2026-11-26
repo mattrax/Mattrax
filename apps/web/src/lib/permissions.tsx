@@ -1,5 +1,4 @@
 import { useParams } from "@solidjs/router";
-import { routes } from "~/lib/routes";
 import { useQuery } from "@tanstack/solid-query";
 import {
   BUILT_IN_ROLE_LABELS,
@@ -92,11 +91,17 @@ export type TenantPermissionsApi = {
  * Permissions for the tenant in the current URL. Every tenant page and the
  * dashboard shell read the same `me` query, so this adds no extra request.
  */
+/** Read account data only after success so a held /me cannot suspend callers. */
+const settledQueryData = <T,>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined => (query.isSuccess ? query.data : undefined);
+
 export function useTenantPermissions(): TenantPermissionsApi {
   const params = useParams();
   const session = authClient.useSession();
   const me = useQuery(() => meQueryOptions(session().data?.user?.id));
-  const tenant = createMemo(() => resolveActiveTenant(me.data, params.tenantId));
+  const tenant = createMemo(() => resolveActiveTenant(settledQueryData(me), params.tenantId));
   const permissions = createMemo(() => tenantPermissions(tenant()));
 
   return {
@@ -143,7 +148,7 @@ export function ReadOnlyNotice(props: { class?: string; children?: JSX.Element }
     <div
       role="status"
       class={cn(
-        "flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-[12px] leading-relaxed text-muted-foreground",
+        "flex items-start gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted-foreground",
         props.class,
       )}
     >
@@ -161,10 +166,10 @@ export function AccessDenied(props: { title?: string; message?: string; action?:
   return (
     <div class="flex flex-1 items-center justify-center px-4 py-16">
       <div class="w-full max-w-md rounded-xl border border-border bg-surface p-6 text-center">
-        <h1 class="text-[15px] font-semibold text-foreground">
+        <h1 class="text-sm font-semibold text-foreground">
           {props.title ?? "You don't have access"}
         </h1>
-        <p class="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">
+        <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
           {props.message ??
             "Your role does not include permission for this area. Ask a tenant owner if you need access."}
         </p>
@@ -176,178 +181,36 @@ export function AccessDenied(props: { title?: string; message?: string; action?:
   );
 }
 
-/** Read permission for each primary tenant section. */
-export function tenantSectionPermission(section: string): Permission | undefined {
-  switch (section) {
-    case "overview":
-      return "tenant.read";
-    case "dashboards":
-      return "dashboards.read";
-    case "devices":
-    case "os-versions":
-      return "devices.read";
-    case "users":
-      return "members.read";
-    case "groups":
-      return "groups.read";
-    case "policies":
-      return "policies.read";
-    case "applications":
-      return "applications.read";
-    case "scripts":
-      return "scripts.read";
-    case "settings":
-      return "tenant.read";
-    default:
-      return undefined;
-  }
-}
-
-/** Read permission for a settings tab. */
-export function settingsTabPermission(tab: string): Permission {
-  switch (tab) {
-    case "administrators":
-      return "members.read";
-    case "approvals":
-      // Requesters without the queue permission still need to see and cancel
-      // their own requests, so the tab is open to every member. The page and
-      // API hide the full queue behind approvals.read.
-      return "tenant.read";
-    case "identity":
-      return "identity.read";
-    case "enrollment":
-      return "enrollment.read";
-    case "management":
-    case "delivery":
-      return "management.read";
-    case "integrations":
-      return "webhooks.read";
-    case "audit":
-      return "audit.read";
-    case "os-updates":
-    case "migration":
-      return "devices.read";
-    case "billing":
-      return "billing.read";
-    default:
-      return "tenant.read";
-  }
-}
+export {
+  MIGRATION_ACCESS_PERMISSIONS,
+  MIGRATION_MOVE_PERMISSIONS,
+  firstReadableSettingsTab,
+  firstReadableTenantSection,
+  permissionForTenantPath,
+  settingsTabPermission,
+  settingsTabPermissions,
+  tenantSectionPermission,
+} from "~/lib/settings-permissions";
 
 /** Any of these makes the Settings section worth showing in navigation. */
 export const SETTINGS_READ_PERMISSIONS: ReadonlyArray<Permission> = [
   "tenant.read",
   "members.read",
+  // OS updates and Migration are settings tabs gated by devices.read.
+  "devices.read",
   "identity.read",
   "enrollment.read",
+  // Scope tags are a settings surface even for a role that only reads them.
+  "scope_tags.read",
+  // OS updates and Migration are settings tabs gated by devices.read.
+  "devices.read",
   "management.read",
   "webhooks.read",
   "audit.read",
   "billing.read",
   "approvals.read",
+  "backups.read",
+  // Export/import can move a tenant without device access.
+  "tenant.export",
+  "tenant.import",
 ];
-
-const SETTINGS_TABS = [
-  "",
-  "administrators",
-  "approvals",
-  "identity",
-  "enrollment",
-  "attributes",
-  "management",
-  "migration",
-  "delivery",
-  "integrations",
-  "audit",
-  "os-updates",
-  "billing",
-  "storage",
-] as const;
-
-const SECTIONS = [
-  "overview",
-  "dashboards",
-  "devices",
-  "users",
-  "groups",
-  "policies",
-  "applications",
-  "scripts",
-  "settings",
-] as const;
-
-/**
- * Resolve the permission required by a tenant path. Unknown paths return
- * `undefined` so they fall through instead of becoming accidentally locked.
- */
-export function permissionForTenantPath(path: string, tenantId: string): Permission | undefined {
-  const base = `/t/${tenantId}`;
-
-  if (path === base || path === `${base}/`) return "tenant.read";
-
-  const rest = path.slice(base.length).replace(/^\//, "");
-
-  if (!rest) return "tenant.read";
-
-  const [section, sub] = rest.split("/");
-
-  if (section === "settings") {
-    if (sub === undefined) return "tenant.read";
-
-    return settingsTabPermission(sub);
-  }
-
-  if (section === "software") return "applications.read";
-
-  if (section === "dashboards" && sub) return "dashboards.read";
-
-  return section ? tenantSectionPermission(section) : undefined;
-}
-
-/** The canonical path of one top-level dashboard section. */
-function sectionPath(tenantId: string, section: (typeof SECTIONS)[number]): string {
-  const tenant = routes.tenant(tenantId);
-
-  switch (section) {
-    case "overview":
-      return tenant.overview();
-    case "dashboards":
-      return tenant.dashboards();
-    case "devices":
-      return tenant.devices();
-    case "users":
-      return tenant.users();
-    case "groups":
-      return tenant.groups();
-    case "policies":
-      return tenant.policies();
-    case "applications":
-      return tenant.applications();
-    case "scripts":
-      return tenant.scripts();
-    case "settings":
-      return tenant.settings();
-  }
-}
-
-/** The first tenant section the current membership can read, if any. */
-export function firstReadableTenantSection(
-  can: (permission: Permission) => boolean,
-  tenantId: string,
-): string | undefined {
-  for (const section of SECTIONS) {
-    const permission = tenantSectionPermission(section);
-
-    if (!permission || !can(permission)) continue;
-
-    return sectionPath(tenantId, section);
-  }
-
-  for (const tab of SETTINGS_TABS) {
-    if (!can(settingsTabPermission(tab))) continue;
-
-    return routes.tenant(tenantId).settingsTab(tab);
-  }
-
-  return undefined;
-}

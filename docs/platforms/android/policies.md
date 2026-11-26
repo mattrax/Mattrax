@@ -68,6 +68,32 @@ curl -X POST "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/android/sync" \
   -H "Authorization: Bearer $MATTRAX_TOKEN"
 ```
 
+## Trusted root certificates
+
+`mttx.android.certificate.<id>` adds a CA to the policy's Open Network Configuration:
+
+```json
+{
+  "mttx.android.certificate.corp": {
+    "pem": "-----BEGIN CERTIFICATE-----…"
+  }
+}
+```
+
+Mattrax compiles it into `openNetworkConfiguration.Certificates` with `Type: Authority`,
+`TrustBits: ["Web"]` and the certificate DER. Existing ONC networks from other fragments
+are merged alongside it.
+
+This is a **user-installed CA**, not a system root: it applies device-wide on a fully
+managed device (or inside the work profile on a company-owned device with a work profile),
+and apps must opt into trusting user-installed CAs. Android's Management API has no
+system-root API.
+
+`mttx.android.pkcs.<id>` and `mttx.android.pfx.<id>` are rejected with an explanation.
+The Android Management API has no client-certificate or PKCS/NDES API, so Mattrax cannot
+deliver a Wi-Fi/VPN client identity or S/MIME certificate there. Use Apple or Windows for
+those profiles; Android Wi-Fi trust can use the ONC CA above.
+
 ## Targeting
 
 Android policies use the same group and direct-device assignment model as Apple and

@@ -1,9 +1,8 @@
-import { useParams } from "@solidjs/router";
+import { useLocation, useParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import type { JSX } from "@solidjs/web";
 import {
   WEBHOOK_EVENT_LABELS,
   WEBHOOK_EVENT_TYPES,
@@ -18,9 +17,10 @@ import type {
   WebhookEventType,
   WebhookTestResponse,
 } from "@mattrax/enterprise-domain/client";
-import { FilterBar } from "@mattrax/ui";
+import { Checkbox, FilterBar } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
+import SectionTabs from "~/components/settings/section-tabs";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -42,10 +42,23 @@ import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
+import Chip from "~/components/settings/status-chip";
+
+/**
+ * Read query data only after success so a pending or disabled query cannot
+ * suspend the settings pane. The deliveries query is disabled until an
+ * endpoint is selected, and a disabled query's `data` never settles.
+ */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
 
 /**
  * Settings → Integrations: outbound event webhooks.
- *
+
  * The signing secret is only in the browser for the moment it is created or
  * rotated; every later list only shows its last four characters.
  */
@@ -89,7 +102,15 @@ export default function IntegrationsSettingsPage() {
   const [testingId, setTestingId] = createSignal<string | null>(null);
   const [rotateError, setRotateError] = createSignal<unknown>();
 
-  const [tab, setTab] = createSignal<"endpoints" | "deliveries">("endpoints");
+  // The active view lives in the URL so it survives a reload and can be
+  // linked to. The tabs render as real anchors, so activation goes through
+  // the router's document-level handler rather than a closure that can be
+  // lost when the tablist is adopted across hydration.
+  const location = useLocation();
+  const tab = (): "endpoints" | "deliveries" =>
+    new URLSearchParams(location.search).get("view") === "deliveries" && canReadDeliveries()
+      ? "deliveries"
+      : "endpoints";
   const [endpointId, setEndpointId] = createSignal("");
   const [eventFilter, setEventFilter] = createSignal("");
   const [statusFilter, setStatusFilter] = createSignal<"" | "succeeded" | "failed">("");
@@ -177,15 +198,30 @@ export default function IntegrationsSettingsPage() {
       tab() === "deliveries" && canReadDeliveries() && Boolean(params.tenantId && endpointId()),
   }));
 
-  const deliveries = () => [...(deliveriesQuery.data?.deliveries ?? []), ...extraDeliveries()];
+  const deliveries = () => [
+    ...(settledQueryData(deliveriesQuery)?.deliveries ?? []),
+    ...extraDeliveries(),
+  ];
+
+  /**
+   * The deliveries query is disabled until an endpoint is selected. Its
+   * `isFetching` and `isLoading` helpers read the data node, which parks on a
+   * promise that never settles while the query is disabled; short-circuit on
+   * an endpoint so the panel renders without waiting for one.
+   */
+  const deliveriesLive = () => Boolean(endpointId()) && canReadDeliveries();
+  const deliveriesFetching = () => deliveriesLive() && deliveriesQuery.isFetching;
+  const deliveriesLoading = () => deliveriesLive() && deliveriesQuery.isLoading;
 
   const moreCursor = () =>
-    nextCursor() === undefined ? (deliveriesQuery.data?.nextCursor ?? null) : nextCursor();
+    nextCursor() === undefined
+      ? (settledQueryData(deliveriesQuery)?.nextCursor ?? null)
+      : nextCursor();
 
   // The first endpoint is selected by default so the deliveries tab is useful
   // without an extra click; a filter change starts the history over.
   createEffect(
-    () => webhooks.data?.endpoints[0]?.id,
+    () => settledQueryData(webhooks)?.endpoints[0]?.id,
     (first) => {
       if (!endpointId() && first) setEndpointId(first);
     },
@@ -398,32 +434,26 @@ export default function IntegrationsSettingsPage() {
       <QueryError error={webhooks.error} onRetry={() => void webhooks.refetch()} />
       <QueryError error={tenant.error} onRetry={() => void tenant.refetch()} />
 
-      <div
-        class="no-scrollbar flex gap-0.5 overflow-x-auto border-b border-border"
-        role="tablist"
-        aria-label="Webhook views"
-      >
-        <For each={["endpoints", "deliveries"] as const}>
-          {(section) => (
-            <button
-              type="button"
-              role="tab"
-              id={`webhook-tab-${section}`}
-              aria-selected={tab() === section ? "true" : "false"}
-              aria-controls={`webhook-panel-${section}`}
-              onClick={() => setTab(section)}
-              class={cn(
-                "relative -mb-px shrink-0 rounded-t-md px-3 pb-2.5 pt-2 text-[12.5px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                tab() === section
-                  ? "text-foreground after:absolute after:inset-x-2 after:bottom-0 after:h-[2px] after:rounded-full after:bg-foreground"
-                  : "text-muted-foreground hover:bg-hover hover:text-foreground",
-              )}
-            >
-              {section === "endpoints" ? "Endpoints" : "Deliveries"}
-            </button>
-          )}
-        </For>
-      </div>
+      <SectionTabs
+        label="Webhook views"
+        active={tab()}
+        hrefFor={(id) => (id === "deliveries" ? "?view=deliveries" : "?")}
+        panelMounted={(id) => tab() === id}
+        tabs={[
+          {
+            id: "endpoints",
+            label: "Endpoints",
+            panelId: "webhook-panel-endpoints",
+            elementId: "webhook-tab-endpoints",
+          },
+          {
+            id: "deliveries",
+            label: "Deliveries",
+            panelId: "webhook-panel-deliveries",
+            elementId: "webhook-tab-deliveries",
+          },
+        ]}
+      />
 
       <Show when={tab() === "endpoints"}>
         <div id="webhook-panel-endpoints" role="tabpanel" aria-labelledby="webhook-tab-endpoints">
@@ -439,17 +469,17 @@ export default function IntegrationsSettingsPage() {
               </Show>
             }
           >
-            <Show when={!canManage() && tenant.data}>
+            <Show when={!canManage() && settledQueryData(tenant)}>
               <p class="mb-4 rounded-lg border border-border bg-surface p-3 text-xs text-muted-foreground">
                 Only a tenant owner or admin can manage webhook endpoints.
               </p>
             </Show>
 
             <Show
-              when={(webhooks.data?.endpoints.length ?? 0) > 0}
+              when={(settledQueryData(webhooks)?.endpoints.length ?? 0) > 0}
               fallback={
                 <div class="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center">
-                  <p class="text-[13px] font-medium text-foreground">No webhook endpoints yet</p>
+                  <p class="text-xs font-medium text-foreground">No webhook endpoints yet</p>
                   <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                     Add an endpoint to receive signed device and enrollment events.
                   </p>
@@ -457,28 +487,28 @@ export default function IntegrationsSettingsPage() {
               }
             >
               <div class="space-y-3">
-                <For each={webhooks.data?.endpoints ?? []}>
+                <For each={settledQueryData(webhooks)?.endpoints ?? []}>
                   {(endpoint) => (
                     <div class="rounded-lg border border-border bg-surface p-4">
                       <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div class="min-w-0 space-y-1.5">
-                          <p class="break-all font-mono text-[12.5px] text-foreground">
+                          <p class="break-all font-mono text-xs text-foreground">
                             {endpoint.url}
                           </p>
                           <Show when={endpoint.description}>
-                            <p class="text-[13px] text-muted-foreground">{endpoint.description}</p>
+                            <p class="text-xs text-muted-foreground">{endpoint.description}</p>
                           </Show>
                           <div class="flex flex-wrap items-center gap-2 pt-0.5">
                             <Chip tone={endpoint.enabled ? "success" : "neutral"}>
                               {endpoint.enabled ? "Enabled" : "Disabled"}
                             </Chip>
                             <Show when={endpoint.secretPrefix}>
-                              <span class="font-mono text-[11px] text-muted-foreground">
+                              <span class="font-mono text-xs text-muted-foreground">
                                 Signing secret ····{endpoint.secretPrefix}
                               </span>
                             </Show>
                             <Show when={endpoint.lastDeliveryAt}>
-                              <span class="text-[11px] text-muted-foreground">
+                              <span class="text-xs text-muted-foreground">
                                 Last delivery {new Date(endpoint.lastDeliveryAt!).toLocaleString()}{" "}
                                 · {endpoint.lastDeliveryStatus ?? "unknown"}
                               </span>
@@ -529,7 +559,7 @@ export default function IntegrationsSettingsPage() {
                           }
                         >
                           {(event) => (
-                            <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted-foreground">
+                            <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-muted-foreground">
                               {WEBHOOK_EVENT_LABELS[event]}
                             </span>
                           )}
@@ -553,7 +583,7 @@ export default function IntegrationsSettingsPage() {
                             class={cn(
                               "mt-3 flex items-start gap-2 rounded-lg border p-2.5 text-xs leading-relaxed",
                               result().status === "succeeded"
-                                ? "border-success/25 bg-success/[0.07] text-success-foreground"
+                                ? "border-success/25 bg-success/[0.07] text-success"
                                 : "border-destructive/25 bg-destructive/[0.07] text-destructive",
                             )}
                           >
@@ -595,10 +625,10 @@ export default function IntegrationsSettingsPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={deliveriesQuery.isFetching}
+                disabled={deliveriesFetching()}
                 onClick={() => void deliveriesQuery.refetch()}
               >
-                {deliveriesQuery.isFetching ? "Refreshing…" : "Refresh"}
+                {deliveriesFetching() ? "Refreshing…" : "Refresh"}
               </Button>
             }
           >
@@ -611,10 +641,10 @@ export default function IntegrationsSettingsPage() {
               }
             >
               <Show
-                when={(webhooks.data?.endpoints.length ?? 0) > 0}
+                when={(settledQueryData(webhooks)?.endpoints.length ?? 0) > 0}
                 fallback={
                   <div class="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center">
-                    <p class="text-[13px] font-medium text-foreground">
+                    <p class="text-xs font-medium text-foreground">
                       No endpoint to show deliveries for
                     </p>
                     <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
@@ -625,15 +655,15 @@ export default function IntegrationsSettingsPage() {
               >
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <label class="flex min-w-0 items-center gap-2">
-                    <span class="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <span class="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Endpoint
                     </span>
                     <select
-                      class="h-8 min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 text-[12px] text-foreground outline-none transition-colors hover:border-border-strong focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                      class="h-8 min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 text-xs text-foreground outline-none transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring/25"
                       value={endpointId()}
                       onChange={(event) => setEndpointId(event.currentTarget.value)}
                     >
-                      <For each={webhooks.data?.endpoints ?? []}>
+                      <For each={settledQueryData(webhooks)?.endpoints ?? []}>
                         {(endpoint) => <option value={endpoint.id}>{endpoint.url}</option>}
                       </For>
                     </select>
@@ -653,7 +683,7 @@ export default function IntegrationsSettingsPage() {
                   when={deliveries().length > 0}
                   fallback={
                     <p class="mt-4 rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center text-xs text-muted-foreground">
-                      {deliveriesQuery.isLoading
+                      {deliveriesLoading()
                         ? "Loading deliveries…"
                         : "No deliveries match these filters in the last 30 days."}
                     </p>
@@ -668,10 +698,10 @@ export default function IntegrationsSettingsPage() {
                               <Chip tone={delivery.status === "succeeded" ? "success" : "danger"}>
                                 {delivery.status}
                               </Chip>
-                              <span class="font-mono text-[12px] text-foreground">
+                              <span class="font-mono text-xs text-foreground">
                                 {delivery.event}
                               </span>
-                              <span class="text-[11px] text-muted-foreground">
+                              <span class="text-xs text-muted-foreground">
                                 {new Date(delivery.createdAt).toLocaleString()}
                               </span>
                             </div>
@@ -684,7 +714,7 @@ export default function IntegrationsSettingsPage() {
                               </Show>
                             </p>
                             <Show when={delivery.eventId}>
-                              <p class="truncate font-mono text-[11px] text-muted-foreground">
+                              <p class="truncate font-mono text-xs text-muted-foreground">
                                 {delivery.eventId}
                               </p>
                             </Show>
@@ -780,13 +810,12 @@ export default function IntegrationsSettingsPage() {
                 />
               </Field>
               <div class="space-y-2">
-                <p class="text-[13px] font-medium text-foreground">Events</p>
+                <p class="text-xs font-medium text-foreground">Events</p>
                 <label class="flex items-start gap-2 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                  <Checkbox
+                    class="mt-0.5"
                     checked={allEvents()}
-                    onChange={(event) => toggleAllEvents(event.currentTarget.checked)}
+                    onCheckedChange={(checked) => toggleAllEvents(checked === true)}
                   />
                   Deliver all events, including future events
                 </label>
@@ -794,18 +823,17 @@ export default function IntegrationsSettingsPage() {
                   <For each={WEBHOOK_EVENT_TYPES}>
                     {(event) => (
                       <label class="flex items-start gap-2 text-xs">
-                        <input
-                          type="checkbox"
-                          class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                        <Checkbox
+                          class="mt-0.5"
                           checked={allEvents() || events().includes(event)}
                           disabled={allEvents()}
-                          onChange={() => toggleEvent(event)}
+                          onCheckedChange={() => toggleEvent(event)}
                         />
                         <span class="min-w-0">
                           <span class="block font-medium text-foreground">
                             {WEBHOOK_EVENT_LABELS[event]}
                           </span>
-                          <span class="block break-all font-mono text-[11px] text-muted-foreground">
+                          <span class="block break-all font-mono text-xs text-muted-foreground">
                             {event}
                           </span>
                         </span>
@@ -815,11 +843,9 @@ export default function IntegrationsSettingsPage() {
                 </div>
               </div>
               <label class="flex items-center gap-2 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  class="size-3.5 accent-brand"
+                <Checkbox
                   checked={enabled()}
-                  onChange={(event) => setEnabled(event.currentTarget.checked)}
+                  onCheckedChange={(checked) => setEnabled(checked === true)}
                 />
                 Endpoint is enabled
               </label>
@@ -847,7 +873,9 @@ export default function IntegrationsSettingsPage() {
               </DialogDescription>
             </DialogHeader>
             <div class="flex flex-col gap-2 sm:flex-row">
-              <Input value={secret() ?? ""} readonly class="min-w-0 flex-1 font-mono" />
+              <span class="contents font-mono">
+                <Input value={secret() ?? ""} readonly class="min-w-0 flex-1" />
+              </span>
               <Button
                 type="button"
                 variant="outline"
@@ -877,7 +905,7 @@ export default function IntegrationsSettingsPage() {
                 Deliveries stop immediately and delivery history is removed. This cannot be undone.
               </DialogDescription>
             </DialogHeader>
-            <p class="break-all font-mono text-[13px]">{deleteTarget()?.url}</p>
+            <p class="break-all font-mono text-xs">{deleteTarget()?.url}</p>
             <ErrorText error={remove.error} />
             <DialogFooter>
               <Button variant="outline" onClick={() => setDeleteTarget(null)}>
@@ -951,7 +979,7 @@ export default function IntegrationsSettingsPage() {
                     <Chip tone={delivery().status === "succeeded" ? "success" : "danger"}>
                       {delivery().status}
                     </Chip>
-                    <span class="font-mono text-[12px] text-foreground">{delivery().event}</span>
+                    <span class="font-mono text-xs text-foreground">{delivery().event}</span>
                     <span class="text-muted-foreground">
                       Attempt {delivery().attempt} · Response {delivery().responseStatus ?? "none"}
                     </span>
@@ -961,7 +989,7 @@ export default function IntegrationsSettingsPage() {
                       {delivery().error}
                     </p>
                   </Show>
-                  <div class="grid gap-1 text-[11px] text-muted-foreground">
+                  <div class="grid gap-1 text-xs text-muted-foreground">
                     <span class="font-mono">Delivery id · {delivery().id}</span>
                     <Show when={delivery().eventId}>
                       <span class="break-all font-mono">
@@ -970,7 +998,7 @@ export default function IntegrationsSettingsPage() {
                     </Show>
                   </div>
                   <div class="relative">
-                    <pre class="max-h-80 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11.5px] leading-relaxed text-foreground">
+                    <pre class="max-h-80 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs leading-relaxed text-foreground">
                       {payloadText()}
                     </pre>
                     <Button
@@ -989,7 +1017,7 @@ export default function IntegrationsSettingsPage() {
                         class={cn(
                           "rounded-lg border p-2.5 text-xs",
                           result().delivery.status === "succeeded"
-                            ? "border-success/25 bg-success/[0.07] text-success-foreground"
+                            ? "border-success/25 bg-success/[0.07] text-success"
                             : "border-destructive/25 bg-destructive/[0.07] text-destructive",
                         )}
                       >
@@ -1027,26 +1055,5 @@ export default function IntegrationsSettingsPage() {
         </Dialog>
       </Show>
     </div>
-  );
-}
-
-const chipTones = {
-  neutral: "border-border bg-surface text-muted-foreground",
-  success: "border-success/25 bg-success/10 text-success-foreground",
-  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
-  danger: "border-destructive/25 bg-destructive/10 text-destructive",
-} as const;
-
-function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element }) {
-  return (
-    <span
-      class={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        chipTones[props.tone],
-      )}
-    >
-      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-      {props.children}
-    </span>
   );
 }

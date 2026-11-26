@@ -6,6 +6,10 @@ export * from "./credentialEmail.js";
 
 export * from "./crons.js";
 
+export * from "./database.js";
+
+export * from "./migrations.js";
+
 export * from "./devMailbox.js";
 
 export * from "./mailer.js";
@@ -14,13 +18,21 @@ export * from "./observability.js";
 
 export * from "./apiSecurity.js";
 
+export * from "./clientAddress.js";
+
 export * from "./loginAttempts.js";
 
 export * from "./probeCache.js";
 
 export * from "./rateLimit.js";
 
+export * from "./rateLimiterCloudflare.js";
+
+export * from "./rateLimiterLocal.js";
+
 export * from "./readiness.js";
+
+export * from "./services.js";
 
 export * from "./sessionPresence.js";
 

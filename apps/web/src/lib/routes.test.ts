@@ -22,6 +22,7 @@ describe("route builders", () => {
   it("keeps platform routes outside every tenant", () => {
     expect(routes.adminAccounts()).toBe("/admin/accounts");
     expect(routes.account()).toBe("/account");
+    expect(routes.accountDelete()).toBe("/account/delete");
   });
 
   it("builds settings tabs and the general tab", () => {
@@ -48,6 +49,12 @@ describe("route builders", () => {
 
     expect(tenant.dashboard("dash-1")).toBe("/t/acme/dashboards/dash-1");
     expect(tenant.dashboard("dash-1", { edit: "1" })).toBe("/t/acme/dashboards/dash-1?edit=1");
+  });
+
+  it("keeps reports on their own dashboard subpage", () => {
+    expect(routes.tenant("acme").dashboardReports("dash-1")).toBe(
+      "/t/acme/dashboards/dash-1/reports",
+    );
   });
 });
 

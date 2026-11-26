@@ -1,17 +1,20 @@
-import { Effect, Layer, Option, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import type { HttpServerRequest } from "effect/http";
 import { HttpRouter, HttpServerResponse } from "effect/http";
-import { and, eq } from "drizzle-orm";
 import { AzureOidc } from "@mattrax/azure-oidc";
-import { Db, authCredentials, schema } from "@mattrax/enterprise-core";
-import type { EnterpriseDb } from "@mattrax/enterprise-core";
-import { settlePendingInvitations } from "@mattrax/enterprise-identity";
+import { Db } from "@mattrax/enterprise-core";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 import type { SsoFailureCode } from "@mattrax/enterprise-domain";
 import { loginAttemptClient, recordLoginAttempt } from "@mattrax/enterprise-backend";
 import type { LoginAttemptFailure } from "@mattrax/enterprise-backend";
-
-const TokenResponse = Schema.Struct({ id_token: Schema.optional(Schema.String) });
+import { ensureCredential, exchangeSsoCode, resolveSsoAccount } from "./ssoIdentity.js";
+import {
+  APPLE_BYOD_STATE_PURPOSE,
+  BYOD_STATE_COOKIE,
+  appleByodAuthorizeRoutes,
+  appleByodFailure,
+  handleAppleByodSsoCallback,
+} from "./appleByod.js";
 
 const json = (body: Schema.Json, status = 200, headers?: Record<string, string>) =>
   HttpServerResponse.jsonUnsafe(body, {
@@ -19,36 +22,7 @@ const json = (body: Schema.Json, status = 200, headers?: Record<string, string>)
     headers: { "cache-control": "no-store", ...headers },
   });
 
-const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
-
-const now = () => new Date();
-
-/**
- * SSO assertions reference a credential in the shared auth authority. Accounts
- * created by directory sync may not have a passkey yet, so make sure the
- * subject has one stable authority row. This row is not a sign-in method: the
- * SSO strategy owns the assertion and the session requirement decides access.
- */
-const ensureCredential = (db: EnterpriseDb, subjectId: string) =>
-  Effect.gen(function* () {
-    const existing = yield* db
-      .select({ credentialId: authCredentials.credentialId })
-      .from(authCredentials)
-      .where(and(eq(authCredentials.subjectId, subjectId), eq(authCredentials.active, true)))
-      .limit(1);
-
-    if (existing.length > 0) return;
-
-    yield* db
-      .insert(authCredentials)
-      .ignore()
-      .values({ credentialId: id(), subjectId, revision: id(), active: true });
-  }).pipe(Effect.catch(() => Effect.void));
-
 const redirectUri = (origin: string) => `${origin}/api/v1/sso/azure/callback`;
-
-const safeEmail = (claims: { email?: string; preferred_username?: string; upn?: string }) =>
-  (claims.email ?? claims.preferred_username ?? claims.upn ?? "").trim().toLowerCase();
 
 /** Only internal, absolute-path destinations can be resumed after sign-in. */
 const safeReturnTo = (value: string | null | undefined) => {
@@ -247,7 +221,6 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
 
           const client = loginAttemptClient(
             request.headers,
-            Option.getOrUndefined(request.remoteAddress) ?? null,
           );
 
           yield* recordLoginAttempt(db, {
@@ -269,19 +242,44 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
       // The cookie identifies the browser flow that started this sign-in. Only
       // a callback presenting that same state may expire it; otherwise a second
       // tab would wipe the state the first tab still needs.
-      const stateMatches = Boolean(state && request.cookies["__Host-sso_state"] === state);
+      const stateMatches = Boolean(
+        state &&
+          (request.cookies["__Host-sso_state"] === state ||
+            request.cookies[BYOD_STATE_COOKIE] === state),
+      );
 
       if (providerError)
         yield* Effect.logWarning(
           `Azure SSO provider returned an error: ${JSON.stringify(providerError.slice(0, 100))}`,
         );
 
-      if (!code || !state)
+      if (!code || !state) {
+        // A cancelled BYOD web view returns no code but still carries the
+        // signed state. Detect that purpose so the failure stays in Apple's
+        // authentication session instead of redirecting to the dashboard.
+        if (!code && state) {
+          const possible = yield* verifyToken(options.authSecret!, state).pipe(
+            Effect.catch(() => Effect.succeed(undefined)),
+          );
+
+          if (possible?.purpose === APPLE_BYOD_STATE_PURPOSE)
+            return appleByodFailure(
+              providerError
+                ? "idp_rejected"
+                : possible.exp <= Date.now()
+                  ? "state_expired"
+                  : "invalid_request",
+              400,
+              stateMatches,
+            );
+        }
+
         return yield* reject({
           code: providerError ? "idp_rejected" : "invalid_request",
           reason: "sso_rejected",
           clearState: stateMatches,
         });
+      }
 
       if (!stateMatches)
         return yield* reject({
@@ -306,7 +304,31 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         });
       const payload = verified.payload;
 
-      if (payload.exp <= Date.now() || payload.purpose !== "sso-state")
+      // Apple account-driven enrollment shares this callback so deployments do
+      // not need a second Entra redirect URI. The signed state names the BYOD
+      // request and the browser-bound cookie check above has already passed.
+      if (payload.purpose === APPLE_BYOD_STATE_PURPOSE) {
+        if (payload.exp <= Date.now()) return appleByodFailure("state_expired");
+
+        const oidc = yield* AzureOidc;
+
+        return yield* handleAppleByodSsoCallback({
+          request,
+          code,
+          payload,
+          db,
+          oidc,
+          options,
+        });
+      }
+
+      if (payload.exp <= Date.now())
+        return yield* reject({
+          code: "state_expired",
+          reason: "expired",
+        });
+
+      if (payload.purpose !== "sso-state")
         return yield* reject({
           code: "state_expired",
           reason: "expired",
@@ -326,253 +348,47 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
         });
 
       const oidc = yield* AzureOidc;
-
-      const discovery = yield* oidc
-        .discovery(config.azureTenantId)
-        .pipe(
-          Effect.catchCause((cause) =>
-            Effect.logError("Azure SSO discovery failed", cause).pipe(Effect.as(null)),
-          ),
-        );
-
-      if (!discovery)
-        return yield* reject({
-          code: "idp_unavailable",
-          reason: "sso_rejected",
-          returnTo,
-        });
-
-      if (!discovery.token_endpoint)
-        return yield* reject({
-          code: "idp_unavailable",
-          reason: "sso_rejected",
-          returnTo,
-        });
-
-      const tokenResponse = yield* Effect.tryPromise({
-        try: () =>
-          fetch(discovery.token_endpoint!, {
-            method: "POST",
-            headers: { "content-type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-              client_id: options.clientId!,
-              client_secret: options.clientSecret!,
-              code,
-              redirect_uri: redirectUri(options.origin),
-              grant_type: "authorization_code",
-              scope: "openid profile email",
-            }),
-          }),
-        catch: (cause) => cause,
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logError("Azure SSO token exchange request failed", cause).pipe(Effect.as(null)),
-        ),
-      );
-
-      if (!tokenResponse)
-        return yield* reject({
-          code: "idp_unavailable",
-          reason: "sso_rejected",
-          returnTo,
-        });
-
-      if (!tokenResponse.ok)
-        return yield* reject({
-          code: "idp_rejected",
-          reason: "sso_rejected",
-          returnTo,
-        });
-
-      const rawTokens = yield* Effect.tryPromise({
-        try: () => tokenResponse.json(),
-        catch: () => null,
+      const exchanged = yield* exchangeSsoCode({
+        code,
+        azureTenantId: config.azureTenantId,
+        clientId: options.clientId!,
+        clientSecret: options.clientSecret!,
+        redirectUri: redirectUri(options.origin),
+        nonce: payload.nonce ?? "",
+        oidc,
       });
 
-      const tokens = Option.getOrUndefined(Schema.decodeUnknownOption(TokenResponse)(rawTokens));
-
-      if (!tokens?.id_token)
+      if (!exchanged.ok)
         return yield* reject({
-          code: "idp_rejected",
-          reason: "sso_rejected",
+          code: exchanged.failure.code,
+          reason: exchanged.failure.reason,
+          accountId: exchanged.failure.accountId,
+          email: exchanged.failure.email,
           returnTo,
         });
 
-      const claims = yield* oidc
-        .validateJwt(tokens.id_token, {
-          tenantIds: [config.azureTenantId],
-          audience: options.clientId!,
-        })
-        .pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("Azure SSO ID token validation failed", cause).pipe(Effect.as(null)),
-          ),
-        );
+      const email = exchanged.email;
+      const objectId = exchanged.objectId;
 
-      if (!claims)
-        return yield* reject({
-          code: "idp_rejected",
-          reason: "sso_rejected",
-          returnTo,
-        });
-
-      if (claims.nonce !== payload.nonce)
-        return yield* reject({
-          code: "idp_rejected",
-          reason: "sso_rejected",
-          returnTo,
-        });
-      const email = safeEmail(claims);
-
-      if (!email)
-        return yield* reject({
-          code: "unknown_account",
-          reason: "unknown_account",
-          returnTo,
-        });
-      const objectId = claims.oid ?? claims.sub;
-
-      if (!objectId)
-        return yield* reject({
-          code: "idp_rejected",
-          reason: "sso_rejected",
-          email,
-          returnTo,
-        });
-
-      const identity = yield* db.query.ssoIdentity.findFirst({
-        where: { organizationId: tenantId, objectId },
+      const resolved = yield* resolveSsoAccount({
+        db,
+        tenantId,
+        autoProvision: config.autoProvision,
+        email,
+        objectId,
+        name: exchanged.name,
       });
 
-      let user = identity
-        ? yield* db.query.account.findFirst({ where: { id: identity.accountId } })
-        : yield* db.query.account.findFirst({ where: { email } });
-
-      if (identity) {
-        if (!user || user.disabled)
-          return yield* reject({
-            code: user?.disabled ? "account_disabled" : "unknown_account",
-            reason: "disabled",
-            accountId: user?.id ?? null,
-            email,
-            returnTo,
-          });
-
-        const member = yield* db.query.member.findFirst({
-          where: { accountId: user.id, organizationId: tenantId },
-        });
-
-        if (!member)
-          return yield* reject({
-            code: "not_a_member",
-            reason: "not_member",
-            accountId: user.id,
-            email,
-            returnTo,
-          });
-      } else if (user) {
-        // Do not auto-link an existing account by email when it belongs to
-        // another tenant; that would let a tenant administrator impersonate a
-        // multi-tenant user. Such users must link SSO explicitly.
-        const memberships = yield* db.query.member.findMany({ where: { accountId: user.id } });
-        const member = memberships.find((item) => item.organizationId === tenantId);
-
-        if (!member)
-          return yield* reject({
-            code: "not_a_member",
-            reason: "not_member",
-            accountId: user.id,
-            email,
-            returnTo,
-          });
-
-        if (memberships.length > 1)
-          return yield* reject({
-            code: "sso_link_required",
-            reason: "sso_rejected",
-            accountId: user.id,
-            email,
-            returnTo,
-          });
-
-        // Only a domain the tenant has proven it controls may claim an
-        // existing account by email. Otherwise an administrator could link an
-        // Entra tenant they own and sign in as an owner of this tenant.
-        const emailDomain = email.slice(email.lastIndexOf("@") + 1).toLowerCase();
-
-        const verifiedDomain = yield* db.query.ssoDomain.findFirst({
-          where: {
-            domain: emailDomain,
-            organizationId: tenantId,
-            isVerified: true,
-            source: "entra",
-          },
-        });
-
-        if (!verifiedDomain)
-          return yield* reject({
-            code: "domain_not_verified",
-            reason: "sso_rejected",
-            accountId: user.id,
-            email,
-            returnTo,
-          });
-
-        yield* db.insert(schema.ssoIdentity).ignore().values({
-          organizationId: tenantId,
-          objectId,
-          accountId: user.id,
-          createdAt: now(),
-        });
-      } else {
-        if (!config.autoProvision)
-          return yield* reject({
-            code: "provisioning_disabled",
-            reason: "unknown_account",
-            email,
-            returnTo,
-          });
-        const accountId = id();
-        const timestamp = now();
-        yield* db.insert(schema.account).values({
-          id: accountId,
-          name: claims.name ?? email,
-          email,
-          emailVerified: true,
-          image: null,
-          disabled: false,
-          authRevision: id(),
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        });
-        yield* db.insert(schema.member).values({
-          id: id(),
-          organizationId: tenantId,
-          accountId,
-          role: "member",
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        });
-        // Auto-provisioned SSO members settle a matching invitation without
-        // inheriting any role the invitation offered.
-        yield* settlePendingInvitations(db, tenantId, email, timestamp);
-        yield* db.insert(schema.ssoIdentity).values({
-          organizationId: tenantId,
-          objectId,
-          accountId,
-          createdAt: timestamp,
-        });
-        user = yield* db.query.account.findFirst({ where: { id: accountId } });
-      }
-
-      if (!user || user.disabled)
+      if (!resolved.ok)
         return yield* reject({
-          code: user?.disabled ? "account_disabled" : "unknown_account",
-          reason: user ? "disabled" : "unknown_account",
-          accountId: user?.id ?? null,
-          email,
+          code: resolved.failure.code,
+          reason: resolved.failure.reason,
+          accountId: resolved.failure.accountId,
+          email: resolved.failure.email,
           returnTo,
         });
+
+      const user = resolved.user;
       yield* ensureCredential(db, user.id);
 
       const assertion = yield* signToken(options.authSecret!, {
@@ -609,5 +425,7 @@ export const ssoRoutes = (options: SsoRoutesOptions) => {
   return Layer.mergeAll(
     HttpRouter.add("GET", "/api/v1/sso/azure/start", start),
     HttpRouter.add("GET", "/api/v1/sso/azure/callback", callback),
+    // Account-driven Apple enrollment's ASWebAuthenticationSession entry point.
+    appleByodAuthorizeRoutes(options),
   );
 };

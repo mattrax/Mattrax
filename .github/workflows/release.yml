@@ -1,6 +1,6 @@
 name: Release image
 
-# Publishes the self-hosted container image that docker-compose.selfhost.yml and
+# Publishes the self-hosted container image that apps/docker/docker-compose.yml and
 # docs/operations/self-hosting.md point at:
 #
 #   ghcr.io/mattrax/mattrax:<version>   immutable release tag
@@ -250,13 +250,13 @@ jobs:
           docker inspect --format '{{json .RepoDigests}}' "$IMAGE:$MATTRAX_VERSION" \
             | jq -e --arg ref "$IMAGE@$DIGEST" 'index($ref) != null' > /dev/null
 
-          docker compose -f docker-compose.selfhost.yml up -d --wait --wait-timeout 300
-          docker compose -f docker-compose.selfhost.yml ps
+          docker compose -f apps/docker/docker-compose.yml up -d --wait --wait-timeout 300
+          docker compose -f apps/docker/docker-compose.yml ps
 
       - name: Probe health, readiness and the dashboard
         run: |
           set -euo pipefail
-          app="$(docker compose -f docker-compose.selfhost.yml ps -q app)"
+          app="$(docker compose -f apps/docker/docker-compose.yml ps -q app)"
 
           # The stack must be serving the tested tag, not a stale local image,
           # and must still run as the unprivileged user.
@@ -285,11 +285,11 @@ jobs:
 
       - name: Container logs
         if: failure()
-        run: docker compose -f docker-compose.selfhost.yml logs --no-color --tail 200 app
+        run: docker compose -f apps/docker/docker-compose.yml logs --no-color --tail 200 app
 
       - name: Tear down
         if: always()
-        run: docker compose -f docker-compose.selfhost.yml down -v --remove-orphans
+        run: docker compose -f apps/docker/docker-compose.yml down -v --remove-orphans
 
   publish:
     name: Publish

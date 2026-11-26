@@ -79,18 +79,111 @@ test.describe("dashboards", () => {
     await expect(page.getByRole("heading", { name: "Quarterly review" })).toBeVisible();
   });
 
+  test("keeps reports on a subpage and saves compact dashboard details", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Reports Tenant");
+    const dashboard = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/dashboards`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Fleet ops" }),
+    });
+
+    await gotoHydrated(page, `/t/${tenant.slug}/dashboards/${dashboard.id}?edit=1`);
+
+    // The edit strip is one compact row: the name and description are directly
+    // labelled inputs rather than a second panel of form fields.
+    const name = page.getByLabel("Dashboard name", { exact: true });
+    const description = page.getByLabel("Dashboard description", { exact: true });
+    await expect(name).toHaveValue("Fleet ops");
+    await name.fill("Fleet operations");
+    await description.fill("Shared runbook for the IT team");
+    await page.getByRole("button", { name: "Save details", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Fleet operations", exact: true }),
+    ).toBeVisible();
+
+    // Report controls are not on the dashboard page.
+    await expect(page.getByText("No scheduled reports")).toHaveCount(0);
+
+    await gotoHydrated(page, `/t/${tenant.slug}/dashboards/${dashboard.id}`);
+    await expect(
+      page.getByRole("heading", { name: "Fleet operations", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("Shared runbook for the IT team")).toBeVisible();
+
+    await page.getByRole("link", { name: "Reports", exact: true }).click();
+    await expect(page).toHaveURL(
+      new RegExp(`/t/${tenant.slug}/dashboards/${dashboard.id}/reports$`),
+    );
+    await expect(
+      page.getByRole("heading", { name: "Reports for Fleet operations", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("No scheduled reports")).toBeVisible();
+
+    await page.getByRole("link", { name: /Fleet operations/ }).click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/dashboards/${dashboard.id}$`));
+  });
+
+  test("coalesces a drag and persists the same non-overlapping layout", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Drag Tenant");
+    const dashboard = await api<{ id: string }>(page, `/api/v1/tenants/${tenant.id}/dashboards`, {
+      method: "POST",
+      body: JSON.stringify({ name: "Drag layout", template: "overview" }),
+    });
+    await gotoHydrated(page, `/t/${tenant.id}/dashboards/${dashboard.id}?edit=1`);
+
+    const grid = page.locator(".dashboard-grid");
+    const handle = page.getByRole("button", { name: "Move Managed devices", exact: true });
+    await handle.scrollIntoViewIfNeeded();
+    const gridBox = await grid.boundingBox();
+    const handleBox = await handle.boundingBox();
+
+    if (!gridBox || !handleBox) throw new Error("Dashboard drag handles were not measurable.");
+
+    const column = (gridBox.width - 12 * 11) / 12 + 12;
+    const startX = handleBox.x + handleBox.width / 2;
+    const startY = handleBox.y + handleBox.height / 2;
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        response.url().includes(`/dashboards/${dashboard.id}/layout`),
+    );
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + column * 6, startY, { steps: 16 });
+    await page.mouse.up();
+    expect((await saved).ok()).toBe(true);
+
+    const layout = await api<{
+      widgets: Array<{ id: string; x: number; y: number; w: number; h: number }>;
+    }>(page, `/api/v1/tenants/${tenant.id}/dashboards/${dashboard.id}`);
+    const moved = layout.widgets.find(
+      (widget) => widget.x === 6 && widget.y === 0 && widget.w === 3,
+    );
+
+    expect(moved).toBeDefined();
+    for (let left = 0; left < layout.widgets.length; left++) {
+      for (let right = left + 1; right < layout.widgets.length; right++) {
+        const a = layout.widgets[left]!;
+        const b = layout.widgets[right]!;
+        const overlaps = a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+        expect(overlaps, `${a.id} overlaps ${b.id}`).toBe(false);
+      }
+    }
+  });
+
   test("filters the device table with a shareable query", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Query Tenant");
     const query = "platform is apple and staleDays at least 14";
     await gotoHydrated(page, `/t/${tenant.id}/devices?query=${encodeURIComponent(query)}`);
-    await expect(page.getByRole("button", { name: /Advanced query/ })).toContainText("2");
+    await expect(page.getByRole("button", { name: /Query 2 conditions/ })).toBeVisible();
     await expect(page).toHaveURL(/query=platform/);
-    await page.getByRole("button", { name: /Advanced query/ }).click();
+    await page.getByRole("button", { name: /Query 2 conditions/ }).click();
     await expect(page.getByRole("button", { name: /Platform is Apple/ })).toBeVisible();
     await expect(
       page.getByRole("button", { name: /Days since check-in at least 14/ }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Clear query" }).click();
+    await page.getByRole("button", { name: "Clear advanced query" }).click();
     await expect(page).not.toHaveURL(/query=/);
   });
 });

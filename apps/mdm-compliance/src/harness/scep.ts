@@ -1,22 +1,37 @@
-import { Effect, Layer } from "effect";
+import { Context, Effect, Exit, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { ScepRepository, ScepService, scepRoutes } from "@mattrax/scep";
-import type { ScepAuthentication, ScepIssuedCertificate, ScepPkcsReq } from "@mattrax/scep";
+import type {
+  ScepAuthentication,
+  ScepAuthenticationRequest,
+  ScepIssuedCertificate,
+} from "@mattrax/scep";
 import type { ScepError } from "@mattrax/scep";
 import { createCaFixture } from "../fixtures/pki.ts";
 import type { ScepCaFixture } from "../fixtures/pki.ts";
 
-let sharedCa: Promise<ScepCaFixture> | undefined;
+export class ScepCaCache extends Context.Service<
+  ScepCaCache,
+  { readonly get: Effect.Effect<ScepCaFixture> }
+>()("@mattrax/mdm-compliance/ScepCaCache") {
+  static readonly layer = (create: () => Promise<ScepCaFixture> = createCaFixture) =>
+    Layer.effect(
+      ScepCaCache,
+      Effect.gen(function* () {
+        const cached = yield* Effect.cachedWithTTL(Effect.promise(create), (exit) =>
+          Exit.isSuccess(exit) ? "Infinity" : 0,
+        );
 
-export const sharedScepCa = (): Promise<ScepCaFixture> => {
-  sharedCa ??= createCaFixture();
-
-  return sharedCa;
-};
+        return ScepCaCache.of({ get: cached });
+      }),
+    );
+}
 
 export type ScepHarnessState = {
   readonly ca: ScepCaFixture;
-  authenticate: (request: ScepPkcsReq) => Effect.Effect<ScepAuthentication | void, ScepError>;
+  authenticate: (
+    request: ScepAuthenticationRequest,
+  ) => Effect.Effect<ScepAuthentication | void, ScepError>;
   issued: Map<string, ScepIssuedCertificate>;
   recorded: ScepIssuedCertificate[];
   saveCount: number;
@@ -28,13 +43,14 @@ export type ScepHarness = {
   readonly state: ScepHarnessState;
 };
 
-export const createScepHarness = async (
+export const createScepHarness = Effect.fnUntraced(function* (
   options: {
     readonly authenticate?: ScepHarnessState["authenticate"];
     readonly issued?: Iterable<ScepIssuedCertificate>;
   } = {},
-): Promise<ScepHarness> => {
-  const ca = await sharedScepCa();
+): Effect.fn.Return<ScepHarness, never, ScepCaCache> {
+  const cache = yield* ScepCaCache;
+  const ca = yield* cache.get;
 
   const state: ScepHarnessState = {
     ca,
@@ -79,7 +95,7 @@ export const createScepHarness = async (
   const { handler } = HttpRouter.toWebHandler(appLayer, { disableLogger: true });
 
   return { handler, state };
-};
+});
 
 export const scepGet = (operation: string): Request =>
   new Request(

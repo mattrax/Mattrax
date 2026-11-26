@@ -159,7 +159,7 @@ const recordAudit = (
     // Audit is secondary to the backup: a transient write failure must not
     // turn a successful upload into a failed run.
     Effect.catch((error) =>
-      Effect.sync(() => console.error("Backup audit write failed", organizationId, error)),
+      Effect.logError("Backup audit write failed", { organizationId, error }),
     ),
     Effect.asVoid,
   );
@@ -386,12 +386,14 @@ export const pruneBackups = (
         // Keep the rows when the object cannot be removed so a later sweep can
         // retry instead of silently losing track of the bytes.
         Effect.catch((error) =>
-          Effect.sync(() => {
-            console.error("Backup object retention failed", error);
-            objectDeleteFailed = true;
-
-            return 0;
-          }),
+          Effect.logError("Backup object retention failed", { error }).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                objectDeleteFailed = true;
+              }),
+            ),
+            Effect.as(0),
+          ),
         ),
       );
 
@@ -459,11 +461,10 @@ export const runScheduledBackups = (
         runTenantBackup(db, storage, organization.id, "scheduled", { now }).pipe(
           Effect.map((result) => ({ ok: result.status === "succeeded" })),
           Effect.catch((error) =>
-            Effect.sync(() => {
-              console.error("Scheduled tenant backup failed", organization.id, error);
-
-              return { ok: false };
-            }),
+            Effect.logError("Scheduled tenant backup failed", {
+              organizationId: organization.id,
+              error,
+            }).pipe(Effect.as({ ok: false })),
           ),
         ),
       { concurrency: options.concurrency ?? BACKUP_CONCURRENCY },

@@ -13,10 +13,10 @@ import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
 import {
   APPLE_APPLICATION_INVENTORY_PAYLOAD,
-  commandDedupeKey,
+  commandDedupeKeyEffect,
   commandIsExpired,
   deviceCommandExpiresAt,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 import type { EnterpriseDb } from "../schema.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -135,24 +135,32 @@ export const refreshAppleApplicationInventory = (
 
     if (due.length === 0) return 0;
 
-    const rows = yield* Effect.promise(() =>
-      Promise.all(
-        due.map(async (device) => ({
-          id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
-          organizationId: device.organizationId,
-          deviceId: device.id,
-          requestType: APPLE_APPLICATION_INVENTORY_REQUEST_TYPE,
-          payload: APPLE_APPLICATION_INVENTORY_PAYLOAD,
-          status: "queued" as const,
-          dedupeKey: await commandDedupeKey(
+    const rows = yield* Effect.forEach(
+      due,
+      (device) =>
+        Effect.gen(function* () {
+          const dedupeKey = yield* commandDedupeKeyEffect(
             APPLE_APPLICATION_INVENTORY_REQUEST_TYPE,
             APPLE_APPLICATION_INVENTORY_PAYLOAD,
-          ),
-          expiresAt: deviceCommandExpiresAt(APPLE_APPLICATION_INVENTORY_REQUEST_TYPE, options.now),
-          createdAt: options.now,
-          updatedAt: options.now,
-        })),
-      ),
+          );
+
+          return {
+            id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
+            organizationId: device.organizationId,
+            deviceId: device.id,
+            requestType: APPLE_APPLICATION_INVENTORY_REQUEST_TYPE,
+            payload: APPLE_APPLICATION_INVENTORY_PAYLOAD,
+            status: "queued" as const,
+            dedupeKey,
+            expiresAt: deviceCommandExpiresAt(
+              APPLE_APPLICATION_INVENTORY_REQUEST_TYPE,
+              options.now,
+            ),
+            createdAt: options.now,
+            updatedAt: options.now,
+          };
+        }),
+      { concurrency: "unbounded" },
     );
 
     // The unique (device_id, dedupe_key) index makes a concurrent sweep safe:

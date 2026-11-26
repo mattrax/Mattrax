@@ -1,6 +1,7 @@
 import { Effect, Schema } from "effect";
-import { sendSmtpMail } from "./smtp.ts";
-import type { SmtpTransportOptions } from "./smtp.ts";
+import { describeEmailFailure, EmailFailure } from "./failure.ts";
+
+export { describeEmailFailure, EmailFailure } from "./failure.ts";
 
 /**
  * Shared transactional-email contract.
@@ -31,16 +32,16 @@ export type OutboundEmailMessage = {
   readonly text?: string;
   readonly html?: string;
   readonly attachments?: ReadonlyArray<EmailAttachment>;
+  /**
+   * Extra MIME headers, used by transports that can express them (SMTP).
+   *
+   * The verification code email sets `OTP-Token`, Resend's parallel to
+   * WebOTP's origin-bound SMS format, so desktop and mobile mail clients can
+   * offer the code without the inbox being the only source. Provider bindings
+   * that cannot carry custom headers simply ignore this field.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
 };
-
-/**
- * A delivery failure with a provider name and a secret-free reason. The
- * message is safe to persist in the outbox and show in readiness output.
- */
-export class EmailFailure extends Schema.TaggedError<EmailFailure>()("EmailFailure", {
-  provider: Schema.String,
-  message: Schema.String,
-}) {}
 
 /**
  * The mailer service contract. Implementations adapt a provider (Cloudflare
@@ -80,16 +81,6 @@ export const makeEmailTransport = (
         }),
     }),
 });
-
-/** Safe, one-line failure text for logs and the outbox. */ export const describeEmailFailure = (
-  cause: unknown,
-): string => {
-  if (cause instanceof EmailFailure) return cause.message;
-
-  const message = cause instanceof Error ? cause.message : "delivery failed";
-
-  return message.replaceAll(/\s+/g, " ").trim().slice(0, 300) || "delivery failed";
-};
 
 /** Sender used when a deployment has not configured `MAIL_FROM`. */
 export const DEFAULT_EMAIL_FROM: EmailAddress = {
@@ -151,16 +142,3 @@ export const replyToAddress = (replyTo: EmailReplyTo): EmailAddress =>
   Schema.is(Schema.String)(replyTo)
     ? { name: DEFAULT_EMAIL_FROM.name, email: replyTo }
     : { name: replyTo.name ?? replyTo.email, email: replyTo.email };
-
-/**
- * SMTP delivery. `node:net`/`node:tls` run in Node and in Workers with
- * `nodejs_compat`, so hosted and self-hosted deployments use one client.
- */
-export const smtpEmailTransport = (options: SmtpTransportOptions): EmailTransport => ({
-  send: (message) =>
-    Effect.tryPromise({
-      try: () => sendSmtpMail(options, message).then(() => undefined),
-      catch: (cause) =>
-        new EmailFailure({ provider: "SMTP", message: describeEmailFailure(cause) }),
-    }),
-});

@@ -11,7 +11,7 @@ function Card(props: ComponentProps<"div"> & { interactive?: boolean }) {
       data-interactive={local.interactive ? "" : undefined}
       class={cn(
         "flex flex-col rounded-xl border border-border bg-card text-card-foreground shadow-card",
-        "data-interactive:cursor-pointer data-interactive:transition-[border-color,box-shadow,transform] data-interactive:duration-[var(--duration-hover)] data-interactive:ease-swift data-interactive:hover:border-border-strong data-interactive:hover:shadow-popover data-interactive:active:scale-[0.997]",
+        "data-interactive:cursor-pointer data-interactive:transition data-interactive:duration-150 data-interactive:ease-out data-interactive:hover:border-border-strong data-interactive:hover:shadow-popover data-interactive:active:scale-100",
         local.class,
       )}
       {...others}
@@ -26,7 +26,7 @@ function CardHeader(props: ComponentProps<"div">) {
     <div
       data-slot="card-header"
       class={cn(
-        "grid auto-rows-min items-start gap-0.5 px-4 pt-4 has-data-[slot=card-action]:grid-cols-[1fr_auto]",
+        "grid auto-rows-min items-start gap-0.5 px-4 pt-4 has-data-[slot=card-action]:grid-cols-2",
         local.class,
       )}
       {...others}
@@ -40,7 +40,7 @@ function CardTitle(props: ComponentProps<"div">) {
   return (
     <div
       data-slot="card-title"
-      class={cn("text-[13px] font-[560] leading-5 tracking-[-0.012em]", local.class)}
+      class={cn("text-xs font-semibold leading-5 tracking-normal", local.class)}
       {...others}
     />
   );
@@ -52,7 +52,7 @@ function CardDescription(props: ComponentProps<"div">) {
   return (
     <div
       data-slot="card-description"
-      class={cn("text-[12px] leading-5 text-muted-foreground", local.class)}
+      class={cn("text-xs leading-5 text-muted-foreground", local.class)}
       {...others}
     />
   );
@@ -95,7 +95,7 @@ function CardLabel(props: ComponentProps<"div">) {
   return (
     <div
       data-slot="card-label"
-      class={cn("label-caps flex items-center gap-1.5", local.class)}
+      class={cn("text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5", local.class)}
       {...others}
     />
   );

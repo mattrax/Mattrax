@@ -4,6 +4,15 @@ A policy is a named container with a priority and one or more configurations. As
 decide which devices receive it; resolution decides which configuration wins when several
 policies apply.
 
+## Policy pages
+
+A policy has four sibling views: **Overview**, **Design**, **Assignments** and
+**Deployment**. All four show the same breadcrumb — **Tenant → Policies → policy name →
+view** — and the tab strip links the views to each other. Assignments, Deployment and
+Design also name the policy in their **Back to …** link. Deep links such as
+`/t/:tenantId/policies/:policyId/assignments` open the same view directly and respect
+the reader's permissions.
+
 ## Create a policy
 
 ```bash
@@ -103,18 +112,120 @@ touches the current tenant.
 | ------------------------------ | -------- | ---------------------------------------------------- |
 | `mttx.apple.device`            | Apple    | Built-in settings; currently `{ "camera": boolean }` |
 | `mttx.apple.custom.<id>`       | Apple    | Base64 `.mobileconfig`                               |
-| `mttx.apple.certificate.<id>`  | Apple    | PEM certificate for DDM                              |
+| `mttx.apple.certificate.<id>`  | Apple    | Trusted root PEM for DDM                             |
+| `mttx.apple.pkcs.<id>`         | Apple    | PKCS certificate profile with sealed PKCS#12         |
+| `mttx.apple.pfx.<id>`          | Apple    | Imported PFX identity (device or user channel)       |
+| `mttx.apple.mail.<id>`         | Apple    | Mail account with optional S/MIME settings           |
 | `mttx.apple.declaration.<id>`  | Apple    | Raw DDM declaration                                  |
 | `mttx.apple.application.<id>`  | Apple    | App install: catalogue reference or inline app       |
 | `mttx.apple.lockScreenMessage` | Apple    | Lock screen default: message and include-asset-tag   |
 | `mttx.windows.custom.<id>`     | Windows  | OMA-URI node or `{ nodes: [...] }`                   |
+| `mttx.windows.certificate.<id>` | Windows | Trusted root certificate                            |
+| `mttx.windows.pkcs.<id>`       | Windows  | PKCS certificate profile with sealed PKCS#12         |
+| `mttx.windows.pfx.<id>`        | Windows  | Imported PFX identity (device or user store)          |
 | `mttx.android.policy.<id>`     | Android  | AMAPI policy fragment                                |
+| `mttx.android.certificate.<id>` | Android | Trusted root as an ONC user CA                      |
 
 An Apple application configuration installs on every device in the policy's scope. It
 references a catalogue row (`{ "applicationId": "…" }`) or carries its own manifest, store
 id or uploaded `.pkg` metadata. See [Applications](/manage/applications#applications-in-a-policy),
 [Apple DDM](/platforms/apple/ddm), [Windows policies](/platforms/windows/policies) and
 [Android policies](/platforms/android/policies).
+
+### Certificate profiles
+
+Certificate profiles are scoped and delivered like every other configuration. A trusted
+root is the prerequisite for any certificate a device should trust, including the SCEP
+device identity Mattrax issues itself.
+
+| Profile              | Apple                        | Windows                              | Android                       | Use it for                                        |
+| -------------------- | ---------------------------- | ------------------------------------ | ----------------------------- | ------------------------------------------------- |
+| Trusted root         | `mttx.apple.certificate`     | `mttx.windows.certificate`          | `mttx.android.certificate`    | Trust the enterprise CA before issuing anything    |
+| PKCS certificate     | `mttx.apple.pkcs`            | `mttx.windows.pkcs`                 | Not supported                 | Wi-Fi/VPN/email identities issued by an enterprise CA |
+| Imported PFX         | `mttx.apple.pfx`             | `mttx.windows.pfx`                  | Not supported                 | A shared or per-user PKCS#12, especially S/MIME     |
+| S/MIME mail account  | `mttx.apple.mail`            | Not supported                        | Not supported                 | Signing/encrypting mail with a PFX or PKCS identity |
+
+The certificate payload is:
+
+```json
+{
+  "mttx.apple.pfx.smime": {
+    "pfx": "<base64 PKCS#12; stripped before storage>",
+    "password": "<PFX password; sealed before storage>",
+    "certificatePem": "-----BEGIN CERTIFICATE-----…",
+    "fileName": "person.pfx",
+    "keyLocation": "tpm-preferred",
+    "exportable": false
+  }
+}
+```
+
+Only `pfx`, `password`, `certificatePem` and `fileName` are supplied on the first save
+(or when rotating). Mattrax parses the PFX, verifies its password and integrity, and
+requires the supplied leaf certificate to match one in the file; a legacy RC2 PFX must be
+re-exported with modern AES/PBES2. It seals the PFX and password with `AUTH_SECRET` and
+stores the public leaf metadata (`subject`, `notAfter`,
+`fingerprintSha256`, `materialSha256`) in the configuration. The API never returns the
+sealed bytes, deployment snapshots keep only the metadata, and tenant exports exclude the
+material; after a restore, upload the PKCS#12 again.
+
+#### SCEP, PKCS and PFX
+
+- **SCEP** is Mattrax's own device identity. It is issued at enrollment, renews in-protocol,
+  and is what mTLS check-ins use. It is not a general-purpose enterprise certificate
+  profile.
+- **PKCS** describes a certificate an enterprise CA issued. It records the CA, template,
+  subject format, key usage, validity and renewal threshold. Mattrax cannot call an
+  enterprise CA or NDES, so the operator must issue the PKCS#12 with the existing
+  certificate connector, then upload it here. Renewal is reported from `notAfter` and the
+  threshold; it is not automatic.
+- **Imported PFX** is the same delivery path without issuance metadata. Use it when the
+  PKCS#12 already exists, including a shared S/MIME decryption identity.
+- The same PKCS#12 is delivered to every device or user in scope. Mattrax cannot issue a
+  unique certificate per device; a CA connector that does is external infrastructure.
+
+Apple devices receive a DDM identity asset and `security.identity` declaration on
+macOS 14/iOS 17+, or a `com.apple.security.pkcs12` profile on legacy delivery. Windows
+receives the `ClientCertificateInstall/PFXCertInstall` CSP nodes. Android's Management API
+has no client-certificate or PKCS API, so `mttx.android.pkcs` and `mttx.android.pfx` are
+rejected with an explanation; only a trusted root is available there.
+
+### S/MIME
+
+`mttx.apple.mail.<id>` creates an Apple Mail account and can reference a PKCS or PFX kind
+from the same policy:
+
+```json
+{
+  "mttx.apple.mail.work": {
+    "visibleName": "Work Mail",
+    "emailAddress": "person@example.com",
+    "incoming": { "serverType": "IMAP", "hostName": "imap.example.com", "authenticationMethod": "None" },
+    "outgoing": { "hostName": "smtp.example.com", "authenticationMethod": "None" },
+    "smime": {
+      "signing": { "enabled": true, "certificateKind": "mttx.apple.pfx.smime" },
+      "encryption": { "enabled": true, "encryptByDefault": true, "certificateKind": "mttx.apple.pfx.smime" }
+    }
+  }
+}
+```
+
+On DDM the account is a `com.apple.configuration.account.mail` declaration whose S/MIME
+settings point at the identity asset. On legacy delivery the mail payload and a
+`com.apple.security.pkcs12` payload are installed in one profile; the profile command is
+sealed at rest because it contains the private key and its password. S/MIME is only
+emitted for iOS 17+ (Apple defines it there; macOS omits it), and macOS mail declarations
+require the user channel while iPhone/iPadOS accept device scope.
+
+Mail server passwords are not stored in policy JSON at all: they would be returned by the
+policy API and copied into snapshots and exports. Use SSO/`None`, a custom
+`.mobileconfig`, or an identity-based setup. Password-based authentication on DDM also
+needs a credentials asset Mattrax does not create, so it is reported as unsupported.
+
+The device page lists the certificate each policy material delivers with its expiry.
+Apple also reports managed certificates from `security.certificate.list`, which the device
+page shows as device evidence. Windows has no certificate inventory, so its entries are
+labelled **Policy material** rather than installed evidence.
 
 ### Lock screen message default
 

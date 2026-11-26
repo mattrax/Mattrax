@@ -11,10 +11,10 @@ import {
 import type { StepUpAction, StepUpMethod } from "@mattrax/enterprise-domain";
 import { Data, DateTime, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect";
 import { Schema as AuthSchema } from "@yielded/auth";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { Db } from "@mattrax/enterprise-core";
 import { schema } from "../schema.ts";
-import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
+import { signToken, TokenError, verifyToken } from "@mattrax/enterprise-tokens";
 
 const base64Url = (bytes: Uint8Array) =>
   btoa(String.fromCharCode(...bytes))
@@ -23,6 +23,41 @@ const base64Url = (bytes: Uint8Array) =>
     .replaceAll("=", "");
 
 const randomBytes = (length: number) => base64Url(crypto.getRandomValues(new Uint8Array(length)));
+
+const unavailable = (
+  message: string,
+  reason: NonNullable<StepUpUnavailable["reason"]>,
+  retryable: boolean,
+  cause?: unknown,
+) => {
+  const error = new StepUpUnavailable({ message, reason, retryable });
+
+  if (cause === undefined) return Effect.fail(error);
+
+  return Effect.logWarning("Step-up is unavailable", {
+    reason,
+    retryable,
+    failure: Predicate.isTagged(cause, "_tag")
+      ? cause._tag
+      : cause instanceof Error
+        ? cause.name
+        : typeof cause,
+  }).pipe(Effect.andThen(Effect.fail(error)));
+};
+
+const recoverToken = <A>(effect: Effect.Effect<A, TokenError>) =>
+  effect.pipe(
+    Effect.catchTag("TokenError", (error) =>
+      error.reason === "crypto"
+        ? unavailable(
+            "Step-up verification is unavailable right now",
+            "cryptography",
+            true,
+            error.cause,
+          )
+        : Effect.succeed(undefined),
+    ),
+  );
 
 class StepUpPasskeyContext extends Data.TaggedClass("StepUp")<{
   readonly target: Schema.Schema.Type<typeof Passkey.PasskeyTarget>;
@@ -61,7 +96,7 @@ export const signStepUpGrant = (
  * credential so callers can require a specific factor instead of a bare
  * boolean.
  */
-export const readStepUpGrant = (
+export const readStepUpGrant = Effect.fnUntraced(function* (
   secret: string,
   token: string,
   expected: {
@@ -69,22 +104,24 @@ export const readStepUpGrant = (
     readonly sessionId: string;
     readonly action: StepUpAction;
   },
-) =>
-  verifyToken(secret, token).pipe(
-    Effect.map((payload) =>
-      payload.purpose === "step-up-grant" &&
-      payload.sub === expected.subjectId &&
-      payload.sid === expected.sessionId &&
-      payload.action === expected.action &&
-      payload.exp > Date.now()
-        ? {
-            method: payload.method,
-            credentialId: payload.credentialId,
-          }
-        : undefined,
-    ),
-    Effect.catch(() => Effect.succeed(undefined)),
-  );
+) {
+  const payload = yield* recoverToken(verifyToken(secret, token));
+
+  if (payload === undefined) return undefined;
+
+  const now = yield* DateTime.now;
+
+  return payload.purpose === "step-up-grant" &&
+    payload.sub === expected.subjectId &&
+    payload.sid === expected.sessionId &&
+    payload.action === expected.action &&
+    payload.exp > DateTime.toEpochMillis(now)
+    ? {
+        method: payload.method,
+        credentialId: payload.credentialId,
+      }
+    : undefined;
+});
 
 /** Verify a grant for this exact account, session and action. */
 export const verifyStepUpGrant = (
@@ -133,7 +170,7 @@ const PasskeyAssertionResponse = Schema.Struct({
   rawId: Schema.optional(Schema.String),
 });
 
-export const verifyStepUpFlow = (
+export const verifyStepUpFlow = Effect.fnUntraced(function* (
   secret: string,
   token: string,
   expected: {
@@ -141,29 +178,31 @@ export const verifyStepUpFlow = (
     readonly sessionId: string;
     readonly action: StepUpAction;
   },
-) =>
-  verifyToken(secret, token).pipe(
-    Effect.map((payload) => {
-      if (
-        payload.purpose !== "step-up-flow" ||
-        payload.sub !== expected.subjectId ||
-        payload.sid !== expected.sessionId ||
-        payload.action !== expected.action ||
-        payload.exp <= Date.now() ||
-        payload.flowId === undefined ||
-        payload.verifier === undefined ||
-        payload.requestBindingExpiresAtMillis === undefined
-      )
-        return undefined;
+) {
+  const payload = yield* recoverToken(verifyToken(secret, token));
 
-      return {
-        flowId: payload.flowId,
-        requestBindingVerifier: payload.verifier,
-        requestBindingExpiresAtMillis: payload.requestBindingExpiresAtMillis,
-      };
-    }),
-    Effect.catch(() => Effect.succeed(undefined)),
-  );
+  if (payload === undefined) return undefined;
+
+  const now = yield* DateTime.now;
+
+  if (
+    payload.purpose !== "step-up-flow" ||
+    payload.sub !== expected.subjectId ||
+    payload.sid !== expected.sessionId ||
+    payload.action !== expected.action ||
+    payload.exp <= DateTime.toEpochMillis(now) ||
+    payload.flowId === undefined ||
+    payload.verifier === undefined ||
+    payload.requestBindingExpiresAtMillis === undefined
+  )
+    return undefined;
+
+  return {
+    flowId: payload.flowId,
+    requestBindingVerifier: payload.verifier,
+    requestBindingExpiresAtMillis: payload.requestBindingExpiresAtMillis,
+  };
+});
 
 /**
  * Verify a flow token without knowing which action it was issued for. The
@@ -217,13 +256,17 @@ export const stepUpServiceLayer = () =>
               })
               .pipe(
                 Effect.map((snapshot) => snapshot?.credentials.length ?? 0),
-                Effect.catch(() => Effect.succeed(0)),
+                Effect.catch((error) =>
+                  unavailable("Step-up methods are unavailable right now", "storage", true, error),
+                ),
               );
 
       const hasTotp = (subjectId: string) =>
         totpPersistence.snapshot({ moduleId: TOTP_MODULE_ID, subjectId: subject(subjectId) }).pipe(
           Effect.map((snapshot) => Boolean(snapshot?.record?.secret)),
-          Effect.catch(() => Effect.succeed(false)),
+          Effect.catch((error) =>
+            unavailable("Step-up methods are unavailable right now", "storage", true, error),
+          ),
         );
 
       return StepUpService.of({
@@ -241,105 +284,158 @@ export const stepUpServiceLayer = () =>
 
             const snapshot = yield* totpPersistence
               .snapshot({ moduleId: TOTP_MODULE_ID, subjectId: subject(subjectId) })
-              .pipe(Effect.catch(() => Effect.succeed(undefined)));
+              .pipe(
+                Effect.catch((error) =>
+                  unavailable(
+                    "Authenticator verification is unavailable right now",
+                    "storage",
+                    true,
+                    error,
+                  ),
+                ),
+              );
 
             const record = snapshot?.record;
+            const envelope = record?.secret;
 
-            if (!record?.secret) return false;
+            if (!record || !envelope) return false;
 
             const now = yield* DateTime.now;
 
             const nowMillis = DateTime.toEpochMillis(now);
             const nowDate = DateTime.toDate(now);
 
-            const [state] = yield* db
-              .select()
-              .from(schema.stepUpTotpState)
-              .where(eq(schema.stepUpTotpState.subjectId, subjectId))
-              .limit(1);
-
-            if (state?.lockedUntil && state.lockedUntil.getTime() > nowDate.getTime()) return false;
-
-            const step = yield* Effect.acquireUseRelease(
-              totpCryptography.decryptSecret(
-                {
-                  moduleId: TOTP_MODULE_ID,
-                  subjectId: record.subjectId,
-                  credentialId: record.credentialId,
-                  revision: record.revision,
-                },
-                record.secret,
-              ),
-              (secret) =>
-                totpCryptography.matchCode(
-                  secret,
-                  code.trim(),
-                  nowMillis,
-                  TOTP_POLICY.clockSkewSteps,
-                ),
-              (secret) => Effect.sync(() => secret.fill(0)),
-            ).pipe(Effect.catch(() => Effect.succeed(null)));
-
-            const failed = () =>
+            return yield* db.transaction((tx) =>
               Effect.gen(function* () {
-                const failures = (state?.failures ?? 0) + 1;
-
-                const lockedUntil =
-                  failures >= 5 ? new Date(nowDate.getTime() + 15 * 60 * 1000) : null;
-
-                yield* db
+                // Materialize the row before taking the lock. SELECT ... FOR
+                // UPDATE cannot lock a gap for a subject that has never
+                // failed, so a locking upsert closes the first-attempt race.
+                yield* tx
                   .insert(schema.stepUpTotpState)
                   .values({
                     subjectId,
                     lastAcceptedStep: 0,
-                    failures,
-                    lockedUntil,
+                    failures: 0,
+                    lockedUntil: null,
                     updatedAt: nowDate,
                   })
-                  .onDuplicateKeyUpdate({ set: { failures, lockedUntil, updatedAt: nowDate } });
+                  .onDuplicateKeyUpdate({
+                    // A no-op upsert takes the exclusive row lock. Unlike
+                    // INSERT IGNORE, it cannot leave duplicate-key shared
+                    // locks that deadlock with the FOR UPDATE below.
+                    set: { subjectId: sql`${schema.stepUpTotpState.subjectId}` },
+                  });
 
-                return false;
-              });
+                const [state] = yield* tx
+                  .select()
+                  .from(schema.stepUpTotpState)
+                  .where(eq(schema.stepUpTotpState.subjectId, subjectId))
+                  .limit(1)
+                  .for("update");
 
-            if (step === null) return yield* failed();
+                if (!state) return false;
+                if (state.lockedUntil && state.lockedUntil.getTime() > nowDate.getTime())
+                  return false;
 
-            // Accept each time-step once per account. The conditional update
-            // makes two concurrent guesses at the same step resolve to one
-            // winner.
-            const claimed = yield* db
-              .update(schema.stepUpTotpState)
-              .set({ lastAcceptedStep: step, failures: 0, lockedUntil: null, updatedAt: nowDate })
-              .where(
-                and(
-                  eq(schema.stepUpTotpState.subjectId, subjectId),
-                  lt(schema.stepUpTotpState.lastAcceptedStep, step),
-                ),
-              );
+                // Keep the lock from the admission check through the guess
+                // and its state write. Concurrent failures are serialized, so
+                // no more than five guesses can run before lockout.
+                const secret = yield* totpCryptography
+                  .decryptSecret(
+                    {
+                      moduleId: TOTP_MODULE_ID,
+                      subjectId: record.subjectId,
+                      credentialId: record.credentialId,
+                      revision: record.revision,
+                    },
+                    envelope,
+                  )
+                  .pipe(
+                    Effect.catch((error) =>
+                      unavailable(
+                        "Authenticator verification is unavailable right now",
+                        "cryptography",
+                        true,
+                        error,
+                      ),
+                    ),
+                  );
 
-            if (claimed.affectedRows === 0) {
-              // No row existed when it was read; claim the first step by
-              // inserting. A concurrent request that inserted first makes this
-              // a no-op, which is a replay.
-              const inserted = yield* db.insert(schema.stepUpTotpState).ignore().values({
-                subjectId,
-                lastAcceptedStep: step,
-                failures: 0,
-                lockedUntil: null,
-                updatedAt: nowDate,
-              });
+                const step = yield* Effect.acquireUseRelease(
+                  Effect.succeed(secret),
+                  (secret) =>
+                    totpCryptography.matchCode(
+                      secret,
+                      code.trim(),
+                      nowMillis,
+                      TOTP_POLICY.clockSkewSteps,
+                    ),
+                  (decrypted) => Effect.sync(() => decrypted.fill(0)),
+                ).pipe(
+                  Effect.catch((error) =>
+                    unavailable(
+                      "Authenticator verification is unavailable right now",
+                      "cryptography",
+                      true,
+                      error,
+                    ),
+                  ),
+                );
 
-              if (inserted.affectedRows === 0) return false;
-            }
+                if (step === null) {
+                  const failures = state.failures + 1;
+                  const lockedUntil =
+                    failures >= 5 ? new Date(nowDate.getTime() + 15 * 60 * 1000) : null;
 
-            return true;
-          }).pipe(Effect.catch(() => Effect.succeed(false))),
+                  yield* tx
+                    .update(schema.stepUpTotpState)
+                    .set({ failures, lockedUntil, updatedAt: nowDate })
+                    .where(eq(schema.stepUpTotpState.subjectId, subjectId));
+
+                  return false;
+                }
+
+                // Accept each time-step once per account. The row lock
+                // serializes the replay check with failure accounting.
+                const claimed = yield* tx
+                  .update(schema.stepUpTotpState)
+                  .set({
+                    lastAcceptedStep: step,
+                    failures: 0,
+                    lockedUntil: null,
+                    updatedAt: nowDate,
+                  })
+                  .where(
+                    and(
+                      eq(schema.stepUpTotpState.subjectId, subjectId),
+                      lt(schema.stepUpTotpState.lastAcceptedStep, step),
+                    ),
+                  );
+
+                return claimed.affectedRows > 0;
+              }),
+            );
+          }).pipe(
+            Effect.catch((error) =>
+              error instanceof StepUpUnavailable
+                ? Effect.fail(error)
+                : unavailable(
+                    "Authenticator verification is unavailable right now",
+                    "storage",
+                    true,
+                    error,
+                  ),
+            ),
+          ),
 
         beginPasskey: (subjectId) =>
           Effect.gen(function* () {
             if (profile === undefined)
-              return yield* StepUpUnavailable.make({
-                message: "Passkeys are not configured on this deployment",
-              });
+              return yield* unavailable(
+                "Passkeys are not configured on this deployment",
+                "configuration",
+                false,
+              );
 
             const snapshot = yield* passkeyCredentials
               .listForSubject({
@@ -348,22 +444,22 @@ export const stepUpServiceLayer = () =>
                 subjectId: subject(subjectId),
               })
               .pipe(
-                Effect.catch(() =>
-                  Effect.fail(
-                    StepUpUnavailable.make({ message: "Passkeys are unavailable right now" }),
-                  ),
+                Effect.catch((error) =>
+                  unavailable("Passkeys are unavailable right now", "storage", true, error),
                 ),
               );
 
             if (!snapshot || snapshot.credentials.length === 0)
-              return yield* StepUpUnavailable.make({
-                message: "Add a passkey to this account before using it to confirm actions",
-              });
+              return yield* unavailable(
+                "Add a passkey to this account before using it to confirm actions",
+                "configuration",
+                false,
+              );
 
             const flowId = crypto.randomUUID();
             const challenge = randomBytes(32);
             const verifier = randomBytes(32);
-            const issuedAtMillis = Date.now();
+            const issuedAtMillis = DateTime.toEpochMillis(yield* DateTime.now);
             const expiresAtMillis = issuedAtMillis + STEP_UP_WINDOW_MILLIS;
 
             const target = yield* Schema.decodeUnknownEffect(Passkey.PasskeyTarget)({
@@ -452,7 +548,12 @@ export const stepUpServiceLayer = () =>
 
         completePasskey: (input) =>
           Effect.gen(function* () {
-            if (profile === undefined) return undefined;
+            if (profile === undefined)
+              return yield* unavailable(
+                "Passkeys are not configured on this deployment",
+                "configuration",
+                false,
+              );
 
             const access = yield* Schema.decodeUnknownEffect(Passkey.PasskeyAccess)({
               moduleId: PASSKEY_MODULE_ID,
@@ -466,11 +567,20 @@ export const stepUpServiceLayer = () =>
 
             const ceremony = yield* passkeyPersistence
               .context(access)
-              .pipe(Effect.catch(() => Effect.succeed(undefined)));
+              .pipe(
+                Effect.catch((error) =>
+                  unavailable(
+                    "Passkey verification is unavailable right now",
+                    "storage",
+                    true,
+                    error,
+                  ),
+                ),
+              );
 
             if (ceremony === undefined || ceremony.purpose !== "step-up") return undefined;
 
-            // The assertion's `rawId` is the base64url protocol credential id.
+            // The assertion's rawId is the base64url protocol credential id.
             const rawId = yield* Effect.sync(() => {
               try {
                 const parsed: Schema.Schema.Type<typeof PasskeyAssertionResponse> =
@@ -495,7 +605,16 @@ export const stepUpServiceLayer = () =>
                 rpId: ceremony.profile.rpId,
                 protocolCredentialId,
               })
-              .pipe(Effect.catch(() => Effect.succeed(undefined)));
+              .pipe(
+                Effect.catch((error) =>
+                  unavailable(
+                    "Passkey verification is unavailable right now",
+                    "storage",
+                    true,
+                    error,
+                  ),
+                ),
+              );
 
             if (!credential || !credential.active) return undefined;
 
@@ -507,7 +626,17 @@ export const stepUpServiceLayer = () =>
                 credential,
                 response: Redacted.make(input.response),
               })
-              .pipe(Effect.catch(() => Effect.succeed(undefined)));
+              .pipe(
+                Effect.catchTag("PasskeyProtocolRejected", () => Effect.succeed(undefined)),
+                Effect.catch((error) =>
+                  unavailable(
+                    "Passkey verification is unavailable right now",
+                    "protocol",
+                    true,
+                    error,
+                  ),
+                ),
+              );
 
             if (assertion === undefined) return undefined;
 
@@ -515,12 +644,26 @@ export const stepUpServiceLayer = () =>
               .consume({ access, ceremony, credential, assertion }, (value, journal) =>
                 journal.prepare(value),
               )
-              .pipe(Effect.catch(() => Effect.succeed(undefined)));
-
-            if (receipt === undefined) return undefined;
+              .pipe(
+                Effect.catch((error) =>
+                  unavailable(
+                    "Passkey verification is unavailable right now",
+                    "storage",
+                    true,
+                    error,
+                  ),
+                ),
+              );
 
             const decision = yield* receipt.read.pipe(
-              Effect.catch(() => Effect.succeed("Rejected" as const)),
+              Effect.catch((error) =>
+                unavailable(
+                  "Passkey verification is unavailable right now",
+                  "storage",
+                  true,
+                  error,
+                ),
+              ),
             );
 
             return decision === "Verified" ? credential.credentialId : undefined;

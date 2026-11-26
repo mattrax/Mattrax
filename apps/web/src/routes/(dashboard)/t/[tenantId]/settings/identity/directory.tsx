@@ -5,11 +5,12 @@ import { BULK_MEMBER_LIMIT } from "@mattrax/enterprise-domain/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { ErrorText, Panel, formatDate } from "~/components/mdm/common";
-import { SetupNotice } from "~/components/settings/setup-notice";
+import SetupNotice from "~/components/settings/setup-notice";
 import { toast } from "~/components/toast";
-import { IndeterminateBar, LoadingState } from "@mattrax/ui";
+import { Checkbox, IndeterminateBar, LoadingState } from "@mattrax/ui";
+import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { ArrowUpRight, RotateCcw } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { bulkFailureReason, bulkReport, runBulkBatches } from "~/lib/bulk-members";
@@ -29,7 +30,7 @@ const SYNC_INTERVALS = [
 ] as const;
 
 const selectClass =
-  "h-8 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground sm:text-[13px] outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-[15rem]";
+  "h-8 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground sm:text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 sm:max-w-60";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -82,15 +83,6 @@ export default function DirectorySyncPage() {
     directoryUsers().length > 0 && selectedUsers().length === directoryUsers().length;
 
   const someUsersSelected = () => selectedUsers().length > 0 && !allUsersSelected();
-
-  let selectAllUsersRef: HTMLInputElement | undefined;
-
-  createEffect(
-    () => someUsersSelected(),
-    (selected) => {
-      if (selectAllUsersRef) selectAllUsersRef.indeterminate = selected;
-    },
-  );
 
   // Keep the picker on a group that still exists as the directory reloads.
   createEffect(
@@ -410,7 +402,7 @@ export default function DirectorySyncPage() {
                       <Show when={value().consentUrl}>
                         {(url) => (
                           <a
-                            class="inline-flex text-[12.5px] font-medium text-brand underline underline-offset-2 transition-colors hover:text-brand/80"
+                            class="inline-flex text-xs font-medium text-brand underline underline-offset-2 transition-colors hover:text-brand/80"
                             href={url()}
                             target="_blank"
                             rel="noreferrer"
@@ -423,7 +415,7 @@ export default function DirectorySyncPage() {
                   />
                 }
               >
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
                   <span class="inline-flex items-center gap-1.5 font-medium text-foreground">
                     <span class="size-1.5 rounded-full bg-success" />
                     Connected
@@ -434,7 +426,7 @@ export default function DirectorySyncPage() {
                   </span>
                   <Show when={value().azureTenantId}>
                     {(tenant) => (
-                      <span class="break-all font-mono text-[11px] text-muted-foreground">
+                      <span class="break-all font-mono text-xs text-muted-foreground">
                         {tenant()}
                       </span>
                     )}
@@ -445,7 +437,7 @@ export default function DirectorySyncPage() {
                 <div class="mt-5 space-y-3 rounded-lg border border-border bg-surface/40 p-3.5">
                   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
                     <label for="entra-sync-interval" class="min-w-0">
-                      <span class="block text-[13px] font-medium text-foreground">
+                      <span class="block text-xs font-medium text-foreground">
                         Automatic sync
                       </span>
                       <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
@@ -454,7 +446,7 @@ export default function DirectorySyncPage() {
                     </label>
                     <select
                       id="entra-sync-interval"
-                      class={cn(selectClass, "shrink-0 sm:w-[15rem]")}
+                      class={cn(selectClass, "shrink-0 sm:w-60")}
                       disabled={!writable() || interval.isPending}
                       value={String(value().syncIntervalMinutes)}
                       onChange={(event) => interval.mutate(Number(event.currentTarget.value))}
@@ -496,10 +488,10 @@ export default function DirectorySyncPage() {
                         </Show>
                         <p
                           class={cn(
-                            "text-[11.5px] leading-relaxed",
+                            "text-xs leading-relaxed",
                             current().state === "running" && "text-muted-foreground",
                             current().state === "stale" && "text-warning-foreground",
-                            current().state === "succeeded" && "text-success-foreground",
+                            current().state === "succeeded" && "text-success",
                             current().state === "failed" && "text-destructive",
                           )}
                         >
@@ -516,7 +508,7 @@ export default function DirectorySyncPage() {
                   (value().lastSyncedAt || value().lastAttemptedAt || counts())
                 }
               >
-                <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border pt-3 text-[11px] text-muted-foreground">
+                <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border pt-3 text-xs text-muted-foreground">
                   <Show when={value().lastSyncedAt}>
                     {(at) => (
                       <span class="inline-flex items-center gap-1.5">
@@ -603,7 +595,6 @@ export default function DirectorySyncPage() {
                           rel="noreferrer"
                           variant="ghost"
                           size="sm"
-                          class="text-muted-foreground"
                         >
                           Google Admin
                           <ArrowUpRight class="size-3.5" />
@@ -611,7 +602,7 @@ export default function DirectorySyncPage() {
                       </>
                     }
                   >
-                    <details class="rounded-lg border border-border bg-surface/60 p-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                    <details class="rounded-lg border border-border bg-surface/60 p-3 text-xs leading-relaxed text-muted-foreground">
                       <summary class="cursor-pointer select-none font-medium text-foreground">
                         What the Google setup needs
                       </summary>
@@ -621,7 +612,7 @@ export default function DirectorySyncPage() {
                         <li>
                           In Google Admin → Security → API controls → Domain-wide delegation,
                           authorise the service account's client id for:
-                          <span class="mt-1 block break-all font-mono text-[10.5px]">
+                          <span class="mt-1 block break-all font-mono text-xs">
                             https://www.googleapis.com/auth/admin.directory.user.readonly
                             https://www.googleapis.com/auth/admin.directory.group.readonly
                           </span>
@@ -635,7 +626,7 @@ export default function DirectorySyncPage() {
                   </SetupNotice>
                 }
               >
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
                   <span class="inline-flex items-center gap-1.5 font-medium text-foreground">
                     <span class="size-1.5 rounded-full bg-success" />
                     Connected
@@ -655,7 +646,7 @@ export default function DirectorySyncPage() {
 
                 <Show when={value().serviceAccountEmail}>
                   {(email) => (
-                    <p class="mt-2 break-all font-mono text-[11px] text-muted-foreground">
+                    <p class="mt-2 break-all font-mono text-xs text-muted-foreground">
                       {email()} → {value().adminEmail ?? "no admin"} ·{" "}
                       {value().customer ?? "my_customer"}
                     </p>
@@ -666,7 +657,7 @@ export default function DirectorySyncPage() {
                 <div class="mt-5 space-y-3 rounded-lg border border-border bg-surface/40 p-3.5">
                   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
                     <label for="google-sync-interval" class="min-w-0">
-                      <span class="block text-[13px] font-medium text-foreground">
+                      <span class="block text-xs font-medium text-foreground">
                         Automatic sync
                       </span>
                       <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
@@ -675,7 +666,7 @@ export default function DirectorySyncPage() {
                     </label>
                     <select
                       id="google-sync-interval"
-                      class={cn(selectClass, "shrink-0 sm:w-[15rem]")}
+                      class={cn(selectClass, "shrink-0 sm:w-60")}
                       disabled={!writable() || googleInterval.isPending}
                       value={String(value().syncIntervalMinutes)}
                       onChange={(event) => googleInterval.mutate(Number(event.currentTarget.value))}
@@ -721,7 +712,6 @@ export default function DirectorySyncPage() {
                       rel="noreferrer"
                       variant="ghost"
                       size="sm"
-                      class="text-muted-foreground"
                     >
                       Google Admin
                       <ArrowUpRight class="size-3.5" />
@@ -741,10 +731,10 @@ export default function DirectorySyncPage() {
                         </Show>
                         <p
                           class={cn(
-                            "text-[11.5px] leading-relaxed",
+                            "text-xs leading-relaxed",
                             current().state === "running" && "text-muted-foreground",
                             current().state === "stale" && "text-warning-foreground",
-                            current().state === "succeeded" && "text-success-foreground",
+                            current().state === "succeeded" && "text-success",
                             current().state === "failed" && "text-destructive",
                           )}
                         >
@@ -761,7 +751,7 @@ export default function DirectorySyncPage() {
                   (value().lastSyncedAt || value().lastAttemptedAt || googleCounts())
                 }
               >
-                <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border pt-3 text-[11px] text-muted-foreground">
+                <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border pt-3 text-xs text-muted-foreground">
                   <Show when={value().lastSyncedAt}>
                     {(at) => (
                       <span class="inline-flex items-center gap-1.5">
@@ -797,41 +787,39 @@ export default function DirectorySyncPage() {
 
               <Show when={googleFormOpen() && writable()}>
                 <div class="mt-4 grid gap-3 rounded-lg border border-border bg-surface/40 p-3">
-                  <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                  <p class="text-xs leading-relaxed text-muted-foreground">
                     Saving validates the key with a single directory read before storing it. The
                     JSON is sealed with the deployment secret; only the service account's email is
                     kept readable.
                   </p>
-                  <label class="grid gap-1 text-[12px] font-medium text-foreground">
+                  <label class="grid gap-1 text-xs font-medium text-foreground">
                     Workspace super-admin email
-                    <input
+                    <Input
                       type="email"
                       autocomplete="off"
-                      class={cn(selectClass, "sm:max-w-none")}
                       placeholder="admin@example.com"
                       value={googleAdminEmail()}
                       onInput={(event) => setGoogleAdminEmail(event.currentTarget.value)}
                     />
                   </label>
-                  <label class="grid gap-1 text-[12px] font-medium text-foreground">
+                  <label class="grid gap-1 text-xs font-medium text-foreground">
                     Customer or primary domain (optional)
-                    <input
+                    <Input
                       type="text"
                       autocomplete="off"
-                      class={cn(selectClass, "sm:max-w-none")}
                       placeholder="my_customer"
                       value={googleCustomer()}
                       onInput={(event) => setGoogleCustomer(event.currentTarget.value)}
                     />
                   </label>
-                  <label class="grid gap-1 text-[12px] font-medium text-foreground">
+                  <label class="grid gap-1 text-xs font-medium text-foreground">
                     Service-account JSON
                     <textarea
                       rows={6}
                       autocomplete="off"
                       autocapitalize="off"
                       spellcheck={false}
-                      class="w-full rounded-lg border border-input bg-surface px-2.5 py-2 font-mono text-[11px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      class="w-full rounded-lg border border-input bg-surface px-2.5 py-2 font-mono text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50"
                       placeholder={
                         '{\n  "type": "service_account",\n  "client_email": "…",\n  "private_key": "-----BEGIN PRIVATE KEY-----…"\n}'
                       }
@@ -871,7 +859,7 @@ export default function DirectorySyncPage() {
                 )}
               </Show>
 
-              <p class="mt-3 rounded-lg border border-border bg-surface/60 p-3 text-[11.5px] leading-relaxed text-muted-foreground">
+              <p class="mt-3 rounded-lg border border-border bg-surface/60 p-3 text-xs leading-relaxed text-muted-foreground">
                 Google sign-in (OIDC) is not enabled by directory sync. Linking a Google user for
                 dashboard or enrollment sign-in requires a Google OAuth client, an ID-token verifier
                 and a tenant SSO binding for your deployment; this sync only imports the directory
@@ -921,20 +909,21 @@ export default function DirectorySyncPage() {
             <div class="grid gap-5 md:grid-cols-2">
               <div>
                 <div class="mb-2 flex items-center justify-between gap-2">
-                  <p class="text-[12px] font-medium text-foreground">
+                  <p class="text-xs font-medium text-foreground">
                     Users{" "}
                     <span class="tabular-nums text-muted-foreground">({value().users.length})</span>
                   </p>
                   <Show when={usersSelectable()}>
-                    <label class="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <input
-                        ref={(element) => {
-                          selectAllUsersRef = element;
-                        }}
-                        type="checkbox"
-                        class="size-3.5 accent-[var(--primary)]"
-                        checked={allUsersSelected()}
-                        onChange={(event) => toggleAllUsers(event.currentTarget.checked)}
+                    <label class="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+                      <Checkbox
+                        checked={
+                          allUsersSelected()
+                            ? true
+                            : someUsersSelected()
+                              ? "indeterminate"
+                              : false
+                        }
+                        onCheckedChange={(checked) => toggleAllUsers(checked === true)}
                         aria-label="Select all directory users"
                       />
                       Select all
@@ -944,7 +933,7 @@ export default function DirectorySyncPage() {
                 <Show
                   when={value().users.length > 0}
                   fallback={
-                    <p class="text-[12.5px] text-muted-foreground">
+                    <p class="text-xs text-muted-foreground">
                       No directory users synced yet.
                     </p>
                   }
@@ -952,13 +941,11 @@ export default function DirectorySyncPage() {
                   <div class="max-h-72 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
                     <For each={value().users}>
                       {(user) => (
-                        <div class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px]">
+                        <div class="flex items-center gap-2 px-2.5 py-1.5 text-xs">
                           <Show when={usersSelectable()}>
-                            <input
-                              type="checkbox"
-                              class="size-3.5 shrink-0 accent-[var(--primary)]"
+                            <Checkbox
                               checked={selectedUserIds().has(user.id)}
-                              onChange={(event) => toggleUser(user.id, event.currentTarget.checked)}
+                              onCheckedChange={(checked) => toggleUser(user.id, checked === true)}
                               aria-label={`Select ${user.name} (${user.email})`}
                             />
                           </Show>
@@ -966,28 +953,28 @@ export default function DirectorySyncPage() {
                             <span class="flex items-center gap-1.5">
                               <span class="block truncate text-foreground">{user.name}</span>
                               <Show when={user.disabled}>
-                                <span class="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                <span class="shrink-0 rounded-full border border-border px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
                                   Disabled
                                 </span>
                               </Show>
                             </span>
-                            <span class="block truncate text-[11px] text-muted-foreground">
+                            <span class="block truncate text-xs text-muted-foreground">
                               {user.email}
                             </span>
                             <Show when={user.externalId}>
                               {(externalId) => (
-                                <span class="block truncate font-mono text-[10px] text-muted-foreground">
+                                <span class="block truncate font-mono text-xs text-muted-foreground">
                                   {externalId()}
                                 </span>
                               )}
                             </Show>
                           </span>
                           <span class="flex shrink-0 flex-col items-end gap-1">
-                            <span class="text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                            <span class="text-xs uppercase tracking-widest text-muted-foreground">
                               {user.source}
                             </span>
                             <Show when={user.linked}>
-                              <span class="shrink-0 rounded-full border border-success/25 bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success-foreground">
+                              <span class="shrink-0 rounded-full border border-success/25 bg-success/10 px-1.5 py-0.5 text-xs font-medium text-success">
                                 SSO linked
                               </span>
                             </Show>
@@ -1026,21 +1013,21 @@ export default function DirectorySyncPage() {
                 </Show>
                 <Show when={linkNotice()}>
                   {(notice) => (
-                    <p role="status" class="mt-2 text-[11.5px] text-success-foreground">
+                    <p role="status" class="mt-2 text-xs text-success">
                       {notice()}
                     </p>
                   )}
                 </Show>
               </div>
               <div>
-                <p class="mb-2 text-[12px] font-medium text-foreground">
+                <p class="mb-2 text-xs font-medium text-foreground">
                   Groups{" "}
                   <span class="tabular-nums text-muted-foreground">({value().groups.length})</span>
                 </p>
                 <Show
                   when={value().groups.length > 0}
                   fallback={
-                    <p class="text-[12.5px] text-muted-foreground">
+                    <p class="text-xs text-muted-foreground">
                       No directory groups synced yet.
                     </p>
                   }
@@ -1048,12 +1035,12 @@ export default function DirectorySyncPage() {
                   <div class="max-h-72 divide-y divide-border/60 overflow-auto rounded-lg border border-border">
                     <For each={value().groups}>
                       {(group) => (
-                        <div class="flex items-center gap-2 px-2.5 py-1.5 text-[12.5px]">
+                        <div class="flex items-center gap-2 px-2.5 py-1.5 text-xs">
                           <span class="min-w-0 flex-1 truncate text-foreground">{group.name}</span>
-                          <span class="shrink-0 text-[11px] text-muted-foreground">
+                          <span class="shrink-0 text-xs text-muted-foreground">
                             {group.memberCount} members
                           </span>
-                          <span class="shrink-0 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                          <span class="shrink-0 text-xs uppercase tracking-widest text-muted-foreground">
                             {group.source}
                           </span>
                         </div>
@@ -1069,9 +1056,9 @@ export default function DirectorySyncPage() {
           <div
             role="group"
             aria-label="Bulk directory user actions"
-            class="fixed bottom-5 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-popover"
+            class="fixed bottom-5 inset-x-4 z-40 mx-auto flex max-w-full flex-wrap items-center justify-center gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-popover"
           >
-            <span class="flex items-center gap-2 text-[12px] font-[550] tabular-nums">
+            <span class="flex items-center gap-2 text-xs font-medium tabular-nums">
               <span class="size-1.5 rounded-full bg-primary" aria-hidden="true" />
               {selectedUsers().length} selected
             </span>

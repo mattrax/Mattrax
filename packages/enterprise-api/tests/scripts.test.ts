@@ -26,7 +26,7 @@ import {
 } from "@mattrax/enterprise-backend";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const now = new Date("2026-11-16T12:00:00.000Z");
 
@@ -672,7 +672,6 @@ describe("handler enforcement", () => {
       db,
       schema,
       origin: "https://enterprise.test",
-      stripeClient: makeStripeClient(),
       // SAFETY: no script path touches R2; the service only stores the binding.
       storage: {} as never,
       // SAFETY: the fake implements only the auth methods these handlers use.
@@ -683,19 +682,70 @@ describe("handler enforcement", () => {
     return { db, service, headers: { cookie: "mattrax_session=test" } };
   };
 
-  it("rejects a script mutation without a step-up and writes nothing", async () => {
+  it("creates a script without a step-up", async () => {
     const { db, service, headers } = await context({ stepUp: false });
+
+    const created = await runEffect(service.createScript(request(headers), orgId, scriptValues));
+
+    expect(created).toHaveProperty("id");
+    expect(db.store.script).toHaveLength(1);
+  });
+
+  it("rejects a script edit without a step-up and leaves the script unchanged", async () => {
+    const { db, service, headers } = await context({ stepUp: false });
+    const { id, row } = await create(db);
 
     const failure = await runEffect(
       service
-        .createScript(request(headers), orgId, scriptValues)
-        .pipe(Effect.catchTag("StepUpRequired", (error) => Effect.succeed(error))),
+        .patchScript(request(headers), orgId, id, { name: "Changed" })
+        .pipe(Effect.catch((error) => Effect.succeed(error))),
     );
 
     expect(failure).toBeInstanceOf(StepUpRequired);
-    expect(db.store.script).toHaveLength(0);
+    expect(db.store.script.find((entry: any) => entry.id === id)?.name).toBe(row.name);
     expect(db.store.audit_log).toHaveLength(0);
   });
+
+  const stepUpMutations = [
+    {
+      name: "delete a script",
+      run: (service: any, headers: any, id: string) =>
+        service.deleteScript(request(headers), orgId, id),
+    },
+    {
+      name: "change script assignments",
+      run: (service: any, headers: any, id: string) =>
+        service.patchScriptAssignments(request(headers), orgId, id, {
+          assign: [],
+          unassign: [],
+        }),
+    },
+    {
+      name: "change script settings",
+      run: (service: any, headers: any) =>
+        service.patchScriptSettings(request(headers), orgId, { enabled: false }),
+    },
+    {
+      name: "run a script",
+      run: (service: any, headers: any, id: string) =>
+        service.runScript(request(headers), orgId, id, {}),
+    },
+  ];
+
+  for (const mutation of stepUpMutations) {
+    it(`requires a step-up to ${mutation.name}`, async () => {
+      const { db, service, headers } = await context({ stepUp: false });
+      const { id } = await create(db);
+
+      const failure = await runEffect(
+        mutation
+          .run(service, headers, id)
+          .pipe(Effect.catch((error: unknown) => Effect.succeed(error))),
+      );
+
+      expect(failure).toBeInstanceOf(StepUpRequired);
+    });
+  }
 
   it("creates, audits and lists a script for an owner", async () => {
     const { db, service, headers } = await context({ stepUp: true });
@@ -720,7 +770,7 @@ describe("handler enforcement", () => {
     const deniedWrite = await runEffect(
       readOnly.service
         .patchScript(request(readOnly.headers), orgId, id, { name: "Nope" })
-        .pipe(Effect.catchTag("EnterprisePermissionDenied", (error) => Effect.succeed(error))),
+        .pipe(Effect.catch((error) => Effect.succeed(error))),
     );
 
     expect(deniedWrite).toHaveProperty("permission", "scripts.write");
@@ -731,7 +781,6 @@ describe("handler enforcement", () => {
       db: outsider,
       schema,
       origin: "https://enterprise.test",
-      stripeClient: makeStripeClient(),
       // SAFETY: the outsider path fails in auth before any storage call.
       storage: {} as never,
       // SAFETY: only requireUser is reached for an unauthenticated caller.
@@ -744,7 +793,7 @@ describe("handler enforcement", () => {
     const denied = await runEffect(
       service
         .listScripts(request({ cookie: "x" }), orgId)
-        .pipe(Effect.catchTag("EnterpriseUnauthorized", (error) => Effect.succeed(error))),
+        .pipe(Effect.catch((error) => Effect.succeed(error))),
     );
 
     expect(denied).toBeInstanceOf(EnterpriseUnauthorized);

@@ -5,7 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import { Switch } from "@mattrax/ui";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { ShieldCheck } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
@@ -251,7 +252,7 @@ export default function IdentitySettingsPage() {
     setSsoError(null);
 
     try {
-      const response = await fetch(
+      const response = await enterprise.request(
         `/api/v1/sso/azure/start?tenantId=${encodeURIComponent(params.tenantId ?? "")}`,
       );
 
@@ -290,7 +291,7 @@ export default function IdentitySettingsPage() {
         description="Connect an identity provider's SCIM client to create, update and deactivate tenant users and groups automatically."
       >
         <div class="rounded-lg border border-border bg-surface p-3">
-          <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <p class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             SCIM base URL
           </p>
           <div class="mt-1.5 flex items-start gap-2">
@@ -338,7 +339,7 @@ export default function IdentitySettingsPage() {
               class="min-w-0 flex-1"
             />
             <label class="flex min-w-0 flex-col gap-1 sm:w-44">
-              <span class="text-[11px] font-medium text-muted-foreground">
+              <span class="text-xs font-medium text-muted-foreground">
                 Expires (default 90 days)
               </span>
               <Input
@@ -399,7 +400,7 @@ export default function IdentitySettingsPage() {
         <Show when={rotationDue().length > 0}>
           <div
             role="status"
-            class="mx-4 mt-4 rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-[13px] text-foreground sm:mx-5"
+            class="mx-4 mt-4 rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-xs text-foreground sm:mx-5"
           >
             <p class="font-medium">
               Rotate {rotationDue().length === 1 ? "a token" : "tokens"} soon
@@ -416,7 +417,7 @@ export default function IdentitySettingsPage() {
         <Show
           when={(tokens.data?.tokens.length ?? 0) > 0}
           fallback={
-            <p class="px-4 py-6 text-[13px] text-muted-foreground sm:px-5">No SCIM tokens yet.</p>
+            <p class="px-4 py-6 text-xs text-muted-foreground sm:px-5">No SCIM tokens yet.</p>
           }
         >
           <ul class="divide-y divide-border">
@@ -424,7 +425,7 @@ export default function IdentitySettingsPage() {
               {(token) => (
                 <li class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                   <span class="min-w-0">
-                    <strong class="block truncate text-[13px] font-medium text-foreground">
+                    <strong class="block truncate text-xs font-medium text-foreground">
                       {token.name}
                     </strong>
                     <span class="block text-xs text-muted-foreground">
@@ -469,7 +470,7 @@ export default function IdentitySettingsPage() {
             title="Approve an account recovery"
             description="A member of this tenant proved control of their verified email address after losing access to their passkeys. Because this tenant has more than one owner, a second owner must approve signing them back in."
           >
-            <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+            <p class="text-xs leading-relaxed text-muted-foreground">
               Approving lets them sign in once and add a new passkey. It does not remove or change
               any existing passkey, and the ceremony is recorded in their account activity.
             </p>
@@ -490,7 +491,7 @@ export default function IdentitySettingsPage() {
               </Button>
             </div>
             <Show when={!writable()}>
-              <p class="mt-2 text-[12.5px] text-muted-foreground">
+              <p class="mt-2 text-xs text-muted-foreground">
                 Your role can view identity settings but cannot approve a recovery. Ask an owner to
                 open this link.
               </p>
@@ -532,7 +533,7 @@ export default function IdentitySettingsPage() {
               </Button>
             </Show>
             <Show when={security.data?.requireMfa}>
-              <span class="text-[12.5px] text-muted-foreground">
+              <span class="text-xs text-muted-foreground">
                 Currently enforced for every member of this tenant.
               </span>
             </Show>
@@ -553,7 +554,7 @@ export default function IdentitySettingsPage() {
             <ShieldCheck class="size-4" />
           </span>
           <div class="min-w-0">
-            <p class="text-[13px] font-medium text-foreground">Microsoft Entra ID</p>
+            <p class="text-xs font-medium text-foreground">Microsoft Entra ID</p>
             <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               Let members sign in with your Entra tenant. SCIM provisioning above can keep the
               member list in sync.
@@ -576,14 +577,14 @@ export default function IdentitySettingsPage() {
           />
           <label class="flex flex-col gap-2 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
             <span class="min-w-0">
-              <span class="block text-[13px] font-medium leading-snug text-foreground">
+              <span class="block text-xs font-medium leading-snug text-foreground">
                 Microsoft Entra tenant ID
               </span>
               <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
                 The directory (tenant) ID from Entra ID.
               </span>
             </span>
-            <span class="w-full min-w-0 sm:w-[19rem] sm:shrink-0">
+            <span class="w-full min-w-0 sm:w-76 sm:shrink-0">
               <Input
                 placeholder="00000000-0000-0000-0000-000000000000"
                 value={azureTenantId()}
@@ -603,7 +604,7 @@ export default function IdentitySettingsPage() {
                 {saveSso.isPending ? "Saving…" : "Save SSO settings"}
               </Button>
               <Show when={ssoSaved()}>
-                <span role="status" class="self-center text-[12.5px] text-success-foreground">
+                <span role="status" class="self-center text-xs text-success">
                   Saved.
                 </span>
               </Show>
@@ -622,10 +623,8 @@ export default function IdentitySettingsPage() {
             {(notice) => (
               <p
                 role="status"
-                class={`pt-3 text-[13px] ${
-                  notice().tone === "success"
-                    ? "text-success-foreground"
-                    : "text-warning-foreground"
+                class={`pt-3 text-xs${
+                  notice().tone === "success" ? "text-success" : "text-warning-foreground"
                 }`}
               >
                 {notice().text}
@@ -634,7 +633,7 @@ export default function IdentitySettingsPage() {
           </Show>
           <Show when={ssoError()}>
             {(message) => (
-              <p role="alert" class="pt-3 text-[13px] text-destructive">
+              <p role="alert" class="pt-3 text-xs text-destructive">
                 {message()}
               </p>
             )}
@@ -674,7 +673,7 @@ function ToggleSetting(props: {
   return (
     <label class="flex cursor-pointer items-start justify-between gap-4 py-3.5">
       <span class="min-w-0">
-        <span class="block text-[13px] font-medium leading-snug text-foreground">
+        <span class="block text-xs font-medium leading-snug text-foreground">
           {props.title}
         </span>
         <Show when={props.description}>
@@ -683,22 +682,12 @@ function ToggleSetting(props: {
           </span>
         </Show>
       </span>
-      <span class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center">
-        <input
-          type="checkbox"
-          class="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
-          checked={props.checked}
-          onChange={(event) => props.onChange(event.currentTarget.checked)}
-        />
-        <span
-          aria-hidden="true"
-          class="h-5 w-9 rounded-full border border-border bg-hover transition-colors duration-150 peer-checked:border-brand peer-checked:bg-brand-solid peer-focus-visible:ring-2 peer-focus-visible:ring-ring/60 peer-disabled:opacity-50"
-        />
-        <span
-          aria-hidden="true"
-          class="pointer-events-none absolute left-0.5 top-0.5 size-3.5 rounded-full bg-card shadow-sm transition-transform duration-150 peer-checked:translate-x-[1.125rem] peer-disabled:opacity-50"
-        />
-      </span>
+      <Switch
+        class="mt-0.5"
+        checked={props.checked}
+        onCheckedChange={(checked) => props.onChange(checked === true)}
+        aria-label={props.title}
+      />
     </label>
   );
 }
