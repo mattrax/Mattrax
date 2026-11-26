@@ -1,8 +1,10 @@
+import { Effect, Ref } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ONBOARDING_REPLY_TO,
   ONBOARDING_EMAIL_FROM,
   ONBOARDING_FOLLOW_UP_AUDIT_ACTION,
+  OnboardingEmailWarnings,
   runOnboardingEmails,
   runWelcomeEmailSweep,
   sendWelcomeEmailOnce,
@@ -42,7 +44,7 @@ const makeTransport = (
 
 /** The single address a message was addressed to, without hiding a leak. */
 const recipientsOf = (message: OutboundEmailMessage): string[] =>
-  Array.isArray(message.to) ? [...message.to] : [message.to];
+  typeof message.to === "string" ? [message.to] : [...message.to];
 
 type AccountSeed = {
   readonly id: string;
@@ -162,6 +164,32 @@ const runFollowUp = (
   );
 
 describe("welcome email", () => {
+  it("keeps invalid-address warning suppression in the provided Layer", async () => {
+    const db = makeDb();
+    const transport = makeTransport();
+
+    const reported = await runEffect(
+      Effect.gen(function* () {
+        yield* runWelcomeEmailSweep({
+          db,
+          email: transport,
+          origin,
+          replyTo: "not-an-address",
+        });
+        yield* runWelcomeEmailSweep({
+          db,
+          email: transport,
+          origin,
+          replyTo: "still-not-an-address",
+        });
+
+        return yield* Ref.get(yield* OnboardingEmailWarnings);
+      }).pipe(Effect.provide(OnboardingEmailWarnings.layer)),
+    );
+
+    expect([...reported]).toEqual(["MATTRAX_ONBOARDING_REPLY_TO"]);
+  });
+
   it("claims and sends exactly once", async () => {
     const db = makeDb({ account: [seedAccount()] });
     const transport = makeTransport();

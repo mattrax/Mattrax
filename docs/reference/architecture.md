@@ -14,13 +14,11 @@ boundary keeps protocol handling independent from product state.
 | Product services    | `enterprise-api`, `enterprise-backend`, `enterprise-identity`, `enterprise-tokens`, `enterprise-billing`, `entra-id`, `apple-business-manager`, `email` | API composition, domain services and integrations  |
 | Data                | `enterprise-core`                                                                                                                                       | Drizzle/MySQL schema, R2, secrets, plan limits     |
 | Hosted services     | `cloud-services`                                                                                                                                        | Mail, SSO, analytics, rate limits, readiness       |
-| Surfaces            | `apps/web`, `apps/cloud`, `apps/apns-relay`                                                                                                             | Dashboard, API and push relay                      |
+| Surfaces            | `apps/web`, `apps/cloud`, `apps/services`                                                                                                               | Dashboard, API, push relay and billing             |
 
-`apps/apns-relay` is a standalone development/custom-fork relay, not a supported
-alternative to the hosted services relay. The application no longer exposes an
-operator setting that targets it; only the internal `MATTRAX_SERVICES_URL` test
-override can. Hosted Cloud uses `apps/services`, and self-hosted production
-deployments use the hosted relay with a licence.
+The APNs relay has a single implementation in `apps/services`. Hosted Cloud
+authenticates with `SERVICES_TOKEN`; self-hosted production deployments use the
+same relay with their deployment licence.
 
 ## Module conventions
 
@@ -40,7 +38,12 @@ The domain and service packages follow Cap's Effect layout:
   own policy, storage or protocol logic.
 - `enterprise-backend` groups implementations by entity (`Account/`, `Tenant/`,
   `Device/`, `Policy/`, `Scep/`, …) and exports the composition helpers the API
-  package needs.
+  package needs. Billing is composed directly from `enterprise-billing` by the
+  applications; it is not re-exported through the backend barrel.
+- Per-isolate caches, refresh coalescing and warning suppression are owned by
+  Effect Layers so tests and embeddings can build isolated state. New verticals
+  expose typed `Context.Service` contracts and keep HTTP handlers thin while the
+  legacy monolithic RPC record is migrated incrementally.
 - `mdm-core` owns the shared policy, command, SCEP and webhook engine;
   `mdm-apple` and `mdm-windows` own only their platform-specific backend.
 
@@ -154,7 +157,11 @@ Core tables:
   `device_apple` (policy delivery mode, ADE awaiting-setup/configured state, Return to
   Service request clocks and the security-report clocks),
   `device_secret` (sealed recovery key, bootstrap token, activation-lock bypass code,
-  managed local-admin password and Recovery Lock password), `device_command` (device or one
+  managed local-admin password, Recovery Lock password and cached Windows LAPS password),
+  `device_bitlocker_key` (Entra BitLocker key metadata with a sealed cache once revealed,
+  capture/report/retirement times), `device_windows_laps` (Entra backup/refresh metadata and reset
+  status; never the password), `device_diagnostics_archive` (DiagnosticLog request and R2
+  pointer), `device_command` (device or one
   Apple user channel via `user_id`), `device_apple_user` (per-user Apple channel: identity names, push credentials,
   bind time, last check-in and reported profiles), `device_declaration`,
   `device_application` (Apple bundle ids, Android package names and Windows product/registry

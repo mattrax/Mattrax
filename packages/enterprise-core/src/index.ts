@@ -22,6 +22,18 @@ export {
 
 export { Db, type EnterpriseDb } from "./db.ts";
 
+export { isUniqueViolationForConstraint } from "./sqlErrors.ts";
+
+export {
+  markAndroidRestrictedSoftwarePolicyDelivered,
+  recordRestrictedSoftwareEnforcement,
+  reconcileRestrictedSoftwareForDevice,
+  reconcileRestrictedSoftwareForOrganization,
+  resolveRestrictedSoftwareForDevice,
+  restrictedSoftwareDeviceIds,
+  type ResolvedRestrictedSoftwareRule,
+} from "./restrictedSoftware.ts";
+
 export {
   MAX_DEVICE_APPLICATIONS,
   clearDeviceApplications,

@@ -1,5 +1,7 @@
 import { Effect, Schema } from "effect";
+import * as SqlError from "effect/sql/SqlError";
 import { describe, expect, it } from "vitest";
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import {
@@ -15,6 +17,7 @@ import {
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseForbidden,
+  EnterpriseInternal,
   EnterpriseLastTenantAccount,
   EnterpriseNotFound,
   EnterpriseNotConfigured,
@@ -23,16 +26,23 @@ import {
   EnterpriseUnauthorized,
   EnterpriseUpstreamError,
   StepUpRequired,
+  dashboardQueryForWidget,
+  defaultOverviewWidgets,
   scriptAgentToken,
 } from "@mattrax/enterprise-domain";
 import type { DeviceSearchQuery } from "@mattrax/enterprise-domain";
-import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/mdm-apple";
+import { ScepRepositoryLive } from "@mattrax/mdm-core";
+import { makeWindowsBackend } from "@mattrax/mdm-windows";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
 import { certToPem, createCaCertificate } from "@mattrax/scep";
-import { appleEnrollmentProfileResponse, createEnterpriseService } from "@mattrax/enterprise-api";
+import {
+  appleEnrollmentProfileResponse,
+  createEnterpriseService,
+  mcpActivityResponseStatus,
+} from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { EmailTransport, OutboundEmailMessage } from "@mattrax/email";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, requireField, runEffect, schema } from "./helpers.js";
 
 if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
@@ -137,8 +147,8 @@ const makeContext = async (
     pushes?: Array<any>;
     authSecret?: string | null;
     email?: EmailTransport;
-    stripeClient?: any;
     apiToken?: any;
+    oauth?: any;
     db?: any;
     analytics?: any;
     auth?: { requireStepUp?: (request: any, action: any) => Effect.Effect<any, any> };
@@ -166,7 +176,7 @@ const makeContext = async (
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
 
       return headers.cookie
-        ? Effect.succeed({ user, apiToken: overrides.apiToken })
+        ? Effect.succeed({ user, apiToken: overrides.apiToken, oauth: overrides.oauth })
         : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
@@ -182,8 +192,6 @@ const makeContext = async (
     db,
     schema,
     origin,
-    stripeClient:
-      overrides.stripeClient === null ? undefined : (overrides.stripeClient ?? makeStripeClient()),
     // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake only implements the auth methods these tests exercise.
@@ -196,8 +204,11 @@ const makeContext = async (
     enrollmentProfileTtlSeconds: overrides.enrollmentProfileTtlSeconds,
   });
 
-  return { db, service, auth, headers: { cookie: "mattrax_session=test" } };
+  return { db, service, auth, user, headers: { cookie: "mattrax_session=test" } };
 };
+
+const gatewayRequest = (headers: Record<string, string>, path: string, method = "GET") =>
+  ({ headers, url: `${origin}${path}`, method }) as any;
 
 describe("enterprise service tenant flow", () => {
   it("requires authentication to create tenants", async () => {
@@ -248,6 +259,28 @@ describe("enterprise service tenant flow", () => {
         role: "owner",
       }),
     );
+  });
+
+  it("loads the built-in overview for a fresh tenant", async () => {
+    const { service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await expect(runEffect(service.listDashboards(request(headers), tenant.id))).resolves.toEqual({
+      dashboards: [],
+    });
+
+    const queries = defaultOverviewWidgets()
+      .filter((widget) => widget.type !== "markdown")
+      .map(dashboardQueryForWidget);
+    const batch = await runEffect(
+      service.queryDashboardBatch(request(headers), tenant.id, { queries }),
+    );
+
+    expect(batch.results).toHaveLength(queries.length);
+    expect(batch.results).toEqual(queries.map(() => ({ total: 0, rows: [], buckets: [] })));
   });
 
   it("creates shared dashboards and applies partial widget updates", async () => {
@@ -408,7 +441,9 @@ describe("enterprise service tenant flow", () => {
       { dataset: "devices" as const, query: { all: [] }, countOnly: true },
       {
         dataset: "devices" as const,
-        query: { all: [{ field: "health" as const, op: "eq" as const, value: "attention" }] },
+        query: {
+          all: [{ field: "health" as const, op: "eq" as const, value: "attention" as const }],
+        },
         countOnly: true,
       },
       { dataset: "devices" as const, query: { all: [] }, groupBy: "platform" },
@@ -919,7 +954,7 @@ describe("enterprise service tenant flow", () => {
 
     const reader = await makeContext({
       db: base.db,
-      apiToken: { tenantId: null, scopes: ["devices.read"] },
+      apiToken: { id: "token-1", name: "CLI", tenantId: null, scopes: ["devices.read"] },
     });
 
     const context = await runEffect(reader.service.mcpContext(request(reader.headers)));
@@ -955,6 +990,141 @@ describe("enterprise service tenant flow", () => {
     expect(ownerContext.methods).not.toContain("deviceHandoverImpact");
   });
 
+  it("derives MCP audit entries only from authenticated dispatched calls", async () => {
+    const base = await makeContext();
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+    const gatewayHeaders = {
+      cookie: "mattrax_session=test",
+      "x-mattrax-mcp-authorization": "Bearer mcp-token",
+      "x-mattrax-client-address": "203.0.113.9",
+    };
+    const reader = await makeContext({
+      db: base.db,
+      apiToken: { id: "token-1", name: "CLI", tenantId: null, scopes: ["devices.read"] },
+    });
+
+    await runEffect(
+      reader.service.listDevices(
+        gatewayRequest(gatewayHeaders, `/api/v1/tenants/${tenant.id}/devices`),
+        tenant.id,
+      ),
+    );
+
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toMatchObject([
+      {
+        organizationId: tenant.id,
+        actorAccountId: "user-1",
+        targetType: "mcp",
+        metadata: {
+          tool: "listDevices",
+          method: "GET",
+          path: `/api/v1/tenants/${tenant.id}/devices`,
+          status: 200,
+          credential: { type: "api_token", id: expect.any(String) },
+        },
+      },
+    ]);
+
+    // A browser session cannot produce that entry even with the marker.
+    await runEffect(
+      base.service.listDevices(
+        gatewayRequest(gatewayHeaders, `/api/v1/tenants/${tenant.id}/devices`),
+        tenant.id,
+      ),
+    );
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(1);
+
+    // A read-only credential cannot attribute a write it cannot perform.
+    await expect(
+      runEffect(
+        reader.service.patchTenant(
+          gatewayRequest(gatewayHeaders, `/api/v1/tenants/${tenant.id}`, "PATCH"),
+          tenant.id,
+          { name: "Forged" },
+        ),
+      ),
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(1);
+  });
+
+  it("derives MCP activity status from the actual service response", () => {
+    expect(mcpActivityResponseStatus({ status: 201, body: { id: "device-1" } })).toBe(201);
+    expect(mcpActivityResponseStatus({ status: 204 })).toBe(204);
+    expect(mcpActivityResponseStatus(undefined)).toBe(204);
+    expect(mcpActivityResponseStatus({ status: "ok" })).toBe(200);
+    expect(mcpActivityResponseStatus({ id: "device-1" })).toBe(200);
+  });
+  it("rejects a direct client-authored activity payload without writing an audit row", async () => {
+    const base = await makeContext();
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+    const reader = await makeContext({
+      db: base.db,
+      apiToken: { id: "token-1", name: "CLI", tenantId: null, scopes: ["devices.read"] },
+    });
+
+    await expect(
+      runEffect(
+        reader.service.recordMcpActivity(
+          gatewayRequest(
+            {
+              cookie: "mattrax_session=test",
+              "x-mattrax-mcp-authorization": "Bearer mcp-token",
+            },
+            `/api/v1/tenants/${tenant.id}/mcp/activity`,
+            "POST",
+          ),
+          tenant.id,
+          {
+            tool: "fabricated-tool",
+            method: "DELETE",
+            path: `/api/v1/tenants/${tenant.id}/devices`,
+            status: 200,
+          },
+        ),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(0);
+  });
+  it("does not attribute a call whose URL names a different tenant", async () => {
+    const base = await makeContext();
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+    const reader = await makeContext({
+      db: base.db,
+      apiToken: { id: "token-1", name: "CLI", tenantId: tenant.id, scopes: ["devices.read"] },
+    });
+
+    await expect(
+      runEffect(
+        reader.service.listDevices(
+          gatewayRequest(
+            {
+              cookie: "mattrax_session=test",
+              "x-mattrax-mcp-authorization": "Bearer mcp-token",
+            },
+            "/api/v1/tenants/other-tenant/devices",
+          ),
+          tenant.id,
+        ),
+      ),
+    ).resolves.toMatchObject({ rows: [] });
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(0);
+  });
   it("enforces fine-grained API token permissions per method", async () => {
     const base = await makeContext();
 
@@ -1672,6 +1842,76 @@ describe("enterprise service group flow", () => {
 });
 
 describe("enterprise service policy flow", () => {
+  const deploymentQuery = "insert into policy_deployment (id, policy_id, version) values (?, ?, ?)";
+
+  const mysqlDriverError = (errno: number, code: string, message: string) =>
+    Object.assign(new Error(message), { code, errno, sqlMessage: message });
+
+  const snapshotSqlError = (reason: SqlError.SqlErrorReason) =>
+    new EffectDrizzleQueryError({
+      query: deploymentQuery,
+      params: undefined,
+      cause: new SqlError.SqlError({ reason }),
+    });
+
+  const snapshotCollision = (constraint: string) =>
+    snapshotSqlError(
+      new SqlError.UniqueViolation({
+        cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+        message: "Duplicate entry",
+        operation: "insert",
+        constraint,
+      }),
+    );
+
+  const makePolicyContext = async () => {
+    const context = await makeContext();
+    const tenant = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "Acme", slug: "acme" }),
+    );
+    const policy = await runEffect(
+      context.service.createPolicy(request(context.headers), tenant.id, { name: "Baseline" }),
+    );
+
+    return { ...context, tenant, policy };
+  };
+
+  const interceptDeploymentInserts = (
+    db: any,
+    respond: (
+      row: any,
+      attempt: number,
+      commit: () => Effect.Effect<unknown, unknown, any>,
+    ) => Effect.Effect<any, any, any>,
+  ) => {
+    const insert = db.insert.bind(db);
+    const attempts: any[] = [];
+
+    db.insert = (table: any) => {
+      const builder = insert(table);
+
+      if (table !== schema.policyDeployment) return builder;
+
+      const values = builder.values.bind(builder);
+
+      builder.values = (rows: any) => {
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        const pending = values(rows);
+        // The fake applies writes when the builder is yielded, not in values().
+        const commit = Effect.gen(function* () {
+          yield* pending;
+        });
+        attempts.push(row);
+
+        return Effect.suspend(() => respond(row, attempts.length, () => commit));
+      };
+
+      return builder;
+    };
+
+    return attempts;
+  };
+
   it("stores the delivery scope of a configuration", async () => {
     const { db, service, headers } = await makeContext();
 
@@ -1703,7 +1943,7 @@ describe("enterprise service policy flow", () => {
 
     const detail = await runEffect(service.getPolicy(request(headers), tenant.id, policy.id));
 
-    expect(detail.configurationScopes).toEqual({
+    expect(requireField(detail, "configurationScopes").configurationScopes).toEqual({
       "mttx.apple.declaration.usersettings": "user",
     });
 
@@ -1924,6 +2164,157 @@ describe("enterprise service policy flow", () => {
         service.patchPolicy(request(headers), tenant.id, "other-policy", { name: "Denied" }),
       ),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+
+  it.each([
+    {
+      name: "connection",
+      error: () =>
+        snapshotSqlError(
+          new SqlError.ConnectionError({
+            cause: mysqlDriverError(2003, "ECONNREFUSED", "connect ECONNREFUSED"),
+            message: "connect ECONNREFUSED",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "syntax",
+      error: () =>
+        snapshotSqlError(
+          new SqlError.SqlSyntaxError({
+            cause: mysqlDriverError(1064, "ER_PARSE_ERROR", "You have an error in your SQL"),
+            message: "You have an error in your SQL",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "non-unique constraint",
+      error: () =>
+        snapshotSqlError(
+          new SqlError.ConstraintError({
+            cause: mysqlDriverError(1452, "ER_NO_REFERENCED_ROW_2", "Constraint failed"),
+            message: "Constraint failed",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unique constraint on another table",
+      error: () => snapshotCollision("configuration.PRIMARY"),
+    },
+    {
+      name: "unstructured driver duplicate",
+      error: () =>
+        new EffectDrizzleQueryError({
+          query: deploymentQuery,
+          params: undefined,
+          cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+        }),
+    },
+  ])("does not retry a Drizzle-wrapped $name snapshot failure", async ({ error }) => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () => Effect.fail(error()));
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts).toHaveLength(1);
+    expect(db.store.policy_deployment).toHaveLength(1);
+  });
+
+  it("reuses one deployment id when a stale version read collides", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, (_row, attempt, commit) =>
+      attempt === 1
+        ? Effect.fail(snapshotCollision("policy_deployment.policy_deployment_version_unique"))
+        : Effect.suspend(commit),
+    );
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: { "mttx.apple.device": { camera: false } },
+      }),
+    );
+
+    expect(attempts.map((row) => row.version)).toEqual([2, 3]);
+    expect(new Set(attempts.map((row) => row.id)).size).toBe(1);
+    expect(db.store.policy_deployment).toHaveLength(2);
+    expect(db.store.policy_deployment.at(-1)).toMatchObject({
+      id: attempts[0].id,
+      version: 3,
+      snapshot: { "mttx.apple.device": { camera: false } },
+    });
+  });
+
+  it("acknowledges an ambiguously committed snapshot without inserting again", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, (_row, _attempt, commit) =>
+      Effect.suspend(commit).pipe(
+        Effect.andThen(Effect.fail(snapshotCollision("policy_deployment.PRIMARY"))),
+      ),
+    );
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: { "mttx.apple.device": { camera: false } },
+      }),
+    );
+
+    expect(attempts).toHaveLength(1);
+    expect(db.store.policy_deployment).toHaveLength(2);
+    expect(db.store.policy_deployment.at(-1)).toMatchObject({
+      id: attempts[0].id,
+      version: 2,
+      snapshot: { "mttx.apple.device": { camera: false } },
+    });
+  });
+
+  it("does not accept a committed snapshot with different contents", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, (row) =>
+      Effect.sync(() => {
+        db.store.policy_deployment.push({
+          ...row,
+          snapshot: { "mttx.apple.device": { camera: true } },
+        });
+      }).pipe(Effect.andThen(Effect.fail(snapshotCollision("policy_deployment.PRIMARY")))),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts).toHaveLength(1);
+  });
+
+  it("bounds repeated version collisions and keeps the deployment id fixed", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () =>
+      Effect.fail(snapshotCollision("policy_deployment_version_unique")),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts.map((row) => row.version)).toEqual([2, 3, 4, 5]);
+    expect(new Set(attempts.map((row) => row.id)).size).toBe(1);
+    expect(db.store.policy_deployment).toHaveLength(1);
   });
 
   it("duplicates policy configurations and deletes with partial failure reporting", async () => {
@@ -5375,7 +5766,7 @@ describe("device command lifecycle", () => {
     );
 
     expect(second).toMatchObject({
-      commandId: first.commandId,
+      commandId: requireField(first, "commandId").commandId,
       deduplicated: true,
     });
     expect(commands(db)).toHaveLength(1);
@@ -6375,7 +6766,7 @@ describe("enterprise policy validation and enrollment", () => {
   });
 
   it("previews a mobileconfig with friendly payload categories", async () => {
-    const { service } = await makeContext();
+    const { service, headers } = await makeContext();
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -6396,7 +6787,9 @@ describe("enterprise policy validation and enrollment", () => {
 </array>
 </dict></plist>`;
 
-    const preview = await runEffect(service.previewMobileconfig({ mobileconfig: btoa(xml) }));
+    const preview = await runEffect(
+      service.previewMobileconfig(request(headers), { mobileconfig: btoa(xml) }),
+    );
     expect(preview).toMatchObject({
       displayName: "Acme Profile",
       description: "Corporate settings",
@@ -6410,10 +6803,34 @@ describe("enterprise policy validation and enrollment", () => {
   });
 
   it("rejects an invalid mobileconfig preview", async () => {
-    const { service } = await makeContext();
+    const { service, headers } = await makeContext();
     await expect(
-      runEffect(service.previewMobileconfig({ mobileconfig: "not base64!" })),
+      runEffect(
+        service.previewMobileconfig(request(headers), { mobileconfig: "not base64!" }),
+      ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("requires an authenticated, verified account to parse a mobileconfig", async () => {
+    const { service, headers, user } = await makeContext();
+
+    await expect(
+      runEffect(
+        service.previewMobileconfig(request(), { mobileconfig: btoa("<plist></plist>") }),
+      ),
+    ).rejects.toBeDefined();
+
+    user.emailVerified = false;
+
+    await expect(
+      runEffect(
+        service.previewMobileconfig(request(headers), {
+          mobileconfig: btoa("<plist></plist>"),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+
+    user.emailVerified = true;
   });
 });
 

@@ -47,7 +47,9 @@ test.describe("RBAC UI gating", () => {
     await expect(page.getByText("Automatic tenant backups")).toBeVisible();
 
     await expect(
-      primaryNav(page).getByRole("link", { name: "Settings", exact: true }),
+      page
+        .getByRole("navigation", { name: "Tenant settings", exact: true })
+        .getByRole("link", { name: "Settings", exact: true }),
     ).toBeVisible();
   });
 
@@ -76,12 +78,15 @@ test.describe("RBAC UI gating", () => {
       "Groups",
       "Policies",
       "Applications",
-      "Settings",
     ]) {
-      await expect(
-        primaryNav(member).getByRole("link", { name: label, exact: true }),
-      ).toBeVisible();
+      await expect(primaryNav(member).getByRole("link", { name: label, exact: true })).toBeVisible();
     }
+
+    await expect(
+      member
+        .getByRole("navigation", { name: "Tenant settings", exact: true })
+        .getByRole("link", { name: "Settings", exact: true }),
+    ).toBeVisible();
 
     await gotoHydrated(member, `/t/${tenant.id}/devices`);
     await expect(member.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
@@ -165,6 +170,14 @@ test.describe("RBAC UI gating", () => {
         primaryNav(reviewer).getByRole("link", { name: label, exact: true }),
       ).toHaveCount(0);
     }
+
+    // devices.read makes Migration and OS updates readable, so Settings must be
+    // visible and land on the first readable tab rather than a denied General.
+    await expect(
+      reviewer
+        .getByRole("navigation", { name: "Tenant settings", exact: true })
+        .getByRole("link", { name: "Settings", exact: true }),
+    ).toHaveAttribute("href", new RegExp(`/t/${tenant.slug}/settings/migration$`));
 
     // Device and policy reads work; their mutation controls are absent.
     await expect(reviewer.getByRole("button", { name: "Import CSV", exact: true })).toHaveCount(0);

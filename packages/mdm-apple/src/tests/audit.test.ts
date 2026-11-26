@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { Effect } from "effect";
-import { schema } from "@mattrax/enterprise-core";
-import { MdmOrigin } from "@mattrax/management-backend";
+import { describe, expect, it, vi } from "vitest";
+import { Effect, Layer } from "effect";
+import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
+import { ApnsService } from "@mattrax/apns";
+import { Db, schema } from "@mattrax/enterprise-core";
+import { ManagementBackend, MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
 import {
   commandFailureTransition,
@@ -10,8 +12,8 @@ import {
   isDeclarationFailure,
   pushInvalidTokenTransition,
   writeSystemAudit,
-} from "@mattrax/mdm-apple";
-import { dbRows, makeDb, tableName } from "./fake-db.js";
+} from "@mattrax/mdm-core";
+import { appleIdentityCertificate, dbRows, makeDb, tableName } from "./fake-db.js";
 import type { Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
@@ -57,6 +59,14 @@ const setup = () => {
       organization("org-2", "second"),
     ],
     [tableName(schema.device)]: [device("device-1", "org-1"), device("device-2", "org-2")],
+    [tableName(schema.scepIssuedCertificate)]: [
+      appleIdentityCertificate({ serial: "a1b2c", deviceId: "device-1" }),
+      appleIdentityCertificate({
+        serial: "a1b2d",
+        organizationId: "org-2",
+        deviceId: "device-2",
+      }),
+    ],
   });
 
   // SAFETY: The fake store implements only the query chains these tests exercise.
@@ -407,6 +417,160 @@ describe("system audit transition helpers", () => {
   });
 });
 
+describe("scoped background delivery", () => {
+  it("does not delay an MDM event on a slow webhook endpoint", async () => {
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => {
+      started();
+      await releasePromise;
+
+      return new Response("ok", { status: 200 });
+    });
+    const db = makeDb({
+      [tableName(schema.organization)]: [organization("org-1", "first")],
+      [tableName(schema.device)]: [device("device-1", "org-1")],
+      [tableName(schema.webhookEndpoint)]: [
+        {
+          id: "wh_1",
+          organizationId: "org-1",
+          url: "https://hooks.example.com/mattrax",
+          secret: await sealSecret(authSecret, "whsec_test_secret"),
+          secretPrefix: "cret",
+          description: null,
+          eventFilters: [],
+          enabled: true,
+          lastDeliveryAt: null,
+          lastDeliveryStatus: null,
+          consecutiveFailures: 0,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+    const layer = ManagementBackendEnterpriseLive.layer(origin, {
+      authSecret,
+      webhookFetch: fetch,
+      deliveryQueue: { concurrency: 1, shutdownTimeoutMs: 1_000 },
+    }).pipe(Layer.provideMerge(Layer.succeed(Db, db as never)));
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const backend = yield* ManagementBackend;
+
+          yield* backend.appleDeviceEvent(scope("udid-device-1"), {
+            _tag: "Authenticate" as const,
+            serialNumber: "SERIAL-device-1",
+            model: "MacBookPro18,3",
+            enrollmentMode: "device" as const,
+          });
+          yield* backend.appleDeviceEvent(scope("udid-device-1"), tokenUpdate).pipe(
+            Effect.timeoutOrElse({
+              duration: "500 millis",
+              orElse: () => Effect.fail(new Error("MDM event waited for a webhook")),
+            }),
+          );
+          yield* Effect.promise(() => startedPromise).pipe(
+            Effect.timeoutOrElse({
+              duration: "500 millis",
+              orElse: () => Effect.fail(new Error("webhook worker did not start")),
+            }),
+          );
+
+          release();
+        }).pipe(Effect.provide(layer)),
+      ),
+    );
+
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(dbRows(db, tableName(schema.webhookDelivery))[0]).toMatchObject({ status: "succeeded" });
+  });
+
+  it("does not delay enrollment on a slow APNs transport", async () => {
+    let started!: () => void;
+    let release!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const releasePromise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const push = vi.fn(() =>
+      Effect.gen(function* () {
+        started();
+        yield* Effect.promise(() => releasePromise);
+      }),
+    );
+    const apns = ApnsService.of({ available: true, transport: "test", push });
+    const keyPair = await generateCaKeyPair();
+    const privateKeyJwk = await exportPrivateKeyJwk(keyPair.privateKey);
+    const db = makeDb({
+      [tableName(schema.organization)]: [organization("org-1", "first")],
+      [tableName(schema.device)]: [device("device-1", "org-1")],
+      [tableName(schema.deviceApple)]: [
+        {
+          deviceId: "device-1",
+          token: "push-token",
+          pushMagic: "push-magic",
+          topic: "com.apple.mgmt.External.acme",
+        },
+      ],
+      [tableName(schema.applePushCertificate)]: [
+        {
+          id: "cert-1",
+          organizationId: "org-1",
+          certPem: "CERT",
+          encryptedKey: await sealSecret(authSecret, JSON.stringify(privateKeyJwk)),
+          topic: "com.apple.mgmt.External.acme",
+        },
+      ],
+    });
+    const layer = ManagementBackendEnterpriseLive.layer(origin, {
+      apns,
+      authSecret,
+      deliveryQueue: { concurrency: 1, shutdownTimeoutMs: 1_000 },
+    }).pipe(Layer.provideMerge(Layer.succeed(Db, db as never)));
+
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const backend = yield* ManagementBackend;
+
+          yield* backend.appleDeviceEvent(scope("udid-device-1"), {
+            _tag: "Authenticate" as const,
+            serialNumber: "SERIAL-device-1",
+            model: "MacBookPro18,3",
+            enrollmentMode: "device" as const,
+          });
+          yield* backend.appleDeviceEvent(scope("udid-device-1"), tokenUpdate).pipe(
+            Effect.timeoutOrElse({
+              duration: "500 millis",
+              orElse: () => Effect.fail(new Error("MDM event waited for APNs")),
+            }),
+          );
+          yield* Effect.promise(() => startedPromise).pipe(
+            Effect.timeoutOrElse({
+              duration: "500 millis",
+              orElse: () => Effect.fail(new Error("APNs worker did not start")),
+            }),
+          );
+
+          release();
+        }).pipe(Effect.provide(layer)),
+      ),
+    );
+
+    expect(push).toHaveBeenCalledOnce();
+  });
+});
+
 describe("fixed-window check-in coalescing", () => {
   const windowMs = 15 * 60 * 1_000;
 
@@ -580,6 +744,9 @@ describe("Apple status-report diffs", () => {
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1", "first")],
       [tableName(schema.device)]: [device("device-1", "org-1")],
+      [tableName(schema.scepIssuedCertificate)]: [
+        appleIdentityCertificate({ serial: "a1b2c", deviceId: "device-1" }),
+      ],
     });
 
     // SAFETY: the fake store implements only the query chains this test uses.
@@ -614,15 +781,7 @@ describe("failure attribution", () => {
       ...device("device-3", "org-1"),
     });
 
-    (db.store[tableName(schema.scepIssuedCertificate)] ??= []).push({
-      __table: tableName(schema.scepIssuedCertificate),
-      serial: "a1b2c",
-      organizationId: "org-1",
-      deviceId: "device-3",
-      notAfter: new Date("2027-01-01T00:00:00Z"),
-      createdAt: now,
-      revokedAt: null,
-    });
+    db.store[tableName(schema.scepIssuedCertificate)]![0]!.deviceId = "device-3";
 
     await run(
       backend.appleRecordFailure!({

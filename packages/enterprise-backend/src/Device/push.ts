@@ -7,7 +7,7 @@ import {
   SYSTEM_AUDIT_ACTIONS,
   pushInvalidTokenTransition,
   writeSystemAudit,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 import type { EnterpriseDb, EnterpriseSchema } from "../schema.ts";
 import { forEachBounded } from "../bounded.ts";
 

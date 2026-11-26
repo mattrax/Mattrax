@@ -1,12 +1,11 @@
-import { Context, Data, Effect, Layer, Option, Schema } from "effect";
-import type Stripe from "stripe";
+import { Cause, Context, Data, Effect, Exit, Layer, Option, Schema } from "effect";
 import {
   HttpStripeClient,
   STRIPE_MAX_NETWORK_RETRIES,
   STRIPE_REQUEST_TIMEOUT_MS,
   verifyStripeSignature,
 } from "./http.ts";
-import type { StripeClientConfig, StripeClientLike } from "./http.ts";
+import type { StripeClientConfig, StripeClientLike, StripeWebhookEvent } from "./http.ts";
 
 export {
   HttpStripeClient,
@@ -26,6 +25,15 @@ export {
   type StripeSubscription,
   type StripeSubscriptionItem,
   type StripeSubscriptionUpdateParams,
+  type StripeWebhookEvent,
+  StripeCheckoutSessionSchema,
+  StripeCustomerSchema,
+  StripeInvoiceSchema,
+  StripeInvoiceStatusSchema,
+  StripePortalSessionSchema,
+  StripeSubscriptionItemSchema,
+  StripeSubscriptionSchema,
+  StripeWebhookEventSchema,
 } from "./http.ts";
 
 export interface StripeErrorDetails {
@@ -110,7 +118,6 @@ type SubscriptionCancel = StripeClientLike["subscriptions"]["cancel"];
 type SubscriptionUpdate = StripeClientLike["subscriptions"]["update"];
 
 export interface EffectStripeClient {
-  readonly client: StripeClientLike;
   readonly effect: <A>(
     f: (client: StripeClientLike) => PromiseLike<A>,
   ) => Effect.Effect<A, StripeError>;
@@ -161,6 +168,16 @@ export interface EffectStripeClient {
       ...args: Parameters<SubscriptionUpdate>
     ) => Effect.Effect<Awaited<ReturnType<SubscriptionUpdate>>, StripeError>;
   };
+}
+
+/** Effect operations over an injected Promise-based Stripe SDK client. */
+export interface WrappedStripeClient extends EffectStripeClient {
+  readonly client: StripeClientLike;
+}
+
+/** Effect operations over the bundled HttpClient-backed Stripe adapter. */
+export interface HttpEffectStripeClient extends EffectStripeClient {
+  readonly client: HttpStripeClient;
 }
 
 const StripeErrorPayload = Schema.Struct({
@@ -236,7 +253,7 @@ export const tryStripe = <A>(try_: () => PromiseLike<A>): Effect.Effect<A, Strip
     catch: toStripeError,
   });
 
-export const makeEffectStripeClient = (client: StripeClientLike): EffectStripeClient => {
+export const makeEffectStripeClient = (client: StripeClientLike): WrappedStripeClient => {
   const effect = <A>(f: (client: StripeClientLike) => PromiseLike<A>) => tryStripe(() => f(client));
 
   return {
@@ -270,6 +287,105 @@ export const makeEffectStripeClient = (client: StripeClientLike): EffectStripeCl
   };
 };
 
+const runCancellablePromise = <A, E>(
+  effect: Effect.Effect<A, E>,
+  signal: AbortSignal,
+): Promise<A> =>
+  new Promise<A>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason ?? new Error("Stripe request aborted"));
+      return;
+    }
+
+    const fiber = Effect.runFork(effect);
+    let settled = false;
+    let removeObserver: () => void = () => undefined;
+    const onAbort = () => fiber.interruptUnsafe();
+    const cleanup = () => {
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      removeObserver();
+    };
+
+    removeObserver = fiber.addObserver((exit) => {
+      cleanup();
+
+      if (Exit.isSuccess(exit)) resolve(exit.value);
+      else reject(Cause.squash(exit.cause));
+    });
+
+    if (settled) removeObserver();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  });
+
+const promiseClient = (client: HttpStripeClient, signal: AbortSignal): StripeClientLike => ({
+  customers: {
+    create: (params) => runCancellablePromise(client.customers.create(params), signal),
+    update: (id, params) => runCancellablePromise(client.customers.update(id, params), signal),
+    retrieve: (id) => runCancellablePromise(client.customers.retrieve(id), signal),
+    search: (params) => runCancellablePromise(client.customers.search(params), signal),
+    list: (params) => runCancellablePromise(client.customers.list(params), signal),
+  },
+  billingPortal: {
+    sessions: {
+      create: (params) =>
+        runCancellablePromise(client.billingPortal.sessions.create(params), signal),
+    },
+  },
+  checkout: {
+    sessions: {
+      create: (params) => runCancellablePromise(client.checkout.sessions.create(params), signal),
+    },
+  },
+  invoices: {
+    list: (params) => runCancellablePromise(client.invoices.list(params), signal),
+  },
+  subscriptions: {
+    retrieve: (id) => runCancellablePromise(client.subscriptions.retrieve(id), signal),
+    cancel: (id) => runCancellablePromise(client.subscriptions.cancel(id), signal),
+    update: (id, params) => runCancellablePromise(client.subscriptions.update(id, params), signal),
+  },
+});
+
+export const makeEffectHttpStripeClient = (client: HttpStripeClient): HttpEffectStripeClient => {
+  const request = <A, E>(effect: Effect.Effect<A, E>) =>
+    effect.pipe(Effect.mapError(toStripeError));
+
+  return {
+    client,
+    effect: (f) =>
+      Effect.tryPromise({
+        try: (signal) => f(promiseClient(client, signal)),
+        catch: toStripeError,
+      }),
+    customers: {
+      create: (...args) => request(client.customers.create(...args)),
+      update: (...args) => request(client.customers.update(...args)),
+      retrieve: (...args) => request(client.customers.retrieve(...args)),
+      search: (...args) => request(client.customers.search(...args)),
+      list: (...args) => request(client.customers.list(...args)),
+    },
+    billingPortal: {
+      sessions: {
+        create: (...args) => request(client.billingPortal.sessions.create(...args)),
+      },
+    },
+    checkout: {
+      sessions: {
+        create: (...args) => request(client.checkout.sessions.create(...args)),
+      },
+    },
+    invoices: {
+      list: (...args) => request(client.invoices.list(...args)),
+    },
+    subscriptions: {
+      retrieve: (...args) => request(client.subscriptions.retrieve(...args)),
+      cancel: (...args) => request(client.subscriptions.cancel(...args)),
+      update: (...args) => request(client.subscriptions.update(...args)),
+    },
+  };
+};
+
 export class StripeService extends Context.Service<StripeService, EffectStripeClient>()(
   "StripeService",
 ) {
@@ -279,8 +395,8 @@ export class StripeService extends Context.Service<StripeService, EffectStripeCl
    * `maxNetworkRetries` is the only retry loop we want; callers may still
    * override both values (e.g. tests).
    */
-  static readonly make = (apiKey: string, config?: StripeClientConfig): EffectStripeClient =>
-    makeEffectStripeClient(new HttpStripeClient(apiKey, config));
+  static readonly make = (apiKey: string, config?: StripeClientConfig): HttpEffectStripeClient =>
+    makeEffectHttpStripeClient(new HttpStripeClient(apiKey, config));
 
   static readonly layer = (
     apiKey: string,
@@ -303,11 +419,8 @@ export const verifyStripeWebhookSignature = (
   payload: string,
   signature: string,
   secret: string,
-): Effect.Effect<Stripe.Event, StripeError> =>
-  Effect.tryPromise({
-    try: () => verifyStripeSignature(payload, signature, secret),
-    catch: toStripeError,
-  });
+): Effect.Effect<StripeWebhookEvent, StripeError> =>
+  verifyStripeSignature(payload, signature, secret).pipe(Effect.mapError(toStripeError));
 
 export const STRIPE_DEFAULTS = {
   timeout: STRIPE_REQUEST_TIMEOUT_MS,

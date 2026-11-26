@@ -1,9 +1,15 @@
 import type { Schema } from "effect";
-import { Effect } from "effect";
+import { Effect, Exit, Fiber, Ref } from "effect";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { describe, expect, it } from "vitest";
 import { deriveSoftwareUpdate, parseSofaFeed } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
-import { loadSoftwareUpdateCatalog, SOFA_MACOS_FEED_ID } from "../src/Device/softwareUpdates.ts";
+import {
+  loadSoftwareUpdateCatalog,
+  MAX_SOFTWARE_UPDATE_CACHE_URLS,
+  SoftwareUpdateCache,
+  SOFA_MACOS_FEED_ID,
+} from "../src/Device/softwareUpdates.ts";
 import type { LoadSoftwareUpdateCatalogOptions } from "../src/Device/softwareUpdates.ts";
 import { createEnterpriseSchema } from "../src/schema.ts";
 import { runEffect } from "./helpers.js";
@@ -47,18 +53,26 @@ const makeFeedDb = (options: FeedDbOptions = {}) => {
     : [];
 
   const failure = () => Effect.fail(new Error("database unavailable"));
+  let selects = 0;
+  let writes = 0;
 
   const db = {
     select: () => ({
       from: () => ({
         where: () => ({
-          limit: () => (options.failRead ? failure() : Effect.succeed([...rows])),
+          limit: () => {
+            selects++;
+
+            return options.failRead ? failure() : Effect.succeed([...rows]);
+          },
         }),
       }),
     }),
     insert: () => ({
       values: (value: FeedDbRow) => ({
         onDuplicateKeyUpdate: ({ set }: { set: Partial<FeedDbRow> }) => {
+          writes++;
+
           if (options.failWrite) return failure();
 
           const existing = rows.find((row) => row.id === value.id);
@@ -73,6 +87,8 @@ const makeFeedDb = (options: FeedDbOptions = {}) => {
     update: () => ({
       set: (patch: Partial<FeedDbRow>) => ({
         where: () => {
+          writes++;
+
           if (options.failWrite) return failure();
 
           const existing = rows[0];
@@ -87,7 +103,8 @@ const makeFeedDb = (options: FeedDbOptions = {}) => {
 
   // SAFETY: the loader only calls select/insert/update with the shapes above;
   // the cast avoids implementing the rest of Drizzle's client surface.
-  return { db: db as EnterpriseDb, rows };
+  // oxlint-disable-next-line quality/no-chained-type-assertions -- The loader uses only the select/insert/update shapes above.
+  return { db: db as unknown as EnterpriseDb, rows, selects: () => selects, writes: () => writes };
 };
 
 const feedBody = (version = "26.7.3") => ({
@@ -128,13 +145,14 @@ const feedUrl = () => `https://feed.example.test/${++feedCounter}.json`;
 
 const optionsFor = (
   db: EnterpriseDb,
-  fetchImpl: typeof globalThis.fetch | undefined,
+  httpClient: HttpClient.HttpClient | undefined,
   overrides: Partial<LoadSoftwareUpdateCatalogOptions> = {},
 ): LoadSoftwareUpdateCatalogOptions => ({
   db,
   schema,
   feedUrl: feedUrl(),
-  fetch: fetchImpl,
+  httpClient,
+  cache: Effect.runSync(SoftwareUpdateCache.make),
   now,
   cacheTtlMs: 60_000,
   retryAfterFailureMs: 60_000,
@@ -142,6 +160,13 @@ const optionsFor = (
   maxBytes: 1_024,
   ...overrides,
 });
+
+const clientForFetch = (fetchImpl: typeof globalThis.fetch) =>
+  HttpClient.make((request, url, signal) =>
+    Effect.promise(() => fetchImpl(url, { signal })).pipe(
+      Effect.map((response) => HttpClientResponse.fromWeb(request, response)),
+    ),
+  );
 
 const countingFetch = (respond: () => Response | Promise<Response>) => {
   let calls = 0;
@@ -152,7 +177,7 @@ const countingFetch = (respond: () => Response | Promise<Response>) => {
     return respond();
   }) satisfies typeof globalThis.fetch;
 
-  return { fetchImpl, calls: () => calls };
+  return { client: clientForFetch(fetchImpl), calls: () => calls };
 };
 
 describe("software update feed cache", () => {
@@ -171,12 +196,277 @@ describe("software update feed cache", () => {
     const fetch = countingFetch(() => jsonResponse(feedBody()));
 
     const state = await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(db, fetch.fetchImpl, { feedUrl: configured })),
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: configured })),
     );
 
     expect(state.available).toBe(true);
     expect(state.stale).toBe(false);
     expect(fetch.calls()).toBe(0);
+  });
+
+  it("serves a warm validated catalog without selecting or decoding the feed", async () => {
+    const configured = feedUrl();
+
+    const { db, rows, selects } = makeFeedDb({
+      row: {
+        sourceUrl: configured,
+        payload: catalog(),
+        fetchedAt: now,
+        checkedAt: now,
+      },
+    });
+
+    const payload = catalog();
+    let payloadReads = 0;
+
+    Object.defineProperty(rows[0]!, "payload", {
+      configurable: true,
+      get() {
+        payloadReads++;
+
+        return payload;
+      },
+    });
+
+    const fetch = countingFetch(() => jsonResponse(feedBody()));
+    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+    const first = await runEffect(loadSoftwareUpdateCatalog(options));
+    const readsAfterColdLoad = payloadReads;
+
+    Object.defineProperty(rows[0]!, "payload", {
+      configurable: true,
+      get() {
+        throw new Error("warm load read the stored payload");
+      },
+    });
+
+    const second = await runEffect(loadSoftwareUpdateCatalog(options));
+
+    expect(first.available).toBe(true);
+    expect(second.available).toBe(true);
+    expect(second.catalog).toBe(first.catalog);
+    expect(selects()).toBe(1);
+    expect(payloadReads).toBe(readsAfterColdLoad);
+    expect(fetch.calls()).toBe(0);
+  });
+
+  it("invalidates the memory catalog when the source URL changes", async () => {
+    const firstUrl = feedUrl();
+    const secondUrl = feedUrl();
+    const { db, selects, writes } = makeFeedDb();
+    const cache = Effect.runSync(SoftwareUpdateCache.make);
+    let version = "26.7.2";
+    const fetch = countingFetch(() => jsonResponse(feedBody(version)));
+
+    const first = await runEffect(
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: firstUrl, cache })),
+    );
+
+    version = "26.7.3";
+
+    const second = await runEffect(
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: secondUrl, cache })),
+    );
+
+    expect(first.catalog?.majors[0]?.latest.version).toBe("26.7.2");
+    expect(second.sourceUrl).toBe(secondUrl);
+    expect(second.catalog?.majors[0]?.latest.version).toBe("26.7.3");
+    expect(fetch.calls()).toBe(2);
+    expect(selects()).toBe(2);
+    expect(writes()).toBe(2);
+  });
+
+  it("serves an expired memory catalog stale and revalidates it", async () => {
+    const configured = feedUrl();
+    const { db, rows, selects } = makeFeedDb();
+    let version = "26.7.2";
+    const fetch = countingFetch(() => jsonResponse(feedBody(version)));
+    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+
+    await runEffect(loadSoftwareUpdateCatalog(options));
+
+    version = "26.7.3";
+
+    const expiresAt = new Date(now.getTime() + 60_000);
+    const stale = await runEffect(loadSoftwareUpdateCatalog({ ...options, now: expiresAt }));
+
+    expect(stale.available).toBe(true);
+    expect(stale.stale).toBe(true);
+    expect(stale.error).toBeNull();
+    expect(stale.catalog?.majors[0]?.latest.version).toBe("26.7.2");
+
+    await expect.poll(() => rows[0]?.fetchedAt?.getTime()).toBe(expiresAt.getTime());
+
+    const fresh = await runEffect(
+      loadSoftwareUpdateCatalog({ ...options, now: new Date(expiresAt.getTime() + 1) }),
+    );
+
+    expect(fresh.available).toBe(true);
+    expect(fresh.stale).toBe(false);
+    expect(fresh.catalog?.majors[0]?.latest.version).toBe("26.7.3");
+    expect(fetch.calls()).toBe(2);
+    expect(selects()).toBe(1);
+  });
+
+  it("single-flights revalidation for concurrent expired loads", async () => {
+    const configured = feedUrl();
+    const { db, rows, selects, writes } = makeFeedDb();
+    let releaseRefresh!: () => void;
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    let calls = 0;
+    let version = "26.7.2";
+    const fetch = countingFetch(async () => {
+      calls++;
+
+      if (calls === 2) await refreshGate;
+
+      return jsonResponse(feedBody(version));
+    });
+    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+
+    await runEffect(loadSoftwareUpdateCatalog(options));
+
+    version = "26.7.3";
+
+    const expiresAt = new Date(now.getTime() + 60_000);
+    const states = await runEffect(
+      Effect.all(
+        Array.from({ length: 4 }, () => loadSoftwareUpdateCatalog({ ...options, now: expiresAt })),
+        { concurrency: "unbounded" },
+      ),
+    );
+
+    expect(states.every((state) => state.available && state.stale)).toBe(true);
+    expect(states.every((state) => state.catalog?.majors[0]?.latest.version === "26.7.2")).toBe(
+      true,
+    );
+    await expect.poll(() => fetch.calls()).toBe(2);
+    expect(selects()).toBe(1);
+    expect(writes()).toBe(1);
+
+    releaseRefresh();
+
+    await expect.poll(() => rows[0]?.fetchedAt?.getTime()).toBe(expiresAt.getTime());
+    expect(fetch.calls()).toBe(2);
+    expect(writes()).toBe(2);
+  });
+
+  it("keeps a stale catalog and failure cooldown when revalidation fails", async () => {
+    const configured = feedUrl();
+    const { db, rows, selects } = makeFeedDb();
+    let down = false;
+    const fetch = countingFetch(() =>
+      down ? jsonResponse({ error: "down" }, 503) : jsonResponse(feedBody()),
+    );
+    const options = optionsFor(db, fetch.client, { feedUrl: configured });
+
+    await runEffect(loadSoftwareUpdateCatalog(options));
+
+    down = true;
+
+    const expiresAt = new Date(now.getTime() + 60_000);
+    const stale = await runEffect(loadSoftwareUpdateCatalog({ ...options, now: expiresAt }));
+
+    expect(stale.available).toBe(true);
+    expect(stale.stale).toBe(true);
+    expect(stale.error).toBeNull();
+
+    await expect.poll(() => rows[0]?.lastError).toBe("http_503");
+
+    const suppressed = await runEffect(
+      loadSoftwareUpdateCatalog({ ...options, now: new Date(expiresAt.getTime() + 1_000) }),
+    );
+
+    expect(suppressed.available).toBe(true);
+    expect(suppressed.stale).toBe(true);
+    expect(suppressed.error).toBe("http_503");
+    expect(fetch.calls()).toBe(2);
+    expect(selects()).toBe(1);
+  });
+
+  it("bounds catalog and failure URLs together and prunes expired failures", async () => {
+    const cache = Effect.runSync(SoftwareUpdateCache.make);
+    const urls = Array.from({ length: MAX_SOFTWARE_UPDATE_CACHE_URLS + 1 }, () => feedUrl());
+
+    for (const [index, configured] of urls.entries()) {
+      const { db } = makeFeedDb();
+      const fetch = countingFetch(() =>
+        index % 2 === 0 ? jsonResponse(feedBody()) : jsonResponse({ error: "down" }, 503),
+      );
+
+      await runEffect(
+        loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: configured, cache })),
+      );
+    }
+
+    const entries = Effect.runSync(Ref.get(cache.entries));
+    const firstKey = `${SOFA_MACOS_FEED_ID}:${urls[0]}`;
+    const lastKey = `${SOFA_MACOS_FEED_ID}:${urls.at(-1)}`;
+    const failedKey = `${SOFA_MACOS_FEED_ID}:${urls[1]}`;
+
+    expect(entries.size).toBe(MAX_SOFTWARE_UPDATE_CACHE_URLS);
+    expect(entries.has(firstKey)).toBe(false);
+    expect(entries.has(lastKey!)).toBe(true);
+    expect(entries.get(failedKey!)?.failure?.error).toBe("http_503");
+
+    const { db } = makeFeedDb({
+      row: {
+        sourceUrl: urls[1],
+        checkedAt: now,
+        lastError: "http_503",
+      },
+    });
+
+    await runEffect(
+      loadSoftwareUpdateCatalog(
+        optionsFor(db, undefined, {
+          feedUrl: urls[1],
+          cache,
+          now: new Date(now.getTime() + 60_001),
+        }),
+      ),
+    );
+
+    expect(Effect.runSync(Ref.get(cache.entries)).has(failedKey!)).toBe(false);
+  });
+
+  it("does not rewrite a durable payload source during A to B to A failed revalidation", async () => {
+    const firstUrl = feedUrl();
+    const secondUrl = feedUrl();
+    const { db, rows } = makeFeedDb();
+    const cache = Effect.runSync(SoftwareUpdateCache.make);
+    let version = "26.7.2";
+    let down = false;
+    const fetch = countingFetch(() =>
+      down ? jsonResponse({ error: "down" }, 503) : jsonResponse(feedBody(version)),
+    );
+
+    await runEffect(
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: firstUrl, cache })),
+    );
+
+    version = "26.7.3";
+
+    await runEffect(
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: secondUrl, cache })),
+    );
+
+    down = true;
+
+    const expiresAt = new Date(now.getTime() + 60_000);
+    const stale = await runEffect(
+      loadSoftwareUpdateCatalog({
+        ...optionsFor(db, fetch.client, { feedUrl: firstUrl, cache }),
+        now: expiresAt,
+      }),
+    );
+
+    expect(stale.stale).toBe(true);
+    await expect.poll(() => rows[0]?.lastError).toBe("http_503");
+    expect(rows[0]?.sourceUrl).toBe(secondUrl);
+    expect(rows[0]?.payload).toEqual(catalog("26.7.3"));
   });
 
   it("times out without throwing", async () => {
@@ -203,7 +493,7 @@ describe("software update feed cache", () => {
     }) satisfies typeof globalThis.fetch;
 
     const state = await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(db, fetchImpl, { timeoutMs: 10 })),
+      loadSoftwareUpdateCatalog(optionsFor(db, clientForFetch(fetchImpl), { timeoutMs: 10 })),
     );
 
     expect(state.error).toBe("timeout");
@@ -228,7 +518,7 @@ describe("software update feed cache", () => {
     const fetch = countingFetch(() => jsonResponse({ error: "down" }, 503));
 
     const state = await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(db, fetch.fetchImpl, { feedUrl: configured })),
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: configured })),
     );
 
     expect(state.available).toBe(true);
@@ -252,7 +542,7 @@ describe("software update feed cache", () => {
 
     const fetch = countingFetch(() => jsonResponse({ error: "down" }, 503));
 
-    const options = optionsFor(db, fetch.fetchImpl, { feedUrl: configured });
+    const options = optionsFor(db, fetch.client, { feedUrl: configured });
 
     const first = await runEffect(loadSoftwareUpdateCatalog(options));
 
@@ -288,7 +578,7 @@ describe("software update feed cache", () => {
       return jsonResponse(feedBody("26.7.3"));
     });
 
-    const options = optionsFor(db, fetch.fetchImpl, { feedUrl: configured });
+    const options = optionsFor(db, fetch.client, { feedUrl: configured });
 
     const [first, second] = await runEffect(
       Effect.all([loadSoftwareUpdateCatalog(options), loadSoftwareUpdateCatalog(options)], {
@@ -307,7 +597,7 @@ describe("software update feed cache", () => {
     const fetch = countingFetch(() => jsonResponse(feedBody()));
 
     const state = await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(db, fetch.fetchImpl, { disabled: true })),
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { disabled: true })),
     );
 
     expect(state.error).toBe("feed_disabled");
@@ -319,7 +609,7 @@ describe("software update feed cache", () => {
     const invalidJson = countingFetch(() => new Response("not-json", { status: 200 }));
 
     const first = await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(makeFeedDb().db, invalidJson.fetchImpl)),
+      loadSoftwareUpdateCatalog(optionsFor(makeFeedDb().db, invalidJson.client)),
     );
 
     expect(first.error).toBe("invalid_json");
@@ -328,7 +618,7 @@ describe("software update feed cache", () => {
     const invalidFeed = countingFetch(() => jsonResponse({}));
 
     const second = await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(makeFeedDb().db, invalidFeed.fetchImpl)),
+      loadSoftwareUpdateCatalog(optionsFor(makeFeedDb().db, invalidFeed.client)),
     );
 
     expect(second.error).toBe("invalid_feed");
@@ -340,7 +630,7 @@ describe("software update feed cache", () => {
 
     const fetch = countingFetch(() => jsonResponse(feedBody()));
 
-    const state = await runEffect(loadSoftwareUpdateCatalog(optionsFor(db, fetch.fetchImpl)));
+    const state = await runEffect(loadSoftwareUpdateCatalog(optionsFor(db, fetch.client)));
 
     expect(state.error).toBe("database_error");
     expect(state.available).toBe(false);
@@ -367,7 +657,7 @@ describe("software update feed cache", () => {
     );
 
     const state = await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(db, fetch.fetchImpl, { maxBytes: 64 })),
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { maxBytes: 64 })),
     );
 
     expect(state.error).toBe("payload_too_large");
@@ -380,7 +670,7 @@ describe("software update feed cache", () => {
 
     const fetch = countingFetch(() => jsonResponse({}));
 
-    const state = await runEffect(loadSoftwareUpdateCatalog(optionsFor(db, fetch.fetchImpl)));
+    const state = await runEffect(loadSoftwareUpdateCatalog(optionsFor(db, fetch.client)));
 
     const info = deriveSoftwareUpdate(
       { proto: "apple", osEdition: "macOS", osVersion: "15.8.3" },
@@ -407,7 +697,7 @@ describe("software update feed cache", () => {
     const fetch = countingFetch(() => jsonResponse(feedBody("26.7.3")));
 
     const state = await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(db, fetch.fetchImpl, { feedUrl: configured })),
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: configured })),
     );
 
     expect(fetch.calls()).toBe(1);
@@ -432,7 +722,7 @@ describe("software update feed cache", () => {
     const fetch = countingFetch(() => jsonResponse({ error: "down" }, 500));
 
     const state = await runEffect(
-      loadSoftwareUpdateCatalog(optionsFor(db, fetch.fetchImpl, { feedUrl: configured })),
+      loadSoftwareUpdateCatalog(optionsFor(db, fetch.client, { feedUrl: configured })),
     );
 
     expect(state.sourceUrl).toBe(configured);
@@ -446,7 +736,7 @@ describe("software update feed cache", () => {
 
     const fetch = countingFetch(() => jsonResponse(feedBody()));
 
-    const options = optionsFor(db, fetch.fetchImpl);
+    const options = optionsFor(db, fetch.client);
 
     const first = await runEffect(loadSoftwareUpdateCatalog(options));
 
@@ -462,5 +752,58 @@ describe("software update feed cache", () => {
     expect(second.available).toBe(false);
     expect(second.error).toBe("cache_write_failed");
     expect(fetch.calls()).toBe(1);
+  });
+
+  it("isolates failure memory between independently built layers", async () => {
+    const configured = feedUrl();
+    const fetch = countingFetch(() => jsonResponse({ error: "down" }, 503));
+    const firstDb = makeFeedDb();
+    const secondDb = makeFeedDb();
+    const firstCache = Effect.runSync(SoftwareUpdateCache.make);
+    const secondCache = Effect.runSync(SoftwareUpdateCache.make);
+
+    const first = await runEffect(
+      loadSoftwareUpdateCatalog(
+        optionsFor(firstDb.db, fetch.client, { feedUrl: configured, cache: firstCache }),
+      ),
+    );
+    const isolated = await runEffect(
+      loadSoftwareUpdateCatalog(
+        optionsFor(secondDb.db, fetch.client, { feedUrl: configured, cache: secondCache }),
+      ),
+    );
+    const shared = await runEffect(
+      loadSoftwareUpdateCatalog(
+        optionsFor(firstDb.db, fetch.client, { feedUrl: configured, cache: firstCache }),
+      ),
+    );
+
+    expect(first.error).toBe("http_503");
+    expect(isolated.error).toBe("http_503");
+    expect(shared.error).toBe("http_503");
+    expect(fetch.calls()).toBe(2);
+  });
+
+  it("propagates refresh interruption and releases the in-flight claim", async () => {
+    const result = await runEffect(
+      Effect.gen(function* () {
+        const cache = yield* SoftwareUpdateCache;
+        const fiber = yield* cache.refresh("interrupted", Effect.never).pipe(Effect.forkChild);
+
+        yield* Effect.yieldNow;
+        yield* Fiber.interrupt(fiber);
+
+        const interrupted = yield* Fiber.await(fiber);
+        const next = yield* cache.refresh(
+          "interrupted",
+          Effect.succeed({ ok: true, catalog: catalog() }),
+        );
+
+        return { interrupted, next };
+      }).pipe(Effect.provide(SoftwareUpdateCache.layer)),
+    );
+
+    expect(Exit.hasInterrupts(result.interrupted)).toBe(true);
+    expect(result.next.ok).toBe(true);
   });
 });

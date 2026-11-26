@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { serializeSoapEnvelope, extractSoapBody, extractSoapHeader } from "../src/index.js";
+import { Effect } from "effect";
+import {
+  serializeSoapEnvelope,
+  extractSoapBody,
+  extractSoapHeader,
+  parseSoapEnvelope,
+} from "../src/index.js";
 
 describe("SOAP Envelope", () => {
   it("should serialize and extract a full envelope", () => {
@@ -51,5 +57,47 @@ describe("SOAP Envelope", () => {
     expect(envelope).toContain(
       'xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"',
     );
+  });
+
+  it("returns typed failures for malformed and wrong-namespace envelopes", async () => {
+    const malformed = await Effect.runPromise(parseSoapEnvelope("<invalid").pipe(Effect.result));
+    const doctype = await Effect.runPromise(
+      parseSoapEnvelope(
+        '<!DOCTYPE Envelope [<!ENTITY value "expanded">]><Envelope xmlns="http://www.w3.org/2003/05/soap-envelope"><Body><Value>&value;</Value></Body></Envelope>',
+      ).pipe(Effect.result),
+    );
+    const wrongNamespace = await Effect.runPromise(
+      parseSoapEnvelope("<Envelope><Body><Value/></Body></Envelope>").pipe(Effect.result),
+    );
+
+    expect(malformed).toMatchObject({
+      _tag: "Failure",
+      failure: { reason: "invalid_xml" },
+    });
+    expect(wrongNamespace).toMatchObject({
+      _tag: "Failure",
+      failure: { reason: "invalid_envelope" },
+    });
+    expect(doctype).toMatchObject({ _tag: "Failure", failure: { reason: "invalid_xml" } });
+  });
+
+  it("rejects oversized requests and security headers before DOM parsing", async () => {
+    const request = await Effect.runPromise(
+      parseSoapEnvelope("x".repeat(100), { maxRequestBytes: 10 }).pipe(Effect.result),
+    );
+    const tags = Array.from({ length: 5_000 }, () => "<wsse:BinarySecurityToken/>").join("");
+    const header = `<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"><s:Header>${tags}</s:Header><s:Body><Value/></s:Body></s:Envelope>`;
+    const oversizedHeader = await Effect.runPromise(
+      parseSoapEnvelope(header, { maxHeaderBytes: 1024 }).pipe(Effect.result),
+    );
+
+    expect(request).toMatchObject({
+      _tag: "Failure",
+      failure: { reason: "request_too_large" },
+    });
+    expect(oversizedHeader).toMatchObject({
+      _tag: "Failure",
+      failure: { reason: "header_too_large" },
+    });
   });
 });

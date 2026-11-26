@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { EnterprisePermissionDenied } from "@mattrax/enterprise-domain";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { sweepDeviceCommands } from "@mattrax/mdm-apple";
+import { sweepDeviceCommands } from "@mattrax/mdm-core";
 import { reconcileApplicationUninstalls } from "@mattrax/enterprise-core";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 

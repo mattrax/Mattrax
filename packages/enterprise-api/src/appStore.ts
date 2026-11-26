@@ -1,7 +1,11 @@
 import { Data, Effect, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { parseAppleStoreLookup } from "@mattrax/enterprise-domain";
-import type { AppleStoreLookup } from "@mattrax/enterprise-domain";
+import { ApplicationStoreService } from "@mattrax/enterprise-domain";
+import type {
+  ApplicationStoreLookupInput,
+  ApplicationStoreLookupOutcome,
+} from "@mattrax/enterprise-domain";
 
 /**
  * iTunes Search API lookup for one App Store storefront.
@@ -23,10 +27,6 @@ export type AppStoreLookupConfig = {
   readonly timeoutMs?: number;
   readonly baseUrl?: string;
 };
-
-export type AppStoreLookupOutcome =
-  | { readonly ok: true; readonly lookup: AppleStoreLookup }
-  | { readonly ok: false; readonly error: string };
 
 /** Internal failure; the public outcome folds it into a message for the UI. */
 class AppStoreLookupFailed extends Data.TaggedError("AppStoreLookupFailed")<{
@@ -54,7 +54,7 @@ export const lookupAppStoreApplication = (input: {
   readonly storeId?: string | null;
   readonly bundleId?: string | null;
   readonly config?: AppStoreLookupConfig;
-}): Effect.Effect<AppStoreLookupOutcome> =>
+}): Effect.Effect<ApplicationStoreLookupOutcome> =>
   Effect.gen(function* () {
     const params = new URLSearchParams({ country: input.region });
 
@@ -115,3 +115,13 @@ export const lookupAppStoreApplication = (input: {
     Effect.catch((error) => Effect.succeed({ ok: false, error: error.message } as const)),
     Effect.provide(httpClientLayer(input.config?.fetch)),
   );
+
+export const makeApplicationStoreService = (
+  config: AppStoreLookupConfig = {},
+): ApplicationStoreService["Service"] =>
+  ApplicationStoreService.of({
+    lookup: (input: ApplicationStoreLookupInput) => lookupAppStoreApplication({ ...input, config }),
+  });
+
+export const applicationStoreServiceLayer = (config: AppStoreLookupConfig = {}) =>
+  Layer.succeed(ApplicationStoreService, makeApplicationStoreService(config));

@@ -1,5 +1,5 @@
 import http2 from "node:http2";
-import { Data, Effect, Layer } from "effect";
+import { Data, Effect, identity, Layer, Option } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 export class ApnsError extends Data.TaggedError("ApnsError")<{
@@ -57,7 +57,7 @@ export const buildApnsRequest = (
 });
 
 /** An `HttpClient` over a specific fetch implementation (binding or stub). */
-const httpClientLayer = (fetchImpl: typeof globalThis.fetch) =>
+const fetchClientLayer = (fetchImpl: typeof globalThis.fetch) =>
   FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
 
 const rejected = (status: number, text: string) =>
@@ -96,7 +96,7 @@ export function NodePushTransport(defaults?: {
         );
 
       return Effect.tryPromise({
-        try: () => {
+        try: (signal) => {
           const request = buildApnsRequest(input, endpoint);
           const url = new URL(request.url);
           const body = Buffer.from(request.body);
@@ -117,6 +117,8 @@ export function NodePushTransport(defaults?: {
             const timeoutError = () =>
               new ApnsError({ message: `APNs request timed out after ${timeoutMs}ms` });
 
+            const onAbort = () => fail(new ApnsError({ message: "APNs request was interrupted" }));
+
             const close = () => {
               // `close` only waits for existing streams; `destroy` guarantees
               // the socket (and any in-flight TLS handshake) is released.
@@ -131,6 +133,8 @@ export function NodePushTransport(defaults?: {
               } catch {
                 // Already destroyed by a concurrent failure path.
               }
+
+              signal.removeEventListener("abort", onAbort);
             };
 
             const fail = (cause: unknown) => {
@@ -144,6 +148,11 @@ export function NodePushTransport(defaults?: {
 
             timer = setTimeout(() => fail(timeoutError()), timeoutMs);
             timer.unref?.();
+
+            // Parent interruption must release a TLS handshake or in-flight
+            // stream immediately rather than waiting for the deadline.
+            signal.addEventListener("abort", onAbort, { once: true });
+            if (signal.aborted) onAbort();
 
             // Covers a stalled TCP/TLS connect as well as an idle socket.
             client.setTimeout(timeoutMs, () => fail(timeoutError()));
@@ -234,7 +243,7 @@ export function MtlsPushTransport(options: {
 
         if (status !== 200)
           return yield* Effect.fail(new ApnsError({ message: rejected(status, text) }));
-      }).pipe(Effect.provide(httpClientLayer(fetchImpl)));
+      }).pipe(Effect.provide(fetchClientLayer(fetchImpl)));
     },
   };
 }
@@ -276,6 +285,8 @@ export type RelayPushTransportOptions = {
   readonly token?: string;
   /** Override for tests or alternative runtimes. */
   readonly fetch?: typeof globalThis.fetch;
+  /** Shared Effect transport supplied by the composition root. */
+  readonly httpClient?: HttpClient.HttpClient;
   /** Override for deterministic signatures in tests. */
   readonly now?: () => number;
   /** Deadline for the relay request. Defaults to {@link APNS_RELAY_TIMEOUT_MS}. */
@@ -317,7 +328,14 @@ export function RelayPushTransport(options: RelayPushTransportOptions): ApnsPush
 
         if (options.token) headers.authorization = `Bearer ${options.token}`;
 
-        const client = yield* HttpClient.HttpClient;
+        const client =
+          options.httpClient ??
+          Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient));
+
+        if (!client)
+          return yield* Effect.fail(
+            new ApnsError({ message: "The APNs relay HTTP client is not configured" }),
+          );
 
         // The relay talks to APNs on our behalf; a hung relay must not hold
         // the Worker's request open, and the deadline covers the body read too.
@@ -350,7 +368,7 @@ export function RelayPushTransport(options: RelayPushTransportOptions): ApnsPush
 
         if (status < 200 || status > 299)
           return yield* Effect.fail(new ApnsError({ message: rejected(status, text) }));
-      }).pipe(Effect.provide(httpClientLayer(doFetch))),
+      }).pipe(options.fetch ? Effect.provide(fetchClientLayer(doFetch)) : identity),
   };
 }
 

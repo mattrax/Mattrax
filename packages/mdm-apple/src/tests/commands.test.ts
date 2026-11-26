@@ -25,7 +25,7 @@ import {
   supersededRequestTypes,
 } from "@mattrax/mdm-core";
 import type { CommandRow } from "@mattrax/mdm-core";
-import { makeDb, tableName, stringValue } from "./fake-db.js";
+import { appleIdentityCertificate, makeDb, tableName, stringValue } from "./fake-db.js";
 
 const origin = "https://policies.test";
 
@@ -706,6 +706,7 @@ const device = (id: string, organizationId: string) => ({
   status: "enrolled",
   name: id,
   dmIdentifier: "udid-1",
+  dmIdentityFingerprint: "fingerprint-1",
   enrolledAt: at("2026-01-01T00:00:00Z"),
   lastSeenAt: at("2026-01-01T00:00:00Z"),
 });
@@ -729,6 +730,8 @@ describe("Apple check-in delivery loop", () => {
     _tag: "device" as const,
     udid: "udid-1",
     identityCertificate: "CN=Device,OU=org-1",
+    identityCertificateFingerprintSha256: "fingerprint-1",
+    identityCertificateSerial: "A1:B2:C3",
     mdmOrigin,
   };
 
@@ -738,6 +741,7 @@ describe("Apple check-in delivery loop", () => {
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1")],
       [tableName(schema.device)]: [device("device-1", "org-1")],
+      [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
       [tableName(schema.deviceCommand)]: [
         command("stale-lock", {
           expiresAt: expiredAt,
@@ -764,6 +768,7 @@ describe("Apple check-in delivery loop", () => {
     const db = makeDb({
       [tableName(schema.organization)]: [organization("org-1")],
       [tableName(schema.device)]: [device("device-1", "org-1")],
+      [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
       [tableName(schema.deviceCommand)]: [
         command("fresh-lock", {
           expiresAt: new Date(Date.now() + 10 * 60 * 1000),

@@ -64,8 +64,8 @@ relay requests, so the two releases must move together:
 2. Deploy the services release and the Cloud release together. Alternatively,
    stage a services release that accepts both credentials first, then deploy
    Cloud, then remove the old secret.
-3. Remove `APNS_RELAY_SECRET` from both once Cloud is signing with
-   `SERVICES_TOKEN`.
+3. Remove the legacy standalone relay secret once Cloud is signing with
+   `SERVICES_TOKEN`. The unsupported `apps/apns-relay` host has been retired.
 
 A self-hosted deployment is unaffected: it authenticates the relay and billing
 with `MATTRAX_LICENSE_KEY` and needs no coordinated rollout.

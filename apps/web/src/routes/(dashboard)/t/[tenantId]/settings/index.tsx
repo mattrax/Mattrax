@@ -8,6 +8,7 @@ import type { JSX } from "@solidjs/web";
 import { DEFAULT_BRAND_COLOR, normalizeBrandColor } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
+import { Checkbox } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -43,7 +44,7 @@ export const route = {
  * and show a matching, interactive trigger until the chunk is warm.
  */
 const LazyRegionPicker = lazy(() =>
-  import("~/components/region-picker").then((module) => ({ default: module.RegionPicker })),
+  import("~/components/region-picker"),
 );
 
 function RegionPickerFallback(props: {
@@ -52,11 +53,13 @@ function RegionPickerFallback(props: {
   onActivate?: () => void;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="lg"
+      class="w-full justify-start"
       disabled={props.disabled}
       onClick={() => props.onActivate?.()}
-      class="flex h-9 w-full items-center gap-2 rounded-md border border-input bg-card px-2.5 text-left text-[13px] text-foreground outline-none transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
     >
       <Show
         when={props.value}
@@ -64,16 +67,16 @@ function RegionPickerFallback(props: {
           <span class="min-w-0 flex-1 truncate text-muted-foreground">Use default (US)</span>
         }
       >
-        <span class="shrink-0 text-[15px] leading-none">{flagOf(props.value)}</span>
+        <span class="shrink-0 text-sm leading-none">{flagOf(props.value)}</span>
         <span class="min-w-0 flex-1 truncate">{regionName(props.value)}</span>
-        <span class="shrink-0 font-mono text-[10.5px] text-muted-foreground">
+        <span class="shrink-0 font-mono text-xs text-muted-foreground">
           {props.value.toUpperCase()}
         </span>
       </Show>
       <span class="ml-auto size-3.5 shrink-0 text-muted-foreground" aria-hidden="true">
         ▾
       </span>
-    </button>
+    </Button>
   );
 }
 
@@ -176,12 +179,12 @@ export default function GeneralSettingsPage() {
               label="Tenant ID"
               hint="Stable identifier used by the API and device enrollment. It never changes, even when the slug does."
             >
-              <span class="block break-all font-mono text-[12px] text-muted-foreground">
+              <span class="block break-all font-mono text-xs text-muted-foreground">
                 {tenant.data?.id ?? "…"}
               </span>
             </ReadOnlyRow>
             <ReadOnlyRow label="Created" hint="When this tenant was provisioned.">
-              <span class="text-[13px] text-muted-foreground">
+              <span class="text-xs text-muted-foreground">
                 {tenant.data ? new Date(tenant.data.createdAt).toLocaleDateString() : "…"}
               </span>
             </ReadOnlyRow>
@@ -251,11 +254,11 @@ export default function GeneralSettingsPage() {
             </FieldRow>
             <FieldRow label="Brand colour" hint="Used for accents on the public enrollment page.">
               <div class="flex items-center gap-2">
-                <input
+                <Input
                   type="color"
                   aria-label="Brand colour picker"
                   disabled={!canWrite()}
-                  class="h-8 w-11 shrink-0 cursor-pointer rounded-md border border-input bg-surface p-1 transition-colors duration-[var(--duration-hover)] ease-swift hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                  class="w-11 shrink-0 cursor-pointer"
                   value={colorValue()}
                   onInput={(e) => setBrandColor(e.currentTarget.value)}
                 />
@@ -309,13 +312,11 @@ export default function GeneralSettingsPage() {
               label="Unlink unavailable apps"
               hint="When an availability check finds the app in none of its storefronts, remove its assignments automatically. The catalogue row and install history are kept."
             >
-              <label class="flex items-center gap-2 text-[13px] text-foreground">
-                <input
-                  type="checkbox"
-                  class="size-3.5 accent-[var(--brand-solid)]"
+              <label class="flex items-center gap-2 text-xs text-foreground">
+                <Checkbox
                   disabled={!canWrite()}
                   checked={autoUnlink()}
-                  onChange={(e) => setAutoUnlink(e.currentTarget.checked)}
+                  onCheckedChange={(checked) => setAutoUnlink(checked === true)}
                 />
                 Unlink assignments when every storefront loses the app
               </label>
@@ -334,14 +335,14 @@ export default function GeneralSettingsPage() {
           class="border-destructive/20 bg-destructive/[0.015]"
           header={
             <div class="flex items-center gap-2">
-              <TriangleAlert class="size-4 text-destructive" />
-              <h2 class="text-[13px] font-semibold text-destructive">Danger zone</h2>
+              <span class="inline-flex text-destructive"><TriangleAlert class="size-4" /></span>
+              <h2 class="text-xs font-semibold text-destructive">Danger zone</h2>
             </div>
           }
         >
           <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div class="min-w-0">
-              <p class="text-[13px] font-medium text-foreground">Delete this tenant</p>
+              <p class="text-sm font-medium text-foreground">Delete this tenant</p>
               <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                 Enrolled devices are sent their platform's unenroll request, the billing
                 subscription is cancelled, all tenant files and backups are deleted, then the tenant
@@ -454,7 +455,7 @@ function ReadOnlyRow(props: { label: string; hint?: string; children: JSX.Elemen
   return (
     <div class="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
       <span class="min-w-0">
-        <span class="block text-[13px] font-medium leading-snug text-foreground">
+        <span class="block text-xs font-medium leading-snug text-foreground">
           {props.label}
         </span>
         <Show when={props.hint}>
@@ -463,7 +464,7 @@ function ReadOnlyRow(props: { label: string; hint?: string; children: JSX.Elemen
           </span>
         </Show>
       </span>
-      <span class="w-full min-w-0 sm:w-[22rem] sm:shrink-0">{props.children}</span>
+      <span class="w-full min-w-0 sm:w-88 sm:shrink-0">{props.children}</span>
     </div>
   );
 }
@@ -472,7 +473,7 @@ function FieldRow(props: { label: string; hint?: string; children: JSX.Element }
   return (
     <label class="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-start sm:justify-between sm:gap-8 [&_input:not([type=checkbox]):not([type=color])]:h-9">
       <span class="min-w-0">
-        <span class="block text-[13px] font-medium leading-snug text-foreground">
+        <span class="block text-xs font-medium leading-snug text-foreground">
           {props.label}
         </span>
         <Show when={props.hint}>
@@ -481,7 +482,7 @@ function FieldRow(props: { label: string; hint?: string; children: JSX.Element }
           </span>
         </Show>
       </span>
-      <span class="w-full min-w-0 sm:w-[22rem] sm:shrink-0">{props.children}</span>
+      <span class="w-full min-w-0 sm:w-88 sm:shrink-0">{props.children}</span>
     </label>
   );
 }

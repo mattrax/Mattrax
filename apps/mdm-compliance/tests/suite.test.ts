@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { allChecks } from "../src/checks/index.ts";
+import { ScepCaCache } from "../src/harness/scep.ts";
 import { filterChecks, runChecks } from "../src/runner.ts";
 
 describe("MDM compliance suite", () => {
   it("passes every protocol check", async () => {
-    const report = await runChecks(allChecks, { timeoutMs: 30_000 });
+    const report = await Effect.runPromise(
+      runChecks(allChecks, { timeoutMs: 30_000 }).pipe(Effect.provide(ScepCaCache.layer())),
+    );
 
     const failures = report.checks
       .filter((check) => check.status === "failed")

@@ -1,4 +1,5 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
+import { CatalogueService, runCatalogue } from "~/lib/catalogue-service";
 import { collectionProperties } from "./catalog";
 import type { Collection, PlatformId, Property } from "./catalog";
 import { valueKey as storageValueKey } from "./build";
@@ -664,61 +665,26 @@ export const cisRequiredCollections = (
   return [...ids].sort();
 };
 
-/**
- * Browser loaders. Assets are static and committed; the generator reads only
- * local files, so no request is made at build or test time.
- */
-const fetchJson = async <S extends Schema.ConstraintDecoder<unknown>>(
+/** Browser loaders are thin Promise adapters over the Layer-owned cache. */
+const fetchJson = <S extends Schema.ConstraintDecoder<unknown>>(
   schema: S,
   url: string,
-  label: string,
-): Promise<S["Type"]> => {
-  const response = await fetch(url);
+  _label: string,
+): Promise<S["Type"]> =>
+  runCatalogue(CatalogueService.pipe(Effect.flatMap((service) => service.get(url, schema))));
 
-  if (!response.ok) throw new Error(`Could not load ${label} (${response.status})`);
-
-  return Schema.decodeUnknownSync(schema)(await response.json());
-};
-
-let indexPromise: Promise<CisTemplateIndex> | undefined;
-
-const templatePromises = new Map<string, Promise<CompiledCisTemplate>>();
-
-export const loadCisTemplateIndex = () => {
-  indexPromise ??= fetchJson(CisTemplateIndex, "/catalog/cis/index.json", "CIS templates").catch(
-    (error: unknown) => {
-      indexPromise = undefined;
-      throw error;
-    },
-  );
-
-  return indexPromise;
-};
+export const loadCisTemplateIndex = () =>
+  fetchJson(CisTemplateIndex, "/catalog/cis/index.json", "CIS templates");
 
 export const loadCisTemplate = (summary: CisTemplateSummary) => {
   const file = summary.file;
 
   if (!/^[a-z0-9][a-z0-9.-]*\.json$/.test(file))
-    return Promise.reject(new Error(`Invalid CIS template file ${JSON.stringify(file)}`));
+    return Promise.reject(new Error("Invalid CIS template file " + JSON.stringify(file)));
 
-  let promise = templatePromises.get(summary.id);
-
-  if (!promise) {
-    promise = fetchJson(
-      CompiledCisTemplate,
-      `/catalog/cis/${file}`,
-      `${summary.benchmark.name} ${summary.benchmark.version}`,
-    ).catch((error: unknown) => {
-      templatePromises.delete(summary.id);
-      throw error;
-    });
-    templatePromises.set(summary.id, promise);
-  }
-
-  return promise;
-};
-
-export const resetCisTemplateCache = () => {
-  indexPromise = undefined;
-  templatePromises.clear();
+  return fetchJson(
+    CompiledCisTemplate,
+    "/catalog/cis/" + file,
+    summary.benchmark.name + " " + summary.benchmark.version,
+  );
 };

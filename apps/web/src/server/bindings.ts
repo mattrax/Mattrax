@@ -16,8 +16,10 @@ export interface DeploymentBindings {
   readonly POSTHOG_HOST: string | undefined;
   /** Optional support or calendar URL used by the app menu and checklist. */
   readonly SUPPORT_URL: string | undefined;
-  /** The API: a service binding on Cloudflare, loopback HTTP on Node. */
-  readonly API: { fetch(request: Request): Promise<Response> };
+  /** Preview/self-host API origin. Takes precedence over the service binding. */
+  readonly API_URL: string | undefined;
+  /** Cloudflare service binding; Node reaches the API over API_URL instead. */
+  readonly API: { fetch(request: Request): Promise<Response> } | undefined;
 }
 
 export class Bindings extends Context.Service<Bindings, DeploymentBindings>()(
@@ -28,13 +30,6 @@ const text = (value: string | undefined): string | undefined => {
   const trimmed = value?.trim();
 
   return trimmed ? trimmed : undefined;
-};
-
-/** Forward to the API at `apiUrl`, preserving path, query, method and body. */
-const forward = (apiUrl: string, request: Request): Promise<Response> => {
-  const source = new URL(request.url);
-
-  return fetch(new Request(new URL(source.pathname + source.search, apiUrl), request));
 };
 
 /**
@@ -53,9 +48,8 @@ const workerBindings = (env: Env): DeploymentBindings => {
     POSTHOG_KEY: env.POSTHOG_KEY,
     POSTHOG_HOST: env.POSTHOG_HOST,
     SUPPORT_URL: env.SUPPORT_URL,
-    API: {
-      fetch: (request) => (apiUrl ? forward(apiUrl, request) : env.API.fetch(request)),
-    },
+    API_URL: apiUrl,
+    API: env.API,
   };
 };
 
@@ -72,23 +66,8 @@ const nodeBindings = (): DeploymentBindings => {
     POSTHOG_KEY: process.env.POSTHOG_KEY,
     POSTHOG_HOST: process.env.POSTHOG_HOST,
     SUPPORT_URL: process.env.SUPPORT_URL,
-    API: {
-      async fetch(request) {
-        try {
-          return await forward(apiUrl, request);
-        } catch (error) {
-          // A down API must not take the dashboard down with it. Bootstrap
-          // already treats a failed call as a signed-out render; proxied
-          // endpoints answer with a gateway error instead.
-          console.error("[selfhost] API request failed", error);
-
-          return new Response("Bad Gateway", {
-            status: 502,
-            headers: { "content-type": "text/plain; charset=utf-8" },
-          });
-        }
-      },
-    },
+    API_URL: apiUrl,
+    API: undefined,
   };
 };
 
@@ -104,6 +83,12 @@ export const useWorkerBindings = (env: Env): void => {
   workerEnv ??= env;
 };
 
+const resolveBindings = (): DeploymentBindings =>
+  workerEnv === undefined ? nodeBindings() : workerBindings(workerEnv);
+
+/** One binding snapshot per isolate/runtime, shared by Effect layers. */
+export const bindingsLayer = Layer.sync(Bindings, () => Bindings.of(resolveBindings()));
+
 let runtime: ManagedRuntime.ManagedRuntime<Bindings, never> | undefined;
 
 /**
@@ -114,9 +99,4 @@ let runtime: ManagedRuntime.ManagedRuntime<Bindings, never> | undefined;
  * threaded through every call: the bindings themselves do not vary per request.
  */
 export const getBindings = (): DeploymentBindings =>
-  (runtime ??= ManagedRuntime.make(
-    Layer.succeed(
-      Bindings,
-      Bindings.of(workerEnv === undefined ? nodeBindings() : workerBindings(workerEnv)),
-    ),
-  )).runSync(Bindings);
+  (runtime ??= ManagedRuntime.make(bindingsLayer)).runSync(Bindings);

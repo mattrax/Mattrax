@@ -1,4 +1,4 @@
-import { Data, Effect, Layer, Option, Result, Schema } from "effect";
+import { Cause, Data, Effect, identity, Layer, Option, Result, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 import type { Db } from "@mattrax/enterprise-core";
@@ -15,7 +15,7 @@ import {
   webhookUrlProblem,
 } from "@mattrax/enterprise-domain";
 import type { WebhookDeliveryStatus, WebhookEventType } from "@mattrax/enterprise-domain";
-import { constantTimeEqual, hmacSha256Hex, openSecret } from "@mattrax/crypto";
+import { Crypto, constantTimeEqual, hmacSha256Hex } from "@mattrax/crypto";
 
 /**
  * Signature, delivery and retry helpers for customer webhooks.
@@ -49,8 +49,10 @@ export type WebhookPayload = typeof WebhookPayload.Type;
 export type WebhookDeliveryOptions = {
   /** Application secret used to unseal endpoint signing secrets. */
   readonly authSecret?: string;
-  /** Injected for tests; defaults to the runtime `fetch`. */
+  /** Injected fetch seam for tests; production uses the shared client. */
   readonly fetch?: typeof globalThis.fetch;
+  /** Shared Effect transport supplied by the composition root. */
+  readonly httpClient?: HttpClient.HttpClient;
   /** Per-attempt deadline. Defaults to 5s. */
   readonly timeoutMs?: number;
   readonly now?: Date;
@@ -101,6 +103,14 @@ const errorText = (cause: unknown): string => {
 
   return truncate(text || "Delivery failed");
 };
+
+/** Recover expected failures and defects, but never consume interruption. */
+const recoverBestEffort =
+  <A>(onFailure: (cause: unknown) => Effect.Effect<A>) =>
+  <E>(effect: Effect.Effect<A, E>): Effect.Effect<A> =>
+    effect.pipe(
+      Effect.catchCauseIf((cause) => !Cause.hasInterrupts(cause), onFailure),
+    ) as Effect.Effect<A>;
 
 /**
  * The transport cause is what an operator can act on ("connection refused"), so
@@ -209,16 +219,15 @@ class WebhookDeliveryError extends Data.TaggedError("WebhookDeliveryError")<{
   readonly message: string;
 }> {}
 
-const httpClientLayer = (fetchImpl?: typeof globalThis.fetch) =>
-  fetchImpl === undefined
-    ? FetchHttpClient.layer
-    : FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
+const fetchClientLayer = (fetchImpl: typeof globalThis.fetch) =>
+  FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
 
-const postWebhook = (input: {
+export const postWebhook = (input: {
   readonly url: string;
   readonly secret: string;
   readonly payload: WebhookPayload;
   readonly fetch?: typeof globalThis.fetch;
+  readonly httpClient?: HttpClient.HttpClient;
   readonly timeoutMs?: number;
 }): Effect.Effect<{ responseStatus: number; body: string }, WebhookDeliveryError> =>
   Effect.gen(function* () {
@@ -226,12 +235,18 @@ const postWebhook = (input: {
     const timestamp = Math.floor(Date.now() / 1000);
     const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
-    const signature = yield* Effect.tryPromise({
-      try: () => signWebhookDelivery(input.secret, timestamp, body),
-      catch: (cause) => new WebhookDeliveryError({ message: errorText(cause) }),
-    });
+    const signature = yield* Crypto.hmacSha256Hex(
+      input.secret,
+      webhookSignatureMessage(timestamp, body),
+    ).pipe(Effect.mapError((cause) => new WebhookDeliveryError({ message: errorText(cause) })));
 
-    const client = yield* HttpClient.HttpClient;
+    const client =
+      input.httpClient ?? Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient));
+
+    if (!client)
+      return yield* Effect.fail(
+        new WebhookDeliveryError({ message: "The webhook HTTP client is not configured" }),
+      );
 
     // The deadline covers the response body as well as the headers, so a
     // customer endpoint that stalls mid-response still fails as a delivery
@@ -271,7 +286,7 @@ const postWebhook = (input: {
 
     return yield* exchange;
   }).pipe(
-    Effect.provide(httpClientLayer(input.fetch)),
+    input.fetch ? Effect.provide(fetchClientLayer(input.fetch)) : identity,
     // Never follow a redirect: a public URL could redirect to an internal
     // address that the static guard cannot see. A 3xx is then recorded as a
     // failed delivery.
@@ -283,6 +298,7 @@ const attemptDelivery = (input: {
   readonly payload: WebhookPayload;
   readonly authSecret: string;
   readonly fetch?: typeof globalThis.fetch;
+  readonly httpClient?: HttpClient.HttpClient;
   readonly timeoutMs?: number;
   readonly allowUnsafeUrl?: boolean;
 }): Effect.Effect<WebhookDeliveryOutcome> =>
@@ -298,10 +314,9 @@ const attemptDelivery = (input: {
         durationMs: Date.now() - startedAt,
       };
 
-    const opened = yield* Effect.tryPromise({
-      try: () => openSecret(input.authSecret, input.endpoint.secret),
-      catch: (cause) => cause,
-    }).pipe(Effect.result);
+    const opened = yield* Crypto.openSecret(input.authSecret, input.endpoint.secret).pipe(
+      Effect.result,
+    );
 
     if (Result.isFailure(opened))
       return {
@@ -316,6 +331,7 @@ const attemptDelivery = (input: {
       secret: opened.success,
       payload: input.payload,
       fetch: input.fetch,
+      httpClient: input.httpClient,
       timeoutMs: input.timeoutMs,
     }).pipe(Effect.result);
 
@@ -379,12 +395,137 @@ const recordDelivery = (
 
     return id;
   }).pipe(
-    Effect.catchCause((cause) =>
+    recoverBestEffort<string | undefined>((cause) =>
       Effect.logWarning(
         `Failed to record webhook delivery for ${input.endpoint.id}: ${String(cause)}`,
       ).pipe(Effect.as(undefined)),
     ),
   );
+
+const updateEndpointDelivery = (
+  db: Db["Service"],
+  endpoint: WebhookEndpointRow,
+  outcome: WebhookDeliveryOutcome,
+  now: Date,
+) =>
+  db
+    .update(s.webhookEndpoint)
+    .set({
+      lastDeliveryAt: now,
+      lastDeliveryStatus: outcome.status,
+      consecutiveFailures:
+        outcome.status === "succeeded" ? 0 : Math.max(1, (endpoint.consecutiveFailures ?? 0) + 1),
+      updatedAt: now,
+    })
+    .where(eq(s.webhookEndpoint.id, endpoint.id));
+
+/**
+ * Persist one delivery row per matching endpoint before the request path
+ * acknowledges the event. `attempt: 0` means durably queued but not attempted;
+ * the existing maintenance retry pass can recover these rows after a crash.
+ */
+export const enqueueWebhookEvent = (
+  db: Db["Service"],
+  event: WebhookEventInput,
+  options: WebhookDeliveryOptions = {},
+): Effect.Effect<ReadonlyArray<string>, unknown> =>
+  Effect.gen(function* () {
+    if (!options.authSecret) return [];
+    const payload = buildWebhookPayload(event, options.now);
+    const endpoints = yield* db
+      .select()
+      .from(s.webhookEndpoint)
+      .where(
+        and(
+          eq(s.webhookEndpoint.organizationId, event.organizationId),
+          eq(s.webhookEndpoint.enabled, true),
+        ),
+      );
+    const matching = endpoints.filter((endpoint) => eventMatchesFilters(endpoint, payload.type));
+    const now = options.now ?? new Date();
+    const ids = yield* Effect.forEach(
+      matching,
+      (endpoint) =>
+        Effect.gen(function* () {
+          const id = `whd_${crypto.randomUUID().replaceAll("-", "").slice(0, 24)}`;
+          yield* db.insert(s.webhookDelivery).values({
+            id,
+            endpointId: endpoint.id,
+            organizationId: endpoint.organizationId,
+            event: payload.type,
+            eventId: payload.id,
+            payload,
+            status: "failed",
+            attempt: 0,
+            responseStatus: null,
+            error: null,
+            createdAt: now,
+          });
+
+          return id;
+        }),
+      { concurrency: Math.max(1, Math.floor(options.concurrency ?? DEFAULT_CONCURRENCY)) },
+    );
+
+    return ids;
+  });
+
+/** Deliver and complete a row previously written by {@link enqueueWebhookEvent}. */
+export const deliverQueuedWebhook = (
+  db: Db["Service"],
+  deliveryId: string,
+  options: WebhookDeliveryOptions = {},
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const [row] = yield* db
+      .select()
+      .from(s.webhookDelivery)
+      .where(eq(s.webhookDelivery.id, deliveryId))
+      .limit(1);
+
+    if (!row || row.attempt !== 0) return;
+    const [endpoint] = yield* db
+      .select()
+      .from(s.webhookEndpoint)
+      .where(
+        and(
+          eq(s.webhookEndpoint.id, row.endpointId),
+          eq(s.webhookEndpoint.organizationId, row.organizationId),
+        ),
+      )
+      .limit(1);
+    const payload = Schema.decodeUnknownOption(WebhookPayload)(row.payload);
+
+    if (!endpoint || !endpoint.enabled || Option.isNone(payload)) return;
+    const now = options.now ?? new Date();
+    const outcome: WebhookDeliveryOutcome = options.authSecret
+      ? yield* attemptDelivery({
+          endpoint,
+          payload: payload.value,
+          authSecret: options.authSecret,
+          fetch: options.fetch,
+          httpClient: options.httpClient,
+          timeoutMs: options.timeoutMs,
+          allowUnsafeUrl: options.allowUnsafeUrl,
+        })
+      : {
+          status: "failed",
+          responseStatus: null,
+          error: "Webhook signing is not configured on this deployment",
+          durationMs: 0,
+        };
+
+    yield* db
+      .update(s.webhookDelivery)
+      .set({
+        status: outcome.status,
+        attempt: 1,
+        responseStatus: outcome.responseStatus,
+        error: outcome.error,
+      })
+      .where(eq(s.webhookDelivery.id, deliveryId));
+    yield* updateEndpointDelivery(db, endpoint, outcome, now);
+  });
 
 /**
  * Deliver one event to one endpoint, recording the outcome. Never fails.
@@ -416,6 +557,7 @@ const deliverToEndpoint = (
         payload,
         authSecret: options.authSecret!,
         fetch: options.fetch,
+        httpClient: options.httpClient,
         timeoutMs: options.timeoutMs,
         allowUnsafeUrl: options.allowUnsafeUrl,
       });
@@ -461,7 +603,7 @@ export const dispatchWebhookEvent = (
       },
     );
   }).pipe(
-    Effect.catchCause((cause) =>
+    recoverBestEffort<void>((cause) =>
       Effect.logWarning(`Webhook dispatch failed for ${event.type}: ${String(cause)}`),
     ),
   );
@@ -510,6 +652,7 @@ export const sendTestWebhook = (
       payload,
       authSecret: options.authSecret!,
       fetch: options.fetch,
+      httpClient: options.httpClient,
       timeoutMs: options.timeoutMs,
       allowUnsafeUrl: options.allowUnsafeUrl,
     });
@@ -547,6 +690,7 @@ export const replayWebhookDelivery = (
           payload: input.payload,
           authSecret: options.authSecret!,
           fetch: options.fetch,
+          httpClient: options.httpClient,
           timeoutMs: options.timeoutMs,
           allowUnsafeUrl: options.allowUnsafeUrl,
         })
@@ -639,6 +783,7 @@ export const retryFailedWebhookDeliveries = (
             payload: payload.value,
             authSecret: options.authSecret!,
             fetch: options.fetch,
+            httpClient: options.httpClient,
             timeoutMs: options.timeoutMs,
             allowUnsafeUrl: options.allowUnsafeUrl,
           });
@@ -669,7 +814,7 @@ export const retryFailedWebhookDeliveries = (
             })
             .where(eq(s.webhookEndpoint.id, endpoint.id));
         }).pipe(
-          Effect.catchCause((cause) =>
+          recoverBestEffort<void>((cause) =>
             Effect.logWarning(`Webhook retry failed for ${row.id}: ${String(cause)}`),
           ),
         ),
@@ -681,14 +826,17 @@ export const retryFailedWebhookDeliveries = (
 
     return result;
   }).pipe(
-    Effect.catchCause((cause) =>
+    recoverBestEffort<WebhookRetryResult>((cause) =>
       Effect.logWarning(`Webhook retry pass failed: ${String(cause)}`).pipe(
         Effect.as({ retried: 0, succeeded: 0, failed: 0 }),
       ),
     ),
   );
 
-/** Delete delivery rows older than the retention window. Returns the count. */
+/** Maximum delivery rows changed by one retention statement. */
+const WEBHOOK_DELIVERY_PRUNE_BATCH = 500;
+
+/** Delete delivery rows older than the retention window in bounded batches. */
 export const pruneWebhookDeliveries = (
   db: Db["Service"],
   options: { readonly now?: Date; readonly retentionDays?: number } = {},
@@ -699,17 +847,19 @@ export const pruneWebhookDeliveries = (
     if (retentionDays <= 0) return 0;
     const now = options.now ?? new Date();
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
+    let deleted = 0;
 
-    const stale = yield* db
-      .select({ id: s.webhookDelivery.id })
-      .from(s.webhookDelivery)
-      .where(lt(s.webhookDelivery.createdAt, cutoff));
+    while (true) {
+      const result = yield* db
+        .delete(s.webhookDelivery)
+        .where(lt(s.webhookDelivery.createdAt, cutoff))
+        .limit(WEBHOOK_DELIVERY_PRUNE_BATCH);
+      const affectedRows = Number(result.affectedRows);
 
-    if (stale.length === 0) return 0;
-    yield* db.delete(s.webhookDelivery).where(lt(s.webhookDelivery.createdAt, cutoff));
-
-    return stale.length;
-  }).pipe(Effect.catchCause(() => Effect.succeed(0)));
+      deleted += affectedRows;
+      if (affectedRows < WEBHOOK_DELIVERY_PRUNE_BATCH) return deleted;
+    }
+  }).pipe(recoverBestEffort<number>(() => Effect.succeed(0)));
 
 export const WEBHOOK_DELIVERY_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;
 

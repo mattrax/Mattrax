@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import { eq } from "drizzle-orm";
 import {
-  certificateMatchesKey,
+  certificatePemMatchesKey,
   importApnsKeyJwk,
   isApnsMdmTopic,
   parseApnsCertificate,
@@ -239,7 +239,7 @@ export const apnsCredentialHealth = async (input: {
         const jwk: JsonWebKey = JSON.parse(await openSecret(input.authSecret, input.encryptedKey));
 
         const privateKey = await importApnsKeyJwk(jwk);
-        keyMatchesCertificate = await certificateMatchesKey(parsed.certificate, privateKey);
+        keyMatchesCertificate = await certificatePemMatchesKey(input.certificatePem, privateKey);
       } catch {
         // The key exists but cannot be opened: pushes cannot be signed.
         keyMatchesCertificate = false;

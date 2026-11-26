@@ -12,6 +12,7 @@ export type SettingsTabId =
   | "identity"
   | "enrollment"
   | "attributes"
+  | "tags"
   | "management"
   | "migration"
   | "backups"
@@ -85,6 +86,13 @@ export const SETTINGS_TABS: ReadonlyArray<SettingsTab> = [
     label: "Attributes",
     group: "Access",
     description: "Define the custom fields your organisation tracks on every device.",
+  },
+  {
+    id: "tags",
+    label: "Scope tags",
+    group: "Access",
+    description:
+      "Carve the tenant into regions or teams, then limit delegated administrators to the resources carrying their tags.",
   },
   {
     id: "management",

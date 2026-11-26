@@ -35,14 +35,14 @@ function SheetContent(
     <>
       <DialogBackdrop
         class={cn(
-          "fixed inset-0 z-[70] bg-scrim backdrop-blur-[1px] transition-opacity duration-[var(--duration-popover)] ease-swift",
+          "fixed inset-0 z-50 bg-scrim backdrop-blur-xs transition-opacity duration-150 ease-out",
           "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
         )}
       />
       <DialogContentPrimitive
         class={cn(
-          "fixed inset-y-0 right-0 z-[71] flex w-full max-w-md flex-col gap-5 overflow-y-auto border-l border-border bg-background p-5 shadow-panel outline-none",
-          "transition-transform duration-[var(--duration-panel)] ease-glide data-[starting-style]:translate-x-full data-[ending-style]:translate-x-full",
+          "fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col gap-5 overflow-y-auto border-l border-border bg-background p-5 shadow-panel outline-none",
+          "transition-transform duration-200 ease-in-out data-[starting-style]:translate-x-full data-[ending-style]:translate-x-full",
           local.class,
         )}
         {...others}
@@ -51,7 +51,7 @@ function SheetContent(
         {local.showCloseButton === false ? null : (
           <DialogClose
             aria-label="Close"
-            class="absolute right-4 top-4 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30"
+            class="absolute right-4 top-4 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
           >
             <X class="size-4" />
           </DialogClose>
@@ -86,7 +86,7 @@ function SheetTitle(props: ComponentProps<typeof DialogTitle>) {
 
   return (
     <DialogTitle
-      class={cn("text-[15px] font-[600] leading-6 tracking-[-0.02em]", local.class)}
+      class={cn("text-sm font-semibold leading-6 tracking-tight", local.class)}
       {...others}
     />
   );
@@ -97,7 +97,7 @@ function SheetDescription(props: ComponentProps<typeof DialogDescription>) {
 
   return (
     <DialogDescription
-      class={cn("text-[12.5px] leading-5 text-muted-foreground", local.class)}
+      class={cn("text-xs leading-5 text-muted-foreground", local.class)}
       {...others}
     />
   );

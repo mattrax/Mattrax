@@ -596,8 +596,47 @@ export const runScheduledReports = (
       .orderBy(asc(s.dashboardReport.createdAt))
       .limit(limit);
 
+    // A report renders tenant-wide data. If its creator has since been scoped,
+    // skip it until an unscoped administrator owns it; the same rule applies
+    // when the report was created by a scoped member before this guard existed.
+    const creatorIds = [
+      ...new Set(
+        reports
+          .map((report) => report.createdByAccountId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0),
+      ),
+    ];
+    const organizationIds = [...new Set(reports.map((report) => report.organizationId))];
+    const scopedCreators =
+      creatorIds.length > 0 && organizationIds.length > 0
+        ? yield* options.db
+            .select({
+              accountId: s.member.accountId,
+              organizationId: s.member.organizationId,
+            })
+            .from(s.member)
+            .innerJoin(s.memberScopeTag, eq(s.memberScopeTag.memberId, s.member.id))
+            .where(
+              and(
+                inArray(s.member.organizationId, organizationIds),
+                inArray(s.member.accountId, creatorIds),
+              ),
+            )
+        : [];
+    const scopedKeys = new Set(
+      scopedCreators.map(
+        (row: { accountId: string; organizationId: string }) =>
+          `${row.organizationId}:${row.accountId}`,
+      ),
+    );
+    const eligibleReports = reports.filter(
+      (report) =>
+        !report.createdByAccountId ||
+        !scopedKeys.has(`${report.organizationId}:${report.createdByAccountId}`),
+    );
+
     const outcomes = yield* Effect.forEach(
-      reports,
+      eligibleReports,
       (report) =>
         Effect.gen(function* () {
           const slot = scheduledReportSlot(frequencyOf(report.frequency), report.hourUtc, now);

@@ -73,6 +73,21 @@ test.describe("tenant export and import", () => {
       new RegExp(`/t/${tenant.slug}/settings/migration/export#restore$`),
     );
     await expect(page.getByRole("heading", { name: "Migration", exact: true })).toBeVisible();
+
+    // The redirect is only useful if the import section actually reaches the
+    // top of the settings scrollport, not merely the URL.
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const section = document.getElementById("restore");
+          const pane = section?.closest(".settings-sections");
+
+          if (!section || !pane) return null;
+
+          return Math.round(section.getBoundingClientRect().top - pane.getBoundingClientRect().top);
+        }),
+      )
+      .toBeLessThan(160);
   });
 });
 

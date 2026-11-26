@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { Effect, Layer, Option, Predicate, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { openSecret, sealSecret } from "@mattrax/crypto";
-import { parsePlist } from "@mattrax/plist";
+import { parsePlist, PlistValue } from "@mattrax/plist";
 import { schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { describeAppleError, parseAppleDate } from "./appleBusinessManager.ts";
@@ -42,12 +42,18 @@ const now = () => new Date();
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
-const JsonObject = Schema.Record(Schema.String, Schema.Json);
+type CredentialValue = Schema.Json | PlistValue | undefined;
+
+type CredentialRecord = Record<string, CredentialValue>;
+
+const CredentialValueSchema = Schema.Union([Schema.Json, PlistValue]);
+
+const CredentialRecordSchema = Schema.Record(Schema.String, CredentialValueSchema);
 
 const iso = (value: Date | null | undefined) =>
   value == null ? null : (value instanceof Date ? value : new Date(value)).toISOString();
 
-const text = (value: Schema.Json | undefined): string | undefined => {
+const text = (value: CredentialValue): string | undefined => {
   const string = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value))?.trim();
 
   if (string) return string;
@@ -57,8 +63,8 @@ const text = (value: Schema.Json | undefined): string | undefined => {
   return number !== undefined && Number.isFinite(number) ? String(number) : undefined;
 };
 
-const record = (value: Schema.Json | undefined): Record<string, Schema.Json> | undefined =>
-  Schema.is(JsonObject)(value) ? value : undefined;
+const record = (value: CredentialValue): CredentialRecord | undefined =>
+  Schema.is(CredentialRecordSchema)(value) ? value : undefined;
 
 const base64ToBytes = (value: string): Uint8Array => {
   const cleaned = value.replaceAll(/\s/g, "");
@@ -124,18 +130,19 @@ export const parseVppTokenUpload = async (input: {
 
   candidates.push(raw);
 
-  let decoded: Record<string, Schema.Json> | undefined;
+  let decoded: CredentialRecord | undefined;
   let contentToken: string | undefined;
+  let fromPlist = false;
 
   for (const candidate of candidates) {
     const json = tryJson(candidate);
     const value = record(json);
 
-    if (value) {
+    if (value && json) {
       decoded = value;
       // Raw JSON is not itself the base64 sToken Apple expects. Re-encode it
       // so the stored credential is always a valid bearer value.
-      contentToken = jsonToBase64(value);
+      contentToken = jsonToBase64(json);
       break;
     }
 
@@ -156,15 +163,15 @@ export const parseVppTokenUpload = async (input: {
   if (!decoded && (raw.startsWith("<?xml") || raw.startsWith("<plist"))) {
     const parsed = await Effect.runPromise(parsePlist(raw)).catch(() => undefined);
 
-    const value = record(Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(parsed)));
+    const value = record(parsed);
 
     if (value) {
       decoded = value;
-      contentToken = jsonToBase64(value);
+      fromPlist = true;
     }
   }
 
-  if (!decoded || !contentToken)
+  if (!decoded)
     throw fail(
       "invalid_token",
       "Unrecognised Apps and Books token. Upload the .vpptoken content token downloaded from Apple Business Manager.",
@@ -189,6 +196,19 @@ export const parseVppTokenUpload = async (input: {
     throw fail(
       "expired",
       "The Apps and Books token has expired. Download a new token from Apple Business Manager.",
+    );
+
+  if (fromPlist)
+    contentToken = jsonToBase64({
+      token: tokenId,
+      expDate: expiresAt.toISOString(),
+      orgName,
+    });
+
+  if (!contentToken)
+    throw fail(
+      "invalid_token",
+      "Unrecognised Apps and Books token. Upload the .vpptoken content token downloaded from Apple Business Manager.",
     );
 
   return { contentToken, tokenId, expiresAt, orgName };
@@ -303,10 +323,50 @@ const vppErrorKind = (status: number): VppErrorKind => {
   return "upstream";
 };
 
-/** Apple's documented shape only; a malformed body is treated as absent. */
-export const parseAppleJson = <T>(text: string): T | undefined => {
+const VppAssetSchema = Schema.Struct({
+  adamId: Schema.NonEmptyString,
+  name: Schema.optional(Schema.String),
+  bundleId: Schema.optional(Schema.String),
+  totalCount: Schema.optional(Schema.Number),
+  availableCount: Schema.optional(Schema.Number),
+  assignedCount: Schema.optional(Schema.Number),
+  retiredCount: Schema.optional(Schema.Number),
+  pricingParam: Schema.optional(Schema.String),
+  deviceAssignable: Schema.optional(Schema.Boolean),
+  revocable: Schema.optional(Schema.Boolean),
+  productType: Schema.optional(Schema.String),
+  supportedPlatforms: Schema.optional(Schema.Array(Schema.String)),
+});
+
+const VppAssignmentSchema = Schema.Struct({
+  adamId: Schema.NonEmptyString,
+  serialNumber: Schema.optional(Schema.String),
+  clientUserId: Schema.optional(Schema.String),
+  pricingParam: Schema.optional(Schema.String),
+});
+
+const VppEventResponseSchema = Schema.Struct({
+  eventId: Schema.optional(Schema.NonEmptyString),
+});
+
+const VppEventStatusSchema = Schema.Struct({
+  eventStatus: Schema.optional(Schema.String),
+  eventType: Schema.optional(Schema.String),
+});
+
+const VppErrorResponseSchema = Schema.Struct({
+  errorMessage: Schema.optional(Schema.String),
+  errorNumber: Schema.optional(Schema.Number),
+});
+
+const VppPageSchema = Schema.Record(Schema.String, Schema.Json);
+
+const VppTotalPagesSchema = Schema.Int;
+
+/** Parse JSON without trusting its shape; callers validate it with a Schema. */
+export const parseAppleJson = (text: string): Schema.Json | undefined => {
   try {
-    return JSON.parse(text) as T;
+    return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text));
   } catch {
     return undefined;
   }
@@ -327,6 +387,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
    * well as the headers, so a stalled page fails like a hung connect.
    */
   const request = <T>(
+    schema: Schema.Decoder<T>,
     path: string,
     contentToken: string,
     init: { readonly method?: "POST"; readonly body?: string } = {},
@@ -367,7 +428,9 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
       );
 
       if (sent.status < 200 || sent.status > 299) {
-        const body = parseAppleJson<{ errorMessage?: string; errorNumber?: number }>(sent.text);
+        const body = Option.getOrUndefined(
+          Schema.decodeUnknownOption(VppErrorResponseSchema)(parseAppleJson(sent.text)),
+        );
 
         return yield* Effect.fail(
           fail(
@@ -381,17 +444,24 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
 
       if (sent.status === 204) return undefined;
 
-      const json = parseAppleJson<T>(sent.text);
+      const json = parseAppleJson(sent.text);
 
       if (json === undefined)
         return yield* Effect.fail(
           fail("invalid_response", "Apple Apps and Books returned invalid JSON."),
         );
 
-      return json;
+      const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(schema)(json));
+
+      if (decoded === undefined)
+        return yield* Effect.fail(
+          fail("invalid_response", "Apple Apps and Books returned an invalid response shape."),
+        );
+
+      return decoded;
     });
 
-  const paged = <T extends Schema.Json>(
+  const paged = <T>(
     path: string,
     contentToken: string,
     key: string,
@@ -402,7 +472,13 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
       let pageIndex = 0;
 
       while (true) {
-        const page = yield* request<Record<string, Schema.Json>>(
+        if (pageIndex >= 100)
+          return yield* Effect.fail(
+            fail("invalid_response", "Apple Apps and Books pagination exceeded 100 pages."),
+          );
+
+        const page = yield* request(
+          VppPageSchema,
           `${path}${path.includes("?") ? "&" : "?"}pageIndex=${pageIndex}`,
           contentToken,
         );
@@ -411,16 +487,30 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
           Schema.decodeUnknownOption(Schema.Array(valueSchema))(page?.[key]),
         );
 
-        if (values) items.push(...values);
+        if (!values)
+          return yield* Effect.fail(
+            fail(
+              "invalid_response",
+              `Apple Apps and Books page did not include a valid ${key} array.`,
+            ),
+          );
 
-        const total = Number(page?.totalPages);
-        const totalPages = Number.isFinite(total) && total > 0 ? total : 1;
-        pageIndex++;
+        const totalPages = Option.getOrUndefined(
+          Schema.decodeUnknownOption(VppTotalPagesSchema)(page?.totalPages),
+        );
 
-        if (pageIndex > 100)
+        if (!totalPages || totalPages < 1)
+          return yield* Effect.fail(
+            fail("invalid_response", "Apple Apps and Books returned an invalid totalPages value."),
+          );
+
+        if (totalPages > 100)
           return yield* Effect.fail(
             fail("invalid_response", "Apple Apps and Books pagination exceeded 100 pages."),
           );
+
+        items.push(...values);
+        pageIndex++;
 
         if (pageIndex >= totalPages) break;
       }
@@ -430,21 +520,18 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
 
   const listAssets = (contentToken: string): Effect.Effect<VppAsset[], VppError> =>
     Effect.gen(function* () {
-      const assets = yield* paged("/v2/assets", contentToken, "assets", JsonObject);
+      const assets = yield* paged("/v2/assets", contentToken, "assets", VppAssetSchema);
 
       return assets.map((asset) => {
         const result: Mutable<VppAsset> = {
-          adamId: text(asset.adamId) ?? "",
-          totalCount: Number(asset.totalCount) || 0,
-          availableCount: Number(asset.availableCount) || 0,
-          assignedCount: Number(asset.assignedCount) || 0,
-          retiredCount: Number(asset.retiredCount) || 0,
-          deviceAssignable: asset.deviceAssignable === true,
-          revocable: asset.revocable === true,
-          supportedPlatforms:
-            Option.getOrUndefined(
-              Schema.decodeUnknownOption(Schema.Array(Schema.String))(asset.supportedPlatforms),
-            ) ?? [],
+          adamId: asset.adamId,
+          totalCount: asset.totalCount ?? 0,
+          availableCount: asset.availableCount ?? 0,
+          assignedCount: asset.assignedCount ?? 0,
+          retiredCount: asset.retiredCount ?? 0,
+          deviceAssignable: asset.deviceAssignable ?? false,
+          revocable: asset.revocable ?? false,
+          supportedPlatforms: asset.supportedPlatforms ?? [],
         };
 
         const name = text(asset.name);
@@ -463,13 +550,18 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
 
   const listAssignments = (contentToken: string): Effect.Effect<VppAssignment[], VppError> =>
     Effect.gen(function* () {
-      const assignments = yield* paged("/v2/assignments", contentToken, "assignments", JsonObject);
+      const assignments = yield* paged(
+        "/v2/assignments",
+        contentToken,
+        "assignments",
+        VppAssignmentSchema,
+      );
 
       return assignments.map((assignment) => {
-        const result: Mutable<VppAssignment> = { adamId: text(assignment.adamId) ?? "" };
-        const serialNumber = text(assignment.serialNumber);
-        const clientUserId = text(assignment.clientUserId);
-        const pricingParam = text(assignment.pricingParam);
+        const result: Mutable<VppAssignment> = { adamId: assignment.adamId };
+        const serialNumber = assignment.serialNumber;
+        const clientUserId = assignment.clientUserId;
+        const pricingParam = assignment.pricingParam;
 
         if (serialNumber) result.serialNumber = serialNumber;
         if (clientUserId) result.clientUserId = clientUserId;
@@ -488,13 +580,18 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
     },
   ): Effect.Effect<{ readonly eventId?: string }, VppError> =>
     Effect.gen(function* () {
-      const response = yield* request<{ eventId?: string }>("/v2/assets/associate", contentToken, {
-        method: "POST",
-        body: JSON.stringify({
-          assets: [{ adamId: input.adamId, pricingParam: input.pricingParam }],
-          serialNumbers: [...input.serialNumbers],
-        }),
-      });
+      const response = yield* request(
+        VppEventResponseSchema,
+        "/v2/assets/associate",
+        contentToken,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            assets: [{ adamId: input.adamId, pricingParam: input.pricingParam }],
+            serialNumbers: [...input.serialNumbers],
+          }),
+        },
+      );
 
       return response?.eventId ? { eventId: response.eventId } : {};
     }).pipe(Effect.provide(clientLayer));
@@ -508,7 +605,8 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
     },
   ): Effect.Effect<{ readonly eventId?: string }, VppError> =>
     Effect.gen(function* () {
-      const response = yield* request<{ eventId?: string }>(
+      const response = yield* request(
+        VppEventResponseSchema,
         "/v2/assets/disassociate",
         contentToken,
         {
@@ -528,7 +626,7 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
     input: { readonly serialNumbers: ReadonlyArray<string> },
   ): Effect.Effect<{ readonly eventId?: string }, VppError> =>
     Effect.gen(function* () {
-      const response = yield* request<{ eventId?: string }>("/v2/assets/revoke", contentToken, {
+      const response = yield* request(VppEventResponseSchema, "/v2/assets/revoke", contentToken, {
         method: "POST",
         body: JSON.stringify({ serialNumbers: [...input.serialNumbers] }),
       });
@@ -541,7 +639,8 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
     eventId: string,
   ): Effect.Effect<{ readonly eventStatus?: string; readonly eventType?: string }, VppError> =>
     Effect.gen(function* () {
-      const response = yield* request<{ eventStatus?: string; eventType?: string }>(
+      const response = yield* request(
+        VppEventStatusSchema,
         `/v2/status?eventId=${encodeURIComponent(eventId)}`,
         contentToken,
       );

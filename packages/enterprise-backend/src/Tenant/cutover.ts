@@ -350,8 +350,11 @@ export const buildTenantCutover = (
         let value: string | null = null;
 
         // A rotation that has not been acknowledged is not the account's
-        // current password; never export or migrate it.
-        if (row.kind === "local_admin_password_pending") continue;
+        // current password; never export or migrate it. A Windows LAPS
+        // password is held by Entra ID and is re-read from there after the
+        // device is enrolled, so it is not part of a cutover archive.
+        if (row.kind === "local_admin_password_pending" || row.kind === "windows_laps_password")
+          continue;
 
         if (authSecret)
           value = yield* Effect.tryPromise({

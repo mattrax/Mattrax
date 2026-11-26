@@ -1,32 +1,37 @@
 /**
  * Abuse protection for high-cost public endpoints.
  *
- * Two layers back the same rules:
+ * This module is policy: which request belongs to which bucket, and what key
+ * identifies a caller. The counters live behind the {@link RateLimiter}
+ * service so the same rules run on whatever limiter the deployment has:
  *
- * 1. An optional Cloudflare Rate Limiting binding per bucket, configured when
- *    `MATTRAX_RATE_LIMIT_NAMESPACE` is present at build time. This is shared by
- *    every isolate and every colo, so it is the real limiter in production.
- * 2. A per-isolate in-memory fallback so local development and deployments
- *    without a namespace still get some protection.
+ * - {@link RateLimiterCloudflare} — Cloudflare's Rate Limiting binding. Its
+ *   counters are approximate and counted **per Cloudflare location**, so it is
+ *   an abuse backstop, not a global quota.
+ * - {@link RateLimiterLocal} — one counter set per process. Exact for the
+ *   single-container self-hosted deployment; a Worker isolate only ever sees
+ *   its own copy, so there it is a fallback at best.
  *
- * The in-memory layer is intentionally not presented as a global limit: a
- * Worker runs many isolates and each one keeps its own counters. Credential
- * endpoints (`auth`) therefore fail closed when their edge binding is
- * configured but throws, instead of silently multiplying the limit by the
- * isolate count. Other buckets keep the bounded fallback so an edge outage
- * cannot take down enrollment, MDM or billing.
+ * Credential endpoints (`auth`) fail closed when a configured shared limiter
+ * throws, rather than silently degrading to something weaker. Other buckets
+ * keep the local fallback so a limiter outage cannot take down enrollment,
+ * MDM or billing.
  */
 
-import { Option, Schema } from "effect";
+import { Context, Effect } from "effect";
 import { normalisePath } from "@mattrax/enterprise-domain";
 import { clientAddress as trustedClientAddress } from "./clientAddress.js";
 
 export { normalisePath };
 
-export type RateLimitBucket = "auth" | "enrollment" | "mdm" | "scep" | "scim" | "billing";
-
-/** The only shape a Cloudflare Rate Limiting binding may resolve to. */
-const RateLimitBindingResult = Schema.Struct({ success: Schema.Boolean });
+export type RateLimitBucket =
+  | "auth"
+  | "enrollment"
+  | "mdm"
+  | "scep"
+  | "scim"
+  | "billing"
+  | "policy";
 
 export type RateLimitRule = {
   readonly bucket: RateLimitBucket;
@@ -56,6 +61,17 @@ const authRule = (): RateLimitRule => ({
   failClosedWhenUnavailable: true,
 });
 
+/**
+ * Stateless policy helpers that parse caller-supplied profiles. They are
+ * cheap for a normal editor session but expensive enough per request (base64
+ * decode, optional PKCS#7 unwrap, plist parse) to deserve their own bucket
+ * instead of the generous MDM/enrollment allowances.
+ */
+export const MOBILECONFIG_PATHS = new Set([
+  "/api/v1/policy/extract-mobileconfig",
+  "/api/v1/policy/preview-mobileconfig",
+]);
+
 /** POST endpoints that issue sessions or mutate authentication factors. */
 export const SENSITIVE_AUTH_PATHS = new Set([
   "/api/v1/beginpasskeysignin",
@@ -69,6 +85,8 @@ export const SENSITIVE_AUTH_PATHS = new Set([
   "/api/v1/account/email-change",
   "/api/v1/account/email-change/verify",
   "/api/v1/account/email-verification",
+  "/api/v1/account/recovery",
+  "/api/v1/account/recovery/verify",
   "/api/v1/register/verification",
   "/api/v1/register/verification/verify",
   "/api/v1/verifytotppending",
@@ -94,6 +112,13 @@ export const rateLimitRuleFor = (request: Request): RateLimitRule | undefined =>
   if (pathname === "/api/v1/bootstrap") return undefined;
 
   if (request.method === "POST" && SENSITIVE_AUTH_PATHS.has(pathname)) return authRule();
+
+  // Policy editors preview a profile as the user types, so this is a normal
+  // authenticated session workload, not a credential guess. The dedicated
+  // bucket keeps a runaway loop or an unauthenticated flood away from the
+  // MDM/enrollment counters while still allowing quick re-previews.
+  if (request.method === "POST" && MOBILECONFIG_PATHS.has(pathname))
+    return { bucket: "policy", limit: 120, windowSeconds: 60 };
 
   // SSO discovery is public and reveals whether an address belongs to a
   // tenant; keep it in the credential bucket so it cannot be enumerated. The
@@ -201,6 +226,7 @@ export type RateLimitEnv = {
   readonly RATE_LIMITER_SCIM?: RateLimitBindingLike;
   readonly RATE_LIMITER_BILLING?: RateLimitBindingLike;
   readonly RATE_LIMITER_SCEP?: RateLimitBindingLike;
+  readonly RATE_LIMITER_POLICY?: RateLimitBindingLike;
 };
 
 /**
@@ -216,6 +242,7 @@ export const rateLimitBindingsFromEnv = (env: RateLimitEnv): RateLimitBindings =
   scim: env.RATE_LIMITER_SCIM,
   billing: env.RATE_LIMITER_BILLING,
   scep: env.RATE_LIMITER_SCEP,
+  policy: env.RATE_LIMITER_POLICY,
 });
 
 export type RateLimitOutcome = {
@@ -225,133 +252,55 @@ export type RateLimitOutcome = {
   readonly retryAfterSeconds: number;
 };
 
-type Counter = { count: number; resetAt: number };
-
-export type RateLimitStore = Map<string, Counter>;
-
-export type RateLimiterOptions = {
-  readonly store?: RateLimitStore;
-  readonly now?: () => number;
-  readonly maxEntries?: number;
-  readonly trustForwarded?: boolean;
-  readonly warn?: (message: string, cause?: unknown) => void;
-};
-
-const DEFAULT_MAX_ENTRIES = 10_000;
-
-export const createRateLimiter = ({
-  store = new Map<string, Counter>(),
-  now = Date.now,
-  maxEntries = DEFAULT_MAX_ENTRIES,
-  trustForwarded = false,
-  warn = (message, cause) => console.warn(message, cause),
-}: RateLimiterOptions = {}) => {
-  const prune = () => {
-    if (store.size < maxEntries) return;
-    const nowMs = now();
-
-    for (const [key, entry] of store) {
-      if (entry.resetAt <= nowMs) store.delete(key);
-    }
-
-    // Still full: drop the oldest keys. Map preserves insertion order.
-    while (store.size >= maxEntries) {
-      const oldest = store.keys().next().value;
-
-      if (oldest === undefined) break;
-      store.delete(oldest);
-    }
+export declare namespace RateLimiter {
+  export type Service = {
+    /**
+     * Charge one request to its bucket and report whether the deployment
+     * allows it. Never fails: an unavailable shared limiter is either a denial
+     * (credential buckets) or a degradation, decided by the implementation.
+     */
+    readonly check: (request: Request) => Effect.Effect<RateLimitOutcome>;
   };
+}
 
-  const consumeFallback = (key: string, rule: RateLimitRule): RateLimitOutcome => {
-    const nowMs = now();
-    const entry = store.get(key);
+/**
+ * The counter behind the rules. Cloud provides it with Cloudflare's Rate
+ * Limiting binding; the self-hosted container uses a process-local map.
+ */
+export class RateLimiter extends Context.Service<RateLimiter, RateLimiter.Service>()(
+  "mattrax/RateLimiter",
+) {}
 
-    if (!entry || entry.resetAt <= nowMs) {
-      if (!entry) prune();
-      store.set(key, { count: 1, resetAt: nowMs + rule.windowSeconds * 1_000 });
+/** Charge one request to the limiter provided by the current layer. */
+export const check = (request: Request): Effect.Effect<RateLimitOutcome, never, RateLimiter> =>
+  Effect.gen(function* () {
+    const limiter = yield* RateLimiter;
 
-      return { limited: false, bucket: rule.bucket, limit: rule.limit, retryAfterSeconds: 0 };
-    }
+    return yield* limiter.check(request);
+  });
 
-    entry.count += 1;
+/** Charge one unit for a classified request. */
+export type ConsumeRateLimit = (
+  rule: RateLimitRule,
+  key: string,
+) => Effect.Effect<RateLimitOutcome>;
 
-    if (entry.count <= rule.limit)
-      return { limited: false, bucket: rule.bucket, limit: rule.limit, retryAfterSeconds: 0 };
-
-    return {
-      limited: true,
-      bucket: rule.bucket,
-      limit: rule.limit,
-      retryAfterSeconds: Math.max(1, Math.ceil((entry.resetAt - nowMs) / 1_000)),
-    };
-  };
-
-  const check = async (
-    request: Request,
-    bindings: RateLimitBindings = {},
-  ): Promise<RateLimitOutcome> => {
+/**
+ * Build the service's `check` from a consumer. Rule selection and key policy
+ * stay identical across deployments; only the counter differs.
+ */
+export const checkWith =
+  (
+    { trustForwarded = false }: ClientKeyOptions,
+    consume: ConsumeRateLimit,
+  ): RateLimiter.Service["check"] =>
+  (request) => {
     const rule = rateLimitRuleFor(request);
 
-    if (!rule) return { limited: false, retryAfterSeconds: 0 };
+    if (rule === undefined) return Effect.succeed({ limited: false, retryAfterSeconds: 0 });
 
-    const key = `${rule.bucket}:${clientKey(request, { trustForwarded })}`;
-    const binding = bindings[rule.bucket];
-
-    if (binding) {
-      try {
-        const result = await binding.limit({ key });
-
-        const decoded = Option.getOrUndefined(
-          Schema.decodeUnknownOption(RateLimitBindingResult)(result),
-        );
-
-        // A binding that resolves to an unexpected shape is treated exactly
-        // like an unavailable binding rather than allowing the request.
-        if (decoded === undefined)
-          throw new Error("Rate limiter binding returned an invalid result");
-
-        return decoded.success
-          ? { limited: false, bucket: rule.bucket, limit: rule.limit, retryAfterSeconds: 0 }
-          : {
-              limited: true,
-              bucket: rule.bucket,
-              limit: rule.limit,
-              retryAfterSeconds: rule.windowSeconds,
-            };
-      } catch (error) {
-        // Credential endpoints fail closed: the per-isolate counter is only
-        // meaningful for a single isolate, so a shared-limiter outage must not
-        // turn a global limit into N independent limits for a credential
-        // guessing window. Other buckets keep their bounded local fallback.
-        if (rule.failClosedWhenUnavailable) {
-          warn(`Cloudflare rate limiter failed for bucket ${rule.bucket}; failing closed`, error);
-
-          return {
-            limited: true,
-            bucket: rule.bucket,
-            limit: rule.limit,
-            retryAfterSeconds: rule.windowSeconds,
-          };
-        }
-
-        // A limiter outage must not take down enrollment, MDM or billing. Keep
-        // serving with the per-isolate fallback and make the degradation
-        // visible.
-        warn(
-          `Cloudflare rate limiter failed for bucket ${rule.bucket}; using local fallback`,
-          error,
-        );
-      }
-    }
-
-    return consumeFallback(key, rule);
+    return consume(rule, `${rule.bucket}:${clientKey(request, { trustForwarded })}`);
   };
-
-  return { check, store };
-};
-
-export type RateLimiter = ReturnType<typeof createRateLimiter>;
 
 /** Stable JSON body for 429s so clients and probes can branch on `error`. */
 export const rateLimitResponse = (outcome: RateLimitOutcome, requestId: string): Response => {

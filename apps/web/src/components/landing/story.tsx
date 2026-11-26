@@ -42,7 +42,7 @@ const policies: readonly PolicyCandidate[] = [
   },
 ];
 
-export function Story() {
+export default function Story() {
   installStorySteps();
 
   return (
@@ -105,7 +105,7 @@ export function Story() {
                             <div
                               class="lx-policy"
                               data-state={policy.state}
-                              style={`--i:${policyIndex()}`}
+                              style={{ "--i": policyIndex() }}
                             >
                               <p class="lx-policy__name">{policy.name}</p>
                               <p class="lx-policy__meta">{policy.meta}</p>
