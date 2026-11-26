@@ -17,10 +17,10 @@ import type {
   WebhookEventType,
   WebhookTestResponse,
 } from "@mattrax/enterprise-domain/client";
-import { FilterBar } from "@mattrax/ui";
+import { Checkbox, FilterBar } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
-import { SectionTabs } from "~/components/settings/section-tabs";
+import SectionTabs from "~/components/settings/section-tabs";
 import { Button } from "~/components/ui/button";
 import {
   Dialog,
@@ -42,7 +42,7 @@ import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
-import { StatusChip as Chip } from "~/components/settings/status-chip";
+import Chip from "~/components/settings/status-chip";
 
 /**
  * Read query data only after success so a pending or disabled query cannot
@@ -479,7 +479,7 @@ export default function IntegrationsSettingsPage() {
               when={(settledQueryData(webhooks)?.endpoints.length ?? 0) > 0}
               fallback={
                 <div class="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center">
-                  <p class="text-[13px] font-medium text-foreground">No webhook endpoints yet</p>
+                  <p class="text-xs font-medium text-foreground">No webhook endpoints yet</p>
                   <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                     Add an endpoint to receive signed device and enrollment events.
                   </p>
@@ -492,23 +492,23 @@ export default function IntegrationsSettingsPage() {
                     <div class="rounded-lg border border-border bg-surface p-4">
                       <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                         <div class="min-w-0 space-y-1.5">
-                          <p class="break-all font-mono text-[12.5px] text-foreground">
+                          <p class="break-all font-mono text-xs text-foreground">
                             {endpoint.url}
                           </p>
                           <Show when={endpoint.description}>
-                            <p class="text-[13px] text-muted-foreground">{endpoint.description}</p>
+                            <p class="text-xs text-muted-foreground">{endpoint.description}</p>
                           </Show>
                           <div class="flex flex-wrap items-center gap-2 pt-0.5">
                             <Chip tone={endpoint.enabled ? "success" : "neutral"}>
                               {endpoint.enabled ? "Enabled" : "Disabled"}
                             </Chip>
                             <Show when={endpoint.secretPrefix}>
-                              <span class="font-mono text-[11px] text-muted-foreground">
+                              <span class="font-mono text-xs text-muted-foreground">
                                 Signing secret ····{endpoint.secretPrefix}
                               </span>
                             </Show>
                             <Show when={endpoint.lastDeliveryAt}>
-                              <span class="text-[11px] text-muted-foreground">
+                              <span class="text-xs text-muted-foreground">
                                 Last delivery {new Date(endpoint.lastDeliveryAt!).toLocaleString()}{" "}
                                 · {endpoint.lastDeliveryStatus ?? "unknown"}
                               </span>
@@ -559,7 +559,7 @@ export default function IntegrationsSettingsPage() {
                           }
                         >
                           {(event) => (
-                            <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted-foreground">
+                            <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-muted-foreground">
                               {WEBHOOK_EVENT_LABELS[event]}
                             </span>
                           )}
@@ -644,7 +644,7 @@ export default function IntegrationsSettingsPage() {
                 when={(settledQueryData(webhooks)?.endpoints.length ?? 0) > 0}
                 fallback={
                   <div class="rounded-lg border border-dashed border-border bg-surface px-6 py-10 text-center">
-                    <p class="text-[13px] font-medium text-foreground">
+                    <p class="text-xs font-medium text-foreground">
                       No endpoint to show deliveries for
                     </p>
                     <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
@@ -655,11 +655,11 @@ export default function IntegrationsSettingsPage() {
               >
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <label class="flex min-w-0 items-center gap-2">
-                    <span class="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <span class="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Endpoint
                     </span>
                     <select
-                      class="h-8 min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 text-[12px] text-foreground outline-none transition-colors hover:border-border-strong focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                      class="h-8 min-w-0 flex-1 rounded-full border border-border bg-card px-2.5 text-xs text-foreground outline-none transition-colors hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring/25"
                       value={endpointId()}
                       onChange={(event) => setEndpointId(event.currentTarget.value)}
                     >
@@ -698,10 +698,10 @@ export default function IntegrationsSettingsPage() {
                               <Chip tone={delivery.status === "succeeded" ? "success" : "danger"}>
                                 {delivery.status}
                               </Chip>
-                              <span class="font-mono text-[12px] text-foreground">
+                              <span class="font-mono text-xs text-foreground">
                                 {delivery.event}
                               </span>
-                              <span class="text-[11px] text-muted-foreground">
+                              <span class="text-xs text-muted-foreground">
                                 {new Date(delivery.createdAt).toLocaleString()}
                               </span>
                             </div>
@@ -714,7 +714,7 @@ export default function IntegrationsSettingsPage() {
                               </Show>
                             </p>
                             <Show when={delivery.eventId}>
-                              <p class="truncate font-mono text-[11px] text-muted-foreground">
+                              <p class="truncate font-mono text-xs text-muted-foreground">
                                 {delivery.eventId}
                               </p>
                             </Show>
@@ -810,13 +810,12 @@ export default function IntegrationsSettingsPage() {
                 />
               </Field>
               <div class="space-y-2">
-                <p class="text-[13px] font-medium text-foreground">Events</p>
+                <p class="text-xs font-medium text-foreground">Events</p>
                 <label class="flex items-start gap-2 text-xs text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                  <Checkbox
+                    class="mt-0.5"
                     checked={allEvents()}
-                    onChange={(event) => toggleAllEvents(event.currentTarget.checked)}
+                    onCheckedChange={(checked) => toggleAllEvents(checked === true)}
                   />
                   Deliver all events, including future events
                 </label>
@@ -824,18 +823,17 @@ export default function IntegrationsSettingsPage() {
                   <For each={WEBHOOK_EVENT_TYPES}>
                     {(event) => (
                       <label class="flex items-start gap-2 text-xs">
-                        <input
-                          type="checkbox"
-                          class="mt-0.5 size-3.5 shrink-0 accent-brand"
+                        <Checkbox
+                          class="mt-0.5"
                           checked={allEvents() || events().includes(event)}
                           disabled={allEvents()}
-                          onChange={() => toggleEvent(event)}
+                          onCheckedChange={() => toggleEvent(event)}
                         />
                         <span class="min-w-0">
                           <span class="block font-medium text-foreground">
                             {WEBHOOK_EVENT_LABELS[event]}
                           </span>
-                          <span class="block break-all font-mono text-[11px] text-muted-foreground">
+                          <span class="block break-all font-mono text-xs text-muted-foreground">
                             {event}
                           </span>
                         </span>
@@ -845,11 +843,9 @@ export default function IntegrationsSettingsPage() {
                 </div>
               </div>
               <label class="flex items-center gap-2 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  class="size-3.5 accent-brand"
+                <Checkbox
                   checked={enabled()}
-                  onChange={(event) => setEnabled(event.currentTarget.checked)}
+                  onCheckedChange={(checked) => setEnabled(checked === true)}
                 />
                 Endpoint is enabled
               </label>
@@ -877,7 +873,9 @@ export default function IntegrationsSettingsPage() {
               </DialogDescription>
             </DialogHeader>
             <div class="flex flex-col gap-2 sm:flex-row">
-              <Input value={secret() ?? ""} readonly class="min-w-0 flex-1 font-mono" />
+              <span class="contents font-mono">
+                <Input value={secret() ?? ""} readonly class="min-w-0 flex-1" />
+              </span>
               <Button
                 type="button"
                 variant="outline"
@@ -907,7 +905,7 @@ export default function IntegrationsSettingsPage() {
                 Deliveries stop immediately and delivery history is removed. This cannot be undone.
               </DialogDescription>
             </DialogHeader>
-            <p class="break-all font-mono text-[13px]">{deleteTarget()?.url}</p>
+            <p class="break-all font-mono text-xs">{deleteTarget()?.url}</p>
             <ErrorText error={remove.error} />
             <DialogFooter>
               <Button variant="outline" onClick={() => setDeleteTarget(null)}>
@@ -981,7 +979,7 @@ export default function IntegrationsSettingsPage() {
                     <Chip tone={delivery().status === "succeeded" ? "success" : "danger"}>
                       {delivery().status}
                     </Chip>
-                    <span class="font-mono text-[12px] text-foreground">{delivery().event}</span>
+                    <span class="font-mono text-xs text-foreground">{delivery().event}</span>
                     <span class="text-muted-foreground">
                       Attempt {delivery().attempt} · Response {delivery().responseStatus ?? "none"}
                     </span>
@@ -991,7 +989,7 @@ export default function IntegrationsSettingsPage() {
                       {delivery().error}
                     </p>
                   </Show>
-                  <div class="grid gap-1 text-[11px] text-muted-foreground">
+                  <div class="grid gap-1 text-xs text-muted-foreground">
                     <span class="font-mono">Delivery id · {delivery().id}</span>
                     <Show when={delivery().eventId}>
                       <span class="break-all font-mono">
@@ -1000,7 +998,7 @@ export default function IntegrationsSettingsPage() {
                     </Show>
                   </div>
                   <div class="relative">
-                    <pre class="max-h-80 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11.5px] leading-relaxed text-foreground">
+                    <pre class="max-h-80 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs leading-relaxed text-foreground">
                       {payloadText()}
                     </pre>
                     <Button

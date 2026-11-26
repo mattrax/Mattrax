@@ -10,7 +10,7 @@ import { osComplianceLabel, osComplianceReasonText, osComplianceTone } from "~/l
  * Windows and Android rows can be compliant without knowing whether a newer
  * release exists; the tooltip says so rather than implying "up to date".
  */
-export function OsComplianceTag(props: {
+export default function OsComplianceTag(props: {
   info?: OsComplianceInfo | null;
   class?: string;
   empty?: JSX.Element;
@@ -30,25 +30,25 @@ export function OsComplianceTag(props: {
                 <TooltipTrigger
                   as="span"
                   tabindex={0}
-                  class="inline-flex cursor-default rounded-[5px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  class="inline-flex cursor-default"
                   aria-label={`OS compliance: ${text()}. ${osComplianceReasonText(value())}`}
                 >
-                  <Badge variant={tone().variant} dot={tone().dot} class={props.class}>
-                    {text()}
-                  </Badge>
+                  <span class={props.class}>
+                    <Badge variant={tone().variant} dot={tone().dot}>{text()}</Badge>
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent class="max-w-64">
-                  <p class="text-[11px] font-medium">
+                  <p class="text-xs font-medium">
                     {value().currentVersion
                       ? `${platformLabel(value().platform)} ${value().currentVersion}`
                       : "OS compliance"}
                   </p>
-                  <p class="mt-1 text-[11.5px] text-muted-foreground">
+                  <p class="mt-1 text-xs text-muted-foreground">
                     {osComplianceReasonText(value())}
                   </p>
                   <Show when={value().minimumVersion}>
                     {(minimum) => (
-                      <p class="mt-1 text-[11.5px]">
+                      <p class="mt-1 text-xs">
                         Minimum: <span class="font-medium">{minimum()}</span>
                       </p>
                     )}
@@ -57,13 +57,13 @@ export function OsComplianceTag(props: {
                     when={value().targetVersion && value().targetVersion !== value().minimumVersion}
                   >
                     {(target) => (
-                      <p class="mt-1 text-[11.5px]">
+                      <p class="mt-1 text-xs">
                         Target: <span class="font-medium">{target()}</span>
                       </p>
                     )}
                   </Show>
                   <Show when={value().enforcement === "enforce"}>
-                    <p class="mt-1 text-[11px] text-muted-foreground">
+                    <p class="mt-1 text-xs text-muted-foreground">
                       Enforcement is configured for this platform. The OS versions page explains
                       exactly what is applied.
                     </p>

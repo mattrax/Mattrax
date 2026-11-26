@@ -1,18 +1,17 @@
 import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
-import { BrandLogo } from "~/components/brand-logo";
+import BrandLogo from "~/components/brand-logo";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { createSignal, onCleanup, onSettled, Show, untrack } from "solid-js";
-import { MfaPending } from "~/components/mfa-pending";
+import MfaPending from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
 import { KeyRound } from "~/components/ui/icons";
 import { redirectToProvider, startOrganisationSso } from "~/lib/sso-start";
 import { conditionalPasskeyAvailable, passkeySignInFailureMessage } from "~/lib/passkey-sign-in";
 
-/* oxlint-disable jsx-a11y/autocomplete-valid -- "webauthn" opts the email field into passkey autofill; browsers rely on the token even though the rule's list predates it. */
-
 /** Inline alerts arrive with a short rise so the state change is legible. */
-const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
+const feedbackEnter = "page-enter";
 
 const looksLikeEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
@@ -337,10 +336,10 @@ export default function LoginPage() {
           <a href="/" class="inline-flex items-center gap-2 mb-6">
             <BrandLogo class="h-4" />
           </a>
-          <h1 id="login-heading" class="text-2xl font-semibold text-stone-900">
+          <h1 id="login-heading" class="text-2xl font-semibold text-foreground">
             Sign in to Mattrax
           </h1>
-          <p class="text-stone-500 text-sm mt-1">
+          <p class="text-subtle-foreground text-sm mt-1">
             {step() === "email"
               ? "Enter your work email to continue."
               : "Use the passkey saved on this device or a nearby device."}
@@ -354,7 +353,7 @@ export default function LoginPage() {
           <Show when={created}>
             <p
               role="status"
-              class={`mb-4 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-[12.5px] text-stone-700 ${feedbackEnter}`}
+              class={`mb-4 rounded-lg border border-border bg-page px-3 py-2 text-xs text-muted-foreground ${feedbackEnter}`}
             >
               Your account is ready. Sign in with the passkey you just created.
             </p>
@@ -364,7 +363,7 @@ export default function LoginPage() {
             when={step() === "email"}
             fallback={
               <div class={`space-y-4 ${feedbackEnter}`}>
-                <div class="flex items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2">
+                <div class="flex items-center justify-between gap-3 rounded-lg border border-border bg-page px-3 py-2">
                   {/* The address is a lookup preview: show it once the lookup
                       settles and step aside while a ceremony or redirect owns the
                       screen. Change stays usable throughout. */}
@@ -372,30 +371,33 @@ export default function LoginPage() {
                     when={!checkingEmail() && !passkeyPending() && !redirecting()}
                     fallback={<span class="min-w-0 flex-1" />}
                   >
-                    <span class="min-w-0 truncate text-[13px] text-stone-700">{email()}</span>
+                    <span class="min-w-0 truncate text-xs text-muted-foreground">{email()}</span>
                   </Show>
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="xs"
+                    class="shrink-0"
                     onClick={changeEmail}
-                    class="shrink-0 text-[12px] font-medium text-stone-700 underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-stone-900"
                   >
                     Change
-                  </button>
+                  </Button>
                 </div>
 
                 <Show when={redirecting()}>
-                  <p role="status" class="text-center text-sm text-stone-600">
+                  <p role="status" class="text-center text-sm text-muted-foreground">
                     Redirecting to your organisation…
                   </p>
-                  <p class="text-center text-[12.5px] text-stone-500">
+                  <p class="text-center text-xs text-subtle-foreground">
                     Taking too long?{" "}
-                    <button
+                    <Button
                       type="button"
+                      variant="link"
+                      size="xs"
                       onClick={changeEmail}
-                      class="font-medium text-stone-900 underline underline-offset-2"
                     >
                       Cancel and change email
-                    </button>
+                    </Button>
                   </p>
                 </Show>
 
@@ -425,7 +427,7 @@ export default function LoginPage() {
                     )}
                   </Show>
                   <Show when={checkingEmail()}>
-                    <p role="status" class="text-center text-[12.5px] text-stone-500">
+                    <p role="status" class="text-center text-xs text-subtle-foreground">
                       Checking your organisation…
                     </p>
                   </Show>
@@ -435,7 +437,8 @@ export default function LoginPage() {
                     fallback={
                       <Button
                         type="button"
-                        class="h-10 w-full rounded-lg px-4 text-sm"
+                        size="lg"
+                        class="w-full"
                         pending={passkeyPending()}
                         disabled={checkingEmail()}
                         aria-describedby={error() ? "login-error" : undefined}
@@ -452,7 +455,8 @@ export default function LoginPage() {
                   >
                     <Button
                       type="button"
-                      class="h-10 w-full rounded-lg px-4 text-sm"
+                      size="lg"
+                      class="w-full"
                       pending={checkingEmail()}
                       disabled={passkeyPending()}
                       onClick={() => void inspectEmail()}
@@ -462,7 +466,8 @@ export default function LoginPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      class="h-10 w-full rounded-lg px-4 text-sm"
+                      size="lg"
+                      class="w-full"
                       pending={passkeyPending()}
                       disabled={checkingEmail()}
                       aria-describedby={error() ? "login-error" : undefined}
@@ -478,11 +483,11 @@ export default function LoginPage() {
                   </Show>
 
                   <Show when={error()}>
-                    <p class="text-center text-[12.5px] text-stone-500">
+                    <p class="text-center text-xs text-subtle-foreground">
                       Need another way in?{" "}
                       <a
                         href="/recover"
-                        class="text-stone-900 font-medium underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-stone-700"
+                        class="text-foreground font-medium underline underline-offset-2 transition-colors duration-(--duration-hover) ease-swift hover:text-muted-foreground"
                       >
                         Email me a recovery link
                       </a>
@@ -499,10 +504,10 @@ export default function LoginPage() {
               aria-labelledby="login-heading"
             >
               <div class="space-y-1.5">
-                <label for="email" class="text-sm font-medium text-stone-700">
+                <label for="email" class="text-sm font-medium text-muted-foreground">
                   Work email
                 </label>
-                <input
+                <Input
                   id="email"
                   name="email"
                   type="email"
@@ -521,7 +526,7 @@ export default function LoginPage() {
                     setEmailError(null);
                     scheduleConditionalPasskey();
                   }}
-                  class="w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
+                  class="h-10"
                 />
               </div>
               <Show when={emailError()}>
@@ -538,7 +543,8 @@ export default function LoginPage() {
               </Show>
               <Button
                 type="submit"
-                class="h-10 w-full rounded-lg px-4 text-sm"
+                size="lg"
+                class="w-full"
                 pending={checkingEmail() || redirecting()}
               >
                 {redirecting() ? "Redirecting…" : checkingEmail() ? "Checking…" : "Continue"}
@@ -558,22 +564,22 @@ export default function LoginPage() {
           <Show
             when={!signedIn()}
             fallback={
-              <p class="mt-6 text-center text-sm text-stone-500">
+              <p class="mt-6 text-center text-sm text-subtle-foreground">
                 Already signed in.{" "}
                 <a
                   href="/dashboard"
-                  class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+                  class="text-foreground font-medium underline-offset-2 transition-colors duration-(--duration-hover) ease-swift hover:underline"
                 >
                   Open dashboard
                 </a>
               </p>
             }
           >
-            <p class="mt-6 text-center text-sm text-stone-500">
+            <p class="mt-6 text-center text-sm text-subtle-foreground">
               Don't have an account?{" "}
               <a
                 href="/register"
-                class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+                class="text-foreground font-medium underline-offset-2 transition-colors duration-(--duration-hover) ease-swift hover:underline"
               >
                 Sign up
               </a>
@@ -581,11 +587,11 @@ export default function LoginPage() {
           </Show>
         </Show>
 
-        <p class="mt-2 text-center text-[12.5px] text-stone-500">
+        <p class="mt-2 text-center text-xs text-subtle-foreground">
           Lost every passkey?{" "}
           <a
             href="/recover"
-            class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+            class="text-foreground font-medium underline-offset-2 transition-colors duration-(--duration-hover) ease-swift hover:underline"
           >
             Recover access
           </a>

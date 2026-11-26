@@ -19,12 +19,12 @@ function SegmentedControl(props: SegmentedControlProps) {
   return (
     <SegmentedControlPrimitive
       class={cn(
-        "relative inline-flex h-7 items-center gap-0.5 rounded-[7px] border border-border bg-surface p-0.5",
+        "relative inline-flex h-7 items-center gap-0.5 rounded-md border border-border bg-surface p-0.5",
         local.class,
       )}
       {...others}
     >
-      <SegmentedControlIndicator class="absolute inset-y-0.5 rounded-[5px] bg-card shadow-[0_1px_2px_rgb(24_24_22/0.08)] transition-none" />
+      <SegmentedControlIndicator class="absolute inset-y-0.5 rounded-sm bg-card shadow-card transition-none" />
       {local.children}
     </SegmentedControlPrimitive>
   );
@@ -38,8 +38,8 @@ function SegmentedControlItemBox(props: SegmentedControlItemProps) {
   return (
     <SegmentedControlItem
       class={cn(
-        "relative z-10 inline-flex h-6 items-center justify-center rounded-[5px] px-2.5 text-[11.5px] font-[520] text-muted-foreground outline-none transition-colors",
-        "hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/25 data-checked:text-foreground data-disabled:opacity-45",
+        "relative z-10 inline-flex h-6 items-center justify-center rounded-sm px-2.5 text-xs font-medium text-muted-foreground outline-none transition-colors",
+        "hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/25 data-checked:text-foreground data-disabled:opacity-45",
         local.class,
       )}
       {...others}

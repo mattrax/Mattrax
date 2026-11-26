@@ -4,7 +4,6 @@ import { Show } from "solid-js";
 import type { SoftwareUpdateInfo } from "@mattrax/enterprise-domain/client";
 import { softwareUpdateReason } from "@mattrax/enterprise-domain/client";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import { cn } from "~/lib/utils";
 import { softwareUpdateLabel } from "~/lib/software-updates";
 
 const tone = (info: SoftwareUpdateInfo) => {
@@ -97,13 +96,10 @@ export function OsVersionTag(props: {
       <TooltipTrigger
         as="span"
         tabindex={0}
-        class={cn(
-          "inline-flex cursor-help items-center gap-1.5 rounded-[5px] text-[12.5px] tabular-nums underline decoration-border decoration-dotted underline-offset-4 outline-none transition-colors hover:decoration-current focus-visible:ring-2 focus-visible:ring-ring/40",
-          tone(),
-        )}
+        class="inline-flex cursor-help items-center"
         aria-label={triggerLabel()}
       >
-        {version() ?? "—"}
+        <span class={tone()}>{version() ?? "—"}</span>
         <Show when={props.info?.status === "security_update_required"}>
           <span class="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden="true" />
         </Show>
@@ -114,16 +110,16 @@ export function OsVersionTag(props: {
       <TooltipContent
         side="bottom"
         align="start"
-        class="w-64 overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-popover"
+        class="w-64 overflow-hidden"
       >
         <div class="flex items-start justify-between gap-3 border-b border-border bg-surface px-3 py-2.5">
           <div class="min-w-0">
-            <p class="truncate text-[12px] font-[560] text-foreground">
+            <p class="truncate text-xs font-semibold text-foreground">
               {platform()} {version() ?? "not reported"}
             </p>
             <Show when={build()}>
               {(value) => (
-                <p class="mt-0.5 font-mono text-[10.5px] text-muted-foreground">Build {value()}</p>
+                <p class="mt-0.5 font-mono text-xs text-muted-foreground">Build {value()}</p>
               )}
             </Show>
           </div>
@@ -135,12 +131,12 @@ export function OsVersionTag(props: {
           <Show
             when={props.info?.latestVersion || props.info?.requiredMinimumVersion}
             fallback={
-              <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+              <p class="text-xs leading-relaxed text-muted-foreground">
                 No published version comparison for this platform.
               </p>
             }
           >
-            <dl class="space-y-1 text-[11.5px]">
+            <dl class="space-y-1 text-xs">
               <Show when={props.info?.latestVersion}>
                 {(latest) => (
                   <div class="flex items-baseline justify-between gap-4">
@@ -159,7 +155,7 @@ export function OsVersionTag(props: {
               </Show>
             </dl>
           </Show>
-          <p class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+          <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
             {props.info
               ? softwareUpdateReason(props.info)
               : "The device has not reported an OS version."}
@@ -171,7 +167,7 @@ export function OsVersionTag(props: {
               href={href()}
               target="_blank"
               rel="noopener noreferrer"
-              class="block border-t border-border px-3 py-2 text-[11.5px] font-medium text-brand underline decoration-brand/30 underline-offset-2 hover:bg-hover hover:decoration-brand"
+              class="block border-t border-border px-3 py-2 text-xs font-medium text-brand underline decoration-brand/30 underline-offset-2 hover:bg-hover hover:decoration-brand"
             >
               Security details
             </a>
@@ -204,24 +200,24 @@ export function SoftwareUpdateTag(props: {
               <TooltipTrigger
                 as="span"
                 tabindex={0}
-                class="inline-flex cursor-default rounded-[5px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                class="inline-flex cursor-default"
                 aria-label={`OS updates: ${text()}. ${softwareUpdateReason(value())}`}
               >
-                <Badge variant={tone(value()).variant} dot={tone(value()).dot} class={props.class}>
+                <span class={props.class}><Badge variant={tone(value()).variant} dot={tone(value()).dot}>
                   {text()}
-                </Badge>
+                </Badge></span>
               </TooltipTrigger>
               <TooltipContent class="max-w-64">
-                <p class="text-[11px] font-medium">
+                <p class="text-xs font-medium">
                   {value().currentVersion
                     ? `macOS ${value().currentVersion}`
                     : "macOS update status"}
                 </p>
-                <p class="mt-1 text-[11.5px] text-muted-foreground">
+                <p class="mt-1 text-xs text-muted-foreground">
                   {softwareUpdateReason(value())}
                 </p>
                 <Show when={value().latestVersion && value().status !== "up_to_date"}>
-                  <p class="mt-1 text-[11.5px]">
+                  <p class="mt-1 text-xs">
                     Latest: <span class="font-medium">macOS {value().latestVersion}</span>
                   </p>
                 </Show>
@@ -231,7 +227,7 @@ export function SoftwareUpdateTag(props: {
                       href={href()}
                       target="_blank"
                       rel="noopener noreferrer"
-                      class="mt-1.5 inline-flex text-[11.5px] font-medium text-brand underline decoration-brand/30 underline-offset-2 hover:decoration-brand"
+                      class="mt-1.5 inline-flex text-xs font-medium text-brand underline decoration-brand/30 underline-offset-2 hover:decoration-brand"
                     >
                       Security details
                     </a>

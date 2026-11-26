@@ -12,7 +12,7 @@ function Breadcrumb(props: { items: Crumb[]; class?: string }) {
 
   return (
     <nav aria-label="Breadcrumb" class={cn("min-w-0", local.class)}>
-      <ol class="flex flex-wrap items-center gap-1 text-[11.5px] text-muted-foreground">
+      <ol class="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
         <For each={local.items}>
           {(item, index) => (
             <li class="flex min-w-0 items-center gap-1">
@@ -61,9 +61,9 @@ function EmptyState(props: {
           {props.icon}
         </div>
       </Show>
-      <div class="text-[13px] font-[550] text-foreground">{props.title}</div>
+      <div class="text-xs font-medium text-foreground">{props.title}</div>
       <Show when={props.description}>
-        <div class="max-w-sm text-[12px] leading-5 text-muted-foreground">{props.description}</div>
+        <div class="max-w-sm text-xs leading-5 text-muted-foreground">{props.description}</div>
       </Show>
       <Show when={props.action}>
         <div class="mt-2">{props.action}</div>
@@ -105,7 +105,7 @@ function Alert(
       role="alert"
       data-slot="alert"
       class={cn(
-        "flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-[12px] leading-5",
+        "flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-xs leading-5",
         alertTone[local.tone ?? "neutral"],
         local.class,
       )}
@@ -116,7 +116,7 @@ function Alert(
       </Show>
       <div class="min-w-0 flex-1">
         <Show when={local.title}>
-          <div class="font-[560]">{local.title}</div>
+          <div class="font-semibold">{local.title}</div>
         </Show>
         <div class={cn(local.title && "mt-0.5", "text-foreground/80")}>{local.children}</div>
       </div>

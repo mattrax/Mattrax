@@ -8,7 +8,7 @@ import { LoadingState } from "@mattrax/ui";
 import { AppShell } from "~/components/app-shell";
 import { PageErrorFallback } from "~/components/error-boundary";
 import { QueryError } from "~/components/mdm/common";
-import { StepUpDialog } from "~/components/step-up-dialog";
+import StepUpDialog from "~/components/step-up-dialog";
 import { authClient } from "~/lib/auth";
 import { queryClient } from "~/lib/query-client";
 import { broadcastCacheReset, setCrossTabTenant } from "~/lib/cross-tab-sync";
@@ -42,7 +42,7 @@ function DashboardBootScreen() {
  * leaving it unmounted until the first keypress would break keyboard users.
  */
 const LazyCommandPalette = lazy(() =>
-  import("~/components/command-palette").then((module) => ({ default: module.CommandPalette })),
+  import("~/components/command-palette"),
 );
 
 const loadCommandPalette = () => import("~/components/command-palette");
