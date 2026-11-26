@@ -1,14 +1,25 @@
 import { useParams, useSearchParams } from "@solidjs/router";
 import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { isServer } from "@solidjs/web";
+import { ArrowRight, Card } from "@mattrax/ui";
 import { useMutation, useQuery } from "@tanstack/solid-query";
-import { createEffect, For, Show } from "solid-js";
+import { createEffect, createUniqueId, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { LoadingState } from "~/components/ui";
 import { Button } from "~/components/ui/button";
-import { CircleAlert, CheckCircle2, HardDrive } from "~/components/ui/icons";
+import {
+  ArrowUpRight,
+  Building2,
+  CircleAlert,
+  CheckCircle2,
+  Download,
+  HardDrive,
+  MonitorSmartphone,
+} from "~/components/ui/icons";
 import { enterprise, enterpriseQueries } from "~/lib/enterprise";
+import { billingUsageRemaining, billingUsageState } from "~/lib/billing-usage";
+import type { BillingUsageState } from "~/lib/billing-usage";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
@@ -19,7 +30,7 @@ import {
   formatPlanUsage,
 } from "~/lib/plan-limits";
 import { cn } from "~/lib/utils";
-import { StatusChip as Chip } from "~/components/settings/status-chip";
+import Chip from "~/components/settings/status-chip";
 import type { StatusTone } from "~/components/settings/status-chip";
 
 const formatDate = (value: string | null | undefined) => {
@@ -87,6 +98,9 @@ export default function BillingSettingsPage() {
   const params = useParams();
   const [searchParams] = useSearchParams();
   const { can } = useCan();
+  const usageHeadingId = createUniqueId();
+  const planHeadingId = createUniqueId();
+  const invoiceCaptionId = createUniqueId();
 
   const billing = useQuery(() => enterpriseQueries.billing(params.tenantId));
 
@@ -184,75 +198,136 @@ export default function BillingSettingsPage() {
         </Callout>
       </Show>
 
-      <Panel title="Plan" description="Your subscription, seat usage and renewal dates.">
-        <div class="divide-y divide-border text-[13px]">
-          <Row label="Plan">
-            <span class="font-medium text-foreground">{billing.data?.plan ?? "Free"}</span>
-          </Row>
-          <Row label="Status">
-            <Chip capitalize tone={statusTone(billing.data?.status, configured())}>
-              {billing.data?.configured === false
-                ? "unavailable"
-                : (billing.data?.status ?? "inactive")}
-            </Chip>
-          </Row>
-          <Row label="Billable devices">
-            <span class="font-medium text-foreground">{billing.data?.billableDevices ?? 0}</span>
-          </Row>
-          <Row label="Devices">
-            <span class="font-medium text-foreground">
-              {formatPlanUsage(billing.data?.devicesUsed, billing.data?.deviceLimit)}
-            </span>
-          </Row>
-          <Row label="Tenants">
-            <span class="font-medium text-foreground">
-              {formatPlanUsage(billing.data?.tenantsUsed, billing.data?.tenantLimit)}
-            </span>
-          </Row>
-          <Row label="Current period ends">
-            <span class="font-medium text-foreground">{formatDate(billing.data?.periodEnd)}</span>
-          </Row>
-          <Row label="Cancels at period end">
-            <span class="font-medium text-foreground">
-              {billing.data?.cancelAtPeriodEnd ? "Yes" : "No"}
-            </span>
-          </Row>
-        </div>
-
-        <div class="mt-4 border-t border-border pt-4">
-          <Show when={can("billing.write")}>
-            <div class="flex flex-wrap gap-2">
-              <Show when={!subscribed()}>
-                <Button
-                  onClick={() => checkout.mutate()}
-                  disabled={checkout.isPending || billing.isLoading || !sellable()}
+      <Panel class="xl:col-span-2">
+        <div class="grid gap-4 xl:grid-cols-5">
+          <Card role="region" aria-labelledby={usageHeadingId} class="min-w-0 xl:col-span-3">
+            <div class="p-4 sm:p-5">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <div class="label-caps">Plan usage</div>
+                <h2
+                  id={usageHeadingId}
+                  class="mt-1 text-lg font-semibold tracking-tight text-foreground"
                 >
-                  {checkout.isPending ? "Opening checkout…" : "Subscribe to the device plan"}
-                </Button>
+                  Usage & limits
+                </h2>
+                <p class="mt-1 text-xs leading-5 text-muted-foreground">
+                  See how much of your plan this account is using.
+                </p>
+              </div>
+              <Show when={billing.data && !billing.data.limitsConfigured}>
+                <Chip tone="neutral">Unlimited</Chip>
               </Show>
-              <Button
-                variant="outline"
-                onClick={() => portal.mutate()}
-                disabled={portal.isPending || billing.isLoading || !sellable()}
-              >
-                {portal.isPending ? "Opening…" : "Open billing portal"}
+            </div>
+
+            <div class="mt-6 grid gap-6 sm:grid-cols-2 sm:gap-5">
+              <UsageMeter
+                label="Device usage"
+                icon={<MonitorSmartphone class="size-4" />}
+                used={billing.data?.devicesUsed ?? 0}
+                limit={billing.data?.deviceLimit}
+                overLimit={billing.data?.overDeviceLimit ?? false}
+                detail={`${billing.data?.billableDevices ?? 0} billable ${billing.data?.billableDevices === 1 ? "device" : "devices"}`}
+              />
+              <UsageMeter
+                label="Tenant usage"
+                icon={<Building2 class="size-4" />}
+                used={billing.data?.tenantsUsed ?? 0}
+                limit={billing.data?.tenantLimit}
+                overLimit={billing.data?.overTenantLimit ?? false}
+                detail={
+                  billing.data?.tenantsUsed === 1
+                    ? "1 organisation owned"
+                    : `${billing.data?.tenantsUsed ?? 0} organisations owned`
+                }
+              />
+            </div>
+
+            <div class="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+              <p class="max-w-prose text-xs leading-5 text-muted-foreground">
+                Only enrolled devices are billable. Checked-out devices stop counting toward the
+                next billing period.
+              </p>
+              <Button as="a" href={`/t/${params.tenantId}/devices`} variant="ghost" size="sm">
+                View devices
+                <ArrowRight class="size-3.5" />
               </Button>
             </div>
-            <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
-              Checkout buys the per-device plan and starts with the devices enrolled today. Seat
-              counts follow your fleet automatically, and the billing portal changes or cancels the
-              subscription.
+            </div>
+          </Card>
+
+          <Card role="region" aria-labelledby={planHeadingId} class="min-w-0 xl:col-span-2">
+            <div class="p-4 sm:p-5">
+            <div class="flex items-center justify-between gap-3">
+              <h2 id={planHeadingId} class="label-caps">
+                Current plan
+              </h2>
+              <Chip capitalize tone={statusTone(billing.data?.status, configured())}>
+                {billing.data?.configured === false
+                  ? "unavailable"
+                  : (billing.data?.status ?? "inactive")}
+              </Chip>
+            </div>
+            <p class="mt-3 text-3xl font-semibold leading-none tracking-tight capitalize text-foreground">
+              {billing.data?.plan ?? "Free"}
             </p>
-          </Show>
-          <Show when={!sellable()}>
-            <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
-              {configured()
-                ? "This deployment has no plan catalogue configured, so Checkout is unavailable."
-                : "Checkout and the billing portal are unavailable until Stripe is configured for this deployment."}
+            <p class="mt-2 text-xs leading-5 text-muted-foreground">
+              Current plan and renewal details.
             </p>
-          </Show>
-          <ErrorText error={checkout.error} />
-          <ErrorText error={portal.error} />
+
+            <dl class="mt-6 divide-y divide-border text-xs">
+              <DefinitionRow
+                label="Current period ends"
+                value={formatDate(billing.data?.periodEnd)}
+              />
+              <DefinitionRow label="Billable devices" value={billing.data?.billableDevices ?? 0} />
+              <DefinitionRow
+                label="Cancellation"
+                value={billing.data?.cancelAtPeriodEnd ? "At period end" : "Not scheduled"}
+              />
+            </dl>
+
+            <div class="mt-6">
+              <Show when={can("billing.write")}>
+                <div class="flex flex-wrap gap-2">
+                  <Show when={!subscribed()}>
+                    <Button
+                      onClick={() => checkout.mutate()}
+                      disabled={checkout.isPending || billing.isLoading || !sellable()}
+                    >
+                      {checkout.isPending ? "Opening checkout…" : "Choose a plan"}
+                    </Button>
+                  </Show>
+                  <Button
+                    variant={subscribed() ? "default" : "outline"}
+                    onClick={() => portal.mutate()}
+                    disabled={portal.isPending || billing.isLoading || !sellable()}
+                  >
+                    {portal.isPending
+                      ? "Opening…"
+                      : subscribed()
+                        ? "Manage plan in Stripe"
+                        : "Open billing portal"}
+                    <ArrowUpRight class="size-3.5" />
+                  </Button>
+                </div>
+                <p class="mt-2 text-xs leading-5 text-muted-foreground">
+                  Stripe handles payment methods, plan changes and cancellations. Seat counts follow
+                  your fleet automatically.
+                </p>
+              </Show>
+              <Show when={!sellable()}>
+                <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+                  {configured()
+                    ? "This deployment has no plan catalogue configured, so Checkout is unavailable."
+                    : "Checkout and the billing portal are unavailable until Stripe is configured for this deployment."}
+                </p>
+              </Show>
+              <ErrorText error={checkout.error} />
+              <ErrorText error={portal.error} />
+            </div>
+            </div>
+          </Card>
         </div>
       </Panel>
 
@@ -260,6 +335,11 @@ export default function BillingSettingsPage() {
         title="Invoices"
         description="Receipts and open invoices for this tenant, newest first."
         class="xl:col-span-2"
+        actions={
+          <Show when={(invoices.data?.invoices.length ?? 0) > 0}>
+            <Chip tone="neutral">{invoices.data?.invoices.length} total</Chip>
+          </Show>
+        }
       >
         <QueryError error={invoices.error} onRetry={() => void invoices.refetch()} />
 
@@ -287,10 +367,13 @@ export default function BillingSettingsPage() {
               </Show>
             }
           >
-            <div class="overflow-x-auto">
-              <table class="w-full min-w-[36rem] text-left text-[13px]">
+            <div class="overflow-x-auto" role="region" aria-labelledby={invoiceCaptionId}>
+              <table class="w-full min-w-136 text-left text-xs">
+                <caption id={invoiceCaptionId} class="sr-only">
+                  Invoices for this tenant
+                </caption>
                 <thead>
-                  <tr class="border-b border-border text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <tr class="border-b border-border text-xs font-medium tracking-wide text-muted-foreground">
                     <th scope="col" class="py-2 pr-3 font-medium">
                       Invoice
                     </th>
@@ -312,21 +395,25 @@ export default function BillingSettingsPage() {
                   <For each={invoices.data?.invoices ?? []}>
                     {(invoice) => (
                       <tr>
-                        <td class="py-2.5 pr-3 font-mono text-[12px]">
+                        <td class="py-3 pr-3 font-mono text-xs font-medium text-foreground">
                           {invoice.number ?? invoice.id}
                         </td>
-                        <td class="py-2.5 pr-3">
-                          <Chip capitalize tone={invoiceTone(invoice.status)}>
+                        <td class="py-3 pr-3">
+                          <Chip
+                            capitalize
+                            tone={invoiceTone(invoice.status)}
+                            class={invoice.status === "paid" ? "bg-success/5" : undefined}
+                          >
                             {invoice.status ?? "unknown"}
                           </Chip>
                         </td>
-                        <td class="py-2.5 pr-3 text-muted-foreground">
+                        <td class="py-3 pr-3 text-muted-foreground">
                           {formatDate(invoice.createdAt)}
                         </td>
-                        <td class="py-2.5 pr-3 text-right font-medium">
+                        <td class="py-3 pr-3 text-right font-medium tabular-nums">
                           {formatAmount(invoice.total, invoice.currency)}
                         </td>
-                        <td class="py-2.5 text-right">
+                        <td class="py-3 text-right">
                           <div class="flex justify-end gap-2">
                             <Show when={invoice.hostedInvoiceUrl}>
                               {(url) => (
@@ -335,8 +422,10 @@ export default function BillingSettingsPage() {
                                   href={url()}
                                   target="_blank"
                                   rel="noreferrer"
+                                  aria-label={`View invoice ${invoice.number ?? invoice.id}`}
                                 >
                                   View
+                                  <ArrowUpRight class="size-3" />
                                 </a>
                               )}
                             </Show>
@@ -347,8 +436,10 @@ export default function BillingSettingsPage() {
                                   href={url()}
                                   target="_blank"
                                   rel="noreferrer"
+                                  aria-label={`Download invoice ${invoice.number ?? invoice.id} PDF`}
                                 >
                                   PDF
+                                  <Download class="size-3" />
                                 </a>
                               )}
                             </Show>
@@ -367,16 +458,11 @@ export default function BillingSettingsPage() {
         </Show>
       </Panel>
 
-      <Panel title="Usage" description="How billing is calculated for this tenant.">
-        <div class="space-y-3 text-xs leading-relaxed text-muted-foreground">
-          <p>
-            Billing is based on enrolled devices. Devices that check out stop counting toward the
-            next billing period, and the seat quantity on the subscription follows the fleet. Card
-            details, plan changes and cancellations are managed in Stripe.
-          </p>
-          <Show when={billing.data && !billing.data.limitsConfigured}>
-            <p class="rounded-lg border border-border bg-surface p-3">{UNLIMITED_PLAN_NOTICE}</p>
-          </Show>
+      <Panel
+        title="How billing works"
+        description="What counts toward your plan and what stays in Stripe."
+        class="xl:col-span-2"
+        actions={
           <Button
             as="a"
             href={`/t/${params.tenantId}/settings/storage`}
@@ -386,17 +472,144 @@ export default function BillingSettingsPage() {
             <HardDrive class="size-3.5" />
             Review storage usage
           </Button>
-        </div>
+        }
+      >
+        <ul class="grid gap-4 text-xs leading-5 text-muted-foreground sm:grid-cols-3">
+          <li>
+            <strong class="font-semibold text-foreground">Enrolled devices</strong>
+            <p class="mt-1">
+              Only enrolled devices are billable. Checked-out devices stop counting.
+            </p>
+          </li>
+          <li>
+            <strong class="font-semibold text-foreground">Automatic seat counts</strong>
+            <p class="mt-1">Your subscription quantity follows the current fleet automatically.</p>
+          </li>
+          <li>
+            <strong class="font-semibold text-foreground">Stripe manages payments</strong>
+            <p class="mt-1">Payment methods, plan changes and cancellations happen in Stripe.</p>
+          </li>
+        </ul>
+        <Show when={billing.data && !billing.data.limitsConfigured}>
+          <p class="mt-4 rounded-lg border border-border bg-surface p-3 text-xs leading-relaxed text-muted-foreground">
+            {UNLIMITED_PLAN_NOTICE}
+          </p>
+        </Show>
       </Panel>
     </div>
   );
 }
 
-function Row(props: { label: string; children: JSX.Element }) {
+function DefinitionRow(props: { label: string; value: JSX.Element }) {
   return (
-    <div class="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
-      <span class="text-muted-foreground">{props.label}</span>
-      <span class="min-w-0 text-right">{props.children}</span>
+    <div class="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
+      <dt class="text-muted-foreground">{props.label}</dt>
+      <dd class="min-w-0 text-right font-medium text-foreground">{props.value}</dd>
+    </div>
+  );
+}
+
+const usageTone: Record<BillingUsageState, { chip: StatusTone; progress: string; icon: string }> = {
+  unlimited: {
+    chip: "neutral",
+    progress: "",
+    icon: "text-muted-foreground",
+  },
+  healthy: {
+    chip: "success",
+    progress: "[&::-webkit-progress-value]:bg-brand [&::-moz-progress-bar]:bg-brand",
+    icon: "text-brand",
+  },
+  near: {
+    chip: "warning",
+    progress: "[&::-webkit-progress-value]:bg-warning [&::-moz-progress-bar]:bg-warning",
+    icon: "text-warning",
+  },
+  full: {
+    chip: "warning",
+    progress: "[&::-webkit-progress-value]:bg-warning [&::-moz-progress-bar]:bg-warning",
+    icon: "text-warning",
+  },
+  over: {
+    chip: "danger",
+    progress: "[&::-webkit-progress-value]:bg-destructive [&::-moz-progress-bar]:bg-destructive",
+    icon: "text-destructive",
+  },
+};
+
+function UsageMeter(props: {
+  label: string;
+  icon: JSX.Element;
+  used: number;
+  limit: number | null | undefined;
+  overLimit: boolean;
+  detail: string;
+}) {
+  const state = () => billingUsageState(props.used, props.limit, props.overLimit);
+  const tone = () => usageTone[state()];
+  const remaining = () => billingUsageRemaining(props.used, props.limit);
+  const valueLabel = () => formatPlanUsage(props.used, props.limit);
+  const statusLabel = () => {
+    if (state() === "unlimited") return "Unlimited";
+    if (state() === "over") return `${Math.max(0, props.used - (props.limit ?? 0))} over limit`;
+    if (state() === "full") return "Limit reached";
+
+    return `${remaining() ?? 0} remaining`;
+  };
+
+  return (
+    <div class="min-w-0">
+      <div class="flex items-center justify-between gap-2">
+        <h3 class="flex min-w-0 items-center gap-2 text-xs font-semibold text-foreground">
+          <span class={cn("shrink-0", tone().icon)}>{props.icon}</span>
+          <span class="truncate">{props.label}</span>
+        </h3>
+        <Chip tone={tone().chip} class="w-2/5 max-w-full truncate">
+          {statusLabel()}
+        </Chip>
+      </div>
+
+      <div class="mt-4 flex items-baseline gap-1.5">
+        <span
+          data-numeric
+          class="text-3xl font-semibold leading-none tracking-tight text-foreground"
+        >
+          {props.used}
+        </span>
+        <span class="text-sm font-medium text-muted-foreground">/ {props.limit ?? "∞"}</span>
+      </div>
+
+      <Show
+        when={props.limit !== null && props.limit !== undefined && props.limit > 0}
+        fallback={<div class="mt-3 h-2 rounded-full bg-muted" aria-hidden="true" />}
+      >
+        <progress
+          max={props.limit ?? 1}
+          value={Math.max(0, Math.min(props.used, props.limit ?? 1))}
+          aria-label={`${props.label}: ${valueLabel()}`}
+          aria-valuetext={valueLabel()}
+          class={cn(
+            "mt-3 h-2 w-full appearance-none overflow-clip rounded-full border-0 bg-muted",
+            "[&::-webkit-progress-bar]:bg-transparent [&::-webkit-progress-value]:rounded-full",
+            "[&::-webkit-progress-value]:transition-all [&::-webkit-progress-value]:duration-200 [&::-webkit-progress-value]:ease-swift",
+            "[&::-moz-progress-bar]:rounded-full [&::-moz-progress-bar]:transition-all [&::-moz-progress-bar]:duration-200 [&::-moz-progress-bar]:ease-swift",
+            "motion-reduce:[&::-webkit-progress-value]:transition-none motion-reduce:[&::-moz-progress-bar]:transition-none",
+            tone().progress,
+          )}
+        />
+      </Show>
+
+      <p class="mt-2 text-xs leading-5 text-muted-foreground">{props.detail}</p>
+      <Show when={state() === "near" || state() === "full"}>
+        <p class="mt-1 text-xs font-medium text-warning">
+          {state() === "full" ? "This plan is at its limit." : "This plan is nearing its limit."}
+        </p>
+      </Show>
+      <Show when={state() === "over"}>
+        <p class="mt-1 text-xs font-medium text-destructive">
+          Upgrade or remove usage to add more.
+        </p>
+      </Show>
     </div>
   );
 }
@@ -427,11 +640,11 @@ function Callout(props: {
     <div class={cn("flex items-start gap-2.5 rounded-lg border p-4", tone().box, props.class)}>
       <Show
         when={props.tone === "success"}
-        fallback={<CircleAlert class={cn("mt-0.5 size-4 shrink-0", tone().text)} />}
+        fallback={<span class={cn("mt-0.5 size-4 shrink-0", tone().text)}><CircleAlert class="size-4" /></span>}
       >
-        <CheckCircle2 class={cn("mt-0.5 size-4 shrink-0", tone().text)} />
+        <span class={cn("mt-0.5 size-4 shrink-0", tone().text)}><CheckCircle2 class="size-4" /></span>
       </Show>
-      <div class={cn("min-w-0 text-[13px] leading-relaxed", tone().text)}>{props.children}</div>
+      <div class={cn("min-w-0 text-xs leading-relaxed", tone().text)}>{props.children}</div>
     </div>
   );
 }

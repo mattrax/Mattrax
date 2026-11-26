@@ -44,7 +44,7 @@ describe("lazy Apple Business Manager access", () => {
     const caught = await Effect.runPromise(
       access
         .loadAppleBusinessManager(db, "org-1")
-        .pipe(Effect.catch((error) => Effect.succeed({ tag: error._tag, kind: error.kind }))),
+        .pipe(Effect.catch((error: any) => Effect.succeed({ tag: error._tag, kind: error.kind }))),
     );
 
     // Reaching this assertion proves `Effect.catch` saw a typed failure.
@@ -55,6 +55,7 @@ describe("lazy Apple Business Manager access", () => {
     );
 
     expect(failure).toBeInstanceOf(AppleBusinessManagerError);
+    if (!(failure instanceof AppleBusinessManagerError)) throw new Error("Expected ABM error");
     expect(failure.message).toContain("could not be loaded");
     expect(failure.message).toContain("chunk load failed");
   });
@@ -65,6 +66,7 @@ describe("lazy Apple Business Manager access", () => {
     const failure = await Effect.runPromise(Effect.flip(access.vppInfo(db, "org-1")));
 
     expect(failure).toBeInstanceOf(VppError);
+    if (!(failure instanceof VppError)) throw new Error("Expected VPP error");
     expect(failure.kind).toBe("upstream");
     expect(failure.message).toContain("Apps and Books");
   });

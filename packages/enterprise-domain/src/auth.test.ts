@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DateTime, Effect, Schema } from "effect";
 import { Sessions, Totp } from "@yielded/auth";
-import { authenticationRequirement, TOTP_POLICY } from "./auth.ts";
+import { authenticationRequirement, Registration, TOTP_POLICY } from "./auth.ts";
 
 const at = DateTime.makeUnsafe(Date.now());
 
@@ -36,6 +36,44 @@ const assess = (proofs: Parameters<typeof evidence>[0], totp: boolean) =>
   Effect.runPromise(
     Sessions.assessAuthentication(evidence(proofs), authenticationRequirement(totp)),
   );
+
+describe("registration contract", () => {
+  it("requires a non-empty mailbox grant", async () => {
+    await expect(
+      Effect.runPromise(
+        Schema.decodeUnknownEffect(Registration)({
+          name: "Ada Lovelace",
+          email: "ada@example.com",
+        }),
+      ),
+    ).rejects.toBeDefined();
+    await expect(
+      Effect.runPromise(
+        Schema.decodeUnknownEffect(Registration)({
+          name: "Ada Lovelace",
+          email: "ada@example.com",
+          grant: "",
+        }),
+      ),
+    ).rejects.toBeDefined();
+  });
+
+  it("normalizes the email while preserving the grant", async () => {
+    const registration = await Effect.runPromise(
+      Schema.decodeUnknownEffect(Registration)({
+        name: "Ada Lovelace",
+        email: "  ADA@Example.COM ",
+        grant: "mailbox-proof",
+      }),
+    );
+
+    expect(registration).toEqual({
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      grant: "mailbox-proof",
+    });
+  });
+});
 
 describe("sign-in assurance", () => {
   it("requires a user-verified phishing-resistant passkey", () => {

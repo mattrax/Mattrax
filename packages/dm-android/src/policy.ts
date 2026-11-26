@@ -1,5 +1,6 @@
 import { Data, Effect, Result, Schema } from "effect";
 import { Digest } from "effect/crypto";
+import { parseCertificateConfigurationKind } from "@mattrax/enterprise-domain";
 
 /**
  * Raised when a policy cannot be merged safely.
@@ -225,9 +226,93 @@ export const androidPolicyHash = Effect.fnUntraced(function* (
 export const isAndroidPolicyKind = (kind: string): boolean =>
   kind.startsWith("mttx.android.policy.");
 
+const decodePemCertificate = (pem: string): Uint8Array | null => {
+  const match = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/.exec(pem);
+
+  if (!match?.[1]) return null;
+
+  const base64 = match[1].replaceAll(/\s/g, "");
+
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(base64) || base64.length % 4 !== 0) return null;
+
+  try {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+
+    return bytes.length > 0 ? bytes : null;
+  } catch {
+    return null;
+  }
+};
+
+const base64Bytes = (bytes: Uint8Array): string => {
+  let binary = "";
+
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+
+  return btoa(binary);
+};
+
+/**
+ * Compile Android trusted-root configurations into ONC CA certificates.
+ *
+ * The Android Management API has no system-root or client-certificate API.
+ * Its supported route is `openNetworkConfiguration`, whose ONC
+ * `Certificates` array installs a user CA (on a fully managed device or in
+ * the work profile). Apps must opt into trusting user-installed CAs, which is
+ * documented rather than hidden.
+ */
+export function androidCertificatePolicy(
+  configurations: ReadonlyArray<AndroidPolicyConfiguration>,
+): PolicyDocumentInput[] {
+  const certificates: Schema.Json[] = [];
+
+  for (const configuration of configurations) {
+    const parsed = parseCertificateConfigurationKind(configuration.kind);
+
+    if (parsed?.platform !== "android" || parsed.type !== "trusted-root") continue;
+    const data = configuration.data;
+
+    if (!Schema.is(Schema.Json)(data) || !isPlainObject(data)) continue;
+    const pem = data["pem"];
+
+    if (!Schema.is(Schema.String)(pem)) continue;
+    const der = decodePemCertificate(pem);
+
+    if (!der) continue;
+
+    const policyKey = (configuration.policyId ?? "policy")
+      .replaceAll(/[^A-Za-z0-9]/g, "")
+      .slice(0, 16);
+
+    certificates.push({
+      GUID: `mattrax-${policyKey}-${parsed.id}`,
+      Type: "Authority",
+      X509: base64Bytes(der),
+      TrustBits: ["Web"],
+    });
+  }
+
+  if (certificates.length === 0) return [];
+
+  return [
+    {
+      openNetworkConfiguration: {
+        Type: "UnencryptedConfiguration",
+        NetworkConfigurations: [],
+        Certificates: certificates,
+      },
+    },
+  ];
+}
+
 export type AndroidPolicyConfiguration = {
   readonly kind: string;
   readonly data: unknown;
+  /** Owning policy, used to keep ONC certificate GUIDs unique across policies. */
+  readonly policyId?: string;
 };
 
 /**
@@ -292,7 +377,10 @@ export function compileAndroidPolicy(
       }
     }
 
-    return yield* mergeAndroidPolicies(policies);
+    return yield* mergeAndroidPolicies([
+      ...policies,
+      ...androidCertificatePolicy(configurations),
+    ]);
   });
 }
 

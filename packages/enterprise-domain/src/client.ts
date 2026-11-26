@@ -37,6 +37,8 @@ export * from "./osPolicy.ts";
 
 export * from "./scripts.ts";
 
+export * from "./restrictedSoftware.ts";
+
 export * from "./fleetMigration.ts";
 
 export * from "./dynamicGroups.ts";
@@ -54,6 +56,8 @@ export * from "./storage.ts";
 export * from "./Cutover.ts";
 
 export * from "./stepUp.ts";
+
+export * from "./certificates.ts";
 
 export * from "./approvals.ts";
 

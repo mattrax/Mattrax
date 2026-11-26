@@ -57,7 +57,7 @@ The Windows device posts a SOAP discovery request to the URL. Mattrax returns:
 
 ### 3. Policy and certificate
 
-The device requests a WSTEP policy, then submits a CSR. Mattrax signs it with the global
+The device requests a WSTEP policy, then submits a CSR. Mattrax signs it with the tenant's
 SCEP CA, sets the certificate OU to the tenant id, and returns:
 
 - `signedCertificate`
@@ -351,7 +351,11 @@ on the check-in after the Exec is acknowledged and polled on later check-ins unt
 `Status/RotateRecoveryPasswordsStatus` is terminal (0 pass, 1 pending, 2 not started).
 Mattrax does not separately read `Status/RotateRecoveryPasswordsRequestID`: its action
 guard rejects a second rotation while the Exec or status command is active, so at most one
-Mattrax rotation is in flight. A rotation started outside Mattrax is not reconciled. Microsoft's rotation CSP requires the
+Mattrax rotation is in flight. A rotation started outside Mattrax is not reconciled.
+Only the documented `DM_S_ACCEPTED_FOR_PROCESSING` value is treated as an acknowledgement;
+`202 Accepted` is not a SyncML status and remains a failure. A terminal status closes the
+parent Exec so `rotationInProgress` clears; an Exec that never terminates expires through
+its 24-hour budget. Microsoft's rotation CSP requires the
 recovery information backup to be required (for example "Do not enable BitLocker until
 recovery information is stored to AD DS" for an AD-backed policy); the Entra path requires
 an Entra device id and the device to be encrypted on Windows 10 1909 or later.

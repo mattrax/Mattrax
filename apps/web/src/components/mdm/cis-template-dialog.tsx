@@ -11,7 +11,7 @@ import {
 } from "~/components/ui/dialog";
 import { Check, Info, ShieldCheck } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
-import { Progress } from "@mattrax/ui";
+import { Progress , Checkbox } from "@mattrax/ui";
 import { loadCollection } from "~/lib/policy-designer/catalog";
 import type { Collection, PlatformId } from "~/lib/policy-designer/catalog";
 import {
@@ -78,7 +78,7 @@ const controlsLabel = (stats: { controls: number; mapped: number }) =>
  * then hands the parent the merged selections. Unmapped controls are shown and
  * disabled rather than hidden: the gap is part of the information.
  */
-export function CisTemplateDialog(props: CisTemplateDialogProps) {
+export default function CisTemplateDialog(props: CisTemplateDialogProps) {
   const [index, setIndex] = createSignal<CisIndexState>(initialCisIndexState);
   const [summary, setSummary] = createSignal<CisTemplateSummary>();
   const [template, setTemplate] = createSignal<CompiledCisTemplate>();
@@ -261,10 +261,10 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent class="flex max-h-[88vh] max-w-4xl flex-col overflow-hidden rounded-xl p-5">
+      <DialogContent class="flex max-h-9/10 max-w-4xl flex-col overflow-hidden">
         <DialogHeader>
-          <DialogTitle class="text-base">Apply a CIS benchmark</DialogTitle>
-          <DialogDescription class="text-[12px] leading-relaxed">
+          <DialogTitle>Apply a CIS benchmark</DialogTitle>
+          <DialogDescription>
             Turn a reviewed subset of a CIS benchmark into policy settings. Unmapped controls are
             listed so you can see what the template does not cover.
           </DialogDescription>
@@ -274,7 +274,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
           {(error) => (
             <div
               role="alert"
-              class="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive"
+              class="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
             >
               <p class="min-w-0 flex-1">Could not load the CIS templates: {error()}</p>
               <Button
@@ -290,12 +290,12 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
         </Show>
 
         <Show when={!indexError()}>
-          <div class="mt-3 grid gap-3 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
+          <div class="mt-3 grid gap-3 lg:grid-cols-2">
             <div class="min-w-0 space-y-3">
               <label class="block">
-                <span class="mb-1 block text-[11px] font-medium text-foreground">Benchmark</span>
+                <span class="mb-1 block text-xs font-medium text-foreground">Benchmark</span>
                 <select
-                  class="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-[12px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
+                  class="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-input/30"
                   value={summary()?.id ?? ""}
                   disabled={loading() || pending()}
                   onChange={(event) => {
@@ -316,7 +316,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
               <Show
                 when={template()}
                 fallback={
-                  <div class="rounded-xl border border-dashed border-input px-3 py-6 text-center text-[12px] text-muted-foreground">
+                  <div class="rounded-xl border border-dashed border-input px-3 py-6 text-center text-xs text-muted-foreground">
                     {cisLoadingLabel(activity(), "No benchmark is available for this platform.")}
                   </div>
                 }
@@ -328,10 +328,10 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                         <ShieldCheck class="size-4" />
                       </div>
                       <div class="min-w-0">
-                        <p class="text-[12px] font-semibold leading-snug text-foreground">
+                        <p class="text-xs font-semibold leading-snug text-foreground">
                           {current().benchmark.name}
                         </p>
-                        <p class="mt-0.5 text-[11px] text-muted-foreground">
+                        <p class="mt-0.5 text-xs text-muted-foreground">
                           Version {current().benchmark.version}
                           {current().benchmark.os ? ` · ${current().benchmark.os}` : ""}
                         </p>
@@ -339,7 +339,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                     </div>
 
                     <div>
-                      <div class="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                      <div class="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                         <span>{controlsLabel(current().stats)}</span>
                         <span class="tabular-nums">{coverage()}%</span>
                       </div>
@@ -349,13 +349,13 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                         label="Control coverage"
                         valueLabel={`${coverage()}%`}
                       />
-                      <p class="mt-1.5 text-[10px] leading-relaxed text-muted-foreground">
+                      <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                         {current().stats.settings} settings across {current().stats.mapped} mapped
                         controls.
                       </p>
                     </div>
 
-                    <p class="text-[11px] leading-relaxed text-muted-foreground">
+                    <p class="text-xs leading-relaxed text-muted-foreground">
                       {current().description}
                     </p>
 
@@ -363,7 +363,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                       href={current().benchmark.source}
                       target="_blank"
                       rel="noreferrer"
-                      class="inline-block text-[11px] font-medium text-brand-solid underline-offset-2 hover:underline"
+                      class="inline-block text-xs font-medium text-brand-solid underline-offset-2 hover:underline"
                     >
                       Benchmark source
                     </a>
@@ -390,7 +390,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                 )}
               </Show>
 
-              <p class="flex gap-1.5 text-[10px] leading-relaxed text-muted-foreground">
+              <p class="flex gap-1.5 text-xs leading-relaxed text-muted-foreground">
                 <Info class="mt-0.5 size-3 shrink-0" />
                 <span>
                   Control summaries are Mattrax's own wording. The CIS benchmark document is not
@@ -399,14 +399,14 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
               </p>
             </div>
 
-            <div class="flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-xl border border-border">
+            <div class="flex min-h-80 min-w-0 flex-col overflow-hidden rounded-xl border border-border">
               <div class="shrink-0 border-b border-border p-2">
                 <Input
                   value={query()}
                   onInput={(event) => setQuery(event.currentTarget.value)}
                   placeholder="Filter controls by reference or title"
                   aria-label="Filter CIS controls"
-                  class="h-8 text-[12px]"
+                  class="h-8"
                 />
               </div>
 
@@ -414,7 +414,7 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                 {(error) => (
                   <p
                     role="alert"
-                    class="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive"
+                    class="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
                   >
                     {error()}
                   </p>
@@ -424,16 +424,16 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
               <Show
                 when={template()}
                 fallback={
-                  <div class="flex flex-1 items-center justify-center px-4 py-10 text-[12px] text-muted-foreground">
+                  <div class="flex flex-1 items-center justify-center px-4 py-10 text-xs text-muted-foreground">
                     {cisLoadingLabel(activity(), "Choose a benchmark to see its controls.")}
                   </div>
                 }
               >
-                <div class="max-h-[46vh] flex-1 overflow-y-auto">
+                <div class="max-h-1/2 flex-1 overflow-y-auto">
                   <Show
                     when={visibleControls().length > 0}
                     fallback={
-                      <p class="px-3 py-8 text-center text-[12px] text-muted-foreground">
+                      <p class="px-3 py-8 text-center text-xs text-muted-foreground">
                         No controls match that filter.
                       </p>
                     }
@@ -447,13 +447,12 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                           return (
                             <li class="border-b border-border/60 last:border-b-0">
                               <div class="flex items-start gap-2 px-3 py-2">
-                                <input
+                                <Checkbox
                                   id={id()}
-                                  type="checkbox"
-                                  class="mt-0.5 size-3.5 shrink-0 accent-[var(--brand-solid)]"
+                                  class="mt-0.5 size-3.5 shrink-0"
                                   checked={checked()}
                                   disabled={!control.mapped}
-                                  onChange={() => toggleControl(control.id)}
+                                  onCheckedChange={() => toggleControl(control.id)}
                                 />
                                 <label
                                   for={id()}
@@ -463,15 +462,15 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                                   )}
                                 >
                                   <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                                    <span class="font-mono text-[10px] text-muted-foreground">
+                                    <span class="font-mono text-xs text-muted-foreground">
                                       {control.id}
                                     </span>
-                                    <span class="text-[12px] font-medium leading-snug text-foreground">
+                                    <span class="text-xs font-medium leading-snug text-foreground">
                                       {control.title}
                                     </span>
                                     <Show when={control.level}>
                                       {(level) => (
-                                        <Badge variant="outline" class="h-4 px-1 text-[9px]">
+                                        <Badge variant="outline">
                                           {level()}
                                         </Badge>
                                       )}
@@ -479,37 +478,37 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
                                     <Show
                                       when={control.mapped}
                                       fallback={
-                                        <Badge variant="secondary" class="h-4 px-1 text-[9px]">
+                                        <Badge variant="secondary">
                                           Not mapped
                                         </Badge>
                                       }
                                     >
-                                      <Badge variant="success" class="h-4 px-1 text-[9px]">
+                                      <Badge variant="success">
                                         <Check class="mr-0.5 size-2.5" />
                                         {control.settings.length}
                                       </Badge>
                                     </Show>
                                   </span>
-                                  <span class="mt-0.5 block text-[11px] leading-relaxed text-muted-foreground">
+                                  <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground">
                                     {control.description}
                                   </span>
                                   <Show when={control.note}>
                                     {(note) => (
-                                      <span class="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground/80">
+                                      <span class="mt-0.5 block text-xs leading-relaxed text-muted-foreground/80">
                                         {note()}
                                       </span>
                                     )}
                                   </Show>
                                   <Show when={control.settings.length > 0}>
                                     <details class="mt-1">
-                                      <summary class="cursor-pointer text-[10px] font-medium text-muted-foreground hover:text-foreground">
+                                      <summary class="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
                                         {control.settings.length} mapped setting
                                         {control.settings.length === 1 ? "" : "s"}
                                       </summary>
                                       <ul class="mt-1 space-y-0.5">
                                         <For each={control.settings}>
                                           {(setting) => (
-                                            <li class="text-[10px] leading-relaxed text-muted-foreground">
+                                            <li class="text-xs leading-relaxed text-muted-foreground">
                                               <span class="text-foreground/80">
                                                 {setting.collectionName}
                                               </span>{" "}
@@ -539,15 +538,15 @@ export function CisTemplateDialog(props: CisTemplateDialogProps) {
           {(error) => (
             <p
               role="alert"
-              class="mt-3 whitespace-pre-wrap rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive"
+              class="mt-3 whitespace-pre-wrap rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
             >
               {error()}
             </p>
           )}
         </Show>
 
-        <DialogFooter class="mt-3 flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-          <p class="text-[11px] text-muted-foreground">
+        <DialogFooter class="mt-3 flex-wrap items-center justify-between">
+          <p class="text-xs text-muted-foreground">
             {selected().size} control{selected().size === 1 ? "" : "s"} selected
             <Show when={mappedCount() > 0}> · {mappedCount()} mapped available</Show>
           </p>

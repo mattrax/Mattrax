@@ -1,35 +1,32 @@
 import { Effect } from "effect";
 import { ScepError } from "./schema.js";
 import {
-  generateCaKeyPair as generateCaKeyPairRaw,
-  exportPrivateKeyJwk as exportPrivateKeyJwkRaw,
-  importPrivateKeyJwk as importPrivateKeyJwkRaw,
-  exportPublicKeySpki as exportPublicKeySpkiRaw,
-  signData as signDataRaw,
-  sha256 as sha256Raw,
+  Crypto,
   arrayBufferToBase64 as arrayBufferToBase64Raw,
   base64ToArrayBuffer as base64ToArrayBufferRaw,
   pemEncode as pemEncodeRaw,
   pemDecode as pemDecodeRaw,
 } from "@mattrax/crypto";
 
+const internalCryptoError =
+  (message: string) =>
+  (cause: unknown): ScepError =>
+    new ScepError({ message, reason: "internal", cause });
+
 export const generateCaKeyPair = (): Effect.Effect<CryptoKeyPair, ScepError> =>
-  Effect.tryPromise({
-    try: () => generateCaKeyPairRaw(),
-    catch: (cause) => new ScepError({ message: "Failed to generate CA key pair", cause }),
-  });
+  Crypto.generateCaKeyPair().pipe(
+    Effect.mapError(internalCryptoError("Failed to generate CA key pair")),
+  );
 
 export const exportPrivateKeyJwk = (key: CryptoKey): Effect.Effect<JsonWebKey, ScepError> =>
-  Effect.tryPromise({
-    try: () => exportPrivateKeyJwkRaw(key),
-    catch: (cause) => new ScepError({ message: "Failed to export private key", cause }),
-  });
+  Crypto.exportPrivateKeyJwk(key).pipe(
+    Effect.mapError(internalCryptoError("Failed to export private key")),
+  );
 
 export const importPrivateKeyJwk = (jwk: JsonWebKey): Effect.Effect<CryptoKey, ScepError> =>
-  Effect.tryPromise({
-    try: () => importPrivateKeyJwkRaw(jwk),
-    catch: (cause) => new ScepError({ message: "Failed to import private key", cause }),
-  });
+  Crypto.importPrivateKeyJwk(jwk).pipe(
+    Effect.mapError(internalCryptoError("Failed to import private key")),
+  );
 
 /**
  * Import an unencrypted PKCS#8 RSA private key (PEM) as an exportable JWK.
@@ -40,15 +37,13 @@ export const importPrivateKeyJwk = (jwk: JsonWebKey): Effect.Effect<CryptoKey, S
  */
 export const importPrivateKeyPem = (pem: string): Effect.Effect<JsonWebKey, ScepError> =>
   Effect.gen(function* () {
-    const der = yield* Effect.try({
-      try: () => pemDecodeRaw("PRIVATE KEY", pem),
-      catch: (cause) =>
-        new ScepError({
-          message:
-            "The SCEP CA key is not an unencrypted PKCS#8 PEM private key (expected -----BEGIN PRIVATE KEY-----)",
-          cause,
-        }),
-    });
+    const der = yield* Crypto.pemDecode("PRIVATE KEY", pem).pipe(
+      Effect.mapError(
+        internalCryptoError(
+          "The SCEP CA key is not an unencrypted PKCS#8 PEM private key (expected -----BEGIN PRIVATE KEY-----)",
+        ),
+      ),
+    );
 
     const key = yield* Effect.tryPromise({
       try: () =>
@@ -59,35 +54,25 @@ export const importPrivateKeyPem = (pem: string): Effect.Effect<JsonWebKey, Scep
           true,
           ["sign"],
         ),
-      catch: (cause) => new ScepError({ message: "The SCEP CA key could not be imported", cause }),
+      catch: internalCryptoError("The SCEP CA key could not be imported"),
     });
 
-    return yield* Effect.tryPromise({
-      try: () => exportPrivateKeyJwkRaw(key),
-      catch: (cause) => new ScepError({ message: "Failed to export private key", cause }),
-    });
+    return yield* exportPrivateKeyJwk(key);
   });
 
 export const exportPublicKeySpki = (key: CryptoKey): Effect.Effect<ArrayBuffer, ScepError> =>
-  Effect.tryPromise({
-    try: () => exportPublicKeySpkiRaw(key),
-    catch: (cause) => new ScepError({ message: "Failed to export public key", cause }),
-  });
+  Crypto.exportPublicKeySpki(key).pipe(
+    Effect.mapError(internalCryptoError("Failed to export public key")),
+  );
 
 export const signData = (
   key: CryptoKey,
   data: ArrayBuffer,
 ): Effect.Effect<ArrayBuffer, ScepError> =>
-  Effect.tryPromise({
-    try: () => signDataRaw(key, data),
-    catch: (cause) => new ScepError({ message: "Failed to sign data", cause }),
-  });
+  Crypto.signData(key, data).pipe(Effect.mapError(internalCryptoError("Failed to sign data")));
 
 export const sha256 = (data: ArrayBuffer): Effect.Effect<ArrayBuffer, ScepError> =>
-  Effect.tryPromise({
-    try: () => sha256Raw(data),
-    catch: (cause) => new ScepError({ message: "Failed to hash data", cause }),
-  });
+  Crypto.sha256(data).pipe(Effect.mapError(internalCryptoError("Failed to hash data")));
 
 /**
  * A cryptographically-random X.509 serial number.

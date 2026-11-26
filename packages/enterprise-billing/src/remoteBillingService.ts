@@ -1,4 +1,4 @@
-import { Effect, Layer, Option, Schema } from "effect";
+import { Effect, identity, Layer, Option, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import {
   BillingInvoicesResponse,
@@ -23,8 +23,10 @@ export type RemoteBillingOptions = {
   readonly licenseKey: string;
   /** Public origin of this deployment, used for Stripe return URLs. */
   readonly origin: string;
-  /** Override for tests or an egress proxy; defaults to the runtime `fetch`. */
+  /** Injected fetch seam for tests; production uses the shared HttpClient. */
   readonly fetch?: typeof globalThis.fetch;
+  /** Shared Effect transport supplied by the composition root. */
+  readonly httpClient?: HttpClient.HttpClient;
 };
 
 const BillingUrl = Schema.Struct({ url: Schema.String, quantity: Schema.optional(Schema.Number) });
@@ -44,16 +46,15 @@ const endpoint = (base: string, path: string) => {
   return url.toString();
 };
 
-const httpClientLayer = (fetchImpl?: typeof globalThis.fetch) =>
-  fetchImpl === undefined
-    ? FetchHttpClient.layer
-    : FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
+const fetchClientLayer = (fetchImpl: typeof globalThis.fetch) =>
+  FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetchImpl)));
 
 export const makeRemoteBillingService = ({
   url,
   licenseKey,
   origin,
   fetch,
+  httpClient,
 }: RemoteBillingOptions): BillingOperations => {
   const post = (
     path: string,
@@ -65,7 +66,10 @@ export const makeRemoteBillingService = ({
         catch: (cause) => failure(cause instanceof Error ? cause.message : "Invalid billing URL"),
       });
 
-      const client = yield* HttpClient.HttpClient;
+      const client =
+        httpClient ?? Option.getOrUndefined(yield* Effect.serviceOption(HttpClient.HttpClient));
+
+      if (!client) return yield* Effect.fail(failure("The billing HTTP client is not configured."));
 
       // The deadline covers the response body as well as the headers.
       const exchange = Effect.gen(function* () {
@@ -100,7 +104,7 @@ export const makeRemoteBillingService = ({
       }
 
       return safeJson(text);
-    }).pipe(Effect.provide(httpClientLayer(fetch)));
+    }).pipe(fetch ? Effect.provide(fetchClientLayer(fetch)) : identity);
 
   const decode = <A>(schema: Schema.Decoder<A>, value: Schema.Json | undefined) =>
     Option.match(Schema.decodeUnknownOption(schema)(value), {

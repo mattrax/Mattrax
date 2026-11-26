@@ -13,7 +13,10 @@
     "noEmit": true,
     "declaration": false,
     "emitDeclarationOnly": false,
-    "composite": false
+    "composite": false,
+    "paths": {
+      "~/*": ["../../apps/web/src/*"]
+    }
   },
   "include": [
     "*.ts",

@@ -22,14 +22,18 @@
     "@mattrax/enterprise-backend": "workspace:*",
     "@mattrax/enterprise-billing": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
+    "@mattrax/software": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/enterprise-identity": "workspace:*",
     "@mattrax/enterprise-tokens": "workspace:*",
     "@mattrax/mdm-apple": "workspace:*",
+    "@mattrax/mdm-core": "workspace:*",
+    "@mattrax/mdm-windows": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "drizzle-orm": "catalog:",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "email-verification-api": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

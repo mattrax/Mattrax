@@ -1,12 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {
-  api,
-  bootstrapTenant,
-  createTenant,
-  gotoHydrated,
-  register,
-  uniqueEmail,
-} from "./helpers";
+import { api, bootstrapTenant, createTenant, gotoHydrated, register, uniqueEmail } from "./helpers";
 
 const openPalette = async (page: import("@playwright/test").Page) => {
   // Global shortcuts register from `onSettled`, which can be later than first
@@ -32,10 +25,35 @@ const openPalette = async (page: import("@playwright/test").Page) => {
   return input;
 };
 
+/**
+ * Global shortcuts are installed from `onSettled`, which can run after the
+ * hydration flag. Press until the destination appears instead of sleeping for a
+ * fixed guess; the presses before registration are no-ops.
+ */
+const pressUntilUrl = async (
+  page: import("@playwright/test").Page,
+  press: () => Promise<void>,
+  target: string | RegExp,
+) => {
+  await expect
+    .poll(
+      async () => {
+        await press();
+
+        return page.url();
+      },
+      { timeout: 20_000 },
+    )
+    .toMatch(target);
+};
 
 type InvitePayload = { email: string; roleId?: string; role?: string };
 
-const invite = async (page: import("@playwright/test").Page, tenantId: string, body: InvitePayload) =>
+const invite = async (
+  page: import("@playwright/test").Page,
+  tenantId: string,
+  body: InvitePayload,
+) =>
   api<{ inviteUrl: string }>(page, `/api/v1/tenants/${tenantId}/invitations`, {
     method: "POST",
     body: JSON.stringify(body),
@@ -46,17 +64,13 @@ const acceptInvitation = async (page: import("@playwright/test").Page, inviteUrl
   await page.getByRole("button", { name: /^Join / }).click();
 };
 
-
 test.describe("settings destination by role", () => {
   for (const [label, permissions, startPath, expected] of [
     ["devices only", ["devices.read"], "migration", "migration"],
     ["backups only", ["backups.read"], "backups", "backups"],
     ["export only", ["tenant.export"], "migration/export", "migration/export"],
   ] as const) {
-    test(`opens the first readable settings tab for a ${label} role`, async ({
-      page,
-      context,
-    }) => {
+    test(`opens the first readable settings tab for a ${label} role`, async ({ page, context }) => {
       const tenant = await bootstrapTenant(page, `Palette ${label}`);
       const email = uniqueEmail(`palette-${label.replaceAll(" ", "-")}`);
 
@@ -77,7 +91,6 @@ test.describe("settings destination by role", () => {
       await acceptInvitation(member, invitation.inviteUrl);
 
       await gotoHydrated(member, `/t/${tenant.id}/settings/${startPath}`);
-      await member.waitForTimeout(900);
 
       const input = await openPalette(member);
       await input.fill("settings");
@@ -90,10 +103,12 @@ test.describe("settings destination by role", () => {
 
       // The `g t` sequence uses the same command and destination.
       await gotoHydrated(member, `/t/${tenant.id}/settings/${startPath}`);
-      await member.waitForTimeout(900);
-      await member.keyboard.press("g");
-      await member.keyboard.press("t");
-      await expect(member).toHaveURL(
+      await pressUntilUrl(
+        member,
+        async () => {
+          await member.keyboard.press("g");
+          await member.keyboard.press("t");
+        },
         new RegExp(`/t/(${tenant.id}|${tenant.slug})/settings/${expected}$`),
       );
 
@@ -108,9 +123,8 @@ test.describe("command palette", () => {
     await createTenant(page, "Palette Extra");
 
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
-    // The global shortcut is registered from `onSettled`, which runs after the
-    // first router transition settles — slightly after the hydration flag.
-    await page.waitForTimeout(1000);
+    // `openPalette` retries the trigger until the palette is mounted, which
+    // covers the shortcut table registering after the hydration flag.
     const input = await openPalette(page);
 
     // Set a marker that only survives an in-document navigation.
@@ -143,7 +157,6 @@ test.describe("command palette", () => {
   test("finds settings, people and constructs device queries", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Palette Discovery");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
-    await page.waitForTimeout(900);
 
     const input = await openPalette(page);
     await input.fill("apns");
@@ -164,7 +177,6 @@ test.describe("command palette", () => {
   test("exposes actions with keyboard shortcuts", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Palette Actions");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
-    await page.waitForTimeout(900);
 
     await openPalette(page);
     await expect(page.getByRole("option", { name: /Account settings/ })).toBeVisible();
@@ -178,18 +190,25 @@ test.describe("command palette", () => {
     expect(shortcut).toMatch(/[,]/);
     await page.keyboard.press("Escape");
 
-    await page.keyboard.press(process.platform === "darwin" ? "Meta+," : "Control+,");
-    await expect(page).toHaveURL(/\/account$/);
+    await pressUntilUrl(
+      page,
+      () => page.keyboard.press(process.platform === "darwin" ? "Meta+," : "Control+,"),
+      /\/account$/,
+    );
   });
 
   test("navigates with sequence shortcuts", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Palette Sequences");
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
-    await page.waitForTimeout(900);
 
-    await page.keyboard.press("g");
-    await page.keyboard.press("p");
-    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/policies$`));
+    await pressUntilUrl(
+      page,
+      async () => {
+        await page.keyboard.press("g");
+        await page.keyboard.press("p");
+      },
+      new RegExp(`/t/${tenant.slug}/policies$`),
+    );
   });
 
   test("registers policy designer actions and removes them on unmount", async ({ page }) => {
@@ -201,7 +220,6 @@ test.describe("command palette", () => {
     });
 
     await gotoHydrated(page, `/t/${tenant.id}/policies/${policy.id}/design`);
-    await page.waitForTimeout(1600);
 
     const input = await openPalette(page);
     await expect(page.getByRole("option", { name: /Save policy/ })).toBeVisible();
@@ -210,12 +228,13 @@ test.describe("command palette", () => {
 
     // The registered shortcut drives the same save action as the header button.
     await page.getByRole("button", { name: /security baseline/i }).click();
-    await page.waitForTimeout(500);
-    await page.keyboard.press(process.platform === "darwin" ? "Meta+s" : "Control+s");
-    await expect(page).toHaveURL(new RegExp(`/policies/${policy.id}$`), { timeout: 20_000 });
+    await pressUntilUrl(
+      page,
+      () => page.keyboard.press(process.platform === "darwin" ? "Meta+s" : "Control+s"),
+      new RegExp(`/policies/${policy.id}$`),
+    );
 
     await gotoHydrated(page, `/t/${tenant.id}/devices`);
-    await page.waitForTimeout(600);
     await openPalette(page);
     await input.fill("save policy");
     await expect(page.getByRole("option", { name: /Save policy/ })).toHaveCount(0);

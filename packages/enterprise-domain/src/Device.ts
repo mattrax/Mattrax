@@ -858,6 +858,28 @@ export const DeviceCertificateInfo = Schema.Struct({
 
 export type DeviceCertificateInfo = typeof DeviceCertificateInfo.Type;
 
+/**
+ * A certificate visible on a device, from Apple's managed-certificate status
+ * item or from the policy material Mattrax delivers.
+ *
+ * `apple-inventory` entries are device evidence. `policy-material` entries
+ * are the certificate a policy is configured to install (with its expiry), and
+ * on Windows they are the only certificate inventory Mattrax has. `scep`
+ * entries are Mattrax-issued identity certificates.
+ */
+export const DeviceManagedCertificateInfo = Schema.Struct({
+  identifier: Schema.String,
+  subject: Schema.String,
+  isIdentity: Schema.Boolean,
+  fingerprintSha256: Schema.optional(NullableString),
+  notAfter: Schema.optional(NullableString),
+  source: Schema.Literals(["apple-inventory", "policy-material", "scep"]),
+  policyId: Schema.optional(NullableString),
+  kind: Schema.optional(NullableString),
+});
+
+export type DeviceManagedCertificateInfo = typeof DeviceManagedCertificateInfo.Type;
+
 /** APNs delivery state for a single Apple device. */
 export const DevicePushErrorCode = Schema.Literals(["invalid_token", "delivery_failed"]);
 
@@ -898,6 +920,7 @@ export type AppleDeviceUserProfile = typeof AppleDeviceUserProfile.Type;
 export const AppleUserIdentitySource = Schema.Literals([
   "certificate",
   "managed-apple-account",
+  "byod-sign-in",
   "manual",
 ]);
 
@@ -1031,7 +1054,14 @@ export type DeviceActivityResponse = typeof DeviceActivityResponse.Type;
 export const DeviceHealthResponse = Schema.Struct({
   health: DeviceHealth,
   declarations: Schema.Array(DeviceDeclarationInfo),
+  /** Mattrax-issued SCEP identities. */
   certificates: Schema.Array(DeviceCertificateInfo),
+  /**
+   * Certificate evidence and policy material for the device page. Apple DDM
+   * reports managed certificates; Windows has no certificate inventory, so its
+   * entries describe what a policy delivers and are labelled as such.
+   */
+  managedCertificates: Schema.Array(DeviceManagedCertificateInfo),
   push: DevicePushInfo,
   /** Windows security inventory, absent for other platforms. */
   windows: Schema.optional(Schema.NullOr(WindowsSecurityInfo)),

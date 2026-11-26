@@ -4,7 +4,7 @@ import type { HttpServerRequest } from "effect/http";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { Db, schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
-import { syncDirectoryGroupsForTenant } from "@mattrax/mdm-apple";
+import { syncDirectoryGroupsForTenant } from "@mattrax/mdm-core";
 import { catchCausePreservingInterrupts } from "./errorBoundary.js";
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });

@@ -8,7 +8,9 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@mattrax/apns": "workspace:*",
     "@mattrax/crypto": "workspace:*",
+    "@mattrax/mdm-pki": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "asn1js": "catalog:",

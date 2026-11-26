@@ -44,7 +44,7 @@ const makeTransport = (
 
 /** The single address a message was addressed to, without hiding a leak. */
 const recipientsOf = (message: OutboundEmailMessage): string[] =>
-  Array.isArray(message.to) ? [...message.to] : [message.to];
+  typeof message.to === "string" ? [message.to] : [...message.to];
 
 type AccountSeed = {
   readonly id: string;

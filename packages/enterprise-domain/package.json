@@ -12,6 +12,7 @@
   "dependencies": {
     "@mattrax/crypto": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
+    "@mattrax/software": "workspace:*",
     "@xmldom/xmldom": "catalog:",
     "@yielded/auth": "catalog:",
     "effect": "catalog:"

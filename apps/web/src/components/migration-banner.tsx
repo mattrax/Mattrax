@@ -28,7 +28,7 @@ const browserStorage = (): MigrationBannerStorage | undefined => {
  * tenant has no devices. The device-health query is already on the overview for
  * the MIA warning, so this adds no request of its own.
  */
-export function MigrationBanner(props: { tenantId: string }) {
+export default function MigrationBanner(props: { tenantId: string }) {
   const { can } = useCan();
   const [dismissedTenant, setDismissedTenant] = createSignal<string | null>(null);
 
@@ -58,7 +58,7 @@ export function MigrationBanner(props: { tenantId: string }) {
     <Show when={visible()}>
       <div
         role="status"
-        class="flex items-start gap-3 rounded-xl border border-brand/20 bg-brand-muted/60 px-3.5 py-3 text-[12.5px] leading-relaxed"
+        class="flex items-start gap-3 rounded-xl border border-brand/20 bg-brand-muted/60 px-3.5 py-3 text-xs leading-relaxed"
       >
         <span class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-card text-brand ring-1 ring-inset ring-brand/15">
           <ArrowRightLeft class="size-4" aria-hidden="true" />
@@ -78,14 +78,15 @@ export function MigrationBanner(props: { tenantId: string }) {
             Open migration
           </Button>
         </div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           aria-label="Dismiss migration banner"
-          class="rounded p-1 text-muted-foreground hover:bg-hover hover:text-foreground"
           onClick={dismiss}
         >
           <X class="size-3.5" />
-        </button>
+        </Button>
       </div>
     </Show>
   );

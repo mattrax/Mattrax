@@ -12,6 +12,16 @@ platform has a real delivery path:
 Apps can also be attached to a policy (`mttx.apple.application.<id>`), which installs them
 on every device in the policy's scope without a separate assignment.
 
+## Curated software catalogue
+
+The dashboard's **Applications → Catalogue** tab carries a curated list of common business,
+school and consumer titles with vendor, identifiers, supported platforms and deployment methods.
+Adding a title creates ordinary application entries with the right source for each platform; it
+does not introduce a second installer. Catalogue-created Apple entries also record their OS target,
+so a macOS App Store title is not queued on an iPhone or vice versa. See [Software catalogue](/manage/software-catalogue) for
+the platform matrix, the data contract and the limits (notably #568 for Windows Win32/MSIX/Store
+and #589 for versioned vendor feeds).
+
 ## Sources
 
 | Source     | Required fields                | Install behaviour                                                        |
@@ -137,7 +147,10 @@ Nothing is reported as successful without a queued command or policy push.
 ### Apple
 
 - A **manifest** entry queues `InstallApplication` with `ManifestURL`, `InstallAsManaged`
-  and `ManagementFlags: 1`.
+  and `ManagementFlags: 1`. If the URL ends in `.pkg` (or the entry came from the catalogue's
+  `apple-pkg` method), Mattrax instead queues `InstallEnterpriseApplication` with an inline
+  manifest and the device downloads the vendor package. The vendor controls those bytes and no
+  SHA-256 is recorded; use an uploaded package when hash pinning is required.
 - A **store** entry consumes a VPP licence when Apps & Books is configured, then queues
   `InstallApplication` with `iTunesStoreID` and `PurchaseMethod: 1`. A configured but
   inactive token fails closed instead of silently using an Apple ID install.

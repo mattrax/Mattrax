@@ -13,10 +13,12 @@ export type QrPath = {
  * element per module.
  *
  * Error-correction level M tolerates a slightly dirty screen or print while
- * keeping enrollment URLs compact.
+ * keeping enrollment URLs compact. A four-module quiet zone is required by
+ * the QR spec; without it, adjacent UI can make an otherwise valid code hard
+ * for a camera to lock onto.
  */
 export const qrPath = (value: string): QrPath => {
-  const qr = encode(value, { ecc: "M", border: 2 });
+  const qr = encode(value, { ecc: "M", border: 4 });
   let path = "";
 
   for (let y = 0; y < qr.size; y++) {

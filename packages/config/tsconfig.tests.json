@@ -27,12 +27,5 @@
     "../../apps/*/tests/**/*.tsx",
     "../../apps/web/src/global.d.ts"
   ],
-  "exclude": [
-    "**/node_modules/**",
-    "**/dist/**",
-    // These legacy suites still have 294 pre-Effect-4 fixture diagnostics.
-    // See README.md and run `pnpm typecheck:legacy-tests` for the exact breakdown.
-    "../enterprise-api/tests/**",
-    "../enterprise-backend/tests/**"
-  ]
+  "exclude": ["**/node_modules/**", "**/dist/**"]
 }

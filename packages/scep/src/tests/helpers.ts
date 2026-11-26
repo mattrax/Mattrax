@@ -7,7 +7,7 @@ import type {
   ScepAuthentication,
   ScepCaScope,
   ScepIssuedCertificate,
-  ScepPkcsReq,
+  ScepAuthenticationRequest,
   ScepRetiredCa,
   ScepStoredCa,
 } from "../repository.js";
@@ -323,7 +323,7 @@ export function mockScepRepository(
     listRetiredCa: (scope: ScepCaScope) => Effect.Effect<ReadonlyArray<ScepRetiredCa>, ScepError>;
     authenticatePkcsReq: (
       scope: ScepCaScope,
-      req: ScepPkcsReq,
+      req: ScepAuthenticationRequest,
     ) => Effect.Effect<ScepAuthentication | void, ScepError>;
     recordIssuedCertificate: (certificate: ScepIssuedCertificate) => Effect.Effect<void, ScepError>;
     findIssuedCertificate: (

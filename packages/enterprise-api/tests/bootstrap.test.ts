@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { isAccountMethod, permissionForMethod } from "@mattrax/enterprise-identity";
 import { verifySsrRevision, verifySsrToken } from "@mattrax/enterprise-backend";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -85,7 +85,6 @@ const makeContext = () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods bootstrap and `me` use.
@@ -237,7 +236,6 @@ describe("GET /api/v1/bootstrap", () => {
       db: makeDb(),
       schema,
       origin,
-      stripeClient: makeStripeClient(),
       storage: {} as any,
       auth: {
         requireUser: () => Effect.succeed({ user, session: undefined }),

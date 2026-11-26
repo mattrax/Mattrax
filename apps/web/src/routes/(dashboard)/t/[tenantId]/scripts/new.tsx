@@ -74,7 +74,7 @@ export default function NewScriptPage() {
         />
         <Show when={scripts.data && !scripts.data.enabled}>
           <Panel title="Scripts are disabled">
-            <p class="text-[12.5px] text-muted-foreground">
+            <p class="text-xs text-muted-foreground">
               Enable scripts on the Scripts page before creating one.
             </p>
           </Panel>
