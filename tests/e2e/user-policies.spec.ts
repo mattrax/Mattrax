@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { api, bootstrapTenant, createScimClient, gotoHydrated, uniqueEmail } from "./helpers";
+import { api, bootstrapFreshTenant, createScimClient, gotoHydrated, uniqueEmail } from "./helpers";
 
 type Directory = {
   users: Array<{
@@ -47,7 +47,7 @@ test.describe("per-user policy assignment", () => {
   test("a fresh tenant's directory is empty and accounts are not directory users", async ({
     page,
   }) => {
-    const tenant = await bootstrapTenant(page, "Empty Directory Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Empty Directory Tenant");
 
     const me = await api<{ account: { id: string; email: string; name: string } }>(
       page,
@@ -75,7 +75,7 @@ test.describe("per-user policy assignment", () => {
   test("lists SCIM directory users and persists a user assignment from the UI", async ({
     page,
   }) => {
-    const tenant = await bootstrapTenant(page, "User Policy Tenant");
+    const tenant = await bootstrapFreshTenant(page, "User Policy Tenant");
     const directoryUser = await provisionDirectoryUser(page, tenant.id);
 
     const directory = await api<Directory>(page, `/api/v1/tenants/${tenant.id}/directory`);
@@ -154,7 +154,7 @@ test.describe("per-user policy assignment", () => {
   });
 
   test("rejects directory and device lookups outside the tenant", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "Isolation Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Isolation Tenant");
 
     const missingDevice = await page.request.get(
       `/api/v1/tenants/${tenant.id}/devices/not-a-device/users`,

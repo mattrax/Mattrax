@@ -92,7 +92,7 @@ test.describe("onboarding email", () => {
     // Asking again (the endpoint the verification screen uses) must not send a
     // second welcome for an already-verified account.
     const again = await page.request.post("/api/v1/account/email-verification", {
-      headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" },
+      headers: { origin: new URL(page.url()).origin, "x-effect-auth-csrf": "1" },
     });
 
     expect(again.ok()).toBe(true);

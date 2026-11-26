@@ -37,7 +37,9 @@ test.describe("settings breadcrumbs", () => {
         },
       });
     });
-    await page.evaluate(() => localStorage.clear());
+    // The page has not navigated yet, so clear storage from an init script that
+    // runs on the first document instead of evaluating on about:blank.
+    await page.addInitScript(() => localStorage.clear());
 
     let releaseMe!: () => void;
     const meGate = new Promise<void>((resolve) => {

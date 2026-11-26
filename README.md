@@ -68,17 +68,10 @@ inherited `DATABASE_URL`/`DATABASE_*` values are ignored. A non-local dev databa
 requires `E2E_ALLOW_REMOTE_DATABASE=1`. The suite creates its own users and
 tenants, so it is safe to point at a disposable database.
 
-The suite runs with a single Playwright worker because its tests share the dev
-mailbox and rate-limit buckets through one server. CI splits it across eight
-runners instead — each gets its own database and dev server. The split is not
-Playwright's `--shard`: that cuts the alphabetically ordered file list into
-contiguous slices, which leaves one shard holding every heavy spec. Instead
-`packages/config/scripts/e2e-shard.ts` assigns spec files largest-first to the
-emptiest shard. To reproduce one shard locally:
-
-```sh
-pnpm test:e2e $(pnpm exec tsx packages/config/scripts/e2e-shard.ts 3/8)
-```
+Tests run in parallel. Each test owns a browser context and a uniquely named
+tenant, while identity and passkey journeys create their own account so they
+cannot change another test's security settings. CI runs the full suite in one
+job with four workers. Set `E2E_WORKERS` to override the worker count locally.
 
 ## Architecture
 

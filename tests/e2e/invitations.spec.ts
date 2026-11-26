@@ -230,7 +230,7 @@ test.describe("invitations", () => {
     // Keep the UI coverage that the new role is offered as an assignable
     // option, but send the invitation through the API: the picker's Solid
     // signal can still hold "Member" after selectOption changes the DOM, which
-    // silently submits the wrong role under a loaded (two-worker) shard.
+    // silently submits the wrong role when the runner is under load.
     await expect(
       page.getByLabel("Invitation role").locator(`option[value="role:${role.id}"]`),
     ).toHaveText(roleName);

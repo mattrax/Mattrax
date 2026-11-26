@@ -1609,10 +1609,12 @@ export default function PolicyDesigner(props: PolicyDesignerProps) {
             onClick={() => applyTemplate(template.keys)}
             class="w-full text-left disabled:cursor-not-allowed"
           >
-            <strong class="block text-xs font-semibold text-foreground">
+            <strong class="block text-xs font-semibold">
               {template.label}
             </strong>
-            <span class="mt-0.5 block text-xs text-muted-foreground">{template.description}</span>
+            <span class="mt-0.5 block text-xs text-primary-foreground/80">
+              {template.description}
+            </span>
             <span class="mt-2 inline-flex whitespace-nowrap rounded-full bg-brand-solid px-2 py-0.5 text-xs font-medium text-brand-foreground">
               Recommended
             </span>
@@ -1630,14 +1632,14 @@ export default function PolicyDesigner(props: PolicyDesignerProps) {
     >
       <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
         <ShieldCheck class="size-4" />
-        <strong class="text-xs font-semibold text-foreground">
+        <strong class="text-xs font-semibold">
           Start from a CIS benchmark
         </strong>
         <Badge variant="outline" class="h-4">
           Template
         </Badge>
       </span>
-      <span class="mt-0.5 block text-xs text-muted-foreground">
+      <span class="mt-0.5 block text-xs text-primary-foreground/80">
         Review a benchmark's controls, see what each maps to, and apply only the ones you want.
       </span>
     </Button>

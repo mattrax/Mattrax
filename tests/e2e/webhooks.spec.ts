@@ -59,10 +59,11 @@ test.describe("tenant outbound webhooks", () => {
 
   test("rejects private webhook URLs", async ({ page }) => {
     const { tenant } = await bootstrapSession(page, "Webhook Guard Tenant");
+    const origin = new URL(page.url()).origin;
 
     const response = await page.request.post(`/api/v1/tenants/${tenant.id}/webhooks`, {
       data: { url: "https://127.0.0.1/hooks", events: [] },
-      headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" },
+      headers: { origin, "x-effect-auth-csrf": "1" },
     });
 
     expect(response.status()).toBe(400);

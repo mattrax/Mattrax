@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import {
-  bootstrapTenant,
+  bootstrapFreshTenant,
   confirmStepUp,
   gotoHydrated,
   register,
   signIn,
+  signOut,
   stepUpGrant,
   totpCode,
 } from "./helpers";
@@ -41,7 +42,7 @@ test.describe("authenticator MFA", () => {
   test("rolls back an optimistic backup Pin when passkey confirmation is cancelled", async ({
     page,
   }) => {
-    const tenant = await bootstrapTenant(page, "Backup Pin Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Backup Pin Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/backups`);
     await page.getByRole("button", { name: "Back up now" }).click();
 
@@ -145,7 +146,9 @@ test.describe("authenticator MFA", () => {
     ]);
 
     if (totpOutcome === "rejected") {
-      await page.locator("#mfa-code").fill(totpCode(manualKey, 1));
+      // The first code can land on a replay-protected boundary. Retry with the
+      // next step instead of submitting the same rejected code again.
+      await page.locator("#mfa-code").fill(totpCode(manualKey, 2));
       await page.getByRole("button", { name: /^continue$/i }).click();
     }
 
@@ -170,10 +173,7 @@ test.describe("authenticator MFA", () => {
     const { email, manualKey, recoveryCodes } = await enrollAuthenticator(page);
     await signInWithTotp(page, email, manualKey);
 
-    await page.getByRole("button", { name: "Account menu" }).click();
-    await expect(page.locator("[data-slot=menu-content]")).toBeVisible();
-    await page.getByRole("menuitem", { name: /sign out/i }).click();
-    await expect(page).toHaveURL(/\/login/);
+    await signOut(page);
     await signIn(page, email);
     // A recovery code completes the same pending flow and is single use.
     await page.getByRole("button", { name: /recovery code/i }).click();

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { api, bootstrapTenant, createScimClient, uniqueEmail } from "./helpers";
+import { api, bootstrapFreshTenant, createScimClient, uniqueEmail } from "./helpers";
 
 type Directory = {
   users: Array<{
@@ -17,7 +17,7 @@ type Administrator = { accountId: string; email: string };
 
 test.describe("SCIM provisioning", () => {
   test("provisions directory users and groups with a tenant token", async ({ page }) => {
-    const tenant = await bootstrapTenant(page, "SCIM Tenant");
+    const tenant = await bootstrapFreshTenant(page, "SCIM Tenant");
     const { scim } = await createScimClient(page, tenant.id);
 
     // A new tenant has no directory people: the account that created it is an

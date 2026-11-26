@@ -117,15 +117,15 @@ const openMenu = async (page: Page, trigger: import("@playwright/test").Locator)
   await expect
     .poll(
       async () => {
-        if ((await page.locator('[data-slot="menu-content"]').count()) > 0) return 1;
+        if ((await trigger.getAttribute("aria-expanded").catch(() => null)) === "true") return true;
 
         await trigger.click();
 
-        return page.locator('[data-slot="menu-content"]').count();
+        return (await trigger.getAttribute("aria-expanded").catch(() => null)) === "true";
       },
       { timeout: 8_000 },
     )
-    .toBeGreaterThan(0);
+    .toBe(true);
 };
 
 const openPalette = async (page: Page) => {
@@ -264,8 +264,7 @@ test.describe("dashboard accessibility", () => {
 
     // Column picker.
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
-    await page.getByRole("button", { name: "Choose visible columns" }).click();
-    await expect(page.locator('[data-slot="menu-content"]')).toBeVisible();
+    await openMenu(page, page.getByRole("button", { name: "Choose visible columns" }));
     await expectNoViolations(page, "column picker open", {
       include: '[data-slot="menu-content"]',
     });
@@ -312,6 +311,7 @@ test.describe("dashboard accessibility", () => {
 
     // Column picker.
     const columns = page.getByRole("button", { name: "Choose visible columns" });
+    await expect(columns).toBeVisible();
     await openMenu(page, columns);
     await page.keyboard.press("Escape");
     await expect(page.locator('[data-slot="menu-content"]')).toHaveCount(0);

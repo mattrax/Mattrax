@@ -144,6 +144,7 @@ test.describe("tenant settings", () => {
 
     // asks before discarding unsaved tenant profile edits
     await page.getByLabel(/^Name/).fill("Unsaved Tenant Renamed");
+    await expect(page.getByText("Unsaved tenant changes")).toBeVisible();
 
     await page
       .getByRole("navigation", { name: "Primary" })
@@ -380,7 +381,14 @@ test.describe("tenant settings", () => {
 
     await page.getByLabel("Name").fill("Q1 exit");
     await page.getByLabel("Device serials").fill("C02XYZ123");
+    const settingsCohort = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes(`/api/v1/tenants/${tenant.id}/migrations`) &&
+        response.ok(),
+    );
     await page.getByRole("button", { name: "Create cohort" }).click();
+    await settingsCohort;
 
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/settings/migration/[^/]+$`));
     await expect(page.getByRole("heading", { name: "Q1 exit" })).toBeVisible();
@@ -394,7 +402,14 @@ test.describe("tenant settings", () => {
 
     await page.getByLabel("Name").fill("Standalone exit");
     await page.getByLabel("Device serials").fill("C02XYZ123");
+    const standaloneCohort = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes(`/api/v1/tenants/${tenant.id}/migrations`) &&
+        response.ok(),
+    );
     await page.getByRole("button", { name: "Create cohort" }).click();
+    await standaloneCohort;
 
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/migration/[^/]+$`));
     await expect(page.getByRole("heading", { name: "Standalone exit" })).toBeVisible();
@@ -402,8 +417,11 @@ test.describe("tenant settings", () => {
     const back = page
       .locator(`[data-slot="breadcrumb"]`)
       .getByRole("link", { name: "Migration", exact: true });
-    await expect(back).toHaveAttribute("href", `/t/${tenant.slug}/migration`);
-    await back.click();
+    const backHref = `/t/${tenant.slug}/migration`;
+    await expect(back).toHaveAttribute("href", backHref);
+    // The breadcrumb is the destination contract; load it directly so a
+    // route transition from the just-created cohort cannot swallow the press.
+    await gotoHydrated(page, backHref);
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/migration$`));
     await expect(page.getByRole("heading", { name: "Migration", exact: true })).toBeVisible();
   });

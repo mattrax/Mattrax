@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { createHmac, randomUUID } from "node:crypto";
-import { readSharedSession } from "../../packages/config/e2e-shared-session.ts";
+import { e2eBaseURL, readSharedSession } from "../../packages/config/e2e-shared-session.ts";
 
 type DebugEmail = { readonly to: string; readonly text: string };
 
@@ -103,6 +103,16 @@ export async function register(page: Page, options: { name?: string; email?: str
   // finish the sign-in the same way a person would.
   if (page.url().includes("/login")) await signIn(page, email);
 
+  // The post-registration redirect can arrive after the first URL match. Let
+  // the router and its data settle so a caller cannot navigate account pages
+  // while the registration flow is about to move them to tenant onboarding.
+  await page.waitForLoadState("networkidle");
+  await page.waitForFunction(
+    () => document.documentElement.dataset.hydrated === "true",
+    undefined,
+    { timeout: 20_000 },
+  );
+
   return { email };
 }
 
@@ -169,7 +179,7 @@ export async function verifyEmail(page: Page, email: string) {
 
   const response = await page.request.post("/api/v1/verify-email", {
     data: { token: decodeURIComponent(token) },
-    headers: { origin: "http://localhost:9050", "x-effect-auth-csrf": "1" },
+    headers: { origin: new URL(page.url()).origin, "x-effect-auth-csrf": "1" },
   });
 
   if (!response.ok())
@@ -200,32 +210,88 @@ export async function signIn(page: Page, email: string) {
   // passkey ceremony follows on the next step.
   await page.locator("#email").fill(email);
   await page.getByRole("button", { name: /^continue$/i }).click();
-  await page
-    .getByRole("button", { name: /passkey/i })
-    .first()
-    .click();
-
   // A passkey signs in directly unless TOTP is enabled, in which case the
-  // pending step appears on the same page.
-  const outcome = await Promise.race([
-    page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 }).then(() => "session"),
-    page
-      .getByText(/two-factor authentication required/i)
-      .waitFor({ timeout: 45_000 })
-      .then(() => "mfa"),
-  ]).catch(() => undefined);
+  // pending step appears on the same page. The server can transiently fail to
+  // persist the session while many tests sign in at once; the page offers a
+  // retry button for that case, so use it instead of failing the test.
+  const failures: string[] = [];
 
-  if (!outcome) {
-    const alert = await page
-      .getByRole("alert")
-      .first()
-      .textContent()
-      .catch(() => null);
-
-    throw new Error(
-      `Passkey sign-in did not complete (${page.url()})${alert ? `: ${alert.trim()}` : ""}`,
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const completion = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/completePasskeySignIn"),
+      { timeout: 45_000 },
     );
+
+    if (attempt === 0)
+      await page
+        .getByRole("button", { name: /passkey/i })
+        .first()
+        .click();
+    else await page.getByRole("button", { name: /try passkey again/i }).click();
+
+    const response = await completion.catch(() => undefined);
+
+    if (!response) break;
+
+    if (!response.ok()) {
+      failures.push(`${response.status()} ${await response.text().catch(() => "")}`);
+
+      continue;
+    }
+
+    const signedIn = await Promise.race([
+      page
+        .waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 })
+        .then(() => true),
+      page
+        .getByText(/two-factor authentication required/i)
+        .waitFor({ timeout: 45_000 })
+        .then(() => true),
+    ]).catch(() => false);
+
+    if (signedIn) return;
   }
+
+  const alert = await page
+    .getByRole("alert")
+    .first()
+    .textContent()
+    .catch(() => null);
+
+  throw new Error(
+    `Passkey sign-in did not complete (${page.url()})${alert ? `: ${alert.trim()}` : ""}${failures.length ? `\n${failures.join("\n")}` : ""}`,
+  );
+}
+
+/**
+ * Sign out through the account menu, retrying if a transient request failure
+ * leaves the menu closed without ending the session.
+ */
+export async function signOut(page: Page) {
+  // The login page can briefly render before its session query settles and
+  // then bounce back to the dashboard with a stale cache. Sign out again when
+  // that happens instead of racing the redirect.
+  await expect(async () => {
+    if (!page.url().includes("/login")) {
+      await page.getByRole("button", { name: "Account menu" }).click();
+      await expect(page.locator("[data-slot=menu-content]")).toBeVisible();
+      await page.getByRole("menuitem", { name: /sign out/i }).click();
+      await page.waitForURL(/\/login/, { timeout: 20_000 });
+    }
+
+    await expect
+      .poll(async () => (await page.request.get("/api/v1/me")).status(), { timeout: 20_000 })
+      .toBe(401);
+
+    await gotoHydrated(page, "/login");
+  }).toPass({ timeout: 60_000 });
+
+  await expect(page.locator("#email")).toBeVisible({ timeout: 20_000 });
+  // Let the sign-out response and the login redirect finish before a caller
+  // starts the next ceremony; a late response can otherwise clear its flow.
+  await page.waitForLoadState("networkidle");
 }
 
 export async function createTenant(page: Page, name: string) {
@@ -236,24 +302,20 @@ export async function createTenant(page: Page, name: string) {
 
   const slug = `${baseSlug}-${randomUUID().slice(0, 8)}`;
 
-  const id = await page.evaluate(
-    async ({ name, slug }) => {
-      const response = await fetch("/api/v1/tenants", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-effect-auth-csrf": "1" },
-        body: JSON.stringify({ name, slug }),
-      });
-
-      if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
-
-      const created: { id: string } = await response.json();
-
-      return created.id;
+  const response = await page.request.post("/api/v1/tenants", {
+    headers: {
+      "content-type": "application/json",
+      origin: e2eBaseURL(),
+      "x-effect-auth-csrf": "1",
     },
-    { name, slug },
-  );
+    data: { name, slug },
+  });
 
-  return { id, slug };
+  if (!response.ok()) throw new Error(`${response.status()}: ${await response.text()}`);
+
+  const created: { id: string } = await response.json();
+
+  return { id: created.id, slug };
 }
 
 export async function gotoHydrated(page: Page, path: string) {
@@ -270,7 +332,18 @@ export async function gotoHydrated(page: Page, path: string) {
   return response;
 }
 
+/** Create a tenant under the shared owner account. */
 export async function bootstrapTenant(page: Page, name = "E2E Tenant") {
+  await sharedSession(page);
+  const tenant = await createTenant(page, `${name} ${randomUUID().slice(0, 4)}`);
+  await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+  await expect(page.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
+
+  return tenant;
+}
+
+/** Create a tenant under a new account that owns its passkey and security state. */
+export async function bootstrapFreshTenant(page: Page, name = "E2E Tenant") {
   await register(page);
   const tenant = await createTenant(page, `${name} ${randomUUID().slice(0, 4)}`);
   await gotoHydrated(page, `/t/${tenant.slug}/devices`);
@@ -298,10 +371,6 @@ export async function sharedSession(page: Page) {
 
       if (me.ok()) {
         const profile: { account?: { email?: string } } = await me.json();
-        // createTenant() and other helpers run fetch() from the page, so put
-        // it on our origin before the caller uses them. register() already
-        // navigates as part of its flow.
-        await gotoHydrated(page, "/dashboard");
 
         return { email: profile.account?.email ?? shared.email };
       }

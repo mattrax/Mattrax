@@ -876,6 +876,7 @@ const makeAppLayer = (
   env: Env,
   cryptoLayer: CryptoLayer,
   httpClientLayer: Layer.Layer<HttpClient.HttpClient>,
+  cacheHandler: boolean,
 ) => {
   const androidConfig = androidDeliveryConfig(apiEnv);
 
@@ -1006,9 +1007,10 @@ const makeAppLayer = (
   const managementBackendLayer = ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
     apns,
     authSecret: env.AUTH_SECRET,
-    // A hosted request must not build a fresh worker pool, or lose queued
-    // delivery work, when its service graph is rebuilt.
-    isolateWideDelivery: true,
+    // Only a host that caches this layer may share the delivery queue. Workers
+    // rebuild the graph per request, and a queue built in one request cannot
+    // use its I/O from another request ("AsyncLocalStorage bound function").
+    isolateWideDelivery: cacheHandler,
     // Tenant-scoped enrollment URLs carry a signed tenant token, so Cloud no
     // longer needs a deployment-wide pin. An explicitly configured pin is kept
     // as a fallback for single-tenant deployments that still use the old
@@ -1314,13 +1316,14 @@ const getAppHandler = (
   env: Env,
   cryptoLayer: CryptoLayer,
   httpClientLayer: Layer.Layer<HttpClient.HttpClient>,
+  cacheHandler: boolean,
 ) => {
   // SAFETY: makeAppLayer returns the combined router/service layer; the web
   // handler only reads the router and server services from its output. The
   // layer's inferred requirement channel includes framework request services
   // that `toWebHandler` cannot name, so the assertion stays at this boundary.
   return HttpRouter.toWebHandler(
-    makeAppLayer(env, cryptoLayer, httpClientLayer) as Layer.Layer<
+    makeAppLayer(env, cryptoLayer, httpClientLayer, cacheHandler) as Layer.Layer<
       unknown,
       unknown,
       HttpRouter.HttpRouter
@@ -1474,12 +1477,13 @@ export const createApiRuntime = (
   const handlers = new WeakMap<Env, ReturnType<typeof getAppHandler>>();
 
   const appHandler = (env: Env) => {
-    if (!options.cacheHandler) return getAppHandler(env, cryptoLayer, httpClientLayer);
+    if (!options.cacheHandler)
+      return getAppHandler(env, cryptoLayer, httpClientLayer, false);
 
     let handler = handlers.get(env);
 
     if (!handler) {
-      handler = getAppHandler(env, cryptoLayer, httpClientLayer);
+      handler = getAppHandler(env, cryptoLayer, httpClientLayer, true);
       handlers.set(env, handler);
     }
 

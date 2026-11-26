@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { bootstrapTenant, confirmStepUp, createTenant, gotoHydrated } from "./helpers";
+import { bootstrapFreshTenant, confirmStepUp, createTenant, gotoHydrated } from "./helpers";
 
 test.describe("account", () => {
   test("updates the profile and manages API tokens", async ({ page }) => {
-    await bootstrapTenant(page, "Account Tenant");
+    await bootstrapFreshTenant(page, "Account Tenant");
     await gotoHydrated(page, "/account");
     // The section heading, not "No active sessions were found" in the
     // pre-fetch state: `getByText` matches substrings case-insensitively.
@@ -54,7 +54,7 @@ test.describe("account", () => {
     page,
     request,
   }) => {
-    const tenant = await bootstrapTenant(page, "Scoped Token Tenant");
+    const tenant = await bootstrapFreshTenant(page, "Scoped Token Tenant");
     const other = await createTenant(page, "Scoped Other Tenant");
     await gotoHydrated(page, "/account");
 

@@ -85,9 +85,9 @@ jobs:
               - '!.dockerignore'
               - '!.zed/**'
             # Paths that can change the migrated schema. This only schedules the
-            # `migrations` job and its cache warm-up; the shards fall back to
-            # running the real migrations on a cache miss, so a path missed
-            # here cannot hide drift.
+            # `migrations` job and its cache warm-up; the browser job falls
+            # back to running the real migrations on a cache miss, so a path
+            # missed here cannot hide drift.
             schema:
               - 'apps/cloud/migrations/**'
               - 'apps/cloud/src/db/**'
@@ -370,9 +370,12 @@ jobs:
           needs.changes.result != 'success' ||
           needs.changes.outputs.schema == 'true'
         run: |
-          printf '[mysqld]\nmysql_native_password=ON\n' |
-            sudo tee /etc/mysql/mysql.conf.d/zz-ci-native.cnf >/dev/null
-          sudo systemctl start mysql.service
+          if ! sudo systemctl start mysql.service; then
+            sudo systemctl status mysql.service || true
+            sudo journalctl -xeu mysql.service || true
+            sudo tail -100 /var/log/mysql/error.log || true
+            exit 1
+          fi
           ready=""
           for attempt in $(seq 1 30); do
             if mysqladmin -h127.0.0.1 -uroot -proot ping >/dev/null 2>&1; then
@@ -387,8 +390,8 @@ jobs:
           fi
           mysql -uroot -proot <<'SQL'
           CREATE DATABASE IF NOT EXISTS mattraxe;
-          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
-          ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
+          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED BY 'mattrax';
+          ALTER USER 'mattrax'@'%' IDENTIFIED BY 'mattrax';
           GRANT ALL ON mattraxe.* TO 'mattrax'@'%';
           SQL
       - name: Apply every migration from scratch
@@ -482,63 +485,43 @@ jobs:
           include-hidden-files: true
           retention-days: 7
 
-  # One runner per shard with a single Playwright worker. Two or more workers
-  # share the dev mailbox and rate-limit buckets through one server and made
-  # stateful specs (overlays, SCIM assignments, slug renames) flaky in CI. The
-  # speedups here are shared sessions, merged setup and cached builds instead.
-  #
-  # `packages/config/scripts/e2e-shard.ts` assigns the spec files instead of
-  # Playwright's `--shard`: files are assigned largest-first to the emptiest
-  # shard, and the assignment is recomputed on every run so a growing spec moves
-  # shard instead of inflating one.
+  # One runner and four Playwright workers. Tests own isolated browser contexts
+  # and unique tenants; identity and passkey flows keep fresh accounts. Shared
+  # setup uses API requests instead of repeating registration and an extra
+  # dashboard document load for every test.
   #
   # The database is the runner image's MySQL 8.4 (production is 8.4; see
   # docs/operations/backups.md) started in place. The old Docker service spent
   # ~34s initialising a fresh data directory and another 29s applying 104
-  # migrations per shard. The shared schema cache keeps the 29s migration off
+  # migrations per job. The shared schema cache keeps the 29s migration off
   # the path once main has published it; the build job above is the real path.
   #
-  # Two shards. Hydration-based navigation removes ~600ms per document load,
-  # the 86s MFA test is split into four tests, 64 repeated setups were merged
-  # away (246 -> 182 tests with every assertion kept), one authenticated
-  # session is reused by most specs, and the production build comes from
-  # cache. This trades the old nine runners for two at the cost of a longer
-  # per-shard wall clock. With vitest down to one, the job count is 11:
-  # changes + lint + 1 vitest + typecheck + build/migrations + 4 Lighthouse
-  # + 2 shards.
+  # The full 182-test suite runs in one job. Hydration-based navigation removes
+  # ~600ms per document load, repeated registration is shared where account
+  # state is not under test, and the production build comes from cache.
   #
   # Setup is ~25s: schema restore ~1s, browser cache ~2s, cached build ~5s
-  # (MySQL and the schema load overlap it), plus the duration-weighted tests.
+  # (MySQL and the schema load overlap it), plus the tests.
   e2e:
-    # The denominator comes from the matrix itself, so adding or removing a
-    # shard cannot leave a shard running a stale share of the suite.
-    name: Browser tests (CDP, ${{ needs.changes.outputs.e2e_changed == 'true' && 'changed files only' || format('shard {0}/{1}', matrix.shard, strategy.job-total) }})
+    name: Browser tests (CDP, ${{ needs.changes.outputs.e2e_changed == 'true' && 'changed files only' || 'full suite' }})
     needs: changes
     # A failed or timed-out gate must not turn into a skipped (successful)
     # browser suite; see the `outputs` step in the `changes` job.
     if: >-
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
-    runs-on: ubuntu-latest
-    # A retried failure costs two 60s timeouts on its own; keep headroom above
-    # the ~2 minute expectation for a balanced shard.
+    # The suite is CPU-bound. GitHub's arm64 image is a faster per-core host
+    # than the x64 runner while still running the whole suite as one shard.
+    runs-on: ubuntu-24.04-arm
+    # Keep headroom for setup, artifacts and a retried failure.
     timeout-minutes: 30
-    strategy:
-      # Every shard's failure report is useful; do not cancel the rest.
-      fail-fast: false
-      matrix:
-        # When the policy is enabled, one job runs `playwright test
-        # --only-changed` for the PR. It is a single job because the selected
-        # set is usually a handful of specs; the full suite keeps its two
-        # shards.
-        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2]') }}
     env:
       E2E_CHANNEL: bundled
+      E2E_WORKERS: 4
       # Serve the production build rather than the dev server: a dashboard page
       # hydrates in ~70ms from built bundles against ~650ms in dev mode, and
       # every test loads several documents.
       E2E_SERVER: built
-      E2E_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
       DATABASE_HOST: 127.0.0.1
       DATABASE_PORT: 3306
       DATABASE_USER: mattrax
@@ -547,8 +530,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # `--only-changed` needs the base branch's history; the sharded path
-          # does not.
+          # `--only-changed` needs the base branch's history.
           fetch-depth: ${{ needs.changes.outputs.e2e_changed == 'true' && 0 || 1 }}
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
         with:
@@ -558,10 +540,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Every shard used to rebuild the dashboard (14-21s of the critical
-      # path). Restore a content-addressed bundle instead: an exact hit skips
-      # the build, while a miss builds and saves it in parallel with the other
-      # shards. The key hashes every input the bundle reads.
+      # Restore a content-addressed bundle instead of rebuilding the dashboard
+      # on every run. The key hashes every input the bundle reads.
       - name: Restore the production build
         id: web-build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -570,7 +550,7 @@ jobs:
             apps/web/dist
             apps/web/.cloudflare/output
           key: >-
-            web-e2e-build-v1-${{ runner.os }}-${{ hashFiles(
+            web-e2e-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(
               'pnpm-lock.yaml', 'apps/*/src/**', 'apps/*/scripts/**',
               'apps/*/public/**', 'apps/*/migrations/**', 'apps/*/package.json',
               'apps/*/*.config.ts', 'packages/**', 'docs/**',
@@ -578,9 +558,9 @@ jobs:
       - name: Fetch the base branch
         if: needs.changes.outputs.e2e_changed == 'true'
         run: git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-      # The migrated schema is identical for every shard. `hashFiles` reads the
+      # The migrated schema is this job's only copy. `hashFiles` reads the
       # 104 migration SQL files (not the 33MB of snapshots), so a migration
-      # change misses the cache and the shard replays the real migrations.
+      # change misses the cache and the job replays the real migrations.
       - name: Restore the migrated schema
         id: schema
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
@@ -600,10 +580,10 @@ jobs:
         id: browser-cache
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
       # No `--with-deps`: measured on this runner image, Chromium launches and
       # runs the suite without the apt packages. Dropping it removes a ~10s
-      # apt-get from every shard; the browsers themselves are still the pinned
+      # apt-get from the job; the browsers themselves are still the pinned
       # Playwright build, not the runner's Chrome.
       - run: pnpm exec playwright install chromium
         if: steps.browser-cache.outputs.cache-hit != 'true'
@@ -628,9 +608,12 @@ jobs:
         run: |
           cat > /tmp/start-mysql.sh <<'SCRIPT'
           set -euo pipefail
-          printf '[mysqld]\nmysql_native_password=ON\n' |
-            sudo tee /etc/mysql/mysql.conf.d/zz-ci-native.cnf >/dev/null
-          sudo systemctl start mysql.service
+          if ! sudo systemctl start mysql.service; then
+            sudo systemctl status mysql.service || true
+            sudo journalctl -xeu mysql.service || true
+            sudo tail -100 /var/log/mysql/error.log || true
+            exit 1
+          fi
           ready=""
           for attempt in $(seq 1 30); do
             if mysqladmin -h127.0.0.1 -uroot -proot ping >/dev/null 2>&1; then
@@ -645,8 +628,8 @@ jobs:
           fi
           mysql -uroot -proot <<'SQL'
           CREATE DATABASE IF NOT EXISTS mattraxe;
-          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
-          ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
+          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED BY 'mattrax';
+          ALTER USER 'mattrax'@'%' IDENTIFIED BY 'mattrax';
           GRANT ALL ON mattraxe.* TO 'mattrax'@'%';
           SQL
           if [ "${SCHEMA_CACHE_HIT:-false}" = "true" ]; then
@@ -671,7 +654,7 @@ jobs:
       # `vite preview` on 9050, and returns once the server answers.
       #
       # A cache hit skips the build; a miss builds here and saves the bundle
-      # for the other shards. Polling every 0.5s instead of 2s trims another
+      # for later runs. Polling every 0.5s instead of 2s trims another
       # second without changing the 180s ceiling.
       - name: Build and serve the production bundle
         env:
@@ -697,7 +680,7 @@ jobs:
             apps/web/dist
             apps/web/.cloudflare/output
           key: >-
-            web-e2e-build-v1-${{ runner.os }}-${{ hashFiles(
+            web-e2e-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(
               'pnpm-lock.yaml', 'apps/*/src/**', 'apps/*/scripts/**',
               'apps/*/public/**', 'apps/*/migrations/**', 'apps/*/package.json',
               'apps/*/*.config.ts', 'packages/**', 'docs/**',
@@ -716,8 +699,8 @@ jobs:
         env:
           E2E_BASE_URL: http://localhost:9050
           E2E_ONLY_CHANGED: ${{ needs.changes.outputs.e2e_changed }}
-          # The JSON report is how the duration weights are refreshed; the
-          # github reporter keeps the inline failure annotations.
+          # Keep the JSON report for timing history; the github reporter adds
+          # inline failure annotations.
           PLAYWRIGHT_JSON_OUTPUT_FILE: test-results/playwright-report.json
           E2E_BASE_REF: ${{ github.base_ref }}
         run: |
@@ -732,31 +715,23 @@ jobs:
             pnpm test:e2e --reporter=github,json --only-changed="origin/$E2E_BASE_REF" --pass-with-no-tests
             exit 0
           fi
-          # `E2E_SHARD` is still the shard's name; the script turns it into the
-          # spec files that shard owns. It exits non-zero rather than printing
-          # nothing, because Playwright with no argument runs the whole suite.
-          specs=$(pnpm exec tsx packages/config/scripts/e2e-shard.ts "$E2E_SHARD")
-          # One CLI filter per spec file: the split is the point, so the
-          # variable is intentionally unquoted.
-          # shellcheck disable=SC2086
-          pnpm test:e2e --reporter=github,json $specs
+          pnpm test:e2e --reporter=github,json
       - name: Stop the server
         if: always()
         run: |
           pkill -9 -f 'vite.js dev' || true
           pkill -9 -f 'vite.js preview' || true
           pkill -9 -f 'apps/web/scripts/e2e-server.ts' || true
-      # Kept on success too: this is the shard's contribution to the duration
-      # map that `pnpm e2e:durations` merges (`main` is the authoritative run).
+      # Kept on success too so a full run always leaves a timing record.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
-          name: playwright-durations-shard-${{ matrix.shard }}
+          name: playwright-durations
           path: test-results/playwright-report.json
           retention-days: 1
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
-          name: playwright-report-shard-${{ matrix.shard }}
+          name: playwright-report
           path: test-results/
           retention-days: 7
