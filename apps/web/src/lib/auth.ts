@@ -2,8 +2,12 @@ import type {
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
 } from "@simplewebauthn/browser";
-import { MeResponse } from "@mattrax/enterprise-domain/client";
-import { Permission } from "@mattrax/enterprise-domain/client";
+import {
+  BeginRegistrationVerificationResponse,
+  CompleteRegistrationVerificationResponse,
+  MeResponse,
+  Permission,
+} from "@mattrax/enterprise-domain/client";
 import type { UpdateMeRequest } from "@mattrax/enterprise-domain/client";
 import { Effect, Option, Schema } from "effect";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
@@ -20,6 +24,13 @@ import { clearMeCache } from "~/lib/me-cache";
 import { resetMePreload } from "~/lib/me-preload";
 import { clearSessionPresence } from "~/lib/session-presence";
 import { clearBrowserTenantDirectory, rememberTenants } from "~/lib/tenant";
+import {
+  passkeyAuthenticationFailure,
+  passkeyEnvironmentAvailable,
+  passkeyEnvironmentFailure,
+  PasskeySignInError,
+  startConditionalPasskey,
+} from "~/lib/passkey-sign-in";
 
 type AuthUser = {
   id: string;
@@ -91,6 +102,17 @@ const Success = Schema.Struct({
 
 const decodeSuccess = Schema.decodeUnknownOption(Success);
 
+type AuthEnvelopeOptions = { readonly directSuccess?: boolean };
+
+/**
+ * Auth operations wrap responses in Success/Failure. Enterprise HttpApi routes
+ * return their declared success schema directly.
+ */
+const hasDirectSuccessResponse = (path: string) =>
+  path.startsWith("/v1/") ||
+  path === "/register/verification" ||
+  path === "/register/verification/verify";
+
 const FailureFields = Schema.Struct({
   _tag: Schema.optional(Schema.String),
   message: Schema.optional(Schema.String),
@@ -148,9 +170,19 @@ const readAuthResponse = async (
     return { status: response.status, body };
   }
 
-  const request = new Request(url, { ...init, credentials: "include", headers });
+  const webRequest = new Request(url, {
+    ...init,
+    body: typeof init.body === "string" ? undefined : init.body,
+    credentials: "include",
+    headers,
+  });
+  const effectRequest = HttpClientRequest.fromWeb(webRequest);
+  const request =
+    typeof init.body === "string"
+      ? HttpClientRequest.bodyText(effectRequest, init.body, "application/json")
+      : effectRequest;
   const result = await Effect.runPromise(
-    HttpClient.execute(HttpClientRequest.fromWeb(request)).pipe(
+    HttpClient.execute(request).pipe(
       Effect.flatMap((response) =>
         Effect.gen(function* () {
           const body = yield* HttpClientResponse.schemaBodyJson(Schema.Json)(response).pipe(
@@ -180,7 +212,9 @@ export const decodeAuthEnvelope = <S extends Schema.ConstraintDecoder<unknown, n
   status: number,
   responseBody: unknown,
   schema: S,
+  options: AuthEnvelopeOptions = {},
 ): AuthEnvelope<S["Type"]> => {
+  const successful = status >= 200 && status < 300;
   const successEnvelope =
     responseBody === undefined ? undefined : Option.getOrUndefined(decodeSuccess(responseBody));
   const value =
@@ -188,18 +222,31 @@ export const decodeAuthEnvelope = <S extends Schema.ConstraintDecoder<unknown, n
       ? undefined
       : Option.getOrUndefined(Schema.decodeUnknownOption(schema)(successEnvelope.value));
 
-  if (status >= 200 && status < 300 && successEnvelope && value !== undefined)
+  if (successful && successEnvelope && value !== undefined)
     return { value, private: successEnvelope.private };
 
   const failureEnvelope =
     responseBody === undefined
       ? undefined
       : Option.getOrUndefined(decodeFailureEnvelope(responseBody));
-  const direct =
-    responseBody === undefined || (status >= 200 && status < 300)
+  const directFailure =
+    responseBody === undefined
       ? undefined
       : Option.getOrUndefined(decodeDirectFailure(responseBody));
-  const failure = failureEnvelope ?? direct;
+  const failure = failureEnvelope ?? (successful ? undefined : directFailure);
+
+  if (
+    successful &&
+    options.directSuccess &&
+    failureEnvelope === undefined &&
+    directFailure === undefined &&
+    responseBody !== undefined
+  ) {
+    const directValue = Option.getOrUndefined(Schema.decodeUnknownOption(schema)(responseBody));
+
+    if (directValue !== undefined) return { value: directValue, private: undefined };
+  }
+
   const fields = failureEnvelope
     ? {
         _tag: failureEnvelope._tag,
@@ -209,12 +256,12 @@ export const decodeAuthEnvelope = <S extends Schema.ConstraintDecoder<unknown, n
         action: failureEnvelope.error?.action ?? failureEnvelope.action,
         methods: failureEnvelope.error?.methods ?? failureEnvelope.methods,
       }
-    : direct;
+    : failure;
   const tag = fields?._tag;
   const message = fields?.message;
   const reason = fields?.reason;
 
-  if (status < 200 || status >= 300 || failure) {
+  if (!successful || failure) {
     const error = new AuthRequestError(
       errorMessage(raisedFailure({ _tag: tag, message, reason }), authFailureFallback(tag, status)),
     );
@@ -238,7 +285,9 @@ async function requestEnvelope<S extends Schema.ConstraintDecoder<unknown, never
 ): Promise<AuthEnvelope<S["Type"]>> {
   const response = await readAuthResponse(path, init);
 
-  return decodeAuthEnvelope(response.status, response.body, schema);
+  return decodeAuthEnvelope(response.status, response.body, schema, {
+    directSuccess: hasDirectSuccessResponse(path),
+  });
 }
 
 class AuthRequestError extends Error {
@@ -300,6 +349,26 @@ const ClientSessionGlobal = Schema.Struct({
 });
 
 const StatusOk = Schema.Struct({ status: Schema.Literal("ok") });
+
+/**
+ * The sign-out action answers with the session module's result, not the
+ * Enterprise routes' `{status:"ok"}` acknowledgement. The transport still
+ * clears this browser's session cookie; the value reports whether the
+ * server-side session was revoked.
+ *
+ * `SessionSignOutUnavailable` is part of the action's declared success union
+ * (a store outage that still clears the client credential), so a person is
+ * signed out locally either way instead of being left on the dashboard.
+ */
+const SignOutResult = Schema.Struct({
+  clearCredential: Schema.Literal(true),
+  invalidation: Schema.Literals(["revoked", "already-invalid", "client-only"]),
+});
+const SignOutUnavailable = Schema.Struct({
+  _tag: Schema.Literal("SessionSignOutUnavailable"),
+  clearCredential: Schema.Literal(true),
+});
+const SignOutSuccess = Schema.Union([SignOutResult, SignOutUnavailable]);
 const SessionResponse = Schema.NullOr(SessionPayload);
 const CredentialDescriptor = Schema.Struct({
   type: Schema.Literal("public-key"),
@@ -389,8 +458,6 @@ const toCreationOptions = (
   hints: options.hints ? [...options.hints] : undefined,
   attestationFormats: options.attestationFormats ? [...options.attestationFormats] : undefined,
 });
-const RegistrationCode = Schema.Struct({ status: Schema.Literal("ok"), emailSent: Schema.Boolean });
-const RegistrationGrant = Schema.Struct({ grant: Schema.String });
 const PasskeyCredential = Schema.Struct({
   credentialId: Schema.String,
   name: Schema.String,
@@ -409,10 +476,6 @@ const PasskeyRename = Schema.Struct({
 const TotpBegin = Schema.Struct({ enrollmentId: Schema.String, expiresAtMillis: Schema.Number });
 const TotpConfirm = Schema.Struct({ enabled: Schema.Boolean, invalidation: Schema.Json });
 const TotpRegenerated = Schema.Struct({ enabled: Schema.Literal(true) });
-const SsoStart = Schema.Struct({
-  url: Schema.optional(Schema.String),
-  error: Schema.optional(Schema.String),
-});
 const EmailVerification = Schema.Struct({
   status: Schema.Literal("ok"),
   challenge: Schema.optional(Schema.String),
@@ -572,7 +635,16 @@ const revealOf = <S extends Schema.ConstraintDecoder<unknown>>(
 };
 
 /** Discoverable-credential sign-in shared by the login page and registration. */
-const passkeySignInFlow = async (): Promise<CompletionState> => {
+const passkeySignInFlow = async (
+  options: {
+    /** Set for conditional UI; the caller aborts it on an email edit or unmount. */
+    conditional?: AbortSignal;
+  } = {},
+): Promise<CompletionState> => {
+  const environmentFailure = passkeyEnvironmentFailure();
+
+  if (environmentFailure) throw environmentFailure;
+
   const started = await request("/beginPasskeySignIn", PasskeyRequestStart, {
     method: "POST",
     body: authBody({
@@ -582,25 +654,39 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
     }),
   });
 
+  if (options.conditional?.aborted)
+    throw new PasskeySignInError("PasskeyCancelled", "Passkey sign-in was cancelled.");
+
   let response: unknown;
 
   try {
-    const { startAuthentication } = await import("@simplewebauthn/browser");
-    response = await startAuthentication({
-      // A registration follow-up should not leave the person staring at a
-      // browser prompt for the server's full five-minute window.
-      optionsJSON: {
-        ...toRequestOptions(started.options),
-        timeout: Math.min(started.options.timeout ?? 60_000, 60_000),
-      },
-      useBrowserAutofill: false,
-    });
-  } catch {
-    // The browser/OS prompt was dismissed or timed out. No tag: callers only
-    // retry a server-tagged PasskeyRejected, so a deliberate cancellation is
-    // never re-prompted.
-    throw new Error("That passkey wasn't confirmed. Try again.");
+    if (options.conditional) {
+      response = await startConditionalPasskey(
+        toRequestOptions(started.options),
+        options.conditional,
+      );
+    } else {
+      const { startAuthentication } = await import("@simplewebauthn/browser");
+      response = await startAuthentication({
+        // A registration follow-up should not leave the person staring at a
+        // browser prompt for the server's full five-minute window.
+        optionsJSON: {
+          ...toRequestOptions(started.options),
+          timeout: Math.min(started.options.timeout ?? 60_000, 60_000),
+        },
+        useBrowserAutofill: false,
+      });
+    }
+  } catch (error) {
+    if (error instanceof PasskeySignInError) throw error;
+
+    throw passkeyAuthenticationFailure(error);
   }
+
+  // An email edit or unmount may land while the browser is finishing the
+  // assertion; never complete a ceremony the page has already abandoned.
+  if (options.conditional?.aborted)
+    throw new PasskeySignInError("PasskeyCancelled", "Passkey sign-in was cancelled.");
 
   const completion = await request("/completePasskeySignIn", Schema.Json, {
     method: "POST",
@@ -615,12 +701,6 @@ const passkeySignInFlow = async (): Promise<CompletionState> => {
 
   return state;
 };
-
-/** WebAuthn needs a secure context and a browser that exposes the API. */
-const passkeyEnvironmentAvailable = () =>
-  typeof window !== "undefined" &&
-  window.isSecureContext &&
-  window.PublicKeyCredential !== undefined;
 
 /**
  * Human copy for the tagged auth failures that arrive without a message.
@@ -782,13 +862,6 @@ export const authClient = {
         return { signedIn: false };
       }
     }),
-  startSso: (email: string, returnTo?: string) => {
-    const query = new URLSearchParams({ email });
-
-    if (returnTo) query.set("returnTo", returnTo);
-
-    return result(() => request("/v1/sso/azure/start?" + query.toString(), SsoStart));
-  },
   ssoSignIn: (token: string) =>
     result(async () => {
       const completion = await request("/ssoSignIn", Schema.Json, {
@@ -807,17 +880,26 @@ export const authClient = {
   /**
    * Guest sign-up verification. Public endpoints on the auth surface, so they
    * use the same transport and error envelope as registration itself.
+   *
+   * `token`/`nonce` are present only when the browser filled the Email
+   * Verification API hidden input. The server falls back to the emailed code
+   * whenever they are absent or fail to verify.
    */
-  requestRegistrationCode: (payload: { name: string; email: string }) =>
+  requestRegistrationCode: (payload: {
+    name: string;
+    email: string;
+    token?: string;
+    nonce?: string;
+  }) =>
     result(async () =>
-      request("/register/verification", RegistrationCode, {
+      request("/register/verification", BeginRegistrationVerificationResponse, {
         method: "POST",
         body: JSON.stringify(payload),
       }),
     ),
   verifyRegistrationCode: (payload: { email: string; code: string }) =>
     result(async () =>
-      request("/register/verification/verify", RegistrationGrant, {
+      request("/register/verification/verify", CompleteRegistrationVerificationResponse, {
         method: "POST",
         body: JSON.stringify(payload),
       }),
@@ -827,7 +909,7 @@ export const authClient = {
     result(async () => request("/getSession", SessionResponse, { method: "POST", body: "{}" })),
   signOut: () =>
     result(async () => {
-      await request("/signOut", StatusOk, { method: "POST", body: "{}" });
+      await request("/signOut", SignOutSuccess, { method: "POST", body: "{}" });
       commitSession(null);
 
       return { status: "ok" as const };
@@ -847,9 +929,22 @@ export const authClient = {
     }),
   /**
    * Passkey sign-in is a discoverable-credential ceremony. Begin issues a
-   * request-binding cookie; only the WebAuthn response travels back.
+   * request-binding cookie; only the WebAuthn response travels back. Passing a
+   * signal runs it as conditional UI, where the browser offers saved passkeys
+   * inline and the caller owns cancellation.
    */
-  passkeySignIn: () => result(passkeySignInFlow),
+  passkeySignIn: async (options?: { conditional?: AbortSignal }): AuthResult<CompletionState> => {
+    try {
+      return { data: await passkeySignInFlow(options) };
+    } catch (error) {
+      if (error instanceof PasskeySignInError)
+        return { error: { message: error.message, tag: error.tag } };
+
+      const raised = raisedFailure(error);
+
+      return { error: { message: errorMessage(raised), tag: errorTag(raised) } };
+    }
+  },
   /** Complete a pending SSO sign-in with a passkey. */
   passkeyPending: () =>
     result(async () => {
@@ -870,8 +965,8 @@ export const authClient = {
           optionsJSON: toRequestOptions(started.options),
           useBrowserAutofill: false,
         });
-      } catch {
-        throw new Error("That passkey wasn't confirmed. Try again or use a code.");
+      } catch (error) {
+        throw passkeyAuthenticationFailure(error);
       }
 
       const completion = await request("/completePasskeyPending", Schema.Json, {

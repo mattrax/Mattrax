@@ -79,6 +79,10 @@ if (!skipMigrations)
 const stopCron = startCronScheduler({
   expressions: ["17 3 * * *", "47 * * * *"],
   trigger: async (cron) => {
+    // Only work registered by this tick may hold the overlap guard. Request
+    // analytics and other process-wide work stay in the shutdown collector.
+    const tickTasks = backgroundTasks.fork();
+
     await api.scheduled(
       // SAFETY: `ScheduledController` only requires the cron expression and
       // schedule time for these handlers; `noRetry` is a no-op in-process.
@@ -87,11 +91,11 @@ const stopCron = startCronScheduler({
         scheduledTime: Date.now(),
         noRetry: () => {},
       },
-      context,
+      { ...context, waitUntil: tickTasks.waitUntil, signal: tickTasks.signal },
     );
     // scheduled returns after registering Workers waitUntil work. Keep the
-    // scheduler's running guard set until those jobs actually finish.
-    await Promise.all([backgroundTasks.idle(), api.backgroundTasks?.idle()]);
+    // scheduler's running guard set until this tick's jobs actually finish.
+    await tickTasks.idle();
   },
   log: (message) => console.log(message),
 });

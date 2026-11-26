@@ -1,8 +1,9 @@
 import { Effect, Option, Schema } from "effect";
-import { eq } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http";
 import { Db, schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 
 /**
  * Receive a billing entitlement from the services deployment.
@@ -18,7 +19,28 @@ const EntitlementBody = Schema.Struct({
   organizationId: Schema.String,
   plan: Schema.String,
   status: Schema.optional(Schema.NullOr(Schema.String)),
+  revision: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
 });
+
+/** Apply only a strictly newer billing snapshot. Returns MySQL affected rows. */
+export const applyBillingEntitlement = (
+  db: EnterpriseDb,
+  body: Schema.Schema.Type<typeof EntitlementBody>,
+) =>
+  db
+    .update(schema.organization)
+    .set({
+      billingPlan: body.plan,
+      billingStatus: body.status ?? null,
+      billingEntitlementRevision: body.revision,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.organization.id, body.organizationId),
+        lt(schema.organization.billingEntitlementRevision, body.revision),
+      ),
+    );
 
 const safeEqual = (left: string, right: string) => {
   const length = Math.max(left.length, right.length);
@@ -55,14 +77,9 @@ export const billingEntitlementRoutes = (config: BillingEntitlementConfig) =>
 
       const db = yield* Db;
 
-      yield* db
-        .update(schema.organization)
-        .set({
-          billingPlan: body.plan,
-          billingStatus: body.status ?? null,
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.organization.id, body.organizationId));
+      // Compare-and-set in the database: delayed or duplicate pushes must not
+      // restore an older paid snapshot after a newer cancellation.
+      yield* applyBillingEntitlement(db, body);
 
       return HttpServerResponse.empty({ status: 204 });
     }).pipe(

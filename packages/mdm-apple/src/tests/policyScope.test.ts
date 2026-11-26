@@ -597,3 +597,25 @@ describe("derivePolicyPlatformSupport", () => {
     expect(support.apple).toEqual([]);
   });
 });
+
+describe("derivePolicyPlatformSupport for certificate profiles", () => {
+  it("reports Windows and Android certificate profiles as their real platforms", async () => {
+    const support = await derivePolicyPlatformSupport([
+      configuration("p", "mttx.windows.certificate.root", { data: { pem: "x" } }),
+      configuration("p", "mttx.windows.pfx.wifi", {
+        data: {
+          materialSha256: "a".repeat(64),
+          certificatePem: "pem",
+          subject: "person",
+          notAfter: "2027-01-01T00:00:00.000Z",
+          fingerprintSha256: "b".repeat(64),
+          channel: "device",
+        },
+      }),
+      configuration("p", "mttx.android.certificate.corp", { data: { pem: "x" } }),
+    ]);
+
+    expect([...support.platforms].sort()).toEqual(["android", "windows"]);
+    expect(support.channels).toEqual(["device"]);
+  });
+});

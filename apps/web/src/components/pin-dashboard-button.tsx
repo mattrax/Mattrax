@@ -8,7 +8,7 @@ import { cn } from "~/lib/utils";
  * Pin control shared by the dashboard list and a dashboard's own header.
  * Pinning is browser-local; see `~/lib/pinned-dashboards`.
  */
-export function PinDashboardButton(props: {
+export default function PinDashboardButton(props: {
   tenantId: string;
   dashboardId: string;
   name: string;
@@ -26,7 +26,6 @@ export function PinDashboardButton(props: {
       aria-pressed={pinned() ? "true" : "false"}
       aria-label={`${label()}: ${props.name}`}
       title={label()}
-      class={cn(props.compact && "px-2", props.class)}
       onClick={() => {
         togglePinnedDashboard({
           tenantId: props.tenantId,
@@ -35,7 +34,7 @@ export function PinDashboardButton(props: {
         });
       }}
     >
-      <Pin class={cn("size-3.5", pinned() && "fill-current")} />
+      <Pin class={cn("size-3.5", pinned() && "")} />
       <Show when={!props.compact}>{pinned() ? "Pinned" : "Pin"}</Show>
     </Button>
   );

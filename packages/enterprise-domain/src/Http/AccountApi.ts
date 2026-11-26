@@ -18,6 +18,7 @@ import { AuditExportQuery } from "../Audit.js";
 import { AuditSearchQuery } from "../Audit.js";
 import { BeginRegistrationVerificationRequest } from "../Account.js";
 import { BeginRegistrationVerificationResponse } from "../Account.js";
+import { RegistrationNonceHeaders } from "../Account.js";
 import { BootstrapResponse } from "../Tenant.js";
 import { ChangeEmailRequest } from "../Account.js";
 import { CompleteRegistrationVerificationRequest } from "../Account.js";
@@ -62,7 +63,12 @@ export const enterpriseAccountApi = HttpApiGroup.make("EnterpriseAccount")
     HttpApiEndpoint.post("requestRegistrationCode", "/v1/register/verification", {
       error: EnterprisePublicEmailErrors,
       payload: BeginRegistrationVerificationRequest,
-      success: BeginRegistrationVerificationResponse,
+      // The success carries an optional Set-Cookie so a token attempt rotates
+      // (or clears) the sign-up nonce in the same round trip.
+      success: HttpApiSchema.WithHeaders(
+        BeginRegistrationVerificationResponse,
+        RegistrationNonceHeaders,
+      ),
     }),
   )
   .add(

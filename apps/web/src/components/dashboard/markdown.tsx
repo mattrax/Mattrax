@@ -69,7 +69,7 @@ const inline = (text: string): JSX.Element[] => {
       nodes.push(<strong class="font-semibold text-foreground">{token.slice(2, -2)}</strong>);
     } else if (token.startsWith("`")) {
       nodes.push(
-        <code class="rounded bg-hover px-1 py-0.5 font-mono text-[0.92em]">
+        <code class="rounded bg-hover px-1 py-0.5 font-mono text-sm">
           {token.slice(1, -1)}
         </code>,
       );
@@ -89,7 +89,7 @@ const inline = (text: string): JSX.Element[] => {
  * A deliberately small markdown subset. It creates real DOM nodes (never HTML
  * strings), so a team note cannot inject markup into the dashboard.
  */
-export function Markdown(props: { content: string }) {
+export default function Markdown(props: { content: string }) {
   const blocks = () => {
     const lines = props.content.replaceAll("\r\n", "\n").split("\n");
     const output: Array<() => JSX.Element> = [];
@@ -114,7 +114,7 @@ export function Markdown(props: { content: string }) {
 
         index++;
         output.push(() => (
-          <pre class="my-2 overflow-x-auto rounded-lg border border-border bg-muted p-3 text-[11.5px] leading-relaxed">
+          <pre class="my-2 overflow-x-auto rounded-lg border border-border bg-muted p-3 text-xs leading-relaxed">
             <code class="font-mono">{body.join("\n")}</code>
           </pre>
         ));
@@ -129,17 +129,17 @@ export function Markdown(props: { content: string }) {
         output.push(() =>
           Match.value(level).pipe(
             Match.when(1, () => (
-              <h2 class="mb-1.5 mt-3 text-[15px] font-semibold text-foreground first:mt-0">
+              <h2 class="mb-1.5 mt-3 text-sm font-semibold text-foreground first:mt-0">
                 {content}
               </h2>
             )),
             Match.when(2, () => (
-              <h3 class="mb-1.5 mt-3 text-[13.5px] font-semibold text-foreground first:mt-0">
+              <h3 class="mb-1.5 mt-3 text-sm font-semibold text-foreground first:mt-0">
                 {content}
               </h3>
             )),
             Match.orElse(() => (
-              <h4 class="mb-1 mt-2.5 text-[12.5px] font-semibold text-foreground first:mt-0">
+              <h4 class="mb-1 mt-2.5 text-xs font-semibold text-foreground first:mt-0">
                 {content}
               </h4>
             )),
@@ -164,7 +164,7 @@ export function Markdown(props: { content: string }) {
         }
 
         output.push(() => (
-          <ul class="my-1.5 list-disc space-y-1 pl-5 text-[12.5px] leading-relaxed text-muted-foreground">
+          <ul class="my-1.5 list-disc space-y-1 pl-5 text-xs leading-relaxed text-muted-foreground">
             <For each={items}>{(item) => <li>{inline(item)}</li>}</For>
           </ul>
         ));
@@ -180,7 +180,7 @@ export function Markdown(props: { content: string }) {
         }
 
         output.push(() => (
-          <ol class="my-1.5 list-decimal space-y-1 pl-5 text-[12.5px] leading-relaxed text-muted-foreground">
+          <ol class="my-1.5 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-muted-foreground">
             <For each={items}>{(item) => <li>{inline(item)}</li>}</For>
           </ol>
         ));
@@ -196,7 +196,7 @@ export function Markdown(props: { content: string }) {
         }
 
         output.push(() => (
-          <blockquote class="my-2 border-l-2 border-border pl-3 text-[12.5px] italic text-muted-foreground">
+          <blockquote class="my-2 border-l-2 border-border pl-3 text-xs italic text-muted-foreground">
             {inline(quoted.join(" "))}
           </blockquote>
         ));
@@ -216,7 +216,7 @@ export function Markdown(props: { content: string }) {
       }
 
       output.push(() => (
-        <p class="my-1.5 text-[12.5px] leading-relaxed text-muted-foreground first:mt-0 last:mb-0">
+        <p class="my-1.5 text-xs leading-relaxed text-muted-foreground first:mt-0 last:mb-0">
           {inline(paragraph.join(" "))}
         </p>
       ));
@@ -229,7 +229,7 @@ export function Markdown(props: { content: string }) {
     <div class="min-w-0">
       <Show
         when={props.content.trim()}
-        fallback={<p class="text-[12px] text-muted-foreground">Nothing written yet.</p>}
+        fallback={<p class="text-xs text-muted-foreground">Nothing written yet.</p>}
       >
         <For each={blocks()}>{(block) => block()}</For>
       </Show>

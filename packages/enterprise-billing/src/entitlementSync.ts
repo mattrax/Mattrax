@@ -23,6 +23,8 @@ export type Entitlement = {
   readonly organizationId: string;
   readonly plan: string;
   readonly status: string | null;
+  /** Monotonic revision of the billing transaction that produced this snapshot. */
+  readonly revision: number;
 };
 
 /** An entitlement push is best-effort and must not pin the caller open. */

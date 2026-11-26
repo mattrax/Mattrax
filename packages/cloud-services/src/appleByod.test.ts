@@ -2,10 +2,13 @@ import { Effect, Option } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Db } from "@mattrax/enterprise-core";
 import { HttpServerResponse } from "effect/http";
-import { exchangeSsoCode } from "./ssoIdentity.js";
+import type { Table } from "drizzle-orm";
+import { getTableName } from "drizzle-orm";
+import { exchangeSsoCode, resolveSsoAccount } from "./ssoIdentity.js";
 import {
   BYOD_STATE_COOKIE,
   APPLE_BYOD_STATE_PURPOSE,
+  appleByodFailure,
   appleByodAuthorize,
   handleAppleByodSsoCallback,
   appleRemotemanagementRedirect,
@@ -127,6 +130,29 @@ describe("BYOD SSO code exchange", () => {
       failure: { code: "unknown_account" },
     });
   });
+
+  it("rejects a validated token without an immutable external object id", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ id_token: "id-token" }), { status: 200 })),
+    );
+
+    await expect(
+      exchange({
+        oidc: oidc({
+          claims: claims({
+            oid: undefined,
+            sub: undefined,
+            preferred_username: undefined,
+            upn: undefined,
+          }),
+        }),
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      failure: { code: "idp_rejected", email: "student@school.example" },
+    });
+  });
 });
 
 describe("Apple callback redirect", () => {
@@ -139,6 +165,8 @@ describe("Apple callback redirect", () => {
 
 type FakeValue = string | number | boolean | Date | null | undefined;
 type FakeRow = Record<string, FakeValue>;
+
+const tableName = (table: Table) => getTableName(table);
 
 const rows = (initial: Record<string, FakeRow[]>) => {
   const store = { ...initial };
@@ -269,6 +297,18 @@ describe("BYOD authorize host routing", () => {
   });
 });
 
+describe("Apple BYOD failure state cookie isolation", () => {
+  it("only clears the BYOD state cookie when the failure owns it", () => {
+    const cleared = HttpServerResponse.toWeb(appleByodFailure("invalid_request"));
+    const foreign = HttpServerResponse.toWeb(appleByodFailure("invalid_request", 400, false));
+
+    expect(cleared.headers.get("set-cookie")).toContain(`${BYOD_STATE_COOKIE}=;`);
+    expect(cleared.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(cleared.headers.get("set-cookie")).not.toContain("__Host-sso_state=");
+    expect(foreign.headers.get("set-cookie")).toBeNull();
+  });
+});
+
 const callbackDb = (rows: Record<string, FakeRow[]>) => {
   const defaults: Array<[string, FakeRow[]]> = [
     ["appleByodEnrollment", []],
@@ -300,15 +340,15 @@ const callbackDb = (rows: Record<string, FakeRow[]>) => {
           },
         ]),
       ),
-      insert: (table: { [key: symbol]: string }) => ({
+      insert: (table: Table) => ({
         values: (value: FakeRow) => {
-          store[String(table[Symbol.for("drizzle:Name")])]?.push(value);
+          store[tableName(table)]?.push(value);
 
           return Effect.void;
         },
-        ignore: () => ({
-          values: (value: FakeRow) => {
-            store[String(table[Symbol.for("drizzle:Name")])]?.push(value);
+          ignore: () => ({
+            values: (value: FakeRow) => {
+              store[tableName(table)]?.push(value);
 
             return Effect.void;
           },
@@ -335,7 +375,7 @@ const callbackDb = (rows: Record<string, FakeRow[]>) => {
 };
 
 const callbackInput = (rows: Record<string, FakeRow[]>) => {
-  const { db } = callbackDb(rows);
+  const { db, store } = callbackDb(rows);
   const payload = {
     sub: "org-1",
     email: "student@school.example",
@@ -348,6 +388,7 @@ const callbackInput = (rows: Record<string, FakeRow[]>) => {
 
   return {
     db,
+    store,
     input: {
       request: { headers: {}, remoteAddress: Option.none() } as never,
       code: "code-1",
@@ -377,6 +418,10 @@ const byodCallbackRows = () => ({
     {
       id: "challenge-1",
       organizationId: "org-1",
+      managedAppleAccount: null,
+      accountId: undefined,
+      directoryUserId: undefined,
+      requestHash: "request-hash",
       challengeExpiresAt: new Date(Date.now() + 60_000),
       authorizedAt: null,
       tokenHash: null,
@@ -391,18 +436,74 @@ const byodCallbackRows = () => ({
       hardwareValidatedAt: null,
     },
   ],
-  ssoConfig: [{ organizationId: "org-1", enabled: true, azureTenantId: "entra-tenant" }],
+  ssoConfig: [
+    { organizationId: "org-1", enabled: true, azureTenantId: "entra-tenant", autoProvision: false },
+  ],
 });
 
 describe("BYOD callback security", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("refuses a directory person that directory sync has not imported", async () => {
+  const stubExchange = () =>
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(JSON.stringify({ id_token: "id-token" }), { status: 200 })),
     );
-    const { input } = callbackInput(byodCallbackRows());
+
+  const completeCallback = async (rows: Record<string, FakeRow[]>) => {
+    const { input, store } = callbackInput(rows);
+    const response = HttpServerResponse.toWeb(
+      await Effect.runPromise(handleAppleByodSsoCallback(input as never)),
+    );
+
+    return { response, store, enrollment: store.appleByodEnrollment?.[0] };
+  };
+
+  const identityRows = (overrides: { externalId?: string | null } = {}) => ({
+    ...byodCallbackRows(),
+    account: [
+      {
+        id: "account-1",
+        name: "Student",
+        email: "student@school.example",
+        emailVerified: true,
+        disabled: false,
+        authRevision: "revision-1",
+        image: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ],
+    member: [{ id: "member-1", organizationId: "org-1", accountId: "account-1" }],
+    ssoIdentity: [
+      {
+        organizationId: "org-1",
+        objectId: "entra-object",
+        accountId: "account-1",
+        createdAt: new Date(),
+      },
+    ],
+    user: [
+      {
+        id: "directory-1",
+        organizationId: "org-1",
+        name: "Student",
+        email: "student@school.example",
+        externalId: Object.hasOwn(overrides, "externalId")
+          ? overrides.externalId
+          : "entra-object",
+        source: "entra",
+        disabled: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ],
+  });
+
+  it("refuses a directory person that directory sync has not imported", async () => {
+    stubExchange();
+    const { input, store } = callbackInput(identityRows());
+    store.user = [];
     const response = HttpServerResponse.toWeb(
       await Effect.runPromise(handleAppleByodSsoCallback(input as never)),
     );
@@ -410,13 +511,15 @@ describe("BYOD callback security", () => {
 
     expect(response.status).toBe(403);
     expect(body).toContain("directory person");
+    expect(store.appleByodEnrollment?.[0]).toMatchObject({
+      accountId: undefined,
+      directoryUserId: undefined,
+      tokenHash: null,
+    });
   });
 
   it("refuses an IdP address that is not the Managed Apple Account", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ id_token: "id-token" }), { status: 200 })),
-    );
+    stubExchange();
     const { db, input } = callbackInput(byodCallbackRows());
     input.oidc.validateJwt = () =>
       Effect.succeed({
@@ -431,5 +534,140 @@ describe("BYOD callback security", () => {
 
     expect(response.status).toBe(403);
     expect(body).toContain("Managed Apple Account");
+  });
+
+  it("refuses an email-equal directory person with a different immutable external id", async () => {
+    stubExchange();
+    const { response, enrollment } = await completeCallback(
+      identityRows({ externalId: "different-entra-object" }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("directory person");
+    expect(enrollment).toMatchObject({
+      accountId: undefined,
+      directoryUserId: undefined,
+      tokenHash: null,
+    });
+  });
+
+  it("refuses a directory person without an immutable external id", async () => {
+    stubExchange();
+
+    for (const externalId of [undefined, null]) {
+      const { response, enrollment } = await completeCallback(identityRows({ externalId }));
+
+      expect(response.status).toBe(403);
+      expect(await response.text()).toContain("directory person");
+      expect(enrollment).toMatchObject({
+        accountId: undefined,
+        directoryUserId: undefined,
+        tokenHash: null,
+      });
+    }
+  });
+
+  it("refuses a disabled directory person with a matching immutable external id", async () => {
+    stubExchange();
+    const rows = identityRows();
+    rows.user[0]!.disabled = true;
+
+    const { response, enrollment } = await completeCallback(rows);
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("directory person");
+    expect(enrollment).toMatchObject({
+      accountId: undefined,
+      directoryUserId: undefined,
+      tokenHash: null,
+    });
+  });
+
+  it("refuses an account that is not already linked to the immutable IdP object", async () => {
+    stubExchange();
+    const rows = { ...identityRows(), ssoIdentity: [] };
+    rows.ssoConfig = [{ ...rows.ssoConfig[0]!, autoProvision: true }];
+
+    const { response, store, enrollment } = await completeCallback(rows);
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("No Mattrax account");
+    expect(store.ssoIdentity).toEqual([]);
+    expect(store.account).toHaveLength(1);
+    expect(enrollment).toMatchObject({
+      accountId: undefined,
+      directoryUserId: undefined,
+      tokenHash: null,
+    });
+  });
+
+  it("refuses a disabled object-bound account", async () => {
+    stubExchange();
+    const rows = identityRows();
+    rows.account[0]!.disabled = true;
+
+    const { response, enrollment } = await completeCallback(rows);
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toContain("account is disabled");
+    expect(enrollment).toMatchObject({
+      accountId: undefined,
+      directoryUserId: undefined,
+      tokenHash: null,
+    });
+  });
+
+  it("binds transitively linked identities through the immutable object id", async () => {
+    stubExchange();
+    const { response, enrollment } = await completeCallback(identityRows());
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toMatch(
+      /^apple-remotemanagement-user-login:\/\/authentication-results\?access-token=/,
+    );
+    expect(enrollment).toMatchObject({
+      accountId: "account-1",
+      directoryUserId: "directory-1",
+    });
+    expect(enrollment?.tokenHash).toEqual(expect.any(String));
+    expect(enrollment?.tokenHash).not.toBe("");
+    expect(enrollment?.authorizedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe("SSO identity resolution policy", () => {
+  it("can require an existing object-bound account without linking or provisioning", async () => {
+    const { db, store } = callbackDb({
+      account: [
+        {
+          id: "account-1",
+          name: "Student",
+          email: "student@school.example",
+          emailVerified: true,
+          disabled: false,
+          authRevision: "revision-1",
+          image: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ],
+      member: [{ id: "member-1", organizationId: "org-1", accountId: "account-1" }],
+    });
+
+    const result = await Effect.runPromise(
+      resolveSsoAccount({
+        db: db as never,
+        tenantId: "org-1",
+        autoProvision: true,
+        email: "student@school.example",
+        objectId: "entra-object",
+        requireExistingIdentity: true,
+      }),
+    );
+
+    expect(result).toMatchObject({ ok: false, failure: { code: "unknown_account" } });
+    expect(store.ssoIdentity).toEqual([]);
+    expect(store.account).toHaveLength(1);
+    expect(store.member).toHaveLength(1);
   });
 });

@@ -18,9 +18,9 @@ import {
   Panel,
   QueryError,
 } from "~/components/mdm/common";
-import { OsComplianceTag } from "~/components/os-compliance-badge";
+import OsComplianceTag from "~/components/os-compliance-badge";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { toast } from "~/components/toast";
 import { preloadPage } from "~/lib/page-data";
@@ -73,7 +73,7 @@ const isApplePlatform = (platform: OsPolicyPlatform) =>
 const Stat = (props: { label: string; value: number; tone?: string }) => (
   <div class="rounded-lg border border-border bg-card px-3 py-2.5">
     <p class="label-caps">{props.label}</p>
-    <p class={cn("mt-1 text-[20px] font-[560] leading-none tracking-[-0.02em]", props.tone)}>
+    <p class={cn("mt-1 text-xl font-semibold leading-none tracking-tight", props.tone)}>
       {props.value}
     </p>
   </div>
@@ -283,7 +283,7 @@ export default function OsVersionsPage() {
             </div>
 
             <Show when={data().feed.stale || !data().feed.available}>
-              <div class="rounded-lg border border-warning/25 bg-warning/[0.06] px-3.5 py-2.5 text-[12px] leading-relaxed text-warning-foreground">
+              <div class="rounded-lg border border-warning/25 bg-warning/[0.06] px-3.5 py-2.5 text-xs leading-relaxed text-warning-foreground">
                 {data().feed.stale
                   ? "The macOS update feed is stale. macOS update availability may be out of date."
                   : "The macOS update feed is unavailable. macOS devices that meet their minimum are still reported as unknown rather than up to date."}
@@ -291,7 +291,7 @@ export default function OsVersionsPage() {
             </Show>
 
             <Show when={data().unsupported.total > 0}>
-              <div class="rounded-lg border border-border bg-surface-muted/40 px-3.5 py-2.5 text-[12px] leading-relaxed text-muted-foreground">
+              <div class="rounded-lg border border-border bg-surface px-3.5 py-2.5 text-xs leading-relaxed text-muted-foreground">
                 {data().unsupported.total}{" "}
                 {data().unsupported.total === 1 ? "Apple device runs" : "Apple devices run"}{" "}
                 {data()
@@ -331,8 +331,8 @@ export default function OsVersionsPage() {
                       </div>
                     }
                   >
-                    <div class="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-                      <div>
+                    <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
+                      <div class="min-w-0 lg:col-span-5">
                         <div class="flex flex-wrap gap-2">
                           <Badge variant="success" dot="success">
                             {platform.counts.compliant} compliant
@@ -355,10 +355,10 @@ export default function OsVersionsPage() {
                           </Show>
                         </div>
 
-                        <p class="mt-3 text-[11.5px] leading-relaxed text-muted-foreground">
+                        <p class="mt-3 text-pretty text-xs leading-relaxed text-muted-foreground">
                           {platform.capability.description}
                         </p>
-                        <p class="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                        <p class="mt-1 text-pretty text-xs leading-relaxed text-muted-foreground">
                           <span class="font-medium text-foreground">Not enforced: </span>
                           {platform.capability.limitation}
                         </p>
@@ -368,30 +368,30 @@ export default function OsVersionsPage() {
                             {(bucket) => (
                               <div class="flex items-center justify-between gap-3 rounded-md border border-border/70 px-2.5 py-1.5">
                                 <div class="flex min-w-0 items-center gap-2">
-                                  <span class="font-mono text-[11.5px] text-foreground">
+                                  <span class="font-mono text-xs text-foreground">
                                     {bucket.version ?? "Not reported"}
                                   </span>
                                   <Badge variant={bucketVariant(bucket.status)}>
                                     {bucket.status}
                                   </Badge>
                                 </div>
-                                <span class="text-[11.5px] tabular-nums text-muted-foreground">
+                                <span class="text-xs tabular-nums text-muted-foreground">
                                   {bucket.count}
                                 </span>
                               </div>
                             )}
                           </For>
                           <Show when={platform.versions.length > 12}>
-                            <p class="text-[11px] text-muted-foreground">
+                            <p class="text-xs text-muted-foreground">
                               +{platform.versions.length - 12} more versions
                             </p>
                           </Show>
                         </div>
                       </div>
 
-                      <div>
+                      <div class="min-w-0 lg:col-span-7">
                         <div class="flex flex-wrap items-center justify-between gap-2">
-                          <p class="text-[12.5px] font-medium text-foreground">
+                          <p class="text-xs font-medium text-foreground">
                             {platform.behind.length === 0
                               ? "Nothing to remediate"
                               : "Devices needing attention"}
@@ -437,7 +437,7 @@ export default function OsVersionsPage() {
                         <Show
                           when={platform.behind.length > 0}
                           fallback={
-                            <p class="mt-3 rounded-md border border-dashed border-border px-3 py-4 text-[12px] text-muted-foreground">
+                            <p class="mt-3 rounded-md border border-dashed border-border px-3 py-4 text-xs text-muted-foreground">
                               {platform.counts.unknown > 0
                                 ? "Devices with unknown status are listed above; they cannot be called compliant."
                                 : "Every evaluated device meets the configured policy."}
@@ -445,8 +445,8 @@ export default function OsVersionsPage() {
                           }
                         >
                           <div class="mt-2 overflow-hidden rounded-lg border border-border">
-                            <table class="w-full text-left text-[12px]">
-                              <thead class="border-b border-border bg-surface-muted/50 text-[11px] text-muted-foreground">
+                            <table class="w-full text-left text-xs">
+                              <thead class="border-b border-border bg-surface text-xs text-muted-foreground">
                                 <tr>
                                   <th class="w-8 px-2 py-1.5">
                                     <span class="sr-only">Select</span>
@@ -481,15 +481,15 @@ export default function OsVersionsPage() {
                                           {row.name}
                                         </a>
                                       </td>
-                                      <td class="px-2 py-1.5 font-mono text-[11.5px]">
+                                      <td class="px-2 py-1.5 font-mono text-xs">
                                         {row.currentVersion ?? "—"}
                                       </td>
-                                      <td class="px-2 py-1.5 text-[11px] text-muted-foreground">
+                                      <td class="px-2 py-1.5 text-xs text-muted-foreground">
                                         <Show when={row.pendingVersion || row.installState}>
                                           <span class="flex flex-col">
                                             <Show when={row.pendingVersion}>
                                               {(version) => (
-                                                <span class="font-mono text-[11px] text-foreground">
+                                                <span class="font-mono text-xs text-foreground">
                                                   {version()} pending
                                                 </span>
                                               )}
@@ -548,7 +548,7 @@ export default function OsVersionsPage() {
                             </table>
                           </div>
                           <Show when={platform.behindTruncated}>
-                            <p class="mt-2 text-[11px] text-muted-foreground">
+                            <p class="mt-2 text-xs text-muted-foreground">
                               Showing the first {platform.behind.length} devices. The counts above
                               cover the whole fleet; narrow the list from the devices page.
                             </p>
@@ -556,7 +556,7 @@ export default function OsVersionsPage() {
                         </Show>
 
                         <Show when={!selectable() && platform.behind.length > 0}>
-                          <p class="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                          <p class="mt-2 text-xs leading-relaxed text-muted-foreground">
                             {isApple()
                               ? "You need the device-command permission to apply Apple updates."
                               : "This platform has no per-device update command. Enforcement is applied through its update policy on the next check-in."}

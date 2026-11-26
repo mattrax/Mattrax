@@ -1,10 +1,9 @@
-import { Effect, Exit, Schema } from "effect";
+import { Effect, Exit, Option, Schema } from "effect";
 import { parsePlist, serializePlist } from "@mattrax/plist";
-import { certificateDer, extractCmsSignedContent } from "@mattrax/scep";
+import { certificateDer, describeScepCa, extractCmsSignedContent } from "@mattrax/scep";
 import {
   configurationAssetIdentifier,
   configurationDeclarationIdentifier,
-  isCertificateKind,
   isLegacyKind,
   parseConfigurationKind,
 } from "@mattrax/mdm-core";
@@ -21,13 +20,24 @@ import type { VerifiedAppleAssetToken } from "@mattrax/dm-apple";
 import {
   APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
   APPLE_LOCK_SCREEN_MESSAGE_MAX_LENGTH,
+  AppleMailConfiguration,
+  PkcsCertificateConfiguration,
+  PfxCertificateConfiguration,
+  certificateKindPlatformSupport,
+  isIdentityCertificateKind,
   normalizeAppleLockScreenMessage,
   parseAppleLockScreenMessageConfiguration,
   parseWindowsLapsPolicy,
   windowsLapsPolicyProblem,
 } from "@mattrax/enterprise-domain";
+import {
+  isAppleCertificateKind,
+} from "@mattrax/mdm-core";
 import { isPlistObject, plistText } from "@mattrax/mdm-core";
 import type { PlistObject } from "@mattrax/mdm-core";
+import type { PolicyCertificateMaterial } from "@mattrax/mdm-core";
+
+type MutablePlistObject = { -readonly [K in keyof PlistObject]: PlistObject[K] };
 
 /**
  * Apple policy compiler for the enterprise management backend.
@@ -49,6 +59,8 @@ export type DeclarationContext = {
   readonly deviceId: string;
   /** Injectable clock for deterministic URLs and tokens in tests. */
   readonly now?: number;
+  /** Apple family, used to omit settings an OS does not support. */
+  readonly osFamily?: string | null;
 };
 
 /**
@@ -530,6 +542,41 @@ export const validateEscrowConfiguration = async (
  * deployed by an Apple device is rejected at patch time (rather than being
  * stored and silently ignored during declaration sync).
  */
+const pemProblem = (kind: string, record: Record<string, Schema.Json>): string | null => {
+  if (!Schema.is(Schema.String)(record.pem) || record.pem.length === 0)
+    return `"${kind}" requires a PEM "pem" string`;
+
+  const begins = record.pem.match(/-----BEGIN CERTIFICATE-----/g)?.length ?? 0;
+  const ends = record.pem.match(/-----END CERTIFICATE-----/g)?.length ?? 0;
+
+  if (begins !== 1 || ends !== 1)
+    return `"${kind}.pem" must contain exactly one PEM certificate`;
+
+  return null;
+};
+
+const certificateChannelProblem = (
+  kind: string,
+  record: Schema.JsonObject,
+  scope: "device" | "user",
+): string | null => {
+  if (record.channel === undefined)
+    return `"${kind}.channel" must be device or user (the policy scope determines it)`;
+
+  if (record.channel !== "device" && record.channel !== "user")
+    return `"${kind}.channel" must be device or user`;
+
+  if (record.channel !== scope)
+    return `"${kind}.channel" is "${record.channel}" but the configuration scope is "${scope}". Change the scope or re-save the configuration.`;
+
+  return null;
+};
+
+/**
+ * Validate a configuration before it is persisted. Anything that cannot be
+ * deployed by an Apple device is rejected at patch time (rather than being
+ * stored and silently ignored during declaration sync).
+ */
 export const validateConfiguration = (
   kind: string,
   data: Schema.Json,
@@ -544,6 +591,14 @@ export const validateConfiguration = (
      * the payload or declaration actually supports it on the user channel.
      */
     readonly scope?: "device" | "user";
+    /**
+     * Every configuration kind being written in the same request. Mail S/MIME
+     * and PKCS/PFX references are only valid when the referenced certificate
+     * kind is stored on the same policy.
+     */
+    readonly configurationKinds?: ReadonlyArray<string>;
+    /** Scope of every configuration kind on the policy, when known. */
+    readonly configurationScopes?: Readonly<Record<string, "device" | "user">>;
   } = {},
 ): Effect.Effect<void, string> =>
   Effect.gen(function* () {
@@ -553,7 +608,7 @@ export const validateConfiguration = (
     switch (parsed.type) {
       case "unknown":
         return yield* Effect.fail(
-          `Unknown configuration kind "${kind}". Supported kinds are mttx.apple.device, mttx.apple.custom.<id>, mttx.apple.certificate.<id>, mttx.apple.declaration.<id>, mttx.windows.custom.<id>, mttx.windows.laps and mttx.android.policy.<id>.`,
+          `Unknown configuration kind "${kind}". Supported kinds are mttx.apple.device, mttx.apple.custom.<id>, mttx.apple.certificate.<id>, mttx.apple.pkcs.<id>, mttx.apple.pfx.<id>, mttx.apple.mail.<id>, mttx.apple.declaration.<id>, mttx.windows.custom.<id>, mttx.windows.laps, mttx.windows.certificate.<id>, mttx.windows.pkcs.<id>, mttx.windows.pfx.<id>, mttx.android.policy.<id> and mttx.android.certificate.<id>.`,
         );
       case "application": {
         if (scope === "user")
@@ -800,20 +855,157 @@ export const validateConfiguration = (
         return;
       }
 
-      case "certificate": {
+      case "certificate":
+      case "windowsCertificate":
+      case "androidCertificate": {
         if (scope === "user")
           return yield* Effect.fail(
-            `"${kind}" issues a device credential asset; user-channel certificate assets are not implemented.`,
+            `"${kind}" installs a trusted root as a device credential asset; user-channel certificate assets are not implemented.`,
           );
         const record = asRecord(data);
 
-        if (!record || !Schema.is(Schema.String)(record.pem) || record.pem.length === 0)
-          return yield* Effect.fail(`"${kind}" requires a PEM "pem" string`);
-        const begins = record.pem.match(/-----BEGIN CERTIFICATE-----/g)?.length ?? 0;
-        const ends = record.pem.match(/-----END CERTIFICATE-----/g)?.length ?? 0;
+        if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
+        const problem = pemProblem(kind, record);
 
-        if (begins !== 1 || ends !== 1)
-          return yield* Effect.fail(`"${kind}.pem" must contain exactly one PEM certificate`);
+        if (problem) return yield* Effect.fail(problem);
+
+        const parsedCertificate = yield* Effect.exit(describeScepCa(record.pem as string));
+
+        if (Exit.isFailure(parsedCertificate))
+          return yield* Effect.fail(`"${kind}.pem" is not a parseable X.509 certificate`);
+
+        return;
+      }
+
+      case "pkcs":
+      case "pfx": {
+        const support = certificateKindPlatformSupport(kind);
+
+        if (!support.supported)
+          return yield* Effect.fail(`"${kind}": ${support.reason ?? "Unsupported platform"}`);
+
+        const record = asRecord(data);
+
+        if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
+
+        if ("pfx" in record || "password" in record)
+          return yield* Effect.fail(
+            `"${kind}" carries secret certificate material. Upload it through the policy editor so it can be sealed; secrets cannot be stored in policy JSON.`,
+          );
+
+        // Android client certificates are rejected above. Apple supports both
+        // channels; Windows needs the CSP's User path, which the stored channel
+        // records so delivery never has to guess.
+        if (parsed.platform === "windows") {
+          const channelProblem = certificateChannelProblem(kind, record, scope);
+
+          if (channelProblem) return yield* Effect.fail(channelProblem);
+        }
+
+        if (parsed.platform === "apple" && scope === "user" && parsed.type === "pfx") {
+          // DDM identity assets are user-scoped; legacy profiles are not.
+          // Accept the configuration so an upgraded device can use it, and let
+          // legacy delivery report it as unsupported.
+        }
+
+        const schema =
+          parsed.type === "pkcs" ? PkcsCertificateConfiguration : PfxCertificateConfiguration;
+
+        if (!Schema.is(schema)(record))
+          return yield* Effect.fail(
+            parsed.type === "pkcs"
+              ? `"${kind}" needs certificate metadata plus ca, template, subjectNameFormat and keyUsage. Upload the issued PKCS#12 with its leaf certificate the first time you save.`
+              : `"${kind}" needs certificate metadata. Upload the PKCS#12 with its leaf certificate the first time you save.`,
+          );
+
+        if (parsed.type === "pkcs") {
+          const configuration = record as typeof PkcsCertificateConfiguration.Type;
+
+          if (!configuration.template.trim())
+            return yield* Effect.fail(`"${kind}.template" is required`);
+
+          if (!configuration.subjectNameFormat.trim())
+            return yield* Effect.fail(`"${kind}.subjectNameFormat" is required`);
+
+          if (!configuration.keyUsage.trim())
+            return yield* Effect.fail(`"${kind}.keyUsage" is required`);
+
+          if (
+            configuration.validityDays !== undefined &&
+            (!Number.isFinite(configuration.validityDays) ||
+              configuration.validityDays < 1 ||
+              configuration.validityDays > 3650)
+          )
+            return yield* Effect.fail(`"${kind}.validityDays" must be between 1 and 3650`);
+
+          if (
+            configuration.renewalThresholdPercent !== undefined &&
+            (!Number.isFinite(configuration.renewalThresholdPercent) ||
+              configuration.renewalThresholdPercent < 1 ||
+              configuration.renewalThresholdPercent > 90)
+          )
+            return yield* Effect.fail(
+              `"${kind}.renewalThresholdPercent" must be between 1 and 90`,
+            );
+        }
+
+        return;
+      }
+
+      case "appleMail": {
+        const record = asRecord(data);
+
+        if (!record) return yield* Effect.fail(`"${kind}" must be an object`);
+
+        if (!Schema.is(AppleMailConfiguration)(record))
+          return yield* Effect.fail(
+            `"${kind}" needs incoming and outgoing mail server settings (hostName and authenticationMethod) and optional S/MIME settings`,
+          );
+
+        const configuration = record as typeof AppleMailConfiguration.Type;
+
+        for (const server of [configuration.incoming, configuration.outgoing]) {
+          if (Schema.is(Schema.JsonObject)(server) && "password" in server)
+            return yield* Effect.fail(
+              `"${kind}" must not contain mail server passwords. Policy JSON is returned by the API and copied into snapshots and exports; use SSO/None, a custom mobileconfig, or an identity-based setup.`,
+            );
+        }
+
+        const siblings = new Set(context.configurationKinds ?? []);
+        const checkReference = (
+          direction: "signing" | "encryption",
+          certificateKind: string | undefined,
+        ): string | null => {
+          if (!certificateKind) return null;
+
+          const certificate = parseConfigurationKind(certificateKind);
+
+          if (!isAppleCertificateKind(certificateKind) || !isIdentityCertificateKind(certificateKind))
+            return `"${kind}.smime.${direction}.certificateKind" must reference an Apple PKCS or PFX identity in this policy`;
+
+          if (siblings.size > 0 && !siblings.has(certificateKind))
+            return `"${kind}.smime.${direction}.certificateKind" references "${certificateKind}", which is not part of this policy`;
+
+          const certificateScope = context.configurationScopes?.[certificateKind];
+
+          if (certificateScope !== undefined && certificateScope !== scope)
+            return `"${kind}.smime.${direction}.certificateKind" references a ${certificateScope}-scoped identity; S/MIME and its identity must use the same delivery channel`;
+
+          if (certificate.type === "certificate")
+            return `"${kind}.smime.${direction}.certificateKind" must be an identity (PKCS or PFX), not a trusted root`;
+
+          return null;
+        };
+
+        for (const [direction, value] of [
+          ["signing", configuration.smime?.signing],
+          ["encryption", configuration.smime?.encryption],
+        ] as const) {
+          if (!value?.enabled) continue;
+          const problem = checkReference(direction, value.certificateKind);
+
+          if (problem) return yield* Effect.fail(problem);
+        }
 
         return;
       }
@@ -851,6 +1043,17 @@ const declarationTypeFor = (row: PolicyConfigurationRow): string | null => {
       return "com.apple.configuration.legacy";
     case "certificate":
       return "com.apple.configuration.security.certificate";
+    case "pkcs":
+    case "pfx":
+      return parsed.platform === "apple" ? "com.apple.configuration.security.identity" : null;
+    case "appleMail":
+      return "com.apple.configuration.account.mail";
+    case "windowsCertificate":
+    case "androidCertificate":
+    case "windows":
+    case "windows-laps":
+    case "android":
+      return null;
     case "declaration": {
       const data = asRecord(row.data);
       const kind = data?.kind;
@@ -933,6 +1136,84 @@ export const configurationProfileUrl = async (
   return `${origin}/mdm/apple/profiles/${encodeURIComponent(context.deviceToken)}/${encodeURIComponent(row.policyId)}/${encodeURIComponent(row.kind)}?token=${encodeURIComponent(token)}&deviceId=${encodeURIComponent(context.deviceId)}&expiresAt=${expiresAt}`;
 };
 
+const mailServerDeclaration = (server: {
+  readonly hostName: string;
+  readonly port?: number;
+  readonly authenticationMethod: string;
+}) => ({
+  HostName: server.hostName,
+  ...(server.port !== undefined ? { Port: server.port } : {}),
+  AuthenticationMethod: server.authenticationMethod,
+});
+
+/**
+ * Apple's DDM mail declaration.
+ *
+ * Password and other credential-based authentication needs a separate
+ * `com.apple.asset.credential.userpassword` asset, which Mattrax does not
+ * create; `policySupport` reports that combination as unsupported on DDM
+ * instead of sending a declaration Apple will reject. `None` (for example
+ * Kerberos/SSO) is valid without one.
+ */
+export const appleMailDeclarationPayload = (
+  row: PolicyConfigurationRow,
+  configuration: typeof AppleMailConfiguration.Type,
+  options: { readonly smime?: boolean } = {},
+) => {
+  const referenceFor = (certificateKind: string | undefined) =>
+    certificateKind ? configurationAssetIdentifier(row.policyId, certificateKind) : undefined;
+  // Apple only defines account.mail S/MIME for iOS 17+; macOS rejects the key.
+  const signing = options.smime === false ? undefined : configuration.smime?.signing;
+  const encryption = options.smime === false ? undefined : configuration.smime?.encryption;
+  const smime = {
+    ...(signing
+      ? {
+          Signing: {
+            Enabled: signing.enabled,
+            ...(signing.certificateKind
+              ? { IdentityAssetReference: referenceFor(signing.certificateKind) }
+              : {}),
+            ...(signing.userOverrideable !== undefined
+              ? { UserOverrideable: signing.userOverrideable }
+              : {}),
+            ...(signing.identityUserOverrideable !== undefined
+              ? { IdentityUserOverrideable: signing.identityUserOverrideable }
+              : {}),
+          },
+        }
+      : {}),
+    ...(encryption
+      ? {
+          Encryption: {
+            Enabled: encryption.encryptByDefault ?? encryption.enabled,
+            ...(encryption.certificateKind
+              ? { IdentityAssetReference: referenceFor(encryption.certificateKind) }
+              : {}),
+            ...(encryption.userOverrideable !== undefined
+              ? { UserOverrideable: encryption.userOverrideable }
+              : {}),
+            ...(encryption.identityUserOverrideable !== undefined
+              ? { IdentityUserOverrideable: encryption.identityUserOverrideable }
+              : {}),
+            ...(encryption.perMessageSwitchEnabled !== undefined
+              ? { PerMessageSwitchEnabled: encryption.perMessageSwitchEnabled }
+              : {}),
+          },
+        }
+      : {}),
+  };
+
+  return {
+    ...(configuration.visibleName ? { VisibleName: configuration.visibleName } : {}),
+    IncomingServer: {
+      ServerType: configuration.incoming.serverType,
+      ...mailServerDeclaration(configuration.incoming),
+    },
+    OutgoingServer: mailServerDeclaration(configuration.outgoing),
+    ...(Object.keys(smime).length > 0 ? { SMIME: smime } : {}),
+  };
+};
+
 export const buildConfigurationDeclaration = async (
   row: PolicyConfigurationRow,
   context: DeclarationContext,
@@ -954,6 +1235,8 @@ export const buildConfigurationDeclaration = async (
         Payload: { ProfileURL: await configurationProfileUrl(row, context) },
       };
     case "certificate":
+    case "pkcs":
+    case "pfx":
       return {
         Type: type,
         Identifier: identifier,
@@ -962,6 +1245,23 @@ export const buildConfigurationDeclaration = async (
           CredentialAssetReference: configurationAssetIdentifier(row.policyId, row.kind),
         },
       };
+    case "appleMail": {
+      const data = asRecord(row.data);
+      const configuration = data
+        ? Option.getOrUndefined(Schema.decodeUnknownOption(AppleMailConfiguration)(data))
+        : undefined;
+
+      if (!configuration) return null;
+
+      return {
+        Type: type,
+        Identifier: identifier,
+        ServerToken: serverToken,
+        Payload: appleMailDeclarationPayload(row, configuration, {
+          smime: context.osFamily === undefined ? true : context.osFamily === "iOS",
+        }),
+      };
+    }
     case "declaration": {
       const data = asRecord(row.data);
       const payload = data?.configuration;
@@ -985,10 +1285,8 @@ export const buildAssetDeclaration = async (
 ): Promise<CompiledDeclaration | null> => {
   const parsed = parseConfigurationKind(row.kind);
 
-  if (parsed.type !== "certificate") return null;
+  if (!isAppleCertificateKind(row.kind)) return null;
   const data = asRecord(row.data);
-
-  if (!Schema.is(Schema.String)(data?.pem)) return null;
 
   const identifier = configurationAssetIdentifier(row.policyId, row.kind);
   const serverToken = await configurationAssetServerToken(row, context);
@@ -1000,8 +1298,29 @@ export const buildAssetDeclaration = async (
     expiresAt: appleAssetTokenExpiresAt(context.now),
   });
 
-  const pemBytes = encoder.encode(data.pem);
   const origin = trimTrailingSlash(context.origin);
+  const dataUrl = `${origin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(assetToken)}`;
+
+  if (parsed.type !== "certificate") {
+    // A DDM identity is a JSON credential document (Password + base64 PKCS#12)
+    // served by the same signed asset endpoint. Its hash and size are computed
+    // when the asset is fetched, so they are omitted here rather than guessed.
+    return {
+      Type: "com.apple.asset.credential.identity",
+      Identifier: identifier,
+      ServerToken: serverToken,
+      Payload: {
+        Reference: {
+          DataURL: dataUrl,
+          ContentType: "application/json",
+        },
+      },
+    };
+  }
+
+  if (!Schema.is(Schema.String)(data?.pem)) return null;
+
+  const pemBytes = encoder.encode(data.pem);
 
   return {
     Type: "com.apple.asset.credential.certificate",
@@ -1009,7 +1328,7 @@ export const buildAssetDeclaration = async (
     ServerToken: serverToken,
     Payload: {
       Reference: {
-        DataURL: `${origin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(assetToken)}`,
+        DataURL: dataUrl,
         ContentType: "application/pem",
         "Hash-SHA-256": bytesToBase64(
           new Uint8Array(await crypto.subtle.digest("SHA-256", pemBytes)),
@@ -1145,8 +1464,35 @@ const legacyDeviceProfile = async (row: PolicyConfigurationRow) => {
  * Render the legacy `.mobileconfig` for a policy configuration.
  * Returns null for kinds that are not served as legacy profiles.
  */
+/** Apple's legacy mail payload uses a different authentication enum. */
+const legacyMailAuthentication = (value: string): string => {
+  switch (value) {
+    case "Password":
+      return "EmailAuthPassword";
+    case "CRAMMD5":
+      return "EmailAuthCRAMMD5";
+    case "NTLM":
+      return "EmailAuthNTLM";
+    case "HTTPMD5":
+      return "EmailAuthHTTPMD5";
+    default:
+      return "EmailAuthNone";
+  }
+};
+
+/**
+ * Render the legacy `.mobileconfig` for a policy configuration.
+ * Returns null for kinds that are not served as legacy profiles.
+ */
 export const buildLegacyProfile = async (
   row: PolicyConfigurationRow,
+  options: {
+    readonly material?: PolicyCertificateMaterial | null;
+    /** Material for a certificate kind referenced by an Apple mail profile. */
+    readonly materialFor?: (kind: string) => PolicyCertificateMaterial | null | undefined;
+    /** Apple family; S/MIME mail keys are iOS-only. */
+    readonly osFamily?: string | null;
+  } = {},
 ): Promise<{ content: Uint8Array; contentType: string } | null> => {
   const parsed = parseConfigurationKind(row.kind);
 
@@ -1200,6 +1546,171 @@ export const buildLegacyProfile = async (
           },
         ],
         PayloadDisplayName: `Mattrax policy ${row.policyId}`,
+        PayloadIdentifier: `app.mattrax.p.${row.policyId}.${row.kind}.legacy`,
+        PayloadOrganization: "Mattrax",
+        PayloadType: "Configuration",
+        PayloadUUID: await stableUuid(`mattrax:${row.policyId}:${row.kind}:legacy`),
+        PayloadVersion: 1,
+      }),
+    );
+
+    return {
+      content: encoder.encode(plist),
+      contentType: "application/x-apple-aspen-config",
+    };
+  }
+
+  // PKCS and imported PFX identities are a DDM identity asset on modern OSes.
+  // A pre-DDM device receives the same PKCS#12 in a `com.apple.security.pkcs12`
+  // payload, which is Apple's native profile representation.
+  if (parsed.type === "pkcs" || parsed.type === "pfx") {
+    const material = options.material;
+
+    if (!material) return null;
+    const data = asRecord(row.data);
+
+    const plist = await Effect.runPromise(
+      serializePlist({
+        PayloadContent: [
+          {
+            PayloadCertificateFileName:
+              data && Schema.is(Schema.String)(data.fileName)
+                ? data.fileName
+                : `${row.policyId}-${row.kind}.pfx`,
+            PayloadContent: material.pfx,
+            Password: material.password,
+            PayloadDisplayName: `Mattrax identity ${row.kind}`,
+            PayloadIdentifier: `app.mattrax.p.${row.policyId}.${row.kind}.identity`,
+            PayloadType: "com.apple.security.pkcs12",
+            PayloadUUID: await stableUuid(`mattrax:${row.policyId}:${row.kind}:identity`),
+            PayloadVersion: 1,
+          },
+        ],
+        PayloadDisplayName: `Mattrax identity ${row.kind}`,
+        PayloadIdentifier: `app.mattrax.p.${row.policyId}.${row.kind}.legacy`,
+        PayloadOrganization: "Mattrax",
+        PayloadType: "Configuration",
+        PayloadUUID: await stableUuid(`mattrax:${row.policyId}:${row.kind}:legacy`),
+        PayloadVersion: 1,
+      }),
+    );
+
+    return {
+      content: encoder.encode(plist),
+      contentType: "application/x-apple-aspen-config",
+    };
+  }
+
+  if (parsed.type === "appleMail") {
+    const data = asRecord(row.data);
+    const configuration = data
+      ? Option.getOrUndefined(Schema.decodeUnknownOption(AppleMailConfiguration)(data))
+      : undefined;
+
+    if (!configuration) return null;
+    const content: Array<PlistObject> = [];
+
+    const identityPayload = async (
+      certificateKind: string | undefined,
+    ): Promise<{ payload: PlistObject; uuid: string } | null> => {
+      if (!certificateKind) return null;
+      const material = options.materialFor?.(certificateKind);
+
+      if (!material) return null;
+      const uuid = await stableUuid(`mattrax:${row.policyId}:${certificateKind}:identity`);
+
+      return {
+        uuid,
+        payload: {
+          PayloadCertificateFileName: `${certificateKind}.pfx`,
+          PayloadContent: material.pfx,
+          Password: material.password,
+          PayloadDisplayName: `Mattrax identity ${certificateKind}`,
+          PayloadIdentifier: `app.mattrax.p.${row.policyId}.${certificateKind}.identity`,
+          PayloadType: "com.apple.security.pkcs12",
+          PayloadUUID: uuid,
+          PayloadVersion: 1,
+        },
+      };
+    };
+
+    const smimeAllowed = options.osFamily !== "macOS";
+    const signing = smimeAllowed
+      ? await identityPayload(configuration.smime?.signing?.certificateKind)
+      : null;
+    const encryption = smimeAllowed
+      ? await identityPayload(configuration.smime?.encryption?.certificateKind)
+      : null;
+
+    if (signing) content.push(signing.payload);
+    if (encryption && encryption.uuid !== signing?.uuid) content.push(encryption.payload);
+
+    const mailPayload: MutablePlistObject = {
+      PayloadType: "com.apple.mail.managed",
+      PayloadIdentifier: `app.mattrax.p.${row.policyId}.${row.kind}.mail`,
+      PayloadUUID: await stableUuid(`mattrax:${row.policyId}:${row.kind}:mail`),
+      PayloadVersion: 1,
+      PayloadDisplayName: configuration.visibleName ?? "Mail account",
+      EmailAccountName: configuration.visibleName ?? "Mail account",
+      EmailAddress: configuration.emailAddress ?? "",
+      EmailAccountType:
+        configuration.incoming.serverType === "POP" ? "EmailTypePOP" : "EmailTypeIMAP",
+      IncomingMailServerHostName: configuration.incoming.hostName,
+      IncomingMailServerPortNumber: configuration.incoming.port ?? 993,
+      IncomingMailServerUseSSL: true,
+      IncomingMailServerAuthentication: legacyMailAuthentication(
+        configuration.incoming.authenticationMethod,
+      ),
+      OutgoingMailServerHostName: configuration.outgoing.hostName,
+      OutgoingMailServerPortNumber: configuration.outgoing.port ?? 587,
+      OutgoingMailServerUseSSL: true,
+      OutgoingMailServerAuthentication: legacyMailAuthentication(
+        configuration.outgoing.authenticationMethod,
+      ),
+    };
+
+    if (configuration.incoming.username)
+      mailPayload.IncomingMailServerUsername = configuration.incoming.username;
+
+    if (configuration.outgoing.username)
+      mailPayload.OutgoingMailServerUsername = configuration.outgoing.username;
+
+    if (smimeAllowed && configuration.smime?.signing) {
+      mailPayload.SMIMESigningEnabled = configuration.smime.signing.enabled;
+
+      if (signing) mailPayload.SMIMESigningCertificateUUID = signing.uuid;
+
+      if (configuration.smime.signing.userOverrideable !== undefined)
+        mailPayload.SMIMESigningUserOverrideable =
+          configuration.smime.signing.userOverrideable;
+
+      if (configuration.smime.signing.identityUserOverrideable !== undefined)
+        mailPayload.SMIMESigningCertificateUUIDUserOverrideable =
+          configuration.smime.signing.identityUserOverrideable;
+    }
+
+    if (smimeAllowed && configuration.smime?.encryption) {
+      mailPayload.SMIMEEncryptionEnabled = configuration.smime.encryption.enabled;
+      mailPayload.SMIMEEncryptByDefault =
+        configuration.smime.encryption.encryptByDefault ?? configuration.smime.encryption.enabled;
+
+      if (encryption) mailPayload.SMIMEEncryptionCertificateUUID = encryption.uuid;
+
+      if (configuration.smime.encryption.userOverrideable !== undefined)
+        mailPayload.SMIMEEncryptByDefaultUserOverrideable =
+          configuration.smime.encryption.userOverrideable;
+
+      if (configuration.smime.encryption.identityUserOverrideable !== undefined)
+        mailPayload.SMIMEEncryptionCertificateUUIDUserOverrideable =
+          configuration.smime.encryption.identityUserOverrideable;
+    }
+
+    content.push(mailPayload);
+
+    const plist = await Effect.runPromise(
+      serializePlist({
+        PayloadContent: content,
+        PayloadDisplayName: configuration.visibleName ?? "Mail account",
         PayloadIdentifier: `app.mattrax.p.${row.policyId}.${row.kind}.legacy`,
         PayloadOrganization: "Mattrax",
         PayloadType: "Configuration",
@@ -1284,8 +1795,30 @@ export const applyEscrowCertificate = async (
 
 export const buildAssetContent = (
   row: PolicyConfigurationRow,
+  options: { readonly material?: PolicyCertificateMaterial | null } = {},
 ): { content: Uint8Array; contentType: string } | null => {
-  if (!isCertificateKind(row.kind)) return null;
+  if (!isAppleCertificateKind(row.kind)) return null;
+
+  const parsed = parseConfigurationKind(row.kind);
+
+  if (parsed.type !== "certificate") {
+    const material = options.material;
+
+    if (!material) return null;
+
+    // Apple's `com.apple.credential.identity` document. The device decrypts
+    // the PKCS#12 with the password as it installs the identity.
+    return {
+      content: encoder.encode(
+        JSON.stringify({
+          Password: material.password,
+          Identity: bytesToBase64(material.pfx),
+        }),
+      ),
+      contentType: "application/json",
+    };
+  }
+
   const pem = asRecord(row.data)?.pem;
 
   if (!Schema.is(Schema.String)(pem)) return null;
@@ -1335,3 +1868,4 @@ export const verifyAssetRequestToken = (
   token
     ? verifyAppleAssetToken(authSecret, token, { policyId: row.policyId, kind: row.kind }, now)
     : Promise.resolve(null);
+

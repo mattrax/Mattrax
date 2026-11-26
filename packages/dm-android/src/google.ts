@@ -313,6 +313,92 @@ export type AuthorizedRequest<A> = {
 
 export type AuthorizedVoidRequest = Omit<AuthorizedRequest<never>, "schema">;
 
+const TOKEN_CACHE_LIMIT = 8;
+
+/**
+ * Shareable Android Management access-token cache. Keyed by the service account
+ * identity and key material, so a certificate/key rotation cannot reuse the old
+ * token. Supply one across request graphs to reuse tokens within an isolate.
+ */
+export type GoogleTokenCache = {
+  readonly get: (key: string, now: number) => AccessToken | undefined;
+  readonly set: (key: string, token: AccessToken) => void;
+  readonly delete: (key: string) => void;
+  readonly load: (
+    key: string,
+    load: Effect.Effect<AccessToken, GoogleError>,
+  ) => Effect.Effect<AccessToken, GoogleError>;
+};
+
+export const makeGoogleTokenCache = (
+  options: { readonly maxEntries?: number } = {},
+): GoogleTokenCache => {
+  const maxEntries =
+    options.maxEntries !== undefined && options.maxEntries > 0
+      ? Math.floor(options.maxEntries)
+      : TOKEN_CACHE_LIMIT;
+  const entries = new Map<string, AccessToken>();
+  const flights = new Map<string, Effect.Effect<AccessToken, GoogleError>>();
+
+  return {
+    get: (key, now) => {
+      const entry = entries.get(key);
+
+      if (!entry) return undefined;
+
+      if (entry.expiresAt <= now) {
+        entries.delete(key);
+
+        return undefined;
+      }
+
+      // Refresh insertion order so capacity evicts the least-recently used key.
+      entries.delete(key);
+      entries.set(key, entry);
+
+      return entry;
+    },
+    set: (key, token) => {
+      entries.delete(key);
+      entries.set(key, token);
+
+      while (entries.size > maxEntries) {
+        const oldest = entries.keys().next().value;
+
+        if (oldest === undefined) break;
+        entries.delete(oldest);
+      }
+    },
+    delete: (key) => {
+      entries.delete(key);
+    },
+    load: (key, load) =>
+      Effect.gen(function* () {
+        const inFlight = flights.get(key);
+
+        if (inFlight) return yield* inFlight;
+
+        const cached = yield* Effect.cached(load);
+
+        // `Effect.cached` already shares one run and only interrupts it when
+        // every waiter has left. Forget the completed run so the next expired
+        // token starts fresh, but leave interrupted runs in place to retry.
+        const entry: Effect.Effect<AccessToken, GoogleError> = cached.pipe(
+          Effect.onExit((exit) =>
+            Exit.hasInterrupts(exit)
+              ? Effect.void
+              : Effect.sync(() => {
+                  if (flights.get(key) === entry) flights.delete(key);
+                }),
+          ),
+        );
+        flights.set(key, entry);
+
+        return yield* entry;
+      }),
+  };
+};
+
 export interface GoogleAuthService {
   /** Returns a cached access token, refreshing when it is within 60s of expiry. */
   readonly accessToken: () => Effect.Effect<AccessToken, GoogleError>;
@@ -326,7 +412,20 @@ export interface GoogleAuthService {
 
 export class GoogleAuth extends Context.Service<GoogleAuth, GoogleAuthService>()("GoogleAuth") {}
 
-export const GoogleAuthLive = (config: ServiceAccountConfig) =>
+export type GoogleAuthLiveOptions = {
+  /** Supply one cache across rebuilt request layers to reuse tokens per isolate. */
+  readonly tokenCache?: GoogleTokenCache;
+};
+
+const tokenCacheKey = (config: ServiceAccountConfig): string =>
+  [
+    config.clientEmail,
+    config.projectId,
+    config.tokenUri ?? DEFAULT_TOKEN_URI,
+    config.privateKeyPem,
+  ].join("\0");
+
+export const GoogleAuthLive = (config: ServiceAccountConfig, options: GoogleAuthLiveOptions = {}) =>
   Layer.effect(
     GoogleAuth,
     Effect.gen(function* () {
@@ -335,11 +434,10 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
       // Layer configuration is static; an invalid deadline is a programmer
       // error rather than a per-request failure.
       const timeouts = yield* resolveHttpTimeouts(config.httpTimeouts).pipe(Effect.orDie);
+      const cache = options.tokenCache ?? makeGoogleTokenCache();
+      const cacheKey = tokenCacheKey(config);
 
-      const refresh = Effect.fnUntraced(function* (): Effect.fn.Return<
-        { readonly token: AccessToken; readonly timeToLive: number },
-        GoogleError
-      > {
+      const refresh = Effect.fnUntraced(function* (): Effect.fn.Return<AccessToken, GoogleError> {
         const assertion = yield* buildServiceAccountJwt({
           clientEmail: config.clientEmail,
           privateKeyPem: config.privateKeyPem,
@@ -347,24 +445,27 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
           scope: ANDROID_MANAGEMENT_SCOPE,
         });
 
-        const token = yield* exchangeServiceAccountJwt({
+        return yield* exchangeServiceAccountJwt({
           tokenUri,
           assertion,
           client,
           timeouts,
         });
-        const now = yield* Clock.currentTimeMillis;
-
-        return {
-          token,
-          timeToLive: Math.max(0, token.expiresAt - now),
-        };
       });
 
-      const [cached, invalidate] = yield* Effect.cachedInvalidateWithTTL(refresh(), (exit) =>
-        Exit.isSuccess(exit) ? exit.value.timeToLive : 0,
-      );
-      const accessToken = () => cached.pipe(Effect.map((entry) => entry.token));
+      const accessToken = () =>
+        Effect.gen(function* () {
+          const now = yield* Clock.currentTimeMillis;
+          const cached = cache.get(cacheKey, now);
+
+          if (cached) return cached;
+
+          const entry = yield* cache.load(cacheKey, refresh());
+
+          cache.set(cacheKey, entry);
+
+          return entry;
+        });
 
       const send = (request: AuthorizedVoidRequest) =>
         Effect.gen(function* () {
@@ -392,7 +493,8 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
             withDeadline(timeouts.headers, `${label} timed out waiting for headers`),
           );
 
-          if (response.status === 401) yield* invalidate;
+          // Revocation or a rotated key invalidates the cached token.
+          if (response.status === 401) cache.delete(cacheKey);
 
           const text = yield* response.text.pipe(
             Effect.mapError(
@@ -452,5 +554,7 @@ export const GoogleAuthLive = (config: ServiceAccountConfig) =>
   );
 
 /** `GoogleAuthLive` with the platform fetch client wired in. */
-export const GoogleAuthFetchLive = (config: ServiceAccountConfig) =>
-  GoogleAuthLive(config).pipe(Layer.provide(FetchHttpClient.layer));
+export const GoogleAuthFetchLive = (
+  config: ServiceAccountConfig,
+  options: GoogleAuthLiveOptions = {},
+) => GoogleAuthLive(config, options).pipe(Layer.provide(FetchHttpClient.layer));

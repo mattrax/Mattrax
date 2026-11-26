@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Context, DateTime, Effect, Exit, Layer, Option, Predicate, Schema, Tracer } from "effect";
+import { Context, DateTime, Effect, Exit, Layer, Predicate, Schema, Tracer } from "effect";
 import { HttpApi, HttpApiBuilder, OpenApi } from "effect/http-api";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { version } from "../package.json" with { type: "json" };
@@ -28,11 +28,15 @@ import {
   enterpriseWindowsApi,
   enterpriseApprovalApi,
   EnterpriseErrorDiagnostics,
+  WINDOWS_DIAGNOSTICS_MAX_BYTES,
+  enterpriseScopeTagApi,
   fleetMigrationApi,
   parseSuperadminEmails,
   scriptAgentApi,
   scriptApi,
   EnterpriseService as EnterpriseServiceTag,
+  restrictedSoftwareApi,
+  restrictedSoftwareAgentApi,
 } from "@mattrax/enterprise-domain";
 import {
   EnterpriseAnalyticsService,
@@ -50,6 +54,7 @@ import {
   enterpriseGroupHandlers,
   enterpriseHandlers,
   appleByodRoutes,
+  enterpriseScopeTagHandlers,
   enterpriseApplicationHandlers,
   enterpriseCutoverHandlers,
   enterpriseSoftwareUpdateHandlers,
@@ -65,6 +70,8 @@ import {
   realtimeRoutes,
   scriptAgentHandlers,
   scriptHandlers,
+  restrictedSoftwareHandlers,
+  restrictedSoftwareAgentHandlers,
   scimRoutes,
   ScimMembershipNotifier,
   appleBusinessManager,
@@ -95,10 +102,12 @@ import {
   sessionCookie,
   billingEntitlementRoutes,
   drainEmailOutbox,
+  notifyRestrictedSoftwareViolations,
   sendTransactionalEmail,
   loadTrustedScepCaCertificates,
   runServerCertificateCheck,
   SoftwareUpdateCache,
+  SoftwareUpdateBackground,
 } from "@mattrax/enterprise-backend";
 import {
   BillingServiceLive,
@@ -112,7 +121,7 @@ import { scepRoutes } from "@mattrax/scep";
 import { AppleMdmConfig, AppleMdmService, AppleMdmTopic } from "@mattrax/dm-apple";
 import { ScepService } from "@mattrax/scep";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { ScepRepositoryLive } from "@mattrax/mdm-core";
+import { BackgroundDeliveryKeepAlive, ScepRepositoryLive } from "@mattrax/mdm-core";
 import { managementWebhookOpenApi } from "@mattrax/management-backend-http";
 import {
   Db,
@@ -128,10 +137,19 @@ import { MysqlClient } from "@effect/sql-mysql2";
 import { decodeDeploymentCredentials } from "@mattrax/google-workspace";
 import type { GoogleWorkspaceCredentials } from "@mattrax/google-workspace";
 import { env as apiEnv } from "./env.js";
+import { deviceIdentityHeaders } from "./deviceIdentity.js";
+import { parseTrustedPeerAddresses } from "./trustedPeer.js";
 import { resolveDeploymentBranding } from "./onboardingBranding.js";
 import { metricsResponse, telemetry } from "./telemetry.js";
 import { logBestEffortFailure } from "./bestEffort.js";
 import { runScheduledJobs, scheduledRuntimeLayer } from "./scheduledRuntime.js";
+import { softwareUpdateRequestService } from "./softwareUpdateRuntime.js";
+import {
+  backgroundDeliveryKeepAlive,
+  hostedAndroidManagementOptions,
+  hostedAndroidRouteOptions,
+  hostedAzureGraphOptions,
+} from "./runtimeWiring.js";
 import {
   DAILY_CRON,
   HOURLY_CRON,
@@ -141,7 +159,9 @@ import {
   isDevMailboxEnabled,
   listDevEmails,
   timingSafeStringEqual,
+  clientKey,
   errorResponse,
+  localConsumer,
   logRequest,
   readErrorTag,
   resolveRequestId,
@@ -170,7 +190,6 @@ import {
   withSessionPresence,
   loginAttemptObserver,
   credentialExpiryEmail,
-  boundedClientAddress,
   databaseConfigFromFields,
   mysqlClientOptions,
   servicesUrls,
@@ -228,6 +247,44 @@ const auditCheckinCoalesceWindowMs =
  * fallback.
  */
 const localRateLimitStore: RateLimitStore = new Map();
+
+const WINDOWS_DIAGNOSTICS_UPLOAD_PATH = "/api/v1/windows-diagnostics/upload";
+
+/**
+ * Diagnostics uploads are large, unauthenticated until their scoped token is
+ * checked, and intentionally absent from the general route classifier. Keep a
+ * separate, low per-client ceiling so invalid tokens cannot fan out unbounded
+ * body reads. This process-local backstop is exact for the self-hosted host;
+ * Worker isolates retain the same bounded per-isolate behaviour as the other
+ * local fallback counters.
+ */
+const windowsDiagnosticsUploadRateLimitRule = {
+  bucket: "mdm",
+  limit: 30,
+  windowSeconds: 60,
+} as const;
+
+const windowsDiagnosticsUploadRateLimitStore: RateLimitStore = new Map();
+
+const consumeWindowsDiagnosticsUploadRateLimit = localConsumer({
+  store: windowsDiagnosticsUploadRateLimitStore,
+});
+
+const checkWindowsDiagnosticsUploadRateLimit = (request: Request) =>
+  consumeWindowsDiagnosticsUploadRateLimit(
+    windowsDiagnosticsUploadRateLimitRule,
+    `windows-diagnostics-upload:${clientKey(request, { trustForwarded: TRUST_PROXY_HEADERS })}`,
+  );
+
+const isWindowsDiagnosticsUpload = (request: Request) =>
+  (request.method === "PUT" || request.method === "POST") &&
+  new URL(request.url).pathname === WINDOWS_DIAGNOSTICS_UPLOAD_PATH;
+
+const windowsDiagnosticsContentLengthTooLarge = (request: Request) => {
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+
+  return Number.isFinite(contentLength) && contentLength > WINDOWS_DIAGNOSTICS_MAX_BYTES;
+};
 
 /**
  * Charge the request to whichever limiter this deployment has.
@@ -291,9 +348,12 @@ const apiRoot = HttpApi.make("Mattrax")
   .add(enterpriseSoftwareCatalogueApi)
   .add(enterpriseWindowsApi)
   .add(enterpriseApprovalApi)
+  .add(enterpriseScopeTagApi)
   .add(fleetMigrationApi)
   .add(scriptApi)
   .add(scriptAgentApi)
+  .add(restrictedSoftwareApi)
+  .add(restrictedSoftwareAgentApi)
   .add(authHttp)
   .add(appleMdmApi)
   .annotateMerge(
@@ -364,9 +424,12 @@ const applicationHandlers = Layer.mergeAll(
   HttpApiBuilder.group(apiRoot, "EnterpriseSoftwareCatalogue", enterpriseSoftwareCatalogueHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseWindows", enterpriseWindowsHandlers),
   HttpApiBuilder.group(apiRoot, "EnterpriseApproval", enterpriseApprovalHandlers),
+  HttpApiBuilder.group(apiRoot, "EnterpriseScopeTag", enterpriseScopeTagHandlers),
   HttpApiBuilder.group(apiRoot, "FleetMigration", fleetMigrationHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptApi", scriptHandlers),
   HttpApiBuilder.group(apiRoot, "ScriptAgentApi", scriptAgentHandlers),
+  HttpApiBuilder.group(apiRoot, "RestrictedSoftwareApi", restrictedSoftwareHandlers),
+  HttpApiBuilder.group(apiRoot, "RestrictedSoftwareAgentApi", restrictedSoftwareAgentHandlers),
   HttpApiBuilder.group(apiRoot, "AppleDM", appleMdmHandlers),
 ).pipe(authHttps.middleware);
 
@@ -393,7 +456,7 @@ const handlersLayer = Layer.mergeAll(
   // route because the body is binary and the device presents a signed token,
   // not a tenant session.
   ...["PUT" as const, "POST" as const].map((method) =>
-    HttpRouter.add(method, "/api/v1/windows-diagnostics/upload", (request) =>
+    HttpRouter.add(method, WINDOWS_DIAGNOSTICS_UPLOAD_PATH, (request) =>
       Effect.flatMap(EnterpriseServiceTag, (service) =>
         Effect.map(
           service.uploadWindowsDiagnostics(request),
@@ -627,6 +690,22 @@ const emailOutboxJob = (env: Env) =>
   });
 
 /**
+ * Deliver pending restricted-software violation events. Inventory writes mark
+ * new violations with `notifiedAt = null`; this sweep signs the webhook and
+ * queues the optional email, then records that the event went out.
+ */
+const restrictedSoftwareNotificationsJob = (env: Env) =>
+  Effect.gen(function* () {
+    const db = yield* Db;
+
+    return yield* notifyRestrictedSoftwareViolations({
+      db,
+      authSecret: env.AUTH_SECRET,
+      email: resolveMailer(env).transport,
+    });
+  }).pipe(Effect.orDie, Effect.provide(Db.layer), Effect.provide(databaseLayer(env)));
+
+/**
  * Review the deployment origin's TLS certificate. Runs from the hourly trigger
  * so the code path is exercised often; the check itself is throttled to once an
  * hour, and the daily maintenance run reuses a fresh observation.
@@ -720,7 +799,7 @@ const makeMembershipRefresher = (db: EnterpriseDb, env: Env) => {
         deviceIds,
       }).pipe(
         logBestEffortFailure("android_policy_sync", organizationId),
-        Effect.provide(androidManagementLayer(androidConfig)),
+        Effect.provide(androidManagementLayer(androidConfig, hostedAndroidManagementOptions)),
       );
     });
 };
@@ -927,6 +1006,9 @@ const makeAppLayer = (
   const managementBackendLayer = ManagementBackendEnterpriseLive.layer(env.ORIGIN, {
     apns,
     authSecret: env.AUTH_SECRET,
+    // A hosted request must not build a fresh worker pool, or lose queued
+    // delivery work, when its service graph is rebuilt.
+    isolateWideDelivery: true,
     // Tenant-scoped enrollment URLs carry a signed tenant token, so Cloud no
     // longer needs a deployment-wide pin. An explicitly configured pin is kept
     // as a fallback for single-tenant deployments that still use the old
@@ -983,11 +1065,14 @@ const makeAppLayer = (
 
   const azureGraphLayer =
     env.AZURE_CLIENT_ID && env.AZURE_CLIENT_SECRET
-      ? AzureGraphLive({
-          clientId: env.AZURE_CLIENT_ID,
-          clientSecret: env.AZURE_CLIENT_SECRET,
-          origin: env.ORIGIN,
-        })
+      ? AzureGraphLive(
+          {
+            clientId: env.AZURE_CLIENT_ID,
+            clientSecret: env.AZURE_CLIENT_SECRET,
+            origin: env.ORIGIN,
+          },
+          hostedAzureGraphOptions,
+        )
       : Layer.empty;
 
   // Hosted Cloud forwards tenant billing to the services deployment. A
@@ -1041,6 +1126,8 @@ const makeAppLayer = (
       Layer.provide(billing ? BillingServiceLive(billing) : Layer.empty),
       Layer.provideMerge(applicationStoreServiceLayer()),
       Layer.provideMerge(EnterpriseErrorDiagnostics.layer),
+      // This Layer is an isolate-wide, I/O-free singleton even though the
+      // surrounding request service graph is rebuilt for each Worker request.
       Layer.provideMerge(SoftwareUpdateCache.layer),
       // Merge auth into the service layer's output so raw routes (the SSE
       // stream) can resolve it from the request context too.
@@ -1066,7 +1153,7 @@ const makeAppLayer = (
       ),
     ),
     AzureOidcLive(),
-    androidManagementLayer(androidConfig),
+    androidManagementLayer(androidConfig, hostedAndroidManagementOptions),
   );
 
   const appWithDevRoutes = Layer.mergeAll(
@@ -1146,6 +1233,7 @@ const makeAppLayer = (
       authSecret: env.AUTH_SECRET,
       config: androidConfig,
       planLimits,
+      ...hostedAndroidRouteOptions,
     }).pipe(Layer.provide(HttpServer.layerServices)),
     // Authenticated, tenant-scoped SSE invalidation. Mounted as a raw route so
     // it can return a bounded streaming body instead of an HttpApi JSON value.
@@ -1187,7 +1275,7 @@ const makeAppLayer = (
           deviceIds,
         }).pipe(
           logBestEffortFailure("android_policy_sync", organizationId),
-          Effect.provide(androidManagementLayer(androidConfig)),
+          Effect.provide(androidManagementLayer(androidConfig, hostedAndroidManagementOptions)),
         );
       }),
   );
@@ -1342,18 +1430,6 @@ const readinessResponse = async (env: Env, requestId: string): Promise<Response>
   );
 };
 
-const TlsClientAuth = Schema.Struct({
-  certVerified: Schema.optional(Schema.String),
-  certRevoked: Schema.optional(Schema.Union([Schema.String, Schema.Boolean])),
-  certSubjectDN: Schema.optional(Schema.String),
-  certSerial: Schema.optional(Schema.String),
-  certFingerprintSHA256: Schema.optional(Schema.String),
-});
-
-const RequestCfProperties = Schema.Struct({
-  tlsClientAuth: Schema.optional(TlsClientAuth),
-});
-
 /** Redact emails and long opaque tokens before an error message reaches logs. */
 const describeError = (cause: unknown): string => {
   const error = Predicate.isError(cause) ? cause : undefined;
@@ -1372,46 +1448,9 @@ const describeError = (cause: unknown): string => {
  * forwards the verified fields instead, which requires an explicit opt-in.
  */
 const TRUST_DEVICE_IDENTITY_HEADERS = apiEnv.TRUST_DEVICE_IDENTITY_HEADERS === "1";
-
-const deviceIdentityHeaders = (request: Request) => {
-  const headers = new Headers(request.headers);
-
-  // The client address is computed once, with the rate limiter's trust policy,
-  // and handed to the inner handlers as a header they can trust. A caller can
-  // never set it: the value is stripped first and only the verified address is
-  // written back. Handlers store null when the deployment cannot prove one.
-  headers.delete("x-mattrax-client-address");
-  // SAFETY: Workers requests expose the platform's `cf` object; Node requests do not.
-  const cloudflare = (request as { cf?: unknown }).cf !== undefined;
-
-  const address = boundedClientAddress(request.headers, {
-    trustForwarded: TRUST_PROXY_HEADERS,
-    cloudflare,
-  });
-
-  if (address) headers.set("x-mattrax-client-address", address);
-
-  if (TRUST_DEVICE_IDENTITY_HEADERS) return headers;
-
-  headers.delete("x-device-identity-certificate");
-  headers.delete("x-device-identity-certificate-serial");
-  headers.delete("x-device-identity-certificate-sha256");
-
-  const cf = Option.getOrUndefined(Schema.decodeUnknownOption(RequestCfProperties)(request.cf));
-
-  const tls = cf?.tlsClientAuth;
-
-  if (tls?.certVerified === "SUCCESS" && tls.certRevoked !== "1" && tls.certRevoked !== true) {
-    if (tls.certSubjectDN) headers.set("x-device-identity-certificate", tls.certSubjectDN);
-
-    if (tls.certSerial) headers.set("x-device-identity-certificate-serial", tls.certSerial);
-
-    if (tls.certFingerprintSHA256)
-      headers.set("x-device-identity-certificate-sha256", tls.certFingerprintSHA256);
-  }
-
-  return headers;
-};
+const TRUSTED_DEVICE_IDENTITY_PEERS = parseTrustedPeerAddresses(
+  apiEnv.TRUSTED_DEVICE_IDENTITY_PEERS,
+);
 
 /**
  * Build the API runtime for a host. The Cloudflare entry supplies the Workers
@@ -1484,9 +1523,21 @@ export const createApiRuntime = (
         const limited = await Effect.runPromise(
           checkRateLimit(request).pipe(Effect.provide(rateLimiterLayer(env))),
         );
+        const uploadLimited = isWindowsDiagnosticsUpload(request)
+          ? await Effect.runPromise(checkWindowsDiagnosticsUploadRateLimit(request))
+          : undefined;
+        const effectiveLimit = limited.limited ? limited : uploadLimited;
 
-        if (limited.limited) {
-          response = rateLimitResponse(limited, requestId);
+        if (effectiveLimit?.limited) {
+          response = rateLimitResponse(effectiveLimit, requestId);
+        } else if (uploadLimited && windowsDiagnosticsContentLengthTooLarge(request)) {
+          response = errorResponse(413, requestId, {
+            error: "payload_too_large",
+            message:
+              "Diagnostic archives must be " +
+              Math.floor(WINDOWS_DIAGNOSTICS_MAX_BYTES / 1024 / 1024) +
+              " MB or smaller.",
+          });
         } else if (
           (pathname === "/api/health" || pathname === "/health") &&
           request.method === "GET"
@@ -1506,13 +1557,21 @@ export const createApiRuntime = (
           // machinery and no service layer, so a scrape stays cheap.
           response = metricsResponse(request);
         } else {
-          const deviceRequest = new Request(request, { headers: deviceIdentityHeaders(request) });
+          const deviceRequest = new Request(request, {
+            headers: deviceIdentityHeaders(request, {
+              trustIdentityHeaders: TRUST_DEVICE_IDENTITY_HEADERS,
+              trustedPeers: TRUSTED_DEVICE_IDENTITY_PEERS,
+              trustForwarded: TRUST_PROXY_HEADERS,
+            }),
+          });
 
           // The root span becomes the parent of every span the handler creates
           // (including `@effect/sql` query spans), which is what makes the
           // trace ids on the log line join up.
           const requestServices = new Map<string, unknown>([
             [EnterpriseAnalyticsService.key, analytics],
+            [SoftwareUpdateBackground.key, softwareUpdateRequestService(ctx)],
+            [BackgroundDeliveryKeepAlive.key, backgroundDeliveryKeepAlive(ctx)],
           ]);
 
           if (trace) requestServices.set(Tracer.ParentSpan.key, trace.span);
@@ -1690,6 +1749,14 @@ export const createApiRuntime = (
             if (result.queued > 0 || result.failed > 0)
               console.log("Scheduled dashboard reports complete", result);
           }),
+          observeJob(
+            "Scheduled restricted software notifications failed",
+            restrictedSoftwareNotificationsJob(env),
+            (result) => {
+              if (result.notified > 0)
+                console.log("Scheduled restricted software notifications complete", result);
+            },
+          ),
           ...(graphConfigured
             ? [
                 observeJob("Scheduled Entra directory sync failed", entraSyncJob(env), (result) => {

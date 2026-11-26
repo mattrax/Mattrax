@@ -1,8 +1,8 @@
 import { Effect } from "effect";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { describe, expect, it } from "vitest";
 import { ApiClient } from "./api-client";
-import { fetchMcpApi, recordMcpActivity, shouldExposeMcpPath } from "./mcp.ts";
+import { fetchMcpApi, shouldExposeMcpPath } from "./mcp.ts";
 
 describe("MCP path exposure", () => {
   it("never exposes device handover, including the token download", () => {
@@ -73,16 +73,21 @@ describe("MCP response lifecycle", () => {
     await expect(Effect.runPromise(program)).rejects.toBeDefined();
   });
 
-  it("consumes activity response bodies", async () => {
-    const source = Response.json({ ignored: true });
-    const program = recordMcpActivity("Bearer token", "tenant-1", {
-      tool: "search",
-      method: "GET",
-      path: "/api/v1/search",
-      status: 200,
-    }).pipe(Effect.provide(layerFor(source)));
+  it("marks real API dispatches so the backend can derive their audit entry", async () => {
+    let seen: HttpClientRequest.HttpClientRequest | undefined;
+    const layer = ApiClient.fromClient(
+      HttpClient.make((request) => {
+        seen = request;
 
-    await Effect.runPromise(program);
-    expect(source.bodyUsed).toBe(true);
+        return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ ok: true })));
+      }),
+    );
+
+    await Effect.runPromise(
+      fetchMcpApi("Bearer token", "/api/v1/tenants/tenant-1/devices").pipe(Effect.provide(layer)),
+    );
+
+    expect(seen?.headers["x-mattrax-mcp-authorization"]).toBe("Bearer token");
+    expect(seen?.url).toBe("https://api.mattrax.internal/api/v1/tenants/tenant-1/devices");
   });
 });

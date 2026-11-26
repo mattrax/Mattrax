@@ -10,6 +10,7 @@ declare global {
     readonly RATE_LIMITER_SCIM?: RateLimitBindingLike;
     readonly RATE_LIMITER_BILLING?: RateLimitBindingLike;
     readonly RATE_LIMITER_SCEP?: RateLimitBindingLike;
+    readonly RATE_LIMITER_POLICY?: RateLimitBindingLike;
   }
 }
 

@@ -445,6 +445,31 @@ describe("mail relay MIME rendering", () => {
     expect(rendered).toContain(Buffer.from(message.text, "utf8").toString("base64").slice(0, 24));
   });
 
+  it("writes an OTP-Token header so mail clients can offer the code", () => {
+    const rendered = buildMimeMessage({ ...message, headers: { "OTP-Token": "123456" } });
+
+    expect(rendered).toContain("\r\nOTP-Token: 123456\r\n");
+    expect(rendered.indexOf("OTP-Token: 123456")).toBeLessThan(rendered.indexOf("\r\n\r\n"));
+  });
+
+  it("cannot inject a header name or value through custom headers", () => {
+    const rendered = buildMimeMessage({
+      ...message,
+      headers: {
+        "OTP-Token": "123456\r\nBcc: evil@example.com",
+        "X-Test: Bcc": "evil@example.com",
+        Subject: "Hijacked",
+      },
+    });
+
+    expect(rendered).not.toMatch(/\r\nBcc:/);
+    expect(rendered).not.toContain("X-Test: Bcc");
+    expect(rendered).toContain("OTP-Token: 123456 Bcc: evil@example.com");
+    // The caller may not replace the real Subject (or any builder-owned field).
+    expect(rendered.match(/^Subject:/gm)).toHaveLength(1);
+    expect(rendered).toContain("Subject: Join Acme on Mattrax");
+  });
+
   it("wraps a report attachment in multipart/mixed", () => {
     const contentBase64 = Buffer.from("Report,Fleet digest\r\n", "utf8").toString("base64");
 

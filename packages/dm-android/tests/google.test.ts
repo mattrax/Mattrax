@@ -8,6 +8,7 @@ import {
   GoogleAuthError,
   GoogleAuthLive,
   buildServiceAccountJwt,
+  makeGoogleTokenCache,
 } from "../src/index.js";
 import type { ServiceAccountConfig } from "../src/index.js";
 import { decodeJwt, jsonResponse, makeServiceAccount, mockFetch, verifyJwt } from "./helpers.js";
@@ -137,6 +138,79 @@ describe("google service account auth", () => {
       aud: tokenUri,
       scope: ANDROID_MANAGEMENT_SCOPE,
     });
+  });
+
+  it("reuses a shared token cache across rebuilt request layers", async () => {
+    const mock = mockFetch(() =>
+      jsonResponse({ access_token: "ya29.shared", expires_in: 3600, token_type: "Bearer" }),
+    );
+    const tokenCache = makeGoogleTokenCache();
+    const layer = () => GoogleAuthLive(config(), { tokenCache }).pipe(Layer.provide(mock.layer));
+    const token = () =>
+      Effect.gen(function* () {
+        const auth = yield* GoogleAuth;
+
+        return yield* auth.accessToken();
+      }).pipe(Effect.provide(layer()));
+
+    const first = await Effect.runPromise(token());
+    const second = await Effect.runPromise(token());
+
+    expect(second).toEqual(first);
+    expect(mock.requests.filter((request) => request.pathname === "/token")).toHaveLength(1);
+  });
+
+  it("expires and revokes a shared token instead of reusing it", async () => {
+    let issued = 0;
+    let revoked = false;
+    const mock = mockFetch((request) => {
+      if (request.pathname === "/token") {
+        issued++;
+
+        return jsonResponse({
+          access_token: `ya29.${issued}`,
+          expires_in: 3600,
+          token_type: "Bearer",
+        });
+      }
+
+      return revoked ? new Response("revoked", { status: 401 }) : jsonResponse({ ok: true }, 200);
+    });
+    const tokenCache = makeGoogleTokenCache();
+    const layer = () => GoogleAuthLive(config(), { tokenCache }).pipe(Layer.provide(mock.layer));
+    const authorized = () =>
+      Effect.gen(function* () {
+        const auth = yield* GoogleAuth;
+
+        return yield* auth.authorizedFetch({
+          url: "https://androidmanagement.googleapis.com/v1/enterprises/test",
+          schema: Schema.Struct({ ok: Schema.Boolean }),
+          label: "test",
+        });
+      }).pipe(Effect.provide(layer()));
+
+    const result = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(1_000_000);
+        const first = yield* authorized();
+        yield* TestClock.adjust("2 hours");
+        const afterExpiry = yield* authorized();
+
+        revoked = true;
+        const afterRevocationError = yield* Effect.flip(authorized());
+        revoked = false;
+        const afterRevocation = yield* authorized();
+
+        return { first, afterExpiry, afterRevocationError, afterRevocation };
+      }).pipe(Effect.provide(TestClock.layer())),
+    );
+
+    expect(result.first).toEqual({ ok: true });
+    expect(result.afterExpiry).toEqual({ ok: true });
+    expect(result.afterRevocationError).toBeInstanceOf(GoogleApiError);
+    expect(result.afterRevocationError).toMatchObject({ status: 401 });
+    expect(result.afterRevocation).toEqual({ ok: true });
+    expect(issued).toBe(3);
   });
 
   it("refreshes a token that is within 60 seconds of expiry", async () => {

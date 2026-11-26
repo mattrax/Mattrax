@@ -1,24 +1,30 @@
 import { Title } from "@solidjs/meta";
-import { BrandLogo } from "~/components/brand-logo";
+import BrandLogo from "~/components/brand-logo";
 import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { createSignal, onCleanup, onSettled, Show } from "solid-js";
 import { Schema } from "effect";
 import { authClient } from "~/lib/auth";
 import { Button } from "~/components/ui/button";
-import { EmailCodeField } from "~/components/email-code-field";
+import { Input } from "~/components/ui/input";
+import EmailCodeField from "~/components/email-code-field";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { readRegistrationNonce, rememberRegistrationNonce } from "~/lib/registration-nonce";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
-const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
+const feedbackEnter = "page-enter";
 
 /** Seconds before the address can ask for another code. */
 const RESEND_COOLDOWN_SECONDS = 30;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const fieldClass =
-  "w-full rounded-lg border border-input bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors";
+/**
+ * The Email Verification API's autocomplete token. It is proposal-stage and
+ * absent from the accessibility rule's value list, so it lives in a constant
+ * the linter cannot mistake for a typo.
+ */
+const EMAIL_VERIFICATION_AUTOCOMPLETE = "email-verification-token";
 
 /**
  * Sign-up proves the email address before it creates anything: the code form
@@ -41,11 +47,18 @@ export default function RegisterPage() {
   const [error, setError] = createSignal<string | null>(null);
   const [pending, setPending] = createSignal<"send" | "verify" | null>(null);
   const [cooldown, setCooldown] = createSignal(0);
+  /**
+   * The server-issued nonce for this form. The browser fills the hidden token
+   * input only when this attribute is present; a token attempt rotates it.
+   */
+  const [verificationNonce, setVerificationNonce] = createSignal(readRegistrationNonce());
   const session = authClient.useSession();
   const signedInAs = () => session().data?.user;
   const [signingOut, setSigningOut] = createSignal(false);
 
   let codeInput: HTMLInputElement | undefined;
+  /** Filled by the browser when it can verify the address inline. */
+  let tokenInput: HTMLInputElement | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   /** The last value an input event submitted, so it cannot submit twice. */
   let submittedCode: string | null = null;
@@ -86,6 +99,9 @@ export default function RegisterPage() {
     setError(null);
     setCooldown(0);
     submittedCode = null;
+
+    // A token for the previous address is no longer evidence for this one.
+    if (tokenInput) tokenInput.value = "";
   };
 
   /**
@@ -143,10 +159,29 @@ export default function RegisterPage() {
     setPending("send");
 
     try {
+      // The browser writes the Email Verification API token into the hidden
+      // input. Read both halves from the live element so hydration, a browser
+      // refill and a rotated nonce all use exactly what is in the DOM.
+      const token = tokenInput?.value.trim();
+      // The signal is the rotated source of truth; the DOM attribute is only a
+      // fallback for a render that has not flushed yet.
+      const nonce = verificationNonce()?.trim() ?? tokenInput?.getAttribute("nonce")?.trim();
       const result = await authClient.requestRegistrationCode({
         name: trimmedName,
         email: trimmedEmail,
+        ...(token && nonce ? { token, nonce } : {}),
       });
+
+      // Every token attempt rotates the nonce; a request without one leaves the
+      // current binding alone.
+      if (result.data?.nonce) {
+        setVerificationNonce(result.data.nonce);
+        rememberRegistrationNonce(result.data.nonce);
+      }
+
+      // A consumed token must not survive into the code step, where a browser
+      // refill could submit it again with the old address.
+      if (tokenInput) tokenInput.value = "";
 
       if (result.error) {
         setError(result.error.message ?? "Could not send a verification code.");
@@ -156,6 +191,15 @@ export default function RegisterPage() {
 
       setCode("");
       submittedCode = null;
+
+      // The browser proved the address inline: no email, no code. Go straight
+      // to passkey creation with the grant the server just issued.
+      if (result.data?.verified && result.data.grant) {
+        setPending("verify");
+        await finishRegistration(result.data.grant);
+
+        return;
+      }
 
       if (!result.data?.emailSent) {
         // The code is stored, but no mail left the building. Say that instead of
@@ -296,8 +340,8 @@ export default function RegisterPage() {
           <a href="/" class="inline-flex items-center gap-2 mb-6">
             <BrandLogo class="h-4" />
           </a>
-          <h1 class="text-2xl font-semibold text-stone-900">Create an account</h1>
-          <p class="text-stone-500 text-sm mt-1">
+          <h1 class="text-2xl font-semibold text-foreground">Create an account</h1>
+          <p class="text-subtle-foreground text-sm mt-1">
             {codeSent()
               ? "Enter the code we sent to your inbox."
               : "We'll verify your email, then set up a passkey to sign in with."}
@@ -308,25 +352,27 @@ export default function RegisterPage() {
           {(user) => (
             <div
               role="status"
-              class={`mb-4 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] leading-relaxed text-warning-foreground ${feedbackEnter}`}
+              class={`mb-4 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-xs leading-relaxed text-warning-foreground ${feedbackEnter}`}
             >
               <p class="font-medium">You're already signed in as {user().email}</p>
               <p class="mt-1">
-                Creating a separate account needs a fresh sign-in. Open your dashboard to keep
-                using this account, or sign out first if you really want another one.
+                Creating a separate account needs a fresh sign-in. Open your dashboard to keep using
+                this account, or sign out first if you really want another one.
               </p>
               <div class="mt-2 flex flex-wrap items-center gap-2">
                 <Button as="a" href="/dashboard" size="xs" variant="outline">
                   Open dashboard
                 </Button>
-                <button
+                <Button
                   type="button"
-                  class="inline-flex min-h-8 items-center rounded-md px-2.5 font-medium transition-opacity duration-[var(--duration-hover)] ease-swift hover:opacity-80 disabled:opacity-50"
+                  variant="ghost"
+                  size="sm"
+                  class="min-h-8"
                   disabled={signingOut()}
                   onClick={() => void signOutForRegistration()}
                 >
                   {signingOut() ? "Signing out…" : "Sign out"}
-                </button>
+                </Button>
               </div>
             </div>
           )}
@@ -334,10 +380,10 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit} class="space-y-4" autocomplete="on" novalidate>
           <div class="space-y-1.5">
-            <label for="name" class="text-sm font-medium text-stone-700">
+            <label for="name" class="text-sm font-medium text-muted-foreground">
               Name
             </label>
-            <input
+            <Input
               id="name"
               name="name"
               type="text"
@@ -347,31 +393,47 @@ export default function RegisterPage() {
               placeholder="Ada Lovelace"
               value={name()}
               onInput={(event) => setName(event.currentTarget.value)}
-              class={fieldClass}
+              class="h-10"
             />
           </div>
 
           <div class="space-y-1.5">
-            <label for="email" class="text-sm font-medium text-stone-700">
+            <label for="email" class="text-sm font-medium text-muted-foreground">
               Email
             </label>
-            <input
+            <Input
               id="email"
               name="email"
               type="email"
               required
-              autocomplete="username"
+              autocomplete="email"
               autocapitalize="none"
               spellcheck={false}
               placeholder="you@example.com"
               value={email()}
               onInput={(event) => updateEmail(event.currentTarget.value)}
-              class={fieldClass}
+              class="h-10"
             />
           </div>
 
+          {/*
+            Email Verification API progressive enhancement. A supporting
+            browser (Chrome behind the origin trial, with Gmail as the issuer)
+            writes a token into this input's value. Without support the input
+            stays empty and the emailed code is the only path. The `nonce` is
+            the server-issued, single-use binding the API checks against the
+            sign-up cookie.
+          */}
+          <input
+            ref={(input) => (tokenInput = input)}
+            type="hidden"
+            name="token"
+            nonce={verificationNonce()}
+            autocomplete={EMAIL_VERIFICATION_AUTOCOMPLETE}
+          />
+
           <Show when={codeSent()}>
-            <div class="space-y-1.5 motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]">
+            <div class="space-y-1.5 page-enter">
               <EmailCodeField
                 value={code()}
                 onInput={updateCode}
@@ -380,11 +442,12 @@ export default function RegisterPage() {
                 inputRef={(input) => (codeInput = input)}
               />
               <div class="flex items-center justify-end">
-                <button
+                <Button
                   type="button"
+                  variant="link"
+                  size="xs"
                   onClick={() => void sendCode({ resend: true })}
                   disabled={pending() === "send" || cooldown() > 0}
-                  class="text-xs font-medium text-stone-700 underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-stone-900 disabled:no-underline disabled:opacity-60"
                 >
                   <span>
                     {pending() === "send"
@@ -396,7 +459,7 @@ export default function RegisterPage() {
                   <span class="sr-only" aria-live="polite">
                     {pending() === "send" ? "Sending a new code" : ""}
                   </span>
-                </button>
+                </Button>
               </div>
             </div>
           </Show>
@@ -415,7 +478,7 @@ export default function RegisterPage() {
 
           <Show when={notice()}>
             {(message) => (
-              <p role="status" class={`text-sm text-emerald-600 ${feedbackEnter}`}>
+              <p role="status" class={`text-sm text-success ${feedbackEnter}`}>
                 {message()}
               </p>
             )}
@@ -423,7 +486,8 @@ export default function RegisterPage() {
 
           <Button
             type="submit"
-            class="h-10 w-full rounded-lg px-4 text-sm"
+            size="lg"
+            class="w-full"
             pending={pending() !== null}
           >
             {codeSent()
@@ -432,7 +496,9 @@ export default function RegisterPage() {
                 : "Verify and create passkey"
               : pending() === "send"
                 ? "Sending code…"
-                : "Continue"}
+                : pending() === "verify"
+                  ? "Setting up passkey…"
+                  : "Continue"}
           </Button>
         </form>
 
@@ -447,22 +513,22 @@ export default function RegisterPage() {
           <Show
             when={!signedInAs()}
             fallback={
-              <p class="mt-6 text-center text-sm text-stone-500">
+              <p class="mt-6 text-center text-sm text-subtle-foreground">
                 Already signed in.{" "}
                 <a
                   href="/dashboard"
-                  class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+                  class="text-foreground font-medium underline-offset-2 transition-colors duration-(--duration-hover) ease-swift hover:underline"
                 >
                   Open dashboard
                 </a>
               </p>
             }
           >
-            <p class="mt-6 text-center text-sm text-stone-500">
+            <p class="mt-6 text-center text-sm text-subtle-foreground">
               Already have an account?{" "}
               <a
                 href={withReturnTo("/login")}
-                class="text-stone-900 font-medium underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:underline"
+                class="text-foreground font-medium underline-offset-2 transition-colors duration-(--duration-hover) ease-swift hover:underline"
               >
                 Sign in
               </a>

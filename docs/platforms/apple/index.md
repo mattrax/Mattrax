@@ -195,7 +195,7 @@ first use, and resetting or reconfiguring the enrollment invalidates it.
 | `UserAuthenticate`      | Validates the user against the authenticated device and answers with an empty `DigestChallenge` (no password); `410` for a user it will not manage                                                                                                                                          |
 | `TokenUpdate`           | Stores push token, push magic and topic; moves `enrolling → enrolled`; writes `device.enrolled`. A user channel is stored per user                                                                                                                                                          |
 | `CheckOut`              | Marks the device `unenrolled`, clears push credentials, revokes device certificates; a user channel removes only that user                                                                                                                                                                  |
-| `DeclarativeManagement` | Serves DDM tokens, declaration items, declarations and status. A user channel gets an empty declaration set                                                                                                                                                                                 |
+| `DeclarativeManagement` | Requires an enrolled/enrolling device and its active, device-bound SCEP certificate. Serves DDM tokens, declaration items, declarations and status; an unbound user channel gets an empty declaration set                                                                                   |
 | `GetToken`              | Rejected with `400`: the Managed Apple Account and watch-pairing token services are not implemented, and the profile does not advertise `com.apple.mdm.token`                                                                                                                               |
 | Command result          | Updates the command row, parses `SecurityInfo` and `InstalledApplicationList`; a user result only touches that user's rows                                                                                                                                                                  |
 
@@ -203,6 +203,13 @@ A new identity cannot take over an already-enrolled UDID with a different certif
 fingerprint. Reclaiming a row by serial requires a pre-registration or a row that is already
 unenrolled/stale. An ABM assignment alone is **not** intra-tenant proof: any enrolled device
 in the tenant can assert a serial, so ABM-only reclaim is refused.
+
+Enrolled legacy rows created before identity-fingerprint verification have a null
+`dm_identity_fingerprint` and fail closed: they cannot be rebound, check in, or read escrow and
+DDM data until their identity is established. During rollout, backfill a fingerprint only from
+independently verified enrollment records, or securely re-enroll/reclaim the device through the
+existing proof-gated pre-registration, unenrolled, or stale-row paths. Never backfill by trusting
+a device-asserted UDID alone.
 
 ### User channel
 
@@ -221,8 +228,11 @@ iPad open a second, per-user channel alongside the device channel:
    device cannot register an arbitrary user. Shared iPad never authenticates and reports
    Apple's `FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF` sentinel as `UserID` for every login, so its
    channels are keyed by the Managed Apple Account identifier Apple sends as `UserShortName`.
-   That account is matched to a directory person by exact email and bound as
-   `managed-apple-account`. See [User-scoped policies](/reference/user-scoped-policies/).
+   That device-asserted account is a routing key, not proof of the person: Mattrax no longer
+   matches it to a directory email or marks it verified. User-scoped declarations require an
+   existing certificate, BYOD, or manual/operator-provisioned binding. Legacy
+   `managed-apple-account` email correlations are treated as unbound and receive no user policy.
+   See [User-scoped policies](/reference/user-scoped-policies/).
 3. Commands queued for a user (`ProfileList` from **Refresh profiles**) are delivered only
    on that user's check-in. A user result is only accepted from the same user, and it never
    writes device inventory. `CheckOut` from a user removes just that channel and cancels its
@@ -353,6 +363,46 @@ for a token service the server does not support.
   Renewal rejects revoked identities.
 - There is no published CRL or OCSP endpoint. Revocation is enforced at renewal and on
   mTLS check-in.
+
+### Certificate profiles (trusted root, PKCS, imported PFX)
+
+SCEP issues the device identity. Other certificates — Wi-Fi/VPN client identities and
+S/MIME — are separate policy profiles:
+
+| Kind                          | Delivery                                                                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mttx.apple.certificate.<id>` | `com.apple.asset.credential.certificate` + `security.certificate` declaration (macOS 14/iOS 17+), or `com.apple.security.pkcs1` on legacy devices |
+| `mttx.apple.pkcs.<id>`        | `com.apple.asset.credential.identity` + `security.identity` declaration, or `com.apple.security.pkcs12` on legacy devices                         |
+| `mttx.apple.pfx.<id>`         | Same identity path as PKCS, without CA/template metadata                                                                                          |
+| `mttx.apple.mail.<id>`        | `account.mail` declaration with S/MIME identity references, or `com.apple.mail.managed`                                                           |
+
+The trusted root must be delivered before the issued certificate is useful. Apple has no
+on-device PKCS/NDES client: a PKCS profile records how the CA issued the certificate
+(CA, template, subject format, key usage, validity, renewal threshold) and delivers the
+PKCS#12 that the operator's enterprise connector produced. Mattrax does not call the CA
+or issue per-device certificates. Imported PFX is for an existing PKCS#12, including a
+shared S/MIME decryption identity.
+
+The PFX and password are sealed with `AUTH_SECRET` and never appear in policy JSON, API
+responses, deployment snapshots or tenant exports. Legacy delivery embeds them in a
+`com.apple.security.pkcs12` profile, so the `InstallProfile` command payload is sealed in
+`device_command` as well and only opened when the command is handed to the device or when
+installed-profile reconciliation reads command history. Upload
+the leaf certificate alongside the PFX; Mattrax parses the PKCS#12, verifies the password
+and requires the leaf's fingerprint to match, and metadata always comes from the PFX. The
+same PKCS#12 is delivered to every device/user in scope.
+
+User-scoped identities use the DDM user channel. Legacy delivery has no user channel, so a
+user-scoped identity is not installed on a pre-DDM device. S/MIME on a DDM mail account
+with password authentication needs a credentials asset Mattrax does not create; that
+combination is reported as unsupported. Apple defines `account.mail` S/MIME only on iOS 17+,
+so a macOS declaration omits the `SMIME` dictionary.
+
+Identity assets are private keys, not public roots. The asset endpoint requires the signed
+per-device token and re-resolves the device's effective policy before serving the JSON
+credential; a tenant mTLS certificate alone is accepted only for non-secret certificate
+assets. A token for an unassigned or unenrolled device, another tenant's device, or an
+expired link is refused.
 
 ## APNs
 

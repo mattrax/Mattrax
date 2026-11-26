@@ -8,7 +8,7 @@ import {
 import type { JSX } from "@solidjs/web";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -41,7 +41,7 @@ import { cn } from "~/lib/utils";
  * dashboard; writers manage schedules; only built-in owners/admins may add an
  * external address (the API enforces the same rule).
  */
-export function DashboardReportsPanel(props: { tenantId: string; dashboardId: string }) {
+export default function DashboardReportsPanel(props: { tenantId: string; dashboardId: string }) {
   const queryClient = useQueryClient();
   const permissions = useTenantPermissions();
   const writable = () => permissions.can("dashboards.write");
@@ -274,7 +274,7 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
       }
     >
       <Show when={downloadError()}>
-        <p role="alert" class="mb-2 text-[12px] text-destructive">
+        <p role="alert" class="mb-2 text-xs text-destructive">
           {errorMessage(raisedFailure(downloadError()), "Could not download the dashboard.")}
         </p>
       </Show>
@@ -285,9 +285,9 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
         when={(reports.data?.reports.length ?? 0) > 0}
         fallback={
           <div class="rounded-lg border border-dashed border-border bg-surface px-4 py-6 text-center">
-            <ArrowUpRight class="mx-auto size-5 text-muted-foreground" />
-            <p class="mt-2 text-[12.5px] font-medium">No scheduled reports</p>
-            <p class="mt-1 text-[11.5px] text-muted-foreground">
+            <ArrowUpRight class="mx-auto size-5" />
+            <p class="mt-2 text-xs font-medium">No scheduled reports</p>
+            <p class="mt-1 text-xs text-muted-foreground">
               {writable()
                 ? "Create one to email this dashboard on a daily, weekly or monthly schedule."
                 : "Ask a dashboard administrator to schedule a report for this dashboard."}
@@ -302,17 +302,17 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
                 <div class="flex flex-wrap items-start justify-between gap-2">
                   <div class="min-w-0">
                     <div class="flex flex-wrap items-center gap-2">
-                      <p class="truncate text-[12.5px] font-medium text-foreground">
+                      <p class="truncate text-xs font-medium text-foreground">
                         {report.name}
                       </p>
                       <Badge variant={report.enabled ? "secondary" : "outline"}>
                         {report.enabled ? "Active" : "Paused"}
                       </Badge>
-                      <span class="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      <span class="rounded-full border border-border px-2 py-0.5 text-xs uppercase tracking-wide text-muted-foreground">
                         {report.format}
                       </span>
                     </div>
-                    <p class="mt-1 text-[11.5px] text-muted-foreground">
+                    <p class="mt-1 text-xs text-muted-foreground">
                       {scheduleLabel(report)} ·{" "}
                       {report.recipients.memberAccountIds.length + report.recipients.emails.length}{" "}
                       recipient
@@ -323,7 +323,7 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
                         : "s"}
                       <Show when={report.nextRunAt}> · next {relativeTime(report.nextRunAt)}</Show>
                     </p>
-                    <p class="mt-0.5 text-[10.5px] text-muted-foreground">
+                    <p class="mt-0.5 text-xs text-muted-foreground">
                       <Show when={report.lastRunAt} fallback="Not sent yet">
                         Last run {relativeTime(report.lastRunAt)}
                       </Show>
@@ -360,15 +360,18 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
                       >
                         {report.enabled ? "Pause" : "Resume"}
                       </Button>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        class="text-muted-foreground hover:text-destructive"
-                        aria-label={`Delete ${report.name}`}
-                        onClick={() => setRemoveTarget(report)}
-                      >
-                        <X class="size-3" />
-                      </Button>
+                      <span class="group inline-flex">
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          aria-label={`Delete ${report.name}`}
+                          onClick={() => setRemoveTarget(report)}
+                        >
+                          <span class="group-hover:text-destructive">
+                            <X class="size-3" />
+                          </span>
+                        </Button>
+                      </span>
                     </Show>
                   </div>
                 </div>
@@ -403,7 +406,7 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
       </Show>
 
       <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>
-        <DialogContent class="max-w-lg rounded-xl border border-border bg-card p-5">
+        <DialogContent class="max-w-lg">
           <DialogHeader>
             <DialogTitle>{editing() ? "Edit report" : "New report"}</DialogTitle>
             <DialogDescription>
@@ -413,7 +416,7 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
 
           <div class="space-y-3">
             <label class="block">
-              <span class="mb-1 block text-[11px] font-medium text-muted-foreground">Name</span>
+              <span class="mb-1 block text-xs font-medium text-muted-foreground">Name</span>
               <Input
                 class="h-8"
                 value={name()}
@@ -424,11 +427,11 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
 
             <div class="grid gap-2 sm:grid-cols-2">
               <label>
-                <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+                <span class="mb-1 block text-xs font-medium text-muted-foreground">
                   Schedule
                 </span>
                 <select
-                  class="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                   value={frequency()}
                   onChange={(event) => {
                     const value = event.currentTarget.value;
@@ -442,7 +445,7 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
                 </select>
               </label>
               <label>
-                <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+                <span class="mb-1 block text-xs font-medium text-muted-foreground">
                   Hour (UTC)
                 </span>
                 <Input
@@ -457,9 +460,9 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
             </div>
 
             <label class="block">
-              <span class="mb-1 block text-[11px] font-medium text-muted-foreground">Format</span>
+              <span class="mb-1 block text-xs font-medium text-muted-foreground">Format</span>
               <select
-                class="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 value={format()}
                 onChange={(event) => {
                   const value = event.currentTarget.value;
@@ -473,29 +476,29 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
             </label>
 
             <div>
-              <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+              <span class="mb-1 block text-xs font-medium text-muted-foreground">
                 Tenant members
               </span>
               <div class="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-border bg-surface p-2">
                 <Show
                   when={(accounts.data?.accounts.length ?? 0) > 0}
                   fallback={
-                    <p class="px-1 py-1.5 text-[11.5px] text-muted-foreground">
+                    <p class="px-1 py-1.5 text-xs text-muted-foreground">
                       No other members can be selected.
                     </p>
                   }
                 >
                   <For each={accounts.data.accounts}>
                     {(account) => (
-                      <label class="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-[12px] hover:bg-hover">
-                        <input
+                      <label class="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-xs hover:bg-hover">
+                        <Input
                           type="checkbox"
-                          class="size-3.5 accent-[var(--primary)]"
+                          class="size-3.5"
                           checked={memberIds().includes(account.accountId)}
                           onChange={() => toggleMember(account.accountId)}
                         />
                         <span class="min-w-0 flex-1 truncate">{account.name || account.email}</span>
-                        <span class="truncate text-[10.5px] text-muted-foreground">
+                        <span class="truncate text-xs text-muted-foreground">
                           {account.email}
                         </span>
                       </label>
@@ -507,7 +510,7 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
 
             <Show when={mayExternal()}>
               <label class="block">
-                <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+                <span class="mb-1 block text-xs font-medium text-muted-foreground">
                   External addresses
                 </span>
                 <Input
@@ -516,14 +519,14 @@ export function DashboardReportsPanel(props: { tenantId: string; dashboardId: st
                   onInput={(event) => setEmails(event.currentTarget.value)}
                   placeholder="security@example.com, ops@example.com"
                 />
-                <span class="mt-1 block text-[10.5px] text-muted-foreground">
+                <span class="mt-1 block text-xs text-muted-foreground">
                   Comma-separated. Only owners and admins can add external recipients.
                 </span>
               </label>
             </Show>
 
             <Show when={formError()}>
-              <p role="alert" class="text-[12px] text-destructive">
+              <p role="alert" class="text-xs text-destructive">
                 {formError()}
               </p>
             </Show>
@@ -570,15 +573,15 @@ function ReportRuns(props: {
       <QueryError error={runs.error} onRetry={() => void runs.refetch()} />
       <Show
         when={(runs.data?.runs.length ?? 0) > 0}
-        fallback={<p class="text-[11.5px] text-muted-foreground">No runs recorded yet.</p>}
+        fallback={<p class="text-xs text-muted-foreground">No runs recorded yet.</p>}
       >
         <ul class="space-y-1.5">
           <For each={runs.data.runs}>
             {(run) => (
-              <li class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11.5px]">
+              <li class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
                 <span
                   class={cn(
-                    "rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+                    "rounded px-1.5 py-0.5 text-xs font-medium uppercase tracking-wide",
                     Match.value(run.status).pipe(
                       Match.when("failed", () => "bg-destructive/10 text-destructive"),
                       Match.when("queued", () => "bg-success/10 text-success"),
@@ -588,7 +591,7 @@ function ReportRuns(props: {
                 >
                   {label(run)}
                 </span>
-                <span class="font-mono text-[10.5px] text-muted-foreground">{run.period}</span>
+                <span class="font-mono text-xs text-muted-foreground">{run.period}</span>
                 <span class="text-muted-foreground">
                   {run.attempts} attempt{run.attempts === 1 ? "" : "s"}
                   {run.recipients.length > 0 ? ` · ${run.recipients.length} recipients` : ""}
@@ -596,7 +599,7 @@ function ReportRuns(props: {
                 </span>
                 <span class="ml-auto text-muted-foreground">{relativeTime(run.createdAt)}</span>
                 <Show when={run.error}>
-                  <span class="w-full text-[11px] text-destructive">{run.error}</span>
+                  <span class="w-full text-xs text-destructive">{run.error}</span>
                 </Show>
               </li>
             )}

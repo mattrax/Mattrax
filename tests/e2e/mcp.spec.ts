@@ -178,7 +178,7 @@ test.describe("MCP", () => {
 
     await gotoHydrated(page, "/account");
     await expect(page.getByText("Agent access (MCP)")).toBeVisible();
-    await expect(page.getByText("E2E Agent")).toBeVisible();
+    await expect(page.getByText("E2E Agent", { exact: true })).toBeVisible();
 
     await api(page, `/api/v1/account/mcp-connections/${connection!.id}`, {
       method: "DELETE",
@@ -273,7 +273,7 @@ test.describe("MCP", () => {
     expect(names).not.toContain("query_data");
 
     await gotoHydrated(page, "/account");
-    await expect(page.getByText("Read-only Agent")).toBeVisible();
+    await expect(page.getByText("Read-only Agent", { exact: true })).toBeVisible();
     await expect(page.getByText(/1 permission · Connected/)).toBeVisible();
   });
 

@@ -22,6 +22,8 @@ export type WindowsMdmRequestContext = {
   readonly tenantToken?: string;
   readonly identityCertificate?: string;
   readonly identityCertificateSerial?: string;
+  /** Verified client certificate DER as standard base64. */
+  readonly identityCertificateDerBase64?: string;
   /** Verified client address, set by the deployment boundary for the audit log. */
   readonly clientIp?: string;
   /** Bounded request `User-Agent`; audit only. */
