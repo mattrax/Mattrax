@@ -34,9 +34,14 @@ export * from "./softwareUpdates.ts";
 
 export * from "./osPolicy.ts";
 
+export * from "./certificates.ts";
+
 export * from "./deviceActions.ts";
+export * from "./windowsSecurity.ts";
 
 export * from "./scripts.ts";
+
+export * from "./restrictedSoftware.ts";
 
 export * from "./fleetMigration.ts";
 
@@ -57,13 +62,23 @@ export * from "./sso.ts";
 export {
   applicationKey,
   applicationPrefix,
+  isTenantApplicationObjectKey,
   policyApplicationKey,
   policyApplicationPrefix,
+  tenantApplicationObjectPrefix,
 } from "./storage.ts";
 
-export { EnterpriseAuth, EnterpriseService } from "./service.ts";
+export { ApplicationStorefrontService, EnterpriseAuth, EnterpriseService } from "./service.ts";
 
-export type { EnterpriseAuthResolved, EnterpriseAuthUser } from "./service.ts";
+export type {
+  EnterpriseAuthApiToken,
+  EnterpriseAuthFailure,
+  EnterpriseAuthOAuthToken,
+  EnterpriseAuthResolved,
+  EnterpriseAuthSession,
+  EnterpriseAuthUser,
+  EnterpriseStepUpMethods,
+} from "./service.ts";
 
 export * from "./auth.ts";
 
@@ -74,6 +89,8 @@ export * from "./policyVariables.ts";
 export * from "./csv.ts";
 
 export * from "./stepUp.ts";
+
+export * from "./approvals.ts";
 
 export * from "./stepUpServer.ts";
 
@@ -90,8 +107,11 @@ export {
 
 export type { DeviceCapabilities, InstallerCandidate } from "./applicationInstallers.js";
 
+export * from "./applicationUninstall.js";
+
 export {
   ApplicationAvailability,
+  ApplicationStoreService,
   DEFAULT_STOREFRONT_REGION,
   normaliseStorefrontRegion,
   parseAppleStoreLookup,
@@ -102,6 +122,8 @@ export {
 
 export type {
   AppleStoreLookup,
+  ApplicationStoreLookupInput,
+  ApplicationStoreLookupOutcome,
   ApplicationAvailabilitySummary,
   ResolvedStoreId,
   StorefrontAvailability,

@@ -1,5 +1,8 @@
 import { getRequestEvent } from "@solidjs/web";
-import { fetchApi } from "~/server/api";
+import { Effect, Option, Schema } from "effect";
+import { HttpBody, HttpClientRequest, HttpClientResponse } from "effect/http";
+import { runApiEffect } from "~/server/api";
+import { ApiClient } from "~/server/api-client";
 import {
   AndroidEnrollment,
   EnrollmentQuestion,
@@ -8,12 +11,11 @@ import {
   TenantBranding,
   WindowsEnrollment,
 } from "@mattrax/enterprise-domain/client";
-import { Option, Schema } from "effect";
 import { ENROLLMENT_STATUS_HEADER, enrollmentLookupFailure } from "~/lib/enrollment-lookup";
 
 /**
- * The API serialises optional numbers as `null` in the public enrollment
- * payload (`deviceLimit.limit`/`used`), which the strict domain type models as
+ * The API serialises optional numbers as null in the public enrollment
+ * payload (deviceLimit.limit/used), which the strict domain type models as
  * absent. Decode a representation that accepts both and normalise afterwards.
  */
 const ServerDeviceLimit = Schema.Struct({
@@ -42,85 +44,93 @@ const ServerEnrollmentResponse = Schema.Union([
   }),
 ]);
 
-const decodeEnrollment = Schema.decodeUnknownOption(ServerEnrollmentResponse);
-
 const decodeEnrollmentResponse = Schema.decodeUnknownOption(EnrollmentResponse);
 
-/**
- * The public enrollment link's state, resolved before the page renders.
- *
- * Without this the page could only show "Verifying…" until the client bundle
- * hydrated. The API endpoint is public and needs no session, so a server
- * function can answer it from the Worker's service binding and the SSR pass can
- * render the password form (or the platform instructions) in the first HTML
- * response. A no-JS device can then submit the native form.
- */
 export type PublicEnrollmentLookup =
   | { readonly status: "found"; readonly enrollment: EnrollmentResponse }
   | { readonly status: "expired" }
   | { readonly status: "invalid" }
   | { readonly status: "unavailable" };
 
+const requestHeaders = () => {
+  const event = getRequestEvent();
+  const cookie = event?.request.headers.get("cookie");
+  const ip = event?.request.headers.get("cf-connecting-ip");
+
+  return {
+    accept: "application/json",
+    ...(cookie ? { cookie } : {}),
+    ...(ip ? { "cf-connecting-ip": ip } : {}),
+  };
+};
+
+/** Effect seam used by SSR and transport tests; no ambient fetch is involved. */
+export const lookupPublicEnrollmentEffect = (
+  id: string,
+  code: string,
+): Effect.Effect<PublicEnrollmentLookup, never, ApiClient> =>
+  Effect.gen(function* () {
+    const client = yield* ApiClient;
+    const event = getRequestEvent();
+    const url = new URL(
+      "/api/v1/enrollment/" + encodeURIComponent(id),
+      event?.request.url ?? "https://mattrax.invalid",
+    );
+
+    if (code) url.searchParams.set("code", code);
+
+    const response = yield* client
+      .execute(HttpClientRequest.get(url, { headers: requestHeaders() }))
+      .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
+    if (response === undefined) return { status: "unavailable" };
+
+    if (response.status < 200 || response.status >= 300) {
+      const explicitlyExpired = response.headers[ENROLLMENT_STATUS_HEADER] === "expired";
+
+      yield* client.discard(response).pipe(Effect.catch(() => Effect.void));
+
+      return { status: enrollmentLookupFailure(response.status, explicitlyExpired) };
+    }
+
+    const decoded = yield* client.bounded(response, 1024 * 1024).pipe(
+      Effect.flatMap(HttpClientResponse.schemaBodyJson(ServerEnrollmentResponse)),
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+
+    if (decoded === undefined) return { status: "invalid" };
+
+    // Normalise the nullable optional numbers before the domain schema checks
+    // the payload the client will receive.
+    const normalized =
+      decoded.authenticated === true && decoded.deviceLimit
+        ? {
+            ...decoded,
+            deviceLimit: {
+              ...decoded.deviceLimit,
+              limit: decoded.deviceLimit.limit ?? undefined,
+              used: decoded.deviceLimit.used ?? undefined,
+            },
+          }
+        : decoded;
+
+    const enrollment = Option.getOrUndefined(decodeEnrollmentResponse(normalized));
+
+    return enrollment === undefined ? { status: "invalid" } : { status: "found", enrollment };
+  });
+
+/**
+ * The public enrollment link's state, resolved before the page renders.
+ * Without this the page could only show "Verifying…" until the client bundle
+ * hydrated. A no-JS device can also submit the native form.
+ */
 export async function lookupPublicEnrollment(
   id: string,
   code: string,
 ): Promise<PublicEnrollmentLookup> {
   "use server";
 
-  const event = getRequestEvent();
-
-  const url = new URL(
-    `/api/v1/enrollment/${encodeURIComponent(id)}`,
-    event?.request.url ?? "https://mattrax.invalid",
-  );
-
-  if (code) url.searchParams.set("code", code);
-
-  const headers = new Headers({ accept: "application/json" });
-  const cookie = event?.request.headers.get("cookie");
-  const ip = event?.request.headers.get("cf-connecting-ip");
-
-  if (cookie) headers.set("cookie", cookie);
-
-  if (ip) headers.set("cf-connecting-ip", ip);
-
-  let response: Response;
-
-  try {
-    response = await fetchApi(new Request(url, { headers }));
-  } catch {
-    return { status: "unavailable" };
-  }
-
-  if (!response.ok) {
-    const explicitlyExpired = response.headers.get(ENROLLMENT_STATUS_HEADER) === "expired";
-
-    return { status: enrollmentLookupFailure(response.status, explicitlyExpired) };
-  }
-
-  const body = await response.json().catch(() => undefined);
-
-  const decoded = Option.getOrUndefined(decodeEnrollment(body));
-
-  if (decoded === undefined) return { status: "invalid" };
-
-  // Normalise the nullable optional numbers before the domain schema checks
-  // the payload the client will receive.
-  const normalized =
-    decoded.authenticated === true && decoded.deviceLimit
-      ? {
-          ...decoded,
-          deviceLimit: {
-            ...decoded.deviceLimit,
-            limit: decoded.deviceLimit.limit ?? undefined,
-            used: decoded.deviceLimit.used ?? undefined,
-          },
-        }
-      : decoded;
-
-  const enrollment = Option.getOrUndefined(decodeEnrollmentResponse(normalized));
-
-  return enrollment === undefined ? { status: "invalid" } : { status: "found", enrollment };
+  return await runApiEffect(lookupPublicEnrollmentEffect(id, code));
 }
 
 const ErrorBody = Schema.Struct({ message: Schema.optional(Schema.String) });
@@ -131,11 +141,59 @@ export type SubmitEnrollmentAnswersResult =
   | { readonly ok: true; readonly stored: number }
   | { readonly ok: false; readonly message: string };
 
-/**
- * Store answers to a tenant's custom enrollment questions. The public
- * enrollment page is served by the Worker, so the submission goes through the
- * service binding rather than exposing the API origin to the browser.
- */
+/** Effect seam for the public enrollment submission. */
+export const submitPublicEnrollmentAnswersEffect = (
+  id: string,
+  input: {
+    readonly code?: string;
+    readonly serial: string;
+    readonly name?: string;
+    readonly assetTag?: string;
+    readonly answers: Readonly<Record<string, string>>;
+  },
+): Effect.Effect<SubmitEnrollmentAnswersResult, never, ApiClient> =>
+  Effect.gen(function* () {
+    const client = yield* ApiClient;
+    const event = getRequestEvent();
+    const url = new URL(
+      "/api/v1/enrollment/" + encodeURIComponent(id) + "/answers",
+      event?.request.url ?? "https://mattrax.invalid",
+    );
+    const headers = { ...requestHeaders(), "content-type": "application/json" };
+    const response = yield* client
+      .execute(
+        HttpClientRequest.post(url, {
+          headers,
+          body: HttpBody.jsonUnsafe(input),
+        }),
+      )
+      .pipe(Effect.catch(() => Effect.succeed(undefined)));
+
+    if (response === undefined)
+      return { ok: false, message: "Enrollment is temporarily unavailable. Try again shortly." };
+
+    const body = yield* client.bounded(response, 64 * 1024).pipe(
+      Effect.flatMap(HttpClientResponse.schemaBodyJson(Schema.Unknown)),
+      Effect.catch(() => Effect.succeed(undefined)),
+    );
+
+    if (response.status < 200 || response.status >= 300) {
+      const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorBody)(body));
+
+      return {
+        ok: false,
+        message:
+          decoded?.message ??
+          "The enrollment details could not be saved. Check the values and try again.",
+      };
+    }
+
+    const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(StoredBody)(body));
+
+    return { ok: true, stored: decoded?.stored ?? 0 };
+  });
+
+/** Store answers through the same injectable API boundary as SSR preload. */
 export async function submitPublicEnrollmentAnswers(
   id: string,
   input: {
@@ -148,45 +206,5 @@ export async function submitPublicEnrollmentAnswers(
 ): Promise<SubmitEnrollmentAnswersResult> {
   "use server";
 
-  const event = getRequestEvent();
-
-  const url = new URL(
-    `/api/v1/enrollment/${encodeURIComponent(id)}/answers`,
-    event?.request.url ?? "https://mattrax.invalid",
-  );
-
-  const headers = new Headers({ accept: "application/json", "content-type": "application/json" });
-  const cookie = event?.request.headers.get("cookie");
-  const ip = event?.request.headers.get("cf-connecting-ip");
-
-  if (cookie) headers.set("cookie", cookie);
-
-  if (ip) headers.set("cf-connecting-ip", ip);
-
-  let response: Response;
-
-  try {
-    response = await fetchApi(
-      new Request(url, { method: "POST", headers, body: JSON.stringify(input) }),
-    );
-  } catch {
-    return { ok: false, message: "Enrollment is temporarily unavailable. Try again shortly." };
-  }
-
-  const body = await response.json().catch(() => undefined);
-
-  if (!response.ok) {
-    const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorBody)(body));
-
-    return {
-      ok: false,
-      message:
-        decoded?.message ??
-        "The enrollment details could not be saved. Check the values and try again.",
-    };
-  }
-
-  const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(StoredBody)(body));
-
-  return { ok: true, stored: decoded?.stored ?? 0 };
+  return await runApiEffect(submitPublicEnrollmentAnswersEffect(id, input));
 }

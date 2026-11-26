@@ -1,4 +1,4 @@
-import { Effect, Exit, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 import { and, eq, gt, lt, ne } from "drizzle-orm";
 import { openSecret } from "@mattrax/crypto";
 import { isDirectorySyncDue, nextDirectorySyncAt, syncDirectory } from "@mattrax/directory-sync";
@@ -278,6 +278,39 @@ export type GoogleDirectorySyncOutcome =
   | { readonly status: "not_configured"; readonly message: string }
   | { readonly status: "error"; readonly message: string };
 
+export type GoogleWorkspaceErrorLogFields = {
+  readonly tag: string;
+  readonly kind?: string;
+  readonly status?: number;
+  readonly message: string;
+};
+
+/** Explicit safe fields for logs; provider bodies and raw causes are excluded. */
+export const googleWorkspaceErrorSummary = (
+  error: unknown,
+  credentials?: GoogleWorkspaceCredentials,
+): GoogleWorkspaceErrorLogFields => {
+  if (error instanceof GoogleWorkspaceError)
+    return {
+      tag: error._tag,
+      kind: error.kind,
+      status: error.status,
+      message: redactGoogleCredentials(error.message, credentials).slice(0, 2_000),
+    };
+
+  if (error instanceof GoogleWorkspaceConfigError)
+    return {
+      tag: error._tag,
+      kind: "configuration",
+      message: redactGoogleCredentials(error.message, credentials).slice(0, 2_000),
+    };
+
+  return {
+    tag: "UnknownError",
+    message: "Google Workspace directory sync failed.",
+  };
+};
+
 /**
  * Run one tenant's Workspace sync.
  *
@@ -311,7 +344,7 @@ export const runGoogleDirectorySyncForTenant = <R = never>(options: {
 
     if (!lock.acquired) return { status: "locked" } as const;
 
-    const service = options.service ?? makeGoogleWorkspaceService({ credentials });
+    const service = options.service ?? (yield* makeGoogleWorkspaceService({ credentials }));
 
     const exit = yield* Effect.exit(
       syncDirectory({
@@ -320,41 +353,46 @@ export const runGoogleDirectorySyncForTenant = <R = never>(options: {
         directory: googleWorkspaceDirectoryUserDirectory({ service }),
         // Google has no persisted cursor: every run is a complete listing, and
         // the pipeline reconciles people/groups that disappeared.
-        onUsersComplete: (progress) =>
-          db
+        onUsersComplete: (progress, tx) =>
+          tx
             .update(schema.googleDirectorySync)
             .set({
               lastCounts: { users: progress.users, groups: 0 },
               // Real heartbeat: a long healthy run must not look stale.
-              updatedAt: new Date(),
+              updatedAt: timestamp,
             })
             .where(eq(schema.googleDirectorySync.organizationId, organizationId)),
-        onGroupsComplete: (progress) =>
-          db
+        onGroupsComplete: (progress, tx) =>
+          tx
             .update(schema.googleDirectorySync)
             .set({
               lastCounts: { users: progress.users, groups: progress.groups },
-              updatedAt: new Date(),
+              updatedAt: timestamp,
             })
             .where(eq(schema.googleDirectorySync.organizationId, organizationId)),
       }),
     );
 
     if (Exit.isFailure(exit)) {
-      const message = redactGoogleCredentials(String(exit.cause), credentials).slice(0, 2000);
+      const error = googleWorkspaceErrorSummary(Cause.squash(exit.cause), credentials);
+
+      yield* Effect.logError("Google directory sync failed", {
+        organizationId,
+        ...error,
+      });
 
       yield* db
         .update(schema.googleDirectorySync)
         .set({
           status: "error",
-          lastError: message,
+          lastError: error.message,
           lastRunTrigger: trigger,
           nextSyncAt,
           updatedAt: timestamp,
         })
         .where(eq(schema.googleDirectorySync.organizationId, organizationId));
 
-      return { status: "error", message } as const;
+      return { status: "error", message: error.message } as const;
     }
 
     const result = exit.value;
@@ -362,8 +400,9 @@ export const runGoogleDirectorySyncForTenant = <R = never>(options: {
     if (result.changedUserIds.length > 0 && options.onMembershipsChanged)
       yield* options.onMembershipsChanged(organizationId, result.changedUserIds).pipe(
         Effect.catch((error) =>
-          Effect.sync(() => {
-            console.error("Google directory membership refresh failed", organizationId, error);
+          Effect.logError("Google directory membership refresh failed", {
+            organizationId,
+            ...googleWorkspaceErrorSummary(error, credentials),
           }),
         ),
       );
@@ -384,16 +423,15 @@ export const runGoogleDirectorySyncForTenant = <R = never>(options: {
     return { status: "ok", users: result.users, groups: result.groups } as const;
   }).pipe(
     Effect.catch((error) =>
-      Effect.sync(() => {
-        console.error("Google directory sync failed", options.organizationId, error);
+      Effect.gen(function* () {
+        const summary = googleWorkspaceErrorSummary(error, options.credentials ?? undefined);
 
-        return {
-          status: "error",
-          message: redactGoogleCredentials(String(error), options.credentials ?? undefined).slice(
-            0,
-            2000,
-          ),
-        } as const;
+        yield* Effect.logError("Google directory sync failed", {
+          organizationId: options.organizationId,
+          ...summary,
+        });
+
+        return { status: "error", message: summary.message } as const;
       }),
     ),
   );
@@ -460,10 +498,15 @@ export const runScheduledGoogleSync = <R = never>(options: {
           });
         }).pipe(
           Effect.catch((error) =>
-            Effect.sync(() => {
-              console.error("Scheduled Google directory sync failed", row.organizationId, error);
+            Effect.gen(function* () {
+              const summary = googleWorkspaceErrorSummary(error);
 
-              return { status: "error", message: String(error) } as const;
+              yield* Effect.logError("Scheduled Google directory sync failed", {
+                organizationId: row.organizationId,
+                ...summary,
+              });
+
+              return { status: "error", message: summary.message } as const;
             }),
           ),
         ),

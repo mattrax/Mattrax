@@ -7,8 +7,7 @@
   "references": [
     { "path": "../effect-stripe" },
     { "path": "../enterprise-core" },
-    { "path": "../enterprise-domain" },
-    { "path": "../net" }
+    { "path": "../enterprise-domain" }
   ],
   "include": ["src"]
 }

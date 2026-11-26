@@ -8,14 +8,14 @@ import {
   TENANT_IMPORT_MAX_BYTES,
   TenantImportRequest,
   isSupportedDynamicGroupRulesVersion,
+  isTenantApplicationObjectKey,
+  tenantApplicationObjectPrefix,
+  remapDynamicGroupRuleGroups,
   validateTenantBranding,
 } from "@mattrax/enterprise-domain";
 import type { TenantExportGroup } from "@mattrax/enterprise-domain";
-import {
-  syncDirectoryGroupsForTenant,
-  syncGroupInheritance,
-  validateConfiguration,
-} from "@mattrax/mdm-apple";
+import { syncDirectoryGroupsForTenant, syncGroupInheritance } from "@mattrax/mdm-core";
+import { validateConfiguration } from "@mattrax/mdm-apple";
 import { schema } from "@mattrax/enterprise-core";
 import { loadTenantEscrowKey } from "../Device/fdeEscrow.ts";
 import { readTenantBackup, runTenantBackup } from "./backup.ts";
@@ -24,6 +24,55 @@ import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
 
 /** Restore obeys the same bundle size limit as a fresh import. */
 export const TENANT_RESTORE_MAX_BYTES = TENANT_IMPORT_MAX_BYTES;
+
+// The guard lives in the domain package so the delivery sinks (including
+// mdm-apple) can apply it without depending on this module.
+export { isTenantApplicationObjectKey, tenantApplicationObjectPrefix };
+
+const AUDIT_OBJECT_KEY_PROPERTIES = new Set(["r2Key", "objectKey", "backupKey"]);
+
+/** Object-key shapes that must never be exposed through audit metadata. */
+const AUDIT_OBJECT_KEY_VALUE = /^(?:a|p|backups|diagnostics|handover|handovers)\//;
+
+type AuditJson = string | number | boolean | null | AuditJson[] | { [key: string]: AuditJson };
+
+/**
+ * Remove R2 object keys from audit metadata before it is stored or returned.
+ * `audit.read` is separate from `backups.read` and application permissions, so
+ * a key visible here would let a read-only role acquire another resource's
+ * object path.
+ */
+export const redactAuditObjectKeys = (value: unknown, depth = 0): AuditJson => {
+  if (depth > 20) return "[redacted]";
+
+  if (Array.isArray(value)) return value.map((entry) => redactAuditObjectKeys(entry, depth + 1));
+
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  )
+    return value;
+
+  if (typeof value !== "object") return "[redacted]";
+
+  const output: Record<string, AuditJson> = {};
+
+  for (const [name, entry] of Object.entries(value)) {
+    if (AUDIT_OBJECT_KEY_PROPERTIES.has(name)) {
+      output[name] = "[redacted]";
+      continue;
+    }
+
+    output[name] =
+      name === "key" && typeof entry === "string" && AUDIT_OBJECT_KEY_VALUE.test(entry)
+        ? "[redacted]"
+        : redactAuditObjectKeys(entry, depth + 1);
+  }
+
+  return output;
+};
 
 export class TenantRestoreError extends Data.TaggedError("TenantRestoreError")<{
   readonly reason: "invalid_bundle" | "snapshot_failed" | "write_failed";
@@ -101,6 +150,11 @@ type ParsedBundle = {
     sha256: string | null;
     r2Key: string | null;
     notes: string | null;
+    catalogueTitleId?: string | null;
+    catalogueMethodId?: string | null;
+    catalogueTarget?: string | null;
+    catalogueKind?: string | null;
+    removeOnUnassign?: boolean | null;
     installers?: ReadonlyArray<{
       platform: "apple" | "win" | "android";
       source: "manifest" | "store" | "upload";
@@ -116,6 +170,7 @@ type ParsedBundle = {
       minOsVersion: string | null;
       requiredCapability: string | null;
       priority: number;
+      provisioningExpiresAt?: string | null;
     }>;
     groupKeys: ReadonlyArray<string>;
     userGroupIds: ReadonlyArray<string>;
@@ -588,6 +643,11 @@ export const parseTenantRestoreBundle = (
         sha256: text(application.sha256, 255),
         r2Key: application.r2Key ?? null,
         notes: text(application.notes, 10_000),
+        catalogueTitleId: text(application.catalogueTitleId, 255),
+        catalogueMethodId: text(application.catalogueMethodId, 255),
+        catalogueTarget: text(application.catalogueTarget, 32),
+        catalogueKind: text(application.catalogueKind, 64),
+        removeOnUnassign: application.removeOnUnassign ?? false,
         installers: application.installers?.map((installer) => ({
           platform: installer.platform,
           source: installer.source,
@@ -603,6 +663,7 @@ export const parseTenantRestoreBundle = (
           minOsVersion: text(installer.minOsVersion, 255),
           requiredCapability: text(installer.requiredCapability, 255),
           priority: installer.priority ?? 0,
+          provisioningExpiresAt: installer.provisioningExpiresAt ?? null,
         })),
         groupKeys: application.groupKeys ?? [],
         userGroupIds: Array.isArray(application.userGroupIds)
@@ -761,653 +822,697 @@ export const applyTenantBundle = (
     const applicationIds = existingApplications.map((row) => row.id);
 
     const applied = yield* Effect.gen(function* () {
-        // Children first. Production cascades these from the parent rows, but
-        // deleting explicitly keeps the order visible and measurable in tests.
+      // Children first. Production cascades these from the parent rows, but
+      // deleting explicitly keeps the order visible and measurable in tests.
+      yield* tx
+        .delete(schema.devicePreRegistration)
+        .where(eq(schema.devicePreRegistration.organizationId, organization.id));
+
+      if (applicationIds.length > 0) {
         yield* tx
-          .delete(schema.devicePreRegistration)
-          .where(eq(schema.devicePreRegistration.organizationId, organization.id));
-
-        if (applicationIds.length > 0) {
-          yield* tx
-            .delete(schema.applicationGroup)
-            .where(inArray(schema.applicationGroup.applicationId, applicationIds));
-          yield* tx
-            .delete(schema.applicationDevice)
-            .where(inArray(schema.applicationDevice.applicationId, applicationIds));
-          yield* tx
-            .delete(schema.userGroupApplication)
-            .where(inArray(schema.userGroupApplication.applicationId, applicationIds));
-        }
-
-        if (groupIds.length > 0) {
-          yield* tx.delete(schema.groupPolicy).where(inArray(schema.groupPolicy.groupId, groupIds));
-          yield* tx.delete(schema.groupDevice).where(inArray(schema.groupDevice.groupId, groupIds));
-        }
-
-        if (policyIds.length > 0) {
-          yield* tx
-            .delete(schema.configuration)
-            .where(inArray(schema.configuration.policyId, policyIds));
-          yield* tx
-            .delete(schema.policyDeployment)
-            .where(inArray(schema.policyDeployment.policyId, policyIds));
-          yield* tx
-            .delete(schema.devicePolicy)
-            .where(inArray(schema.devicePolicy.policyId, policyIds));
-        }
-
+          .delete(schema.applicationGroup)
+          .where(inArray(schema.applicationGroup.applicationId, applicationIds));
         yield* tx
-          .delete(schema.application)
-          .where(eq(schema.application.organizationId, organization.id));
+          .delete(schema.applicationDevice)
+          .where(inArray(schema.applicationDevice.applicationId, applicationIds));
         yield* tx
-          .delete(schema.enterpriseGroup)
-          .where(eq(schema.enterpriseGroup.organizationId, organization.id));
-        yield* tx.delete(schema.policy).where(eq(schema.policy.organizationId, organization.id));
-
-        const policyIdByKey = new Map<string, string>();
-
-        for (const policy of bundle.policies) {
-          const policyId = newId();
-          policyIdByKey.set(policy.key, policyId);
-          yield* tx.insert(schema.policy).values({
-            id: policyId,
-            organizationId: organization.id,
-            name: policy.name,
-            notes: policy.notes,
-            enabled: policy.enabled ?? true,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          });
-
-          if (policy.configurations.length > 0) {
-            const values = yield* Effect.all(
-              policy.configurations.map(([kind, data]) =>
-                Effect.map(hashJson(data), (hash) => ({
-                  policyId,
-                  kind,
-                  scope: policy.configurationScopes[kind] ?? "device",
-                  data,
-                  hash,
-                })),
-              ),
-            );
-
-            yield* tx.insert(schema.configuration).values(values);
-          }
-
-          yield* tx.insert(schema.policyDeployment).values({
-            id: newId(),
-            organizationId: organization.id,
-            policyId,
-            version: 1,
-            snapshot: {
-              ...Object.fromEntries(policy.configurations),
-              ...(Object.keys(policy.configurationScopes).length > 0
-                ? { [POLICY_SNAPSHOT_SCOPES_KEY]: policy.configurationScopes }
-                : {}),
-              ...(policy.enabled === false ? { [POLICY_SNAPSHOT_ENABLED_KEY]: false } : {}),
-            },
-            createdByAccountId: actor.accountId,
-            createdAt: timestamp,
-          });
-        }
-
-        const groupIdByKey = new Map<string, string>();
-        let skippedDirectoryLinks = 0;
-
-        for (const group of bundle.groups) {
-          const groupId = newId();
-          groupIdByKey.set(group.key, groupId);
-
-          const dynamic = group.kind === "dynamic";
-
-          const directoryGroupId =
-            !dynamic &&
-            group.directoryGroupId &&
-            existingDirectoryGroupIds.has(group.directoryGroupId)
-              ? group.directoryGroupId
-              : null;
-
-          if (group.directoryGroupId && !directoryGroupId) skippedDirectoryLinks++;
-
-          yield* tx.insert(schema.enterpriseGroup).values({
-            id: groupId,
-            organizationId: organization.id,
-            name: text(group.name, 255)!,
-            notes: text(group.notes, 10_000),
-            kind: dynamic ? "dynamic" : "manual",
-            rules: dynamic ? (group.rules ?? null) : null,
-            // Restore is in-place: directory groups survive it, so re-link only
-            // when the exported directory group still exists. An older bundle
-            // has no link and restores an unlinked group; a dynamic group can
-            // never carry one.
-            directoryGroupId,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          });
-        }
-
-        const groupPolicyValues: Array<{ groupId: string; policyId: string }> = [];
-
-        for (const group of bundle.groups) {
-          const groupId = groupIdByKey.get(group.key)!;
-
-          for (const policyKey of group.policyKeys) {
-            const policyId = policyIdByKey.get(policyKey);
-
-            if (policyId) groupPolicyValues.push({ groupId, policyId });
-          }
-        }
-
-        if (groupPolicyValues.length > 0)
-          yield* tx.insert(schema.groupPolicy).ignore().values(groupPolicyValues);
-
-        // Deleting and recreating policies cascades their user and user-group
-        // assignments away. Restore directory users first, then re-link the
-        // assignments by their stable email and the directory group id, which
-        // the restore does not replace. Older bundles have no directoryUsers
-        // array, so assignments still create the missing manual user.
-        const existingDirectoryUsers = yield* tx
-          .select({ id: schema.user.id, email: schema.user.email })
-          .from(schema.user)
-          .where(eq(schema.user.organizationId, organization.id));
-
-        const userIdByEmail = new Map(
-          existingDirectoryUsers.map((user) => [user.email.toLowerCase(), user.id]),
-        );
-
-        const directoryUsersToCreate = new Map<string, ParsedBundle["directoryUsers"][number]>();
-
-        for (const user of bundle.directoryUsers) {
-          if (!userIdByEmail.has(user.email)) directoryUsersToCreate.set(user.email, user);
-        }
-
-        for (const assignment of bundle.userAssignments) {
-          if (!userIdByEmail.has(assignment.email) && !directoryUsersToCreate.has(assignment.email))
-            directoryUsersToCreate.set(assignment.email, {
-              email: assignment.email,
-              name: assignment.email,
-              externalId: null,
-              source: "manual",
-              disabled: false,
-            });
-        }
-
-        for (const user of directoryUsersToCreate.values()) {
-          const id = newId();
-          yield* tx.insert(schema.user).values({
-            id,
-            organizationId: organization.id,
-            name: user.name,
-            email: user.email,
-            externalId: user.externalId,
-            source: user.source,
-            disabled: user.disabled,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-          });
-          userIdByEmail.set(user.email, id);
-        }
-
-        const userPolicyValues: Array<{
-          organizationId: string;
-          userId: string;
-          policyId: string;
-          mode: "include" | "exclude";
-          createdAt: Date;
-        }> = [];
-
-        for (const assignment of bundle.userAssignments) {
-          const userId = userIdByEmail.get(assignment.email);
-
-          if (!userId) continue;
-
-          for (const policyKey of assignment.policyKeys) {
-            const policyId = policyIdByKey.get(policyKey);
-
-            if (policyId)
-              userPolicyValues.push({
-                organizationId: organization.id,
-                userId,
-                policyId,
-                mode: "include",
-                createdAt: timestamp,
-              });
-          }
-
-          for (const policyKey of assignment.excludedPolicyKeys) {
-            const policyId = policyIdByKey.get(policyKey);
-
-            if (policyId)
-              userPolicyValues.push({
-                organizationId: organization.id,
-                userId,
-                policyId,
-                mode: "exclude",
-                createdAt: timestamp,
-              });
-          }
-        }
-
-        if (userPolicyValues.length > 0)
-          yield* tx.insert(schema.userPolicy).ignore().values(userPolicyValues);
-
-        const directoryGroups = yield* tx
-          .select({ id: schema.userGroup.id })
-          .from(schema.userGroup)
-          .where(eq(schema.userGroup.organizationId, organization.id));
-
-        const directoryGroupIds = new Set(directoryGroups.map((group) => group.id));
-
-        const userGroupPolicyValues: Array<{
-          organizationId: string;
-          groupId: string;
-          policyId: string;
-          mode: "include" | "exclude";
-          createdAt: Date;
-        }> = [];
-
-        for (const assignment of bundle.userGroupAssignments) {
-          if (!directoryGroupIds.has(assignment.groupId)) continue;
-
-          for (const policyKey of assignment.policyKeys) {
-            const policyId = policyIdByKey.get(policyKey);
-
-            if (policyId)
-              userGroupPolicyValues.push({
-                organizationId: organization.id,
-                groupId: assignment.groupId,
-                policyId,
-                mode: "include",
-                createdAt: timestamp,
-              });
-          }
-
-          for (const policyKey of assignment.excludedPolicyKeys) {
-            const policyId = policyIdByKey.get(policyKey);
-
-            if (policyId)
-              userGroupPolicyValues.push({
-                organizationId: organization.id,
-                groupId: assignment.groupId,
-                policyId,
-                mode: "exclude",
-                createdAt: timestamp,
-              });
-          }
-        }
-
-        if (userGroupPolicyValues.length > 0)
-          yield* tx.insert(schema.userGroupPolicy).ignore().values(userGroupPolicyValues);
-
-        let skippedDevices = 0;
-
-        const groupDeviceValues: Array<{
-          groupId: string;
-          deviceId: string;
-          source: "manual" | "dynamic" | "directory";
-        }> = [];
-
-        const seenMemberships = new Set<string>();
-
-        for (const group of bundle.groups) {
-          const groupId = groupIdByKey.get(group.key)!;
-
-          for (const device of group.devices ?? []) {
-            const deviceId = resolveDevice(device.key, device.serial);
-
-            if (!deviceId) {
-              skippedDevices++;
-              continue;
-            }
-
-            const membership = `${groupId}:${deviceId}`;
-
-            if (seenMemberships.has(membership)) continue;
-            seenMemberships.add(membership);
-            groupDeviceValues.push({
-              groupId,
-              deviceId,
-              source: group.kind === "dynamic" ? "dynamic" : (device.source ?? "manual"),
-            });
-          }
-        }
-
-        if (groupDeviceValues.length > 0)
-          yield* tx.insert(schema.groupDevice).ignore().values(groupDeviceValues);
-
-        // Nested groups are restored from their child edges. Inherited rows
-        // were not exported, so they are re-derived below instead of trusting a
-        // stale snapshot of a parent's membership.
-        const childEdgeValues: Array<{
-          parentGroupId: string;
-          childGroupId: string;
-          createdAt: Date;
-        }> = [];
-
-        for (const group of bundle.groups) {
-          const parentGroupId = groupIdByKey.get(group.key);
-
-          if (!parentGroupId) continue;
-
-          for (const childKey of group.childGroupKeys ?? []) {
-            const childGroupId = groupIdByKey.get(childKey);
-
-            if (!childGroupId || childGroupId === parentGroupId) continue;
-            childEdgeValues.push({ parentGroupId, childGroupId, createdAt: timestamp });
-          }
-        }
-
-        if (childEdgeValues.length > 0)
-          yield* tx.insert(schema.groupGroup).ignore().values(childEdgeValues);
-
-        const exclusionValues: Array<{
-          groupId: string;
-          target: "device" | "user";
-          targetId: string;
-          createdAt: Date;
-        }> = [];
-
-        for (const group of bundle.groups) {
-          const groupId = groupIdByKey.get(group.key);
-
-          if (!groupId) continue;
-
-          for (const deviceKey of group.excludedDeviceKeys ?? []) {
-            const deviceId = resolveDevice(deviceKey, null);
-
-            if (deviceId)
-              exclusionValues.push({
-                groupId,
-                target: "device",
-                targetId: deviceId,
-                createdAt: timestamp,
-              });
-          }
-
-          for (const email of group.excludedUserEmails ?? []) {
-            const userId = userIdByEmail.get(email.toLowerCase());
-
-            if (userId)
-              exclusionValues.push({
-                groupId,
-                target: "user",
-                targetId: userId,
-                createdAt: timestamp,
-              });
-          }
-        }
-
-        if (exclusionValues.length > 0)
-          yield* tx.insert(schema.groupExclusion).ignore().values(exclusionValues);
-
-        // Every restored group needs its inherited rows materialised. Each
-        // refresh also walks its ancestors, so a child processed last still
-        // corrects a parent that read it early.
-        for (const groupId of groupIdByKey.values())
-          yield* syncGroupInheritance(tx, organization.id, groupId);
-
-        // Directory-linked groups are restored from live directory membership,
-        // not from the exported device list: an in-place restore keeps directory
-        // groups and their memberships. This also sweeps derived rows whose link
-        // disappeared while the bundle was taken.
-        yield* syncDirectoryGroupsForTenant(tx, organization.id, {
-          now: timestamp,
+          .delete(schema.userGroupApplication)
+          .where(inArray(schema.userGroupApplication.applicationId, applicationIds));
+      }
+
+      if (groupIds.length > 0) {
+        yield* tx.delete(schema.groupPolicy).where(inArray(schema.groupPolicy.groupId, groupIds));
+        yield* tx.delete(schema.groupDevice).where(inArray(schema.groupDevice.groupId, groupIds));
+      }
+
+      if (policyIds.length > 0) {
+        yield* tx
+          .delete(schema.configuration)
+          .where(inArray(schema.configuration.policyId, policyIds));
+        yield* tx
+          .delete(schema.policyDeployment)
+          .where(inArray(schema.policyDeployment.policyId, policyIds));
+        yield* tx
+          .delete(schema.devicePolicy)
+          .where(inArray(schema.devicePolicy.policyId, policyIds));
+      }
+
+      yield* tx
+        .delete(schema.application)
+        .where(eq(schema.application.organizationId, organization.id));
+      yield* tx
+        .delete(schema.enterpriseGroup)
+        .where(eq(schema.enterpriseGroup.organizationId, organization.id));
+      yield* tx.delete(schema.policy).where(eq(schema.policy.organizationId, organization.id));
+
+      const policyIdByKey = new Map<string, string>();
+
+      for (const policy of bundle.policies) {
+        const policyId = newId();
+        policyIdByKey.set(policy.key, policyId);
+        yield* tx.insert(schema.policy).values({
+          id: policyId,
+          organizationId: organization.id,
+          name: policy.name,
+          notes: policy.notes,
+          enabled: policy.enabled ?? true,
+          createdAt: timestamp,
+          updatedAt: timestamp,
         });
 
-        const applicationIdByKey = new Map<string, string>();
-        let applicationsWithoutFiles = 0;
+        if (policy.configurations.length > 0) {
+          const values = yield* Effect.all(
+            policy.configurations.map(([kind, data]) =>
+              Effect.map(hashJson(data), (hash) => ({
+                policyId,
+                kind,
+                scope: policy.configurationScopes[kind] ?? "device",
+                data,
+                hash,
+              })),
+            ),
+          );
 
-        for (const application of bundle.applications) {
-          const applicationId = newId();
-          applicationIdByKey.set(application.key, applicationId);
-          yield* tx.insert(schema.application).values({
-            id: applicationId,
-            organizationId: organization.id,
-            name: application.name,
-            platform: application.platform,
-            bundleId: application.bundleId,
-            version: application.version,
-            source: application.source,
-            manifestUrl: application.manifestUrl,
-            storeId: application.storeId,
-            fileName: application.fileName,
-            contentType: application.contentType,
-            size: application.size,
-            sha256: application.sha256,
-            // Same tenant, so the object under `a/<tenant>/` still exists.
-            r2Key: application.r2Key,
-            notes: application.notes,
-            createdAt: timestamp,
-            updatedAt: timestamp,
+          yield* tx.insert(schema.configuration).values(values);
+        }
+
+        yield* tx.insert(schema.policyDeployment).values({
+          id: newId(),
+          organizationId: organization.id,
+          policyId,
+          version: 1,
+          snapshot: {
+            ...Object.fromEntries(policy.configurations),
+            ...(Object.keys(policy.configurationScopes).length > 0
+              ? { [POLICY_SNAPSHOT_SCOPES_KEY]: policy.configurationScopes }
+              : {}),
+            ...(policy.enabled === false ? { [POLICY_SNAPSHOT_ENABLED_KEY]: false } : {}),
+          },
+          createdByAccountId: actor.accountId,
+          createdAt: timestamp,
+        });
+      }
+
+      const groupIdByKey = new Map<string, string>();
+      let skippedDirectoryLinks = 0;
+
+      // Ids are generated up front so a rule can reference a group that is
+      // inserted later in the same backup.
+      for (const group of bundle.groups) groupIdByKey.set(group.key, newId());
+
+      for (const group of bundle.groups) {
+        const groupId = groupIdByKey.get(group.key)!;
+
+        const dynamic = group.kind === "dynamic";
+
+        // Group ids are regenerated by the restore. A `group` criterion must
+        // be rewritten to the new id, or it would point at the id from the
+        // source tenant (and be reported as a missing reference forever).
+        const remapped = dynamic
+          ? remapDynamicGroupRuleGroups(group.rules ?? null, (id) => groupIdByKey.get(id))
+          : { rules: null, missing: [] as ReadonlyArray<string> };
+
+        if (remapped.missing.length > 0)
+          return yield* Effect.fail(
+            new TenantRestoreError({
+              reason: "invalid_bundle",
+              message: `Group "${group.name}" references group ids that are not in this backup (${remapped.missing.join(", ")}).`,
+            }),
+          );
+
+        const directoryGroupId =
+          !dynamic &&
+          group.directoryGroupId &&
+          existingDirectoryGroupIds.has(group.directoryGroupId)
+            ? group.directoryGroupId
+            : null;
+
+        if (group.directoryGroupId && !directoryGroupId) skippedDirectoryLinks++;
+
+        yield* tx.insert(schema.enterpriseGroup).values({
+          id: groupId,
+          organizationId: organization.id,
+          name: text(group.name, 255)!,
+          notes: text(group.notes, 10_000),
+          kind: dynamic ? "dynamic" : "manual",
+          rules: remapped.rules,
+          // Restore is in-place: directory groups survive it, so re-link only
+          // when the exported directory group still exists. An older bundle
+          // has no link and restores an unlinked group; a dynamic group can
+          // never carry one.
+          directoryGroupId,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      }
+
+      const groupPolicyValues: Array<{ groupId: string; policyId: string }> = [];
+
+      for (const group of bundle.groups) {
+        const groupId = groupIdByKey.get(group.key)!;
+
+        for (const policyKey of group.policyKeys) {
+          const policyId = policyIdByKey.get(policyKey);
+
+          if (policyId) groupPolicyValues.push({ groupId, policyId });
+        }
+      }
+
+      if (groupPolicyValues.length > 0)
+        yield* tx.insert(schema.groupPolicy).ignore().values(groupPolicyValues);
+
+      // Deleting and recreating policies cascades their user and user-group
+      // assignments away. Restore directory users first, then re-link the
+      // assignments by their stable email and the directory group id, which
+      // the restore does not replace. Older bundles have no directoryUsers
+      // array, so assignments still create the missing manual user.
+      const existingDirectoryUsers = yield* tx
+        .select({ id: schema.user.id, email: schema.user.email })
+        .from(schema.user)
+        .where(eq(schema.user.organizationId, organization.id));
+
+      const userIdByEmail = new Map(
+        existingDirectoryUsers.map((user) => [user.email.toLowerCase(), user.id]),
+      );
+
+      const directoryUsersToCreate = new Map<string, ParsedBundle["directoryUsers"][number]>();
+
+      for (const user of bundle.directoryUsers) {
+        if (!userIdByEmail.has(user.email)) directoryUsersToCreate.set(user.email, user);
+      }
+
+      for (const assignment of bundle.userAssignments) {
+        if (!userIdByEmail.has(assignment.email) && !directoryUsersToCreate.has(assignment.email))
+          directoryUsersToCreate.set(assignment.email, {
+            email: assignment.email,
+            name: assignment.email,
+            externalId: null,
+            source: "manual",
+            disabled: false,
           });
+      }
 
-          const installerInputs = application.installers?.length
-            ? application.installers
-            : [
-                {
-                  platform: application.platform,
-                  source: application.source,
-                  bundleId: application.bundleId,
-                  version: application.version,
-                  manifestUrl: application.manifestUrl,
-                  storeId: application.storeId,
-                  fileName: application.fileName,
-                  contentType: application.contentType,
-                  size: application.size,
-                  sha256: application.sha256,
-                  r2Key: application.r2Key,
-                  minOsVersion: null,
-                  requiredCapability: null,
-                  priority: 0,
-                },
-              ];
+      for (const user of directoryUsersToCreate.values()) {
+        const id = newId();
+        yield* tx.insert(schema.user).values({
+          id,
+          organizationId: organization.id,
+          name: user.name,
+          email: user.email,
+          externalId: user.externalId,
+          source: user.source,
+          disabled: user.disabled,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+        userIdByEmail.set(user.email, id);
+      }
 
-          for (const installer of installerInputs)
-            yield* tx.insert(schema.applicationInstaller).values({
-              id: newId(),
+      const userPolicyValues: Array<{
+        organizationId: string;
+        userId: string;
+        policyId: string;
+        mode: "include" | "exclude";
+        createdAt: Date;
+      }> = [];
+
+      for (const assignment of bundle.userAssignments) {
+        const userId = userIdByEmail.get(assignment.email);
+
+        if (!userId) continue;
+
+        for (const policyKey of assignment.policyKeys) {
+          const policyId = policyIdByKey.get(policyKey);
+
+          if (policyId)
+            userPolicyValues.push({
               organizationId: organization.id,
-              applicationId,
-              platform: installer.platform,
-              source: installer.source,
-              bundleId: installer.bundleId ?? null,
-              version: installer.version ?? null,
-              manifestUrl: installer.manifestUrl ?? null,
-              storeId: installer.storeId ?? null,
-              fileName: installer.fileName ?? null,
-              contentType: installer.contentType ?? null,
-              size: installer.size ?? null,
-              sha256: installer.sha256 ?? null,
-              r2Key: installer.r2Key ?? null,
-              minOsVersion: installer.minOsVersion ?? null,
-              requiredCapability: installer.requiredCapability ?? null,
-              priority: installer.priority ?? 0,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            });
-
-          if (
-            installerInputs.some((installer) => installer.source === "upload" && !installer.r2Key)
-          )
-            applicationsWithoutFiles++;
-        }
-
-        const applicationGroupValues: Array<{ groupId: string; applicationId: string }> = [];
-
-        for (const application of bundle.applications) {
-          const applicationId = applicationIdByKey.get(application.key)!;
-
-          for (const groupKey of application.groupKeys) {
-            const groupId = groupIdByKey.get(groupKey);
-
-            if (groupId) applicationGroupValues.push({ groupId, applicationId });
-          }
-        }
-
-        if (applicationGroupValues.length > 0)
-          yield* tx.insert(schema.applicationGroup).ignore().values(applicationGroupValues);
-
-        const applicationUserGroupValues: Array<{
-          organizationId: string;
-          groupId: string;
-          applicationId: string;
-          createdAt: Date;
-        }> = [];
-
-        for (const application of bundle.applications) {
-          const applicationId = applicationIdByKey.get(application.key)!;
-
-          for (const groupId of application.userGroupIds ?? []) {
-            // Directory groups are not part of a bundle. Re-link only when the
-            // restore target already has that group; otherwise drop the
-            // assignment rather than pointing at an id the tenant does not own.
-            if (!existingDirectoryGroupIds.has(groupId)) continue;
-
-            applicationUserGroupValues.push({
-              organizationId: organization.id,
-              groupId,
-              applicationId,
+              userId,
+              policyId,
+              mode: "include",
               createdAt: timestamp,
             });
-          }
         }
 
-        if (applicationUserGroupValues.length > 0)
-          yield* tx.insert(schema.userGroupApplication).ignore().values(applicationUserGroupValues);
+        for (const policyKey of assignment.excludedPolicyKeys) {
+          const policyId = policyIdByKey.get(policyKey);
 
-        // Device-level assignments are part of the configuration, not the
-        // device: the device itself survives a restore. A bundle entry whose
-        // device has since been deleted is skipped and reported rather than
-        // failing the whole restore.
-        let skippedDeviceAssignments = 0;
+          if (policyId)
+            userPolicyValues.push({
+              organizationId: organization.id,
+              userId,
+              policyId,
+              mode: "exclude",
+              createdAt: timestamp,
+            });
+        }
+      }
 
-        const devicePolicyValues: Array<{
-          deviceId: string;
-          policyId: string;
-          mode: "include" | "exclude";
-        }> = [];
+      if (userPolicyValues.length > 0)
+        yield* tx.insert(schema.userPolicy).ignore().values(userPolicyValues);
 
-        const applicationDeviceValues: Array<{ deviceId: string; applicationId: string }> = [];
+      const directoryGroups = yield* tx
+        .select({ id: schema.userGroup.id })
+        .from(schema.userGroup)
+        .where(eq(schema.userGroup.organizationId, organization.id));
 
-        for (const assignment of bundle.deviceAssignments) {
-          const deviceId = resolveDevice(assignment.deviceKey, assignment.deviceSerial);
+      const directoryGroupIds = new Set(directoryGroups.map((group) => group.id));
+
+      const userGroupPolicyValues: Array<{
+        organizationId: string;
+        groupId: string;
+        policyId: string;
+        mode: "include" | "exclude";
+        createdAt: Date;
+      }> = [];
+
+      for (const assignment of bundle.userGroupAssignments) {
+        if (!directoryGroupIds.has(assignment.groupId)) continue;
+
+        for (const policyKey of assignment.policyKeys) {
+          const policyId = policyIdByKey.get(policyKey);
+
+          if (policyId)
+            userGroupPolicyValues.push({
+              organizationId: organization.id,
+              groupId: assignment.groupId,
+              policyId,
+              mode: "include",
+              createdAt: timestamp,
+            });
+        }
+
+        for (const policyKey of assignment.excludedPolicyKeys) {
+          const policyId = policyIdByKey.get(policyKey);
+
+          if (policyId)
+            userGroupPolicyValues.push({
+              organizationId: organization.id,
+              groupId: assignment.groupId,
+              policyId,
+              mode: "exclude",
+              createdAt: timestamp,
+            });
+        }
+      }
+
+      if (userGroupPolicyValues.length > 0)
+        yield* tx.insert(schema.userGroupPolicy).ignore().values(userGroupPolicyValues);
+
+      let skippedDevices = 0;
+
+      const groupDeviceValues: Array<{
+        groupId: string;
+        deviceId: string;
+        source: "manual" | "dynamic" | "directory";
+      }> = [];
+
+      const seenMemberships = new Set<string>();
+
+      for (const group of bundle.groups) {
+        const groupId = groupIdByKey.get(group.key)!;
+
+        for (const device of group.devices ?? []) {
+          const deviceId = resolveDevice(device.key, device.serial);
 
           if (!deviceId) {
-            skippedDeviceAssignments++;
+            skippedDevices++;
             continue;
           }
 
-          for (const policyKey of assignment.policyKeys)
-            // SAFETY: parseTenantRestoreBundle rejected unknown policy keys.
-            devicePolicyValues.push({
-              deviceId,
-              policyId: policyIdByKey.get(policyKey)!,
-              mode: "include",
-            });
+          const membership = `${groupId}:${deviceId}`;
 
-          for (const policyKey of assignment.excludedPolicyKeys)
-            // SAFETY: parseTenantRestoreBundle rejected unknown policy keys.
-            devicePolicyValues.push({
-              deviceId,
-              policyId: policyIdByKey.get(policyKey)!,
-              mode: "exclude",
-            });
+          if (seenMemberships.has(membership)) continue;
+          seenMemberships.add(membership);
+          groupDeviceValues.push({
+            groupId,
+            deviceId,
+            source: group.kind === "dynamic" ? "dynamic" : (device.source ?? "manual"),
+          });
+        }
+      }
 
-          for (const applicationKey of assignment.applicationKeys)
-            // SAFETY: parseTenantRestoreBundle rejected unknown application keys.
-            applicationDeviceValues.push({
-              deviceId,
-              applicationId: applicationIdByKey.get(applicationKey)!,
+      if (groupDeviceValues.length > 0)
+        yield* tx.insert(schema.groupDevice).ignore().values(groupDeviceValues);
+
+      // Nested groups are restored from their child edges. Inherited rows
+      // were not exported, so they are re-derived below instead of trusting a
+      // stale snapshot of a parent's membership.
+      const childEdgeValues: Array<{
+        parentGroupId: string;
+        childGroupId: string;
+        createdAt: Date;
+      }> = [];
+
+      for (const group of bundle.groups) {
+        const parentGroupId = groupIdByKey.get(group.key);
+
+        if (!parentGroupId) continue;
+
+        for (const childKey of group.childGroupKeys ?? []) {
+          const childGroupId = groupIdByKey.get(childKey);
+
+          if (!childGroupId || childGroupId === parentGroupId) continue;
+          childEdgeValues.push({ parentGroupId, childGroupId, createdAt: timestamp });
+        }
+      }
+
+      if (childEdgeValues.length > 0)
+        yield* tx.insert(schema.groupGroup).ignore().values(childEdgeValues);
+
+      const exclusionValues: Array<{
+        groupId: string;
+        target: "device" | "user";
+        targetId: string;
+        createdAt: Date;
+      }> = [];
+
+      for (const group of bundle.groups) {
+        const groupId = groupIdByKey.get(group.key);
+
+        if (!groupId) continue;
+
+        for (const deviceKey of group.excludedDeviceKeys ?? []) {
+          const deviceId = resolveDevice(deviceKey, null);
+
+          if (deviceId)
+            exclusionValues.push({
+              groupId,
+              target: "device",
+              targetId: deviceId,
+              createdAt: timestamp,
             });
         }
 
-        if (devicePolicyValues.length > 0)
-          yield* tx.insert(schema.devicePolicy).ignore().values(devicePolicyValues);
+        for (const email of group.excludedUserEmails ?? []) {
+          const userId = userIdByEmail.get(email.toLowerCase());
 
-        if (applicationDeviceValues.length > 0)
-          yield* tx.insert(schema.applicationDevice).ignore().values(applicationDeviceValues);
+          if (userId)
+            exclusionValues.push({
+              groupId,
+              target: "user",
+              targetId: userId,
+              createdAt: timestamp,
+            });
+        }
+      }
 
-        for (const row of bundle.preRegistrations) {
-          // A consumed serial must stay consumed. If its device is gone, drop
-          // the row rather than reopening an enrollment that already happened.
-          const consumedDeviceId = row.consumedDeviceKey
-            ? resolveDevice(row.consumedDeviceKey, null)
-            : undefined;
+      if (exclusionValues.length > 0)
+        yield* tx.insert(schema.groupExclusion).ignore().values(exclusionValues);
 
-          if (row.consumedDeviceKey && !consumedDeviceId) continue;
+      // Every restored group needs its inherited rows materialised. Each
+      // refresh also walks its ancestors, so a child processed last still
+      // corrects a parent that read it early.
+      for (const groupId of groupIdByKey.values())
+        yield* syncGroupInheritance(tx, organization.id, groupId);
 
-          yield* tx.insert(schema.devicePreRegistration).values({
+      // Directory-linked groups are restored from live directory membership,
+      // not from the exported device list: an in-place restore keeps directory
+      // groups and their memberships. This also sweeps derived rows whose link
+      // disappeared while the bundle was taken.
+      yield* syncDirectoryGroupsForTenant(tx, organization.id, {
+        now: timestamp,
+      });
+
+      const applicationIdByKey = new Map<string, string>();
+      let applicationsWithoutFiles = 0;
+
+      for (const application of bundle.applications) {
+        const applicationId = newId();
+        applicationIdByKey.set(application.key, applicationId);
+
+        // A bundle can only reference objects this tenant owns. Restore and
+        // cutover both pass through here, so a foreign key is never persisted:
+        // the row is kept (so assignments survive) with the object reference
+        // stripped and the file reported for re-upload.
+        const primaryR2Key = isTenantApplicationObjectKey(organization.id, application.r2Key)
+          ? application.r2Key
+          : null;
+
+        yield* tx.insert(schema.application).values({
+          id: applicationId,
+          organizationId: organization.id,
+          name: application.name,
+          platform: application.platform,
+          bundleId: application.bundleId,
+          version: application.version,
+          source: application.source,
+          manifestUrl: application.manifestUrl,
+          storeId: application.storeId,
+          fileName: application.fileName,
+          contentType: application.contentType,
+          size: application.size,
+          sha256: application.sha256,
+          // Same tenant, so the object under `a/<tenant>/` still exists. A key
+          // under another prefix is dropped rather than trusted.
+          r2Key: primaryR2Key,
+          notes: application.notes,
+          catalogueTitleId: application.catalogueTitleId ?? null,
+          catalogueMethodId: application.catalogueMethodId ?? null,
+          catalogueTarget: application.catalogueTarget ?? null,
+          catalogueKind: application.catalogueKind ?? null,
+          removeOnUnassign: application.removeOnUnassign ?? false,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+
+        const installerInputs = application.installers?.length
+          ? application.installers
+          : [
+              {
+                platform: application.platform,
+                source: application.source,
+                bundleId: application.bundleId,
+                version: application.version,
+                manifestUrl: application.manifestUrl,
+                storeId: application.storeId,
+                fileName: application.fileName,
+                contentType: application.contentType,
+                size: application.size,
+                sha256: application.sha256,
+                r2Key: application.r2Key,
+                minOsVersion: null,
+                requiredCapability: null,
+                priority: 0,
+              },
+            ];
+
+        // A primary upload with no object is also a file the operator must
+        // supply again, not just a missing installer.
+        let missingObject = application.source === "upload" && primaryR2Key === null;
+
+        for (const installer of installerInputs) {
+          const installerR2Key = isTenantApplicationObjectKey(organization.id, installer.r2Key)
+            ? installer.r2Key
+            : null;
+
+          if (installer.source === "upload" && installerR2Key === null) missingObject = true;
+
+          yield* tx.insert(schema.applicationInstaller).values({
             id: newId(),
             organizationId: organization.id,
-            serial: row.serial,
-            name: row.name,
-            assetTag: row.assetTag,
-            notes: row.notes,
-            groupId: row.groupKey ? (groupIdByKey.get(row.groupKey) ?? null) : null,
-            consumedDeviceId: consumedDeviceId ?? null,
+            applicationId,
+            platform: installer.platform,
+            source: installer.source,
+            bundleId: installer.bundleId ?? null,
+            version: installer.version ?? null,
+            manifestUrl: installer.manifestUrl ?? null,
+            storeId: installer.storeId ?? null,
+            fileName: installer.fileName ?? null,
+            contentType: installer.contentType ?? null,
+            size: installer.size ?? null,
+            sha256: installer.sha256 ?? null,
+            r2Key: installerR2Key,
+            minOsVersion: installer.minOsVersion ?? null,
+            requiredCapability: installer.requiredCapability ?? null,
+            priority: installer.priority ?? 0,
+            provisioningExpiresAt: installer.provisioningExpiresAt
+              ? new Date(installer.provisioningExpiresAt)
+              : null,
             createdAt: timestamp,
             updatedAt: timestamp,
           });
         }
 
-        if (bundle.enrollment) {
-          const value = {
-            code: bundle.enrollment.code,
-            enabledApple: bundle.enrollment.enabledApple,
-            enabledWindows: bundle.enrollment.enabledWindows,
-            enabledAndroid: bundle.enrollment.enabledAndroid,
-            enabledAssetTag: bundle.enrollment.enabledAssetTag,
-            maxDevices: bundle.enrollment.maxDevices,
-            updatedAt: timestamp,
-          };
+        if (missingObject) applicationsWithoutFiles++;
+      }
 
-          if (enrollment)
-            yield* tx
-              .update(schema.enterpriseEnrollment)
-              .set(value)
-              .where(eq(schema.enterpriseEnrollment.organizationId, organization.id));
-          else
-            yield* tx.insert(schema.enterpriseEnrollment).values({
-              id: organization.id,
-              organizationId: organization.id,
-              ...value,
-              createdAt: timestamp,
-            });
+      const applicationGroupValues: Array<{ groupId: string; applicationId: string }> = [];
+
+      for (const application of bundle.applications) {
+        const applicationId = applicationIdByKey.get(application.key)!;
+
+        for (const groupKey of application.groupKeys) {
+          const groupId = groupIdByKey.get(groupKey);
+
+          if (groupId) applicationGroupValues.push({ groupId, applicationId });
+        }
+      }
+
+      if (applicationGroupValues.length > 0)
+        yield* tx.insert(schema.applicationGroup).ignore().values(applicationGroupValues);
+
+      const applicationUserGroupValues: Array<{
+        organizationId: string;
+        groupId: string;
+        applicationId: string;
+        createdAt: Date;
+      }> = [];
+
+      for (const application of bundle.applications) {
+        const applicationId = applicationIdByKey.get(application.key)!;
+
+        for (const groupId of application.userGroupIds ?? []) {
+          // Directory groups are not part of a bundle. Re-link only when the
+          // restore target already has that group; otherwise drop the
+          // assignment rather than pointing at an id the tenant does not own.
+          if (!existingDirectoryGroupIds.has(groupId)) continue;
+
+          applicationUserGroupValues.push({
+            organizationId: organization.id,
+            groupId,
+            applicationId,
+            createdAt: timestamp,
+          });
+        }
+      }
+
+      if (applicationUserGroupValues.length > 0)
+        yield* tx.insert(schema.userGroupApplication).ignore().values(applicationUserGroupValues);
+
+      // Device-level assignments are part of the configuration, not the
+      // device: the device itself survives a restore. A bundle entry whose
+      // device has since been deleted is skipped and reported rather than
+      // failing the whole restore.
+      let skippedDeviceAssignments = 0;
+
+      const devicePolicyValues: Array<{
+        deviceId: string;
+        policyId: string;
+        mode: "include" | "exclude";
+      }> = [];
+
+      const applicationDeviceValues: Array<{ deviceId: string; applicationId: string }> = [];
+
+      for (const assignment of bundle.deviceAssignments) {
+        const deviceId = resolveDevice(assignment.deviceKey, assignment.deviceSerial);
+
+        if (!deviceId) {
+          skippedDeviceAssignments++;
+          continue;
         }
 
-        yield* tx
-          .update(schema.organization)
-          .set({
-            name: bundle.name,
-            displayName: bundle.branding.displayName,
-            logo: bundle.branding.logo,
-            supportEmail: bundle.branding.supportEmail,
-            brandColor: bundle.branding.brandColor,
-            metadata: bundle.metadata,
-            updatedAt: timestamp,
-          })
-          .where(eq(schema.organization.id, organization.id));
+        for (const policyKey of assignment.policyKeys)
+          // SAFETY: parseTenantRestoreBundle rejected unknown policy keys.
+          devicePolicyValues.push({
+            deviceId,
+            policyId: policyIdByKey.get(policyKey)!,
+            mode: "include",
+          });
 
-        return {
-          counts: {
-            groups: bundle.groups.length,
-            policies: bundle.policies.length,
-            applications: bundle.applications.length,
-            preRegistrations: bundle.preRegistrations.length,
-            devices: groupDeviceValues.length,
-            deviceAssignments: devicePolicyValues.length + applicationDeviceValues.length,
-          },
-          skippedDevices,
-          skippedDeviceAssignments,
-          skippedDirectoryLinks,
-          applicationsWithoutFiles,
-          ids: {
-            groups: groupIdByKey,
-            policies: policyIdByKey,
-            applications: applicationIdByKey,
-          },
+        for (const policyKey of assignment.excludedPolicyKeys)
+          // SAFETY: parseTenantRestoreBundle rejected unknown policy keys.
+          devicePolicyValues.push({
+            deviceId,
+            policyId: policyIdByKey.get(policyKey)!,
+            mode: "exclude",
+          });
+
+        for (const applicationKey of assignment.applicationKeys)
+          // SAFETY: parseTenantRestoreBundle rejected unknown application keys.
+          applicationDeviceValues.push({
+            deviceId,
+            applicationId: applicationIdByKey.get(applicationKey)!,
+          });
+      }
+
+      if (devicePolicyValues.length > 0)
+        yield* tx.insert(schema.devicePolicy).ignore().values(devicePolicyValues);
+
+      if (applicationDeviceValues.length > 0)
+        yield* tx.insert(schema.applicationDevice).ignore().values(applicationDeviceValues);
+
+      for (const row of bundle.preRegistrations) {
+        // A consumed serial must stay consumed. If its device is gone, drop
+        // the row rather than reopening an enrollment that already happened.
+        const consumedDeviceId = row.consumedDeviceKey
+          ? resolveDevice(row.consumedDeviceKey, null)
+          : undefined;
+
+        if (row.consumedDeviceKey && !consumedDeviceId) continue;
+
+        yield* tx.insert(schema.devicePreRegistration).values({
+          id: newId(),
+          organizationId: organization.id,
+          serial: row.serial,
+          name: row.name,
+          assetTag: row.assetTag,
+          notes: row.notes,
+          groupId: row.groupKey ? (groupIdByKey.get(row.groupKey) ?? null) : null,
+          consumedDeviceId: consumedDeviceId ?? null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        });
+      }
+
+      if (bundle.enrollment) {
+        const value = {
+          code: bundle.enrollment.code,
+          enabledApple: bundle.enrollment.enabledApple,
+          enabledWindows: bundle.enrollment.enabledWindows,
+          enabledAndroid: bundle.enrollment.enabledAndroid,
+          enabledAssetTag: bundle.enrollment.enabledAssetTag,
+          maxDevices: bundle.enrollment.maxDevices,
+          updatedAt: timestamp,
         };
-      });
+
+        if (enrollment)
+          yield* tx
+            .update(schema.enterpriseEnrollment)
+            .set(value)
+            .where(eq(schema.enterpriseEnrollment.organizationId, organization.id));
+        else
+          yield* tx.insert(schema.enterpriseEnrollment).values({
+            id: organization.id,
+            organizationId: organization.id,
+            ...value,
+            createdAt: timestamp,
+          });
+      }
+
+      yield* tx
+        .update(schema.organization)
+        .set({
+          name: bundle.name,
+          displayName: bundle.branding.displayName,
+          logo: bundle.branding.logo,
+          supportEmail: bundle.branding.supportEmail,
+          brandColor: bundle.branding.brandColor,
+          metadata: bundle.metadata,
+          updatedAt: timestamp,
+        })
+        .where(eq(schema.organization.id, organization.id));
+
+      return {
+        counts: {
+          groups: bundle.groups.length,
+          policies: bundle.policies.length,
+          applications: bundle.applications.length,
+          preRegistrations: bundle.preRegistrations.length,
+          devices: groupDeviceValues.length,
+          deviceAssignments: devicePolicyValues.length + applicationDeviceValues.length,
+        },
+        skippedDevices,
+        skippedDeviceAssignments,
+        skippedDirectoryLinks,
+        applicationsWithoutFiles,
+        ids: {
+          groups: groupIdByKey,
+          policies: policyIdByKey,
+          applications: applicationIdByKey,
+        },
+      };
+    });
 
     return applied;
   });
@@ -1458,21 +1563,6 @@ export const restoreTenantFromBackup = (
       escrowCertificateFingerprintSha256: escrowKey?.certificateFingerprintSha256 ?? null,
     });
 
-    // A bundle can only reference objects this tenant owns. Accepting an
-    // arbitrary key would make the download endpoint read another tenant's
-    // bytes (or an object the restore never created).
-    const foreignObject = bundle.applications.find(
-      (application) =>
-        application.r2Key != null &&
-        application.r2Key !== "" &&
-        !application.r2Key.startsWith(`a/${organization.id}/`),
-    );
-
-    if (foreignObject)
-      return yield* Effect.fail(
-        invalid(`Application "${foreignObject.name}" references an object outside this tenant`),
-      );
-
     const timestamp = options.now ?? new Date();
 
     const snapshot = yield* runTenantBackup(db, storage, organization.id, "manual", {
@@ -1502,14 +1592,17 @@ export const restoreTenantFromBackup = (
       );
 
     const applied = yield* applyBundle(db, organization, bundle, options.actor, timestamp).pipe(
-      Effect.mapError(
-        (cause) =>
-          new TenantRestoreError({
-            reason: "write_failed",
-            message: `Could not write the restored configuration: ${String(
-              cause instanceof Error ? cause.message : cause,
-            ).slice(0, 500)}`,
-          }),
+      Effect.mapError((cause) =>
+        // Bundle validation inside the transaction keeps its specific reason
+        // and message; anything else is an unexpected write failure.
+        cause instanceof TenantRestoreError
+          ? cause
+          : new TenantRestoreError({
+              reason: "write_failed",
+              message: `Could not write the restored configuration: ${String(
+                cause instanceof Error ? cause.message : cause,
+              ).slice(0, 500)}`,
+            }),
       ),
     );
 

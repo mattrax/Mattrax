@@ -22,13 +22,17 @@ const ROUTE_LABELS = new Map<string, string>([
   ["groups", "Groups"],
   ["policies", "Policies"],
   ["assignments", "Assignments"],
+  ["deployment", "Deployment"],
   ["design", "Design"],
   ["editor", "Editor"],
   ["applications", "Applications"],
+  ["catalogue", "Catalogue"],
   ["scripts", "Scripts"],
   ["dashboards", "Dashboards"],
+  ["reports", "Reports"],
   ["software", "Software"],
   ["enrollment", "Enrollment"],
+  ["migration", "Migration"],
   ["settings", "Settings"],
   ["identity", "Identity"],
   ["domains", "Domains"],
@@ -40,6 +44,7 @@ const ROUTE_LABELS = new Map<string, string>([
   ["audit", "Audit log"],
   ["billing", "Billing"],
   ["administrators", "Administrators"],
+  ["approvals", "Approvals"],
 ]);
 
 const normalise = (value: string) => value.trim().toLocaleLowerCase();
@@ -47,6 +52,13 @@ const normalise = (value: string) => value.trim().toLocaleLowerCase();
 export function buildBreadcrumbs(input: {
   pathname: string;
   title?: string;
+  /**
+   * The loaded resource's name for an opaque id in the middle of the path.
+   * When set, the id becomes a named link instead of being skipped.
+   */
+  resourceName?: string;
+  /** The view name for a route whose path ends in the resource id (Overview). */
+  section?: string;
 }): BreadcrumbTrailItem[] {
   const pathname = input.pathname.split(/[?#]/, 1)[0] ?? "";
   const segments = pathname.split("/").filter(Boolean);
@@ -76,11 +88,26 @@ export function buildBreadcrumbs(input: {
     }
 
     // An opaque id in the middle of the path is the object the next segment
-    // belongs to (for example `/policies/:id/assignments`); the loaded page
-    // title names the leaf, so the id itself adds no information.
-    if (index < content.length - 1) continue;
+    // belongs to (for example `/policies/:id/assignments`). Show its loaded
+    // name when the page knows it; otherwise the id adds no information and
+    // the leaf title names the page.
+    if (index < content.length - 1) {
+      if (input.resourceName?.trim()) crumbs.push({ label: input.resourceName.trim(), href });
 
-    crumbs.push({ label: input.title?.trim() || "Details", href });
+      continue;
+    }
+
+    const section = input.section?.trim();
+
+    // A route whose path ends at the resource id still has a named object and
+    // a view (for example the policy overview). Keep both segments so the
+    // policy is named in the trail.
+    if (section && input.resourceName?.trim()) {
+      crumbs.push({ label: input.resourceName.trim(), href }, { label: section, href });
+      continue;
+    }
+
+    crumbs.push({ label: section || input.title?.trim() || "Details", href });
   }
 
   if (crumbs.length < 2) return [];

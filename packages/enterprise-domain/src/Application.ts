@@ -32,6 +32,11 @@ export const ApplicationInstallerRow = Schema.Struct({
   /** Capability the device must report, e.g. `vpp` or `msi`. */
   requiredCapability: Schema.optional(NullableString),
   priority: Schema.Number,
+  /**
+   * Expiry read from an uploaded `.ipa`'s embedded provisioning profile.
+   * Absent when the upload is not an `.ipa` or the profile was unreadable.
+   */
+  provisioningExpiresAt: Schema.optional(NullableString),
   createdAt: Schema.optional(Schema.String),
   updatedAt: Schema.optional(Schema.String),
 });
@@ -82,6 +87,8 @@ export const ApplicationRow = Schema.Struct({
   availabilityReason: Schema.optional(NullableString),
   /** Last time any storefront still carried the app. */
   lastSeenAt: Schema.optional(NullableString),
+  /** Remove the app from devices that lose their assignment. */
+  removeOnUnassign: Schema.optional(Schema.Boolean),
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
@@ -176,6 +183,8 @@ export const CreateApplicationRequest = Schema.Struct({
   storeId: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
   installers: Schema.optional(Schema.Array(ApplicationInstallerInput)),
+  /** Remove the app from devices that lose their assignment. */
+  removeOnUnassign: Schema.optional(Schema.Boolean),
 });
 
 export const PatchApplicationRequest = Schema.Struct({
@@ -190,6 +199,8 @@ export const PatchApplicationRequest = Schema.Struct({
   notes: Schema.optional(NullableString),
   /** Replace the installer set. Omit to keep it unchanged. */
   installers: Schema.optional(Schema.Array(ApplicationInstallerInput)),
+  /** Remove the app from devices that lose their assignment. */
+  removeOnUnassign: Schema.optional(Schema.Boolean),
 });
 
 export const ApplicationStorefrontInput = Schema.Struct({
@@ -215,6 +226,8 @@ export const PatchApplicationStorefrontsRequest = Schema.Struct({
 export const RefreshApplicationStorefrontsRequest = Schema.Struct({
   regions: Schema.optional(Schema.Array(Schema.String)),
 });
+
+export type RefreshApplicationStorefrontsRequest = typeof RefreshApplicationStorefrontsRequest.Type;
 
 export const RemovedApplicationAssignments = Schema.Struct({
   groups: Schema.Number,
@@ -274,3 +287,20 @@ export const ApplicationInstallResult = Schema.Struct({
 });
 
 export type ApplicationInstallResult = typeof ApplicationInstallResult.Type;
+
+/**
+ * Outcome of asking every assigned device to remove the app.
+ *
+ * `queued` counts devices whose removal is now tracked, `skipped` devices the
+ * action did not apply to, and `failed` devices where Mattrax could not claim
+ * the install (so it must not remove it) or the platform cannot remove it.
+ */
+export const ApplicationUninstallResult = Schema.Struct({
+  status: Schema.Literal("ok"),
+  queued: Schema.Number,
+  skipped: Schema.Number,
+  failed: Schema.optional(Schema.Number),
+  message: Schema.optional(Schema.String),
+});
+
+export type ApplicationUninstallResult = typeof ApplicationUninstallResult.Type;

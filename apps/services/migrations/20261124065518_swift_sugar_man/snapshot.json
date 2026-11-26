@@ -1,0 +1,797 @@
+{
+  "version": "6",
+  "dialect": "mysql",
+  "id": "4cf2ae49-0fdb-4134-9beb-005a2d7bf215",
+  "prevIds": [
+    "fee6f539-96b2-4e38-ac83-33c978e454ec"
+  ],
+  "ddl": [
+    {
+      "name": "services_deployment_license",
+      "entityType": "tables"
+    },
+    {
+      "name": "services_stripe_event",
+      "entityType": "tables"
+    },
+    {
+      "name": "services_subscription",
+      "entityType": "tables"
+    },
+    {
+      "name": "services_tenant",
+      "entityType": "tables"
+    },
+    {
+      "name": "services_tenant_usage",
+      "entityType": "tables"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "id",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "name",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "license_key_hash",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "license_key_prefix",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "origin",
+      "type": "varchar(255)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "contact_email",
+      "type": "varchar(320)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "stripe_customer_id",
+      "type": "varchar(255)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "stripe_subscription_id",
+      "type": "varchar(255)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "plan",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": "'device'",
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "status",
+      "type": "varchar(32)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "device_count",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": "0",
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "tenant_count",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": "0",
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "period_end",
+      "type": "datetime(3)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "cancel_at_period_end",
+      "type": "boolean",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": "false",
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "last_seen_at",
+      "type": "datetime(3)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "created_at",
+      "type": "datetime(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "updated_at",
+      "type": "datetime(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_stripe_event",
+      "name": "id",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_stripe_event",
+      "name": "type",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_stripe_event",
+      "name": "tenant_id",
+      "type": "varchar(255)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_stripe_event",
+      "name": "license_id",
+      "type": "varchar(255)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_stripe_event",
+      "name": "received_at",
+      "type": "datetime(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "id",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "plan",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "tenant_id",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "stripe_customer_id",
+      "type": "varchar(255)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "stripe_subscription_id",
+      "type": "varchar(255)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "status",
+      "type": "varchar(32)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "entitlement_revision",
+      "type": "bigint",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": "0",
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "period_start",
+      "type": "datetime(3)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "period_end",
+      "type": "datetime(3)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "cancel_at_period_end",
+      "type": "boolean",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "created_at",
+      "type": "datetime(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_subscription",
+      "name": "updated_at",
+      "type": "datetime(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant",
+      "name": "id",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant",
+      "name": "name",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant",
+      "name": "stripe_customer_id",
+      "type": "varchar(255)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant",
+      "name": "entitlement_synced_at",
+      "type": "datetime(3)",
+      "notNull": false,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant",
+      "name": "created_at",
+      "type": "datetime(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant",
+      "name": "updated_at",
+      "type": "datetime(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant_usage",
+      "name": "tenant_id",
+      "type": "varchar(255)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant_usage",
+      "name": "billable_devices",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": "0",
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant_usage",
+      "name": "devices_used",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": "0",
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant_usage",
+      "name": "tenant_count",
+      "type": "int",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": "0",
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_tenant_usage",
+      "name": "reported_at",
+      "type": "datetime(3)",
+      "notNull": true,
+      "autoIncrement": false,
+      "default": null,
+      "onUpdateNow": false,
+      "onUpdateNowFsp": null,
+      "charSet": null,
+      "collation": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "services_stripe_event",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "services_subscription",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "services_tenant",
+      "name": "PRIMARY",
+      "columns": [
+        "id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "services_tenant_usage",
+      "name": "PRIMARY",
+      "columns": [
+        "tenant_id"
+      ],
+      "entityType": "pks"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "services_deployment_license_key_unique",
+      "columns": [
+        {
+          "value": "license_key_hash",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "services_deployment_license",
+      "name": "services_deployment_license_customer_unique",
+      "columns": [
+        {
+          "value": "stripe_customer_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "services_stripe_event",
+      "name": "services_stripe_event_received_at_idx",
+      "columns": [
+        {
+          "value": "received_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "services_subscription",
+      "name": "services_subscription_tenant_unique",
+      "columns": [
+        {
+          "value": "tenant_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "services_subscription",
+      "name": "services_subscription_stripe_unique",
+      "columns": [
+        {
+          "value": "stripe_subscription_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    },
+    {
+      "table": "services_tenant",
+      "name": "services_tenant_customer_unique",
+      "columns": [
+        {
+          "value": "stripe_customer_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "using": null,
+      "algorithm": null,
+      "lock": null,
+      "nameExplicit": true,
+      "entityType": "indexes"
+    }
+  ],
+  "renames": []
+}

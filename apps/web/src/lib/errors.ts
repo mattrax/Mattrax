@@ -33,7 +33,7 @@ export const raisedFailure = (cause: unknown): RaisedFailure | undefined =>
   isRaisedFailure(cause) ? cause : undefined;
 
 const TAG_PATTERN =
-  /^(?:Enterprise|Platform|Password|Session|StaleAuthentication|PendingAuthentication|Email|Sso|NewPassword|Proof|Hook|Auth|R2|Stripe|StepUp)[A-Za-z0-9_]*$/;
+  /^(?:Enterprise|Platform|Password|Session|StaleAuthentication|PendingAuthentication|Email|Sso|NewPassword|Proof|Hook|Auth|R2|Stripe|StepUp|Approval)[A-Za-z0-9_]*$/;
 
 const TITLES: Record<ErrorVariant, string> = {
   auth: "Sign in required",
@@ -57,6 +57,10 @@ const TAGS = {
   },
   EnterpriseForbidden: {
     message: "You don't have permission to do that.",
+    variant: "permission",
+  },
+  ApprovalRequired: {
+    message: "Another administrator must approve this action first.",
     variant: "permission",
   },
   EnterprisePermissionDenied: {
@@ -230,6 +234,8 @@ const ErrorEnvelope = Schema.Struct({
   reason: Schema.optional(Schema.String),
   action: Schema.optional(Schema.Json),
   methods: Schema.optional(Schema.Json),
+  requestId: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.String),
   error: Schema.optional(Schema.Unknown),
 });
 
@@ -361,6 +367,53 @@ export const stepUpFailure = (error: RaisedFailure | undefined): StepUpFailureFi
       }
 
       return stepUpFields(envelopeOf(isRaisedFailure(parsed.error) ? parsed.error : undefined));
+    }
+  }
+
+  return {};
+};
+
+export type ApprovalFailureFields = {
+  readonly requestId?: string;
+  readonly status?: string;
+};
+
+const approvalFields = (envelope: ErrorEnvelope | undefined): ApprovalFailureFields => ({
+  requestId: envelope?.requestId,
+  status: envelope?.status,
+});
+
+/**
+ * Read the approval handle from a typed API failure. `ApprovalRequired` is a
+ * real tagged error, so the fields are usually at the top level; transport
+ * wrappers put them under `error` and some add a serialized message.
+ */
+export const approvalFailure = (error: RaisedFailure | undefined): ApprovalFailureFields => {
+  if (error === undefined) return {};
+
+  if (isString(error)) return approvalFields(envelopeOf(parseJson(error)));
+
+  const envelope = envelopeOf(error);
+
+  if (envelope === undefined) return {};
+  const own = approvalFields(envelope);
+
+  if (own.requestId !== undefined) return own;
+  const nested = envelopeOf(isRaisedFailure(envelope.error) ? envelope.error : undefined);
+  const fromNested = approvalFields(nested);
+
+  if (fromNested.requestId !== undefined) return fromNested;
+  const message = envelope.message;
+
+  if (isString(message)) {
+    const parsed = envelopeOf(parseJson(message));
+
+    if (parsed !== undefined) {
+      const fromMessage = approvalFields(parsed);
+
+      if (fromMessage.requestId !== undefined) return fromMessage;
+
+      return approvalFields(envelopeOf(isRaisedFailure(parsed.error) ? parsed.error : undefined));
     }
   }
 

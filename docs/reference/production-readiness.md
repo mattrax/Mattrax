@@ -24,8 +24,9 @@ real-vendor validation. It is a status page, not a marketing page.
   short-lived per-device profile links for manual installs.
 - Apps & Books location tokens, asset sync, device licence assignment and release,
   automatic daily sync and catalogue entries created from purchased apps.
-- Apple application delivery: manifest/store installs, uploaded `.pkg` installs through
-  signed device-bound asset URLs, policy-attached applications and managed app
+- Apple application delivery: manifest/store installs, uploaded `.pkg` and `.ipa`
+  installs through signed device-bound URLs (including a generated OTA manifest for an
+  `.ipa`), removal of managed app installs, policy-attached applications and managed app
   configuration.
 - Windows MSI delivery through `EnterpriseDesktopAppManagement`, with the command result
   and the daily MSI inventory reporting status.
@@ -43,15 +44,20 @@ real-vendor validation. It is a status page, not a marketing page.
   token-authenticated results. Step-up and audit cover
   every change and run.
 - Windows WSTEP enrollment, SyncML OMA-URI `Replace`/`Delete` delivery with applied-state
-  tracking and command history, wipe/restart/unenroll, security inventory (BitLocker, TPM,
-  Secure Boot, domain/Entra join) and Entra federated token validation.
+  tracking and command history, wipe/restart/unenroll, Fresh Start, DiagnosticLog archive
+  collection into R2, security inventory (BitLocker, TPM, Secure Boot, domain/Entra join),
+  Windows LAPS policy plus Entra-backed password reveal, Entra Graph BitLocker key
+  metadata/reveal/rotation and Entra federated token validation.
 - Autopilot hardware-hash import, Graph sync, deployment profiles and group assignment.
 - Android Enterprise signup, enrollment tokens, Pub/Sub, policy delivery, device
   inventory, installed-application inventory and commands.
 - Tenant-defined device attributes: a typed registry (text, number, boolean, date,
-  select), per-device values with merge/clear semantics, searchable and filterable device
-  columns, `attribute:<key>` CSV import/export, custom enrollment questions validated by
-  type and requiredness, and audit entries for every write.
+  select) with per-attribute sources, per-device values with merge/clear semantics,
+  searchable and filterable device columns, `attribute:<key>` CSV import/export, custom
+  enrollment questions validated by type and requiredness, and audit entries for every
+  write. Script-sourced attributes are collected from an assigned script's reported output
+  (JSON object or one value per line), validated against the declared type, read-only to
+  manual edits, and shown with their last collection and last error.
 - Policy variables (`${device.name}`, `${device.serial}`, `${device.model}`,
   `${tenant.name}` and `${attribute.<key>}`) resolved per device at compile time for
   Apple declarations, legacy profiles and Windows SyncML; unknown names fail validation
@@ -90,24 +96,25 @@ These are implemented but not proven end to end in this repository.
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Apple ADE                 | Setup gating and the ADE enrollment endpoint are implemented; zero-touch depends on registering the ADE cloud-configuration `url`/`await_device_configured` manually because Apple's Business API does not expose it. The inline `Authenticate` profile is unverified and likely ignored by hardware |
 | Apple user channel        | `UserAuthenticate`, per-user `TokenUpdate`/`CheckOut`, delivery and results are fixture-tested; not validated on a real macOS or Shared iPad login                                                                                                                                                   |
-| Apple BYOD                | User-enrollment check-in is supported, but account-driven enrollment is not hosted: it needs a Managed Apple Account, tenant-domain service discovery and a sign-in page                                                                                                                             |
+| Apple BYOD                | Preview. Account-driven enrollment is implemented (tenant-domain discovery, Entra SSO sign-in, one-time bound token, BYOD profile, user-channel binding) but requires a customer-controlled discovery domain and real-device validation before it is supported |
 | Apple FileVault           | Escrow key generation, CMS unwrap and rotation are fixture-tested; not validated on real supervised hardware                                                                                                                                                                                         |
 | Apple app inventory       | Fixture-tested; refreshed daily by maintenance and on demand, not validated on real hardware                                                                                                                                                                                                         |
 | Apple activation lock     | Bypass-code collection and Recovery Lock are fixture-tested; not validated on real Apple silicon                                                                                                                                                                                                     |
 | Windows federated Entra   | Handshake fixture-tested, not real hardware                                                                                                                                                                                                                                                          |
 | Windows Autopilot         | OOBE not validated; timezone not sent to Graph                                                                                                                                                                                                                                                       |
 | Windows inventory         | None                                                                                                                                                                                                                                                                                                 |
-| Windows security          | BitLocker/TPM/Secure Boot/join nodes are fixture-tested, not validated across every Windows edition                                                                                                                                                                                                  |
+| Windows security          | BitLocker/TPM/Secure Boot/join nodes are fixture-tested, not validated across every Windows edition. Fresh Start, DiagnosticArchive, LAPS and BitLocker CSP payloads and Graph key paths are fixture-tested; no real Windows hardware or Entra tenant is available in this repository. |
 | Windows unenroll          | Server-initiated and `1226` device-initiated paths are unit-tested, not validated on real hardware                                                                                                                                                                                                   |
 | Android                   | Signup, Pub/Sub, QR/token enrollment, work-profile/fully-managed provisioning, policy convergence, reconciliation and commands are fixture-tested; not validated against real Google Cloud/managed devices                                                                                           |
 | Android apps              | Assigned apps merge into the policy (one entry per package) and are fixture-tested; no real-device validation and no Play approval flow                                                                                                                                                              |
-| Apple app delivery        | Manifest, store and uploaded `.pkg` installs are fixture-tested; not validated on real supervised hardware                                                                                                                                                                                           |
+| Apple app delivery        | Manifest, store and uploaded `.pkg`/`.ipa` installs and uninstalls are fixture-tested; not validated on real supervised hardware                                                                                                                                                                     |
 | Windows apps              | MSI install jobs and result reporting are unit-tested; not validated against real Windows hardware                                                                                                                                                                                                   |
 | Third-party app catalogue | Settings are sourced from vendor/ProfileManifests data and validated by tests; not reviewed by the vendors                                                                                                                                                                                           |
 | Apple OS scoping          | Delivery filtering is fixture-tested against Apple's published `supportedOS`; not confirmed on every OS build                                                                                                                                                                                        |
-| Scripts                   | Profile encoding, queueing, redaction, retention, result ingestion and the agent's trigger/redaction/update logic are fixture-tested; the release workflow builds and signs the pkg, but no Developer ID/notary credentials are configured here and it has not run on real hardware |
-| Windows scripts           | Windows MDM has no arbitrary-script CSP; the API and agent contract exist and CI builds the Windows executable, but script delivery and Authenticode signing are not configured                                                                    |
+| Scripts                   | Profile encoding, queueing, redaction, retention, result ingestion and the agent's trigger/redaction/update logic are fixture-tested; the release workflow builds and signs the pkg, but no Developer ID/notary credentials are configured here and it has not run on real hardware                  |
+| Windows scripts           | Windows MDM has no arbitrary-script CSP; the API and agent contract exist and CI builds the Windows executable, but script delivery and Authenticode signing are not configured                                                                                                                      |
 | Android scripts           | Unsupported by the Android Management API; devices are skipped with a reason rather than silently ignored                                                                                                                                                                                            |
+| Script attribute values   | Binding, parsing, validation, read-only enforcement, collection state and "Collect now" are fixture-tested; not driven by a real `mattraxd` on hardware. Apple only: Windows/Android unsupported, `directory` source has no collector yet                                                            |
 | Compliance                | Derived health only; no policy engine or Conditional Access                                                                                                                                                                                                                                          |
 | Bulk work                 | Synchronous; no Cloudflare Queues or job ids                                                                                                                                                                                                                                                         |
 | Transactional email       | Queued in `email_outbox`, retried hourly with exponential backoff and a 5-attempt cap; a permanent failure is audited but not re-driven automatically                                                                                                                                                |
@@ -175,12 +182,15 @@ These are implemented but not proven end to end in this repository.
       bootstrap token, and the re-enrolment recorded on the timeline.
 - [ ] VPP token uploaded and a licence installed.
 - [ ] FileVault escrow key generated, escrow profile deployed and a key revealed on a real Mac.
+- [ ] Windows LAPS policy delivered, `DeviceLocalCredential.Read.All` consented and a password revealed on a real Entra-joined Windows 11 22H2+ device.
+- [ ] `BitlockerKey.Read.All` is consented and a real Entra-joined, encrypted Windows device lists, reveals and rotates a BitLocker key.
+- [ ] Fresh Start (retain and remove modes) and diagnostic archive upload/download are exercised on real Windows hardware.
 - [ ] Activation Lock bypass code collected before Activation Lock is enabled, and revealed.
 - [ ] Recovery Lock set, verified and cleared on Apple silicon.
 - [ ] Pre-DDM fallback confirmed: a macOS 12/iOS 14 device receives profiles, not a DDM sync.
 - [ ] App inventory refresh confirmed.
-- [ ] Manifest, App Store/VPP and uploaded `.pkg` installs each confirmed on a Mac (and an
-      iOS manifest install on an iPhone).
+- [ ] Manifest, App Store/VPP and uploaded `.pkg` installs each confirmed on a Mac, and a
+      manifest and uploaded `.ipa` install confirmed on an iPhone.
 - [ ] Uploaded package URL expires and a re-check-in installs without re-adding the app.
 - [ ] `mattraxd` is signed with a Developer ID, the pkg is notarized and stapled,
       and a script runs on a real Mac with a manual run and an interval trigger. The

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Layer } from "effect";
+import { ByteSize, Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
-import { scepRoutes } from "../routes.js";
+import { scepRoutesWith } from "../routes.js";
 import { ScepService } from "../service.js";
 import type { ScepRepository } from "../repository.js";
 import { ScepError } from "../schema.js";
@@ -19,9 +19,12 @@ const TENANT = "tenant-route";
 
 const SCEP_URL = `http://localhost/mdm/apple/scep/${TENANT}`;
 
-async function makeScepHandler(repoLayer: Layer.Layer<ScepRepository>) {
+async function makeScepHandler(
+  repoLayer: Layer.Layer<ScepRepository>,
+  maxBodySize?: ByteSize.ByteSize,
+) {
   const serviceLayer = ScepService.pipe(Layer.provideMerge(repoLayer));
-  const appLayer = scepRoutes.pipe(Layer.provideMerge(serviceLayer));
+  const appLayer = scepRoutesWith(maxBodySize).pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
 
   return handler;
@@ -101,6 +104,48 @@ describe("SCEP routes", () => {
   });
 
   describe("POST /mdm/apple/scep/:organizationId", () => {
+    it("returns 413 for an oversized chunked PKIOperation", async () => {
+      let pulledChunks = 0;
+      const handler = await makeScepHandler(mockScepRepository(), ByteSize.bytes(64));
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulledChunks += 1;
+          if (pulledChunks > 16) controller.close();
+          else controller.enqueue(new Uint8Array(16));
+        },
+      });
+
+      const response = await handler(
+        new Request(`${SCEP_URL}?operation=PKIOperation`, {
+          method: "POST",
+          body,
+          duplex: "half",
+        } as RequestInit),
+      );
+
+      expect(response.status).toBe(413);
+      expect(pulledChunks).toBeLessThan(16);
+    });
+
+    it("keeps body read failures distinct from invalid CMS", async () => {
+      const handler = await makeScepHandler(mockScepRepository());
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(new Error("connection reset"));
+        },
+      });
+
+      const response = await handler(
+        new Request(`${SCEP_URL}?operation=PKIOperation`, {
+          method: "POST",
+          body,
+          duplex: "half",
+        } as RequestInit),
+      );
+
+      expect(response.status).toBe(500);
+    });
+
     const makeRequest = async (transactionId: string) => {
       const caKeyPair = await generateKeyPair();
       const caCert = await createTestCaCert(caKeyPair, "Post CA");
@@ -165,6 +210,27 @@ describe("SCEP routes", () => {
       const response = await handler(request);
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("application/x-pki-message");
+    });
+
+    it("returns 500 when challenge authentication has an internal failure", async () => {
+      const { caCertPem, caPrivateKeyJwk, pkcsReq } = await makeRequest("txn-post-internal");
+
+      const repo = mockScepRepository({
+        getCa: () => Effect.succeed({ certPem: caCertPem, privateKeyJwk: caPrivateKeyJwk }),
+        authenticatePkcsReq: () =>
+          Effect.fail(new ScepError({ message: "Database unavailable", reason: "internal" })),
+      });
+
+      const handler = await makeScepHandler(repo);
+
+      const response = await handler(
+        new Request(`${SCEP_URL}?operation=PKIOperation`, {
+          method: "POST",
+          body: pkcsReq,
+        }),
+      );
+
+      expect(response.status).toBe(500);
     });
 
     it("rejects the old deployment-wide endpoint", async () => {

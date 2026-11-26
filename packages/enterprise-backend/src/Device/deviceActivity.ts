@@ -179,6 +179,12 @@ export type DeviceActivityInputs = {
 
 const AUDIT_TITLES = {
   "device.updated": "Device details updated",
+  "device.renamed": "Device renamed",
+  "device.name_push_queued": "Device name push queued",
+  "device.name_push_skipped": "Device name push skipped",
+  "application.uninstall_queued": "Application uninstall requested",
+  "application.uninstall_requested": "Application uninstall requested",
+  "device.lock_screen_message_pushed": "Lock screen message queued",
   "device.action": "Remote action requested",
   "device.enrolled": "Device enrolled",
   "device.unenrolled": "Device unenrolled",
@@ -191,6 +197,15 @@ const AUDIT_TITLES = {
   "device.compliance_changed": "Compliance changed",
   "device.push_invalid_token": "Push token rejected",
   "device.return_to_service_requested": "Return to service requested",
+  "device.fresh_start_requested": "Fresh Start requested",
+  "device.diagnostics_requested": "Diagnostics requested",
+  "device.diagnostics_uploaded": "Diagnostics uploaded",
+  "device.diagnostics_downloaded": "Diagnostics downloaded",
+  "device.windows_laps_password_viewed": "Windows LAPS password viewed",
+  "device.windows_laps_rotated": "Windows LAPS password rotation requested",
+  "device.bitlocker_key_viewed": "BitLocker recovery key viewed",
+  "device.bitlocker_keys_escrowed": "BitLocker recovery keys escrowed",
+  "device.bitlocker_keys_rotated": "BitLocker recovery keys rotation requested",
   "device.return_to_service_completed": "Return to service completed",
   "device.identity_revoked": "Identity certificates revoked",
   "device.deleted": "Device deleted",
@@ -201,6 +216,11 @@ const AUDIT_TITLES = {
   "mdm.failure": "MDM request failed",
   "device_pre_registration.imported": "Enrollment pre-registration imported",
   "device_pre_registration.updated": "Enrollment pre-registration updated",
+  "restricted_software.violation_detected": "Restricted software detected",
+  "restricted_software.violation_resolved": "Restricted software removed",
+  "restricted_software.enforced": "Restricted software enforced",
+  "restricted_software.enforcement_failed": "Restricted software enforcement failed",
+  "restricted_software.enforcement_skipped": "Restricted software enforcement skipped",
 } satisfies Record<string, string>;
 
 const AUDIT_TITLE_BY_ACTION = new Map(Object.entries(AUDIT_TITLES));
@@ -235,6 +255,28 @@ const auditDetail = (row: AuditRow) => {
   const action = trimmed(metadata.action, 40);
 
   if (action) parts.push(`Action: ${action}`);
+
+  const deviceName = trimmed(metadata.deviceName, 80);
+
+  if (deviceName) parts.push(`Name: ${deviceName}`);
+
+  const ruleName = trimmed(metadata.ruleName, 80);
+
+  if (ruleName) parts.push(`Rule: ${ruleName}`);
+
+  const bundleId = trimmed(metadata.bundleId, 160);
+
+  if (bundleId) parts.push(bundleId);
+
+  const enforcement = trimmed(metadata.enforcement, 20);
+
+  if (enforcement) parts.push(`enforcement: ${enforcement}`);
+
+  const lockScreenMessage = trimmed(metadata.lockScreenMessage, 120);
+
+  if (lockScreenMessage) parts.push(`Message: ${lockScreenMessage}`);
+
+  if (metadata.includeAssetTag === true) parts.push("Asset tag included");
 
   const rawFields = metadata.fields;
 
@@ -303,6 +345,24 @@ const auditDetail = (row: AuditRow) => {
   return parts.length > 0 ? parts.join(" · ") : null;
 };
 
+/** Title for an audit row, using the operation for lock-screen profile pushes. */
+const auditTitle = (row: AuditRow) => {
+  if (row.action === "device.lock_screen_message_pushed") {
+    const metadata = Option.getOrElse(
+      Schema.decodeUnknownOption(AuditMetadata)(row.metadata),
+      () => ({}),
+    );
+
+    const operation = "operation" in metadata ? metadata.operation : undefined;
+
+    return operation === "remove"
+      ? "Lock screen message removal queued"
+      : "Lock screen message install queued";
+  }
+
+  return AUDIT_TITLE_BY_ACTION.get(row.action) ?? row.action;
+};
+
 /**
  * Merge the device-scoped sources into one newest-first feed. Kept pure so the
  * ordering, limit and redaction rules are unit tested without a database.
@@ -325,7 +385,7 @@ export const buildDeviceActivity = (
     events.push({
       id: `${DEVICE_ACTIVITY_AUDIT_PREFIX}${row.id}`,
       kind: "audit",
-      title: AUDIT_TITLE_BY_ACTION.get(row.action) ?? row.action,
+      title: auditTitle(row),
       detail: auditDetail(row),
       status: null,
       at,

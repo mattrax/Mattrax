@@ -12,17 +12,13 @@
  * decide what to do on failure; nothing here touches the request pipeline.
  */
 import { Schema } from "effect";
-import * as pkijs from "pkijs";
+import type * as pkijs from "pkijs";
+import { loadPkijs } from "@mattrax/mdm-pki";
+import type { PkijsModule } from "@mattrax/mdm-pki";
 
-// ─── PKIjs Crypto Engine Setup ───────────────────────────────────
-
-if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
-  try {
-    pkijs.getEngine();
-  } catch {
-    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
-  }
-}
+// pkijs is loaded on first use (see `loadPkijs`) so verifying a signature does
+// not put it in the Worker's startup closure. Every entry point below is async
+// and hands the loaded module to the helpers that construct pkijs values.
 
 // ─── Constants ───────────────────────────────────────────────────
 
@@ -350,7 +346,7 @@ const certificateFingerprintSha256 = async (cert: pkijs.Certificate): Promise<st
 const findExtension = (cert: pkijs.Certificate, oid: string): pkijs.Extension | undefined =>
   cert.extensions?.find((extension) => extension.extnID === oid);
 
-const isCertificateAuthority = (cert: pkijs.Certificate): boolean => {
+const isCertificateAuthority = (pkijs: PkijsModule, cert: pkijs.Certificate): boolean => {
   const extension = findExtension(cert, BASIC_CONSTRAINTS_OID);
 
   if (!extension) return false;
@@ -364,7 +360,7 @@ const isCertificateAuthority = (cert: pkijs.Certificate): boolean => {
   }
 };
 
-const hasClientAuthEku = (cert: pkijs.Certificate): boolean => {
+const hasClientAuthEku = (pkijs: PkijsModule, cert: pkijs.Certificate): boolean => {
   const extension = findExtension(cert, EXT_KEY_USAGE_OID);
 
   if (!extension) return false;
@@ -388,7 +384,7 @@ const assertValidityWindow = (cert: pkijs.Certificate, now: Date): void => {
   }
 };
 
-const parseCaCertificates = (pems: readonly string[]): pkijs.Certificate[] =>
+const parseCaCertificates = (pkijs: PkijsModule, pems: readonly string[]): pkijs.Certificate[] =>
   pems.map((pem) => {
     try {
       return pkijs.Certificate.fromBER(toArrayBuffer(decodePemCertificate(pem)));
@@ -401,11 +397,12 @@ const parseCaCertificates = (pems: readonly string[]): pkijs.Certificate[] =>
 
 /** Find a supplied CA that issued (and signed) the signer certificate. */
 const findIssuerCertificate = async (
+  pkijs: PkijsModule,
   signer: pkijs.Certificate,
   caCertificates: readonly pkijs.Certificate[],
 ): Promise<pkijs.Certificate> => {
   for (const candidate of caCertificates) {
-    if (!isCertificateAuthority(candidate)) continue;
+    if (!isCertificateAuthority(pkijs, candidate)) continue;
 
     if (!signer.issuer.isEqual(candidate.subject)) continue;
 
@@ -426,7 +423,7 @@ type ParsedSignedData = {
   readonly certificates: pkijs.Certificate[];
 };
 
-const parseSignedData = (bytes: Uint8Array): ParsedSignedData => {
+const parseSignedData = (pkijs: PkijsModule, bytes: Uint8Array): ParsedSignedData => {
   if (bytes.byteLength === 0) throw new Error("signature is empty");
 
   let contentInfo: pkijs.ContentInfo;
@@ -545,21 +542,23 @@ export async function verifyMdmSignature(
     throw new Error("at least one CA certificate is required");
   }
 
+  const pkijs = await loadPkijs();
+
   const cmsBytes = decodeBase64(signature, "Mdm-Signature");
   const bodyBytes = toBytes(body);
-  const { signedData, certificates } = parseSignedData(cmsBytes);
+  const { signedData, certificates } = parseSignedData(pkijs, cmsBytes);
 
   const now = new Date();
   const signer = await verifyCmsSignature(signedData, certificates, bodyBytes, now);
 
   assertValidityWindow(signer, now);
 
-  if (!hasClientAuthEku(signer)) {
+  if (!hasClientAuthEku(pkijs, signer)) {
     throw new Error("signer certificate is missing the client authentication EKU");
   }
 
-  const caCertificates = parseCaCertificates(caCertPems);
-  await findIssuerCertificate(signer, caCertificates);
+  const caCertificates = parseCaCertificates(pkijs, caCertPems);
+  await findIssuerCertificate(pkijs, signer, caCertificates);
 
   const signerSubject = certificateSubjectAttributes(signer);
   const subject = formatSubject(signerSubject);
@@ -625,7 +624,9 @@ export async function verifyScepPkcsReqSignature(
     throw new Error("SCEP PKCSReq signature is too large");
   }
 
-  const { signedData, certificates } = parseSignedData(cmsBytes);
+  const pkijs = await loadPkijs();
+
+  const { signedData, certificates } = parseSignedData(pkijs, cmsBytes);
   const eContent = signedData.encapContentInfo.eContent;
 
   if (!eContent) throw new Error("SCEP PKCSReq signature must encapsulate eContent");
@@ -647,7 +648,7 @@ export async function verifyScepPkcsReqSignature(
 
     if (!valid) throw new Error("SCEP PKCSReq signer certificate is self-signed but invalid");
   } else if (options.caCertPems && options.caCertPems.length > 0) {
-    await findIssuerCertificate(signer, parseCaCertificates(options.caCertPems));
+    await findIssuerCertificate(pkijs, signer, parseCaCertificates(pkijs, options.caCertPems));
   }
 
   const signerSubject = certificateSubjectAttributes(signer);

@@ -416,12 +416,12 @@ describe("SCEP PKCS#7", () => {
       expect(kuExt).toBeDefined();
     });
 
-    it("round-trips through PEM", () => {
+    it("round-trips through PEM", async () => {
       const pem = certToPem(caCert);
       expect(pem).toContain("BEGIN CERTIFICATE");
       expect(pem).toContain("END CERTIFICATE");
 
-      const parsed = pemToCert(pem);
+      const parsed = await pemToCert(pem);
       expect(parsed.serialNumber.valueBlock.valueDec).toBe(1);
     });
   });
@@ -467,22 +467,22 @@ describe("SCEP PKCS#7", () => {
   });
 
   describe("buildPkcs7Degenerate", () => {
-    it("produces a valid ContentInfo", () => {
-      const der = buildPkcs7Degenerate(caCert);
+    it("produces a valid ContentInfo", async () => {
+      const der = await buildPkcs7Degenerate(caCert);
       const contentInfo = pkijs.ContentInfo.fromBER(der);
       expect(contentInfo.contentType).toBe(pkijs.ContentInfo.SIGNED_DATA);
     });
 
-    it("contains the CA certificate", () => {
-      const der = buildPkcs7Degenerate(caCert);
+    it("contains the CA certificate", async () => {
+      const der = await buildPkcs7Degenerate(caCert);
       const contentInfo = pkijs.ContentInfo.fromBER(der);
       const signedData = new pkijs.SignedData({ schema: contentInfo.content });
       expect(signedData.certificates).toBeDefined();
       expect(signedData.certificates!.length).toBe(1);
     });
 
-    it("has no signer infos", () => {
-      const der = buildPkcs7Degenerate(caCert);
+    it("has no signer infos", async () => {
+      const der = await buildPkcs7Degenerate(caCert);
       const contentInfo = pkijs.ContentInfo.fromBER(der);
       const signedData = new pkijs.SignedData({ schema: contentInfo.content });
       expect(signedData.signerInfos.length).toBe(0);

@@ -15,40 +15,80 @@ Nothing is bundled or transpiled at boot. The image contains the prebuilt API
 and dashboard bundles, and database migrations run automatically before the
 first request is served.
 
-## Container image
+## Published image
+
+Released images live in the GitHub Container Registry, and that is what
+`apps/docker/docker-compose.yml` pulls:
+
+```bash
+docker pull ghcr.io/mattrax/mattrax:latest
+```
+
+- `ghcr.io/mattrax/mattrax:<version>` is an immutable release tag. Pin it on a
+  deployment that should not change until an operator upgrades it. A published
+  version tag is never moved: re-running a release with different bytes fails
+  instead of replacing it.
+- `ghcr.io/mattrax/mattrax:latest` follows the newest stable release and only
+  moves forward, so re-cutting an older version never rolls it back. Pre-release
+  versions such as `1.4.0-rc.1` are published under their own tag and never move
+  `latest`.
+
+Pulling needs no registry credentials once the package is public. GHCR creates
+a package private by default, so an organisation owner flips its visibility once
+under the package settings after the first release. If a host cannot pull
+anonymously, `docker login ghcr.io` with a token that has `read:packages`.
+
+Images are built for `linux/amd64`; on an ARM host (an Apple Silicon machine or
+an arm64 VPS) Docker runs them under emulation.
+
+`.github/workflows/release.yml` is the only publisher. A `v*` tag, or a manual
+`workflow_dispatch` that names the version, builds `apps/docker/Dockerfile`,
+runs the compose smoke test against the pushed digest, and only then creates the
+version tags. Pull requests never run it. Every image carries a BuildKit
+provenance attestation and an SPDX SBOM:
+
+```bash
+docker buildx imagetools inspect ghcr.io/mattrax/mattrax:latest
+```
+
+### What the image contains
+
+- The API and MDM runtime plus the dashboard SSR server, in one process on port
+  `8080`. The bundles are prebuilt; nothing is compiled at boot.
+- The client assets, including this documentation at `/docs/`, and
+  `/sitemap.xml`/`/robots.txt` for the deployment's own origin rather than a
+  hosted one.
+- The Drizzle migrations, applied automatically before the first request.
+- The production-only `node_modules` the host process needs for the migration
+  runner and its MySQL client.
 
 The runtime stage is based on [Distroless](https://github.com/GoogleContainerTools/distroless)
 (Debian 12). It contains the Node runtime, glibc/libstdc++, CA certificates,
-timezone data, the prebuilt API/dashboard bundles and the host process. It deliberately has
+timezone data, the prebuilt bundles and the host process. It deliberately has
 no shell, `npm` or package manager, so `docker exec <container> sh` will fail.
 Use `docker logs` for diagnostics, or run a Node one-liner with
 `docker exec <container> /usr/local/bin/node -e '...'`.
 
 The process runs as the unprivileged `node` user (UID/GID 1000), and `/data` is
-owned by that ID. The native `node` binary is stripped of debug symbols at build time;
-JavaScript stack traces are unaffected, but native crash traces will not contain
-symbol names.
+owned by that ID. The native `node` binary is stripped of debug symbols at build
+time; JavaScript stack traces are unaffected, but native crash traces will not
+contain symbol names.
 
-The image also contains the built documentation, served at `/docs/` on the same
-origin, and `/sitemap.xml`/`/robots.txt` advertise that origin rather than a
-hosted one.
+### What the image does not contain
 
-## Building a lean image
-
-`pnpm build:image` builds the local image with zstd layers at level 3 and forces
-recompression of any layer that arrived as gzip. containerd 2.x reads zstd, and
-a new node unpacks zstd layers faster than gzip; Kubernetes clusters that still
-run an older runtime should use a plain `docker build` instead.
-
-The Dockerfile also prunes the deployed `node_modules` (type declarations,
-source maps, readmes, changelogs, tests and examples) in the same layer as the
-production install. Docker layers are additive, so cleaning in a later `RUN`
-would ship the files twice. Licences are kept.
+- **Secrets.** `AUTH_SECRET`, database and SMTP credentials,
+  `MATTRAX_LICENSE_KEY`, Apple signing material and vendor certificates are read
+  from the environment at start. None is baked into a layer, and the build
+  context excludes local `.env` files.
+- **State.** MySQL is external, and tenant files, app packages and backups live
+  on the `/data` volume. A container started without that volume begins empty.
+- **Platform.** There is no shell, package manager, TLS certificate or reverse
+  proxy; TLS and device-certificate verification are the operator's job.
 
 ## Requirements
 
-- Docker 24 or newer.
-- A MySQL 26.10 database. `docker-compose.selfhost.yml` starts one next to the app.
+- Docker 24 or newer, on a `linux/amd64` host (or emulation).
+- A MySQL 26.10 database. `apps/docker/docker-compose.yml` starts one next to the app.
 - An HTTPS reverse proxy in front of the container. `ORIGIN` must be `https://`,
   because WebAuthn passkeys and email magic links require a secure origin.
 
@@ -58,53 +98,187 @@ would ship the files twice. Licences are kept.
 export ORIGIN=https://mdm.example.com
 export AUTH_SECRET="$(openssl rand -base64 32)"
 
-docker compose -f docker-compose.selfhost.yml up -d --build
+docker compose -f apps/docker/docker-compose.yml pull
+docker compose -f apps/docker/docker-compose.yml up -d
 ```
 
-Then put your reverse proxy in front of port `8080`:
+This installs `latest`. Pin a specific release once you have chosen one (see
+[Version pinning and upgrades](#version-pinning-and-upgrades)); a network that
+cannot reach GHCR can build from source instead
+([Building from source](#building-from-source)).
+
+The first start applies the database migrations and creates the `mattrax-data`
+volume. Check it with `curl http://127.0.0.1:8080/api/ready` or
+`docker compose -f apps/docker/docker-compose.yml ps`.
+
+## Reverse proxy
+
+TLS is terminated by a reverse proxy in front of port `8080`. Compose publishes
+the backend on `127.0.0.1` by default, so a proxy on the same host can reach it
+without exposing it to other networks. If the proxy runs on another host, set
+`MATTRAX_BIND_ADDRESS` to a private host interface and restrict that interface
+with a firewall; do not publish it on a public address.
+
+The following Caddyfile configures Caddy v2 to terminate TLS, verify any
+presented device certificate, and forward the certificate's SHA-256
+fingerprint. It is highlighted as nginx because the docs bundle has no Caddy
+grammar:
 
 ```nginx
-server {
-  listen 443 ssl;
-  server_name mdm.example.com;
+mdm.example.com {
+	tls {
+		client_auth {
+			# Browsers may connect without a client certificate. Any certificate
+			# a device presents must verify against the device CA.
+			mode verify_if_given
+			trust_pool file /path/to/apple-ca-bundle.pem /path/to/tenant-scep-ca-bundle.pem
+		}
+	}
 
-  # Apple, Windows and Android clients talk to /mdm/* on the same host.
-  client_max_body_size 64m;
+	# Apple, Windows and Android clients talk to /mdm/* on the same host.
+	request_body {
+		max_size 64MB
+	}
 
-  location / {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_set_header Host $host;
-    # Overwrite rather than append: a caller-supplied chain would let the
-    # client choose its own rate-limit key.
-    proxy_set_header X-Forwarded-For $remote_addr;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header Cf-Connecting-Ip "";
-    proxy_set_header X-Forwarded-Proto https;
+	reverse_proxy 127.0.0.1:8080 {
+		header_up Host {host}
+		# Overwrite rather than append: a caller-supplied chain would let the
+		# client choose its own rate-limit key.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+		header_up -Cf-Connecting-Ip
+		header_up X-Forwarded-Proto https
 
-    # Required for Apple MDM certificate authentication. Strip anything the
-    # client sent, then forward only what nginx verified.
-    proxy_set_header x-device-identity-certificate "";
-    proxy_set_header x-device-identity-certificate-serial "";
-    proxy_set_header x-device-identity-certificate-sha256 "";
-    proxy_set_header x-device-identity-certificate $ssl_client_s_dn;
-    proxy_set_header x-device-identity-certificate-serial $ssl_client_serial;
-
-    ssl_client_certificate /path/to/apple-device-ca.pem;
-    ssl_verify_client optional;
-  }
+		# header_up replaces caller values with fields from the verified TLS
+		# handshake. The fingerprint placeholder is SHA-256, not SHA-1.
+		header_up x-device-identity-certificate {tls_client_subject}
+		header_up x-device-identity-certificate-serial {tls_client_serial}
+		header_up x-device-identity-certificate-sha256 {tls_client_fingerprint}
+		header_up x-device-identity-certificate-der-base64 {tls_client_certificate_der_base64}
+	}
 }
 ```
 
+Stock nginx `$ssl_client_fingerprint` is SHA-1 and must not be sent as
+`x-device-identity-certificate-sha256`. Use Caddy as above, or configure another
+proxy to compute SHA-256 over the verified client certificate's DER encoding.
+
+### Device CA bundle
+
+`apple-ca-bundle.pem` contains the Apple trust roots. The second file must contain
+every tenant SCEP CA that signs Windows identities, plus retired anchors still
+inside their overlap window. Windows WSTEP enrollment uses the tenant's SCEP CA;
+Mattrax creates it on first use, rotates it automatically 400 days before expiry,
+and supports manual rotation and import. The current certificate is stored in
+`scep_ca`. Rotation writes the predecessor to `scep_ca_trust` with a
+`trust_until` deadline so existing devices can keep checking in until they renew.
+
+Regenerate `tenant-scep-ca-bundle.pem` after a tenant CA is created, rotated or
+imported, and on a schedule after daily maintenance. Add a new current CA before
+its first Windows management check-in, and retain retired anchors until
+`trust_until` passes. The following MySQL query produces the complete PEM bundle;
+run it on the database host, then validate the bundle, replace it atomically,
+and reload Caddy:
+
+```bash
+set -euo pipefail
+
+live=/path/to/tenant-scep-ca-bundle.pem
+bundle=$(mktemp /path/to/.tenant-scep-ca-bundle.pem.XXXXXX)
+previous=$(mktemp /path/to/.tenant-scep-ca-bundle.pem.previous.XXXXXX)
+trap 'rm -f "$bundle" "$previous"' EXIT
+had_previous=0
+if [[ -f "$live" ]]; then
+  cp -p "$live" "$previous"
+  had_previous=1
+fi
+
+docker compose -f apps/docker/docker-compose.yml exec -T mysql \
+  sh -c 'mysql --batch --raw --skip-column-names -umattrax -p"$MYSQL_PASSWORD" mattrax -e "
+    SELECT cert_pem FROM scep_ca
+    UNION
+    SELECT cert_pem FROM scep_ca_trust
+    WHERE trust_until > UTC_TIMESTAMP();
+  "' > "$bundle"
+
+openssl crl2pkcs7 -nocrl -certfile "$bundle" |
+  openssl pkcs7 -print_certs -noout >/dev/null
+chmod 0644 "$bundle"
+mv -f "$bundle" "$live"
+
+if ! caddy reload --config /etc/caddy/Caddyfile; then
+  if (( had_previous )); then
+    mv -f "$previous" "$live"
+    caddy reload --config /etc/caddy/Caddyfile || true
+  else
+    rm -f "$live"
+  fi
+  echo "Caddy reload failed; previous CA bundle restored." >&2
+  exit 1
+fi
+```
+
+The script exits on a failed query or certificate validation before replacing the
+live bundle. If Caddy rejects the new bundle, it restores the previous file and
+attempts to reload it before exiting nonzero.
+
+For an external MySQL database, replace the `docker compose exec` command with a
+mysql client invocation on the database host. Use a protected option file rather
+than a password on the command line:
+
+```bash
+mysql --defaults-extra-file=/secure/mattrax-ca-export.cnf \
+  --batch --raw --skip-column-names mattrax -e '
+    SELECT cert_pem FROM scep_ca
+    UNION
+    SELECT cert_pem FROM scep_ca_trust
+    WHERE trust_until > UTC_TIMESTAMP();
+  ' > "$bundle"
+```
+
+Keep the same validation, atomic replacement and rollback steps for either
+database. Caddy loads trust-pool files when the configuration is adapted, so a
+file change alone is not enough; reload after every update. An Apple-only pool
+rejects Windows client certificates. Android management requests do not present
+an mTLS client certificate and continue through `verify_if_given` without
+identity headers.
+
 Set `TRUST_DEVICE_IDENTITY_HEADERS=1` **only** when the proxy verifies device
-certificates and overwrites the headers as above. Exposing the container without
-that proxy would let a caller claim any tenant by setting the certificate OU.
+certificates and overwrites the headers as above. Also set
+`TRUSTED_DEVICE_IDENTITY_PEERS` to the comma-separated numeric IPv4/IPv6
+addresses of the proxy as seen by the container. For a host-side Caddy example,
+loopback is typical; some Docker bridge setups present the private gateway
+instead, so configure the address the container actually observes. For a proxy
+on another host, use its stable private address. Startup fails when
+trusted-header mode is enabled without this allowlist.
+
+The API compares the allowlist with the actual Node socket peer, not with
+`X-Forwarded-For` or any caller-supplied header. It strips all incoming identity
+headers, including `x-device-identity-certificate-der-base64`, and restores them
+only for an allowlisted peer. Caddy's `{tls_client_certificate_der_base64}`
+placeholder supplies the verified leaf certificate as plain base64 DER; the
+Cloudflare boundary converts its verified RFC 9440 leaf into the same header.
+The Windows request context exposes the rebuilt value as
+`identityCertificateDerBase64`. The verified certificate must include a CN and a
+serial; an incomplete bundle is discarded rather than allowing tenant routing by
+OU alone. For Apple MDM, forwarding the verified SHA-256 fingerprint is mandatory.
+Serial-only fallback is no longer valid. Exposing the container without a
+verifying, overwriting proxy would otherwise let a caller claim any tenant by
+setting the certificate OU.
+
+Global proxy trust is not tenant authorization. The Windows backend parses the
+forwarded DER certificate, derives its issuer fingerprint, and compares that
+fingerprint with the asserted tenant's current and still-trusted retired SCEP CAs
+before accepting the certificate identity or serial. A valid certificate issued
+by Tenant A therefore cannot authenticate a request that asserts Tenant B, even
+though both CAs are present in the proxy's global trust pool.
 
 Apple signs MDM check-ins with the SCEP identity certificate and sends its subject
-distinguished name in the TLS handshake. The tenant is the `OU` in that subject, so
-forwarding `$ssl_client_s_dn` is what routes a device to its tenant. If your proxy
-can also compute the certificate's SHA-256 fingerprint, send it as
-`x-device-identity-certificate-sha256`; otherwise identity binding falls back to
-the serial number.
+distinguished name in the TLS handshake. The tenant is the `OU` in that subject.
+Caddy's `{tls_client_subject}` placeholder supplies that DN, and
+`{tls_client_fingerprint}` supplies the mandatory SHA-256 fingerprint. A proxy
+that cannot forward the verified SHA-256 fingerprint cannot serve Apple MDM
+traffic.
 
 The container serves plain HTTP because TLS is the proxy's job. Set
 `TRUSTED_ORIGINS` when the dashboard and API are served from different origins.
@@ -113,20 +287,81 @@ rate limits then key on the client address, and the device/MDM audit events stor
 the same verified address. Without the opt-in neither trusts a forwarded header,
 so the audit `ip` column stays null rather than recording a caller-chosen value.
 
+## Version pinning and upgrades
+
+`MATTRAX_VERSION` selects the image tag and defaults to `latest`. Pinning a
+published release makes a restart predictable:
+
+```bash
+# Substitute a published release tag (without the leading v), from the GitHub
+# releases page or the registry.
+export MATTRAX_VERSION=<version>
+docker compose -f apps/docker/docker-compose.yml pull
+docker compose -f apps/docker/docker-compose.yml up -d
+```
+
+Run `pull` explicitly: `up` reuses a `latest` image that is already present, so
+it would not fetch a newer stable release. Migrations are applied on start; the
+migration runner records the same `__drizzle_migrations` rows as
+`drizzle-kit`, so switching between the container and `pnpm db:migrate` is safe.
+Migrations are forward-only, so take a database dump and a `mattrax-data`
+backup before a version jump: rolling back to an older image may need that
+backup rather than only re-pinning `MATTRAX_VERSION`.
+
+### Breaking change: hosted services endpoints
+
+`APNS_RELAY_URL` and `MATTRAX_BILLING_URL` are no longer read. Remove them,
+and the old separate relay secret, from the container environment. Push and
+billing always use `https://services.mattrax.app`, and a custom relay is no
+longer supported. `MATTRAX_LICENSE_KEY` authenticates both the hosted relay
+and billing; without a licence the relay is disabled and devices poll.
+
+## Building from source
+
+The compose file is pull-based by default. A checkout can build the same
+Dockerfile instead by layering the build override, which adds the `build`
+stanza and tags the result `mattrax-selfhost:local`:
+
+```bash
+export ORIGIN=https://mdm.example.com
+export AUTH_SECRET="$(openssl rand -base64 32)"
+
+docker compose -f apps/docker/docker-compose.yml \
+  -f apps/docker/docker-compose.build.yml up -d --build
+```
+
+The override ignores `MATTRAX_VERSION`, so a local build cannot overwrite a
+release tag in the local image store. This is the path for contributors,
+unreleased commits and air-gapped installs that import the source rather than
+pull from GHCR.
+
+`pnpm build:image` builds just the image with zstd layers at level 3 and forces
+recompression of any layer that arrived as gzip. containerd 2.x reads zstd, and
+a new node unpacks zstd layers faster than gzip; Kubernetes clusters that still
+run an older runtime should use a plain `docker build` instead.
+
+The Dockerfile also prunes the deployed `node_modules` (type declarations,
+source maps, readmes, changelogs, tests and examples) in the same layer as the
+production install. Docker layers are additive, so cleaning in a later `RUN`
+would ship the files twice. Licences are kept.
+
 ## Configuration
 
-| Variable                        | Required  | Purpose                                                                       |
-| ------------------------------- | --------- | ----------------------------------------------------------------------------- |
-| `ORIGIN`                        | yes       | Canonical public HTTPS URL. WebAuthn relying party and link generator.        |
-| `AUTH_SECRET`                   | yes       | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets.   |
-| `DATABASE_URL`                  | yes       | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.         |
-| `TRUST_DEVICE_IDENTITY_HEADERS` | no        | Set to `1` when a TLS proxy forwards verified device certificates.            |
-| `TRUST_PROXY_HEADERS`           | no        | Set to `1` when the proxy overwrites `X-Forwarded-For`; used for rate limits and audit IPs. |
-| `PORT`                          | no        | HTTP port inside the container. Defaults to `8080`.                           |
-| `DATA_DIR`                      | no        | Object storage and runtime state. Defaults to `/data`.                        |
-| `SKIP_MIGRATIONS`               | no        | Set to `1` to manage the schema from a separate job.                          |
-| `MAIL_TRANSPORT`                | no        | `smtp`; unset disables outbound email.                                        |
-| `MAIL_FROM`                     | with mail | Verified sender, e.g. `Mattrax <notifications@example.com>`.                  |
+| Variable                        | Required   | Purpose                                                                                         |
+| ------------------------------- | ---------- | ----------------------------------------------------------------------------------------------- |
+| `ORIGIN`                        | yes        | Canonical public HTTPS URL. WebAuthn relying party and link generator.                          |
+| `AUTH_SECRET`                   | yes        | At least 32 bytes. Signs sessions and seals APNs, SCEP and webhook secrets.                     |
+| `DATABASE_URL`                  | yes        | MySQL connection string, e.g. `mysql://user:pass@mysql:3306/mattrax`.                           |
+| `TRUST_DEVICE_IDENTITY_HEADERS` | no         | Set to `1` when a TLS proxy forwards verified device certificates.                              |
+| `TRUSTED_DEVICE_IDENTITY_PEERS` | with trust | Comma-separated numeric proxy addresses allowed to supply device identity.                      |
+| `TRUST_PROXY_HEADERS`           | no         | Set to `1` when the proxy overwrites `X-Forwarded-For`; used for rate limits and audit IPs.     |
+| `MATTRAX_BIND_ADDRESS`          | no         | Compose host bind address; defaults to `127.0.0.1`. Use a private interface for a remote proxy. |
+| `PORT`                          | no         | HTTP port inside the container. Defaults to `8080`.                                             |
+| `DATA_DIR`                      | no         | Object storage and runtime state. Defaults to `/data`.                                          |
+| `SKIP_MIGRATIONS`               | no         | Set to `1` to manage the schema from a separate job.                                            |
+| `MAIL_TRANSPORT`                | no         | `smtp`; unset disables outbound email.                                                          |
+| `MAIL_FROM`                     | with mail  | Verified sender, e.g. `Mattrax <notifications@example.com>`.                                    |
+| `MATTRAX_VERSION`               | no         | Compose image tag. Defaults to `latest`; set a release version to pin.                          |
 
 Optional integrations use the same names as the hosted deployment. See
 [Configuration](/operations/configuration) for the full list. Anything unset is
@@ -138,18 +373,16 @@ no analytics, and no Stripe billing.
 Self-hosted deployments send mail directly over SMTP. Set the transport, a
 verified sender and the server details:
 
-| Variable              | Purpose                                                                     |
-| --------------------- | --------------------------------------------------------------------------- |
-| `MAIL_TRANSPORT`      | `smtp`.                                                                     |
-| `MAIL_FROM`           | Sender address, e.g. `Mattrax <notifications@example.com>`.                 |
-| `MAIL_SMTP_HOST`      | SMTP server hostname, e.g. `smtp.example.com`.                              |
-| `MAIL_SMTP_PORT`      | Port. Defaults to 587, or 465 when `MAIL_SMTP_SECURE` is on.                |
-| `MAIL_SMTP_SECURE`    | `true` connects with implicit TLS; otherwise STARTTLS is used when offered. |
-| `MAIL_SMTP_USER`      | Username for AUTH PLAIN/LOGIN, when the server requires it.                 |
-| `MAIL_SMTP_PASSWORD`  | Password for the same account.                                              |
-| `MAIL_SMTP_HELO`      | EHLO name; defaults to the runtime hostname.                                |
-| `MATTRAX_BILLING_URL` | Cloud billing origin. Defaults to `https://services.mattrax.app`.                  |
-| `MATTRAX_LICENSE_KEY` | Deployment licence key issued by the Mattrax operator; also authenticates APNs relay requests. |
+| Variable             | Purpose                                                                     |
+| -------------------- | --------------------------------------------------------------------------- |
+| `MAIL_TRANSPORT`     | `smtp`.                                                                     |
+| `MAIL_FROM`          | Sender address, e.g. `Mattrax <notifications@example.com>`.                 |
+| `MAIL_SMTP_HOST`     | SMTP server hostname, e.g. `smtp.example.com`.                              |
+| `MAIL_SMTP_PORT`     | Port. Defaults to 587, or 465 when `MAIL_SMTP_SECURE` is on.                |
+| `MAIL_SMTP_SECURE`   | `true` connects with implicit TLS; otherwise STARTTLS is used when offered. |
+| `MAIL_SMTP_USER`     | Username for AUTH PLAIN/LOGIN, when the server requires it.                 |
+| `MAIL_SMTP_PASSWORD` | Password for the same account.                                              |
+| `MAIL_SMTP_HELO`     | EHLO name; defaults to the runtime hostname.                                |
 
 ```bash
 MAIL_TRANSPORT=smtp
@@ -165,25 +398,6 @@ provider). Use a monitored mailbox, not `no-reply@`: invitation and verification
 replies should reach a person. The container talks to the SMTP server directly,
 so there is no sidecar to run and no relay secret to manage.
 
-### Licensing
-
-Self-hosted deployments are licensed by the Mattrax operator and billed to the
-operator for the whole deployment, based on enrolled devices. The install does
-not need its own Stripe account:
-
-```bash
-MATTRAX_BILLING_URL=https://services.mattrax.app
-MATTRAX_LICENSE_KEY=mtx_lic_...
-```
-
-The licence key is issued against the cloud billing account (see
-[Operations](/admin/operations#deployment-licences)). The deployment reports its
-enrolled device and tenant counts once a day; the cloud keeps the Stripe
-subscription quantity in step. Settings → Billing shows the licence status,
-Stripe Checkout, the customer portal and invoices from the cloud. Without a
-licence the rest of the product keeps running; the billing page reports that the
-deployment is unlicensed.
-
 Without a transport the container declares `MATTRAX_EMAIL_DISABLED=1`: readiness
 reports `mailer: skipped` (degraded), verification requests fail with "This
 deployment cannot send email", and invitations return their one-time link for the
@@ -194,15 +408,56 @@ them. It only switches on for a loopback `ORIGIN`. To use it on a public host,
 set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
 `DEV_MAILBOX_SECRET`, then send that value in `x-dev-mailbox-secret`.
 
+### Mattrax services and licensing
+
+A self-hosted install owns its database, storage, email and TLS. Two optional
+features use the hosted services origin at `https://services.mattrax.app`, and
+they are the only calls it makes there. The origin is built into the release:
+there is no endpoint to configure.
+
+| Feature         | Configuration         | Data sent                                                                                                                                                                     |
+| --------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| APNs push relay | `MATTRAX_LICENSE_KEY` | Each device push: push token, push magic, topic and the tenant's APNs certificate and private key, which the relay uses to authenticate the request to Apple. It stores none. |
+| Licence billing | `MATTRAX_LICENSE_KEY` | A daily count of enrolled devices and tenants, plus the licence summary, portal, checkout and invoice requests an owner starts.                                               |
+
+The licence key is issued against the cloud billing account (see
+[Operations](/admin/operations#deployment-licences)). It authenticates both the
+hosted relay and billing calls, so the deployment needs no separate shared
+secret. The hosted relay holds the Apple connectivity and the Stripe secret, so
+the install does not need vendor APNs credentials to wake devices. The release
+has no separate relay URL: a self-hosted install always wakes devices through
+the hosted relay. Without a licence the relay is disabled and devices poll for
+changes.
+
+Self-hosted deployments are billed to the operator for the whole deployment,
+based on enrolled devices. The install does not need its own Stripe account:
+
+```bash
+MATTRAX_LICENSE_KEY=mtx_lic_...
+```
+
+The deployment reports its enrolled device and tenant counts once a day; the
+cloud keeps the Stripe subscription quantity in step. Settings → Billing shows
+the licence status, Stripe Checkout, the customer portal and invoices from the
+cloud. Without a licence the rest of the product keeps running; the billing page
+reports that the deployment is unlicensed, and the APNs relay is disabled.
+
+Your deployment's own product analytics is separate and opt-in: the
+dashboard and API send events only when you configure `POSTHOG_KEY`. The hosted
+relay also reports each relayed push to the Mattrax operator's PostHog project,
+identified only by a SHA-256 hash of the deployment licence id (no tenant data,
+push token, certificate or request body), so relay usage can be told apart.
+See [Monitoring](/operations/monitoring) for the analytics and metrics your
+deployment exposes.
+
 ## Operations
 
-- **Upgrades.** Rebuild the image and restart. Migrations are applied on start;
-  the migration runner records the same `__drizzle_migrations` rows as
-  `drizzle-kit`, so switching between the container and `pnpm db:migrate` is safe.
-  Upgrading from a pre-Node image re-homes object storage: the old workerd/Miniflare
-  local bucket is not readable by the Node runtime. Export or restore tenant files
-  and backups through the product before switching, or copy them into
-  `/data/storage` using the same keys.
+- **Upgrades.** Pull the release you want and restart, as shown in
+  [Version pinning and upgrades](#version-pinning-and-upgrades). Migrations are
+  applied on start. Upgrading from a pre-Node image re-homes object storage: the
+  old workerd/Miniflare local bucket is not readable by the Node runtime. Export
+  or restore tenant files and backups through the product before switching, or
+  copy them into `/data/storage` using the same keys.
 - **MySQL 26.10.** The bundled compose file now runs MySQL 26.10. A 26.10 server
   refuses to start on an 8.4 data directory (`Invalid MySQL server upgrade`), so
   an existing stack must dump and restore rather than swap the image under the
@@ -218,7 +473,7 @@ set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
   is unusable. With no mail transport (or `MATTRAX_EMAIL_DISABLED=1`) `checks.mailer` is
   `skipped` and the overall status is `degraded` (HTTP 200) rather than unhealthy.
 - **Backups and restore.** The daily job writes tenant bundles into the `mattrax-data`
-  volume. Owners can pin, unpin, delete and restore them from Settings → General; a
+  volume. Owners can pin, unpin, delete and restore them from Settings → Backups; a
   restore runs in place and creates a pinned pre-restore snapshot first. See
   [Operations](/admin/operations#restoring-in-place). To move a tenant in or out of
   this deployment without re-enrolling devices, see
@@ -232,5 +487,11 @@ set `DEV_MAILBOX=true`, `DEV_MAILBOX_ALLOW_REMOTE=true` and a non-empty
 ## Limitations
 
 - R2 is local to the `/data` volume; it is not replicated off the host.
+- Only `linux/amd64` images are published. An arm64 build is not available yet;
+  ARM hosts run the amd64 image under emulation.
 - Cloudflare-specific secrets (vendor APNs relay, managed Android Pub/Sub) still
   point at the hosted services if configured, and are otherwise disabled.
+- The hosted APNs relay reports each push to the Mattrax operator's PostHog
+  project when that project is configured, with a hash of the deployment licence
+  id. It is not a per-deployment analytics feed, and it is not enabled by your
+  deployment's `POSTHOG_KEY`.

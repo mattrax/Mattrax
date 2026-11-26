@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   attributeKeyProblem,
+  parseScriptAttributeOutput,
   reservedAttributeKeyProblem,
   validateAttributeValue,
 } from "./attributes.ts";
@@ -92,5 +93,119 @@ describe("attribute value validation", () => {
   it("bounds long values", () => {
     expect(validateAttributeValue(definition(), "x".repeat(4096)).ok).toBe(true);
     expect(validateAttributeValue(definition(), "x".repeat(4097)).ok).toBe(false);
+  });
+});
+
+describe("script attribute output", () => {
+  const bindings = [
+    {
+      key: "antivirus",
+      label: "Antivirus",
+      type: "text" as const,
+      line: 1,
+    },
+    {
+      key: "agent_version",
+      label: "Agent version",
+      type: "number" as const,
+      line: 2,
+    },
+    {
+      key: "compliant",
+      label: "Compliant",
+      type: "boolean" as const,
+      line: 3,
+    },
+  ];
+
+  it("reads a JSON object keyed by attribute key", () => {
+    expect(
+      parseScriptAttributeOutput(
+        bindings,
+        JSON.stringify({ antivirus: "CrowdStrike", agent_version: 7.12, compliant: true }),
+      ),
+    ).toEqual([
+      { key: "antivirus", ok: true, value: "CrowdStrike" },
+      { key: "agent_version", ok: true, value: "7.12" },
+      { key: "compliant", ok: true, value: "true" },
+    ]);
+  });
+
+  it("uses the configured output key when one is set", () => {
+    const result = parseScriptAttributeOutput(
+      [{ ...bindings[0], outputKey: "product" }],
+      JSON.stringify({ product: "CrowdStrike" }),
+    );
+
+    expect(result).toEqual([{ key: "antivirus", ok: true, value: "CrowdStrike" }]);
+  });
+
+  it("reads one value per line in binding order", () => {
+    const outOfOrder = [bindings[2], bindings[0], bindings[1]];
+
+    expect(parseScriptAttributeOutput(outOfOrder, "CrowdStrike\n7.12\ntrue")).toEqual([
+      { key: "antivirus", ok: true, value: "CrowdStrike" },
+      { key: "agent_version", ok: true, value: "7.12" },
+      { key: "compliant", ok: true, value: "true" },
+    ]);
+  });
+
+  it("reports a missing JSON key and a short line list per attribute", () => {
+    const json = parseScriptAttributeOutput(bindings, JSON.stringify({ antivirus: "Acme" }));
+
+    expect(json[0]).toEqual({ key: "antivirus", ok: true, value: "Acme" });
+    expect(json[1]).toMatchObject({ key: "agent_version", ok: false });
+    expect(json[1].ok ? "" : json[1].error).toMatch(/no "agent_version" key/);
+
+    const lines = parseScriptAttributeOutput(bindings, "Acme");
+
+    expect(lines[2]).toMatchObject({ key: "compliant", ok: false });
+    expect(lines[2].ok ? "" : lines[2].error).toMatch(/line 3/);
+  });
+
+  it("rejects values the definition cannot hold and keeps the rest", () => {
+    const readings = parseScriptAttributeOutput(
+      bindings,
+      JSON.stringify({ antivirus: "Acme", agent_version: "seven", compliant: "maybe" }),
+    );
+
+    expect(readings[0]).toMatchObject({ key: "antivirus", ok: true });
+    expect(readings[1].ok ? "" : readings[1].error).toMatch(/must be a number/);
+    expect(readings[2].ok ? "" : readings[2].error).toMatch(/true or false/);
+  });
+
+  it("treats an empty value as a collection error, not a clear", () => {
+    const readings = parseScriptAttributeOutput(bindings, "Acme\n\ntrue");
+
+    expect(readings[1]).toMatchObject({ key: "agent_version", ok: false });
+    expect(readings[1].ok ? "" : readings[1].error).toMatch(/empty/);
+  });
+
+  it("keeps a leading blank line in place instead of shifting values", () => {
+    const readings = parseScriptAttributeOutput(bindings, "\nCrowdStrike\n7.12\ntrue");
+
+    // The blank first line belongs to the first binding, so "CrowdStrike" is
+    // validated as the number attribute instead of being accepted as antivirus.
+    expect(readings[0].ok ? "" : readings[0].error).toMatch(/empty/);
+    expect(readings[1].ok ? "" : readings[1].error).toMatch(/must be a number/);
+    expect(readings[2].ok ? "" : readings[2].error).toMatch(/true or false/);
+  });
+
+  it("rejects nested JSON values, unparseable JSON and empty output", () => {
+    const nested = parseScriptAttributeOutput(bindings.slice(0, 1), '{"antivirus":{"name":"x"}}');
+
+    expect(nested[0].ok ? "" : nested[0].error).toMatch(/string, number or boolean/);
+
+    const broken = parseScriptAttributeOutput(bindings.slice(0, 1), "{not json");
+
+    expect(broken[0].ok ? "" : broken[0].error).toMatch(/could not be parsed/);
+
+    const empty = parseScriptAttributeOutput(bindings, "  \n ");
+
+    expect(empty.every((reading) => !reading.ok)).toBe(true);
+  });
+
+  it("returns nothing when no attributes are bound", () => {
+    expect(parseScriptAttributeOutput([], "CrowdStrike")).toEqual([]);
   });
 });

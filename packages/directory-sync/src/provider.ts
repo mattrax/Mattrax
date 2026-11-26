@@ -122,15 +122,15 @@ export type DirectoryProviderHealth = {
  * Credentials are captured in the closure, never in the provider definition,
  * so a registry entry cannot be used to discover another tenant's directory.
  */
-export type DirectoryUserDirectory = {
+export type DirectoryUserDirectory<E = unknown> = {
   readonly provider: DirectoryProviderDefinition;
-  readonly discoverUsers: (cursor?: string | null) => Effect.Effect<DirectoryUserPage, unknown>;
-  readonly discoverGroups: (cursor?: string | null) => Effect.Effect<DirectoryGroupPage, unknown>;
+  readonly discoverUsers: (cursor?: string | null) => Effect.Effect<DirectoryUserPage, E>;
+  readonly discoverGroups: (cursor?: string | null) => Effect.Effect<DirectoryGroupPage, E>;
   readonly resolveProfile: (
     input: DirectoryProfileQuery,
-  ) => Effect.Effect<DirectoryProfile | null, unknown>;
+  ) => Effect.Effect<DirectoryProfile | null, E>;
   /** Verify credentials and reachability without changing tenant state. */
-  readonly validate: () => Effect.Effect<DirectoryProviderHealth, unknown>;
+  readonly validate: () => Effect.Effect<DirectoryProviderHealth, E>;
 };
 
 /** The registry entry: metadata plus pure, credential-free helpers. */

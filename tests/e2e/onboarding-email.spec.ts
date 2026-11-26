@@ -46,7 +46,7 @@ test.describe("onboarding email", () => {
             (item) => item.to === email && item.subject === "Your Mattrax verification code",
           );
 
-          code = message?.text.match(/code is (\d{6})/)?.[1] ?? "";
+          code = message?.text.match(/code is:?\s+(\d{6})/)?.[1] ?? "";
 
           return code;
         },

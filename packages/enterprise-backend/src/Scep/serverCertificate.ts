@@ -1,7 +1,8 @@
 import { Effect, Option, Schema } from "effect";
 import { eq } from "drizzle-orm";
-import * as pkijs from "pkijs";
+import type * as pkijs from "pkijs";
 import { connect } from "node:tls";
+import { loadPkijs } from "@mattrax/scep";
 import { schema as s } from "@mattrax/enterprise-core";
 import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
 import { serverCertificateInfo } from "../Device/credentialHealth.ts";
@@ -21,14 +22,6 @@ import type { EnterpriseDb } from "../schema.ts";
  * or untrusted certificate must be *observed and reported*, not turned into a
  * probe error that hides why.
  */
-
-if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
-  try {
-    pkijs.getEngine();
-  } catch {
-    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
-  }
-}
 
 /** Default interval between probes. The hourly cron calls it, so one hour. */
 export const SERVER_CERTIFICATE_CHECK_INTERVAL_MINUTES = 60;
@@ -115,7 +108,8 @@ export const serverCertificatePeerFromDer = async (input: {
   readonly authorizationError: string | null;
   readonly chainLength: number;
 }): Promise<ServerCertificatePeer> => {
-  const certificate = pkijs.Certificate.fromBER(new Uint8Array(input.der).buffer);
+  const { Certificate } = await loadPkijs();
+  const certificate = Certificate.fromBER(new Uint8Array(input.der).buffer);
   const serial = certificate.serialNumber.valueBlock.valueHexView;
 
   return {

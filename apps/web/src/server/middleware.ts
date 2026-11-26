@@ -5,6 +5,8 @@ import type { Schema } from "effect";
 import { createAPIHandler } from "filesystem-routing/api";
 import routes from "virtual:file-routes";
 import { getPreloadedSession, setPreloadedSession } from "~/lib/session-store";
+import { setRegistrationNonce } from "~/lib/registration-nonce";
+import { newRegistrationNonce, registrationNonceCookie } from "@mattrax/enterprise-domain/client";
 import { isCacheablePublicPage } from "~/lib/public-routes";
 import { SESSION_PRESENCE_MAX_AGE_SECONDS, sessionPresenceSetCookie } from "~/lib/session-presence";
 import { postHogEnvironment, setPostHogConfig } from "~/lib/posthog-config-store";
@@ -146,7 +148,14 @@ const oauthMetadata = (url: URL): Response | undefined => {
 };
 
 const middleware: StartMiddleware = async (event, next) => {
-  const metadata = oauthMetadata(new URL(event.request.url));
+  const requestUrl = new URL(event.request.url);
+
+  // Apple's account-driven enrollment discovery document belongs to the API:
+  // only it can resolve the tenant by host and read the BYOD configuration.
+  if (requestUrl.pathname === "/.well-known/com.apple.remotemanagement")
+    return fetchApi(event.request);
+
+  const metadata = oauthMetadata(requestUrl);
 
   if (metadata) return metadata;
 
@@ -178,6 +187,20 @@ const middleware: StartMiddleware = async (event, next) => {
     (event.request.method === "GET" || event.request.method === "HEAD") &&
     isCacheablePublicPage(requestPath);
 
+  // Sign-up pages carry an Email Verification API nonce. It is minted here so
+  // the server-rendered hidden input and the cookie the API checks agree on
+  // the first frame; `/login` gets one too because the router can reach the
+  // sign-up form client-side without another document request. A fresh form
+  // load therefore always rotates the nonce.
+  const registrationNonce =
+    event.request.method === "GET" &&
+    !publicPage &&
+    (requestPath === "/register" || requestPath === "/login")
+      ? newRegistrationNonce()
+      : undefined;
+
+  if (registrationNonce !== undefined) setRegistrationNonce(event.request, registrationNonce);
+
   const outcome = publicPage
     ? {}
     : await preloadSession(event.request, {
@@ -194,7 +217,6 @@ const middleware: StartMiddleware = async (event, next) => {
   // Canonical tenant URLs: an id link from a bookmark or an older integration
   // is redirected to the tenant's slug before rendering. Doing this on the
   // server avoids a client-side rewrite that races the router transition.
-  const requestUrl = new URL(event.request.url);
   const tenantSegment = /^\/t\/([^/]+)(\/.*)?$/.exec(requestUrl.pathname);
 
   if (
@@ -236,9 +258,11 @@ const middleware: StartMiddleware = async (event, next) => {
   // API responses already mirror session cookie rotations themselves.
   if (event.request.method !== "GET" || !isHtml(afterProfileUpdate)) return afterProfileUpdate;
   const presence = getPreloadedSession(event.request);
+  const secure = new URL(event.request.url).protocol === "https:";
 
   if (
     presence === undefined &&
+    registrationNonce === undefined &&
     outcome.setSsrCookie === undefined &&
     outcome.setSsrRevisionCookie === undefined &&
     !outcome.clearSsrCookie &&
@@ -246,8 +270,12 @@ const middleware: StartMiddleware = async (event, next) => {
   )
     return afterProfileUpdate;
 
-  const secure = new URL(event.request.url).protocol === "https:";
   const headers = new Headers(afterProfileUpdate.headers);
+
+  // Set before the SSR/session cookies so the nonce is present even on a page
+  // whose session preload produced nothing.
+  if (registrationNonce !== undefined)
+    headers.append("set-cookie", registrationNonceCookie(registrationNonce, secure));
 
   if (outcome.setSsrCookie) headers.append("set-cookie", outcome.setSsrCookie);
 

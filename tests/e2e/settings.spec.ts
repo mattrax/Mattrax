@@ -21,8 +21,67 @@ test.describe("tenant settings", () => {
   test("shows tenant audit events", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Audit Tenant");
     await gotoHydrated(page, `/t/${tenant.id}/settings/audit`);
-    await expect(page.getByText("Audit log", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Audit log", exact: true })).toHaveCount(1);
+    await expect(page.getByRole("heading", { name: "Audit log", exact: true })).toBeVisible();
+    await expect(page.getByText(/Account changes and device \(MDM\) activity/)).toBeVisible();
     await expect(page.getByText(/Tenant · created/i)).toBeVisible();
+  });
+
+  test("shows one Approvals title and keeps policy creation available", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Approvals Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings/approvals`);
+
+    await expect(page.getByRole("heading", { name: "Approvals", exact: true })).toHaveCount(1);
+    await expect(page.getByRole("heading", { name: "Approvals", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "New policy" }).click();
+    await expect(page.getByRole("dialog", { name: "New approval policy" })).toBeVisible();
+  });
+
+  test("labels the attribute CSV picker and keeps validation inline", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Attribute Validation Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings/attributes`);
+
+    const csvFile = page.getByLabel("Import device values CSV");
+    await expect(csvFile).toBeVisible();
+    await expect(csvFile).toHaveAttribute("accept", ".csv,text/csv");
+    await csvFile.setInputFiles({
+      name: "attributes.csv",
+      mimeType: "text/csv",
+      buffer: Buffer.from("serial\n"),
+    });
+    await expect(page.getByText("Import device values CSV", { exact: true })).toBeVisible();
+
+    await page.getByLabel("Key", { exact: true }).fill("Bad Key");
+    await page.getByLabel("Label", { exact: true }).fill("Cost centre");
+    await page.getByRole("button", { name: "Add attribute", exact: true }).click();
+
+    const error = page.getByRole("alert");
+    await expect(error).toContainText(/lowercase/i);
+    await expect(error).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Dismiss error" })).toHaveCount(0);
+
+    await page.getByLabel("Key", { exact: true }).fill("cost_centre");
+    const created = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        /\/api\/v1\/tenants\/[^/]+\/attributes$/.test(response.url()),
+    );
+    await page.getByRole("button", { name: "Add attribute", exact: true }).click();
+    expect((await created).ok()).toBe(true);
+
+    const row = page.getByRole("row").filter({ hasText: "cost_centre" });
+    await expect(row).toBeVisible();
+    await row.getByRole("button", { name: "Edit" }).click();
+    await page.getByLabel("Label", { exact: true }).fill("Cost centre updated");
+
+    const saved = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        /\/api\/v1\/tenants\/[^/]+\/attributes\/[^/]+$/.test(response.url()),
+    );
+    await page.getByRole("button", { name: "Save attribute", exact: true }).click();
+    expect((await saved).ok()).toBe(true);
+    await expect(page.getByRole("alert")).toHaveCount(0);
   });
 
   test("filters audit events and exports CSV", async ({ page }) => {
@@ -242,6 +301,26 @@ test.describe("tenant settings", () => {
     ).toHaveText("Migration");
   });
 
+  test("links a standalone migration cohort back to the cohort list", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Standalone Cohort Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/migration`);
+
+    await page.getByLabel("Name").fill("Standalone exit");
+    await page.getByLabel("Device serials").fill("C02XYZ123");
+    await page.getByRole("button", { name: "Create cohort" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/migration/[^/]+$`));
+    await expect(page.getByRole("heading", { name: "Standalone exit" })).toBeVisible();
+
+    const back = page
+      .locator('[data-slot="breadcrumb"]')
+      .getByRole("link", { name: "Migration", exact: true });
+    await expect(back).toHaveAttribute("href", `/t/${tenant.slug}/migration`);
+    await back.click();
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/migration$`));
+    await expect(page.getByRole("heading", { name: "Migration", exact: true })).toBeVisible();
+  });
+
   test("picks an App Store region on the globe", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Region Tenant");
     await gotoHydrated(page, `/t/${tenant.slug}/settings`);
@@ -252,8 +331,13 @@ test.describe("tenant settings", () => {
     await trigger.click();
     const dialog = page.getByRole("dialog", { name: "Choose App Store region" });
     await expect(dialog).toBeVisible();
-    await dialog.getByRole("textbox", { name: "Search countries" }).fill("Japan");
-    await dialog.getByRole("button", { name: /Japan/ }).click();
+    const search = dialog.getByRole("textbox", { name: "Search countries" });
+    await search.fill("Japan");
+    const result = dialog.getByRole("button", { name: /Japan/ });
+    await result.focus();
+    await page.keyboard.press("Enter");
+    await expect(search).toBeFocused();
+    await expect(result).toHaveCount(0);
     await dialog.getByRole("button", { name: "Use JP" }).click();
     await expect(dialog).toBeHidden({ timeout: 15_000 });
     // The dialog's dismiss layer lingers while it animates out; a click in that

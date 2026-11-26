@@ -11,11 +11,12 @@ authentication, SSO for the dashboard and Autopilot deployment profiles.
 | Enrollment | Tenant-scoped discovery URL, WSTEP policy and certificate         |
 | Identity   | Device certificate, 365-day validity, 180-day renewal             |
 | Policy     | OMA-URI `Replace`/`Delete` SyncML commands with applied state     |
-| Commands   | Remote wipe, restart and unenroll                                 |
+| Commands   | Wipe, restart, unenroll, Fresh Start and diagnostic collection     |
 | Zero-touch | Autopilot hardware-hash import and deployment profiles            |
 | Directory  | Entra ID SSO, directory sync, SCIM                                |
 | Push       | None; devices poll on their SyncML schedule                       |
 | Inventory  | Identity, OS, storage, BitLocker, TPM, Secure Boot and join state |
+| Secrets    | Windows LAPS password and BitLocker recovery key escrow           |
 
 ## Prerequisites
 
@@ -23,7 +24,13 @@ authentication, SSO for the dashboard and Autopilot deployment profiles.
 - A Windows device that can reach the discovery URL.
 - For Entra join or Autopilot: a Microsoft Entra tenant and an app registration with the
   required Graph permissions. See [Entra ID](/platforms/windows/entra-id).
-- For policy: at least one `mttx.windows.custom.<id>` configuration.
+- For policy: at least one `mttx.windows.custom.<id>` or `mttx.windows.laps` configuration.
+- For LAPS password retrieval: the Graph application permission
+  `DeviceLocalCredential.Read.All` and admin consent. This permission is only used by the
+  explicit reveal endpoint.
+- For BitLocker recovery keys and rotation: an Entra-joined or hybrid-joined device, a
+  BitLocker policy that backs recovery information up to Microsoft Entra ID, and the Graph
+  `BitlockerKey.Read.All` application permission with admin consent.
 
 ## Enrollment
 
@@ -50,7 +57,7 @@ The Windows device posts a SOAP discovery request to the URL. Mattrax returns:
 
 ### 3. Policy and certificate
 
-The device requests a WSTEP policy, then submits a CSR. Mattrax signs it with the global
+The device requests a WSTEP policy, then submits a CSR. Mattrax signs it with the tenant's
 SCEP CA, sets the certificate OU to the tenant id, and returns:
 
 - `signedCertificate`
@@ -216,19 +223,146 @@ rules.
 
 ## Commands
 
-| Action     | OMA-DM command                                                              |
-| ---------- | --------------------------------------------------------------------------- |
-| `wipe`     | `./Device/Vendor/MSFT/RemoteWipe/doWipeProtected`                           |
-| `restart`  | `./Device/Vendor/MSFT/Reboot/RebootNow`                                     |
-| `unenroll` | `./Vendor/MSFT/DMClient/Provider/Mattrax/Unenroll` (Exec, provider id data) |
+| Action                       | OMA-DM command                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| `wipe`                       | `./Device/Vendor/MSFT/RemoteWipe/doWipeProtected`                              |
+| `restart`                    | `./Device/Vendor/MSFT/Reboot/RebootNow`                                        |
+| `fresh-start`                | `./Device/Vendor/MSFT/CleanPC/CleanPCRetainingUserData` or `CleanPCWithoutRetainingUserData` (Exec, `1`) |
+| `collect-diagnostics`        | `./Vendor/MSFT/DiagnosticLog/DiagnosticArchive/ArchiveDefinition` (Exec, Collection XML) |
+| `rotate-bitlocker-key`       | `./Device/Vendor/MSFT/BitLocker/RotateRecoveryPasswords` (Exec, request id)    |
+| `rotate-local-admin-password` | `./Device/Vendor/MSFT/LAPS/Actions/ResetPassword` (Exec)                      |
+| `unenroll`                   | `./Vendor/MSFT/DMClient/Provider/Mattrax/Unenroll` (Exec, provider id data)    |
 
 Other actions are rejected. In particular `sync` is not offered for Windows: there is no
 push channel, so a command or policy change is delivered the next time the device polls.
-The API's per-device `actions` array is the authoritative list of supported actions.
+The API's per-device `actions` array is the authoritative list of supported actions and is
+derived from the platform, OS build/edition, join state and effective LAPS policy. The API
+rejects an unsupported action with the reason instead of queueing a command that the device
+can never run.
 
 Every delivered command (policy, inventory and imperative) is recorded in the device command
 history with its `locURI`, status, and result. A rejected policy command records the exact
-OMA-URI and SyncML status on the device.
+OMA-URI and SyncML status on the device. Friendly labels are shown for the Windows actions
+above; the raw request type remains in the API.
+
+### Fresh Start
+
+`fresh-start` removes OEM and user-installed applications through the CleanPC CSP. The
+caller must send `freshStartRetainUserData` explicitly:
+
+- `true` uses `CleanPCRetainingUserData`; user files stay, applications are removed.
+- `false` uses `CleanPCWithoutRetainingUserData`; the device returns to OOBE and must be
+  enrolled again.
+
+Both modes are destructive and require a fresh step-up plus the `device.fresh-start`
+approval when an approval policy covers that action. CleanPC is only available on Windows
+Enterprise and Education (not Pro or Home), on Windows 10 1703 (build 15063) or later.
+The dashboard shows the retention choice before queueing and warns about re-enrolment for
+the non-retaining mode.
+
+### Diagnostic collection
+
+`collect-diagnostics` queues the DiagnosticArchive CSP with a Collection XML containing only
+Microsoft's allow-listed directives: HKLM policies/enrolment registry keys, Application,
+System and the DeviceManagement-Enterprise-Diagnostics event channel,
+`MdmDiagnosticsTool.exe`, and ETL/log files under `%ProgramData%`. It never enables
+arbitrary commands or user document paths.
+
+The CSP uploads one ZIP to a signed, device-scoped URL on this deployment
+(`PUT /api/v1/windows-diagnostics/upload`; POST is also accepted for tests and proxies).
+The server verifies the token, the ZIP signature,
+the 64 MB cap and the archive's pending state, then stores the bytes in R2 under
+`diagnostics/<tenant>/<device>/<archive>.zip`. Archives expire 24 hours after the request;
+the download link is a short-lived (15 minute) tenant-scoped token and the maintenance sweep
+deletes expired rows and objects. The device page lists pending/uploaded/failed archives and
+the command history records the CSP result. DiagnosticArchive is available on Windows 10
+1903 (build 18362) and later.
+
+### Windows LAPS
+
+A LAPS policy is a structured configuration kind:
+
+```json
+{
+  "mttx.windows.laps": {
+    "backupDirectory": "entra-id",
+    "accountName": "MattraxAdmin",
+    "passwordAgeDays": 30,
+    "passwordLength": 20,
+    "passwordComplexity": 4,
+    "postAuthenticationActions": 3,
+    "postAuthenticationResetDelayHours": 24
+  }
+}
+```
+
+It compiles to the documented `./Device/Vendor/MSFT/LAPS/Policies/...` nodes. A raw
+`mttx.windows.custom.*` configuration targeting the same OMA-URIs is also recognised for
+compatibility. Supported values and dependencies are the Microsoft LAPS CSP ranges; notably
+an Entra-backed password age must be at least 7 days.
+
+The device must be Windows 11 22H2 (build 22621, with the March 2023 update) or later, or
+Windows Server 2025. The API advertises `rotate-local-admin-password` only when a LAPS
+policy applies.
+
+Password retrieval is available only when `backupDirectory` is `entra-id`, the device is
+Entra joined and its inventory has reported `AADDeviceID`. Mattrax reads the password from
+Microsoft Entra ID with `GET /v1.0/directory/deviceLocalCredentials/{deviceId}` using the
+tenant's Graph app, decodes Graph's Base64 UTF-16LE password, seals it with `AUTH_SECRET`
+and records the Entra backup and refresh times. It does not integrate with Active Directory;
+an AD-only policy is rejected with that explanation. An expired password (older than the
+policy age) is still returned so the help desk can try it, but the response and UI mark it
+expired.
+
+`GET /v1/tenants/:tenantId/devices/:id/laps-password?reason=...` requires
+`devices.recovery_key`, a fresh step-up and a reason. Every reveal is audited as
+`device.windows_laps_password_viewed`; the password never appears in device list, search,
+CSV, webhook or MCP payloads. Rotation queues `ResetPassword` and reads
+`ResetPasswordStatus`; the next Entra backup is reconciled when the password is next read.
+
+### BitLocker recovery keys and rotation
+
+Mattrax reads BitLocker recovery keys from **Microsoft Entra ID**, not from an on-device
+agent. This is the only supported escrow path; Windows OMA-DM has no generic recovery-key
+upload node, and the Windows build of `mattraxd` does not collect keys.
+
+Prerequisites:
+
+- The device reports a Microsoft Entra device id (`AADDeviceID`) in inventory, so it is
+  Entra joined or hybrid joined. A plain AD domain join is not supported.
+- BitLocker backs recovery information up to Microsoft Entra ID.
+- The Graph application has `BitlockerKey.Read.All` application permission with admin
+  consent. Listing key metadata uses the least-privileged read; fetching the actual key for
+  a reveal uses `GET /informationProtection/bitlocker/recoveryKeys/{id}?$select=key`, which
+  Microsoft Entra audits.
+
+`GET /devices/:id/windows-security` refreshes the metadata-only list (cached for 10
+minutes; a reveal that misses the cache forces a fresh list), retires keys Entra no longer
+lists, and returns key id, volume type, capture time,
+age, stale health (180 days), sync time/error and rotation state. It never returns key
+material. The first list has no key material; an authorised reveal fetches the key from
+Graph, seals it with `AUTH_SECRET` and caches it for later reveals.
+
+A reveal requires `devices.recovery_key`, a fresh step-up and a reason via
+`GET /devices/:id/bitlocker-keys/:keyId/reveal?reason=...`; every reveal is audited as
+`device.bitlocker_key_viewed` and Microsoft Entra separately audits the `$select=key` read.
+Rotation uses `RotateRecoveryPasswords` with an opaque request id. The status Get is queued
+on the check-in after the Exec is acknowledged and polled on later check-ins until
+`Status/RotateRecoveryPasswordsStatus` is terminal (0 pass, 1 pending, 2 not started).
+Mattrax does not separately read `Status/RotateRecoveryPasswordsRequestID`: its action
+guard rejects a second rotation while the Exec or status command is active, so at most one
+Mattrax rotation is in flight. A rotation started outside Mattrax is not reconciled.
+Only the documented `DM_S_ACCEPTED_FOR_PROCESSING` value is treated as an acknowledgement;
+`202 Accepted` is not a SyncML status and remains a failure. A terminal status closes the
+parent Exec so `rotationInProgress` clears; an Exec that never terminates expires through
+its 24-hour budget. Microsoft's rotation CSP requires the
+recovery information backup to be required (for example "Do not enable BitLocker until
+recovery information is stored to AD DS" for an AD-backed policy); the Entra path requires
+an Entra device id and the device to be encrypted on Windows 10 1909 or later.
+
+The Graph list/reveal, sealed cache, retirement and rotation-status paths are fixture-tested
+server-side. There is no real Windows hardware or Entra tenant in this repository's test
+environment, so end-to-end recovery-key retrieval and rotation are not hardware-validated.
 
 ## Device identity
 
@@ -286,14 +420,30 @@ the API for support rather than being shown as an unexplained integer.
 
 ## Limitations
 
-- No BitLocker key escrow, Defender or OS-build compliance checks. Windows activation and
-  licensing are collected by `mattraxd` on Windows (see above), not by OMA-DM: the
+- BitLocker recovery keys come from Microsoft Entra ID only. Plain AD-domain-joined devices,
+  devices that do not back up recovery information to Entra, and tenants without
+  `BitlockerKey.Read.All` consent have no recoverable keys in Mattrax. The Graph list, reveal
+  cache and rotation-status paths are fixture-tested, not validated on real hardware or a
+  real Entra tenant. There is no Defender or OS-build compliance engine. Windows activation
+  and licensing are collected by `mattraxd` on Windows (see above), not by OMA-DM: the
   `WindowsLicensing` CSP reports edition-upgrade and subscription state, not base activation.
+- Windows LAPS retrieval is Entra-only. An Active Directory-backed policy can still rotate
+  the password, but Mattrax cannot read it from AD. LAPS is supported only on Windows 11
+  22H2+/Server 2025; Windows 10's backport is deliberately rejected.
+- Fresh Start is Enterprise/Education only. It removes applications and OEM provisioning;
+  it is not a replacement for an Intune compliance policy.
+- Diagnostic archives are capped at 64 MB and expire after 24 hours. The CSP can still reject
+  an individual directive; the command history shows that rejection. Large log sets should be
+  collected in smaller scopes.
 - Desktop Windows does not expose total disk size through OMA-DM (`TotalStorage` is
   documented as mobile-only), so storage health may be unavailable for some laptops.
 - Inventory depends on the device answering `Get`; no push channel wakes it early.
 - No remote lock, shutdown or per-device policy push.
 - Only MSI application installs are supported; `.exe`/`.intunewin` and Store apps are not.
+- Scripts are not delivered: the Windows build of `mattraxd` does not implement
+  `GET /api/v1/script-agent/scripts` yet, so script runs and script-collected device
+  attributes are unsupported on Windows. The API reports that instead of queueing a run
+  nothing would collect; see [Scripts](/manage/scripts#collect-device-attributes).
 - Device-initiated unenroll is recognised from the OMA-DM `1226` Generic Alert. A device
   that is wiped or removed from management without sending it stays `enrolled` until an
   operator deletes or unenrolls it.
@@ -317,6 +467,12 @@ the API for support rather than being shown as an unexplained integer.
 | `GET`       | `/api/v1/tenants/:tenantId/devices/:id/commands` |
 | `GET`       | `/api/v1/tenants/:tenantId/devices/:id/health`   |
 | `POST`      | `/api/v1/windows-agent/activation`               |
+| `PUT/POST`  | `/api/v1/windows-diagnostics/upload`             |
+| `GET`       | `/api/v1/tenants/:tenantId/devices/:id/windows-security` |
+| `GET`       | `/api/v1/tenants/:tenantId/devices/:id/laps-password` |
+| `GET`       | `/api/v1/tenants/:tenantId/devices/:id/bitlocker-keys/:keyId/reveal` |
+| `GET`       | `/api/v1/tenants/:tenantId/devices/:id/diagnostics` |
+| `GET`       | `/api/v1/tenants/:tenantId/devices/:id/diagnostics/:archiveId/download` |
 | `GET/POST`  | `/api/v1/tenants/:tenantId/autopilot`            |
 | `POST`      | `/api/v1/tenants/:tenantId/autopilot/import`     |
 | `POST`      | `/api/v1/tenants/:tenantId/autopilot/sync`       |

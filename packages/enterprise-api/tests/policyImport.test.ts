@@ -6,7 +6,7 @@ import {
   EnterprisePermissionDenied,
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -49,7 +49,6 @@ const makeContext = () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake only implements the auth methods these tests exercise.
@@ -366,9 +365,8 @@ describe("mobileconfig preview scope", () => {
       ),
     );
 
-    // SAFETY: the preview endpoint is account-scoped and takes no request.
     const preview = await runEffect(
-      (context.service as any).previewMobileconfig({ mobileconfig: userProfile }),
+      context.service.previewMobileconfig(request(headers), { mobileconfig: userProfile }),
     );
 
     expect(preview.scope).toBe("user");

@@ -10,8 +10,23 @@
 
 import { and, eq } from "drizzle-orm";
 import { Effect } from "effect";
+import {
+  DEVICE_COMMAND_RECONCILED_RESULT_STATUS,
+  planApplicationUninstallReconciliation,
+} from "@mattrax/enterprise-domain";
+import type {
+  ApplicationUninstallTransition,
+  InstalledApplicationSnapshot,
+} from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "./db.ts";
-import { device, deviceApplication } from "./schema.ts";
+import {
+  applicationInstall,
+  applicationUninstall,
+  device,
+  deviceApplication,
+  deviceCommand,
+} from "./schema.ts";
+import { reconcileRestrictedSoftwareForDevice } from "./restrictedSoftware.ts";
 
 /** Largest inventory accepted from one device; larger reports are truncated. */
 export const MAX_DEVICE_APPLICATIONS = 2_000;
@@ -74,6 +89,152 @@ const rowValues = (application: DeviceApplicationRecord) => ({
 });
 
 /**
+ * Record that Mattrax delivered a catalogue app to a device.
+ *
+ * Uninstall must only remove apps the tenant installed, and command history is
+ * both pruned and windowed, so the provenance is persisted separately. The
+ * row is replaced when another installer or version is delivered.
+ */
+export const recordApplicationInstall = (
+  db: EnterpriseDb,
+  input: {
+    readonly organizationId: string;
+    readonly deviceId: string;
+    readonly applicationId: string;
+    readonly installerId?: string | null;
+    readonly platform: "apple" | "win" | "android";
+    readonly bundleId: string;
+    readonly at: Date;
+  },
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const [existing] = yield* db
+      .select({ id: applicationInstall.id })
+      .from(applicationInstall)
+      .where(
+        and(
+          eq(applicationInstall.deviceId, input.deviceId),
+          eq(applicationInstall.applicationId, input.applicationId),
+        ),
+      )
+      .limit(1);
+
+    const values = {
+      organizationId: input.organizationId,
+      deviceId: input.deviceId,
+      applicationId: input.applicationId,
+      installerId: input.installerId ?? null,
+      platform: input.platform,
+      bundleId: input.bundleId,
+      updatedAt: input.at,
+    };
+
+    if (existing)
+      yield* db
+        .update(applicationInstall)
+        .set(values)
+        .where(eq(applicationInstall.id, existing.id));
+    else
+      yield* db
+        .insert(applicationInstall)
+        .values({ id: crypto.randomUUID(), createdAt: input.at, ...values });
+  });
+
+/**
+ * Resolve outstanding catalogue-app uninstalls against a fresh inventory.
+ *
+ * `succeeded` rows release the app's VPP licence when the caller supplies one
+ * (see the Apple backend), because the licence must only return once the app
+ * is provably gone. A row still present after its deadline becomes `failed`
+ * and records the version the device kept. The queued command, when there is
+ * one, is closed with the same outcome so command history and the device
+ * timeline agree with the uninstall state.
+ */
+export const reconcileApplicationUninstalls = (
+  db: EnterpriseDb,
+  input: {
+    readonly deviceId: string;
+    readonly organizationId: string;
+    readonly applications: ReadonlyArray<InstalledApplicationSnapshot>;
+    readonly at: Date;
+  },
+): Effect.Effect<ReadonlyArray<ApplicationUninstallTransition>, unknown> =>
+  Effect.gen(function* () {
+    const rows = yield* db
+      .select()
+      .from(applicationUninstall)
+      .where(
+        and(
+          eq(applicationUninstall.deviceId, input.deviceId),
+          eq(applicationUninstall.organizationId, input.organizationId),
+          eq(applicationUninstall.status, "queued"),
+        ),
+      );
+
+    if (rows.length === 0) return [];
+
+    const transitions = planApplicationUninstallReconciliation(rows, input.applications, input.at);
+    const claimed: ApplicationUninstallTransition[] = [];
+
+    for (const transition of transitions) {
+      // Two concurrent check-ins can read the same queued row. Only the update
+      // that still sees it queued wins, so a VPP seat cannot be released twice.
+      const result = yield* db
+        .update(applicationUninstall)
+        .set({
+          status: transition.status,
+          observedVersion: transition.observedVersion ?? null,
+          resultDetail: transition.resultDetail,
+          updatedAt: input.at,
+        })
+        .where(
+          and(
+            eq(applicationUninstall.id, transition.id),
+            eq(applicationUninstall.deviceId, input.deviceId),
+            eq(applicationUninstall.status, "queued"),
+          ),
+        );
+
+      if (result.affectedRows === 0) continue;
+
+      claimed.push(transition);
+
+      // Provenance describes a current install. Once removal is confirmed,
+      // keeping it would let a later user-installed copy be claimed as
+      // Mattrax's and removed.
+      if (transition.status === "succeeded")
+        yield* db
+          .delete(applicationInstall)
+          .where(
+            and(
+              eq(applicationInstall.deviceId, input.deviceId),
+              eq(applicationInstall.applicationId, transition.applicationId),
+            ),
+          );
+
+      if (!transition.commandId) continue;
+
+      yield* db
+        .update(deviceCommand)
+        .set({
+          status: transition.status,
+          dedupeKey: null,
+          resultStatus: DEVICE_COMMAND_RECONCILED_RESULT_STATUS,
+          resultDetail: transition.resultDetail,
+          updatedAt: input.at,
+        })
+        .where(
+          and(
+            eq(deviceCommand.id, transition.commandId),
+            eq(deviceCommand.deviceId, input.deviceId),
+          ),
+        );
+    }
+
+    return claimed;
+  });
+
+/**
  * Replace a device's installed-application inventory.
  *
  * De-duplicates by `bundleId` (last report wins), drops entries without an
@@ -92,66 +253,25 @@ export const replaceDeviceApplications = (
     readonly reportedAt: Date;
   },
 ): Effect.Effect<number, unknown> =>
-  db.transaction((tx) =>
-    Effect.gen(function* () {
-      const normalized = new Map<string, DeviceApplicationRecord>();
+  db
+    .transaction((tx) =>
+      Effect.gen(function* () {
+        const normalized = new Map<string, DeviceApplicationRecord>();
 
-      for (const application of input.applications) {
-        const bundleId = text(application.bundleId);
+        for (const application of input.applications) {
+          const bundleId = text(application.bundleId);
 
-        if (!bundleId) continue;
-        normalized.set(bundleId, { ...application, bundleId });
-      }
+          if (!bundleId) continue;
+          normalized.set(bundleId, { ...application, bundleId });
+        }
 
-      const applications = [...normalized.values()]
-        .sort((left, right) => left.bundleId.localeCompare(right.bundleId))
-        .slice(0, MAX_DEVICE_APPLICATIONS);
+        const applications = [...normalized.values()]
+          .sort((left, right) => left.bundleId.localeCompare(right.bundleId))
+          .slice(0, MAX_DEVICE_APPLICATIONS);
 
-      const existing = yield* tx
-        .select()
-        .from(deviceApplication)
-        .where(
-          and(
-            eq(deviceApplication.deviceId, input.deviceId),
-            eq(deviceApplication.organizationId, input.organizationId),
-          ),
-        );
-
-      const existingById = new Map(existing.map((row) => [row.bundleId, row]));
-
-      const unchanged =
-        existing.length === applications.length &&
-        applications.every((application) => {
-          const row = existingById.get(application.bundleId);
-
-          if (!row) return false;
-          const values = rowValues(application);
-
-          return (
-            row.name === values.name &&
-            row.version === values.version &&
-            row.shortVersion === values.shortVersion &&
-            row.publisher === values.publisher &&
-            row.bundleSize === values.bundleSize &&
-            row.dynamicSize === values.dynamicSize &&
-            row.hasUpdateAvailable === values.hasUpdateAvailable &&
-            row.isManaged === values.isManaged
-          );
-        });
-
-      if (unchanged)
-        yield* tx
-          .update(deviceApplication)
-          .set({ lastReportedAt: input.reportedAt })
-          .where(
-            and(
-              eq(deviceApplication.deviceId, input.deviceId),
-              eq(deviceApplication.organizationId, input.organizationId),
-            ),
-          );
-      else {
-        yield* tx
-          .delete(deviceApplication)
+        const existing = yield* tx
+          .select()
+          .from(deviceApplication)
           .where(
             and(
               eq(deviceApplication.deviceId, input.deviceId),
@@ -159,26 +279,98 @@ export const replaceDeviceApplications = (
             ),
           );
 
-        for (const chunk of chunks(applications, WRITE_CHUNK_SIZE))
-          yield* tx.insert(deviceApplication).values(
-            chunk.map((application) => ({
+        const existingById = new Map(existing.map((row) => [row.bundleId, row]));
+
+        const unchanged =
+          existing.length === applications.length &&
+          applications.every((application) => {
+            const row = existingById.get(application.bundleId);
+
+            if (!row) return false;
+            const values = rowValues(application);
+
+            return (
+              row.name === values.name &&
+              row.version === values.version &&
+              row.shortVersion === values.shortVersion &&
+              row.publisher === values.publisher &&
+              row.bundleSize === values.bundleSize &&
+              row.dynamicSize === values.dynamicSize &&
+              row.hasUpdateAvailable === values.hasUpdateAvailable &&
+              row.isManaged === values.isManaged
+            );
+          });
+
+        if (unchanged)
+          yield* tx
+            .update(deviceApplication)
+            .set({ lastReportedAt: input.reportedAt })
+            .where(
+              and(
+                eq(deviceApplication.deviceId, input.deviceId),
+                eq(deviceApplication.organizationId, input.organizationId),
+              ),
+            );
+        else {
+          yield* tx
+            .delete(deviceApplication)
+            .where(
+              and(
+                eq(deviceApplication.deviceId, input.deviceId),
+                eq(deviceApplication.organizationId, input.organizationId),
+              ),
+            );
+
+          for (const chunk of chunks(applications, WRITE_CHUNK_SIZE))
+            yield* tx.insert(deviceApplication).values(
+              chunk.map((application) => ({
+                deviceId: input.deviceId,
+                organizationId: input.organizationId,
+                bundleId: text(application.bundleId)!,
+                ...rowValues(application),
+                lastReportedAt: input.reportedAt,
+              })),
+            );
+        }
+
+        yield* tx
+          .update(device)
+          .set({ applicationsUpdatedAt: input.reportedAt })
+          .where(
+            and(eq(device.id, input.deviceId), eq(device.organizationId, input.organizationId)),
+          );
+
+        return applications;
+      }),
+    )
+    .pipe(
+      Effect.flatMap((applications) =>
+        reconcileApplicationUninstalls(db, {
+          deviceId: input.deviceId,
+          organizationId: input.organizationId,
+          applications,
+          at: input.reportedAt,
+        }).pipe(
+          // A fresh inventory is the moment a banned app becomes known. Every
+          // platform using this helper gets detection without reading the rows
+          // it just wrote back from the database.
+          Effect.tap(() =>
+            reconcileRestrictedSoftwareForDevice(db, {
               deviceId: input.deviceId,
               organizationId: input.organizationId,
-              bundleId: text(application.bundleId)!,
-              ...rowValues(application),
-              lastReportedAt: input.reportedAt,
-            })),
-          );
-      }
-
-      yield* tx
-        .update(device)
-        .set({ applicationsUpdatedAt: input.reportedAt })
-        .where(and(eq(device.id, input.deviceId), eq(device.organizationId, input.organizationId)));
-
-      return applications.length;
-    }),
-  );
+              at: input.reportedAt,
+              // Match the evidence persisted above, including text clipping.
+              applications: applications.map((application) => ({
+                bundleId: application.bundleId,
+                name: text(application.name),
+                version: text(application.version),
+              })),
+            }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+          ),
+          Effect.as(applications.length),
+        ),
+      ),
+    );
 
 /**
  * Remove every inventoried application for a device (for example when it

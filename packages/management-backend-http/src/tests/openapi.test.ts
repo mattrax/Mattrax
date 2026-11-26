@@ -22,6 +22,7 @@ const expectedOperationIds = [
   "ManagementWebhook.getAppleDeclarationItems",
   "ManagementWebhook.getAppleDeclaration",
   "ManagementWebhook.getAppleAsset",
+  "ManagementWebhook.getAppleManifest",
   "ManagementWebhook.getAppleProfile",
   "ManagementWebhook.windowsDiscovery",
   "ManagementWebhook.getWindowsEnrollmentPolicy",
@@ -31,10 +32,10 @@ const expectedOperationIds = [
 ].sort();
 
 describe("management webhook OpenAPI", () => {
-  it("documents all 14 paths, each under /webhook/", () => {
+  it("documents all 15 paths, each under /webhook/", () => {
     const paths = Object.keys(document.paths);
 
-    expect(paths).toHaveLength(14);
+    expect(paths).toHaveLength(15);
 
     for (const path of paths) {
       expect(path.startsWith("/webhook/")).toBe(true);
@@ -71,7 +72,7 @@ describe("management webhook OpenAPI", () => {
   });
 
   it("requires both headers on every operation", () => {
-    expect(operations).toHaveLength(14);
+    expect(operations).toHaveLength(15);
 
     for (const operation of operations) {
       expect(operation.security).toHaveLength(1);
@@ -99,5 +100,22 @@ describe("management webhook OpenAPI", () => {
 
     expect(operation).toBeDefined();
     expect(Object.keys(operation!.responses).sort()).toEqual(["200", "204", "500"]);
+  });
+
+  it("documents optional Windows enrollment audit context", () => {
+    const operation = operations.find(
+      (candidate) => candidate.operationId === "ManagementWebhook.getWindowsEnrollmentPolicy",
+    );
+    const schema = operation?.requestBody?.content?.["application/json"]?.schema;
+
+    expect(schema).toMatchObject({
+      properties: {
+        authToken: { type: "string" },
+        tenantToken: { anyOf: [{ type: "string" }, { type: "null" }] },
+        clientIp: { anyOf: [{ type: "string" }, { type: "null" }] },
+        userAgent: { anyOf: [{ type: "string" }, { type: "null" }] },
+      },
+      required: ["authToken"],
+    });
   });
 });

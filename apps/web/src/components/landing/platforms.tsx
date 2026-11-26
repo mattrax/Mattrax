@@ -22,7 +22,7 @@ const platforms = [
   },
 ];
 
-export function Platforms() {
+export default function Platforms() {
   return (
     <section id="platforms" class="lx-section lx-platforms" aria-labelledby="platforms-title">
       <div class="lx-shell">

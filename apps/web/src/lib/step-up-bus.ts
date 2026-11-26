@@ -19,6 +19,7 @@ export const STEP_UP_ACTIONS = [
   "sessions-revoke-all",
   "recovery-approve",
   "recovery-key-reveal",
+  "device-handover",
   "backup-download",
   "backup-pin",
   "backup-delete",
@@ -29,6 +30,7 @@ export const STEP_UP_ACTIONS = [
   "android-disconnect",
   "script-change",
   "script-run",
+  "restricted-software-change",
   "billing-portal",
   "sso-policy",
   "tenant-mfa-policy",
@@ -172,6 +174,8 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "approve this account recovery";
     case "recovery-key-reveal":
       return "reveal this recovery key";
+    case "device-handover":
+      return "export this device handover archive";
     case "backup-download":
       return "download this tenant backup";
     case "backup-pin":
@@ -192,6 +196,8 @@ export const stepUpActionLabel = (action: StepUpAction): string => {
       return "change this script";
     case "script-run":
       return "run this script on your devices";
+    case "restricted-software-change":
+      return "change this restricted software rule";
     case "billing-portal":
       return "open the billing portal";
     case "sso-policy":

@@ -16,9 +16,14 @@ export * from "./Errors.ts";
 
 export * from "./rbac.ts";
 
+export * from "./ScopeTag.ts";
+
 export * from "./branding.ts";
 
 export * from "./webhooks.ts";
+
+export * from "./deviceActions.ts";
+export * from "./windowsSecurity.ts";
 
 export * from "./deviceHealth.ts";
 
@@ -31,6 +36,8 @@ export * from "./softwareUpdates.ts";
 export * from "./osPolicy.ts";
 
 export * from "./scripts.ts";
+
+export * from "./restrictedSoftware.ts";
 
 export * from "./fleetMigration.ts";
 
@@ -49,6 +56,10 @@ export * from "./storage.ts";
 export * from "./Cutover.ts";
 
 export * from "./stepUp.ts";
+
+export * from "./certificates.ts";
+
+export * from "./approvals.ts";
 
 export * from "./ssr.ts";
 

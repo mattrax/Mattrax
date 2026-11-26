@@ -39,6 +39,10 @@ const platformLabel = (platform: OsPolicyPlatform) => {
   switch (platform) {
     case "macos":
       return "macOS";
+    case "ios":
+      return "iOS";
+    case "ipados":
+      return "iPadOS";
     case "windows":
       return "Windows";
     case "android":
@@ -52,6 +56,9 @@ const versionExample = (platform: OsPolicyPlatform) => {
       return "10.0.22631";
     case "android":
       return "14";
+    case "ios":
+    case "ipados":
+      return "18.1";
     default:
       return "14.6";
   }
@@ -83,8 +90,10 @@ const enforcementLabel = (value: Draft["enforcement"]) => {
  * Tenant-wide OS policy.
  *
  * The page is deliberately explicit about what `enforce` does on each
- * platform: only macOS has a minimum-version command, and Windows/Android only
- * have update rings. Claiming otherwise would be a lie the fleet view repeats.
+ * platform: Apple platforms deliver the DDM software-update enforcement
+ * declaration (with an explicit ScheduleOSUpdate fallback), while
+ * Windows/Android only have update rings. Claiming otherwise would be a lie
+ * the fleet view repeats.
  */
 export default function OsUpdateSettingsPage() {
   const params = useParams();
@@ -172,7 +181,7 @@ export default function OsUpdateSettingsPage() {
                   </Badge>
                   <Show when={platform.updatedAt}>
                     {(updatedAt) => (
-                      <span class="text-[11px] text-muted-foreground">
+                      <span class="text-xs text-muted-foreground">
                         Saved {new Date(updatedAt()).toLocaleDateString()}
                       </span>
                     )}
@@ -240,23 +249,23 @@ export default function OsUpdateSettingsPage() {
                 </div>
               </div>
 
-              <div class="border-t border-border bg-surface-muted/40 px-4 py-3">
-                <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+              <div class="border-t border-border bg-surface px-4 py-3">
+                <p class="text-xs leading-relaxed text-muted-foreground">
                   <span class="font-medium text-foreground">What enforce does here. </span>
                   {platform.capability.description}
                 </p>
-                <p class="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                   <span class="font-medium text-foreground">Limitation. </span>
                   {platform.capability.limitation}
                 </p>
                 <Show when={draft().enforcement === "enforce" && !canEnforceMinimum()}>
-                  <p class="mt-2 text-[11.5px] leading-relaxed text-warning">
+                  <p class="mt-2 text-xs leading-relaxed text-warning">
                     This platform has no minimum-version enforcement. Enforcing still applies its
                     update policy, and the minimum remains a compliance check.
                   </p>
                 </Show>
                 <Show when={enforcingWithoutMinimum()}>
-                  <p class="mt-2 text-[11.5px] leading-relaxed text-warning">
+                  <p class="mt-2 text-xs leading-relaxed text-warning">
                     Enter a minimum version before switching this platform on.
                   </p>
                 </Show>

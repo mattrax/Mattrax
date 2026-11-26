@@ -46,18 +46,18 @@ describe("cert", () => {
   describe("extractTopicFromCertPem", () => {
     it("extracts UID topic from a valid cert", async () => {
       const pem = await generateTestCertWithTopic("com.apple.mgmt.External.test", true);
-      const topic = extractTopicFromCertPem(pem);
+      const topic = await extractTopicFromCertPem(pem);
       expect(topic).toBe("com.apple.mgmt.External.test");
     });
 
     it("falls back to CN when UID is absent", async () => {
       const pem = await generateTestCertWithTopic("com.apple.mgmt.External.cn", false);
-      const topic = extractTopicFromCertPem(pem);
+      const topic = await extractTopicFromCertPem(pem);
       expect(topic).toBe("com.apple.mgmt.External.cn");
     });
 
-    it("returns null for invalid PEM", () => {
-      const topic = extractTopicFromCertPem("not-a-pem");
+    it("returns null for invalid PEM", async () => {
+      const topic = await extractTopicFromCertPem("not-a-pem");
       expect(topic).toBeNull();
     });
 
@@ -82,7 +82,7 @@ describe("cert", () => {
       await cert.sign(keyPair.privateKey, "SHA-256");
 
       const pem = pemEncode("CERTIFICATE", cert.toSchema().toBER(false));
-      const topic = extractTopicFromCertPem(pem);
+      const topic = await extractTopicFromCertPem(pem);
       expect(topic).toBeNull();
     });
   });

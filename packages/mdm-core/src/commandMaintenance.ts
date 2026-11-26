@@ -1,4 +1,4 @@
-import { and, inArray, lt } from "drizzle-orm";
+import { and, eq, inArray, lt } from "drizzle-orm";
 import { schema as s } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { Effect } from "effect";
@@ -28,6 +28,8 @@ const SWEEP_LIMIT = 5_000;
 export type CommandSweepResult = {
   readonly expired: number;
   readonly pruned: number;
+  /** Uninstall rows whose inventory deadline passed without a report. */
+  readonly failedUninstalls: number;
 };
 
 /**
@@ -63,7 +65,42 @@ export const sweepDeviceCommands = (
         })
         .where(inArray(s.deviceCommand.id, expiredIds));
 
-    if (retentionDays <= 0) return { expired: expiredIds.length, pruned: 0 };
+    // An uninstall that the device never answered is not queued forever.
+    // Only a reported inventory can confirm removal (and release a VPP seat),
+    // so a missing report is a failure rather than an assumed success.
+    const overdueUninstalls = yield* db
+      .select({ id: s.applicationUninstall.id })
+      .from(s.applicationUninstall)
+      .where(
+        and(eq(s.applicationUninstall.status, "queued"), lt(s.applicationUninstall.deadline, now)),
+      )
+      .limit(SWEEP_LIMIT);
+
+    if (overdueUninstalls.length > 0)
+      yield* db
+        .update(s.applicationUninstall)
+        .set({
+          status: "failed",
+          resultDetail:
+            "The uninstall deadline passed before the device reported a fresh application inventory.",
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(s.applicationUninstall.status, "queued"),
+            inArray(
+              s.applicationUninstall.id,
+              overdueUninstalls.map((row) => row.id),
+            ),
+          ),
+        );
+
+    if (retentionDays <= 0)
+      return {
+        expired: expiredIds.length,
+        pruned: 0,
+        failedUninstalls: overdueUninstalls.length,
+      };
 
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
 
@@ -87,5 +124,9 @@ export const sweepDeviceCommands = (
         ),
       );
 
-    return { expired: expiredIds.length, pruned: prunable.length };
+    return {
+      expired: expiredIds.length,
+      pruned: prunable.length,
+      failedUninstalls: overdueUninstalls.length,
+    };
   });

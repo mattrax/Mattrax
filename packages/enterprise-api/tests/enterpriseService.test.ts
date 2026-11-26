@@ -1,5 +1,7 @@
 import { Effect, Schema } from "effect";
+import * as SqlError from "effect/sql/SqlError";
 import { describe, expect, it } from "vitest";
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import {
@@ -15,6 +17,7 @@ import {
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseForbidden,
+  EnterpriseInternal,
   EnterpriseLastTenantAccount,
   EnterpriseNotFound,
   EnterpriseNotConfigured,
@@ -23,16 +26,23 @@ import {
   EnterpriseUnauthorized,
   EnterpriseUpstreamError,
   StepUpRequired,
+  dashboardQueryForWidget,
+  defaultOverviewWidgets,
   scriptAgentToken,
 } from "@mattrax/enterprise-domain";
 import type { DeviceSearchQuery } from "@mattrax/enterprise-domain";
-import { ScepRepositoryLive, makeWindowsBackend } from "@mattrax/mdm-apple";
+import { ScepRepositoryLive } from "@mattrax/mdm-core";
+import { makeWindowsBackend } from "@mattrax/mdm-windows";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
 import { certToPem, createCaCertificate } from "@mattrax/scep";
-import { appleEnrollmentProfileResponse, createEnterpriseService } from "@mattrax/enterprise-api";
+import {
+  appleEnrollmentProfileResponse,
+  createEnterpriseService,
+  mcpActivityResponseStatus,
+} from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import type { EmailTransport, OutboundEmailMessage } from "@mattrax/email";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, requireField, runEffect, schema } from "./helpers.js";
 
 if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
@@ -137,8 +147,8 @@ const makeContext = async (
     pushes?: Array<any>;
     authSecret?: string | null;
     email?: EmailTransport;
-    stripeClient?: any;
     apiToken?: any;
+    oauth?: any;
     db?: any;
     analytics?: any;
     auth?: { requireStepUp?: (request: any, action: any) => Effect.Effect<any, any> };
@@ -166,7 +176,7 @@ const makeContext = async (
       const headers = input instanceof Request ? Object.fromEntries(input.headers) : input.headers;
 
       return headers.cookie
-        ? Effect.succeed({ user, apiToken: overrides.apiToken })
+        ? Effect.succeed({ user, apiToken: overrides.apiToken, oauth: overrides.oauth })
         : Effect.fail(new EnterpriseUnauthorized({ message: "Unauthenticated" }));
     },
     listApiTokens: () => Effect.succeed({ tokens: [] }),
@@ -182,8 +192,6 @@ const makeContext = async (
     db,
     schema,
     origin,
-    stripeClient:
-      overrides.stripeClient === null ? undefined : (overrides.stripeClient ?? makeStripeClient()),
     // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake only implements the auth methods these tests exercise.
@@ -196,8 +204,11 @@ const makeContext = async (
     enrollmentProfileTtlSeconds: overrides.enrollmentProfileTtlSeconds,
   });
 
-  return { db, service, auth, headers: { cookie: "mattrax_session=test" } };
+  return { db, service, auth, user, headers: { cookie: "mattrax_session=test" } };
 };
+
+const gatewayRequest = (headers: Record<string, string>, path: string, method = "GET") =>
+  ({ headers, url: `${origin}${path}`, method }) as any;
 
 describe("enterprise service tenant flow", () => {
   it("requires authentication to create tenants", async () => {
@@ -248,6 +259,28 @@ describe("enterprise service tenant flow", () => {
         role: "owner",
       }),
     );
+  });
+
+  it("loads the built-in overview for a fresh tenant", async () => {
+    const { service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    await expect(runEffect(service.listDashboards(request(headers), tenant.id))).resolves.toEqual({
+      dashboards: [],
+    });
+
+    const queries = defaultOverviewWidgets()
+      .filter((widget) => widget.type !== "markdown")
+      .map(dashboardQueryForWidget);
+    const batch = await runEffect(
+      service.queryDashboardBatch(request(headers), tenant.id, { queries }),
+    );
+
+    expect(batch.results).toHaveLength(queries.length);
+    expect(batch.results).toEqual(queries.map(() => ({ total: 0, rows: [], buckets: [] })));
   });
 
   it("creates shared dashboards and applies partial widget updates", async () => {
@@ -408,7 +441,9 @@ describe("enterprise service tenant flow", () => {
       { dataset: "devices" as const, query: { all: [] }, countOnly: true },
       {
         dataset: "devices" as const,
-        query: { all: [{ field: "health" as const, op: "eq" as const, value: "attention" }] },
+        query: {
+          all: [{ field: "health" as const, op: "eq" as const, value: "attention" as const }],
+        },
         countOnly: true,
       },
       { dataset: "devices" as const, query: { all: [] }, groupBy: "platform" },
@@ -919,7 +954,7 @@ describe("enterprise service tenant flow", () => {
 
     const reader = await makeContext({
       db: base.db,
-      apiToken: { tenantId: null, scopes: ["devices.read"] },
+      apiToken: { id: "token-1", name: "CLI", tenantId: null, scopes: ["devices.read"] },
     });
 
     const context = await runEffect(reader.service.mcpContext(request(reader.headers)));
@@ -943,8 +978,153 @@ describe("enterprise service tenant flow", () => {
     expect(writeContext.methods).toContain("patchDevice");
     expect(writeContext.methods).not.toContain("createGroup");
     expect(writeContext.methods).not.toContain("createApiToken");
+
+    // Handover exports carry every escrowed secret and the derived zip download
+    // is a token-bearing GET, so the methods are never advertised even when
+    // the account's role holds the permission.
+    const ownerContext = await runEffect(base.service.mcpContext(request(base.headers)));
+
+    expect(ownerContext.permissions).toContain("devices.handover");
+    expect(ownerContext.methods).not.toContain("createDeviceHandover");
+    expect(ownerContext.methods).not.toContain("downloadDeviceHandover");
+    expect(ownerContext.methods).not.toContain("deviceHandoverImpact");
   });
 
+  it("derives MCP audit entries only from authenticated dispatched calls", async () => {
+    const base = await makeContext();
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+    const gatewayHeaders = {
+      cookie: "mattrax_session=test",
+      "x-mattrax-mcp-authorization": "Bearer mcp-token",
+      "x-mattrax-client-address": "203.0.113.9",
+    };
+    const reader = await makeContext({
+      db: base.db,
+      apiToken: { id: "token-1", name: "CLI", tenantId: null, scopes: ["devices.read"] },
+    });
+
+    await runEffect(
+      reader.service.listDevices(
+        gatewayRequest(gatewayHeaders, `/api/v1/tenants/${tenant.id}/devices`),
+        tenant.id,
+      ),
+    );
+
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toMatchObject([
+      {
+        organizationId: tenant.id,
+        actorAccountId: "user-1",
+        targetType: "mcp",
+        metadata: {
+          tool: "listDevices",
+          method: "GET",
+          path: `/api/v1/tenants/${tenant.id}/devices`,
+          status: 200,
+          credential: { type: "api_token", id: expect.any(String) },
+        },
+      },
+    ]);
+
+    // A browser session cannot produce that entry even with the marker.
+    await runEffect(
+      base.service.listDevices(
+        gatewayRequest(gatewayHeaders, `/api/v1/tenants/${tenant.id}/devices`),
+        tenant.id,
+      ),
+    );
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(1);
+
+    // A read-only credential cannot attribute a write it cannot perform.
+    await expect(
+      runEffect(
+        reader.service.patchTenant(
+          gatewayRequest(gatewayHeaders, `/api/v1/tenants/${tenant.id}`, "PATCH"),
+          tenant.id,
+          { name: "Forged" },
+        ),
+      ),
+    ).rejects.toBeInstanceOf(EnterprisePermissionDenied);
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(1);
+  });
+
+  it("derives MCP activity status from the actual service response", () => {
+    expect(mcpActivityResponseStatus({ status: 201, body: { id: "device-1" } })).toBe(201);
+    expect(mcpActivityResponseStatus({ status: 204 })).toBe(204);
+    expect(mcpActivityResponseStatus(undefined)).toBe(204);
+    expect(mcpActivityResponseStatus({ status: "ok" })).toBe(200);
+    expect(mcpActivityResponseStatus({ id: "device-1" })).toBe(200);
+  });
+  it("rejects a direct client-authored activity payload without writing an audit row", async () => {
+    const base = await makeContext();
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+    const reader = await makeContext({
+      db: base.db,
+      apiToken: { id: "token-1", name: "CLI", tenantId: null, scopes: ["devices.read"] },
+    });
+
+    await expect(
+      runEffect(
+        reader.service.recordMcpActivity(
+          gatewayRequest(
+            {
+              cookie: "mattrax_session=test",
+              "x-mattrax-mcp-authorization": "Bearer mcp-token",
+            },
+            `/api/v1/tenants/${tenant.id}/mcp/activity`,
+            "POST",
+          ),
+          tenant.id,
+          {
+            tool: "fabricated-tool",
+            method: "DELETE",
+            path: `/api/v1/tenants/${tenant.id}/devices`,
+            status: 200,
+          },
+        ),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(0);
+  });
+  it("does not attribute a call whose URL names a different tenant", async () => {
+    const base = await makeContext();
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+    const reader = await makeContext({
+      db: base.db,
+      apiToken: { id: "token-1", name: "CLI", tenantId: tenant.id, scopes: ["devices.read"] },
+    });
+
+    await expect(
+      runEffect(
+        reader.service.listDevices(
+          gatewayRequest(
+            {
+              cookie: "mattrax_session=test",
+              "x-mattrax-mcp-authorization": "Bearer mcp-token",
+            },
+            "/api/v1/tenants/other-tenant/devices",
+          ),
+          tenant.id,
+        ),
+      ),
+    ).resolves.toMatchObject({ rows: [] });
+    expect(
+      base.db.store.audit_log.filter((row: any) => row.action === "mcp.tool_called"),
+    ).toHaveLength(0);
+  });
   it("enforces fine-grained API token permissions per method", async () => {
     const base = await makeContext();
 
@@ -1475,9 +1655,263 @@ describe("enterprise service group flow", () => {
       ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
   });
+
+  it("accepts group references and rejects cycles and cross-tenant ids", async () => {
+    const { service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const pilot = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Pilot", kind: "manual" }),
+    );
+
+    const ring = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Ring",
+        kind: "dynamic",
+        rules: { version: 1, all: [{ field: "group", op: "in", value: [pilot.id] }] },
+      }),
+    );
+
+    // A direct self-reference is rejected before it is stored.
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, ring.id, {
+          rules: { version: 1, all: [{ field: "group", op: "in", value: [ring.id] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    // Making the pilot group reference the ring would close a loop.
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, pilot.id, {
+          kind: "dynamic",
+          rules: { version: 1, all: [{ field: "group", op: "in", value: [ring.id] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    // An id outside the tenant (here: nonexistent) is not accepted.
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, ring.id, {
+          rules: { version: 1, all: [{ field: "group", op: "in", value: ["other-tenant"] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("rejects a rule that references a group containing it", async () => {
+    const { service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const parent = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Parent", kind: "manual" }),
+    );
+    const child = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Child", kind: "manual" }),
+    );
+
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, parent.id, {
+        assign: { childGroups: [child.id] },
+      }),
+    );
+
+    await expect(
+      runEffect(
+        service.patchGroup(request(headers), tenant.id, child.id, {
+          kind: "dynamic",
+          rules: { version: 1, all: [{ field: "group", op: "in", value: [parent.id] }] },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("recomputes a parent watcher after a nested child membership change", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const now = new Date();
+    db.store.device.push({
+      id: "device-1",
+      organizationId: tenant.id,
+      proto: "apple",
+      status: "enrolled",
+      name: "Mac",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    const parent = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Parent", kind: "manual" }),
+    );
+    const child = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Child", kind: "manual" }),
+    );
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, parent.id, {
+        assign: { childGroups: [child.id] },
+      }),
+    );
+
+    const watcher = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Watcher",
+        kind: "dynamic",
+        rules: { version: 1, all: [{ field: "group", op: "in", value: [parent.id] }] },
+      }),
+    );
+
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, child.id, {
+        assign: { devices: ["device-1"] },
+      }),
+    );
+
+    // The child row reaches the parent through inheritance first, then the
+    // watcher is recomputed against the parent's new membership.
+    expect(db.store.group_device).toEqual(
+      expect.arrayContaining([
+        { groupId: parent.id, deviceId: "device-1", source: "nested" },
+        { groupId: watcher.id, deviceId: "device-1", source: "dynamic" },
+      ]),
+    );
+  });
+
+  it("recomputes a former parent's watcher when a nested group is deleted", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const now = new Date();
+    db.store.device.push({
+      id: "device-1",
+      organizationId: tenant.id,
+      proto: "apple",
+      status: "enrolled",
+      name: "Mac",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    const parent = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Parent", kind: "manual" }),
+    );
+    const child = await runEffect(
+      service.createGroup(request(headers), tenant.id, { name: "Child", kind: "manual" }),
+    );
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, parent.id, {
+        assign: { childGroups: [child.id] },
+      }),
+    );
+    const watcher = await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Watcher",
+        kind: "dynamic",
+        rules: { version: 1, all: [{ field: "group", op: "in", value: [parent.id] }] },
+      }),
+    );
+
+    await runEffect(
+      service.patchGroupMembers(request(headers), tenant.id, child.id, {
+        assign: { devices: ["device-1"] },
+      }),
+    );
+
+    await runEffect(service.deleteGroups(request(headers), tenant.id, [child.id]));
+
+    // The parent loses the inherited device and the watcher follows in the
+    // same request, even though the nesting edge is already gone.
+    expect(
+      db.store.group_device.filter((row: { groupId: string }) => row.groupId === watcher.id),
+    ).toEqual([]);
+  });
 });
 
 describe("enterprise service policy flow", () => {
+  const deploymentQuery = "insert into policy_deployment (id, policy_id, version) values (?, ?, ?)";
+
+  const mysqlDriverError = (errno: number, code: string, message: string) =>
+    Object.assign(new Error(message), { code, errno, sqlMessage: message });
+
+  const snapshotSqlError = (reason: SqlError.SqlErrorReason) =>
+    new EffectDrizzleQueryError({
+      query: deploymentQuery,
+      params: undefined,
+      cause: new SqlError.SqlError({ reason }),
+    });
+
+  const snapshotCollision = (constraint: string) =>
+    snapshotSqlError(
+      new SqlError.UniqueViolation({
+        cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+        message: "Duplicate entry",
+        operation: "insert",
+        constraint,
+      }),
+    );
+
+  const makePolicyContext = async () => {
+    const context = await makeContext();
+    const tenant = await runEffect(
+      context.service.createTenant(request(context.headers), { name: "Acme", slug: "acme" }),
+    );
+    const policy = await runEffect(
+      context.service.createPolicy(request(context.headers), tenant.id, { name: "Baseline" }),
+    );
+
+    return { ...context, tenant, policy };
+  };
+
+  const interceptDeploymentInserts = (
+    db: any,
+    respond: (
+      row: any,
+      attempt: number,
+      commit: () => Effect.Effect<unknown, unknown, any>,
+    ) => Effect.Effect<any, any, any>,
+  ) => {
+    const insert = db.insert.bind(db);
+    const attempts: any[] = [];
+
+    db.insert = (table: any) => {
+      const builder = insert(table);
+
+      if (table !== schema.policyDeployment) return builder;
+
+      const values = builder.values.bind(builder);
+
+      builder.values = (rows: any) => {
+        const row = Array.isArray(rows) ? rows[0] : rows;
+        const pending = values(rows);
+        // The fake applies writes when the builder is yielded, not in values().
+        const commit = Effect.gen(function* () {
+          yield* pending;
+        });
+        attempts.push(row);
+
+        return Effect.suspend(() => respond(row, attempts.length, () => commit));
+      };
+
+      return builder;
+    };
+
+    return attempts;
+  };
+
   it("stores the delivery scope of a configuration", async () => {
     const { db, service, headers } = await makeContext();
 
@@ -1509,7 +1943,7 @@ describe("enterprise service policy flow", () => {
 
     const detail = await runEffect(service.getPolicy(request(headers), tenant.id, policy.id));
 
-    expect(detail.configurationScopes).toEqual({
+    expect(requireField(detail, "configurationScopes").configurationScopes).toEqual({
       "mttx.apple.declaration.usersettings": "user",
     });
 
@@ -1730,6 +2164,157 @@ describe("enterprise service policy flow", () => {
         service.patchPolicy(request(headers), tenant.id, "other-policy", { name: "Denied" }),
       ),
     ).rejects.toBeInstanceOf(EnterpriseNotFound);
+  });
+
+  it.each([
+    {
+      name: "connection",
+      error: () =>
+        snapshotSqlError(
+          new SqlError.ConnectionError({
+            cause: mysqlDriverError(2003, "ECONNREFUSED", "connect ECONNREFUSED"),
+            message: "connect ECONNREFUSED",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "syntax",
+      error: () =>
+        snapshotSqlError(
+          new SqlError.SqlSyntaxError({
+            cause: mysqlDriverError(1064, "ER_PARSE_ERROR", "You have an error in your SQL"),
+            message: "You have an error in your SQL",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "non-unique constraint",
+      error: () =>
+        snapshotSqlError(
+          new SqlError.ConstraintError({
+            cause: mysqlDriverError(1452, "ER_NO_REFERENCED_ROW_2", "Constraint failed"),
+            message: "Constraint failed",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unique constraint on another table",
+      error: () => snapshotCollision("configuration.PRIMARY"),
+    },
+    {
+      name: "unstructured driver duplicate",
+      error: () =>
+        new EffectDrizzleQueryError({
+          query: deploymentQuery,
+          params: undefined,
+          cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+        }),
+    },
+  ])("does not retry a Drizzle-wrapped $name snapshot failure", async ({ error }) => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () => Effect.fail(error()));
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts).toHaveLength(1);
+    expect(db.store.policy_deployment).toHaveLength(1);
+  });
+
+  it("reuses one deployment id when a stale version read collides", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, (_row, attempt, commit) =>
+      attempt === 1
+        ? Effect.fail(snapshotCollision("policy_deployment.policy_deployment_version_unique"))
+        : Effect.suspend(commit),
+    );
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: { "mttx.apple.device": { camera: false } },
+      }),
+    );
+
+    expect(attempts.map((row) => row.version)).toEqual([2, 3]);
+    expect(new Set(attempts.map((row) => row.id)).size).toBe(1);
+    expect(db.store.policy_deployment).toHaveLength(2);
+    expect(db.store.policy_deployment.at(-1)).toMatchObject({
+      id: attempts[0].id,
+      version: 3,
+      snapshot: { "mttx.apple.device": { camera: false } },
+    });
+  });
+
+  it("acknowledges an ambiguously committed snapshot without inserting again", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, (_row, _attempt, commit) =>
+      Effect.suspend(commit).pipe(
+        Effect.andThen(Effect.fail(snapshotCollision("policy_deployment.PRIMARY"))),
+      ),
+    );
+
+    await runEffect(
+      service.patchPolicy(request(headers), tenant.id, policy.id, {
+        configurations: { "mttx.apple.device": { camera: false } },
+      }),
+    );
+
+    expect(attempts).toHaveLength(1);
+    expect(db.store.policy_deployment).toHaveLength(2);
+    expect(db.store.policy_deployment.at(-1)).toMatchObject({
+      id: attempts[0].id,
+      version: 2,
+      snapshot: { "mttx.apple.device": { camera: false } },
+    });
+  });
+
+  it("does not accept a committed snapshot with different contents", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, (row) =>
+      Effect.sync(() => {
+        db.store.policy_deployment.push({
+          ...row,
+          snapshot: { "mttx.apple.device": { camera: true } },
+        });
+      }).pipe(Effect.andThen(Effect.fail(snapshotCollision("policy_deployment.PRIMARY")))),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts).toHaveLength(1);
+  });
+
+  it("bounds repeated version collisions and keeps the deployment id fixed", async () => {
+    const { db, service, headers, tenant, policy } = await makePolicyContext();
+    const attempts = interceptDeploymentInserts(db, () =>
+      Effect.fail(snapshotCollision("policy_deployment_version_unique")),
+    );
+
+    await expect(
+      runEffect(
+        service.patchPolicy(request(headers), tenant.id, policy.id, {
+          configurations: { "mttx.apple.device": { camera: false } },
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseInternal);
+
+    expect(attempts.map((row) => row.version)).toEqual([2, 3, 4, 5]);
+    expect(new Set(attempts.map((row) => row.id)).size).toBe(1);
+    expect(db.store.policy_deployment).toHaveLength(1);
   });
 
   it("duplicates policy configurations and deletes with partial failure reporting", async () => {
@@ -4485,6 +5070,506 @@ describe("device command lifecycle", () => {
     ]);
   });
 
+  it("queues Apple's Settings/DeviceName command for set-device-name", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    const result = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-device-name",
+        deviceName: "  Reception Mac  ",
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "ok" });
+    expect("commandId" in result ? result.commandId : undefined).toBeDefined();
+
+    const [queued] = commands(db).filter((row: any) => row.requestType === "Settings");
+
+    expect(queued).toMatchObject({
+      status: "queued",
+      payload: { Settings: [{ Item: "DeviceName", DeviceName: "Reception Mac" }] },
+    });
+    expect(queued.expiresAt).toBeInstanceOf(Date);
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "device.action",
+      metadata: expect.objectContaining({
+        action: "set-device-name",
+        deviceName: "Reception Mac",
+      }),
+    });
+  });
+
+  it("rejects a missing or over-long device name", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    await expect(
+      runEffect(
+        service.deviceAction(request(headers), tenant.id, "device-1", {
+          action: "set-device-name",
+          deviceName: "   ",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    await expect(
+      runEffect(
+        service.deviceAction(request(headers), tenant.id, "device-1", {
+          action: "set-device-name",
+          deviceName: "x".repeat(64),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    expect(commands(db)).toHaveLength(0);
+
+    // Apple accepts 63 characters exactly.
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-device-name",
+        deviceName: "x".repeat(63),
+      }),
+    );
+
+    expect(commands(db)).toHaveLength(1);
+  });
+
+  it("does not offer set-device-name on Apple User Enrollment", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device_apple[0]!.enrollmentMode = "user";
+
+    const failure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-device-name",
+        deviceName: "Reception Mac",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(failure).toMatchObject({ message: expect.stringContaining("User Enrollment") });
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("persists the apply-name opt-in on rename and audits it", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    await runEffect(
+      service.patchDevice(request(headers), tenant.id, "device-1", {
+        name: "Reception Mac",
+        applyNameToDevice: true,
+      }),
+    );
+
+    expect(db.store.device[0]).toMatchObject({
+      name: "Reception Mac",
+      namePushEnabled: true,
+    });
+    expect(db.store.audit_log.at(-1)).toMatchObject({ action: "device.renamed" });
+
+    // The same limit the command enforces applies to the opt-in path.
+    await expect(
+      runEffect(
+        service.patchDevice(request(headers), tenant.id, "device-1", {
+          name: "x".repeat(64),
+          applyNameToDevice: true,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("rejects the apply-name opt-in on platforms without name delivery", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    const now = new Date();
+    db.store.device.push({
+      id: "windows-1",
+      organizationId: tenant.id,
+      proto: "win",
+      status: "enrolled",
+      name: "DESKTOP-1",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    await expect(
+      runEffect(
+        service.patchDevice(request(headers), tenant.id, "windows-1", {
+          name: "Reception PC",
+          applyNameToDevice: true,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("queues Apple's shared-device lock screen profile with the message and asset tag", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.assetTag = "AST-1042";
+    db.store.device[0]!.osEdition = "iPadOS";
+    db.store.device[0]!.osVersion = "18.1";
+
+    const result = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "  If found, return to the IT desk  ",
+        lockScreenIncludeAssetTag: true,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "ok" });
+    expect("commandId" in result ? result.commandId : undefined).toBeDefined();
+
+    const [queued] = commands(db).filter((row: any) => row.requestType === "InstallProfile");
+
+    expect(queued).toMatchObject({ status: "queued" });
+    expect(queued.expiresAt).toBeInstanceOf(Date);
+
+    const profile = new TextDecoder().decode(
+      Uint8Array.from(atob(queued!.payload.Payload), (character) => character.charCodeAt(0)),
+    );
+
+    expect(profile).toContain("com.apple.shareddeviceconfiguration");
+    expect(profile).toContain("If found, return to the IT desk");
+    expect(profile).toContain("AssetTagInformation");
+    expect(profile).toContain("AST-1042");
+    expect(db.store.device[0]).toMatchObject({
+      lockScreenMessage: "If found, return to the IT desk",
+      lockScreenIncludeAssetTag: true,
+    });
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "device.action",
+      metadata: expect.objectContaining({
+        action: "set-lock-screen-message",
+        lockScreenMessage: "If found, return to the IT desk",
+        includeAssetTag: true,
+      }),
+    });
+  });
+
+  it("resolves the policy lock screen default and lets a device override it", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.assetTag = "AST-1042";
+    db.store.device[0]!.osEdition = "iPadOS";
+
+    const policy = await runEffect(
+      service.createPolicy(request(headers), tenant.id, {
+        name: "Shared iPads",
+        configurations: {
+          "mttx.apple.lockScreenMessage": {
+            message: "Please return to the IT desk",
+            includeAssetTag: true,
+          },
+        },
+      }),
+    );
+
+    await runEffect(
+      service.createGroup(request(headers), tenant.id, {
+        name: "Shared iPads",
+        devices: ["device-1"],
+        policies: [policy.id],
+      }),
+    );
+
+    const detail = await runEffect(service.getDevice(request(headers), tenant.id, "device-1"));
+
+    expect(detail).toMatchObject({
+      effectiveLockScreenMessage: "Please return to the IT desk",
+      effectiveLockScreenIncludeAssetTag: true,
+      lockScreenMessageSource: "policy",
+      lockScreenPolicyName: "Shared iPads",
+      lockScreenMessageProblem: null,
+    });
+
+    await runEffect(
+      service.patchDevice(request(headers), tenant.id, "device-1", {
+        lockScreenMessage: "Call Oscar on +61 400 000 000",
+        lockScreenIncludeAssetTag: false,
+      }),
+    );
+
+    const overridden = await runEffect(service.getDevice(request(headers), tenant.id, "device-1"));
+
+    expect(overridden).toMatchObject({
+      lockScreenMessage: "Call Oscar on +61 400 000 000",
+      effectiveLockScreenMessage: "Call Oscar on +61 400 000 000",
+      effectiveLockScreenIncludeAssetTag: false,
+      lockScreenMessageSource: "device",
+    });
+  });
+
+  it("omits AssetTagInformation when Include asset tag is off", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.assetTag = "AST-1042";
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "If found, return to the IT desk",
+      }),
+    );
+
+    const profile = new TextDecoder().decode(
+      Uint8Array.from(atob(commands(db)[0]!.payload.Payload), (character) =>
+        character.charCodeAt(0),
+      ),
+    );
+
+    expect(profile).toContain("If found, return to the IT desk");
+    expect(profile).not.toContain("AssetTagInformation");
+  });
+
+  it("refuses Include asset tag when the device has no asset tag", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    const failure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "If found, return to the IT desk",
+        lockScreenIncludeAssetTag: true,
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(failure).toMatchObject({ message: expect.stringContaining("no asset tag") });
+    expect(commands(db)).toHaveLength(0);
+    expect(db.store.device[0]).not.toHaveProperty("lockScreenMessage");
+  });
+
+  it("rejects an empty or over-long lock screen message", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+
+    for (const lockScreenMessage of ["   ", "x".repeat(501)]) {
+      const failure = await runEffect(
+        service.deviceAction(request(headers), tenant.id, "device-1", {
+          action: "set-lock-screen-message",
+          lockScreenMessage,
+        }),
+      ).catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(EnterpriseBadRequest);
+    }
+
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("does not offer set-lock-screen-message on macOS, tvOS, Android or BYOD Apple devices", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "macOS";
+
+    const macFailure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "Return to the IT desk",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(macFailure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(macFailure).toMatchObject({ message: expect.stringContaining("macOS") });
+
+    db.store.device[0]!.osEdition = "tvOS";
+    const tvFailure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "Return to the IT desk",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(tvFailure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(tvFailure).toMatchObject({ message: expect.stringContaining("tvOS") });
+
+    db.store.device[0]!.osEdition = "iOS";
+    db.store.device_apple[0]!.enrollmentMode = "user";
+    const byodFailure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "Return to the IT desk",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(byodFailure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(byodFailure).toMatchObject({ message: expect.stringContaining("User Enrollment") });
+
+    const now = new Date();
+    db.store.device.push({
+      id: "android-1",
+      organizationId: tenant.id,
+      proto: "android",
+      status: "enrolled",
+      name: "Android",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    const androidFailure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "android-1", {
+        action: "set-lock-screen-message",
+        lockScreenMessage: "Return to the IT desk",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(androidFailure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(androidFailure).toMatchObject({
+      message: expect.stringContaining("supervised iPhone and iPad"),
+    });
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("stores and clears the per-device lock screen override", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.assetTag = "AST-1042";
+
+    await runEffect(
+      service.patchDevice(request(headers), tenant.id, "device-1", {
+        lockScreenMessage: "Return to the IT desk",
+        lockScreenIncludeAssetTag: true,
+      }),
+    );
+
+    expect(db.store.device[0]).toMatchObject({
+      lockScreenMessage: "Return to the IT desk",
+      lockScreenIncludeAssetTag: true,
+    });
+
+    await runEffect(
+      service.patchDevice(request(headers), tenant.id, "device-1", {
+        lockScreenMessage: null,
+        lockScreenIncludeAssetTag: null,
+      }),
+    );
+
+    expect(db.store.device[0]).toMatchObject({
+      lockScreenMessage: null,
+      lockScreenIncludeAssetTag: null,
+    });
+  });
+
+  it("requires devices.command to set but not clear a lock screen override", async () => {
+    const base = await makeContext();
+
+    const tenant = await runEffect(
+      base.service.createTenant(request(base.headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(base.db, tenant.id);
+    base.db.store.device[0]!.assetTag = "AST-1042";
+    base.db.store.device[0]!.osEdition = "iPadOS";
+
+    const writer = await makeContext({
+      db: base.db,
+      apiToken: { tenantId: null, scopes: ["devices.write"] },
+    });
+
+    await expect(
+      runEffect(
+        writer.service.patchDevice(request(writer.headers), tenant.id, "device-1", {
+          lockScreenMessage: "Return to the IT desk",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+
+    // Clearing the override does not queue work, so devices.write is enough.
+    await runEffect(
+      writer.service.patchDevice(request(writer.headers), tenant.id, "device-1", {
+        lockScreenMessage: null,
+        lockScreenIncludeAssetTag: null,
+      }),
+    );
+
+    expect(base.db.store.device[0]).toMatchObject({
+      lockScreenMessage: null,
+      lockScreenIncludeAssetTag: null,
+    });
+  });
+
+  it("rejects the lock screen asset-tag opt-in when the device has no asset tag", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+
+    await expect(
+      runEffect(
+        service.patchDevice(request(headers), tenant.id, "device-1", {
+          lockScreenMessage: "Return to the IT desk",
+          lockScreenIncludeAssetTag: true,
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
   it("queues a fresh command when the identical one already expired", async () => {
     const { db, service, headers } = await makeContext();
 
@@ -4575,6 +5660,408 @@ describe("device command lifecycle", () => {
     await runEffect(service.deviceUnenroll(request(headers), tenant.id, "device-1"));
 
     expect(commands(db)[0]).toMatchObject({ status: "cancelled", dedupeKey: null });
+  });
+
+  it("queues Lost Mode with the message and persists the requested state", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+
+    const result = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "start-lost-mode",
+        lostModeMessage: "  This iPad is lost  ",
+        lostModePhone: "+61 400 000 000",
+        lostModeFootnote: "AST-1042",
+      }),
+    );
+
+    expect(result).toMatchObject({ status: "ok" });
+    expect(commands(db)).toEqual([
+      expect.objectContaining({
+        requestType: "EnableLostMode",
+        payload: {
+          Message: "This iPad is lost",
+          PhoneNumber: "+61 400 000 000",
+          Footnote: "AST-1042",
+        },
+        status: "queued",
+      }),
+    ]);
+    expect(db.store.device_apple[0]).toMatchObject({
+      lostModeMessage: "This iPad is lost",
+      lostModePhone: "+61 400 000 000",
+      lostModeFootnote: "AST-1042",
+    });
+    expect(db.store.device_apple[0]!.lostModeRequestedAt).toBeInstanceOf(Date);
+    expect(db.store.audit_log.at(-1)).toMatchObject({
+      action: "device.action",
+      metadata: expect.objectContaining({
+        action: "start-lost-mode",
+        lostModeMessage: "This iPad is lost",
+      }),
+    });
+  });
+
+  it("requires a message or phone number and rejects Lost Mode off iPhone/iPad", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+
+    const empty = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "start-lost-mode",
+        lostModeMessage: "   ",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(empty).toBeInstanceOf(EnterpriseBadRequest);
+    expect(empty).toMatchObject({ message: expect.stringContaining("at least one") });
+    expect(commands(db)).toHaveLength(0);
+
+    db.store.device[0]!.osEdition = "macOS";
+    const mac = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "start-lost-mode",
+        lostModeMessage: "Lost",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(mac).toBeInstanceOf(EnterpriseBadRequest);
+    expect(mac).toMatchObject({ message: expect.stringContaining("macOS") });
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("de-duplicates an identical Lost Mode request", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+
+    const payload = {
+      action: "start-lost-mode",
+      lostModeMessage: "Lost iPad",
+      lostModePhone: "+61 400 000 000",
+    } as const;
+
+    const first = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", payload),
+    );
+    const second = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", payload),
+    );
+
+    expect(second).toMatchObject({
+      commandId: requireField(first, "commandId").commandId,
+      deduplicated: true,
+    });
+    expect(commands(db)).toHaveLength(1);
+  });
+
+  it("offers PlayLostModeSound only while Lost Mode is active", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+
+    await expect(
+      runEffect(
+        service.deviceAction(request(headers), tenant.id, "device-1", {
+          action: "play-lost-mode-sound",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+
+    db.store.device_apple[0]!.lostModeEnabled = true;
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "play-lost-mode-sound",
+      }),
+    );
+
+    expect(commands(db)).toEqual([
+      expect.objectContaining({ requestType: "PlayLostModeSound", status: "queued" }),
+    ]);
+  });
+
+  it("queues UserList for a Mac and records the local-account request time", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "macOS";
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "refresh-local-accounts",
+      }),
+    );
+
+    expect(commands(db)).toEqual([
+      expect.objectContaining({ requestType: "UserList", status: "queued" }),
+    ]);
+    expect(db.store.device_apple[0]!.localAccountsRequestedAt).toBeInstanceOf(Date);
+  });
+
+  it("refuses local administrator rotation without a reported GUID", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "macOS";
+
+    const failure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "rotate-local-admin-password",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(EnterpriseBadRequest);
+    expect(failure).toMatchObject({ message: expect.stringContaining("GUID") });
+    expect(commands(db)).toHaveLength(0);
+  });
+
+  it("queues SetAutoAdminPassword with the reported GUID and a pending secret", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "macOS";
+    db.store.device_apple[0]!.localAdminGuid = "11111111-AAAA-BBBB-CCCC-222222222222";
+
+    const now = new Date();
+    db.store.device_secret.push({
+      deviceId: "device-1",
+      organizationId: tenant.id,
+      kind: "local_admin_password",
+      sealedValue: "sealed-current",
+      format: "plaintext",
+      createdAt: now,
+      updatedAt: now,
+      rotatedAt: now,
+    });
+
+    await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "rotate-local-admin-password",
+      }),
+    );
+
+    const [command] = commands(db);
+
+    expect(command).toMatchObject({ requestType: "SetAutoAdminPassword", status: "queued" });
+    expect(command!.payload).toMatchObject({
+      GUID: "11111111-AAAA-BBBB-CCCC-222222222222",
+      passwordHash: expect.any(String),
+    });
+    expect(atob(command!.payload.passwordHash)).toContain("SALTED-SHA512-PBKDF2");
+    expect(db.store.device_secret).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "local_admin_password_pending",
+          sealedValue: expect.not.stringMatching(/^sealed-current$/),
+        }),
+      ]),
+    );
+  });
+
+  it("refuses a concurrent local administrator rotation", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "macOS";
+    db.store.device_apple[0]!.localAdminGuid = "11111111-AAAA-BBBB-CCCC-222222222222";
+
+    const now = new Date();
+    db.store.device_secret.push({
+      deviceId: "device-1",
+      organizationId: tenant.id,
+      kind: "local_admin_password",
+      sealedValue: "sealed-current",
+      format: "plaintext",
+      createdAt: now,
+      updatedAt: now,
+      rotatedAt: now,
+    });
+    db.store.device_command.push({
+      id: "rotation-1",
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      requestType: "SetAutoAdminPassword",
+      payload: { GUID: "11111111-AAAA-BBBB-CCCC-222222222222", passwordHash: "hash" },
+      status: "queued",
+      dedupeKey: null,
+      expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
+      resultStatus: null,
+      resultDetail: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const failure = await runEffect(
+      service.deviceAction(request(headers), tenant.id, "device-1", {
+        action: "rotate-local-admin-password",
+      }),
+    ).catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(EnterpriseConflict);
+    expect(failure).toMatchObject({ message: expect.stringContaining("already in progress") });
+  });
+
+  it("filters the fleet by Lost Mode and local-account risk", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+    db.store.device_apple[0]!.lostModeEnabled = true;
+
+    const active = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        lostMode: "active",
+        limit: 50,
+      }),
+    );
+
+    expect(active.devices.map((device) => device.id)).toEqual(["device-1"]);
+
+    db.store.device_apple[0]!.lostModeEnabled = false;
+
+    const inactive = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        lostMode: "inactive",
+        limit: 50,
+      }),
+    );
+
+    expect(inactive.devices.map((device) => device.id)).toEqual(["device-1"]);
+
+    const now = new Date();
+    db.store.device.push({
+      id: "windows-1",
+      organizationId: tenant.id,
+      proto: "win",
+      status: "enrolled",
+      name: "DESKTOP-1",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+
+    const inactiveAfterWindows = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        lostMode: "inactive",
+        limit: 50,
+      }),
+    );
+
+    expect(inactiveAfterWindows.devices.map((device) => device.id)).toEqual(["device-1"]);
+
+    // A Mac that has never reported a local-account inventory is included in
+    // the stale-inventory filter, not silently excluded.
+    db.store.device[0]!.osEdition = "macOS 15.1";
+
+    const staleInventory = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        localAccount: "not-seen-30-days",
+        limit: 50,
+      }),
+    );
+
+    expect(staleInventory.devices.map((device) => device.id)).toEqual(["device-1"]);
+
+    db.store.device_local_account.push({
+      id: "local-account-1",
+      organizationId: tenant.id,
+      deviceId: "device-1",
+      username: "shared",
+      fullName: "Shared",
+      uid: 502,
+      guid: null,
+      isAdmin: null,
+      isManaged: false,
+      hasSecureToken: false,
+      isLoggedIn: false,
+      mobileAccount: false,
+      dataQuota: null,
+      dataUsed: null,
+      lastLoginAt: null,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      reportedAt: now,
+    });
+
+    const noToken = await runEffect(
+      service.searchDevices(request(headers), tenant.id, {
+        localAccount: "without-secure-token",
+        limit: 50,
+      }),
+    );
+
+    expect(noToken.devices.map((device) => device.id)).toEqual(["device-1"]);
+  });
+
+  it("advertises the Lost Mode sound and rotation only when their state allows it", async () => {
+    const { db, service, headers } = await makeContext();
+
+    const tenant = await runEffect(
+      service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
+    );
+
+    seed(db, tenant.id);
+    db.store.device[0]!.osEdition = "iOS";
+    db.store.device_apple[0]!.lostModeEnabled = true;
+
+    const lost = await runEffect(service.getDevice(request(headers), tenant.id, "device-1"));
+
+    expect(lost.actions).toContain("play-lost-mode-sound");
+
+    db.store.device[0]!.osEdition = "macOS";
+    db.store.device_apple[0]!.lostModeEnabled = false;
+
+    const withoutGuid = await runEffect(service.getDevice(request(headers), tenant.id, "device-1"));
+
+    expect(withoutGuid.actions).not.toContain("rotate-local-admin-password");
+
+    db.store.device_apple[0]!.localAdminGuid = "11111111-AAAA-BBBB-CCCC-222222222222";
+
+    const withGuid = await runEffect(service.getDevice(request(headers), tenant.id, "device-1"));
+
+    expect(withGuid.actions).toContain("rotate-local-admin-password");
   });
 });
 
@@ -5279,7 +6766,7 @@ describe("enterprise policy validation and enrollment", () => {
   });
 
   it("previews a mobileconfig with friendly payload categories", async () => {
-    const { service } = await makeContext();
+    const { service, headers } = await makeContext();
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -5300,7 +6787,9 @@ describe("enterprise policy validation and enrollment", () => {
 </array>
 </dict></plist>`;
 
-    const preview = await runEffect(service.previewMobileconfig({ mobileconfig: btoa(xml) }));
+    const preview = await runEffect(
+      service.previewMobileconfig(request(headers), { mobileconfig: btoa(xml) }),
+    );
     expect(preview).toMatchObject({
       displayName: "Acme Profile",
       description: "Corporate settings",
@@ -5314,10 +6803,34 @@ describe("enterprise policy validation and enrollment", () => {
   });
 
   it("rejects an invalid mobileconfig preview", async () => {
-    const { service } = await makeContext();
+    const { service, headers } = await makeContext();
     await expect(
-      runEffect(service.previewMobileconfig({ mobileconfig: "not base64!" })),
+      runEffect(
+        service.previewMobileconfig(request(headers), { mobileconfig: "not base64!" }),
+      ),
     ).rejects.toBeInstanceOf(EnterpriseBadRequest);
+  });
+
+  it("requires an authenticated, verified account to parse a mobileconfig", async () => {
+    const { service, headers, user } = await makeContext();
+
+    await expect(
+      runEffect(
+        service.previewMobileconfig(request(), { mobileconfig: btoa("<plist></plist>") }),
+      ),
+    ).rejects.toBeDefined();
+
+    user.emailVerified = false;
+
+    await expect(
+      runEffect(
+        service.previewMobileconfig(request(headers), {
+          mobileconfig: btoa("<plist></plist>"),
+        }),
+      ),
+    ).rejects.toBeInstanceOf(EnterpriseForbidden);
+
+    user.emailVerified = true;
   });
 });
 

@@ -6,6 +6,9 @@ import { AutopilotDeviceInfo } from "./Autopilot.js";
 import { GroupMembershipKind } from "./Group.js";
 import { NullableString } from "./Errors.js";
 import { WindowsActivationStatus } from "./deviceInventory.js";
+import { WindowsFailurePhase } from "@mattrax/management-backend";
+
+export { WindowsFailurePhase };
 
 export const DeviceProtocol = Schema.Literals(["apple", "win", "android"]);
 
@@ -14,6 +17,21 @@ export const DeviceStatus = Schema.Literals(["enrolling", "enrolled", "unenrolli
 export const DeviceFileVaultStatus = Schema.Literals(["enabled", "disabled", "unknown"]);
 
 export type DeviceFileVaultStatus = typeof DeviceFileVaultStatus.Type;
+
+/**
+ * Escrowed secret kinds a device handover archive can contain. The order is
+ * stable so the dashboard and audit metadata render it consistently.
+ */
+export const DeviceHandoverSecretKind = Schema.Literals([
+  "filevault_recovery_key",
+  "activation_lock_bypass_code",
+  "recovery_lock_password",
+  "local_admin_password",
+  "bootstrap_token",
+  "bitlocker_recovery_key",
+]);
+
+export type DeviceHandoverSecretKind = typeof DeviceHandoverSecretKind.Type;
 
 /**
  * Android Management API state that does not apply to Apple or Windows.
@@ -128,17 +146,6 @@ export const WindowsPolicyInfo = Schema.Struct({
 
 export type WindowsPolicyInfo = typeof WindowsPolicyInfo.Type;
 
-/** Where in the Windows protocol a recorded failure happened. */
-export const WindowsFailurePhase = Schema.Literals([
-  "discovery",
-  "wstep",
-  "enrollment",
-  "policy",
-  "command",
-]);
-
-export type WindowsFailurePhase = typeof WindowsFailurePhase.Type;
-
 /**
  * One failed Windows enrollment or management request.
  *
@@ -200,6 +207,95 @@ export const DeviceManagementApp = Schema.Struct({
 
 export type DeviceManagementApp = typeof DeviceManagementApp.Type;
 
+/**
+ * The most recent `InstallProfile`/`RemoveProfile` command for a device's
+ * lock screen profile. The command history is keyed by profile identifier in
+ * its payload, so the detail endpoint resolves the matching row for the UI.
+ */
+export const DeviceLockScreenDelivery = Schema.Struct({
+  id: Schema.String,
+  requestType: Schema.String,
+  status: Schema.String,
+  statusLabel: Schema.String,
+  resultStatus: Schema.optional(NullableString),
+  resultDetail: Schema.optional(NullableString),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+  expiresAt: Schema.optional(NullableString),
+});
+
+export type DeviceLockScreenDelivery = typeof DeviceLockScreenDelivery.Type;
+
+/** Where the device was when it last reported from Lost Mode. */
+export const DeviceLostModeLocation = Schema.Struct({
+  latitude: Schema.Number,
+  longitude: Schema.Number,
+  /** Radius of uncertainty in metres; absent when Apple did not report it. */
+  horizontalAccuracy: Schema.optional(NullableString),
+  verticalAccuracy: Schema.optional(NullableString),
+  /** RFC 3339 instant Apple sampled the location. */
+  reportedAt: Schema.optional(NullableString),
+});
+
+export type DeviceLostModeLocation = typeof DeviceLostModeLocation.Type;
+
+/**
+ * Apple Lost Mode state for one device.
+ *
+ * `location` is only present while Lost Mode is active: Apple's
+ * `DeviceLocation` command has no meaning outside Lost Mode, and showing a
+ * stale fix for a device that is no longer lost would be misleading.
+ */
+export const DeviceLostMode = Schema.Struct({
+  enabled: Schema.Boolean,
+  message: Schema.optional(NullableString),
+  phone: Schema.optional(NullableString),
+  footnote: Schema.optional(NullableString),
+  requestedAt: Schema.optional(NullableString),
+  acknowledgedAt: Schema.optional(NullableString),
+  location: Schema.optional(Schema.NullOr(DeviceLostModeLocation)),
+});
+
+export type DeviceLostMode = typeof DeviceLostMode.Type;
+
+/**
+ * One local account from Apple's `UserList`.
+ *
+ * Metadata only. Apple does not report a password, home-directory contents or
+ * keychain data, and it does not report whether an account is an administrator
+ * or when it last logged in — those fields stay null instead of being guessed.
+ */
+export const DeviceLocalAccount = Schema.Struct({
+  username: Schema.String,
+  fullName: Schema.optional(NullableString),
+  uid: Schema.optional(Schema.NullOr(Schema.Number)),
+  guid: Schema.optional(NullableString),
+  isAdmin: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  isManaged: Schema.Boolean,
+  hasSecureToken: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  isLoggedIn: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  mobileAccount: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  lastLoginAt: Schema.optional(NullableString),
+  lastSeenAt: Schema.String,
+  reportedAt: Schema.String,
+});
+
+export type DeviceLocalAccount = typeof DeviceLocalAccount.Type;
+
+/**
+ * Apple-only state that is not part of the shared inventory row: Lost Mode and
+ * the local-account inventory. Kept in one grouped field so the common device
+ * payload (and the endpoint contract) stays small.
+ */
+export const DeviceAppleState = Schema.Struct({
+  lostMode: Schema.optional(Schema.NullOr(DeviceLostMode)),
+  localAccounts: Schema.optional(Schema.Array(DeviceLocalAccount)),
+  localAccountsUpdatedAt: Schema.optional(NullableString),
+  localAdminGuidKnown: Schema.optional(Schema.Boolean),
+});
+
+export type DeviceAppleState = typeof DeviceAppleState.Type;
+
 export const DeviceRow = Schema.Struct({
   id: Schema.String,
   proto: DeviceProtocol,
@@ -218,6 +314,45 @@ export const DeviceRow = Schema.Struct({
   assetTag: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
   physicalName: Schema.optional(NullableString),
+  /**
+   * Whether "Apply name to device" is enabled. True makes the Apple check-in
+   * re-queue a `Settings`/`DeviceName` command while the reported name still
+   * differs. `null` means the administrator never chose; the dashboard
+   * defaults it on for supervised Apple devices.
+   */
+  namePushEnabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** The last name the device acknowledged from a `Settings` command. */
+  appliedName: Schema.optional(NullableString),
+  appliedNameAt: Schema.optional(NullableString),
+  /** True when the device-reported name differs from the management name. */
+  nameDrift: Schema.optional(Schema.Boolean),
+  /**
+   * Per-device lock screen message override. Absent or null means the device
+   * uses its policy's default, when one is assigned.
+   */
+  lockScreenMessage: Schema.optional(NullableString),
+  /** Per-device choice to append the asset tag to the message. */
+  lockScreenIncludeAssetTag: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  /** The effective message and where it came from, resolved for the detail page. */
+  effectiveLockScreenMessage: Schema.optional(NullableString),
+  effectiveLockScreenIncludeAssetTag: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  lockScreenMessageSource: Schema.optional(Schema.NullOr(Schema.Literals(["device", "policy"]))),
+  /** The policy supplying the effective default, when the source is policy. */
+  lockScreenPolicyName: Schema.optional(NullableString),
+  /** Why the resolved message cannot be pushed (missing asset tag, ...). */
+  lockScreenMessageProblem: Schema.optional(NullableString),
+  /** The last message and asset tag the device acknowledged. */
+  appliedLockScreenMessage: Schema.optional(NullableString),
+  appliedLockScreenAssetTag: Schema.optional(NullableString),
+  /** The management name when the message was last acknowledged. */
+  appliedLockScreenName: Schema.optional(NullableString),
+  appliedLockScreenAt: Schema.optional(NullableString),
+  /**
+   * Delivery state of the most recent lock screen profile command. Exposed as
+   * unknown to keep the device response schema small; clients decode it with
+   * `DeviceLockScreenDelivery`.
+   */
+  lockScreenDelivery: Schema.optional(Schema.Unknown),
   vendor: Schema.optional(NullableString),
   osEdition: Schema.optional(NullableString),
   osVersion: Schema.optional(NullableString),
@@ -284,6 +419,11 @@ export const DeviceRow = Schema.Struct({
   /** True when that answer is older than the refresh window. */
   securityInfoStale: Schema.optional(Schema.Boolean),
   /**
+   * Lost Mode and local-account state, present on Apple devices. Decode with
+   * `DeviceAppleState`; other platforms omit it.
+   */
+  apple: Schema.optional(Schema.Unknown),
+  /**
    * Device detail escrow metadata. The recovery key and bootstrap token are
    * never included in device payloads; use the recovery-key endpoint to read
    * the decrypted FileVault key.
@@ -319,7 +459,13 @@ export const DeviceRow = Schema.Struct({
    * enrollment status and reported capabilities. The dashboard renders its
    * action menu from this instead of guessing per platform.
    */
-  actions: Schema.optional(Schema.Array(DeviceActionName)),
+  /**
+   * Kept as strings in the stored schema: expanding the action literal union
+   * into every `DeviceRow` field pushes the endpoint group's declaration emit
+   * past TypeScript's serialization limit. Decode with
+   * `DeviceActionNameList` for the typed union.
+   */
+  actions: Schema.optional(Schema.Array(Schema.String)),
   /** Windows Autopilot state when the device is also known to Autopilot. */
   autopilot: Schema.optional(Schema.NullOr(AutopilotDeviceInfo)),
   /**
@@ -479,6 +625,59 @@ export const DeviceActivationLockBypassCodeResponse = Schema.Struct({
 export type DeviceActivationLockBypassCodeResponse =
   typeof DeviceActivationLockBypassCodeResponse.Type;
 
+/**
+ * Export escrowed secrets for one device or a batch before deleting the rows.
+ * The passphrase seals the archive in the browser-facing API and is never
+ * persisted; the reason is mandatory so the audit trail explains the export.
+ */
+export const DeviceHandoverRequest = Schema.Struct({
+  ids: Schema.Array(Schema.String),
+  /** Operator-supplied passphrase for the sealed archive. Never stored. */
+  passphrase: Schema.String,
+  /** Why the devices are leaving management, recorded in the audit log. */
+  reason: Schema.String,
+});
+
+export type DeviceHandoverRequest = typeof DeviceHandoverRequest.Type;
+
+/** One archive that was written to object storage, without its contents. */
+export const DeviceHandoverArchiveInfo = Schema.Struct({
+  id: Schema.String,
+  filename: Schema.String,
+  /** Unix ISO timestamp; the signed download stops working after this. */
+  expiresAt: Schema.String,
+  deviceCount: Schema.Number,
+  /** Every secret kind across the archive; per-device kinds are inside it. */
+  secretKinds: Schema.Array(DeviceHandoverSecretKind),
+  /** Single-use token for the download endpoint. */
+  downloadToken: Schema.String,
+});
+
+export type DeviceHandoverArchiveInfo = typeof DeviceHandoverArchiveInfo.Type;
+
+/** Presence-only impact of deleting devices, used to warn before delete. */
+export const DeviceHandoverImpactRequest = Schema.Struct({
+  ids: Schema.Array(Schema.String),
+});
+
+export type DeviceHandoverImpactRequest = typeof DeviceHandoverImpactRequest.Type;
+
+export const DeviceHandoverImpactEntry = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  secretKinds: Schema.Array(DeviceHandoverSecretKind),
+});
+
+export type DeviceHandoverImpactEntry = typeof DeviceHandoverImpactEntry.Type;
+
+export const DeviceHandoverImpactResponse = Schema.Struct({
+  devices: Schema.Array(DeviceHandoverImpactEntry),
+  /** Whether the caller holds `devices.handover` and can export or delete. */
+  canExport: Schema.Boolean,
+});
+
+export type DeviceHandoverImpactResponse = typeof DeviceHandoverImpactResponse.Type;
+
 /** Tenant FileVault personal recovery key escrow identity (public half only). */
 export const AppleFdeEscrowKeyInfo = Schema.Struct({
   configured: Schema.Boolean,
@@ -506,15 +705,18 @@ export type UploadAppleFdeEscrowKeyRequest = typeof UploadAppleFdeEscrowKeyReque
 /**
  * Lifecycle of a queued MDM command.
  *
- * `queued`, `sent` and `deferred` are active: the device may still run the
- * command. `succeeded` and `failed` are outcomes reported by the device (or
- * reconciled from what it reports). `expired` means the delivery deadline
+ * `queued`, `sent`, `deferred` and `accepted` are active. `accepted` means the
+ * device acknowledged an asynchronous command (for example BitLocker key
+ * rotation) and is still processing it; it must never be re-delivered.
+ * `succeeded` and `failed` are outcomes reported by the device (or reconciled
+ * from what it reports). `expired` means the delivery deadline
  * passed before the device ran it, `superseded` means a newer command made it
  * obsolete, and `cancelled` means the device left management first.
  */
 export const DeviceCommandStatus = Schema.Literals([
   "queued",
   "sent",
+  "accepted",
   "deferred",
   "succeeded",
   "failed",
@@ -527,11 +729,15 @@ export const DeviceCommandStatus = Schema.Literals([
 export type DeviceCommandStatus = typeof DeviceCommandStatus.Type;
 
 /** Statuses where the device can still run the command. */
-export const DEVICE_COMMAND_ACTIVE_STATUSES = ["queued", "sent", "deferred"] as const;
+export const DEVICE_COMMAND_ACTIVE_STATUSES = ["queued", "sent", "accepted", "deferred"] as const;
+
+/** Result status recorded when the server, not the device, resolved a command. */
+export const DEVICE_COMMAND_RECONCILED_RESULT_STATUS = "Reconciled";
 
 export const DEVICE_COMMAND_STATUS_LABELS: Record<DeviceCommandStatus, string> = {
   queued: "Queued",
   sent: "Sent",
+  accepted: "Accepted by device",
   deferred: "Deferred by device",
   succeeded: "Succeeded",
   failed: "Failed",
@@ -551,6 +757,7 @@ export const normalizeDeviceCommandStatus = (
   switch (value) {
     case "queued":
     case "sent":
+    case "accepted":
     case "succeeded":
     case "failed":
     case "expired":
@@ -651,6 +858,28 @@ export const DeviceCertificateInfo = Schema.Struct({
 
 export type DeviceCertificateInfo = typeof DeviceCertificateInfo.Type;
 
+/**
+ * A certificate visible on a device, from Apple's managed-certificate status
+ * item or from the policy material Mattrax delivers.
+ *
+ * `apple-inventory` entries are device evidence. `policy-material` entries
+ * are the certificate a policy is configured to install (with its expiry), and
+ * on Windows they are the only certificate inventory Mattrax has. `scep`
+ * entries are Mattrax-issued identity certificates.
+ */
+export const DeviceManagedCertificateInfo = Schema.Struct({
+  identifier: Schema.String,
+  subject: Schema.String,
+  isIdentity: Schema.Boolean,
+  fingerprintSha256: Schema.optional(NullableString),
+  notAfter: Schema.optional(NullableString),
+  source: Schema.Literals(["apple-inventory", "policy-material", "scep"]),
+  policyId: Schema.optional(NullableString),
+  kind: Schema.optional(NullableString),
+});
+
+export type DeviceManagedCertificateInfo = typeof DeviceManagedCertificateInfo.Type;
+
 /** APNs delivery state for a single Apple device. */
 export const DevicePushErrorCode = Schema.Literals(["invalid_token", "delivery_failed"]);
 
@@ -691,6 +920,7 @@ export type AppleDeviceUserProfile = typeof AppleDeviceUserProfile.Type;
 export const AppleUserIdentitySource = Schema.Literals([
   "certificate",
   "managed-apple-account",
+  "byod-sign-in",
   "manual",
 ]);
 
@@ -824,7 +1054,14 @@ export type DeviceActivityResponse = typeof DeviceActivityResponse.Type;
 export const DeviceHealthResponse = Schema.Struct({
   health: DeviceHealth,
   declarations: Schema.Array(DeviceDeclarationInfo),
+  /** Mattrax-issued SCEP identities. */
   certificates: Schema.Array(DeviceCertificateInfo),
+  /**
+   * Certificate evidence and policy material for the device page. Apple DDM
+   * reports managed certificates; Windows has no certificate inventory, so its
+   * entries describe what a policy delivers and are labelled as such.
+   */
+  managedCertificates: Schema.Array(DeviceManagedCertificateInfo),
   push: DevicePushInfo,
   /** Windows security inventory, absent for other platforms. */
   windows: Schema.optional(Schema.NullOr(WindowsSecurityInfo)),
@@ -1033,38 +1270,54 @@ export const DeviceActionResponse = Schema.Struct({
       automatedDeviceEnrollment: Schema.Boolean,
     }),
   ),
+  /**
+   * What a Windows Fresh Start will do. The mode is explicit so the dashboard
+   * cannot imply that user files survive when they will not.
+   */
+  freshStart: Schema.optional(
+    Schema.Struct({
+      mode: Schema.Literals(["retain-user-data", "remove-user-data"]),
+      retainUserData: Schema.Boolean,
+      /** Set when the device returns to OOBE and must enrol again. */
+      warning: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
+  /** The diagnostic archive request created by `collect-diagnostics`. */
+  diagnostics: Schema.optional(
+    Schema.Struct({
+      archiveId: Schema.String,
+      expiresAt: Schema.String,
+    }),
+  ),
 });
 
 export const DeviceActionRequest = Schema.Struct({
-  action: Schema.optional(
-    Schema.Literals([
-      "sync",
-      "lock",
-      "wipe",
-      "return-to-service",
-      "restart",
-      "shutdown",
-      "clear-passcode",
-      "install-app",
-      "collect-security-info",
-      "refresh-applications",
-      "collect-activation-lock-code",
-      "rotate-filevault-key",
-      "set-recovery-lock",
-      "verify-recovery-lock",
-      "start-lost-mode",
-      "stop-lost-mode",
-      "reset-password",
-      "clear-app-data",
-      "request-device-info",
-      "relinquish-ownership",
-      "schedule-os-update",
-    ]),
-  ),
+  action: Schema.optional(DeviceActionName),
+  /**
+   * The name to write to an Apple device's own `DeviceName`. Required by
+   * `set-device-name`; it does not change the management name.
+   */
+  deviceName: Schema.optional(Schema.String),
+  /**
+   * The message to show on the lock screen. Required by
+   * `set-lock-screen-message`; it is also stored as the device's override.
+   */
+  lockScreenMessage: Schema.optional(Schema.String),
+  /** Append the device's asset tag to the message as `AssetTagInformation`. */
+  lockScreenIncludeAssetTag: Schema.optional(Schema.Boolean),
+  /** Lost Mode message and companion fields for `start-lost-mode`. */
+  lostModeMessage: Schema.optional(Schema.String),
+  lostModePhone: Schema.optional(Schema.String),
+  lostModeFootnote: Schema.optional(Schema.String),
   manifestUrl: Schema.optional(Schema.String),
   iTunesStoreId: Schema.optional(Schema.Number),
   /** New Recovery Lock password; generated when omitted. */
   recoveryLockPassword: Schema.optional(Schema.String),
+  /**
+   * Windows Fresh Start: `true` keeps user files, `false` removes everything.
+   * Required by `fresh-start` so the retention choice is never implicit.
+   */
+  freshStartRetainUserData: Schema.optional(Schema.Boolean),
   /**
    * `ScheduleOSUpdate` install action. `InstallASAP` is immediate; use
    * `InstallLater` with a deadline to let the user postpone the restart.
@@ -1081,6 +1334,13 @@ export const DeviceActionRequest = Schema.Struct({
   /** Apple's ProductKey from `AvailableOSUpdates`; omitted schedules all. */
   osUpdateProductKey: Schema.optional(Schema.String),
   /**
+   * Marks a `sync` as the OS-update bulk apply for a DDM-managed Apple
+   * device. The server validates that the tenant rule actually delivers the
+   * declaration, then records the mechanism in the audit trail so a bulk
+   * apply is distinguishable from a manual sync.
+   */
+  osUpdateMechanism: Schema.optional(Schema.Literals(["ddm-software-update"])),
+  /**
    * ISO-8601 deadline for `InstallLater`. Apple has no absolute deadline, so
    * the server converts this into a bounded `MaxUserDeferrals` count.
    */
@@ -1091,6 +1351,20 @@ export const PatchDeviceRequest = Schema.Struct({
   name: Schema.optional(Schema.String),
   notes: Schema.optional(NullableString),
   assetTag: Schema.optional(NullableString),
+  /**
+   * Opt into "Apply name to device with each sync". Turning it on does not
+   * queue anything by itself; the dashboard follows the save with a
+   * `set-device-name` command. Turning it off stops check-in re-applies.
+   */
+  applyNameToDevice: Schema.optional(Schema.Boolean),
+  /**
+   * Clear the per-device lock screen override so the policy default applies
+   * again. Setting a message here does not queue a command; use the
+   * `set-lock-screen-message` action for that.
+   */
+  lockScreenMessage: Schema.optional(NullableString),
+  /** Clear or set the per-device asset-tag choice independently of the message. */
+  lockScreenIncludeAssetTag: Schema.optional(Schema.NullOr(Schema.Boolean)),
 });
 
 /** One Apple per-user channel action. */

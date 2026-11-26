@@ -62,8 +62,14 @@ const describeCertificate = (certificatePem: string) =>
   Effect.gen(function* () {
     return {
       certificateFingerprintSha256: yield* escrowCertificateFingerprint(certificatePem),
-      subject: certificateCommonName(certificatePem),
-      certificateNotAfter: certificateNotAfter(certificatePem),
+      subject: yield* Effect.tryPromise({
+        try: () => certificateCommonName(certificatePem),
+        catch: () => new EscrowKeyError("The escrow certificate could not be read"),
+      }),
+      certificateNotAfter: yield* Effect.tryPromise({
+        try: () => certificateNotAfter(certificatePem),
+        catch: () => new EscrowKeyError("The escrow certificate could not be read"),
+      }),
     };
   });
 
@@ -200,9 +206,9 @@ export const uploadTenantEscrowKey = (input: {
   authSecret: string;
 }): Effect.Effect<EscrowKeyRow, EscrowKeyError | unknown> =>
   Effect.gen(function* () {
-    yield* Effect.try({
-      try: () => {
-        const certificate = pemToCert(input.certificatePem.trim());
+    yield* Effect.tryPromise({
+      try: async () => {
+        const certificate = await pemToCert(input.certificatePem.trim());
 
         // Apple wraps the key with CMS RSA key transport, so a non-RSA
         // certificate can never be used for escrow.

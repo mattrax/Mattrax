@@ -6,6 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./analytics": "./src/analytics.ts",
+    "./services": "./src/services.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {
@@ -17,7 +19,6 @@
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/enterprise-identity": "workspace:*",
     "@mattrax/enterprise-tokens": "workspace:*",
-    "@mattrax/net": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"
   },

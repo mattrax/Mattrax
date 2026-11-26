@@ -7,6 +7,7 @@ import { CliRuntime } from "../runtime.ts";
 import {
   CliFailure,
   configPath,
+  environmentValue,
   redactToken,
   removeStoredSettings,
   requireToken,
@@ -69,7 +70,7 @@ const logout = Command.make(
   {},
   Effect.fn(function* () {
     const flags: GlobalFlags = yield* rootCommand;
-    const path = configPath();
+    const path = yield* configPath;
     const removed = yield* removeStoredSettings(path);
 
     if (flags.json) {
@@ -82,7 +83,9 @@ const logout = Command.make(
       removed ? `Removed the stored credentials at ${path}.` : `No stored credentials at ${path}.`,
     );
 
-    if (process.env.MATTRAX_TOKEN)
+    const environmentToken = yield* environmentValue("MATTRAX_TOKEN");
+
+    if (environmentToken)
       yield* line("MATTRAX_TOKEN is still set in this environment and takes precedence.");
   }),
 ).pipe(Command.withDescription("Remove the stored token and origin"));

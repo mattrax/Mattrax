@@ -1,19 +1,22 @@
 import { Effect, Schema } from "effect";
+import * as SqlError from "effect/sql/SqlError";
 import { describe, expect, it } from "vitest";
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
 import type { R2Bucket, TenantDeletionStep } from "@mattrax/enterprise-core";
 import {
   deleteTenantObjects,
   teardownTenant,
   TenantTeardownInProgress,
+  TenantTeardownStepFailed,
 } from "../src/Tenant/tenantTeardown.ts";
 import type {
   DeviceUnenrollSummary,
   TenantTeardownDependencies,
-  TenantTeardownStepFailed,
 } from "../src/Tenant/tenantTeardown.ts";
 import { makeDb, runEffect, schema } from "./helpers.js";
 
-const failureStep = (failure: TenantTeardownStepFailed | null) => failure?.step;
+const failureStep = (failure: TenantTeardownStepFailed | TenantTeardownInProgress | null) =>
+  failure && "step" in failure ? failure.step : undefined;
 
 const recordedSteps = (journal: { readonly steps: unknown }) => {
   // SAFETY: the teardown validates every journal entry it writes; the fake
@@ -34,6 +37,18 @@ const organization = {
   createdAt: new Date("2026-01-01T00:00:00Z"),
   updatedAt: new Date("2026-01-01T00:00:00Z"),
 };
+
+const teardownQuery = "insert into tenant_deletion (id, organization_id) values (?, ?)";
+
+const mysqlDriverError = (errno: number, code: string, message: string) =>
+  Object.assign(new Error(message), { code, errno, sqlMessage: message });
+
+const drizzleSqlError = (reason: SqlError.SqlErrorReason) =>
+  new EffectDrizzleQueryError({
+    query: teardownQuery,
+    params: undefined,
+    cause: new SqlError.SqlError({ reason }),
+  });
 
 type FakeStorage = R2Bucket & {
   readonly objects: Map<string, string>;
@@ -495,12 +510,18 @@ describe("tenant teardown", () => {
 
     const calls: string[] = [];
 
-    const duplicate = Object.assign(
-      new Error("Duplicate entry 'org-1' for key 'tenant_deletion_organization_unique'"),
-      {
-        code: "ER_DUP_ENTRY",
-        errno: 1062,
-      },
+    const duplicate = drizzleSqlError(
+      new SqlError.UniqueViolation({
+        cause: mysqlDriverError(
+          1062,
+          "ER_DUP_ENTRY",
+          "Duplicate entry 'org-1' for key 'tenant_deletion.tenant_deletion_organization_unique'",
+        ),
+        message:
+          "Duplicate entry 'org-1' for key 'tenant_deletion.tenant_deletion_organization_unique'",
+        operation: "insert",
+        constraint: "tenant_deletion.tenant_deletion_organization_unique",
+      }),
     );
 
     // Model the exact race: this attempt read before the winner committed, and
@@ -514,11 +535,11 @@ describe("tenant teardown", () => {
     };
 
     const insert = db.insert;
-    db.insert = (table: any) => {
+    db.insert = ((table: any) => {
       if (table !== schema.tenantDeletion) return insert(table);
 
       return { values: () => Effect.fail(duplicate) };
-    };
+    }) as typeof db.insert;
 
     const failure = await runEffect(
       Effect.match(
@@ -531,6 +552,97 @@ describe("tenant teardown", () => {
     expect(calls).toEqual([]);
     expect(db.store.organization).toHaveLength(1);
   });
+
+  it.each([
+    {
+      name: "connection",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.ConnectionError({
+            cause: mysqlDriverError(2003, "ECONNREFUSED", "connect ECONNREFUSED"),
+            message: "connect ECONNREFUSED",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "deadlock",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.DeadlockError({
+            cause: mysqlDriverError(1213, "ER_LOCK_DEADLOCK", "Deadlock found"),
+            message: "Deadlock found",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "lock timeout",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.LockTimeoutError({
+            cause: mysqlDriverError(1205, "ER_LOCK_WAIT_TIMEOUT", "Lock wait timeout"),
+            message: "Lock wait timeout",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "non-unique constraint",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.ConstraintError({
+            cause: mysqlDriverError(1452, "ER_NO_REFERENCED_ROW_2", "Constraint failed"),
+            message: "Constraint failed",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unique constraint on another table",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.UniqueViolation({
+            cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+            constraint: "organization.PRIMARY",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unstructured driver duplicate",
+      error: () =>
+        new EffectDrizzleQueryError({
+          query: teardownQuery,
+          params: undefined,
+          cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+        }),
+    },
+  ])("propagates a Drizzle-wrapped $name claim failure", async ({ error }) => {
+    const db = makeDb();
+    seed(db);
+
+    const calls: string[] = [];
+    const insert = db.insert;
+    db.insert = ((table: any) => {
+      if (table !== schema.tenantDeletion) return insert(table);
+
+      return { values: () => Effect.fail(error()) };
+    }) as typeof db.insert;
+
+    const failure = await runEffect(
+      Effect.match(
+        teardownTenant(db, makeStorage(), { organizationId: "org-1", deps: makeDeps({ calls }) }),
+        { onFailure: (error) => error, onSuccess: () => null },
+      ),
+    );
+
+    expect(failure).toBeInstanceOf(TenantTeardownStepFailed);
+    expect(failureStep(failure as TenantTeardownStepFailed)).toBe("tenant");
+    expect(calls).toEqual([]);
+    expect(db.store.organization).toHaveLength(1);
+    expect(db.store.tenant_deletion).toEqual([]);
+  });
 });
 
 describe("tenant object deletion", () => {
@@ -539,10 +651,11 @@ describe("tenant object deletion", () => {
       "p/org-1/a": "1",
       "a/org-1/b": "1",
       "backups/org-1/c": "1",
+      "handovers/org-1/d": "1",
       "p/org-10/d": "1",
     });
 
-    expect(await deleteTenantObjects(storage, "org-1")).toEqual({ deleted: 3, complete: true });
+    expect(await deleteTenantObjects(storage, "org-1")).toEqual({ deleted: 4, complete: true });
     expect([...storage.objects.keys()]).toEqual(["p/org-10/d"]);
   });
 });

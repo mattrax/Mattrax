@@ -74,10 +74,16 @@ describe("client descriptor parsing", () => {
 });
 
 describe("client address hashing", () => {
-  it("prefers the edge header and falls back to proxy headers", () => {
-    expect(clientAddress({ "cf-connecting-ip": "203.0.113.9" })).toBe("203.0.113.9");
-    expect(clientAddress({ "x-forwarded-for": "198.51.100.4, 10.0.0.1" })).toBe("198.51.100.4");
-    expect(clientAddress({ "x-real-ip": "192.0.2.7" })).toBe("192.0.2.7");
+  it("uses only the address rebuilt by the runtime trust boundary", () => {
+    expect(clientAddress({ "x-mattrax-client-address": "203.0.113.9" })).toBe("203.0.113.9");
+    expect(
+      clientAddress({
+        "cf-connecting-ip": "203.0.113.9",
+        "x-forwarded-for": "198.51.100.4, 10.0.0.1",
+        "x-real-ip": "192.0.2.7",
+      }),
+    ).toBeNull();
+    expect(clientAddress({ "x-mattrax-client-address": "not-an-ip" })).toBeNull();
     expect(clientAddress({})).toBeNull();
   });
 
@@ -97,7 +103,7 @@ describe("client address hashing", () => {
   it("combines the parsed agent with the addressed digest", async () => {
     const descriptor = await runEffect(
       clientDescriptor(
-        { "user-agent": agents.macChrome, "cf-connecting-ip": "203.0.113.9" },
+        { "user-agent": agents.macChrome, "x-mattrax-client-address": "203.0.113.9" },
         "deployment-secret",
       ),
     );

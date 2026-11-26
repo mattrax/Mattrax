@@ -9,6 +9,22 @@ export const TenantParam = { tenantId: Schema.String };
 
 export const TenantIdParam = { tenantId: Schema.String, id: Schema.String };
 
+export const TenantHandoverParam = { tenantId: Schema.String, archiveId: Schema.String };
+
+/** One Windows diagnostic archive under a device. */
+export const TenantDiagnosticsParam = {
+  tenantId: Schema.String,
+  id: Schema.String,
+  archiveId: Schema.String,
+};
+
+/** One escrowed BitLocker key under a device. */
+export const TenantBitlockerKeyParam = {
+  tenantId: Schema.String,
+  id: Schema.String,
+  keyId: Schema.String,
+};
+
 export const TenantInvitationParam = { tenantId: Schema.String, invitationId: Schema.String };
 
 export const TenantAccountParam = { tenantId: Schema.String, accountId: Schema.String };
@@ -25,6 +41,13 @@ export const TenantDeviceUserParam = {
 };
 
 export const TenantAttributeParam = { tenantId: Schema.String, attributeId: Schema.String };
+
+/** One attribute's value on one device (device id is `:id`). */
+export const TenantDeviceAttributeParam = {
+  tenantId: Schema.String,
+  id: Schema.String,
+  attributeId: Schema.String,
+};
 
 export const TenantWebhookParam = { tenantId: Schema.String, webhookId: Schema.String };
 
@@ -46,6 +69,8 @@ export const TenantMigrationEntryParam = {
   entryId: Schema.String,
 };
 
+export const TenantDeviceViewParam = { tenantId: Schema.String, viewId: Schema.String };
+
 export const TenantDashboardParam = { tenantId: Schema.String, dashboardId: Schema.String };
 
 export const TenantDashboardWidgetParam = {
@@ -61,6 +86,10 @@ export const TenantDashboardReportParam = {
 };
 
 export const TenantRoleParam = { tenantId: Schema.String, roleId: Schema.String };
+
+export const TenantApprovalParam = { tenantId: Schema.String, approvalId: Schema.String };
+
+export const TenantApprovalPolicyParam = { tenantId: Schema.String, policyId: Schema.String };
 
 export const McpConnectionParam = { connectionId: Schema.String };
 

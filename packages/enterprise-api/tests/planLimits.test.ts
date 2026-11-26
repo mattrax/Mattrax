@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { EnterpriseForbidden, EnterpriseUnauthorized } from "@mattrax/enterprise-domain";
 import { parsePlanLimits, planLimitsFor } from "@mattrax/enterprise-core";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 /** Assert a service call rejected with the forbidden tag and message fragment. */
 const expectForbidden = async (run: Promise<unknown>, message?: string) => {
@@ -63,7 +63,6 @@ const makeContext = (planLimits = planConfig()) => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake only implements the auth methods these tests exercise.

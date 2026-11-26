@@ -20,6 +20,17 @@
  *   compliance result distinguishes "meets the minimum we can check" from "we
  *   know this is the latest release". macOS update knowledge comes from SOFA;
  *   Windows and Android update knowledge is explicitly unknown.
+ *
+ * Apple families are split into macOS, iOS and iPadOS rules because their
+ * version numbers and release cadence differ. An enforcing Apple rule is
+ * delivered as Apple's DDM software-update enforcement declaration
+ * (`com.apple.configuration.softwareupdate.enforcement.specific`). Apple only
+ * defines that declaration for supervised macOS 14+, iOS/iPadOS 17+, tvOS 18.4+
+ * and visionOS 26+; Mattrax does not manage tvOS, watchOS or visionOS updates,
+ * which are reported as explicitly unsupported rather than silently unknown.
+ * Where the declaration is unavailable (older iOS/iPadOS or legacy delivery),
+ * the device needs the `ScheduleOSUpdate` command, which is explicit in the
+ * capability table and the UI.
  */
 
 import { Schema } from "effect";
@@ -33,10 +44,16 @@ import type { MacOsUpdateCatalog } from "./softwareUpdates.js";
  *
  * Apple devices are split at the family boundary: iOS, iPadOS, tvOS, watchOS
  * and visionOS do not share macOS's version numbering or its update feed, so a
- * single "Apple minimum" would compare unrelated versions. Only macOS is
- * covered today.
+ * single "Apple minimum" would compare unrelated versions. macOS, iOS and
+ * iPadOS each get their own rule; tvOS, watchOS and visionOS are explicitly
+ * unsupported (see `APPLE_UNSUPPORTED_OS_POLICY_FAMILIES`).
  */
-export const OS_POLICY_PLATFORMS = ["macos", "windows", "android"] as const;
+export const OS_POLICY_PLATFORMS = ["macos", "ios", "ipados", "windows", "android"] as const;
+
+/** The Apple families a tenant policy can target. */
+export const APPLE_OS_POLICY_PLATFORMS = ["macos", "ios", "ipados"] as const;
+
+export type AppleOsPolicyPlatform = (typeof APPLE_OS_POLICY_PLATFORMS)[number];
 
 export const OsPolicyPlatform = Schema.Literals(OS_POLICY_PLATFORMS);
 
@@ -71,11 +88,13 @@ export const OS_COMPLIANCE_REASONS = [
   "up_to_date",
   "up_to_date_minimum_only",
   "update_available",
+  "ddm_update_pending",
   "below_minimum",
   "deferral_active",
   "policy_off",
   "policy_not_configured",
   "platform_not_covered",
+  "platform_unsupported",
   "version_unknown",
   "version_not_in_feed",
   "comparison_failed",
@@ -130,7 +149,7 @@ export const normalizeMinimumVersion = (value: string | null | undefined): strin
 
   if (trimmed.length === 0) return null;
 
-  const withoutLabel = trimmed.replace(/^(macos|mac os|os x|windows|android)\s+/i, "");
+  const withoutLabel = trimmed.replace(/^(macos|mac os|os x|ipados|ios|windows|android)\s+/i, "");
 
   if (withoutLabel.length > MAX_OS_VERSION_LENGTH) return null;
 
@@ -171,6 +190,63 @@ export type OsPolicyDeviceInput = {
   readonly osVersion?: string | null;
   readonly osEdition?: string | null;
   readonly model?: string | null;
+  /** `softwareupdate.install-state` reported by DDM, when the device reports it. */
+  readonly osUpdateInstallState?: string | null;
+  /** `softwareupdate.pending-version.os-version` reported by DDM. */
+  readonly osUpdatePendingVersion?: string | null;
+};
+
+/**
+ * Apple families Mattrax deliberately does not manage OS updates for.
+ *
+ * Apple's DDM enforcement declaration supports tvOS 18.4+ and visionOS 26+,
+ * but Mattrax has no tvOS/watchOS/visionOS update guidance or remediation
+ * path, and watchOS is not supported by Apple at all. Reporting them as
+ * "not covered" hides them; `platform_unsupported` names the decision.
+ */
+export const APPLE_UNSUPPORTED_OS_POLICY_FAMILIES = ["tvos", "watchos", "visionos"] as const;
+
+export type AppleUnsupportedOsPolicyFamily = (typeof APPLE_UNSUPPORTED_OS_POLICY_FAMILIES)[number];
+
+/** The unsupported Apple family a device reports, or `null`. */
+export const unsupportedAppleOsPolicyFamily = (
+  device: OsPolicyDeviceInput,
+): AppleUnsupportedOsPolicyFamily | null => {
+  const edition = device.osEdition?.trim().toLowerCase() ?? "";
+
+  if (!edition) return null;
+
+  return APPLE_UNSUPPORTED_OS_POLICY_FAMILIES.find((family) => edition.startsWith(family)) ?? null;
+};
+
+/**
+ * The Apple policy family a device belongs to.
+ *
+ * An Apple device with no edition at all keeps the historical macOS fallback
+ * (`isMacOsDevice` does the same) so an inventory gap does not silently drop a
+ * policy. iPhone/iPad model identifiers resolve the family when the marketing
+ * name is missing.
+ */
+export const appleOsPolicyPlatform = (
+  device: OsPolicyDeviceInput,
+): AppleOsPolicyPlatform | null => {
+  if (device.proto !== undefined && device.proto !== null && device.proto !== "apple") return null;
+
+  if (isMacOsDevice(device)) return "macos";
+
+  const edition = device.osEdition?.trim() ?? "";
+
+  if (/^ipados/i.test(edition)) return "ipados";
+
+  if (/^ios/i.test(edition)) return "ios";
+
+  const model = device.model?.trim() ?? "";
+
+  if (/ipad/i.test(model)) return "ipados";
+
+  if (/iphone|ipod/i.test(model)) return "ios";
+
+  return null;
 };
 
 /** The platform family a device belongs to, or `null` when none applies. */
@@ -181,7 +257,7 @@ export const osPolicyPlatformForDevice = (device: OsPolicyDeviceInput): OsPolicy
     case "android":
       return "android";
     case "apple":
-      return isMacOsDevice(device) ? "macos" : null;
+      return appleOsPolicyPlatform(device);
     default:
       return null;
   }
@@ -215,12 +291,38 @@ export type OsPolicyCapability = {
   /** Remediation is applied without an operator pressing a button. */
   readonly automatic: boolean;
   /** Stable identifier of the mechanism, for the UI and audit trail. */
-  readonly mechanism: "schedule-os-update" | "windows-update-ring" | "android-system-update";
+  readonly mechanism:
+    | "ddm-software-update"
+    | "schedule-os-update"
+    | "windows-update-ring"
+    | "android-system-update";
   /** Human-readable description of what `enforce` actually does. */
   readonly description: string;
   /** What the platform cannot do, so the UI never promises it. */
   readonly limitation: string;
 };
+
+/**
+ * Apple's DDM software-update enforcement declaration.
+ *
+ * The declaration takes the target version and the force-install date-time;
+ * Apple applies it on the next declaration sync, without a command. It only
+ * exists on supervised macOS 14+, iOS/iPadOS 17+, tvOS 18.4+ and visionOS 26+.
+ */
+const appleDdmCapability = (
+  platform: AppleOsPolicyPlatform,
+  label: string,
+  minimum: string,
+): OsPolicyCapability => ({
+  platform,
+  minimumVersionEnforced: true,
+  deferralEnforced: true,
+  automatic: true,
+  mechanism: "ddm-software-update",
+  description: `Enforce delivers Apple's DDM software-update enforcement declaration with the minimum as TargetOSVersion and the deferral window as TargetLocalDateTime. ${label} ${minimum}+ applies it on the next declaration sync.`,
+  limitation:
+    "Apple only installs a target version its servers still publish, and Mattrax has no GDMF lookup for iOS/iPadOS to verify that (macOS has SOFA), so a declaration can stay active without an update. Devices below the DDM minimum (iOS/iPadOS 17, macOS 14) or on legacy delivery need Apply update, which queues ScheduleOSUpdate; Apple has no absolute deadline in that command and removes it in 27. User-enrolled (BYOD) devices have no command path at all.",
+});
 
 /**
  * What each platform can actually do.
@@ -231,17 +333,9 @@ export type OsPolicyCapability = {
  * "minimum version".
  */
 export const OS_POLICY_CAPABILITIES: Readonly<Record<OsPolicyPlatform, OsPolicyCapability>> = {
-  macos: {
-    platform: "macos",
-    minimumVersionEnforced: true,
-    deferralEnforced: true,
-    automatic: false,
-    mechanism: "schedule-os-update",
-    description:
-      "Enforce queues Apple's ScheduleOSUpdate command, which installs the latest available macOS update. The deferral window sets how long a user may postpone it.",
-    limitation:
-      "Apple does not accept an absolute deadline in ScheduleOSUpdate, and the command is delivered on the device's next check-in. Mattrax does not queue it automatically; use Apply update on the OS versions page.",
-  },
+  macos: appleDdmCapability("macos", "macOS", "14.0"),
+  ios: appleDdmCapability("ios", "iOS", "17.0"),
+  ipados: appleDdmCapability("ipados", "iPadOS", "17.0"),
   windows: {
     platform: "windows",
     minimumVersionEnforced: false,
@@ -268,6 +362,122 @@ export const OS_POLICY_CAPABILITIES: Readonly<Record<OsPolicyPlatform, OsPolicyC
 
 export const osPolicyCapability = (platform: OsPolicyPlatform): OsPolicyCapability =>
   OS_POLICY_CAPABILITIES[platform];
+
+/**
+ * First OS release on which Apple defines the DDM software-update enforcement
+ * declaration, per family. Apple has no watchOS support and Mattrax does not
+ * manage tvOS/visionOS, so only these three are used.
+ */
+export const APPLE_DDM_SOFTWARE_UPDATE_MINIMUM: Readonly<Record<AppleOsPolicyPlatform, string>> = {
+  macos: "14.0",
+  ios: "17.0",
+  ipados: "17.0",
+};
+
+/**
+ * Whether the device's OS can apply Apple's software-update enforcement
+ * declaration. A missing version stays false: the delivery path only injects
+ * the declaration when it can prove the OS supports it.
+ */
+export const appleSoftwareUpdateEnforcementSupported = (device: OsPolicyDeviceInput): boolean => {
+  const platform = appleOsPolicyPlatform(device);
+  const version = device.osVersion?.trim();
+
+  if (!platform || !version) return false;
+
+  const comparison = compareVersionStrings(version, APPLE_DDM_SOFTWARE_UPDATE_MINIMUM[platform]);
+
+  return comparison !== null && comparison >= 0;
+};
+
+/** The major component of a reported OS version, or null when unparseable. */
+const majorOsVersion = (value: string | null | undefined): number | null => {
+  const major = Number.parseInt((value ?? "").trim().split(".")[0] ?? "", 10);
+
+  return Number.isFinite(major) ? major : null;
+};
+
+/** The OS release that removed Apple's `ScheduleOSUpdate` command. */
+export const APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR = 27;
+
+export type AppleOsUpdateInput = OsPolicyDeviceInput & {
+  /** `device_apple.declaration_mode`; legacy delivery cannot apply declarations. */
+  readonly declarationMode?: "ddm" | "legacy" | null;
+  /** `device_apple.enrollment_mode`; user enrolment is never supervised. */
+  readonly enrollmentMode?: "device" | "user" | null;
+};
+
+/**
+ * Whether Apple's `ScheduleOSUpdate` command is a legal fallback for this
+ * device. This is the same predicate the device-action picker advertises, so
+ * a fleet bulk action can never promise a path the API rejects.
+ */
+export const appleScheduleOsUpdateSupported = (input: AppleOsUpdateInput): boolean => {
+  if (input.proto !== "apple") return false;
+
+  // User enrolment is BYOD, never supervised, and Apple forbids the command.
+  if (input.enrollmentMode === "user") return false;
+
+  const major = majorOsVersion(input.osVersion);
+
+  // Apple removed the command in 27; the DDM declaration is the only path.
+  if (major !== null && major >= APPLE_SCHEDULE_OS_UPDATE_REMOVED_MAJOR) return false;
+
+  // macOS keeps the manual command even where DDM is available; the tenant
+  // has always had that one-off control and Apple ignores it under a DDM
+  // declaration, so it cannot fight the policy.
+  if (isMacOsDevice(input)) return true;
+
+  const edition = (input.osEdition ?? "").toLowerCase();
+  const model = (input.model ?? "").toLowerCase();
+
+  if (!/ios|ipados/.test(edition) && !/ipad|iphone|ipod/.test(model)) return false;
+
+  // iOS/iPadOS only fall back where DDM is known to be unavailable: below 17
+  // or a recorded legacy delivery mode. An unknown version is not proof.
+  if (input.declarationMode === "legacy") return true;
+
+  return major !== null && major < 17;
+};
+
+/**
+ * The Apple update mechanism a bulk Apply can actually use, or `null` when
+ * there is no safe action.
+ *
+ * DDM requires all of: an enforcing rule with a minimum (that is what compiles
+ * the declaration), an OS Apple supports, DDM delivery, and a supervised
+ * enrolment. Everything else may fall back to `ScheduleOSUpdate`, but only
+ * when the command predicate allows it; otherwise the fleet must not offer an
+ * Apply action at all.
+ */
+export const appleOsUpdateMechanism = (input: {
+  readonly device: AppleOsUpdateInput;
+  /** The persisted rule for the device's Apple family, if any. */
+  readonly rule?: OsPolicyRule | null;
+  readonly declarationMode?: "ddm" | "legacy" | null;
+  readonly enrollmentMode?: "device" | "user" | null;
+}): "ddm-software-update" | "schedule-os-update" | null => {
+  const platform = appleOsPolicyPlatform(input.device);
+
+  if (!platform) return null;
+
+  const ddmAvailable =
+    input.rule?.enforcement === "enforce" &&
+    effectiveOsMinimumVersion(input.rule) !== null &&
+    input.declarationMode !== "legacy" &&
+    input.enrollmentMode !== "user" &&
+    appleSoftwareUpdateEnforcementSupported(input.device);
+
+  if (ddmAvailable) return "ddm-software-update";
+
+  return appleScheduleOsUpdateSupported({
+    ...input.device,
+    declarationMode: input.declarationMode ?? null,
+    enrollmentMode: input.enrollmentMode ?? null,
+  })
+    ? "schedule-os-update"
+    : null;
+};
 
 export type OsUpdateKnowledge = "known" | "unknown";
 
@@ -330,11 +540,14 @@ export type DeriveOsComplianceOptions = {
  *
  * Order matters:
  *
- * 1. A device whose family is not covered is `unknown`, never compliant.
+ * 1. A device whose family is not covered is `unknown`, never compliant;
+ *    tvOS/watchOS/visionOS get the distinct `platform_unsupported` reason.
  * 2. A missing or unparseable version is `unknown`.
  * 3. The configured minimum is checked first. A device inside an active
  *    deferral window is `update-available` (deferred), not `below-minimum`.
- * 4. macOS then consults SOFA for newer security releases and major upgrades.
+ * 4. Apple DDM pending-update state is checked next: `update-available` when
+ *    Apple reports a newer version is downloading, prepared or installing.
+ * 5. macOS then consults SOFA for newer security releases and major upgrades.
  *    Windows and Android have no feed, so meeting their minimum is
  *    `compliant` with `updateKnowledge: "unknown"`.
  */
@@ -347,11 +560,14 @@ export const deriveOsCompliance = (
   const platform = osPolicyPlatformForDevice(device);
   const rule = platform ? (rules.find((entry) => entry.platform === platform) ?? null) : null;
 
-  if (!platform)
+  if (!platform) {
+    const unsupported = unsupportedAppleOsPolicyFamily(device);
+
     return unknown({
-      reason: "platform_not_covered",
+      reason: unsupported ? "platform_unsupported" : "platform_not_covered",
       currentVersion: device.osVersion?.trim() || null,
     });
+  }
 
   const enforcement = rule?.enforcement ?? "off";
   const minimum = effectiveOsMinimumVersion(rule);
@@ -429,9 +645,25 @@ export const deriveOsCompliance = (
     }
   }
 
+  // DDM reports an update it has downloaded, prepared or started installing,
+  // and the version it is moving to. That is real evidence of a pending update
+  // even where Mattrax has no public release feed (iOS/iPadOS) or the feed is
+  // older than the device's own report (macOS).
+  const reportedPendingVersion = device.osUpdatePendingVersion;
+  const pendingVersion = isValidVersion(reportedPendingVersion)
+    ? reportedPendingVersion.trim()
+    : null;
+  const installState = device.osUpdateInstallState?.trim().toLowerCase() || null;
+  const updatePending =
+    (pendingVersion !== null && (compareVersionStrings(pendingVersion, currentVersion) ?? 0) > 0) ||
+    installState === "downloading" ||
+    installState === "prepared" ||
+    installState === "installing";
+
   if (platform !== "macos") {
-    // No feed exists for Windows or Android. The minimum is the only fact we
-    // can check, so the result says exactly that.
+    // No feed exists for Windows, Android or iOS/iPadOS. The minimum is the
+    // only fact we can check; a pending DDM update is only meaningful under a
+    // configured, non-off rule, so it cannot bypass the policy state.
     if (!minimum)
       return unknown({
         reason: rule ? "policy_off" : "policy_not_configured",
@@ -441,6 +673,22 @@ export const deriveOsCompliance = (
         enforcement,
         deferralEndsAt: deferralIso,
       });
+
+    // DDM is the only update signal iOS/iPadOS have beyond the minimum.
+    if (updatePending && (platform === "ios" || platform === "ipados"))
+      return {
+        status: "update-available",
+        reason: "ddm_update_pending",
+        platform,
+        currentVersion,
+        minimumVersion: minimum,
+        targetVersion: pendingVersion,
+        latestVersion: pendingVersion,
+        enforcement,
+        enforced: false,
+        updateKnowledge: "known",
+        deferralEndsAt: deferralIso,
+      };
 
     return {
       status: "compliant",
@@ -456,6 +704,23 @@ export const deriveOsCompliance = (
       deferralEndsAt: deferralIso,
     };
   }
+
+  // macOS pending state also only means something under a configured minimum;
+  // without one the SOFA feed remains the source of truth.
+  if (updatePending && minimum)
+    return {
+      status: "update-available",
+      reason: "ddm_update_pending",
+      platform,
+      currentVersion,
+      minimumVersion: minimum,
+      targetVersion: pendingVersion,
+      latestVersion: pendingVersion,
+      enforcement,
+      enforced: false,
+      updateKnowledge: "known",
+      deferralEndsAt: deferralIso,
+    };
 
   const update = deriveSoftwareUpdate(
     device,
@@ -598,6 +863,10 @@ export const osComplianceReasonText = (info: OsComplianceInfo): string => {
       return info.targetVersion
         ? `Version ${info.targetVersion} is available.`
         : "A newer release is available.";
+    case "ddm_update_pending":
+      return info.targetVersion
+        ? `Apple reports ${info.targetVersion} as pending; the update has been downloaded, prepared or started installing.`
+        : "Apple reports a software update is pending install.";
     case "below_minimum":
       return info.minimumVersion
         ? `Below the ${info.minimumVersion} minimum.`
@@ -611,7 +880,9 @@ export const osComplianceReasonText = (info: OsComplianceInfo): string => {
     case "policy_not_configured":
       return "No minimum version is configured for this platform.";
     case "platform_not_covered":
-      return "OS version compliance covers macOS, Windows and Android only.";
+      return "OS version compliance covers macOS, iOS, iPadOS, Windows and Android only.";
+    case "platform_unsupported":
+      return "Mattrax does not manage OS update policy for tvOS, watchOS or visionOS. The device is reported but is never evaluated as compliant.";
     case "version_unknown":
       return "The device has not reported a comparable OS version.";
     case "version_not_in_feed":
@@ -635,7 +906,9 @@ export const osComplianceLabel = (info: OsComplianceInfo | null | undefined): st
     case "compliant":
       return "Compliant";
     case "unknown":
-      return info.reason === "platform_not_covered" ? null : "Unknown";
+      if (info.reason === "platform_not_covered") return null;
+
+      return info.reason === "platform_unsupported" ? "Not supported" : "Unknown";
     default:
       return null;
   }
@@ -817,6 +1090,68 @@ export const appleScheduleOsUpdatePayload = (input: {
   return { Updates: [entry] };
 };
 
+/** Apple's DDM software-update enforcement declaration type. */
+export const APPLE_SOFTWARE_UPDATE_ENFORCEMENT_TYPE =
+  "com.apple.configuration.softwareupdate.enforcement.specific";
+
+export type AppleSoftwareUpdateEnforcementDeclaration = {
+  readonly Type: typeof APPLE_SOFTWARE_UPDATE_ENFORCEMENT_TYPE;
+  readonly Payload: {
+    readonly TargetOSVersion: string;
+    /** `yyyy-mm-ddThh:mm:ss`; Apple treats it as the device's local time. */
+    readonly TargetLocalDateTime: string;
+    readonly DetailsURL?: string;
+  };
+};
+
+/**
+ * Format a date as Apple's `TargetLocalDateTime`.
+ *
+ * Apple's schema is derived from RFC 3339 but deliberately omits the zone and
+ * fractional seconds. Mattrax sends the UTC wall clock; Apple force-installs at
+ * that local time on the device, so a device outside UTC may see the deadline
+ * shifted by its offset. This is documented as a gap rather than guessed at,
+ * because a tenant device time zone is not reported.
+ */
+export const formatAppleLocalDateTime = (value: Date): string => value.toISOString().slice(0, 19);
+
+/**
+ * Compile a tenant rule into Apple's software-update enforcement declaration.
+ *
+ * The minimum is the target OS version and the deferral deadline (or the time
+ * the rule was saved when there is no deferral) is the force-install time.
+ * `null` means "this rule does not deliver a declaration": `warn`/`off` rules
+ * and rules without a minimum change no device.
+ *
+ * Apple only installs a version its servers still publish, and it cannot
+ * express a supplemental update on top of another base version. Mattrax has no
+ * GDMF feed for iOS/iPadOS, so those are documented limitations rather than
+ * silently retargeted to "latest".
+ */
+export const appleSoftwareUpdateEnforcementDeclaration = (
+  rule: OsPolicyRule | null | undefined,
+  options: { readonly detailsUrl?: string | null } = {},
+): AppleSoftwareUpdateEnforcementDeclaration | null => {
+  if (!rule || rule.enforcement !== "enforce") return null;
+
+  const minimum = effectiveOsMinimumVersion(rule);
+
+  if (!minimum) return null;
+
+  const deadline = osPolicyDeferralEndsAt(rule) ?? rule.updatedAt;
+
+  const payload: AppleSoftwareUpdateEnforcementDeclaration["Payload"] = {
+    TargetOSVersion: minimum,
+    TargetLocalDateTime: formatAppleLocalDateTime(deadline),
+  };
+
+  const detailsUrl = options.detailsUrl?.trim();
+
+  return {
+    Type: APPLE_SOFTWARE_UPDATE_ENFORCEMENT_TYPE,
+    Payload: detailsUrl ? { ...payload, DetailsURL: detailsUrl } : payload,
+  };
+};
 /** The capability table in the shape the API returns. */
 export const OsPolicyCapabilitySchema = Schema.Struct({
   platform: OsPolicyPlatform,
@@ -824,6 +1159,7 @@ export const OsPolicyCapabilitySchema = Schema.Struct({
   deferralEnforced: Schema.Boolean,
   automatic: Schema.Boolean,
   mechanism: Schema.Literals([
+    "ddm-software-update",
     "schedule-os-update",
     "windows-update-ring",
     "android-system-update",
@@ -898,6 +1234,12 @@ export const OsBehindDevice = Schema.Struct({
   targetVersion: Schema.NullOr(Schema.String),
   deferralEndsAt: Schema.NullOr(Schema.String),
   lastSeenAt: Schema.NullOr(Schema.String),
+  /** `softwareupdate.pending-version.os-version` reported by DDM. */
+  pendingVersion: Schema.NullOr(Schema.String),
+  /** `softwareupdate.install-state` reported by DDM. */
+  installState: Schema.NullOr(Schema.String),
+  /** How Apply update actually reaches this device; null for non-Apple. */
+  updateMechanism: Schema.NullOr(Schema.Literals(["ddm-software-update", "schedule-os-update"])),
 });
 
 export type OsBehindDevice = typeof OsBehindDevice.Type;
@@ -918,10 +1260,30 @@ export const OsFleetPlatform = Schema.Struct({
 
 export type OsFleetPlatform = typeof OsFleetPlatform.Type;
 
+/**
+ * Apple families Mattrax deliberately does not manage OS updates for.
+ *
+ * They are reported separately instead of being dropped: an operator must be
+ * able to see that a tvOS/watchOS/visionOS device exists and is excluded, not
+ * assume the fleet view covers it.
+ */
+export const OsUnsupportedFleet = Schema.Struct({
+  total: Schema.Finite,
+  byFamily: Schema.Array(
+    Schema.Struct({
+      family: Schema.String,
+      count: Schema.Finite,
+    }),
+  ),
+});
+
+export type OsUnsupportedFleet = typeof OsUnsupportedFleet.Type;
+
 export const OsFleetResponse = Schema.Struct({
   generatedAt: Schema.String,
   feed: SoftwareUpdateFeedInfo,
   totals: OsComplianceCountsSchema,
+  unsupported: OsUnsupportedFleet,
   platforms: Schema.Array(OsFleetPlatform),
 });
 

@@ -349,6 +349,13 @@ export const buildTenantCutover = (
       for (const row of secretRows) {
         let value: string | null = null;
 
+        // A rotation that has not been acknowledged is not the account's
+        // current password; never export or migrate it. A Windows LAPS
+        // password is held by Entra ID and is re-read from there after the
+        // device is enrolled, so it is not part of a cutover archive.
+        if (row.kind === "local_admin_password_pending" || row.kind === "windows_laps_password")
+          continue;
+
         if (authSecret)
           value = yield* Effect.tryPromise({
             try: () => openSecret(authSecret, row.sealedValue),
@@ -408,6 +415,16 @@ export const buildTenantCutover = (
           osBuild: device.osBuild,
           osEdition: device.osEdition,
           physicalName: device.physicalName,
+          physicalNameAt: device.physicalNameAt?.toISOString() ?? null,
+          namePushEnabled: device.namePushEnabled,
+          appliedName: device.appliedName,
+          appliedNameAt: device.appliedNameAt?.toISOString() ?? null,
+          lockScreenMessage: device.lockScreenMessage,
+          lockScreenIncludeAssetTag: device.lockScreenIncludeAssetTag,
+          appliedLockScreenMessage: device.appliedLockScreenMessage,
+          appliedLockScreenAssetTag: device.appliedLockScreenAssetTag,
+          appliedLockScreenName: device.appliedLockScreenName,
+          appliedLockScreenAt: device.appliedLockScreenAt?.toISOString() ?? null,
           assetTag: device.assetTag,
           notes: device.notes,
           enrolledAt: device.enrolledAt.toISOString(),
