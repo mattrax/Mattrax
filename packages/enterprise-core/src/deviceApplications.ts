@@ -345,14 +345,29 @@ export const replaceDeviceApplications = (
     )
     .pipe(
       Effect.flatMap((applications) =>
-        Effect.as(
-          reconcileApplicationUninstalls(db, {
-            deviceId: input.deviceId,
-            organizationId: input.organizationId,
-            applications,
-            at: input.reportedAt,
-          }),
-          applications.length,
+        reconcileApplicationUninstalls(db, {
+          deviceId: input.deviceId,
+          organizationId: input.organizationId,
+          applications,
+          at: input.reportedAt,
+        }).pipe(
+          // A fresh inventory is the moment a banned app becomes known. Every
+          // platform using this helper gets detection without reading the rows
+          // it just wrote back from the database.
+          Effect.tap(() =>
+            reconcileRestrictedSoftwareForDevice(db, {
+              deviceId: input.deviceId,
+              organizationId: input.organizationId,
+              at: input.reportedAt,
+              // Match the evidence persisted above, including text clipping.
+              applications: applications.map((application) => ({
+                bundleId: application.bundleId,
+                name: text(application.name),
+                version: text(application.version),
+              })),
+            }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+          ),
+          Effect.as(applications.length),
         ),
       ),
       // A fresh inventory is the moment a banned app becomes known. Running

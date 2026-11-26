@@ -10,7 +10,7 @@ export * from "./crypto.js";
 
 export * from "./pkcs7.js";
 
-export { loadPkijs } from "./pkijs.js";
+export { loadPkijs } from "@mattrax/mdm-pki";
 
 export * from "./repository.js";
 

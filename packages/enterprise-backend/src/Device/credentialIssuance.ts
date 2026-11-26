@@ -5,7 +5,7 @@ import { schema as s } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
 import { ensureScepCa } from "@mattrax/scep";
-import { ScepRepositoryLive } from "@mattrax/mdm-apple";
+import { ScepRepositoryLive } from "@mattrax/mdm-core";
 import { exportApnsKeyJwk, generateApnsKeyPair } from "@mattrax/apns";
 import { sealSecret } from "@mattrax/crypto";
 import { loadCredentialHealth } from "./credentialHealth.ts";

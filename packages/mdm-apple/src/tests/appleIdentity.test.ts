@@ -79,6 +79,7 @@ const deviceRow = (id: string, udid: string) => ({
   status: "enrolled",
   name: id,
   dmIdentifier: udid,
+  dmIdentityFingerprint: "fingerprint-1",
   enrolledAt: now,
   lastSeenAt: now,
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { profileDigest } from "@mattrax/mdm-core";
+import { profileDigest } from "../legacyDelivery.js";
 import {
   buildRestrictedSoftwareProfile,
   buildScriptProfile,

@@ -16,7 +16,7 @@ const group = (id: string, displayName: string, members: string[] = []) => ({
   members,
 });
 
-const page = <T>(items: T[], next?: string, delta?: string) => ({
+const page = <T>(items: ReadonlyArray<T>, next?: string, delta?: string) => ({
   items,
   nextLink: next,
   deltaLink: delta,
@@ -83,11 +83,11 @@ describe("syncEntraDirectory pagination", () => {
 
     let transactions = 0;
     const transaction = db.transaction;
-    db.transaction = <Result>(work: (tx: any) => Result): Result => {
+    db.transaction = ((work: any) => {
       transactions++;
 
       return transaction(work);
-    };
+    }) as typeof db.transaction;
 
     const result = await Effect.runPromise(
       syncEntraDirectory({

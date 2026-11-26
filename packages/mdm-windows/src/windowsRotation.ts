@@ -6,6 +6,7 @@ import {
 import type { Schema } from "effect";
 
 export type WindowsRotationCommandRow = {
+  readonly id: string;
   readonly requestType: string;
   readonly status: string;
   readonly payload: Schema.Json | null;
@@ -22,6 +23,8 @@ export type WindowsRotationPollPlan = {
     readonly locURI: string;
     readonly format: string;
     readonly requestId?: string;
+    /** Parent rotation Exec, so a terminal status can close it. */
+    readonly execCommandId: string;
   };
   readonly expiresAt: Date;
 };
@@ -99,6 +102,7 @@ export const planWindowsRotationPoll = (input: {
         locURI: command.locURI,
         format: command.format,
         ...(requestId ? { requestId } : {}),
+        execCommandId: exec.id,
       },
       expiresAt: new Date(exec.updatedAt.getTime() + 24 * 60 * 60 * 1000),
     };

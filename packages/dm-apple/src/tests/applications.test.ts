@@ -10,6 +10,7 @@ import {
   buildRemoveApplicationPayload,
   isAppleIpaUpload,
   isApplePackageUpload,
+  isApplePackageUrl,
 } from "../applications.js";
 
 describe("Apple enterprise application commands", () => {
@@ -177,5 +178,18 @@ describe("Apple enterprise application commands", () => {
     expect(appleInstallAssetExpiresAt(Date.UTC(2026, 0, 1, 11, 0, 1))).toBe(
       Date.UTC(2026, 0, 1, 12, 0, 0) / 1000 + ttl,
     );
+  });
+});
+describe("Apple package URL detection", () => {
+  it("recognises an HTTPS vendor PKG", () => {
+    expect(isApplePackageUrl("https://go.microsoft.com/fwlink/?linkid=2249065")).toBe(false);
+    expect(isApplePackageUrl("https://zoom.us/client/latest/Zoom.pkg")).toBe(true);
+    expect(isApplePackageUrl("https://example.test/App.PKG?download=1")).toBe(true);
+  });
+
+  it("rejects a manifest plist and a non-HTTPS URL", () => {
+    expect(isApplePackageUrl("https://example.test/app.plist")).toBe(false);
+    expect(isApplePackageUrl("http://example.test/app.pkg")).toBe(false);
+    expect(isApplePackageUrl("not a url")).toBe(false);
   });
 });

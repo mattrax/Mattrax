@@ -364,6 +364,9 @@ export const routes = {
       applications: () => `${base}/applications`,
       newApplication: () => `${base}/applications/new`,
       application: (applicationId: string) => `${base}/applications/${segment(applicationId)}`,
+      softwareCatalogue: () => `${base}/applications/catalogue`,
+      softwareCatalogueTitle: (titleId: string) =>
+        `${base}/applications/catalogue/${segment(titleId)}`,
       scripts: () => `${base}/scripts`,
       restrictedSoftware: () => `${base}/restricted-software`,
       restrictedSoftwareRule: (ruleId: string) => `${base}/restricted-software/${segment(ruleId)}`,
@@ -385,6 +388,7 @@ export const routes = {
           | "backups"
           | "identity"
           | "attributes"
+          | "tags"
           | "enrollment"
           | "management"
           | "migration"

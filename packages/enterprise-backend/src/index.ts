@@ -464,7 +464,12 @@ export { importTenantCutover, previewTenantCutover } from "./Tenant/cutoverImpor
 
 export type { CutoverActor, CutoverImportOptions, CutoverTarget } from "./Tenant/cutoverImport.ts";
 
-export { applyTenantBundle } from "./Tenant/tenantRestore.ts";
+export {
+  applyTenantBundle,
+  isTenantApplicationObjectKey,
+  redactAuditObjectKeys,
+  tenantApplicationObjectPrefix,
+} from "./Tenant/tenantRestore.ts";
 
 export type { TenantRestoreApplied, TenantRestoreTransaction } from "./Tenant/tenantRestore.ts";
 
@@ -513,9 +518,9 @@ export type {
   ScheduledGoogleSyncResult,
 } from "@mattrax/google-workspace";
 
-export { syncDirectoryGroup, syncDirectoryGroupsForTenant } from "@mattrax/mdm-apple";
+export { syncDirectoryGroup, syncDirectoryGroupsForTenant } from "@mattrax/mdm-core";
 
-export type { DirectoryGroupSyncOptions, DirectoryGroupSyncResult } from "@mattrax/mdm-apple";
+export type { DirectoryGroupSyncOptions, DirectoryGroupSyncResult } from "@mattrax/mdm-core";
 
 export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,
@@ -527,13 +532,13 @@ export {
   sendTestWebhook,
   signWebhookDelivery,
   verifyWebhookSignature,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 
 export type {
   WebhookDeliveryOutcome,
   WebhookRetryOptions,
   WebhookRetryResult,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 
 export {
   APNS_RENEWAL_URL,
@@ -710,9 +715,11 @@ export {
   DEFAULT_SOFTWARE_UPDATE_RETRY_MS,
   DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS,
   MAX_SOFTWARE_UPDATE_FEED_BYTES,
+  MAX_SOFTWARE_UPDATE_CACHE_URLS,
   SOFA_MACOS_FEED_ID,
   SOFA_MACOS_FEED_URL,
   SoftwareUpdateCache,
+  SoftwareUpdateBackground,
   loadSoftwareUpdateCatalog,
   type LoadSoftwareUpdateCatalogOptions,
   type SoftwareUpdateCatalogState,

@@ -16,6 +16,8 @@ export * from "./Errors.ts";
 
 export * from "./rbac.ts";
 
+export * from "./ScopeTag.ts";
+
 export * from "./branding.ts";
 
 export * from "./webhooks.ts";
@@ -54,6 +56,8 @@ export * from "./storage.ts";
 export * from "./Cutover.ts";
 
 export * from "./stepUp.ts";
+
+export * from "./certificates.ts";
 
 export * from "./approvals.ts";
 

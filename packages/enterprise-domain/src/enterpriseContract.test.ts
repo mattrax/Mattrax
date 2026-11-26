@@ -97,8 +97,12 @@ describe("account profile contract", () => {
     expect(() => decodeUpdateMe({ name: overLimit })).toThrow();
 
     // Keep the two account-name schemas in lockstep.
-    expect(decodeRegistration({ name: atLimit, email: "user@example.com" }).name).toBe(atLimit);
-    expect(() => decodeRegistration({ name: overLimit, email: "user@example.com" })).toThrow();
+    expect(
+      decodeRegistration({ name: atLimit, email: "user@example.com", grant: "mailbox-proof" }).name,
+    ).toBe(atLimit);
+    expect(() =>
+      decodeRegistration({ name: overLimit, email: "user@example.com", grant: "mailbox-proof" }),
+    ).toThrow();
   });
 
   it("still allows omitting the name or changing only the image", () => {

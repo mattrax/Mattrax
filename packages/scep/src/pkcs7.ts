@@ -4,8 +4,8 @@ import type * as pkijs from "pkijs";
 import { privateDecrypt, publicEncrypt, constants, createDecipheriv } from "node:crypto";
 import { ScepError } from "./schema.js";
 import { pemEncode, pemDecode } from "./crypto.js";
-import { loadPkijs } from "./pkijs.js";
-import type { Asn1jsModule, PkijsModule } from "./pkijs.js";
+import { loadPkijs } from "@mattrax/mdm-pki";
+import type { Asn1jsModule, PkijsModule } from "@mattrax/mdm-pki";
 
 // pkijs is loaded on first use (see `loadPkijs`) so it stays out of the
 // Worker's startup closure. Functions that construct or parse pkijs values are

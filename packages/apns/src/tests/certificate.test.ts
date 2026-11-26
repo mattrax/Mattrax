@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  certificateMatchesKey,
+  certificatePemMatchesKey,
   isApnsMdmTopic,
   parseApnsCertificate,
   validateApnsCertificate,
@@ -69,13 +69,13 @@ describe("APNs certificate parsing", () => {
     const keys = await createTestApnsKeys();
     const other = await createTestApnsKeys();
 
-    const { certificate, pem } = await createTestApnsCertificate({
+    const { pem } = await createTestApnsCertificate({
       keyPair: keys,
       topic: "com.apple.mgmt.External.abc123",
     });
 
-    await expect(certificateMatchesKey(certificate, keys.privateKey)).resolves.toBe(true);
-    await expect(certificateMatchesKey(certificate, other.privateKey)).resolves.toBe(false);
+    await expect(certificatePemMatchesKey(pem, keys.privateKey)).resolves.toBe(true);
+    await expect(certificatePemMatchesKey(pem, other.privateKey)).resolves.toBe(false);
     await expect(
       validateApnsCertificate(pem, { privateKey: keys.privateKey }),
     ).resolves.toMatchObject({ topic: "com.apple.mgmt.External.abc123" });

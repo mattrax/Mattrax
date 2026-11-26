@@ -24,7 +24,7 @@ export function SettingsSaveBar(props: { draft: TenantProfileDraft }) {
       <div
         role="region"
         aria-label="Tenant settings changes"
-        class="fixed bottom-4 left-4 right-4 z-40 flex flex-col gap-2 rounded-xl border border-border bg-card/95 px-3.5 py-2.5 shadow-panel backdrop-blur supports-[backdrop-filter]:bg-card/90 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-[calc(100vw-3rem)]"
+        class="fixed bottom-4 left-4 right-4 z-40 flex flex-col gap-2 rounded-xl border border-border bg-card/95 px-3.5 py-2.5 shadow-panel backdrop-blur supports-[backdrop-filter]:bg-card/90 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-full"
       >
         <div class="flex flex-wrap items-center gap-3">
           <div class="flex min-w-0 items-center gap-2">
@@ -35,14 +35,14 @@ export function SettingsSaveBar(props: { draft: TenantProfileDraft }) {
                   when={draft.saved() && !draft.dirty()}
                   fallback={<span class="size-2 shrink-0 rounded-full bg-warning" />}
                 >
-                  <CheckCircle2 class="size-4 shrink-0 text-success" />
+                  <CheckCircle2 class="size-4 shrink-0" />
                 </Show>
               }
             >
               <DotMatrix size={16} decorative class="shrink-0" />
             </Show>
             <div class="min-w-0">
-              <p class="text-[12px] font-[550] leading-4 text-foreground" aria-live="polite">
+              <p class="text-xs font-medium leading-4 text-foreground" aria-live="polite">
                 {draft.saving()
                   ? "Saving tenant changes…"
                   : draft.saved() && !draft.dirty()
@@ -50,7 +50,7 @@ export function SettingsSaveBar(props: { draft: TenantProfileDraft }) {
                     : "Unsaved tenant changes"}
               </p>
               <Show when={draft.hasBrandingErrors() || draft.validationProblem()}>
-                <p class="mt-0.5 text-[10.5px] leading-3.5 text-destructive">
+                <p class="mt-0.5 text-xs leading-3.5 text-destructive">
                   {draft.validationProblem() ?? "Fix the highlighted fields before saving."}
                 </p>
               </Show>
@@ -74,7 +74,7 @@ export function SettingsSaveBar(props: { draft: TenantProfileDraft }) {
         </div>
 
         <Show when={draft.saveError()}>
-          <div class="max-w-[26rem] [&_p]:text-[11px] [&_p]:leading-4">
+          <div class="max-w-104 [&_p]:text-xs [&_p]:leading-4">
             <ErrorText error={draft.saveError()} />
           </div>
         </Show>
@@ -123,7 +123,7 @@ export function SlugChangeDialog(props: { draft: TenantProfileDraft }) {
             </div>
           </DialogHeader>
 
-          <div class="space-y-2 rounded-lg border border-destructive/25 bg-destructive/[0.04] p-3 text-[12px]">
+          <div class="space-y-2 rounded-lg border border-destructive/25 bg-destructive/[0.04] p-3 text-xs">
             <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
               <span class="w-14 shrink-0 text-muted-foreground">Current</span>
               <code class="break-all font-mono text-foreground">
@@ -136,7 +136,7 @@ export function SlugChangeDialog(props: { draft: TenantProfileDraft }) {
             </div>
           </div>
 
-          <div class="space-y-2 text-[12px] leading-relaxed text-muted-foreground">
+          <div class="space-y-2 text-xs leading-relaxed text-muted-foreground">
             <p>
               Bookmarks, API clients, enrollment links and shortcuts shared with your team will need
               the new address. Links using the tenant id still redirect. Your other tenant changes
@@ -146,9 +146,9 @@ export function SlugChangeDialog(props: { draft: TenantProfileDraft }) {
           </div>
 
           <label class="block">
-            <span class="text-[12px] text-foreground">
+            <span class="text-xs text-foreground">
               Type{" "}
-              <code class="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">I understand</code>{" "}
+              <code class="rounded bg-surface px-1 py-0.5 font-mono text-xs">I understand</code>{" "}
               to confirm
             </span>
             <Input

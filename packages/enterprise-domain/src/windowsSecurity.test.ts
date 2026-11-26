@@ -20,6 +20,7 @@ import {
   windowsBitlockerRotationStatusKind,
   windowsLapsResetStatusKind,
   windowsRotationPollDecision,
+  windowsRotationTerminalOutcome,
   bitlockerVolumeTypeFromGraph,
 } from "./windowsSecurity.ts";
 import { deviceActionUnavailableReason, deviceAvailableActions } from "./deviceActions.ts";
@@ -294,6 +295,12 @@ describe("BitLocker key health and reveal reasons", () => {
     expect(windowsLapsResetStatusKind("-2147483638")).toBe("pending");
     expect(windowsLapsResetStatusKind("2147483648")).toBe("failed");
     expect(windowsLapsResetStatusKind("-2147483648")).toBe("failed");
+
+    expect(windowsRotationTerminalOutcome("bitlocker", "0")).toBe("succeeded");
+    expect(windowsRotationTerminalOutcome("bitlocker", "1")).toBeNull();
+    expect(windowsRotationTerminalOutcome("bitlocker", "3")).toBe("failed");
+    expect(windowsRotationTerminalOutcome("laps", "0x8000000A")).toBeNull();
+    expect(windowsRotationTerminalOutcome("laps", "2147483648")).toBe("failed");
   });
 
   it("polls rotation status until terminal and stops after the deadline", () => {

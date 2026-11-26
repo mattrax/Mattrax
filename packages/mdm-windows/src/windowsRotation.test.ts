@@ -9,6 +9,7 @@ const now = new Date("2026-11-24T10:00:00Z");
 const row = (
   overrides: Partial<WindowsRotationCommandRow> & Pick<WindowsRotationCommandRow, "requestType" | "status">,
 ): WindowsRotationCommandRow => ({
+  id: "command-1",
   payload: null,
   resultDetail: null,
   createdAt: new Date("2026-11-24T09:00:00Z"),
@@ -37,6 +38,7 @@ describe("Windows check-in rotation polling", () => {
         kind: "Get",
         locURI: "./Device/Vendor/MSFT/BitLocker/Status/RotateRecoveryPasswordsStatus",
         requestId: "request-1",
+        execCommandId: "command-1",
       },
     });
   });
@@ -87,7 +89,14 @@ describe("Windows check-in rotation polling", () => {
     ).toBeNull();
   });
 
-  it("polls LAPS E_PENDING but not E_FAIL", () => {
+  it("polls LAPS after an accepted Exec and on E_PENDING, but not E_FAIL", () => {
+    expect(
+      planWindowsRotationPoll({
+        rows: [row({ requestType: "WindowsLapsResetPassword", status: "accepted" })],
+        now,
+      })?.requestType,
+    ).toBe("WindowsLapsResetPasswordStatus");
+
     const exec = row({ requestType: "WindowsLapsResetPassword", status: "succeeded" });
     const status = (value: string) =>
       row({

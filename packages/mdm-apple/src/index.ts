@@ -1,4 +1,4 @@
-import { Effect, Layer, Match, Option, Predicate, Schema } from "effect";
+import { Cause, Effect, Layer, Match, Option, Predicate, Schema } from "effect";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import {
   Db,
@@ -30,14 +30,16 @@ import {
   latestKnownDeviceName,
   APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
   APPLICATION_UNINSTALL_DEADLINE_MS,
+  AppleMailConfiguration,
   LOCK_SCREEN_MESSAGE_PUSH_RETRY_MS,
   isAppleLockScreenMessageDevice,
   isConfirmedMacOsDevice,
+  isTenantApplicationObjectKey,
   parseAppleLockScreenMessageConfiguration,
   resolveAppleLockScreenMessage,
 } from "@mattrax/enterprise-domain";
 import type { ApnsService } from "@mattrax/apns";
-import { importPrivateKeyJwk, openSecret, pemEncode, sealSecret } from "@mattrax/crypto";
+import { Crypto, pemEncode } from "@mattrax/crypto";
 import { PlistValue } from "@mattrax/plist";
 import {
   appleOsFamily,
@@ -49,19 +51,58 @@ import {
   createAppleProfileSigner,
   signAppleProfilePlist,
   appleInstallAssetExpiresAt,
+  scriptProfileDocumentIdentifier,
+  signAppleAssetTokenEffect,
   isRestrictedSoftwareProfileIdentifier,
   planRestrictedSoftwareProfileChanges,
   restrictedSoftwareProfileDocumentIdentifier,
-  scriptProfileDocumentIdentifier,
-  signAppleAssetToken,
   appleUploadKind,
   appleUploadSupportsDevice,
   buildRemoveApplicationPayload,
   isAppleIpaUpload,
-  verifyAppleAssetToken,
+  verifyAppleAssetTokenEffect,
 } from "@mattrax/dm-apple";
 import { serializePlist } from "@mattrax/plist";
 import { buildAdeEnrollmentProfile } from "./adeProfile.js";
+import { applePolicySupport } from "./applePolicySupport.js";
+import { parseAppleUserProfiles } from "./appleUsers.js";
+import {
+  certificateMaterialKey,
+  isAppleCertificateKind,
+  isAppleConfigurationKind,
+  isAppleIdentityCertificateKind,
+  isAppleMailKind,
+  loadCertificateMaterials,
+} from "@mattrax/mdm-core";
+import { parseManagedCertificates } from "./managedCertificates.js";
+import { appleDeliveryModeChanged, decideAppleDelivery } from "./deliveryMode.js";
+import { appleStatusItemsForDevice, DEVICE_INFORMATION_BASE_STATUS_ITEMS } from "./statusItems.js";
+import {
+  APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX,
+  appleLockScreenProfileIdentifier,
+  applyEscrowCertificate,
+  buildAppleLockScreenProfile,
+  buildAssetContent,
+  buildAssetDeclaration,
+  buildConfigurationDeclaration,
+  buildLegacyProfile,
+  certificateAllowsOrganization,
+  configurationAssetServerToken,
+  configurationServerToken,
+  parseAppleApplicationConfiguration,
+  readAppleLockScreenProfile,
+  verifyAssetRequestToken,
+} from "./policy.js";
+import type { AppleApplicationConfiguration, DeclarationContext } from "./policy.js";
+import {
+  buildLegacyProfiles,
+  installProfilePayload,
+  openCommandPayload,
+  sealLegacyInstallProfilePayload,
+  installedProfiles,
+  planLegacyProfileChanges,
+  profileDigest,
+} from "./legacyDelivery.js";
 import { policyApplicationKey } from "@mattrax/enterprise-domain";
 import { resolveAssignedScriptIds, scriptAgentToken } from "@mattrax/enterprise-domain";
 import {
@@ -107,6 +148,14 @@ import { setupIsReady } from "@mattrax/mdm-core";
 import { syncDynamicGroupsForDevice } from "@mattrax/mdm-core";
 import { deleteDepartedTenantDevice } from "@mattrax/mdm-core";
 import { ScepRepositoryLive } from "@mattrax/mdm-core";
+import {
+  BackgroundDelivery,
+  BackgroundDeliveryLive,
+  SharedBackgroundDeliveryLive,
+  deliverQueuedWebhook,
+  enqueueWebhookEvent,
+} from "@mattrax/mdm-core";
+import type { BackgroundDeliveryOptions, BackgroundDeliveryService } from "@mattrax/mdm-core";
 import { ensureScepCa } from "@mattrax/scep";
 import {
   SYSTEM_AUDIT_ACTIONS,
@@ -116,21 +165,9 @@ import {
   writeSystemAudit,
 } from "@mattrax/mdm-core";
 import type { SystemAuditOptions } from "@mattrax/mdm-core";
-import { DEVICE_INFORMATION_BASE_STATUS_ITEMS, appleStatusItemsForDevice } from "@mattrax/mdm-core";
-import { appleDeliveryModeChanged, decideAppleDelivery } from "@mattrax/mdm-core";
 import { describeSkippedConfigurations, scopeConfigurationsToDevice } from "@mattrax/mdm-core";
 import type { SkippedConfiguration } from "@mattrax/mdm-core";
-import {
-  APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX,
-  appleLockScreenProfileIdentifier,
-  buildAppleLockScreenProfile,
-  buildLegacyProfiles,
-  installProfilePayload,
-  installedProfiles,
-  planLegacyProfileChanges,
-  profileDigest,
-  readAppleLockScreenProfile,
-} from "@mattrax/mdm-core";
+
 import { isScriptProfileIdentifier, planScriptProfileChanges } from "@mattrax/mdm-core";
 import type { DesiredScriptProfile } from "@mattrax/mdm-core";
 import {
@@ -139,7 +176,7 @@ import {
   DEVICE_COMMAND_ACTIVE_LIMIT,
   DEVICE_COMMAND_INSTALL_ATTEMPT_WINDOW_MS,
   RECONCILED_RESULT_STATUS,
-  commandDedupeKey,
+  commandDedupeKeyEffect,
   commandStatusIsActive,
   deviceCommandExpiresAt,
   installApplicationTarget,
@@ -150,34 +187,19 @@ import {
   shouldRetryInstallBundle,
 } from "@mattrax/mdm-core";
 import type { CommandPayload } from "@mattrax/mdm-core";
-import { parseAppleUserProfiles } from "@mattrax/mdm-core";
 import {
-  applyEscrowCertificate,
-  buildAssetContent,
-  buildAssetDeclaration,
-  buildConfigurationDeclaration,
-  buildLegacyProfile,
   CATALOGUE_APPLICATION_ASSET_KIND,
   catalogueApplicationAssetIdentifier,
-  certificateAllowsOrganization,
   configurationAssetIdentifier,
-  configurationAssetServerToken,
   configurationDeclarationIdentifier,
-  configurationServerToken,
   isApplicationKind,
   isCertificateKind,
-  parseAppleApplicationConfiguration,
   parseCatalogueApplicationAssetIdentifier,
   parseConfigurationKind,
   splitConfigurationAssetIdentifier,
   splitConfigurationDeclarationIdentifier,
-  verifyAssetRequestToken,
 } from "@mattrax/mdm-core";
-import type {
-  AppleApplicationConfiguration,
-  DeclarationContext,
-  PolicyConfigurationRow,
-} from "@mattrax/mdm-core";
+import type { PolicyConfigurationRow } from "@mattrax/mdm-core";
 
 const DEVICE_INFORMATION_ACTIVATION_ID = "DAAF574F-36D4-4089-B2E3-D2008B65D5BE";
 
@@ -300,15 +322,22 @@ const findDeviceByScope = (
     const db = yield* Db;
     const organizationId = certificateOu(scope.identityCertificate);
 
-    if (requireIdentity && !organizationId) return null;
+    if (requireIdentity && (!organizationId || !scope.identityCertificateFingerprintSha256))
+      return null;
 
     const [device] = yield* db
       .select()
       .from(s.device)
       .where(
-        organizationId
-          ? and(eq(s.device.dmIdentifier, scope.udid), eq(s.device.organizationId, organizationId))
-          : eq(s.device.dmIdentifier, scope.udid),
+        and(
+          eq(s.device.proto, "apple"),
+          organizationId
+            ? and(
+                eq(s.device.dmIdentifier, scope.udid),
+                eq(s.device.organizationId, organizationId),
+              )
+            : eq(s.device.dmIdentifier, scope.udid),
+        ),
       )
       .limit(1);
 
@@ -316,9 +345,12 @@ const findDeviceByScope = (
 
     // A UDID is only an identifier: bind it to the certificate that first
     // enrolled it so another tenant device cannot check in as this device.
+    // Enrolled legacy rows have no identity to compare and must be re-enrolled
+    // through a proof-gated path rather than claimed by the first caller.
+    if (device.status === "enrolled" && !device.dmIdentityFingerprint) return null;
+
     if (
       scope.identityCertificateFingerprintSha256 &&
-      device.dmIdentityFingerprint &&
       device.dmIdentityFingerprint !== scope.identityCertificateFingerprintSha256
     )
       return null;
@@ -392,9 +424,30 @@ const bindAppleIdentityCertificate = (
           ),
         )
     );
+
+    // A BYOD identity was minted for one account-driven request. Record the
+    // Apple EnrollmentID and device so the user channel can prove the same
+    // profile (not a different tenant member's assertion) owns the channel.
+    if (certificate.byodEnrollmentId)
+      yield* db
+        .update(s.appleByodEnrollment)
+        .set({
+          deviceId: device.id,
+          appleEnrollmentId: scope._tag === "user" ? (scope.enrollmentId ?? null) : null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(s.appleByodEnrollment.id, certificate.byodEnrollmentId),
+            eq(s.appleByodEnrollment.organizationId, device.organizationId),
+          ),
+        );
   });
 
-type ScopedConfiguration = PolicyConfigurationRow & { readonly groupId: string };
+type ScopedConfiguration = PolicyConfigurationRow & {
+  readonly groupId: string;
+  readonly scope: "device" | "user";
+};
 
 type ScopedConfigurations = {
   readonly configurations: ReadonlyArray<ScopedConfiguration>;
@@ -452,6 +505,7 @@ const scopedConfigurations = (
       data: configuration.data,
       hash: configuration.hash ?? "",
       organizationId: device.organizationId,
+      scope: configuration.scope === "user" ? "user" : "device",
       groupId:
         configuration.scope === "group"
           ? (configuration.groupIds[0] ?? `group:${configuration.policyId}`)
@@ -459,14 +513,99 @@ const scopedConfigurations = (
     }));
 
     const scoped = yield* Effect.promise(() =>
-      scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, mode),
+      scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, mode, {
+        apple: applePolicySupport,
+      }),
+    );
+    const delivered = scoped.delivered.filter(
+      (configuration) =>
+        configuration.kind !== APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND &&
+        isAppleConfigurationKind(configuration.kind),
+    );
+    const skipped = [...scoped.skipped];
+
+    // A restored policy has public certificate metadata but no sealed PKCS#12
+    // (exports exclude the material). Do not publish declarations or profiles
+    // that would fetch nothing: report the missing upload instead.
+    const policyIds = [...new Set(delivered.map((configuration) => configuration.policyId))];
+    const materialRows = policyIds.length
+      ? yield* db
+          .select({
+            policyId: s.policyCertificateMaterial.policyId,
+            kind: s.policyCertificateMaterial.kind,
+          })
+          .from(s.policyCertificateMaterial)
+          .where(
+            and(
+              eq(s.policyCertificateMaterial.organizationId, device.organizationId),
+              inArray(s.policyCertificateMaterial.policyId, policyIds),
+            ),
+          )
+      : [];
+    const hasMaterial = new Set(
+      materialRows.map((row) => certificateMaterialKey(row.policyId, row.kind)),
     );
 
+    const appleFamily = appleOsFamily(device.osEdition);
+    const configurations = delivered.filter((configuration) => {
+      if (
+        isAppleMailKind(configuration.kind) &&
+        appleFamily === "macOS" &&
+        configuration.scope !== "user"
+      ) {
+        skipped.push({
+          policyId: configuration.policyId,
+          kind: configuration.kind,
+          reason:
+            "Apple's declarative mail account is user-scope-only on macOS; set the configuration to the user channel",
+        });
+
+        return false;
+      }
+
+      if (isAppleIdentityCertificateKind(configuration.kind)) {
+        if (hasMaterial.has(certificateMaterialKey(configuration.policyId, configuration.kind)))
+          return true;
+
+        skipped.push({
+          policyId: configuration.policyId,
+          kind: configuration.kind,
+          reason: "its PFX certificate material has not been uploaded",
+        });
+
+        return false;
+      }
+
+      if (!isAppleMailKind(configuration.kind)) return true;
+      const mail = Schema.is(Schema.JsonObject)(configuration.data)
+        ? Option.getOrUndefined(
+            Schema.decodeUnknownOption(AppleMailConfiguration)(configuration.data),
+          )
+        : undefined;
+
+      if (!mail?.smime) return true;
+      const references = [
+        mail.smime.signing?.enabled ? mail.smime.signing.certificateKind : undefined,
+        mail.smime.encryption?.enabled ? mail.smime.encryption.certificateKind : undefined,
+      ].filter((kind): kind is string => Boolean(kind));
+      const missing = references.find(
+        (kind) => !hasMaterial.has(certificateMaterialKey(configuration.policyId, kind)),
+      );
+
+      if (!missing) return true;
+
+      skipped.push({
+        policyId: configuration.policyId,
+        kind: configuration.kind,
+        reason: `its S/MIME identity "${missing}" has no uploaded PFX material`,
+      });
+
+      return false;
+    });
+
     return {
-      configurations: scoped.delivered.filter(
-        (configuration) => configuration.kind !== APPLE_LOCK_SCREEN_MESSAGE_CONFIGURATION_KIND,
-      ),
-      skipped: scoped.skipped,
+      configurations,
+      skipped,
       lockScreenMessage,
     };
   });
@@ -650,7 +789,7 @@ const declarationItemsForDevice = (
     const assets = yield* Effect.promise(() =>
       Promise.all(
         [...uniqueConfigurations.values()].flatMap((row) =>
-          isCertificateKind(row.kind)
+          isAppleCertificateKind(row.kind)
             ? [
                 configurationAssetServerToken(row, {
                   origin: context.origin,
@@ -676,67 +815,126 @@ const declarationItemsForDevice = (
   });
 
 /**
- * Bind a Shared iPad channel to the directory person its Managed Apple Account
- * identifies.
+ * Bind an Apple User Enrollment (BYOD) user channel to the directory person
+ * who completed the account-driven sign-in.
  *
- * A Shared iPad login never authenticates, so Apple's only per-user identity is
- * the Managed Apple Account identifier it sends as `UserShortName`. Directory
- * people are keyed by their email, and Apple issues these accounts as email
- * addresses, so an exact match is the correlation. It is the weakest of the
- * three sources (a certificate proves it cryptographically), which is why the
- * binding records `managed-apple-account` and never overwrites an existing one.
+ * The identity certificate installed from the profile is the proof: it carries
+ * the BYOD request id from the SCEP challenge, which in turn names the account
+ * and directory person the IdP authenticated. A channel that presents that
+ * certificate is the enrollment Apple created from that one-time profile. When
+ * Apple also reports a UserShortName it must match the Managed Apple Account;
+ * a mismatch is logged and left unbound rather than trusted.
  */
-const bindManagedAppleAccountIdentity = (
+const bindByodUserChannel = (
   device: DeviceRow,
+  scope: CheckinScope,
   appleUserId: string,
-  managedAppleAccount: string | undefined,
 ): Effect.Effect<void, unknown, Db> =>
   Effect.gen(function* () {
-    const email = managedAppleAccount?.trim().toLowerCase();
+    if (scope._tag !== "user") return;
+    if (scope.source !== "user-enrollment") return;
+    if (!scope.identityCertificateSerial) return;
 
-    if (!email || !email.includes("@")) return;
     const db = yield* Db;
 
-    const [channel] = yield* db
-      .select({ directoryUserId: s.deviceAppleUser.directoryUserId })
-      .from(s.deviceAppleUser)
-      .where(
+    const [binding] = yield* db
+      .select({
+        byodId: s.appleByodEnrollment.id,
+        directoryUserId: s.appleByodEnrollment.directoryUserId,
+        managedAppleAccount: s.appleByodEnrollment.managedAppleAccount,
+        appleEnrollmentId: s.appleByodEnrollment.appleEnrollmentId,
+        deviceId: s.appleByodEnrollment.deviceId,
+        channelDirectoryUserId: s.deviceAppleUser.directoryUserId,
+        channelIdentitySource: s.deviceAppleUser.identitySource,
+        channelIdentityUpn: s.deviceAppleUser.identityUpn,
+      })
+      .from(s.scepIssuedCertificate)
+      .innerJoin(
+        s.appleByodEnrollment,
+        and(
+          eq(s.scepIssuedCertificate.byodEnrollmentId, s.appleByodEnrollment.id),
+          eq(s.appleByodEnrollment.organizationId, device.organizationId),
+        ),
+      )
+      .leftJoin(
+        s.deviceAppleUser,
         and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
       )
-      .limit(1);
-
-    // A manual or certificate binding always wins.
-    if (!channel || channel.directoryUserId) return;
-
-    const [person] = yield* db
-      .select({ id: s.user.id, email: s.user.email })
-      .from(s.user)
       .where(
         and(
-          eq(s.user.organizationId, device.organizationId),
-          eq(s.user.email, email),
-          eq(s.user.disabled, false),
+          eq(
+            s.scepIssuedCertificate.serial,
+            normalizeIssuedCertificateSerial(scope.identityCertificateSerial),
+          ),
+          eq(s.scepIssuedCertificate.organizationId, device.organizationId),
         ),
       )
       .limit(1);
 
-    if (!person) return;
+    if (!binding?.directoryUserId) return;
 
-    yield* db
-      .update(s.deviceAppleUser)
-      .set({
-        directoryUserId: person.id,
-        identitySource: "managed-apple-account",
-        identityUpn: person.email,
-        identityVerifiedAt: now(),
-        // A late binding changes the declaration set; force a full sync.
-        ddmDeclarationsToken: null,
-        updatedAt: now(),
-      })
-      .where(
-        and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
+    const reported = (scope.userShortName ?? "").trim().toLowerCase();
+
+    if (
+      reported &&
+      reported.includes("@") &&
+      binding.managedAppleAccount &&
+      reported !== binding.managedAppleAccount
+    ) {
+      yield* Effect.logWarning(
+        "Refusing to bind a BYOD user channel whose Managed Apple Account does not match its profile",
       );
-  }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())));
+
+      return;
+    }
+
+    const bindingChanged =
+      binding.channelDirectoryUserId !== binding.directoryUserId ||
+      binding.channelIdentitySource !== "byod-sign-in" ||
+      binding.channelIdentityUpn !== (binding.managedAppleAccount ?? null);
+    const appleEnrollmentId = scope.enrollmentId ?? binding.appleEnrollmentId;
+    const identifiersChanged =
+      binding.deviceId !== device.id || binding.appleEnrollmentId !== appleEnrollmentId;
+
+    // TokenUpdate runs on every BYOD poll. Once the certificate has bound the
+    // channel and Apple's identifiers are known, there is nothing to persist.
+    if (!bindingChanged && !identifiersChanged) return;
+
+    const at = now();
+
+    if (bindingChanged)
+      yield* db
+        .update(s.deviceAppleUser)
+        .set({
+          directoryUserId: binding.directoryUserId,
+          identitySource: "byod-sign-in",
+          identityUpn: binding.managedAppleAccount ?? null,
+          identityVerifiedAt: at,
+          // A changed identity changes the declaration set; an unchanged
+          // check-in must not throw away the token and force a full resync.
+          ddmDeclarationsToken: null,
+          updatedAt: at,
+        })
+        .where(
+          and(eq(s.deviceAppleUser.deviceId, device.id), eq(s.deviceAppleUser.userId, appleUserId)),
+        );
+
+    if (identifiersChanged)
+      yield* db
+        .update(s.appleByodEnrollment)
+        .set({
+          ...(binding.deviceId !== device.id ? { deviceId: device.id } : {}),
+          ...(binding.appleEnrollmentId !== appleEnrollmentId ? { appleEnrollmentId } : {}),
+          updatedAt: at,
+        })
+        .where(eq(s.appleByodEnrollment.id, binding.byodId));
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.logWarning(
+        `Failed to bind the BYOD user channel for ${appleUserId} on ${device.id}: ${String(error)}`,
+      ),
+    ),
+  );
 
 /** The Apple user channel row plus its verified directory binding, if any. */
 const boundAppleUser = (
@@ -769,10 +967,18 @@ const boundAppleUser = (
 
     if (!row) return yield* Effect.fail(new UnknownDevice());
 
-    // A channel with no verified directory identity receives no user policy.
-    // It can still check in for commands, which is why this is `null` rather
-    // than an UnknownDevice failure.
-    if (!row.directoryUserId || !row.identityVerifiedAt) return null;
+    // A device-signed Shared iPad login proves the device, not the person.
+    // Only a certificate or an operator/IdP-provisioned binding may authorize
+    // user policy. In particular, legacy `managed-apple-account` rows created
+    // by email correlation are not proof and must receive no declarations.
+    if (
+      !row.directoryUserId ||
+      !row.identityVerifiedAt ||
+      (row.identitySource !== "certificate" &&
+        row.identitySource !== "byod-sign-in" &&
+        row.identitySource !== "manual")
+    )
+      return null;
 
     return {
       directoryUserId: row.directoryUserId,
@@ -807,13 +1013,17 @@ const userDeclarationItems = (
     const effective = yield* resolveEffectivePolicyForUser(db, device, directoryUserId);
 
     const rows: Array<ScopedConfiguration> = effective.configurations
-      .filter((configuration) => !isApplicationKind(configuration.kind))
+      .filter(
+        (configuration) =>
+          !isApplicationKind(configuration.kind) && isAppleConfigurationKind(configuration.kind),
+      )
       .map((configuration) => ({
         policyId: configuration.policyId,
         kind: configuration.kind,
         data: configuration.data,
         hash: configuration.hash ?? "",
         organizationId: device.organizationId,
+        scope: "user",
         groupId:
           configuration.scope === "group"
             ? `user:group:${configuration.groupIds[0] ?? configuration.policyId}`
@@ -821,10 +1031,34 @@ const userDeclarationItems = (
       }));
 
     const scoped = yield* Effect.promise(() =>
-      scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, "ddm"),
+      scopeConfigurationsToDevice<ScopedConfiguration>(rows, device, "ddm", {
+        apple: applePolicySupport,
+      }),
     );
 
-    const delivered = scoped.delivered;
+    const userPolicyIds = [...new Set(scoped.delivered.map((row) => row.policyId))];
+    const userMaterialRows = userPolicyIds.length
+      ? yield* db
+          .select({
+            policyId: s.policyCertificateMaterial.policyId,
+            kind: s.policyCertificateMaterial.kind,
+          })
+          .from(s.policyCertificateMaterial)
+          .where(
+            and(
+              eq(s.policyCertificateMaterial.organizationId, device.organizationId),
+              inArray(s.policyCertificateMaterial.policyId, userPolicyIds),
+            ),
+          )
+      : [];
+    const userHasMaterial = new Set(
+      userMaterialRows.map((row) => certificateMaterialKey(row.policyId, row.kind)),
+    );
+    const delivered = scoped.delivered.filter(
+      (row) =>
+        !isAppleIdentityCertificateKind(row.kind) ||
+        userHasMaterial.has(certificateMaterialKey(row.policyId, row.kind)),
+    );
     const groups = new Map<string, Array<ScopedConfiguration>>();
 
     for (const row of delivered) {
@@ -864,7 +1098,7 @@ const userDeclarationItems = (
     const assets = yield* Effect.promise(() =>
       Promise.all(
         [...unique.values()].flatMap((row) =>
-          isCertificateKind(row.kind)
+          isAppleCertificateKind(row.kind)
             ? [
                 configurationAssetServerToken(row, {
                   origin: context.origin,
@@ -1001,7 +1235,7 @@ const updateInventoryFromStatus = (
   deviceId: string,
   organizationId: string,
   statusItems: PlistInput,
-  options: { readonly authSecret?: string } = {},
+  options: SystemAuditOptions = {},
 ): Effect.Effect<AppleStatusReportOutcome, unknown, Db> =>
   Effect.gen(function* () {
     const root = record(statusItems);
@@ -1009,6 +1243,9 @@ const updateInventoryFromStatus = (
     if (!root) return emptyStatusOutcome();
     const db = yield* Db;
     const inventory = parseDeviceInventory(root);
+    const managedCertificates = yield* Effect.promise(() =>
+      parseManagedCertificates(root as never),
+    );
 
     // Compliance is derived, not stored. Capture the rollup before the write
     // so a level transition can be audited (and mirrored to webhooks) even
@@ -1072,7 +1309,7 @@ const updateInventoryFromStatus = (
                 reasons: next.reasons.map((reason) => reason.code).slice(0, 10),
               },
             },
-            { authSecret: options.authSecret },
+            options,
           ).pipe(Effect.as(true))
         : Effect.succeed(false);
 
@@ -1133,6 +1370,8 @@ const updateInventoryFromStatus = (
     if (inventory.managedCertificateCount !== undefined)
       update.managedCertificateCount = inventory.managedCertificateCount;
 
+    if (managedCertificates !== null) update.managedCertificates = managedCertificates;
+
     if (inventory.managementApps !== undefined) update.managementApps = inventory.managementApps;
 
     // Only stamp the inventory clock when at least one subscribed item was
@@ -1157,6 +1396,7 @@ const updateInventoryFromStatus = (
       inventory.osUpdateFailureCount !== undefined ||
       inventory.securityLockdownMode !== undefined ||
       inventory.managedCertificateCount !== undefined ||
+      managedCertificates !== null ||
       inventory.managementApps !== undefined;
 
     if (hasInventory) update.inventoryUpdatedAt = now();
@@ -1346,10 +1586,7 @@ const writeDeviceSecret = (
       .where(and(eq(s.deviceSecret.deviceId, device.id), eq(s.deviceSecret.kind, kind)))
       .limit(1);
 
-    const sealed = yield* Effect.tryPromise({
-      try: () => sealSecret(authSecret, plaintext),
-      catch: internal,
-    });
+    const sealed = yield* Crypto.sealSecret(authSecret, plaintext).pipe(Effect.mapError(internal));
 
     const timestamp = now();
 
@@ -1371,10 +1608,9 @@ const writeDeviceSecret = (
 
     // Compare without logging either value; a malformed/old seal is treated as
     // a rotation so the fresh value replaces it.
-    const unchanged = yield* Effect.promise(() =>
-      openSecret(authSecret, existing.sealedValue)
-        .then((value) => value === plaintext)
-        .catch(() => false),
+    const unchanged = yield* Crypto.openSecret(authSecret, existing.sealedValue).pipe(
+      Effect.map((value) => value === plaintext),
+      Effect.orElseSucceed(() => false),
     );
 
     const secretUpdate: Partial<typeof s.deviceSecret.$inferInsert> = {
@@ -1405,7 +1641,7 @@ const enqueueSecurityInfo = (
     const db = yield* Db;
     const commandId = crypto.randomUUID();
     const payload = {};
-    const dedupeKey = yield* Effect.promise(() => commandDedupeKey("SecurityInfo", payload));
+    const dedupeKey = yield* commandDedupeKeyEffect("SecurityInfo", payload);
 
     yield* db
       .insert(s.deviceCommand)
@@ -1820,11 +2056,13 @@ const queueAppleCommand = (
   requestType: string,
   payload: CommandPayload,
   at: Date,
+  /** Stable payload for de-duplication when `payload` is sealed. */
+  dedupePayload: CommandPayload = payload,
 ): Effect.Effect<{ readonly id: string }, unknown, Db> =>
   Effect.gen(function* () {
     const db = yield* Db;
     const id = crypto.randomUUID();
-    const dedupeKey = yield* Effect.promise(() => commandDedupeKey(requestType, payload));
+    const dedupeKey = yield* commandDedupeKeyEffect(requestType, dedupePayload);
 
     yield* (
       db
@@ -2171,10 +2409,10 @@ export const rotateAppleLocalAdminPasswords = (
           guid: device.localAdminGuid,
           passwordHash,
         });
-        const dedupeKey = yield* Effect.promise(() =>
-          commandDedupeKey("SetAutoAdminPassword", payload),
+        const dedupeKey = yield* commandDedupeKeyEffect("SetAutoAdminPassword", payload);
+        const sealedValue = yield* Crypto.sealSecret(authSecret, password).pipe(
+          Effect.mapError(internal),
         );
-        const sealedValue = yield* Effect.tryPromise(() => sealSecret(authSecret, password));
         const rotationId = crypto.randomUUID();
 
         // Queue the command and write its pending secret together, so a crash
@@ -2348,8 +2586,8 @@ const readAppleBootstrapToken = (
       .limit(1);
 
     if (sealed && authSecret) {
-      const token = yield* Effect.promise(() =>
-        openSecret(authSecret, sealed.sealedValue).catch(() => null),
+      const token = yield* Crypto.openSecret(authSecret, sealed.sealedValue).pipe(
+        Effect.orElseSucceed(() => null),
       );
 
       if (token) return token;
@@ -2385,13 +2623,18 @@ const policyInstalledProfiles = (
 /** Legacy profiles the device has installed, from its own command history. */
 const installedLegacyProfiles = (
   deviceId: string,
+  authSecret: string,
   limit: number | null = 200,
 ): Effect.Effect<ReadonlyMap<string, string>, unknown, Db> =>
   Effect.gen(function* () {
     const db = yield* Db;
 
     const query = db
-      .select({ requestType: s.deviceCommand.requestType, payload: s.deviceCommand.payload })
+      .select({
+        id: s.deviceCommand.id,
+        requestType: s.deviceCommand.requestType,
+        payload: s.deviceCommand.payload,
+      })
       .from(s.deviceCommand)
       .where(
         and(
@@ -2407,10 +2650,33 @@ const installedLegacyProfiles = (
     // and script callers keep the bounded default.
     const history = limit === null ? yield* query : yield* query.limit(limit);
 
-    return yield* Effect.promise(() =>
-      installedProfiles(
-        history.map((row) => ({ requestType: row.requestType, payload: row.payload })),
+    const results = yield* Effect.promise(() =>
+      Promise.all(
+        history.map(async (row) => {
+          try {
+            return {
+              ok: true as const,
+              command: {
+                requestType: row.requestType,
+                payload: await openCommandPayload(authSecret, row.payload),
+              },
+            };
+          } catch {
+            return { ok: false as const, id: row.id };
+          }
+        }),
       ),
+    );
+    for (const failure of results) {
+      if (failure.ok) continue;
+
+      yield* Effect.logWarning(
+        `Skipping unreadable sealed profile command ${failure.id} for device ${deviceId}`,
+      );
+    }
+
+    return yield* Effect.promise(() =>
+      installedProfiles(results.flatMap((result) => (result.ok ? [result.command] : []))),
     );
   });
 
@@ -2420,8 +2686,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     readonly origin: string;
     /** Push transport for the immediate post-enrollment check-in. */
     readonly apns?: ApnsService.Service;
+    /** Scoped queue used by the production Layer; direct `make` calls may omit it. */
+    readonly backgroundDelivery?: BackgroundDeliveryService;
     /** Application secret used to unseal the tenant APNs private key and sign Windows WSTEP tokens. */
     readonly authSecret?: string;
+    /** Injectable webhook transport for tests and self-hosted adapters. */
+    readonly webhookFetch?: typeof globalThis.fetch;
     /**
      * Tenant that owns Windows devices. When omitted, Windows enrollment fails
      * closed: Windows discovery/enrollment carries no tenant identity, so
@@ -2464,7 +2734,27 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
     const auditOptions: SystemAuditOptions = {
       authSecret,
+      webhookFetch: options.webhookFetch,
       coalesceWindowMs: options.auditCheckinCoalesceWindowMs,
+      webhookDispatch: options.backgroundDelivery
+        ? (event) =>
+            Effect.gen(function* () {
+              const deliveryOptions = { authSecret, fetch: options.webhookFetch };
+              // Persist every delivery before acknowledging the audit event.
+              // If the process dies or the queue is full, attempt-0 rows are
+              // recovered by the existing webhook maintenance retry pass.
+              const ids = yield* enqueueWebhookEvent(db, event, deliveryOptions);
+
+              for (const id of ids)
+                yield* options
+                  .backgroundDelivery!.enqueue(
+                    `webhook:${event.type}`,
+                    deliverQueuedWebhook(db, id, deliveryOptions),
+                    { organizationId: event.organizationId },
+                  )
+                  .pipe(Effect.asVoid);
+            })
+        : undefined,
     };
 
     const appleProfileSigner = options.appleProfileSigning
@@ -2575,10 +2865,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     /**
      * mttx pushes a check-in immediately after a device first reports its push
      * token, so the freshly enrolled device receives its configuration without
-     * waiting for the next poll. Failures are logged and ignored.
+     * waiting for the next poll. This wake-up hint is intentionally
+     * non-durable: a crash or full queue may drop it, and devices still poll.
      */
-    const pushEnrolledDevice = (deviceId: string, organizationId: string) =>
-      Effect.gen(function* () {
+    const pushEnrolledDevice = (deviceId: string, organizationId: string) => {
+      const delivery = Effect.gen(function* () {
         if (!apns || !authSecret) return;
 
         const [apple] = yield* db
@@ -2599,17 +2890,17 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         // SAFETY: The APNs key is stored as a JWK by the settings writer, and
         // importPrivateKeyJwk validates the key material before use.
-        const jwk = JSON.parse(
-          yield* Effect.tryPromise({
-            try: () => openSecret(authSecret, certificate.encryptedKey!),
-            catch: () => new Error("Failed to decrypt the APNs private key"),
-          }),
-        ) as JsonWebKey;
-
-        const key = yield* Effect.tryPromise({
-          try: () => importPrivateKeyJwk(jwk),
-          catch: () => new Error("Failed to import the APNs private key"),
+        const sealed = yield* Crypto.openSecret(authSecret, certificate.encryptedKey!).pipe(
+          Effect.mapError(() => new Error("Failed to decrypt the APNs private key")),
+        );
+        const jwk = yield* Effect.try({
+          try: () => JSON.parse(sealed) as JsonWebKey,
+          catch: () => new Error("Failed to parse the APNs private key"),
         });
+
+        const key = yield* Crypto.importPrivateKeyJwk(jwk).pipe(
+          Effect.mapError(() => new Error("Failed to import the APNs private key")),
+        );
 
         const pkcs8 = yield* Effect.tryPromise({
           try: () => crypto.subtle.exportKey("pkcs8", key),
@@ -2623,11 +2914,29 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           certPem: certificate.certPem,
           privateKeyPem: pemEncode("PRIVATE KEY", pkcs8),
         });
-      }).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning(`Failed to send post-enrollment APNs push: ${String(error)}`),
-        ),
-      );
+      });
+
+      return options.backgroundDelivery
+        ? options.backgroundDelivery
+            .enqueue("apns:post-enrollment", delivery, { organizationId })
+            .pipe(
+              // The queue logs its own drop with the tenant. Keep the APNs path
+              // explicit too: a dropped wake-up is safe (the device polls) but
+              // must be diagnosable instead of silently discarded.
+              Effect.flatMap((accepted) =>
+                accepted
+                  ? Effect.void
+                  : Effect.logWarning(
+                      `APNs post-enrollment wake-up was dropped for tenant ${organizationId}`,
+                    ),
+              ),
+            )
+        : delivery.pipe(
+            Effect.catch((error) =>
+              Effect.logWarning(`Failed to send post-enrollment APNs push: ${String(error)}`),
+            ),
+          );
+    };
 
     /**
      * Queue `SecurityInfo` so a Mac's FileVault key and Activation Lock state
@@ -2649,6 +2958,16 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       at: Date,
     ): Effect.Effect<{ readonly installed: number; readonly removed: number }, unknown, Db> =>
       Effect.gen(function* () {
+        // A sealed profile command needs AUTH_SECRET. Refuse legacy delivery
+        // rather than sealing under an empty key or storing plaintext.
+        if (!authSecret) {
+          yield* Effect.logWarning(
+            `Legacy policy not delivered to ${device.id}: AUTH_SECRET is not configured, so profile commands cannot be sealed.`,
+          );
+
+          return { installed: 0, removed: 0 };
+        }
+
         const [active] = yield* db
           .select({ id: s.deviceCommand.id })
           .from(s.deviceCommand)
@@ -2666,8 +2985,28 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         const escrowCertificatePem = yield* tenantEscrowCertificate(device.organizationId);
 
+        const materials = yield* loadCertificateMaterials(
+          db,
+          authSecret ?? "",
+          device.organizationId,
+          configurations.map((configuration) => ({
+            policyId: configuration.policyId,
+            kind: configuration.kind,
+          })),
+        );
+
         const built = yield* Effect.promise(() =>
-          buildLegacyProfiles(configurations, { escrowCertificatePem }),
+          buildLegacyProfiles(configurations, {
+            escrowCertificatePem,
+            osFamily: appleOsFamily(device.osEdition),
+            materialFor: (kind) => {
+              const configuration = configurations.find((entry) => entry.kind === kind);
+
+              return configuration
+                ? (materials.get(certificateMaterialKey(configuration.policyId, kind)) ?? null)
+                : null;
+            },
+          }),
         );
 
         for (const skipped of built.unsupported)
@@ -2675,14 +3014,22 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             `Legacy policy ${skipped.policyId}/${skipped.kind} not delivered to ${device.id}: ${skipped.reason}`,
           );
 
-        const installed = policyInstalledProfiles(yield* installedLegacyProfiles(device.id));
+        const installed = policyInstalledProfiles(
+          yield* installedLegacyProfiles(device.id, authSecret ?? ""),
+        );
 
         const changes = yield* Effect.promise(() =>
           planLegacyProfileChanges(built.profiles, installed),
         );
 
-        for (const profile of changes.install)
-          yield* queueAppleCommand(device, "InstallProfile", installProfilePayload(profile), at);
+        for (const profile of changes.install) {
+          const plaintext = installProfilePayload(profile);
+          const payload = yield* Effect.promise(() =>
+            sealLegacyInstallProfilePayload(authSecret ?? "", profile),
+          );
+
+          yield* queueAppleCommand(device, "InstallProfile", payload, at, plaintext);
+        }
 
         for (const identifier of changes.remove)
           yield* queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at);
@@ -2700,7 +3047,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       at: Date,
     ): Effect.Effect<void, unknown, Db> =>
       Effect.gen(function* () {
-        const installed = policyInstalledProfiles(yield* installedLegacyProfiles(device.id));
+        const installed = policyInstalledProfiles(
+          yield* installedLegacyProfiles(device.id, authSecret ?? ""),
+        );
 
         for (const identifier of installed.keys())
           yield* queueAppleCommand(device, "RemoveProfile", { Identifier: identifier }, at);
@@ -2735,7 +3084,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         if (active) return;
 
-        const installed = yield* installedLegacyProfiles(device.id);
+        const installed = yield* installedLegacyProfiles(device.id, authSecret ?? "");
 
         const removeProfiles = (identifiers: ReadonlyArray<string>) =>
           Effect.forEach(identifiers, (identifier) =>
@@ -2934,7 +3283,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
         if (active) return;
 
-        const installed = yield* installedLegacyProfiles(device.id, null);
+        const installed = yield* installedLegacyProfiles(device.id, authSecret ?? "", null);
         const installedProfiles = new Map(
           [...installed].filter(([identifier]) =>
             isRestrictedSoftwareProfileIdentifier(identifier),
@@ -3037,13 +3386,57 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         return { installed: changes.install.length, removed: changes.remove.length };
       });
 
-    const requireDevice = (scope: CheckinScope) =>
+    const requireActiveIdentityCertificate = (device: DeviceRow, scope: CheckinScope) =>
+      Effect.gen(function* () {
+        if (
+          certificateOu(scope.identityCertificate) !== device.organizationId ||
+          !scope.identityCertificateFingerprintSha256 ||
+          !device.dmIdentityFingerprint ||
+          device.dmIdentityFingerprint !== scope.identityCertificateFingerprintSha256
+        )
+          return yield* Effect.fail(new UnknownDevice());
+
+        const serial = scope.identityCertificateSerial
+          ? normalizeIssuedCertificateSerial(scope.identityCertificateSerial)
+          : null;
+
+        if (!serial) return yield* Effect.fail(new UnknownDevice());
+
+        const [certificate] = yield* db
+          .select()
+          .from(s.scepIssuedCertificate)
+          .where(
+            and(
+              eq(s.scepIssuedCertificate.serial, serial),
+              eq(s.scepIssuedCertificate.organizationId, device.organizationId),
+              inArray(s.scepIssuedCertificate.deviceId, certificateDeviceIdsFor(device)),
+              isNull(s.scepIssuedCertificate.revokedAt),
+            ),
+          )
+          .limit(1);
+
+        if (!certificate || certificate.notAfter.getTime() <= now().getTime())
+          return yield* Effect.fail(new UnknownDevice());
+
+        return device;
+      }).pipe(Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())));
+
+    const requireDeviceWithStatus = (
+      scope: CheckinScope,
+      statuses: ReadonlyArray<DeviceRow["status"]>,
+    ) =>
       findDeviceByScope(scope, options.requireAppleDeviceIdentity).pipe(
         Effect.flatMap((device) =>
-          device ? Effect.succeed(device) : Effect.fail(new UnknownDevice()),
+          device && statuses.includes(device.status)
+            ? requireActiveIdentityCertificate(device, scope)
+            : Effect.fail(new UnknownDevice()),
         ),
         Effect.mapError((cause) => (cause instanceof UnknownDevice ? cause : internal())),
       );
+
+    /** Shared authorization boundary for Apple escrow and declaration reads. */
+    const requireDevice = (scope: CheckinScope) =>
+      requireDeviceWithStatus(scope, ["enrolled", "enrolling"]);
 
     /**
      * Require the user-channel mapping a device established on this tenant.
@@ -3145,10 +3538,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             ),
           );
 
+        const payload = yield* Effect.promise(() =>
+          openCommandPayload(authSecret ?? "", command.payload),
+        );
+
         return {
           commandUUID: command.id,
           requestType: command.requestType,
-          payload: command.payload ?? {},
+          payload,
         };
       });
 
@@ -3369,7 +3766,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
         if (device.status !== "enrolled") return;
 
         const identifier = appleLockScreenProfileIdentifier(device.id);
-        const installed = yield* installedLegacyProfiles(device.id);
+        const installed = yield* installedLegacyProfiles(device.id, authSecret ?? "");
         const installedDigest = installed.get(identifier);
 
         // Serialise profile commands: an in-flight install/remove may be about
@@ -3946,16 +4343,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               ? catalogueApplicationAssetIdentifier(assetOwnerId)
               : configurationAssetIdentifier(row.policyId, row.kind);
 
-            const token = yield* Effect.tryPromise({
-              try: () =>
-                signAppleAssetToken(authSecret ?? "", {
-                  policyId: assetOwnerId ?? row.policyId,
-                  kind: assetOwnerId ? CATALOGUE_APPLICATION_ASSET_KIND : row.kind,
-                  deviceId: device.id,
-                  expiresAt: appleInstallAssetExpiresAt(at.getTime()),
-                }),
-              catch: internal,
-            });
+            const token = yield* signAppleAssetTokenEffect(authSecret ?? "", {
+              policyId: assetOwnerId ?? row.policyId,
+              kind: assetOwnerId ? CATALOGUE_APPLICATION_ASSET_KIND : row.kind,
+              deviceId: device.id,
+              expiresAt: appleInstallAssetExpiresAt(at.getTime()),
+            }).pipe(Effect.mapError(internal));
 
             if (uploadKind === "pkg") {
               const url = `${serverOrigin}/mdm/apple/assets/${encodeURIComponent(identifier)}?token=${encodeURIComponent(token)}`;
@@ -4102,9 +4495,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
           if (!shouldRetryInstall(history, { ...install, now: at })) continue;
 
-          const dedupeKey = yield* Effect.promise(() =>
-            commandDedupeKey(install.requestType, install.payload),
-          );
+          const dedupeKey = yield* commandDedupeKeyEffect(install.requestType, install.payload);
 
           yield* (
             db
@@ -4617,10 +5008,12 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
           );
         }),
       ).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning(`Could not record the Apple check-in failure: ${String(cause)}`),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterrupts(cause),
+          (cause) =>
+            Effect.logWarning(`Could not record the Apple check-in failure: ${String(cause)}`),
         ),
-      );
+      ) as Effect.Effect<void>;
 
     return ManagementBackend.of({
       appleRecordFailure,
@@ -4775,11 +5168,10 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 // Overwriting an enrolled device from a different certificate
                 // would let one enrolled device hijack another device's UDID.
                 if (
-                  existingByUdid &&
-                  identityFingerprint &&
-                  existingByUdid.dmIdentityFingerprint &&
-                  existingByUdid.dmIdentityFingerprint !== identityFingerprint &&
-                  existingByUdid.status === "enrolled"
+                  existingByUdid?.status === "enrolled" &&
+                  (!identityFingerprint ||
+                    !existingByUdid.dmIdentityFingerprint ||
+                    existingByUdid.dmIdentityFingerprint !== identityFingerprint)
                 )
                   return yield* Effect.fail(new UnknownDevice());
                 const deviceId = existing?.id ?? id();
@@ -4961,9 +5353,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         requestType,
                         payload,
                         status: "queued",
-                        dedupeKey: yield* Effect.promise(() =>
-                          commandDedupeKey(requestType, payload),
-                        ),
+                        dedupeKey: yield* commandDedupeKeyEffect(requestType, payload),
                         expiresAt: deviceCommandExpiresAt(requestType, at),
                         createdAt: at,
                         updatedAt: at,
@@ -4988,6 +5378,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       device: departed,
                       reason: "Apple Authenticate enrolled the same serial in another tenant",
                       authSecret,
+                      webhookDispatch: auditOptions.webhookDispatch,
                     }).pipe(
                       Effect.catch((error) =>
                         Effect.logWarning(
@@ -5120,21 +5511,15 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .set({ lastSeenAt: at })
                     .where(eq(s.device.id, device.id));
 
-                  // A Shared iPad login identifies itself only by its Managed
-                  // Apple Account, so this is where that account is correlated
-                  // with the directory.
-                  if (sharedIpad)
-                    yield* bindManagedAppleAccountIdentity(
-                      device,
-                      event.userId,
-                      event.userShortName ?? scope.userShortName,
-                    ).pipe(
-                      Effect.catch((error) =>
-                        Effect.logWarning(
-                          `Failed to bind the Managed Apple Account for ${event.userId} on ${device.id}: ${String(error)}`,
-                        ),
-                      ),
-                    );
+                  // User Enrollment carries a per-user profile certificate,
+                  // which binds the channel to the IdP-authenticated person.
+                  if (scope.source === "user-enrollment")
+                    yield* bindByodUserChannel(device, scope, event.userId);
+
+                  // Shared iPad's UserShortName is only a device-asserted
+                  // routing key. Never promote it to a verified directory
+                  // identity; a pre-provisioned proof-backed binding, if one
+                  // already exists, is preserved by the upsert above.
 
                   // Keep the enrollment kind correct for devices that enrolled
                   // before the column existed: a user-enrollment user channel
@@ -5213,7 +5598,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                             model: device.model ?? null,
                           },
                         },
-                        { authSecret },
+                        auditOptions,
                       );
 
                     yield* queueLocalAdminAccount(device, authSecret, timestamp).pipe(
@@ -5244,7 +5629,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                           model: device.model ?? null,
                         },
                       },
-                      { authSecret },
+                      auditOptions,
                     );
                     yield* pushEnrolledDevice(device.id, device.organizationId);
                     yield* syncDeviceGroups(device.organizationId, device.id);
@@ -5300,7 +5685,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         protocol: "apple",
                         metadata: { platform: "apple", serial: device.serial ?? null },
                       },
-                      { authSecret },
+                      auditOptions,
                     );
                   }
                 }
@@ -5416,7 +5801,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       protocol: "apple",
                       metadata: { platform: "apple", previousStatus: device.status },
                     },
-                    { authSecret },
+                    auditOptions,
                   );
                 yield* db
                   .update(s.deviceApple)
@@ -5746,7 +6131,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       protocol: "apple",
                       metadata: { platform: "apple", serial: device.serial ?? null },
                     },
-                    { authSecret },
+                    auditOptions,
                   );
                   yield* writeSystemAudit(
                     db,
@@ -5763,7 +6148,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                         model: device.model ?? null,
                       },
                     },
-                    { authSecret },
+                    auditOptions,
                   );
                   yield* pushEnrolledDevice(device.id, device.organizationId);
                   yield* syncDeviceGroups(device.organizationId, device.id);
@@ -5929,7 +6314,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   }
                 }
 
-                yield* applySecurityInfo(device, queryResponses, { authSecret });
+                yield* applySecurityInfo(device, queryResponses, auditOptions);
                 yield* applyInstalledApplications(device, queryResponses, {
                   releaseVppLicence: options.releaseAppleVppLicence,
                 });
@@ -5965,47 +6350,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .where(eq(s.deviceApple.deviceId, device.id));
                 }
 
-                // A successful erase destroys the disk the recovery key protects
-                // and the device generates a new Activation Lock bypass code on
-                // its next setup, so the old escrow values are history.
-                if (command?.requestType === "EraseDevice" && nextStatus === "succeeded")
-                  yield* Effect.gen(function* () {
-                    yield* db
-                      .delete(s.deviceSecret)
-                      .where(
-                        and(
-                          eq(s.deviceSecret.deviceId, device.id),
-                          inArray(s.deviceSecret.kind, [
-                            "filevault_recovery_key",
-                            "activation_lock_bypass_code",
-                            "recovery_lock_password",
-                            "local_admin_password",
-                            "local_admin_password_pending",
-                          ]),
-                        ),
-                      );
-                    // The erase destroys the managed account and any Lost Mode
-                    // state, so neither survives it.
-                    yield* db
-                      .update(s.deviceApple)
-                      .set({
-                        localAdminGuid: null,
-                        lostModeEnabled: false,
-                        lostModeMessage: null,
-                        lostModePhone: null,
-                        lostModeFootnote: null,
-                        lostModeLatitude: null,
-                        lostModeLongitude: null,
-                        lostModeHorizontalAccuracy: null,
-                        lostModeVerticalAccuracy: null,
-                        lostModeLocationReportedAt: null,
-                        lostModeLocationUpdatedAt: null,
-                      })
-                      .where(eq(s.deviceApple.deviceId, device.id));
-                    yield* db
-                      .delete(s.deviceLocalAccount)
-                      .where(eq(s.deviceLocalAccount.deviceId, device.id));
-                  });
+                // EraseDevice's Acknowledged status is asserted by the device
+                // whose signing identity may be compromised. Record the command
+                // result, but never purge irreversible tenant escrow here. A
+                // future independent terminal-erase confirmation path must own
+                // that cleanup; until then retaining the secrets fails closed.
 
                 // `PasswordVerified` is the answer to a `VerifyRecoveryLock`
                 // command; record it so the device page can report the check.
@@ -6137,7 +6486,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                   device.id,
                   device.organizationId,
                   Option.getOrUndefined(Schema.decodeUnknownOption(PlistValue)(event.statusItems)),
-                  { authSecret },
+                  auditOptions,
                 );
 
                 // A report is only an event when it changed something. Polls
@@ -6205,7 +6554,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       > =>
         provideDb(
           Effect.gen(function* () {
-            const device = yield* requireDevice(scope);
+            const device = yield* requireDeviceWithStatus(scope, [
+              "enrolled",
+              "enrolling",
+              "unenrolling",
+            ]);
             yield* bindAppleIdentityCertificate(device, scope);
 
             if (device.status === "unenrolling")
@@ -6330,6 +6683,11 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 ),
               ),
             );
+
+            if (decision.mode === "ddm" && scoped.skipped.length > 0)
+              yield* Effect.logWarning(
+                `DDM policy for ${device.id} skipped: ${describeSkippedConfigurations(scoped.skipped)}`,
+              );
 
             if (decision.mode === "legacy") {
               const skippedNote = describeSkippedConfigurations(scoped.skipped);
@@ -6520,6 +6878,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       getAppleBootstrapToken: (scope) =>
         provideDb(
           Effect.gen(function* () {
+            if (scope._tag !== "device") return yield* Effect.fail(new UnknownDevice());
+
             const device = yield* requireDevice(scope);
 
             return yield* readAppleBootstrapToken(device, authSecret);
@@ -6877,6 +7237,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       authSecret: authSecret ?? "",
                       deviceToken,
                       deviceId: device.id,
+                      osFamily: appleOsFamily(device.osEdition),
                     }),
                   catch: internal,
                 });
@@ -6915,6 +7276,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               authSecret: authSecret ?? "",
               deviceToken,
               deviceId: device.id,
+              osFamily: appleOsFamily(device.osEdition),
             };
 
             const mode = yield* deliveryModeForDevice(device.id).pipe(Effect.mapError(internal));
@@ -7097,14 +7459,16 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
               if (!application?.r2Key || !application.sha256) return null;
 
-              const assetToken = yield* Effect.tryPromise({
-                try: () =>
-                  verifyAppleAssetToken(authSecret ?? "", token, {
-                    policyId: catalogueApplicationId,
-                    kind: CATALOGUE_APPLICATION_ASSET_KIND,
-                  }),
-                catch: internal,
-              });
+              // The row is tenant-checked below, but the *key* must also belong
+              // to that tenant: a row imported before key validation could still
+              // point at another tenant's object.
+              if (!isTenantApplicationObjectKey(application.organizationId, application.r2Key))
+                return null;
+
+              const assetToken = yield* verifyAppleAssetTokenEffect(authSecret ?? "", token, {
+                policyId: catalogueApplicationId,
+                kind: CATALOGUE_APPLICATION_ASSET_KIND,
+              }).pipe(Effect.mapError(internal));
 
               if (!assetToken) return null;
 
@@ -7154,7 +7518,8 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             if (!row || row.policy.enabled === false) return null;
 
             const configKind = row.configuration.kind;
-            const certificate = isCertificateKind(configKind);
+            const certificate = isAppleCertificateKind(configKind);
+            const identity = isAppleIdentityCertificateKind(configKind);
             const application = isApplicationKind(configKind);
 
             if (!certificate && !application) return null;
@@ -7175,7 +7540,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
             // certificate from the owning tenant, or the DDM/install URL carries
             // a valid, unexpired token bound to a device that still belongs to
             // that tenant and is enrolled.
+            // A trusted root is public, but an identity asset carries a
+            // private key and password. It is never served to a merely
+            // tenant-valid mTLS certificate: the signed per-device token is
+            // required, and the device must still resolve the policy/kind so a
+            // revoked assignment or stale token stops working.
             const tenantAllowed =
+              !identity &&
               identityCertificate !== undefined &&
               certificateAllowsOrganization(identityCertificate, row.policy.organizationId);
 
@@ -7190,19 +7561,45 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     .select({ organizationId: s.device.organizationId, status: s.device.status })
                     .from(s.device)
                     .where(eq(s.device.id, assetToken.deviceId))
-                    .limit(1)
-                    .pipe(Effect.mapError(internal));
+                    .limit(1);
 
-                  return (
-                    device?.organizationId === row.policy.organizationId &&
-                    device.status === "enrolled"
+                  if (
+                    device?.organizationId !== row.policy.organizationId ||
+                    device.status !== "enrolled"
+                  )
+                    return false;
+
+                  const effective = yield* resolveEffectivePolicyForDevice(
+                    db,
+                    {
+                      id: assetToken.deviceId,
+                      organizationId: device.organizationId,
+                    },
+                    { includeUserScoped: true },
                   );
-                })
+
+                  return effective.configurations.some(
+                    (configuration) =>
+                      configuration.policyId === parsed.policyId &&
+                      configuration.kind === parsed.kind,
+                  );
+                }).pipe(Effect.mapError(internal))
               : false;
 
-            if (!tenantAllowed && !tokenAllowed) return null;
+            if (identity ? !tokenAllowed : !tenantAllowed && !tokenAllowed) return null;
 
-            if (certificate) return buildAssetContent(configRow);
+            if (certificate) {
+              const materials = yield* loadCertificateMaterials(
+                db,
+                authSecret ?? "",
+                row.policy.organizationId,
+                [{ policyId: configRow.policyId, kind: configRow.kind }],
+              ).pipe(Effect.mapError(internal));
+
+              return buildAssetContent(configRow, {
+                material: materials.get(certificateMaterialKey(configRow.policyId, configRow.kind)),
+              });
+            }
 
             const configuration = parseAppleApplicationConfiguration(configRow.data);
 
@@ -7251,15 +7648,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               .select()
               .from(s.applicationInstaller)
               .where(eq(s.applicationInstaller.id, catalogueApplicationId))
-              .limit(1)
-              .pipe(Effect.mapError(internal));
+              .limit(1);
 
             const [application] = yield* db
               .select()
               .from(s.application)
               .where(eq(s.application.id, installer?.applicationId ?? catalogueApplicationId))
-              .limit(1)
-              .pipe(Effect.mapError(internal));
+              .limit(1);
 
             const file = installer ?? application;
 
@@ -7280,13 +7675,9 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
 
             if (!bundleId) return null;
 
-            const assetToken = yield* Effect.tryPromise({
-              try: () =>
-                verifyAppleAssetToken(authSecret ?? "", token, {
-                  policyId: catalogueApplicationId,
-                  kind: CATALOGUE_APPLICATION_ASSET_KIND,
-                }),
-              catch: internal,
+            const assetToken = yield* verifyAppleAssetTokenEffect(authSecret ?? "", token, {
+              policyId: catalogueApplicationId,
+              kind: CATALOGUE_APPLICATION_ASSET_KIND,
             });
 
             if (!assetToken) return null;
@@ -7295,8 +7686,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
               .select({ organizationId: s.device.organizationId, status: s.device.status })
               .from(s.device)
               .where(eq(s.device.id, assetToken.deviceId))
-              .limit(1)
-              .pipe(Effect.mapError(internal));
+              .limit(1);
 
             if (
               assetDevice?.organizationId !== application.organizationId ||
@@ -7314,13 +7704,13 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                 version: installer?.version ?? application.version ?? "0",
                 title: application.name,
               }),
-            ).pipe(Effect.mapError(internal));
+            );
 
             return {
               content: new TextEncoder().encode(content),
               contentType: "application/xml",
             };
-          }),
+          }).pipe(Effect.mapError(internal)),
         ),
 
       getAppleProfile: (policyId, kind, deviceId) =>
@@ -7408,6 +7798,14 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
     origin: string,
     options?: {
       readonly apns?: ApnsService.Service;
+      readonly webhookFetch?: typeof globalThis.fetch;
+      readonly deliveryQueue?: BackgroundDeliveryOptions;
+      /**
+       * Share one delivery queue across rebuilt request layers. Enable this in
+       * a hosted runtime; tests and short-lived hosts keep the scoped queue so
+       * disposing the layer still drains its work.
+       */
+      readonly isolateWideDelivery?: boolean;
       readonly authSecret?: string;
       readonly windowsOrganizationId?: string;
       readonly requireWindowsDeviceIdentity?: boolean;
@@ -7425,9 +7823,21 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
       ManagementBackend,
       Effect.gen(function* () {
         const db = yield* Db;
+        const backgroundDelivery = yield* BackgroundDelivery;
 
-        return ManagementBackendEnterpriseLive.make({ db, origin, ...options });
+        return ManagementBackendEnterpriseLive.make({
+          db,
+          origin,
+          ...options,
+          backgroundDelivery,
+        });
       }),
+    ).pipe(
+      Layer.provideMerge(
+        options?.isolateWideDelivery
+          ? SharedBackgroundDeliveryLive(options.deliveryQueue)
+          : BackgroundDeliveryLive(options?.deliveryQueue),
+      ),
     );
 }
 
@@ -7435,174 +7845,20 @@ export const policyHash = jsonHash;
 
 export * from "./adeProfile.js";
 
-export {
-  SYSTEM_AUDIT_ACTOR,
-  SYSTEM_AUDIT_ACTIONS,
-  commandFailureTransition,
-  declarationFailedTransition,
-  isDeclarationFailure,
-  pushInvalidTokenTransition,
-  writeSystemAudit,
-  type SystemAuditEvent,
-  type SystemAuditOptions,
-} from "@mattrax/mdm-core";
+export * from "./applePolicySupport.js";
+export * from "./appleUsers.js";
+export * from "./deliveryMode.js";
+export * from "./statusItems.js";
+export * from "./policy.js";
+export * from "./legacyDelivery.js";
 
 export {
-  WEBHOOK_DELIVERY_RETENTION_DAYS,
-  WEBHOOK_DELIVERY_TIMEOUT_MS,
-  WEBHOOK_MAX_RETRY_ATTEMPTS,
-  buildWebhookPayload,
-  dispatchWebhookEvent,
-  generateWebhookSecret,
-  pruneWebhookDeliveries,
-  replayWebhookDelivery,
-  retryFailedWebhookDeliveries,
-  sendTestWebhook,
-  signWebhookDelivery,
-  toWebhookEndpointInfo,
-  verifyWebhookSignature,
-  webhookEventForAuditAction,
-  webhookSecretPrefix,
-  type WebhookDeliveryOptions,
-  type WebhookDeliveryOutcome,
-  type WebhookEndpointRow,
-  type WebhookEventInput,
-  WebhookPayload,
-  type WebhookReplayResult,
-  type WebhookRetryOptions,
-  type WebhookRetryResult,
+  certificateMaterialKey,
+  isAppleCertificateKind,
+  loadCertificateMaterials,
+  prepareCertificateConfiguration,
+  type PolicyCertificateMaterial,
+  type PolicyCertificateMaterialRow,
 } from "@mattrax/mdm-core";
 
-export { createScepChallenge, verifyScepChallenge } from "@mattrax/scep";
-
-export {
-  ScepRepositoryLive,
-  issueScepChallenge,
-  scepChallengeId,
-  type IssueScepChallengeOptions,
-  type IssuedScepChallenge,
-} from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-core";
-
-export { resolveEffectivePolicyForDevice } from "@mattrax/mdm-core";
-
-export {
-  SCRIPT_PROFILE_IDENTIFIER_PREFIX,
-  isScriptProfileIdentifier,
-  planScriptProfileChanges,
-} from "@mattrax/mdm-core";
-
-export type { DesiredScriptProfile, ScriptProfileChanges } from "@mattrax/mdm-core";
-
-export * from "@mattrax/mdm-windows";
-
-export * from "@mattrax/mdm-windows";
-
-export * from "@mattrax/mdm-windows";
-
-export * from "@mattrax/mdm-windows";
-
-export {
-  OS_UPDATE_INSTALL_STATES,
-  parseDeviceInventory,
-  normalizeBatteryHealth,
-  normalizeBoolean,
-  normalizeCapabilities,
-  statusItemValue,
-  type DeviceInventory,
-  type ManagementAppStatus,
-} from "@mattrax/mdm-core";
-
-export {
-  parseActivationLockBypassCode,
-  parseRecoveryLockVerification,
-  parseRotatedRecoveryKey,
-  parseSecurityInfo,
-  type FileVaultStatus,
-  type RecoveryKeyFormat,
-  type SecurityInfoReport,
-} from "@mattrax/mdm-core";
-
-export {
-  ADDITIONAL_STATUS_ITEMS,
-  DEVICE_INFORMATION_BASE_STATUS_ITEMS,
-  appleStatusItemsForDevice,
-} from "@mattrax/mdm-core";
-
-export {
-  appleDeclarativeCapability,
-  appleDeliveryModeChanged,
-  decideAppleDelivery,
-  type AppleCapabilitySupport,
-  type AppleDeliveryDecision,
-  type AppleDeliveryMode,
-} from "@mattrax/mdm-core";
-
-export {
-  describeSkippedConfigurations,
-  scopeConfigurationsToDevice,
-  type OsScopedConfigurations,
-  type PolicyDeliveryDevice,
-  type SkippedConfiguration,
-} from "@mattrax/mdm-core";
-
-export {
-  buildLegacyProfiles,
-  installProfilePayload,
-  installedProfiles,
-  planLegacyProfileChanges,
-  profileDigest,
-  type LegacyProfile,
-  type LegacyProfileBuild,
-  type LegacyProfileChanges,
-} from "@mattrax/mdm-core";
-
-export {
-  APPLE_LOCK_SCREEN_PROFILE_IDENTIFIER_PREFIX,
-  appleLockScreenProfileIdentifier,
-  buildAppleLockScreenProfile,
-  readAppleLockScreenProfile,
-  type AppleLockScreenProfileContent,
-} from "@mattrax/mdm-core";
-
-export {
-  APPLE_APPLICATION_INVENTORY_PAYLOAD,
-  APPLE_DEVICE_INFORMATION_PAYLOAD,
-  parseInstalledApplications,
-  type InstalledApplicationReport,
-} from "@mattrax/mdm-core";
-
-export {
-  syncDynamicGroup,
-  syncDynamicGroupDependents,
-  syncDynamicGroupsForDevice,
-  syncDynamicGroupsForTenant,
-  previewDynamicGroup,
-  type DynamicGroupPreview,
-  type DynamicGroupPreviewReference,
-  type DynamicGroupSyncOptions,
-  type DynamicGroupSyncResult,
-} from "@mattrax/mdm-core";
-
-export {
-  syncDirectoryGroup,
-  syncDirectoryGroupsForTenant,
-  type DirectoryGroupSyncOptions,
-  type DirectoryGroupSyncResult,
-} from "@mattrax/mdm-core";
-
-export {
-  assignedApplicationIdsForDevice,
-  assignedDeviceIdsForApplication,
-} from "@mattrax/mdm-core";
+export { parseManagedCertificates, type ManagedCertificate } from "./managedCertificates.js";

@@ -3,7 +3,7 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { Show } from "solid-js";
 import { Page, PageHeader, QueryError, relativeTime } from "~/components/mdm/common";
-import { DashboardReportsPanel } from "~/components/dashboard/reports";
+import DashboardReportsPanel from "~/components/dashboard/reports";
 import { Button } from "~/components/ui/button";
 import { enterpriseQueries } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
@@ -54,7 +54,7 @@ export default function DashboardReportsPage() {
 
       <Show when={dashboard.data}>
         <DashboardReportsPanel tenantId={params.tenantId!} dashboardId={params.dashboardId!} />
-        <p class="text-[11px] text-muted-foreground">
+        <p class="text-xs text-muted-foreground">
           Reports belong to this dashboard.
           <Show when={dashboard.data?.updatedAt}>
             {" "}

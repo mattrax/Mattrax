@@ -7,7 +7,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { SOFA_MACOS_FEED_URL } from "@mattrax/enterprise-backend";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -83,7 +83,6 @@ const makeContext = async () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake implements the auth methods these tests exercise.
@@ -126,6 +125,15 @@ const seedDevice = (
     enrolledAt: now,
     lastSeenAt: now,
   });
+
+const required = <T>(value: T | undefined): T => {
+  if (value === undefined) throw new Error("Expected fixture entry");
+
+  return value;
+};
+
+const findPlatform = (policy: { readonly platforms: readonly any[] }, name: string) =>
+  required(policy.platforms.find((entry) => entry.platform === name));
 
 describe("tenant OS policy API", () => {
   it("returns every platform with inert defaults", async () => {
@@ -174,7 +182,7 @@ describe("tenant OS policy API", () => {
       }),
     );
 
-    const macos = saved.platforms.find((entry: any) => entry.platform === "macos");
+    const macos = findPlatform(saved, "macos");
 
     expect(macos.minimumVersion).toBe("15.0");
     expect(macos.enforcement).toBe("enforce");
@@ -201,8 +209,8 @@ describe("tenant OS policy API", () => {
       }),
     );
 
-    const ios = saved.platforms.find((entry: any) => entry.platform === "ios");
-    const ipados = saved.platforms.find((entry: any) => entry.platform === "ipados");
+    const ios = findPlatform(saved, "ios");
+    const ipados = findPlatform(saved, "ipados");
 
     expect(ios).toMatchObject({ minimumVersion: "18.1", enforcement: "enforce", deferralDays: 3 });
     expect(ios.capability.mechanism).toBe("ddm-software-update");
@@ -210,9 +218,7 @@ describe("tenant OS policy API", () => {
     expect(ipados).toMatchObject({ minimumVersion: "18.0", enforcement: "warn" });
 
     // macOS is untouched by an iOS rule.
-    expect(
-      saved.platforms.find((entry: any) => entry.platform === "macos").minimumVersion,
-    ).toBeNull();
+    expect(findPlatform(saved, "macos").minimumVersion).toBeNull();
   });
 
   it("rejects an unparseable version and enforcement without a minimum", async () => {
@@ -258,9 +264,7 @@ describe("tenant OS policy API", () => {
 
     const other = await runEffect(service.getTenantOsPolicy(request(headers), second.id));
 
-    expect(
-      other.platforms.find((entry: any) => entry.platform === "windows").minimumVersion,
-    ).toBeNull();
+    expect(findPlatform(other, "windows").minimumVersion).toBeNull();
   });
 
   it("denies policy writes to a read-only member", async () => {
@@ -357,7 +361,7 @@ describe("OS fleet view", () => {
       unknown: 1,
     });
 
-    const macos = fleet.platforms.find((entry: any) => entry.platform === "macos");
+    const macos = findPlatform(fleet, "macos");
 
     expect(macos.counts).toMatchObject({ total: 2, compliant: 1, belowMinimum: 1 });
     expect(macos.versions).toEqual(
@@ -368,11 +372,11 @@ describe("OS fleet view", () => {
     );
     expect(macos.behind.map((row: any) => row.id)).toEqual(["mac-behind"]);
 
-    const ipados = fleet.platforms.find((entry: any) => entry.platform === "ipados");
+    const ipados = findPlatform(fleet, "ipados");
 
     expect(ipados.counts).toMatchObject({ total: 1, compliant: 1 });
 
-    const windows = fleet.platforms.find((entry: any) => entry.platform === "windows");
+    const windows = findPlatform(fleet, "windows");
 
     expect(windows.counts).toMatchObject({ total: 3, compliant: 1, belowMinimum: 1, unknown: 1 });
     expect(windows.behind.map((row: any) => row.id)).toEqual(["win-behind"]);
@@ -451,11 +455,11 @@ describe("OS fleet view", () => {
 
     const fleet = await runEffect(service.getOsFleet(request(headers), tenant.id));
 
-    const ios = fleet.platforms.find((entry: any) => entry.platform === "ios");
+    const ios = findPlatform(fleet, "ios");
 
     expect(ios.counts).toMatchObject({ total: 2, belowMinimum: 1, updateAvailable: 1 });
 
-    const pending = ios.behind.find((row: any) => row.id === "iphone-pending");
+    const pending = required(ios.behind.find((row: any) => row.id === "iphone-pending"));
 
     expect(pending).toMatchObject({
       status: "update-available",
@@ -465,11 +469,11 @@ describe("OS fleet view", () => {
       installState: "downloading",
       updateMechanism: "ddm-software-update",
     });
-    expect(ios.behind.find((row: any) => row.id === "iphone-behind").updateMechanism).toBe(
-      "ddm-software-update",
-    );
+    expect(
+      required(ios.behind.find((row: any) => row.id === "iphone-behind")).updateMechanism,
+    ).toBe("ddm-software-update");
 
-    const ipados = fleet.platforms.find((entry: any) => entry.platform === "ipados");
+    const ipados = findPlatform(fleet, "ipados");
 
     expect(ipados.counts).toMatchObject({ total: 2, compliant: 1, belowMinimum: 1 });
     expect(ipados.behind).toHaveLength(1);
@@ -525,8 +529,8 @@ describe("OS fleet view", () => {
     );
 
     const fleet = await runEffect(service.getOsFleet(request(headers), tenant.id));
-    const ios = fleet.platforms.find((entry: any) => entry.platform === "ios");
-    const ipados = fleet.platforms.find((entry: any) => entry.platform === "ipados");
+    const ios = findPlatform(fleet, "ios");
+    const ipados = findPlatform(fleet, "ipados");
 
     // A warn-only 17+ phone has no command path, so it is listed without one.
     expect(ios.behind).toHaveLength(1);
@@ -571,8 +575,8 @@ describe("OS fleet view", () => {
     );
 
     const fleet = await runEffect(service.getOsFleet(request(headers), tenant.id));
-    const ios = fleet.platforms.find((entry: any) => entry.platform === "ios");
-    const ipados = fleet.platforms.find((entry: any) => entry.platform === "ipados");
+    const ios = findPlatform(fleet, "ios");
+    const ipados = findPlatform(fleet, "ipados");
 
     // The iPhone list is capped, but the iPad query is constrained to iPadOS so
     // it cannot be starved by the shared apple transport limit.

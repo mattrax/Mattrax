@@ -70,9 +70,13 @@ export const windowsPolicyNodeHash = (data: string, format: string | undefined):
   sha256(`${format ?? ""}\u0000${data}`);
 
 /**
- * `DM_S_ACCEPTED_FOR_PROCESSING` is documented as 0x4000000. Only the
- * asynchronous BitLocker rotation Exec treats it as an acknowledgement; other
- * commands keep the normal SyncML status handling.
+ * `DM_S_ACCEPTED_FOR_PROCESSING` is documented as 0x4000000. The asynchronous
+ * BitLocker and LAPS rotation Execs treat it as an acknowledgement because both
+ * have a status node; other commands keep the normal SyncML status handling.
+ *
+ * OMA-DM `Status` values are SyncML codes, not HTTP codes: `202 Accepted` is
+ * not a rotation acknowledgement and remains a failure. The pre-existing
+ * `418` handling is unchanged and still marks a command queued for delivery.
  */
 export const WINDOWS_ACCEPTED_FOR_PROCESSING_STATUS = "0x4000000";
 

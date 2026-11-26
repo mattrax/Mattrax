@@ -1,9 +1,10 @@
 import { Effect, Layer } from "effect";
-import { HttpRouter } from "effect/http";
+import { HttpRouter, HttpServer } from "effect/http";
 import { HttpApi, HttpApiBuilder } from "effect/http-api";
 import { describe, expect, it } from "vitest";
 import { EnterpriseService, enterpriseApplicationApi } from "@mattrax/enterprise-domain";
 import { enterpriseApplicationHandlers } from "@mattrax/enterprise-api";
+import { makeHttpHandler } from "./helpers.js";
 
 /**
  * The catalogue delivery endpoints live in their own group so the main API's
@@ -13,10 +14,8 @@ import { enterpriseApplicationHandlers } from "@mattrax/enterprise-api";
  */
 const makeHandler = () => {
   const service = {
-    installApplication: () =>
-      Effect.succeed({ status: "ok" as const, queued: 0, skipped: 0 }),
-    uninstallApplication: () =>
-      Effect.succeed({ status: "ok" as const, queued: 0, skipped: 0 }),
+    installApplication: () => Effect.succeed({ status: "ok" as const, queued: 0, skipped: 0 }),
+    uninstallApplication: () => Effect.succeed({ status: "ok" as const, queued: 0, skipped: 0 }),
   };
 
   const api = HttpApi.make("ApplicationHttpTest").add(enterpriseApplicationApi);
@@ -29,9 +28,10 @@ const makeHandler = () => {
     ),
     Layer.provide(Layer.succeed(EnterpriseService, service as any)),
     Layer.provide(HttpRouter.layer),
+    Layer.provide(HttpServer.layerServices),
   );
 
-  return HttpRouter.toWebHandler(layer).handler;
+  return makeHttpHandler(layer);
 };
 
 describe("application HTTP contract", () => {

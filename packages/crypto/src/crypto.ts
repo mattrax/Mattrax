@@ -1,4 +1,4 @@
-import { Data } from "effect";
+import { Data, Effect } from "effect";
 
 const ALGORITHM: RsaHashedKeyGenParams = {
   name: "RSASSA-PKCS1-v1_5",
@@ -473,3 +473,69 @@ export async function verifyScopedToken(
     signature,
   );
 }
+
+const cryptoEffect = <A>(
+  operation: string,
+  evaluate: () => PromiseLike<A>,
+): Effect.Effect<A, CryptoError> =>
+  Effect.tryPromise({
+    try: evaluate,
+    catch: (cause) =>
+      new CryptoError({
+        message: cause instanceof Error ? cause.message : `${operation} failed`,
+        cause,
+      }),
+  });
+
+/**
+ * Effect-native crypto operations. Every fallible operation reports a
+ * {@link CryptoError} in the error channel, so callers do not turn routine key
+ * or ciphertext failures into defects with `Effect.promise`.
+ *
+ * The Promise functions above remain for non-Effect consumers. New Effect code
+ * should use this namespace.
+ */
+export const Crypto = {
+  generateCaKeyPair: () => cryptoEffect("generateCaKeyPair", generateCaKeyPair),
+  exportPrivateKeyJwk: (key: CryptoKey) =>
+    cryptoEffect("exportPrivateKeyJwk", () => exportPrivateKeyJwk(key)),
+  importPrivateKeyJwk: (jwk: JsonWebKey) =>
+    cryptoEffect("importPrivateKeyJwk", () => importPrivateKeyJwk(jwk)),
+  exportPublicKeySpki: (key: CryptoKey) =>
+    cryptoEffect("exportPublicKeySpki", () => exportPublicKeySpki(key)),
+  signData: (key: CryptoKey, data: ArrayBuffer) =>
+    cryptoEffect("signData", () => signData(key, data)),
+  sha256: (data: ArrayBuffer) => cryptoEffect("sha256", () => sha256(data)),
+  hmacSha256Hex: (secret: string, message: string) =>
+    cryptoEffect("hmacSha256Hex", () => hmacSha256Hex(secret, message)),
+  signProductKeyRequest: (secret: string, message: string) =>
+    cryptoEffect("signProductKeyRequest", () => signProductKeyRequest(secret, message)),
+  verifyProductKeyRequest: (secret: string, message: string, signature: string) =>
+    cryptoEffect("verifyProductKeyRequest", () =>
+      verifyProductKeyRequest(secret, message, signature),
+    ),
+  sealSecret: (secret: string, plaintext: string) =>
+    cryptoEffect("sealSecret", () => sealSecret(secret, plaintext)),
+  openSecret: (secret: string, sealed: string) =>
+    cryptoEffect("openSecret", () => openSecret(secret, sealed)),
+  sealWithPassphrase: (
+    passphrase: string,
+    plaintext: string,
+    options?: { readonly iterations?: number },
+  ) => cryptoEffect("sealWithPassphrase", () => sealWithPassphrase(passphrase, plaintext, options)),
+  openWithPassphrase: (passphrase: string, envelope: PassphraseEnvelope) =>
+    cryptoEffect("openWithPassphrase", () => openWithPassphrase(passphrase, envelope)),
+  signScopedToken: (secret: string, scope: string, id: string, expiresAt: number) =>
+    cryptoEffect("signScopedToken", () => signScopedToken(secret, scope, id, expiresAt)),
+  verifyScopedToken: (secret: string, scope: string, id: string, token: string, now?: number) =>
+    cryptoEffect("verifyScopedToken", () => verifyScopedToken(secret, scope, id, token, now)),
+  pemDecode: (label: string, pem: string): Effect.Effect<ArrayBuffer, CryptoError> =>
+    Effect.try({
+      try: () => pemDecode(label, pem),
+      catch: (cause) =>
+        new CryptoError({
+          message: cause instanceof Error ? cause.message : `Failed to decode PEM ${label}`,
+          cause,
+        }),
+    }),
+} as const;

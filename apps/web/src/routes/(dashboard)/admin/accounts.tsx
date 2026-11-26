@@ -14,7 +14,7 @@ import {
 } from "~/components/mdm/common";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { Input } from "~/components/ui/input";
 import { ShieldCheck, UsersRound } from "~/components/ui/icons";
 import { toast } from "~/components/toast";
@@ -170,9 +170,9 @@ export default function AdminAccountsPage() {
                     cell: (account) => (
                       <div class="min-w-0">
                         <div class="flex flex-wrap items-center gap-1.5">
-                          <span class="font-[520] text-foreground">{account.name}</span>
+                          <span class="font-medium text-foreground">{account.name}</span>
                           {account.superadmin ? (
-                            <Badge variant="brand" class="gap-1">
+                            <Badge variant="brand">
                               <ShieldCheck class="size-3" aria-hidden="true" />
                               Superadmin
                             </Badge>
@@ -183,7 +183,7 @@ export default function AdminAccountsPage() {
                             </Badge>
                           ) : null}
                         </div>
-                        <div class="mt-0.5 truncate text-[11.5px] text-muted-foreground">
+                        <div class="mt-0.5 truncate text-xs text-muted-foreground">
                           {account.email}
                         </div>
                       </div>
@@ -212,9 +212,9 @@ export default function AdminAccountsPage() {
                               <span class="truncate text-foreground/90">
                                 {membership.tenantName}
                               </span>
-                              <Badge variant="outline" class="max-w-full truncate">
-                                {membership.roleName}
-                              </Badge>
+                              <span class="inline-block max-w-full truncate">
+                                <Badge variant="outline">{membership.roleName}</Badge>
+                              </span>
                             </span>
                           ))}
                         </div>
@@ -273,7 +273,7 @@ export default function AdminAccountsPage() {
               <span
                 role="status"
                 aria-live="polite"
-                class="text-[12px] tabular-nums text-muted-foreground"
+                class="text-xs tabular-nums text-muted-foreground"
               >
                 Page {page() + 1} of {pageCount()}
                 <span>
@@ -302,7 +302,7 @@ export default function AdminAccountsPage() {
             </div>
           </Panel>
 
-          <p class="px-1 text-[11px] leading-relaxed text-muted-foreground">
+          <p class="px-1 text-xs leading-relaxed text-muted-foreground">
             Platform administrator access is separate from tenant roles. It never grants access to a
             tenant's devices, policies or members, and a tenant owner is not a platform
             administrator.

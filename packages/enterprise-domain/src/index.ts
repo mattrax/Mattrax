@@ -34,6 +34,8 @@ export * from "./softwareUpdates.ts";
 
 export * from "./osPolicy.ts";
 
+export * from "./certificates.ts";
+
 export * from "./deviceActions.ts";
 export * from "./windowsSecurity.ts";
 
@@ -60,8 +62,10 @@ export * from "./sso.ts";
 export {
   applicationKey,
   applicationPrefix,
+  isTenantApplicationObjectKey,
   policyApplicationKey,
   policyApplicationPrefix,
+  tenantApplicationObjectPrefix,
 } from "./storage.ts";
 
 export { ApplicationStorefrontService, EnterpriseAuth, EnterpriseService } from "./service.ts";

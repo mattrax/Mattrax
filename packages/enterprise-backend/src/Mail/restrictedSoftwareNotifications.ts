@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { Effect, Option, Schema } from "effect";
 import { DEFAULT_EMAIL_FROM } from "@mattrax/email";
 import type { EmailTransport } from "@mattrax/email";
-import { dispatchWebhookEvent } from "@mattrax/mdm-apple";
+import { dispatchWebhookEvent } from "@mattrax/mdm-core";
 import type { EnterpriseDb } from "../schema.ts";
 import { schema as s } from "../schema.ts";
 import { sendTransactionalEmail } from "./emailOutbox.ts";

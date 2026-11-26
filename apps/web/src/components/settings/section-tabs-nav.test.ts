@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { sectionTabTarget } from "./section-tabs-nav";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { activateSectionTabAnchor, sectionTabTarget } from "./section-tabs-nav";
 
 const tabs = ["endpoints", "deliveries"] as const;
 
@@ -29,12 +29,7 @@ describe("section tab keyboard navigation", () => {
   });
 
   it("leaves browser shortcuts with a modifier to the browser", () => {
-    const modifiers = [
-      { altKey: true },
-      { ctrlKey: true },
-      { metaKey: true },
-      { shiftKey: true },
-    ];
+    const modifiers = [{ altKey: true }, { ctrlKey: true }, { metaKey: true }, { shiftKey: true }];
 
     for (const modifier of modifiers) {
       expect(sectionTabTarget(tabs, "endpoints", "ArrowRight", modifier)).toBeUndefined();
@@ -53,5 +48,29 @@ describe("section tab keyboard navigation", () => {
         shiftKey: false,
       }),
     ).toBe("deliveries");
+  });
+});
+
+describe("section tab anchor activation", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("clicks a navigation tab after the current event settles", () => {
+    vi.useFakeTimers();
+    const click = vi.fn();
+
+    activateSectionTabAnchor({ click });
+
+    expect(click).not.toHaveBeenCalled();
+    vi.runOnlyPendingTimers();
+    expect(click).toHaveBeenCalledOnce();
+  });
+
+  it("ignores a tab that is no longer mounted", () => {
+    vi.useFakeTimers();
+
+    expect(() => activateSectionTabAnchor(undefined)).not.toThrow();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -39,6 +39,22 @@ const decodeAction = Schema.decodeUnknownOption(StepUpActionSchema);
 
 const decodeMethods = Schema.decodeUnknownOption(Schema.Array(StepUpMethodSchema));
 
+const errorName = (error: unknown): string | undefined => {
+  if (typeof error !== "object" || error === null || !("name" in error)) return undefined;
+
+  return typeof error.name === "string" ? error.name : undefined;
+};
+
+/** Native passkey dismissal surfaces as NotAllowedError, sometimes wrapped. */
+export const isPasskeyCancellation = (error: unknown): boolean => {
+  if (errorName(error) === "NotAllowedError") return true;
+
+  const cause =
+    typeof error === "object" && error !== null && "cause" in error ? error.cause : undefined;
+
+  return errorName(cause) === "NotAllowedError";
+};
+
 const stepUpPath = (path: string) => `/api/v1/account/step-up${path}`;
 
 const call = <S extends Schema.ConstraintDecoder<unknown>>(
@@ -123,8 +139,13 @@ export const performStepUp = async (
       optionsJSON: started.options as PublicKeyCredentialRequestOptionsJSON,
       useBrowserAutofill: false,
     });
-  } catch {
-    throw new Error("That passkey wasn't confirmed. Try again or use another method.");
+  } catch (error) {
+    throw new Error(
+      isPasskeyCancellation(error)
+        ? "Passkey confirmation cancelled."
+        : "That passkey wasn't confirmed. Try again or use another method.",
+      { cause: error },
+    );
   }
 
   return call(StepUpGrant, "/passkey/complete", {

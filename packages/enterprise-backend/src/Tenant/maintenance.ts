@@ -1,5 +1,7 @@
 import { Cause, Effect, Exit, Option, Schema } from "effect";
-import { and, count, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
+import { and, asc, count, eq, gt, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
+import type { AnyMySqlTable } from "drizzle-orm/mysql-core";
 import {
   Db,
   billableDeviceCount,
@@ -13,13 +15,15 @@ import {
   retryFailedWebhookDeliveries,
   refreshAppleSecurityInfo,
   refreshAppleLocalAccounts,
-  rotateAppleLocalAdminPasswords,
   sweepDeviceCommands,
-  sweepWindowsStateCommands,
   syncDirectoryGroupsForTenant,
   syncDynamicGroupsForTenant,
+} from "@mattrax/mdm-core";
+import { rotateAppleLocalAdminPasswords } from "@mattrax/mdm-apple";
+import {
+  sweepWindowsStateCommands,
   WINDOWS_STATE_COMMAND_RETENTION_DAYS,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-windows";
 import { sweepScriptExecutions } from "../Policy/scripts.ts";
 import { sweepFleetMigrations } from "../Device/fleetMigration.ts";
 import { loadCredentialHealth } from "../Device/credentialHealth.ts";
@@ -33,7 +37,7 @@ import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
 import { refreshAppleApplicationInventory } from "../Device/appleInventory.ts";
 import { TENANT_DELETION_LOG_RETENTION_DAYS } from "./tenantTeardown.ts";
 import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
-import type { WebhookDeliveryOptions } from "@mattrax/mdm-apple";
+import type { WebhookDeliveryOptions } from "@mattrax/mdm-core";
 import type { EnterpriseDb } from "../schema.ts";
 import type { EmailAddress, EmailTransport } from "@mattrax/email";
 import { drainEmailOutbox, purgeEmailOutbox } from "../Mail/emailOutbox.ts";
@@ -365,6 +369,31 @@ export type MaintenanceResult = {
 
 const day = 24 * 60 * 60 * 1000;
 
+/** Maximum rows changed by one maintenance statement. */
+export const MAINTENANCE_DELETE_BATCH_SIZE = 500;
+
+/**
+ * Drain a retention predicate without materialising every expired id or
+ * holding one unbounded delete lock. MySQL reports the exact deleted count,
+ * so a short batch is also the termination condition.
+ */
+const deleteExpiredInBatches = (
+  db: EnterpriseDb,
+  table: AnyMySqlTable,
+  where: SQL,
+): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    let deleted = 0;
+
+    while (true) {
+      const result = yield* db.delete(table).where(where).limit(MAINTENANCE_DELETE_BATCH_SIZE);
+      const affectedRows = Number(result.affectedRows);
+
+      deleted += affectedRows;
+      if (affectedRows < MAINTENANCE_DELETE_BATCH_SIZE) return deleted;
+    }
+  });
+
 /**
  * Stable log message for a scheduled Apps and Books client that could not be
  * loaded. The sweep is skipped for the run; the next daily tick retries.
@@ -626,31 +655,49 @@ export const runMaintenance = (
 
     // 2. Mark stale enrolled devices. Unenrolling (rather than deleting) keeps
     //    inventory and audit history intact and lets an operator re-enrol.
+    //    Claim one indexed batch at a time so a large fleet never becomes one
+    //    in-memory array or one long lock hold.
     if (staleDeviceDays > 0) {
       const staleCutoff = new Date(now.getTime() - staleDeviceDays * day);
 
-      const staleDeviceRows = yield* db
-        .select({ id: s.device.id, organizationId: s.device.organizationId })
-        .from(s.device)
-        .where(and(eq(s.device.status, "enrolled"), lt(s.device.lastSeenAt, staleCutoff)));
+      while (true) {
+        const staleDevices = yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const rows = yield* tx
+              .select({ id: s.device.id, organizationId: s.device.organizationId })
+              .from(s.device)
+              .where(and(eq(s.device.status, "enrolled"), lt(s.device.lastSeenAt, staleCutoff)))
+              .orderBy(asc(s.device.lastSeenAt), asc(s.device.id))
+              .limit(MAINTENANCE_DELETE_BATCH_SIZE)
+              .for("update");
 
-      const staleDevices = staleDeviceRows.map((row) =>
-        Schema.decodeUnknownSync(
-          Schema.Struct({ id: Schema.String, organizationId: Schema.String }),
-        )(row),
-      );
+            if (rows.length === 0) return [];
 
-      if (staleDevices.length > 0) {
-        yield* db
-          .update(s.device)
-          .set({ status: "unenrolled" })
-          .where(
-            inArray(
-              s.device.id,
-              staleDevices.map((row) => row.id),
-            ),
-          );
-        result.staleDevices = staleDevices.length;
+            yield* tx
+              .update(s.device)
+              .set({ status: "unenrolled" })
+              .where(
+                and(
+                  eq(s.device.status, "enrolled"),
+                  lt(s.device.lastSeenAt, staleCutoff),
+                  inArray(
+                    s.device.id,
+                    rows.map((row) => row.id),
+                  ),
+                ),
+              );
+
+            return rows.map((row) =>
+              Schema.decodeUnknownSync(
+                Schema.Struct({ id: Schema.String, organizationId: Schema.String }),
+              )(row),
+            );
+          }),
+        );
+
+        if (staleDevices.length === 0) break;
+
+        result.staleDevices += staleDevices.length;
         // Staleness is a real unenrollment transition, so it is a webhook
         // event too. Dispatch is bounded and never fails maintenance.
         yield* Effect.forEach(
@@ -675,6 +722,8 @@ export const runMaintenance = (
             ),
           { concurrency: 4, discard: true },
         );
+
+        if (staleDevices.length < MAINTENANCE_DELETE_BATCH_SIZE) break;
       }
     }
 
@@ -682,57 +731,98 @@ export const runMaintenance = (
     //    `@yielded/auth`, so they are referenced through the shared schema
     //    aliases rather than duplicated table definitions. Their expiry columns
     //    are BIGINT epoch milliseconds, not DATETIME, so compare with millis.
+    //    The expiry-leading index bounds each page to expired rows; keyset on
+    //    both columns so equal expiry timestamps resume without rescanning.
     const nowMillis = now.getTime();
+    let afterSession: { readonly expiresAt: number; readonly sessionId: string } | undefined;
+    const SessionCursor = Schema.Struct({ expiresAt: Schema.Number, sessionId: Schema.String });
 
-    const expiredSessions = yield* db
-      .select({ sessionId: s.authSessions.sessionId })
-      .from(s.authSessions)
-      .where(lt(s.authSessions.expiresAt, nowMillis));
+    while (true) {
+      const expiredBatch = yield* db.transaction((tx) =>
+        Effect.gen(function* () {
+          const rows = yield* tx
+            .select({ expiresAt: s.authSessions.expiresAt, sessionId: s.authSessions.sessionId })
+            .from(s.authSessions)
+            .where(
+              and(
+                lt(s.authSessions.expiresAt, nowMillis),
+                afterSession
+                  ? or(
+                      gt(s.authSessions.expiresAt, afterSession.expiresAt),
+                      and(
+                        eq(s.authSessions.expiresAt, afterSession.expiresAt),
+                        gt(s.authSessions.sessionId, afterSession.sessionId),
+                      ),
+                    )
+                  : undefined,
+              ),
+            )
+            .orderBy(asc(s.authSessions.expiresAt), asc(s.authSessions.sessionId))
+            .limit(MAINTENANCE_DELETE_BATCH_SIZE);
 
-    if (expiredSessions.length > 0) {
-      yield* db.delete(s.authSessions).where(lt(s.authSessions.expiresAt, nowMillis));
-      result.expiredAuthSessions = expiredSessions.length;
+          if (rows.length === 0) return { deleted: 0, last: undefined, size: 0 };
 
-      // Session descriptors live in an application table with no foreign key
-      // to the library-owned session row, so they are removed with the
-      // sessions they describe. Explicit revocation removes its own row; this
-      // covers natural expiry. Chunked so one sweep cannot exceed the query
-      // parameter budget.
-      const expiredIds = expiredSessions.map((row) => row.sessionId);
-
-      for (let offset = 0; offset < expiredIds.length; offset += 500)
-        yield* db
-          .delete(s.accountSessionContext)
-          .where(
-            inArray(s.accountSessionContext.sessionId, expiredIds.slice(offset, offset + 500)),
+          const candidates = rows.map((row) => Schema.decodeUnknownSync(SessionCursor)(row));
+          const candidateIds = candidates.map((row) => row.sessionId);
+          // Lock and re-check only the bounded candidate set: a refresh that
+          // won the race keeps its row and descriptor.
+          const expired = yield* tx
+            .select({ sessionId: s.authSessions.sessionId })
+            .from(s.authSessions)
+            .where(
+              and(
+                inArray(s.authSessions.sessionId, candidateIds),
+                lt(s.authSessions.expiresAt, nowMillis),
+              ),
+            )
+            .for("update");
+          const sessionIds = expired.map(
+            (row) =>
+              Schema.decodeUnknownSync(Schema.Struct({ sessionId: Schema.String }))(row).sessionId,
           );
+
+          if (sessionIds.length === 0)
+            return { deleted: 0, last: candidates.at(-1), size: candidates.length };
+
+          // Descriptors have no foreign key to the library-owned session row,
+          // so remove them in the same transaction as the sessions they name.
+          yield* tx
+            .delete(s.accountSessionContext)
+            .where(inArray(s.accountSessionContext.sessionId, sessionIds));
+          const deleted = yield* tx
+            .delete(s.authSessions)
+            .where(inArray(s.authSessions.sessionId, sessionIds));
+
+          return {
+            deleted: Number(deleted.affectedRows),
+            last: candidates.at(-1),
+            size: candidates.length,
+          };
+        }),
+      );
+
+      result.expiredAuthSessions += expiredBatch.deleted;
+      if (expiredBatch.size < MAINTENANCE_DELETE_BATCH_SIZE) break;
+      afterSession = expiredBatch.last;
     }
 
     // 4. Audit retention. Opt out with `auditRetentionDays: 0`.
     if (auditRetentionDays > 0) {
       const auditCutoff = new Date(now.getTime() - auditRetentionDays * day);
 
-      const staleAudit = yield* db
-        .select({ id: s.auditLog.id })
-        .from(s.auditLog)
-        .where(lt(s.auditLog.createdAt, auditCutoff));
-
-      if (staleAudit.length > 0) {
-        yield* db.delete(s.auditLog).where(lt(s.auditLog.createdAt, auditCutoff));
-        result.purgedAuditEntries = staleAudit.length;
-      }
+      result.purgedAuditEntries = yield* deleteExpiredInBatches(
+        db,
+        s.auditLog,
+        lt(s.auditLog.createdAt, auditCutoff),
+      );
 
       // The account stream uses the same retention setting: one privacy policy
       // covers every audit record the deployment keeps.
-      const staleAccountAudit = yield* db
-        .select({ id: s.accountAuditLog.id })
-        .from(s.accountAuditLog)
-        .where(lt(s.accountAuditLog.createdAt, auditCutoff));
-
-      if (staleAccountAudit.length > 0) {
-        yield* db.delete(s.accountAuditLog).where(lt(s.accountAuditLog.createdAt, auditCutoff));
-        result.purgedAccountAuditEntries = staleAccountAudit.length;
-      }
+      result.purgedAccountAuditEntries = yield* deleteExpiredInBatches(
+        db,
+        s.accountAuditLog,
+        lt(s.accountAuditLog.createdAt, auditCutoff),
+      );
 
       // The login log is the same kind of account history and follows the same
       // window, so an account holder and an operator see one privacy policy.
@@ -743,9 +833,11 @@ export const runMaintenance = (
     // reconnect. A day is far longer than any client cursor, so keeping them
     // beyond it has no value and would make the stream table grow with fleet
     // check-in traffic. This is independent of audit retention.
-    yield* db
-      .delete(s.realtimeEvent)
-      .where(lt(s.realtimeEvent.createdAt, new Date(now.getTime() - day)));
+    yield* deleteExpiredInBatches(
+      db,
+      s.realtimeEvent,
+      lt(s.realtimeEvent.createdAt, new Date(now.getTime() - day)),
+    );
 
     // 4c. Approval history is security evidence, not live state. Terminal
     // requests older than the retention window are deleted; MySQL cascades
@@ -753,42 +845,25 @@ export const runMaintenance = (
     if (approvalRetentionDays > 0) {
       const approvalCutoff = new Date(now.getTime() - approvalRetentionDays * day);
 
-      const staleApprovals = yield* db
-        .select({ id: s.approvalRequest.id })
-        .from(s.approvalRequest)
-        .where(
-          and(
-            inArray(s.approvalRequest.status, ["approved", "rejected", "expired", "cancelled"]),
-            lt(s.approvalRequest.updatedAt, approvalCutoff),
-          ),
-        );
-
-      if (staleApprovals.length > 0) {
-        yield* db.delete(s.approvalRequest).where(
-          inArray(
-            s.approvalRequest.id,
-            staleApprovals.map((row) => row.id),
-          ),
-        );
-        result.purgedApprovalRequests = staleApprovals.length;
-      }
+      result.purgedApprovalRequests = yield* deleteExpiredInBatches(
+        db,
+        s.approvalRequest,
+        and(
+          inArray(s.approvalRequest.status, ["approved", "rejected", "expired", "cancelled"]),
+          lt(s.approvalRequest.updatedAt, approvalCutoff),
+        )!,
+      );
     }
 
     // 5. Enrollment-attempt diagnostics are only useful for a short window.
     if (enrollmentAttemptRetentionDays > 0) {
       const attemptCutoff = new Date(now.getTime() - enrollmentAttemptRetentionDays * day);
 
-      const staleAttempts = yield* db
-        .select({ id: s.enrollmentAttempt.id })
-        .from(s.enrollmentAttempt)
-        .where(lt(s.enrollmentAttempt.createdAt, attemptCutoff));
-
-      if (staleAttempts.length > 0) {
-        yield* db
-          .delete(s.enrollmentAttempt)
-          .where(lt(s.enrollmentAttempt.createdAt, attemptCutoff));
-        result.purgedEnrollmentAttempts = staleAttempts.length;
-      }
+      result.purgedEnrollmentAttempts = yield* deleteExpiredInBatches(
+        db,
+        s.enrollmentAttempt,
+        lt(s.enrollmentAttempt.createdAt, attemptCutoff),
+      );
     }
 
     // 5b. Android Pub/Sub deliveries are deduped by message id; the ledger
@@ -796,17 +871,11 @@ export const runMaintenance = (
     if (androidPubSubRetentionDays > 0) {
       const androidCutoff = new Date(now.getTime() - androidPubSubRetentionDays * day);
 
-      const staleMessages = yield* db
-        .select({ messageId: s.androidPubSubMessage.messageId })
-        .from(s.androidPubSubMessage)
-        .where(lt(s.androidPubSubMessage.receivedAt, androidCutoff));
-
-      if (staleMessages.length > 0) {
-        yield* db
-          .delete(s.androidPubSubMessage)
-          .where(lt(s.androidPubSubMessage.receivedAt, androidCutoff));
-        result.purgedAndroidPubSubMessages = staleMessages.length;
-      }
+      result.purgedAndroidPubSubMessages = yield* deleteExpiredInBatches(
+        db,
+        s.androidPubSubMessage,
+        lt(s.androidPubSubMessage.receivedAt, androidCutoff),
+      );
     }
 
     // 5c. Windows enrollment/management failure history is diagnostic, not an

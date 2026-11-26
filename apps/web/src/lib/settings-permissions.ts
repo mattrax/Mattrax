@@ -34,6 +34,8 @@ export function settingsTabPermission(tab: string): Permission {
   switch (tab) {
     case "administrators":
       return "members.read";
+    case "tags":
+      return "scope_tags.read";
     case "backups":
       return "backups.read";
     case "approvals":
@@ -117,6 +119,7 @@ const SETTINGS_TABS = [
   "identity",
   "enrollment",
   "attributes",
+  "tags",
   "management",
   "migration",
   "delivery",
