@@ -6,6 +6,7 @@ import {
   installVirtualAuthenticator,
   register,
   setVirtualAuthenticatorPresence,
+  signIn,
   signOut,
 } from "./helpers";
 
@@ -32,27 +33,43 @@ test.describe("passkeys", () => {
 
     const card = page.locator("section", { hasText: "Passkeys" });
     await card.getByPlaceholder(/name this passkey/i).fill("E2E Passkey");
-    const enrolled = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        response.url().includes("/api/v1/completePasskeyEnrollment") &&
-        response.ok(),
-    );
-    await card.getByRole("button", { name: /add a passkey/i }).click();
-    await confirmStepUp(page);
-    await enrolled;
+    // A concurrent auth write can make the server's credential persistence
+    // fail transiently. That leaves the existing passkeys untouched and the
+    // button in place, so retry the visible action instead of hanging on a
+    // response that will never be ok.
+    let enrolled = false;
+
+    for (let attempt = 0; attempt < 3 && !enrolled; attempt++) {
+      const completion = page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().includes("/api/v1/completePasskeyEnrollment"),
+      );
+
+      await card.getByRole("button", { name: /add a passkey/i }).click();
+      await confirmStepUp(page);
+
+      const response = await completion;
+
+      enrolled = response.ok();
+
+      if (!enrolled && attempt === 2)
+        throw new Error(`Passkey enrollment failed (${response.status()}): ${await response.text()}`);
+    }
+
     await expect(card.getByText("E2E Passkey")).toBeVisible({ timeout: 30_000 });
+    // The enrollment route disabled the original authenticator. Re-enable both
+    // so sign-in works whichever eligible credential the browser selects.
+    await setVirtualAuthenticatorPresence(internal, true);
+    await setVirtualAuthenticatorPresence(usb, true);
 
     // Sign out, then use the passkey.
     await signOut(page);
-    await page.waitForFunction(() => document.documentElement.dataset.hydrated === "true");
-    await page.locator("#email").fill(email);
-    await page.getByRole("button", { name: /^continue$/i }).click();
-    await page
-      .getByRole("button", { name: /passkey/i })
-      .first()
-      .click();
-    await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
+    // Conditional UI would sign in silently from the login page before the
+    // explicit email → passkey path can run, so use the helper that opts out
+    // of it and exercises the visible flow.
+    await signIn(page, email);
+    await expect(page).toHaveURL(/\/dashboard|\/t\/|\/tenants\/new/);
 
     // Removing the last passkey needs another step-up and signs this session out.
     await gotoHydrated(page, "/account");

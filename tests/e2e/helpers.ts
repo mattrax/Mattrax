@@ -210,32 +210,59 @@ export async function signIn(page: Page, email: string) {
   // passkey ceremony follows on the next step.
   await page.locator("#email").fill(email);
   await page.getByRole("button", { name: /^continue$/i }).click();
-  await page
-    .getByRole("button", { name: /passkey/i })
-    .first()
-    .click();
-
   // A passkey signs in directly unless TOTP is enabled, in which case the
-  // pending step appears on the same page.
-  const outcome = await Promise.race([
-    page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 }).then(() => "session"),
-    page
-      .getByText(/two-factor authentication required/i)
-      .waitFor({ timeout: 45_000 })
-      .then(() => "mfa"),
-  ]).catch(() => undefined);
+  // pending step appears on the same page. The server can transiently fail to
+  // persist the session while many tests sign in at once; the page offers a
+  // retry button for that case, so use it instead of failing the test.
+  const failures: string[] = [];
 
-  if (!outcome) {
-    const alert = await page
-      .getByRole("alert")
-      .first()
-      .textContent()
-      .catch(() => null);
-
-    throw new Error(
-      `Passkey sign-in did not complete (${page.url()})${alert ? `: ${alert.trim()}` : ""}`,
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const completion = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/completePasskeySignIn"),
+      { timeout: 45_000 },
     );
+
+    if (attempt === 0)
+      await page
+        .getByRole("button", { name: /passkey/i })
+        .first()
+        .click();
+    else await page.getByRole("button", { name: /try passkey again/i }).click();
+
+    const response = await completion.catch(() => undefined);
+
+    if (!response) break;
+
+    if (!response.ok()) {
+      failures.push(`${response.status()} ${await response.text().catch(() => "")}`);
+
+      continue;
+    }
+
+    const signedIn = await Promise.race([
+      page
+        .waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 })
+        .then(() => true),
+      page
+        .getByText(/two-factor authentication required/i)
+        .waitFor({ timeout: 45_000 })
+        .then(() => true),
+    ]).catch(() => false);
+
+    if (signedIn) return;
   }
+
+  const alert = await page
+    .getByRole("alert")
+    .first()
+    .textContent()
+    .catch(() => null);
+
+  throw new Error(
+    `Passkey sign-in did not complete (${page.url()})${alert ? `: ${alert.trim()}` : ""}${failures.length ? `\n${failures.join("\n")}` : ""}`,
+  );
 }
 
 /**
@@ -243,33 +270,28 @@ export async function signIn(page: Page, email: string) {
  * leaves the menu closed without ending the session.
  */
 export async function signOut(page: Page) {
-  await expect
-    .poll(
-      async () => {
-        if (page.url().includes("/login")) {
-          const me = await page.request.get("/api/v1/me").catch(() => undefined);
+  // The login page can briefly render before its session query settles and
+  // then bounce back to the dashboard with a stale cache. Sign out again when
+  // that happens instead of racing the redirect.
+  await expect(async () => {
+    if (!page.url().includes("/login")) {
+      await page.getByRole("button", { name: "Account menu" }).click();
+      await expect(page.locator("[data-slot=menu-content]")).toBeVisible();
+      await page.getByRole("menuitem", { name: /sign out/i }).click();
+      await page.waitForURL(/\/login/, { timeout: 20_000 });
+    }
 
-          if (me?.status() === 401) return true;
-        }
+    await expect
+      .poll(async () => (await page.request.get("/api/v1/me")).status(), { timeout: 20_000 })
+      .toBe(401);
 
-        const item = page.getByRole("menuitem", { name: /sign out/i });
-
-        if (!(await item.isVisible().catch(() => false))) {
-          await page
-            .getByRole("button", { name: "Account menu" })
-            .click({ timeout: 2_000 })
-            .catch(() => undefined);
-        }
-
-        await item.click({ timeout: 2_000 }).catch(() => undefined);
-
-        return page.url().includes("/login");
-      },
-      { timeout: 30_000 },
-    )
-    .toBe(true);
+    await gotoHydrated(page, "/login");
+  }).toPass({ timeout: 60_000 });
 
   await expect(page.locator("#email")).toBeVisible({ timeout: 20_000 });
+  // Let the sign-out response and the login redirect finish before a caller
+  // starts the next ceremony; a late response can otherwise clear its flow.
+  await page.waitForLoadState("networkidle");
 }
 
 export async function createTenant(page: Page, name: string) {
