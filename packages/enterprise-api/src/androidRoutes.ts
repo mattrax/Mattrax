@@ -1,12 +1,15 @@
-import { Effect, Layer, Schema } from "effect";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
-import { Db, type PlanLimitsConfig } from "@mattrax/enterprise-core";
-import {
-  AndroidDeliveryError,
-  completeAndroidSignup,
-  handleAndroidPubSub,
-  type AndroidDeliveryConfig,
-} from "@mattrax/enterprise-backend";
+import type { Schema } from "effect";
+import { Effect, Layer } from "effect";
+import type { HttpServerRequest } from "effect/http";
+import { FetchHttpClient } from "effect/http";
+import { HttpRouter, HttpServerResponse } from "effect/http";
+import { Db } from "@mattrax/enterprise-core";
+import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
+import type { AndroidDeliveryError } from "@mattrax/enterprise-backend";
+import { completeAndroidSignup, handleAndroidPubSub } from "@mattrax/enterprise-backend";
+import type { AndroidDeliveryConfig } from "@mattrax/enterprise-backend";
+import { PubSubOidcVerifierLive } from "@mattrax/dm-android";
+import { catchCausePreservingInterrupts } from "./errorBoundary.js";
 
 const json = (body: Schema.Json, status = 200) => HttpServerResponse.jsonUnsafe(body, { status });
 
@@ -15,6 +18,10 @@ export type AndroidRoutesOptions = {
   readonly authSecret?: string;
   readonly config?: AndroidDeliveryConfig;
   readonly planLimits?: PlanLimitsConfig;
+  /** Override the JWKS transport in tests. */
+  readonly jwksFetch?: typeof globalThis.fetch;
+  /** Reuse the remote key set across rebuilt hosted request layers. */
+  readonly sharedJwks?: boolean;
 };
 
 const statusFor = (kind: AndroidDeliveryError["kind"]): number => {
@@ -44,6 +51,21 @@ const statusFor = (kind: AndroidDeliveryError["kind"]): number => {
  * tenant; the Pub/Sub endpoint by Google's OIDC JWT.
  */
 export const androidRoutes = (options: AndroidRoutesOptions) => {
+  const jwksClient = FetchHttpClient.layer.pipe(
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, options.jwksFetch ?? globalThis.fetch)),
+    Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })),
+  );
+  const pubsubVerifier = PubSubOidcVerifierLive(
+    {
+      audience:
+        options.config?.pubsubAudience ??
+        `${options.origin.replace(/\/+$/, "")}/api/v1/android/pubsub`,
+      serviceAccountEmail: options.config?.serviceAccount.clientEmail ?? "",
+      jwksUri: options.config?.jwksUri,
+    },
+    { sharedJwks: options.sharedJwks },
+  ).pipe(Layer.provide(jwksClient), Layer.orDie);
+
   const callback = (request: HttpServerRequest.HttpServerRequest) =>
     Effect.gen(function* () {
       const url = new URL(request.url, "http://localhost");
@@ -72,7 +94,7 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
       Effect.catchTag("AndroidDeliveryError", (error) =>
         Effect.succeed(json({ error: error.message }, statusFor(error.kind))),
       ),
-      Effect.catchCause((cause) =>
+      catchCausePreservingInterrupts((cause) =>
         Effect.gen(function* () {
           yield* Effect.logError("Android signup callback failed", cause);
 
@@ -103,7 +125,7 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
       Effect.catchTag("AndroidDeliveryError", (error) =>
         Effect.succeed(json({ error: error.message }, statusFor(error.kind))),
       ),
-      Effect.catchCause((cause) =>
+      catchCausePreservingInterrupts((cause) =>
         Effect.gen(function* () {
           yield* Effect.logError("Android Pub/Sub handling failed", cause);
 
@@ -115,5 +137,5 @@ export const androidRoutes = (options: AndroidRoutesOptions) => {
   return Layer.mergeAll(
     HttpRouter.add("GET", "/api/v1/android/signup/callback", callback),
     HttpRouter.add("POST", "/api/v1/android/pubsub", pubsub),
-  );
+  ).pipe(Layer.provideMerge(pubsubVerifier));
 };

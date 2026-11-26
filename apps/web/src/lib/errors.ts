@@ -26,15 +26,14 @@ const isError = Schema.is(Schema.instanceOf(Error));
 
 const isJson = Schema.is(Schema.Json);
 
-const isRaisedFailure = (cause: unknown): cause is RaisedFailure =>
-  isError(cause) || isJson(cause);
+const isRaisedFailure = (cause: unknown): cause is RaisedFailure => isError(cause) || isJson(cause);
 
 /** Decode an arbitrary catch binding into the failure domain. */
 export const raisedFailure = (cause: unknown): RaisedFailure | undefined =>
   isRaisedFailure(cause) ? cause : undefined;
 
 const TAG_PATTERN =
-  /^(?:Enterprise|Platform|Password|Session|StaleAuthentication|PendingAuthentication|Email|Sso|NewPassword|Proof|Hook|Auth|R2|Stripe|StepUp)[A-Za-z0-9_]*$/;
+  /^(?:Enterprise|Platform|Password|Session|StaleAuthentication|PendingAuthentication|Email|Sso|NewPassword|Proof|Hook|Auth|R2|Stripe|StepUp|Approval)[A-Za-z0-9_]*$/;
 
 const TITLES: Record<ErrorVariant, string> = {
   auth: "Sign in required",
@@ -60,6 +59,10 @@ const TAGS = {
     message: "You don't have permission to do that.",
     variant: "permission",
   },
+  ApprovalRequired: {
+    message: "Another administrator must approve this action first.",
+    variant: "permission",
+  },
   EnterprisePermissionDenied: {
     message: "Your role does not allow that action.",
     variant: "permission",
@@ -71,6 +74,10 @@ const TAGS = {
   EnterpriseBadRequest: { message: "That request couldn't be completed.", variant: "validation" },
   EnterpriseConflict: {
     message: "That change conflicts with something that already exists.",
+    variant: "validation",
+  },
+  EnterprisePreconditionFailed: {
+    message: "Someone else changed this. Reload the latest version and try again.",
     variant: "validation",
   },
   EnterpriseTenantHasMembers: {
@@ -227,6 +234,8 @@ const ErrorEnvelope = Schema.Struct({
   reason: Schema.optional(Schema.String),
   action: Schema.optional(Schema.Json),
   methods: Schema.optional(Schema.Json),
+  requestId: Schema.optional(Schema.String),
+  status: Schema.optional(Schema.String),
   error: Schema.optional(Schema.Unknown),
 });
 
@@ -364,6 +373,53 @@ export const stepUpFailure = (error: RaisedFailure | undefined): StepUpFailureFi
   return {};
 };
 
+export type ApprovalFailureFields = {
+  readonly requestId?: string;
+  readonly status?: string;
+};
+
+const approvalFields = (envelope: ErrorEnvelope | undefined): ApprovalFailureFields => ({
+  requestId: envelope?.requestId,
+  status: envelope?.status,
+});
+
+/**
+ * Read the approval handle from a typed API failure. `ApprovalRequired` is a
+ * real tagged error, so the fields are usually at the top level; transport
+ * wrappers put them under `error` and some add a serialized message.
+ */
+export const approvalFailure = (error: RaisedFailure | undefined): ApprovalFailureFields => {
+  if (error === undefined) return {};
+
+  if (isString(error)) return approvalFields(envelopeOf(parseJson(error)));
+
+  const envelope = envelopeOf(error);
+
+  if (envelope === undefined) return {};
+  const own = approvalFields(envelope);
+
+  if (own.requestId !== undefined) return own;
+  const nested = envelopeOf(isRaisedFailure(envelope.error) ? envelope.error : undefined);
+  const fromNested = approvalFields(nested);
+
+  if (fromNested.requestId !== undefined) return fromNested;
+  const message = envelope.message;
+
+  if (isString(message)) {
+    const parsed = envelopeOf(parseJson(message));
+
+    if (parsed !== undefined) {
+      const fromMessage = approvalFields(parsed);
+
+      if (fromMessage.requestId !== undefined) return fromMessage;
+
+      return approvalFields(envelopeOf(isRaisedFailure(parsed.error) ? parsed.error : undefined));
+    }
+  }
+
+  return {};
+};
+
 const isTechnical = (message: string) =>
   /^(Decode error|HttpClientError|TypeError|FiberFailure|Error:)/i.test(message) ||
   /undeclared status code|https?:\/\/|at .+\(.+:\d+:\d+\)/i.test(message);
@@ -373,7 +429,8 @@ export const errorPresentation = (
   fallback = "Something went wrong. Try again.",
 ): ErrorPresentation => {
   const directTag = errorTag(error);
-  const rawMessage = (error === undefined ? undefined : messageOf(error)) ?? (isString(error) ? error : undefined);
+  const rawMessage =
+    (error === undefined ? undefined : messageOf(error)) ?? (isString(error) ? error : undefined);
   const parsed = rawMessage ? parseJson(rawMessage) : undefined;
   const tag = directTag ?? errorTag(parsed) ?? (rawMessage ? errorTag(rawMessage) : undefined);
 
@@ -383,7 +440,10 @@ export const errorPresentation = (
     const message = Match.value(reason).pipe(
       Match.when("too-short", () => "Use at least 15 characters for your password."),
       Match.when("too-long", () => "That password is too long. Use a shorter passphrase."),
-      Match.when("compromised", () => "This password has appeared in a data breach. Choose another."),
+      Match.when(
+        "compromised",
+        () => "This password has appeared in a data breach. Choose another.",
+      ),
       Match.when("common", () => "This password is too common. Choose something less predictable."),
       Match.orElse(() => "Choose a stronger, less predictable password."),
     );

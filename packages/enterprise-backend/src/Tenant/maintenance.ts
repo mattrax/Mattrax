@@ -1,40 +1,47 @@
 import { Cause, Effect, Exit, Option, Schema } from "effect";
-import { and, eq, gte, inArray, lt } from "drizzle-orm";
-import { Db, pruneWindowsFailures, schema as s } from "@mattrax/enterprise-core";
+import { and, asc, count, eq, gt, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
+import type { AnyMySqlTable } from "drizzle-orm/mysql-core";
+import {
+  Db,
+  billableDeviceCount,
+  pruneWindowsFailures,
+  schema as s,
+} from "@mattrax/enterprise-core";
+import type { R2Bucket } from "@mattrax/enterprise-core";
 import {
   dispatchWebhookEvent,
   pruneWebhookDeliveries,
   retryFailedWebhookDeliveries,
   refreshAppleSecurityInfo,
+  refreshAppleLocalAccounts,
   sweepDeviceCommands,
-  sweepWindowsStateCommands,
   syncDirectoryGroupsForTenant,
   syncDynamicGroupsForTenant,
+} from "@mattrax/mdm-core";
+import { rotateAppleLocalAdminPasswords } from "@mattrax/mdm-apple";
+import {
+  sweepWindowsStateCommands,
   WINDOWS_STATE_COMMAND_RETENTION_DAYS,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-windows";
 import { sweepScriptExecutions } from "../Policy/scripts.ts";
-import { loadCredentialHealth, type CredentialHealth } from "../Device/credentialHealth.ts";
-import {
-  sweepCredentialIssuance,
-  type DomainCertificateRequester,
-} from "../Device/credentialIssuance.ts";
+import { sweepFleetMigrations } from "../Device/fleetMigration.ts";
+import { loadCredentialHealth } from "../Device/credentialHealth.ts";
+import type { CredentialHealth } from "../Device/credentialHealth.ts";
+import { sweepCredentialIssuance } from "../Device/credentialIssuance.ts";
+import type { DomainCertificateRequester } from "../Device/credentialIssuance.ts";
 import { purgeExpiredScepCaTrust, rotateDueScepCas } from "../Scep/scepLifecycle.ts";
-import {
-  runServerCertificateCheck,
-  type ServerCertificateProbe,
-} from "../Scep/serverCertificate.ts";
-import { reconcileSubscriptionSweep } from "@mattrax/enterprise-billing";
-import type { PlanLimitsConfig } from "@mattrax/enterprise-core";
+import { runServerCertificateCheck } from "../Scep/serverCertificate.ts";
+import type { ServerCertificateProbe } from "../Scep/serverCertificate.ts";
 import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
-import type { EffectStripeClient } from "@mattrax/effect-stripe";
 import { refreshAppleApplicationInventory } from "../Device/appleInventory.ts";
-import { syncScheduledVppAssets } from "@mattrax/apple-business-manager";
 import { TENANT_DELETION_LOG_RETENTION_DAYS } from "./tenantTeardown.ts";
 import { isBuiltInOwnerMember } from "@mattrax/enterprise-identity";
-import type { WebhookDeliveryOptions } from "@mattrax/mdm-apple";
+import type { WebhookDeliveryOptions } from "@mattrax/mdm-core";
 import type { EnterpriseDb } from "../schema.ts";
-import type { EmailTransport } from "@mattrax/email";
+import type { EmailAddress, EmailTransport } from "@mattrax/email";
 import { drainEmailOutbox, purgeEmailOutbox } from "../Mail/emailOutbox.ts";
+import { purgeDashboardReportRuns, runScheduledReports } from "../Dashboard/reportRun.ts";
 import { pruneLoginAttempts } from "../Account/loginAttempts.ts";
 
 /**
@@ -155,6 +162,14 @@ export type MaintenanceOptions = {
   readonly email?: EmailTransport | null;
   /** Maximum outbox deliveries in flight. Defaults to 4. */
   readonly emailOutboxConcurrency?: number;
+  /**
+   * Generate and queue due dashboard reports. Defaults to true. Reports are
+   * queued through the outbox and drained by the same run, so this has no
+   * effect without an email transport.
+   */
+  readonly reports?: boolean;
+  /** Envelope sender for report mail; defaults to the built-in sender. */
+  readonly reportEmailFrom?: EmailAddress;
   /** Attempts before an outbox row is permanently failed. Defaults to 5. */
   readonly emailOutboxMaxAttempts?: number;
   /**
@@ -197,6 +212,12 @@ export type MaintenanceOptions = {
    */
   readonly requestDomainCertificate?: DomainCertificateRequester;
   /**
+   * Reconcile fleet migration cohorts: a device that reappeared is marked
+   * enrolled and one past its window becomes stuck. Defaults to true; the
+   * dashboard runs the same reconciliation when a cohort is opened.
+   */
+  readonly fleetMigrations?: boolean;
+  /**
    * Terminal script-execution rows older than this many days are deleted.
    * Defaults to 30. Queued runs expire first; they are never pruned while
    * active. Set to `0` to keep script results indefinitely.
@@ -209,19 +230,30 @@ export type MaintenanceOptions = {
    */
   readonly tenantDeletionLogRetentionDays?: number;
   /**
-   * Stripe webhook-event ledger rows older than this many days are deleted.
-   * Defaults to 90 so a late or replayed event is still deduped, while the
-   * ledger does not grow forever. Set to `0` to keep it indefinitely.
+   * Object storage for expired handover archives. When present, maintenance
+   * deletes the sealed object before the row. Without it the rows are still
+   * pruned; a deployment in that position must configure an R2 lifecycle rule
+   * on the `handovers/` prefix, because the archive is encrypted and useless
+   * after its link expires.
    */
-  readonly stripeEventRetentionDays?: number;
+  readonly storage?: R2Bucket;
   /**
-   * Stripe client used to reconcile subscription seats and customer names.
-   * Omit it on deployments without billing, or to skip the billing sweep.
+   * Terminal approval requests and their decisions older than this many days
+   * are deleted. Defaults to 90; pending requests are never pruned. Set to
+   * `0` to keep approval history indefinitely.
+   */
+  readonly approvalRetentionDays?: number;
+  /**
+   * Billing client used to report per-tenant usage. The services deployment
+   * reconciles Stripe seats from these snapshots; omit it to skip the sweep.
    */
   readonly billing?: {
-    readonly stripe: EffectStripeClient;
-    readonly deviceMonthlyPriceId?: string;
-    readonly planLimits?: PlanLimitsConfig;
+    readonly reportUsage: (input: {
+      readonly organizationId: string;
+      readonly deviceCount: number;
+      readonly devicesUsed: number;
+      readonly tenantCount: number;
+    }) => Effect.Effect<void, unknown>;
   };
 };
 
@@ -265,10 +297,16 @@ export type MaintenanceResult = {
    * Activation Lock state). Additive to the maintenance result.
    */
   readonly securityInfoRefreshes: number;
+  /** Macs asked for a fresh `UserList` local-account inventory. */
+  readonly localAccountRefreshes: number;
+  /** Managed local administrator passwords queued for scheduled rotation. */
+  readonly localAdminPasswordsRotated: number;
   /** Active commands whose delivery deadline elapsed during this run. */
   readonly expiredCommands: number;
   /** Terminal command rows deleted by retention. */
   readonly purgedCommands: number;
+  /** Uninstall rows whose inventory deadline passed without a report. */
+  readonly failedUninstalls: number;
   /** Windows state-generated command rows deleted by retention. */
   readonly purgedWindowsCommands: number;
   /** Windows enrollment/management failure records deleted by retention. */
@@ -291,20 +329,22 @@ export type MaintenanceResult = {
   readonly expiredScriptRuns: number;
   /** Terminal script-execution rows deleted by retention. */
   readonly purgedScriptRuns: number;
+  /** Migration devices whose return was detected during this run. */
+  readonly migrationDevicesEnrolled: number;
+  /** Migration devices declared stuck because their window closed. */
+  readonly migrationDevicesStuck: number;
   /** Completed/failed tenant-teardown journal rows deleted by retention. */
   readonly purgedTenantDeletionLogs: number;
-  /** Stripe webhook-event ledger rows deleted by retention. */
-  readonly purgedStripeEvents: number;
-  /** Tenants whose Stripe seat quantity was brought in line this run. */
-  readonly billingSeatsUpdated: number;
-  /** Tenants checked against Stripe where the quantity already matched. */
-  readonly billingSeatsUnchanged: number;
-  /** Tenants skipped (no subscription, another price, ended subscription). */
-  readonly billingSeatsSkipped: number;
-  /** Tenants whose Stripe reconciliation failed; retried next run. */
-  readonly billingSeatsFailed: number;
-  /** Stripe customer names updated to match a renamed tenant. */
-  readonly billingCustomerNamesUpdated: number;
+  /** Expired handover archive rows (and objects, when storage is available). */
+  readonly purgedHandoverArchives: number;
+  /** Expired Windows diagnostic archives and their R2 objects. */
+  readonly purgedDiagnosticsArchives: number;
+  /** Terminal approval requests (and their decisions) deleted by retention. */
+  readonly purgedApprovalRequests: number;
+  /** Tenant usage snapshots accepted by the billing service. */
+  readonly billingUsageReported: number;
+  /** Tenant usage snapshots the billing service rejected; retried next run. */
+  readonly billingUsageFailed: number;
   /** Transactional emails delivered by the outbox drain this run. */
   readonly emailOutboxSent: number;
   /** Rows rescheduled after a provider failure. */
@@ -313,6 +353,14 @@ export type MaintenanceResult = {
   readonly emailOutboxFailed: number;
   /** Delivered/failed outbox rows deleted by retention. */
   readonly purgedEmailOutbox: number;
+  /** Scheduled dashboard reports generated and queued this run. */
+  readonly reportsQueued: number;
+  /** Reports already queued for their period, or whose attempt cap is reached. */
+  readonly reportsSkipped: number;
+  /** Reports whose render or queue step failed (retried next run). */
+  readonly reportsFailed: number;
+  /** Report run history rows deleted by retention. */
+  readonly purgedReportRuns: number;
   /** Apps and Books licence pools refreshed by the scheduled sync. */
   readonly vppSynced: number;
   /** Tenants whose Apps and Books sync failed this run. */
@@ -320,6 +368,42 @@ export type MaintenanceResult = {
 };
 
 const day = 24 * 60 * 60 * 1000;
+
+/** Maximum rows changed by one maintenance statement. */
+export const MAINTENANCE_DELETE_BATCH_SIZE = 500;
+
+/**
+ * Drain a retention predicate without materialising every expired id or
+ * holding one unbounded delete lock. MySQL reports the exact deleted count,
+ * so a short batch is also the termination condition.
+ */
+const deleteExpiredInBatches = (
+  db: EnterpriseDb,
+  table: AnyMySqlTable,
+  where: SQL,
+): Effect.Effect<number, unknown> =>
+  Effect.gen(function* () {
+    let deleted = 0;
+
+    while (true) {
+      const result = yield* db.delete(table).where(where).limit(MAINTENANCE_DELETE_BATCH_SIZE);
+      const affectedRows = Number(result.affectedRows);
+
+      deleted += affectedRows;
+      if (affectedRows < MAINTENANCE_DELETE_BATCH_SIZE) return deleted;
+    }
+  });
+
+/**
+ * Stable log message for a scheduled Apps and Books client that could not be
+ * loaded. The sweep is skipped for the run; the next daily tick retries.
+ */
+export const VPP_CLIENT_LOAD_FAILED =
+  "Scheduled Apps and Books sync skipped: the client could not be loaded";
+
+/** One-line, secret-free description of a boundary failure cause. */
+const describeFailure = (cause: unknown): string =>
+  cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
 
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
@@ -487,8 +571,7 @@ export const runMaintenance = (
 
     const tenantDeletionLogRetentionDays =
       options.tenantDeletionLogRetentionDays ?? TENANT_DELETION_LOG_RETENTION_DAYS;
-
-    const stripeEventRetentionDays = options.stripeEventRetentionDays ?? 90;
+    const approvalRetentionDays = options.approvalRetentionDays ?? 90;
 
     /** Latest origin observation, reused by the missing-certificate sweep. */
     let serverCertificateState: ServerCertificateInfo | null = null;
@@ -515,8 +598,11 @@ export const runMaintenance = (
       webhookRetryFailed: 0,
       applicationInventoryRefreshes: 0,
       securityInfoRefreshes: 0,
+      localAccountRefreshes: 0,
+      localAdminPasswordsRotated: 0,
       expiredCommands: 0,
       purgedCommands: 0,
+      failedUninstalls: 0,
       purgedWindowsCommands: 0,
       purgedWindowsFailures: 0,
       scepCasIssued: 0,
@@ -528,17 +614,22 @@ export const runMaintenance = (
       domainCertificateRequests: 0,
       expiredScriptRuns: 0,
       purgedScriptRuns: 0,
+      migrationDevicesEnrolled: 0,
+      migrationDevicesStuck: 0,
       purgedTenantDeletionLogs: 0,
-      purgedStripeEvents: 0,
-      billingSeatsUpdated: 0,
-      billingSeatsUnchanged: 0,
-      billingSeatsSkipped: 0,
-      billingSeatsFailed: 0,
-      billingCustomerNamesUpdated: 0,
+      purgedHandoverArchives: 0,
+      purgedDiagnosticsArchives: 0,
+      purgedApprovalRequests: 0,
+      billingUsageReported: 0,
+      billingUsageFailed: 0,
       emailOutboxSent: 0,
       emailOutboxRetried: 0,
       emailOutboxFailed: 0,
       purgedEmailOutbox: 0,
+      reportsQueued: 0,
+      reportsSkipped: 0,
+      reportsFailed: 0,
+      purgedReportRuns: 0,
       vppSynced: 0,
       vppFailed: 0,
     };
@@ -564,31 +655,49 @@ export const runMaintenance = (
 
     // 2. Mark stale enrolled devices. Unenrolling (rather than deleting) keeps
     //    inventory and audit history intact and lets an operator re-enrol.
+    //    Claim one indexed batch at a time so a large fleet never becomes one
+    //    in-memory array or one long lock hold.
     if (staleDeviceDays > 0) {
       const staleCutoff = new Date(now.getTime() - staleDeviceDays * day);
 
-      const staleDeviceRows = yield* db
-        .select({ id: s.device.id, organizationId: s.device.organizationId })
-        .from(s.device)
-        .where(and(eq(s.device.status, "enrolled"), lt(s.device.lastSeenAt, staleCutoff)));
+      while (true) {
+        const staleDevices = yield* db.transaction((tx) =>
+          Effect.gen(function* () {
+            const rows = yield* tx
+              .select({ id: s.device.id, organizationId: s.device.organizationId })
+              .from(s.device)
+              .where(and(eq(s.device.status, "enrolled"), lt(s.device.lastSeenAt, staleCutoff)))
+              .orderBy(asc(s.device.lastSeenAt), asc(s.device.id))
+              .limit(MAINTENANCE_DELETE_BATCH_SIZE)
+              .for("update");
 
-      const staleDevices = staleDeviceRows.map((row) =>
-        Schema.decodeUnknownSync(
-          Schema.Struct({ id: Schema.String, organizationId: Schema.String }),
-        )(row),
-      );
+            if (rows.length === 0) return [];
 
-      if (staleDevices.length > 0) {
-        yield* db
-          .update(s.device)
-          .set({ status: "unenrolled" })
-          .where(
-            inArray(
-              s.device.id,
-              staleDevices.map((row) => row.id),
-            ),
-          );
-        result.staleDevices = staleDevices.length;
+            yield* tx
+              .update(s.device)
+              .set({ status: "unenrolled" })
+              .where(
+                and(
+                  eq(s.device.status, "enrolled"),
+                  lt(s.device.lastSeenAt, staleCutoff),
+                  inArray(
+                    s.device.id,
+                    rows.map((row) => row.id),
+                  ),
+                ),
+              );
+
+            return rows.map((row) =>
+              Schema.decodeUnknownSync(
+                Schema.Struct({ id: Schema.String, organizationId: Schema.String }),
+              )(row),
+            );
+          }),
+        );
+
+        if (staleDevices.length === 0) break;
+
+        result.staleDevices += staleDevices.length;
         // Staleness is a real unenrollment transition, so it is a webhook
         // event too. Dispatch is bounded and never fails maintenance.
         yield* Effect.forEach(
@@ -613,6 +722,8 @@ export const runMaintenance = (
             ),
           { concurrency: 4, discard: true },
         );
+
+        if (staleDevices.length < MAINTENANCE_DELETE_BATCH_SIZE) break;
       }
     }
 
@@ -620,78 +731,139 @@ export const runMaintenance = (
     //    `@yielded/auth`, so they are referenced through the shared schema
     //    aliases rather than duplicated table definitions. Their expiry columns
     //    are BIGINT epoch milliseconds, not DATETIME, so compare with millis.
+    //    The expiry-leading index bounds each page to expired rows; keyset on
+    //    both columns so equal expiry timestamps resume without rescanning.
     const nowMillis = now.getTime();
+    let afterSession: { readonly expiresAt: number; readonly sessionId: string } | undefined;
+    const SessionCursor = Schema.Struct({ expiresAt: Schema.Number, sessionId: Schema.String });
 
-    const expiredSessions = yield* db
-      .select({ sessionId: s.authSessions.sessionId })
-      .from(s.authSessions)
-      .where(lt(s.authSessions.expiresAt, nowMillis));
+    while (true) {
+      const expiredBatch = yield* db.transaction((tx) =>
+        Effect.gen(function* () {
+          const rows = yield* tx
+            .select({ expiresAt: s.authSessions.expiresAt, sessionId: s.authSessions.sessionId })
+            .from(s.authSessions)
+            .where(
+              and(
+                lt(s.authSessions.expiresAt, nowMillis),
+                afterSession
+                  ? or(
+                      gt(s.authSessions.expiresAt, afterSession.expiresAt),
+                      and(
+                        eq(s.authSessions.expiresAt, afterSession.expiresAt),
+                        gt(s.authSessions.sessionId, afterSession.sessionId),
+                      ),
+                    )
+                  : undefined,
+              ),
+            )
+            .orderBy(asc(s.authSessions.expiresAt), asc(s.authSessions.sessionId))
+            .limit(MAINTENANCE_DELETE_BATCH_SIZE);
 
-    if (expiredSessions.length > 0) {
-      yield* db.delete(s.authSessions).where(lt(s.authSessions.expiresAt, nowMillis));
-      result.expiredAuthSessions = expiredSessions.length;
+          if (rows.length === 0) return { deleted: 0, last: undefined, size: 0 };
 
-      // Session descriptors live in an application table with no foreign key
-      // to the library-owned session row, so they are removed with the
-      // sessions they describe. Explicit revocation removes its own row; this
-      // covers natural expiry. Chunked so one sweep cannot exceed the query
-      // parameter budget.
-      const expiredIds = expiredSessions.map((row) => row.sessionId);
-
-      for (let offset = 0; offset < expiredIds.length; offset += 500)
-        yield* db
-          .delete(s.accountSessionContext)
-          .where(
-            inArray(s.accountSessionContext.sessionId, expiredIds.slice(offset, offset + 500)),
+          const candidates = rows.map((row) => Schema.decodeUnknownSync(SessionCursor)(row));
+          const candidateIds = candidates.map((row) => row.sessionId);
+          // Lock and re-check only the bounded candidate set: a refresh that
+          // won the race keeps its row and descriptor.
+          const expired = yield* tx
+            .select({ sessionId: s.authSessions.sessionId })
+            .from(s.authSessions)
+            .where(
+              and(
+                inArray(s.authSessions.sessionId, candidateIds),
+                lt(s.authSessions.expiresAt, nowMillis),
+              ),
+            )
+            .for("update");
+          const sessionIds = expired.map(
+            (row) =>
+              Schema.decodeUnknownSync(Schema.Struct({ sessionId: Schema.String }))(row).sessionId,
           );
+
+          if (sessionIds.length === 0)
+            return { deleted: 0, last: candidates.at(-1), size: candidates.length };
+
+          // Descriptors have no foreign key to the library-owned session row,
+          // so remove them in the same transaction as the sessions they name.
+          yield* tx
+            .delete(s.accountSessionContext)
+            .where(inArray(s.accountSessionContext.sessionId, sessionIds));
+          const deleted = yield* tx
+            .delete(s.authSessions)
+            .where(inArray(s.authSessions.sessionId, sessionIds));
+
+          return {
+            deleted: Number(deleted.affectedRows),
+            last: candidates.at(-1),
+            size: candidates.length,
+          };
+        }),
+      );
+
+      result.expiredAuthSessions += expiredBatch.deleted;
+      if (expiredBatch.size < MAINTENANCE_DELETE_BATCH_SIZE) break;
+      afterSession = expiredBatch.last;
     }
 
     // 4. Audit retention. Opt out with `auditRetentionDays: 0`.
     if (auditRetentionDays > 0) {
       const auditCutoff = new Date(now.getTime() - auditRetentionDays * day);
 
-      const staleAudit = yield* db
-        .select({ id: s.auditLog.id })
-        .from(s.auditLog)
-        .where(lt(s.auditLog.createdAt, auditCutoff));
-
-      if (staleAudit.length > 0) {
-        yield* db.delete(s.auditLog).where(lt(s.auditLog.createdAt, auditCutoff));
-        result.purgedAuditEntries = staleAudit.length;
-      }
+      result.purgedAuditEntries = yield* deleteExpiredInBatches(
+        db,
+        s.auditLog,
+        lt(s.auditLog.createdAt, auditCutoff),
+      );
 
       // The account stream uses the same retention setting: one privacy policy
       // covers every audit record the deployment keeps.
-      const staleAccountAudit = yield* db
-        .select({ id: s.accountAuditLog.id })
-        .from(s.accountAuditLog)
-        .where(lt(s.accountAuditLog.createdAt, auditCutoff));
-
-      if (staleAccountAudit.length > 0) {
-        yield* db.delete(s.accountAuditLog).where(lt(s.accountAuditLog.createdAt, auditCutoff));
-        result.purgedAccountAuditEntries = staleAccountAudit.length;
-      }
+      result.purgedAccountAuditEntries = yield* deleteExpiredInBatches(
+        db,
+        s.accountAuditLog,
+        lt(s.accountAuditLog.createdAt, auditCutoff),
+      );
 
       // The login log is the same kind of account history and follows the same
       // window, so an account holder and an operator see one privacy policy.
       result.purgedLoginAttempts = yield* pruneLoginAttempts(db, auditCutoff);
     }
 
+    // 4b. Realtime notifications only bridge a browser connection or a bounded
+    // reconnect. A day is far longer than any client cursor, so keeping them
+    // beyond it has no value and would make the stream table grow with fleet
+    // check-in traffic. This is independent of audit retention.
+    yield* deleteExpiredInBatches(
+      db,
+      s.realtimeEvent,
+      lt(s.realtimeEvent.createdAt, new Date(now.getTime() - day)),
+    );
+
+    // 4c. Approval history is security evidence, not live state. Terminal
+    // requests older than the retention window are deleted; MySQL cascades
+    // their decisions. Pending requests are never pruned here.
+    if (approvalRetentionDays > 0) {
+      const approvalCutoff = new Date(now.getTime() - approvalRetentionDays * day);
+
+      result.purgedApprovalRequests = yield* deleteExpiredInBatches(
+        db,
+        s.approvalRequest,
+        and(
+          inArray(s.approvalRequest.status, ["approved", "rejected", "expired", "cancelled"]),
+          lt(s.approvalRequest.updatedAt, approvalCutoff),
+        )!,
+      );
+    }
+
     // 5. Enrollment-attempt diagnostics are only useful for a short window.
     if (enrollmentAttemptRetentionDays > 0) {
       const attemptCutoff = new Date(now.getTime() - enrollmentAttemptRetentionDays * day);
 
-      const staleAttempts = yield* db
-        .select({ id: s.enrollmentAttempt.id })
-        .from(s.enrollmentAttempt)
-        .where(lt(s.enrollmentAttempt.createdAt, attemptCutoff));
-
-      if (staleAttempts.length > 0) {
-        yield* db
-          .delete(s.enrollmentAttempt)
-          .where(lt(s.enrollmentAttempt.createdAt, attemptCutoff));
-        result.purgedEnrollmentAttempts = staleAttempts.length;
-      }
+      result.purgedEnrollmentAttempts = yield* deleteExpiredInBatches(
+        db,
+        s.enrollmentAttempt,
+        lt(s.enrollmentAttempt.createdAt, attemptCutoff),
+      );
     }
 
     // 5b. Android Pub/Sub deliveries are deduped by message id; the ledger
@@ -699,17 +871,11 @@ export const runMaintenance = (
     if (androidPubSubRetentionDays > 0) {
       const androidCutoff = new Date(now.getTime() - androidPubSubRetentionDays * day);
 
-      const staleMessages = yield* db
-        .select({ messageId: s.androidPubSubMessage.messageId })
-        .from(s.androidPubSubMessage)
-        .where(lt(s.androidPubSubMessage.receivedAt, androidCutoff));
-
-      if (staleMessages.length > 0) {
-        yield* db
-          .delete(s.androidPubSubMessage)
-          .where(lt(s.androidPubSubMessage.receivedAt, androidCutoff));
-        result.purgedAndroidPubSubMessages = staleMessages.length;
-      }
+      result.purgedAndroidPubSubMessages = yield* deleteExpiredInBatches(
+        db,
+        s.androidPubSubMessage,
+        lt(s.androidPubSubMessage.receivedAt, androidCutoff),
+      );
     }
 
     // 5c. Windows enrollment/management failure history is diagnostic, not an
@@ -730,12 +896,10 @@ export const runMaintenance = (
         now,
         authSecret: options.authSecret,
       }).pipe(
-        Effect.catch((cause) =>
-          Effect.sync(() => {
-            console.error("SCEP CA rotation sweep failed", cause);
-
-            return { checked: 0, rotated: 0, failed: 0 };
-          }),
+        Effect.catch((error) =>
+          Effect.logError("SCEP CA rotation sweep failed", { error }).pipe(
+            Effect.as({ checked: 0, rotated: 0, failed: 0 }),
+          ),
         ),
       );
 
@@ -757,12 +921,10 @@ export const runMaintenance = (
         intervalMinutes: options.serverCertificateIntervalMinutes,
         probe: options.serverCertificateProbe,
       }).pipe(
-        Effect.catch((cause) =>
-          Effect.sync(() => {
-            console.error("Origin TLS certificate check failed", cause);
-
-            return { checked: false, state: null };
-          }),
+        Effect.catch((error) =>
+          Effect.logError("Origin TLS certificate check failed", { error }).pipe(
+            Effect.as({ checked: false, state: null }),
+          ),
         ),
       );
 
@@ -902,20 +1064,40 @@ export const runMaintenance = (
           // mail outage cannot abort the rest of maintenance.
           yield* Effect.suspend(() => options.notifyCredentialExpiry!(notification)).pipe(
             Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
+              Cause.hasInterrupts(cause)
                 ? Effect.failCause(cause)
-                : Effect.sync(() =>
-                    console.error(
-                      "Credential expiry notification failed",
-                      organization.id,
-                      threshold,
-                      cause,
-                    ),
-                  ),
+                : Effect.logError("Credential expiry notification failed", {
+                    organizationId: organization.id,
+                    threshold,
+                    cause,
+                  }),
             ),
           );
         }
       }
+    }
+
+    // 6a. Scheduled dashboard reports. Each report is a dashboard snapshot
+    //     rendered to CSV/PDF and queued for its recipients. Claiming a
+    //     `(report, period)` row makes this safe to run from the hourly and
+    //     daily triggers; the drain below delivers what this step queued.
+    if (options.reports !== false) {
+      if (options.email) {
+        const reports = yield* runScheduledReports({
+          db,
+          email: options.email,
+          from: options.reportEmailFrom,
+          now,
+        });
+
+        result.reportsQueued = reports.queued;
+        result.reportsSkipped = reports.skipped;
+        result.reportsFailed = reports.failed;
+      }
+
+      // Old attempts are pruned even when no mailer is configured: history
+      // written before a transport was removed would otherwise never expire.
+      result.purgedReportRuns = yield* purgeDashboardReportRuns(db, now);
     }
 
     // 6b. Drain the transactional-email outbox. Queued invitations,
@@ -999,19 +1181,59 @@ export const runMaintenance = (
       result.securityInfoRefreshes = securityInfo.requested;
     }
 
+    // 9b-bis. Local-account inventory. macOS reports local accounts only on
+    //    request, so the daily sweep queues one `UserList` per Mac whose
+    //    inventory is missing or older than a day. A device that never answers
+    //    is not asked again inside the rate-limit window.
+    if (options.applicationInventory !== false) {
+      const localAccounts = yield* refreshAppleLocalAccounts(db, { now });
+
+      result.localAccountRefreshes = localAccounts.requested;
+    }
+
+    // 9b-ter. Managed local administrator rotation. The tenant policy decides
+    //    the interval, the sweep caps how many devices change per tenant per
+    //    run, and the new password only replaces the sealed secret once the Mac
+    //    acknowledges `SetAutoAdminPassword`.
+    if (options.applicationInventory !== false && options.authSecret) {
+      const rotation = yield* rotateAppleLocalAdminPasswords(db, {
+        now,
+        authSecret: options.authSecret,
+      });
+
+      result.localAdminPasswordsRotated = rotation.queued;
+    }
+
     // 9c. Apps and Books licence pools. Apple's counts change when licences are
     //     purchased, returned or revoked elsewhere, and the manual sync button
     //     is easy to forget. Tenants are refreshed at most once a day; a failed
     //     sync is recorded on the token row and retried by the next run.
     if (options.vppSync !== false && options.authSecret) {
-      const vpp = yield* syncScheduledVppAssets({
-        db,
-        authSecret: options.authSecret,
-        now,
-      });
+      // Apps and Books sync is a daily cron path; the VPP client is imported
+      // here so it stays out of the API Worker's startup closure. A chunk that
+      // cannot be loaded is logged and skips this step: it must not fail the
+      // rest of maintenance (or become a defect `Effect.catch` cannot see).
+      const vppClient = yield* Effect.tryPromise({
+        try: () => import("@mattrax/apple-business-manager"),
+        catch: (cause) => cause,
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(VPP_CLIENT_LOAD_FAILED, { cause: describeFailure(error) }).pipe(
+            Effect.as(undefined),
+          ),
+        ),
+      );
 
-      result.vppSynced = vpp.synced;
-      result.vppFailed = vpp.failed;
+      if (vppClient) {
+        const vpp = yield* vppClient.syncScheduledVppAssets({
+          db,
+          authSecret: options.authSecret,
+          now,
+        });
+
+        result.vppSynced = vpp.synced;
+        result.vppFailed = vpp.failed;
+      }
     }
 
     // 10. Command queue housekeeping. Android commands are issued directly and
@@ -1026,6 +1248,7 @@ export const runMaintenance = (
 
     result.expiredCommands = commands.expired;
     result.purgedCommands = commands.pruned;
+    result.failedUninstalls = commands.failedUninstalls;
 
     // 10a. Windows policy/inventory rows are regenerated from device state on
     //      every check-in and are written without an expiry, so the generic
@@ -1048,6 +1271,17 @@ export const runMaintenance = (
 
     result.expiredScriptRuns = scriptRuns.expired;
     result.purgedScriptRuns = scriptRuns.pruned;
+
+    // 10c. Fleet migration cohorts. A device that reappears after its unenrol
+    //      is matched by serial, and one that has not returned inside its
+    //      cohort window becomes stuck. The dashboard reconciles on read too;
+    //      this is the backstop for a cohort nobody opens.
+    if (options.fleetMigrations !== false) {
+      const migrations = yield* sweepFleetMigrations(db, { now });
+
+      result.migrationDevicesEnrolled = migrations.enrolled;
+      result.migrationDevicesStuck = migrations.stuck;
+    }
 
     // 11. Tenant-teardown journal retention. The journal carries the operator
     //     email that requested the deletion and survives the tenant row, so it
@@ -1077,47 +1311,140 @@ export const runMaintenance = (
       result.purgedTenantDeletionLogs = staleJournals.length;
     }
 
-    // 11b. Stripe webhook-event ledger retention. The ledger only dedupes
-    //      retries, so it needs to outlive Stripe's retry window, not forever.
-    //      Bounded per run; the next daily pass continues from the same cutoff.
-    if (stripeEventRetentionDays > 0) {
-      const cutoff = new Date(now.getTime() - stripeEventRetentionDays * day);
+    // 11b. Spent handover archives. Once `expiresAt` passes the download
+    //      token is dead, and a downloaded row has already served its one-time
+    //      purpose. Delete the object first when storage is available; a failed
+    //      delete leaves the row for the next run instead of orphaning an
+    //      object no database row points at.
+    const expiredHandoverArchives = yield* db
+      .select({ id: s.deviceHandoverArchive.id, r2Key: s.deviceHandoverArchive.r2Key })
+      .from(s.deviceHandoverArchive)
+      .where(
+        or(
+          lt(s.deviceHandoverArchive.expiresAt, now),
+          isNotNull(s.deviceHandoverArchive.downloadedAt),
+        ),
+      )
+      .limit(5_000);
 
-      const staleEvents = yield* db
-        .select({ id: s.stripeEvent.id })
-        .from(s.stripeEvent)
-        .where(lt(s.stripeEvent.receivedAt, cutoff))
-        .limit(5_000);
+    if (expiredHandoverArchives.length > 0) {
+      let purgeable = expiredHandoverArchives;
+      const storage = options.storage;
 
-      if (staleEvents.length > 0)
-        yield* db.delete(s.stripeEvent).where(
+      if (storage) {
+        const deleted = new Set<string>();
+
+        for (let offset = 0; offset < expiredHandoverArchives.length; offset += 500) {
+          const batch = expiredHandoverArchives.slice(offset, offset + 500);
+          const failure = yield* Effect.tryPromise({
+            try: () => storage.delete(batch.map((row) => row.r2Key)),
+            catch: (cause) => cause,
+          }).pipe(Effect.match({ onFailure: (cause) => cause, onSuccess: () => undefined }));
+
+          if (failure !== undefined) {
+            yield* Effect.logWarning(
+              "Failed to delete expired handover archive objects; rows are retried next run",
+              { cause: failure },
+            );
+            continue;
+          }
+
+          for (const row of batch) deleted.add(row.id);
+        }
+
+        purgeable = expiredHandoverArchives.filter((row) => deleted.has(row.id));
+      }
+
+      if (purgeable.length > 0)
+        yield* db.delete(s.deviceHandoverArchive).where(
           inArray(
-            s.stripeEvent.id,
-            staleEvents.map((row) => row.id),
+            s.deviceHandoverArchive.id,
+            purgeable.map((row) => row.id),
           ),
         );
 
-      result.purgedStripeEvents = staleEvents.length;
+      result.purgedHandoverArchives = purgeable.length;
     }
 
-    // 12. Billing seats. Devices enrol through the protocol layer, which has
-    //     no Stripe client, so this sweep is what keeps the paid quantity equal
-    //     to the fleet a tenant actually has. It also retries a customer rename
-    //     whose inline Stripe update failed. Runs after the stale-device sweep
-    //     above so retired devices are already out of the count.
-    if (options.billing) {
-      const billing = yield* reconcileSubscriptionSweep({
-        db,
-        stripe: options.billing.stripe,
-        deviceMonthlyPriceId: options.billing.deviceMonthlyPriceId,
-        planLimits: options.billing.planLimits,
-      });
+    // 11c. Expired Windows diagnostic archives. The download token is already
+    //      dead past `expiresAt`; delete the object first so a failed storage
+    //      delete leaves the row for the next run instead of orphaning bytes.
+    const expiredDiagnostics = yield* db
+      .select({ id: s.deviceDiagnosticsArchive.id, r2Key: s.deviceDiagnosticsArchive.r2Key })
+      .from(s.deviceDiagnosticsArchive)
+      .where(lt(s.deviceDiagnosticsArchive.expiresAt, now))
+      .limit(5_000);
 
-      result.billingSeatsUpdated = billing.updated;
-      result.billingSeatsUnchanged = billing.unchanged;
-      result.billingSeatsSkipped = billing.skipped;
-      result.billingSeatsFailed = billing.failed;
-      result.billingCustomerNamesUpdated = billing.customerNamesUpdated;
+    if (expiredDiagnostics.length > 0) {
+      // Without a storage binding, deleting a row that still points at an R2
+      // object orphans bytes forever. Keep those rows for a deployment that
+      // later configures storage; only keyless rows can be pruned safely.
+      let purgeable = options.storage
+        ? expiredDiagnostics
+        : expiredDiagnostics.filter((row) => row.r2Key === null);
+      const storage = options.storage;
+
+      if (storage) {
+        const keys = expiredDiagnostics.flatMap((row) => (row.r2Key ? [row.r2Key] : []));
+
+        if (keys.length > 0) {
+          const failure = yield* Effect.tryPromise({
+            try: () => storage.delete(keys),
+            catch: (cause) => cause,
+          }).pipe(Effect.match({ onFailure: (cause) => cause, onSuccess: () => undefined }));
+
+          if (failure !== undefined) {
+            yield* Effect.logWarning(
+              "Failed to delete expired diagnostic archives; rows are retried next run",
+              { cause: failure },
+            );
+            purgeable = expiredDiagnostics.filter((row) => row.r2Key === null);
+          }
+        }
+      }
+
+      if (purgeable.length > 0)
+        yield* db.delete(s.deviceDiagnosticsArchive).where(
+          inArray(
+            s.deviceDiagnosticsArchive.id,
+            purgeable.map((row) => row.id),
+          ),
+        );
+
+      result.purgedDiagnosticsArchives = purgeable.length;
+    }
+
+    // 12. Billing usage. Devices live in this database but billing lives in
+    //     the services deployment, so report a snapshot per tenant. The
+    //     services deployment reconciles paid seats from it and retries a lost
+    //     report in its own nightly sweep.
+    if (options.billing) {
+      const organizations = yield* db
+        .select({ id: s.organization.id })
+        .from(s.organization)
+        .orderBy(s.organization.createdAt)
+        .limit(1_000);
+
+      for (const organization of organizations) {
+        const [devices] = yield* db
+          .select({ value: count() })
+          .from(s.device)
+          .where(eq(s.device.organizationId, organization.id));
+
+        const billable = yield* billableDeviceCount(db, organization.id);
+
+        const reported = yield* options.billing
+          .reportUsage({
+            organizationId: organization.id,
+            deviceCount: billable,
+            devicesUsed: devices?.value ?? 0,
+            tenantCount: 0,
+          })
+          .pipe(Effect.exit);
+
+        if (Exit.isSuccess(reported)) result.billingUsageReported += 1;
+        else result.billingUsageFailed += 1;
+      }
     }
 
     return result;

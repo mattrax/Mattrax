@@ -44,7 +44,7 @@ const service = (responses: ReadonlyArray<unknown>) => {
       licenseKey,
       origin,
       // SAFETY: the fake implements the fetch surface the billing client uses.
-      fetch: fetch as typeof globalThis.fetch,
+      fetch,
     }),
   };
 };
@@ -54,16 +54,16 @@ describe("remote deployment billing", () => {
     const { billing, calls } = service([summary, { status: "ok" }, summary]);
 
     const first = await Effect.runPromise(
-      billing.summary({ organizationId: "org-1", accountId: "user-1" }),
+      billing.summary({ organizationId: "org-1", accountId: "user-1" } as never),
     );
 
     expect(first).toMatchObject({ plan: "device", billableDevices: 12, configured: true });
 
     await Effect.runPromise(billing.reportUsage({ deviceCount: 15, tenantCount: 3 }));
 
-    expect(calls[1]!.url).toBe("https://e.mattrax.app/api/platform/billing/usage");
-    expect(calls[1]!.init.headers).toMatchObject({ authorization: `Bearer ${licenseKey}` });
-    expect(JSON.parse(String(calls[1]!.init.body))).toMatchObject({
+    expect(calls[1].url).toBe("https://e.mattrax.app/api/platform/billing/usage");
+    expect(calls[1].init.headers).toMatchObject({ authorization: `Bearer ${licenseKey}` });
+    expect(JSON.parse(String(calls[1].init.body))).toMatchObject({
       origin,
       deviceCount: 15,
       tenantCount: 3,
@@ -78,13 +78,14 @@ describe("remote deployment billing", () => {
     const result = await Effect.runPromise(
       billing.checkout({
         tenantId: "tenant-1",
-        organization: { id: "org-1", name: "Acme", stripeCustomerId: null },
+        organization: { id: "org-1", name: "Acme" },
         request: {},
+        usage: { deviceCount: 12, tenantCount: 2 },
       }),
     );
 
     expect(result).toEqual({ url: "https://checkout.stripe.test/cs_1", quantity: 12 });
-    expect(JSON.parse(String(calls[0]!.init.body))).toMatchObject({ tenantId: "tenant-1" });
+    expect(JSON.parse(String(calls[0].init.body))).toMatchObject({ tenantId: "tenant-1" });
   });
 
   it("reports a rejected licence as a billing error", async () => {
@@ -93,15 +94,15 @@ describe("remote deployment billing", () => {
       licenseKey,
       origin,
       // SAFETY: this fake returns a fetch Response, which is the billing client's contract.
-      fetch: (async () =>
+      fetch: async () =>
         new Response(JSON.stringify({ message: "Licence origin does not match." }), {
           status: 403,
           headers: { "content-type": "application/json" },
-        })) as typeof globalThis.fetch,
+        }),
     });
 
     await expect(
-      Effect.runPromise(billing.summary({ organizationId: "org-1", accountId: "user-1" })),
+      Effect.runPromise(billing.summary({ organizationId: "org-1", accountId: "user-1" } as never)),
     ).rejects.toMatchObject({
       _tag: "EnterpriseStripeError",
       message: "Licence origin does not match.",

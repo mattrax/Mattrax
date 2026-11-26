@@ -1,19 +1,21 @@
 import { useQueries, useQuery } from "@tanstack/solid-query";
-import {
+import type {
   DashboardQueryRequest,
   DashboardQueryResponse,
   DashboardQueryRow,
-  DeviceQuery,
 } from "@mattrax/enterprise-domain/client";
+import { DashboardUserFilter, DeviceQuery } from "@mattrax/enterprise-domain/client";
 import { Match, Option, Schema } from "effect";
-import { For, Show, createContext, createMemo, useContext } from "solid-js";
+import { For, Show, createContext, createMemo, createSignal, useContext } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { isServer } from "@solidjs/web";
 import { relativeTime } from "~/components/mdm/common";
-import { Markdown } from "~/components/dashboard/markdown";
-import { enterprise, enterpriseKeys, type DashboardWidget } from "~/lib/enterprise";
+import Markdown from "~/components/dashboard/markdown";
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import type { DashboardWidget } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
+import { Button } from "~/components/ui/button";
 
 const CHART_COLORS = [
   "var(--chart-1)",
@@ -27,8 +29,9 @@ const CHART_COLORS = [
 ];
 
 const QueryConfig = Schema.Struct({
-  dataset: Schema.optional(Schema.Literals(["devices", "software"])),
+  dataset: Schema.optional(Schema.Literals(["devices", "software", "users"])),
   query: Schema.optional(DeviceQuery),
+  userFilter: Schema.optional(DashboardUserFilter),
   label: Schema.optional(Schema.String),
   dimension: Schema.optional(Schema.String),
   columns: Schema.optional(Schema.Array(Schema.String)),
@@ -49,8 +52,54 @@ const isNumber = Schema.is(Schema.Number);
 
 const isBoolean = Schema.is(Schema.Boolean);
 
-const configOf = (widget: DashboardWidget): QueryConfig =>
-  Option.getOrUndefined(decodeQueryConfig(widget.config)) ?? {};
+const isWeakKey = (value: unknown): value is object =>
+  (typeof value === "object" && value !== null) || typeof value === "function";
+
+/**
+ * Widget config is immutable JSON: a new version arrives as a new object.
+ * Cache the decoded value so the batch provider and widget view can share it.
+ */
+/** Read query data only after success so pending async values never suspend during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
+export const createDashboardWidgetConfigResolver = (
+  decode: (config: unknown) => Option.Option<QueryConfig>,
+) => {
+  const cache = new WeakMap<object, QueryConfig>();
+
+  return (config: unknown): QueryConfig => {
+    if (isWeakKey(config)) {
+      const cached = cache.get(config);
+
+      if (cached !== undefined) return cached;
+    }
+
+    const resolved = Option.getOrUndefined(decode(config)) ?? {};
+
+    if (isWeakKey(config)) cache.set(config, resolved);
+
+    return resolved;
+  };
+};
+
+const resolveQueryConfig = createDashboardWidgetConfigResolver(decodeQueryConfig);
+
+const queryRequestForConfig = (
+  widget: Pick<DashboardWidget, "type">,
+  config: QueryConfig,
+): DashboardQueryRequest => ({
+  dataset: config.dataset ?? "devices",
+  query: config.query ?? { all: [] },
+  userFilter: config.userFilter,
+  groupBy: config.dimension,
+  limit: config.limit,
+  countOnly: widget.type === "stat",
+});
 
 const markdownOf = (widget: DashboardWidget): string =>
   Option.getOrUndefined(decodeMarkdownConfig(widget.config))?.markdown ?? "";
@@ -75,10 +124,49 @@ const SOFTWARE_COLUMNS = new Map([
   ["bundleId", "Bundle ID"],
 ]);
 
-const defaultColumns = (dataset: string | undefined) =>
-  dataset === "software"
-    ? ["name", "version", "managed", "deviceCount"]
-    : ["name", "platform", "osVersion", "status", "health", "lastSeenAt"];
+const USER_COLUMNS = new Map([
+  ["name", "Name"],
+  ["email", "Email"],
+  ["status", "Status"],
+  ["source", "Source"],
+]);
+
+const columnsFor = (dataset: string | undefined) => {
+  if (dataset === "software") return SOFTWARE_COLUMNS;
+
+  if (dataset === "users") return USER_COLUMNS;
+
+  return DEVICE_COLUMNS;
+};
+
+const defaultColumns = (dataset: string | undefined) => {
+  if (dataset === "software") return ["name", "version", "managed", "deviceCount"];
+
+  if (dataset === "users") return ["name", "email", "status", "source"];
+
+  return ["name", "platform", "osVersion", "status", "health", "lastSeenAt"];
+};
+
+const datasetNoun = (dataset: string | undefined) =>
+  Match.value(dataset).pipe(
+    Match.when("software", () => "applications"),
+    Match.when("users", () => "users"),
+    Match.orElse(() => "devices"),
+  );
+
+const datasetCaption = (dataset: string | undefined) =>
+  Match.value(dataset).pipe(
+    Match.when("software", () => "matching installed software"),
+    Match.when("users", () => "matching the directory filter"),
+    Match.orElse(() => "matching the current query"),
+  );
+
+const datasetRowsLabel = (dataset: string | undefined) =>
+  Match.value(dataset).pipe(
+    Match.when("software", () => "Applications"),
+    Match.when("users", () => "Users"),
+    Match.orElse(() => "Devices"),
+  );
 
 const healthClass = (value: string | null | undefined) =>
   Match.value(value).pipe(
@@ -124,7 +212,7 @@ const cellValue = (row: DashboardQueryRow, column: string, dataset: string | und
       <span class="block min-w-0">
         <span class="block truncate font-medium text-foreground">{row.name}</span>
         <Show when={isString(row.bundleId)}>
-          <span class="block max-w-[28ch] truncate font-mono text-[10.5px] text-muted-foreground">
+          <span class="block max-w-56 truncate font-mono text-xs text-muted-foreground">
             {row.bundleId}
           </span>
         </Show>
@@ -138,6 +226,8 @@ const cellValue = (row: DashboardQueryRow, column: string, dataset: string | und
     serial: row.serial,
     version: row.version,
     bundleId: row.bundleId,
+    email: row.email,
+    source: row.source,
   }[column];
 
   if (value === null || value === undefined || value === "") return "—";
@@ -145,20 +235,32 @@ const cellValue = (row: DashboardQueryRow, column: string, dataset: string | und
   return String(value);
 };
 
-/** The exact request a widget sends; shared with the page-level batch. */
-export const dashboardWidgetQueryRequest = (widget: DashboardWidget): DashboardQueryRequest => {
-  const config = configOf(widget);
+/**
+ * The exact request a widget sends; shared with the page-level batch, the
+ * dashboard export and the scheduled report renderer.
+ */
+export const dashboardWidgetQueryRequest = (widget: DashboardWidget): DashboardQueryRequest =>
+  queryRequestForConfig(widget, resolveQueryConfig(widget.config));
 
-  return {
-    dataset: config.dataset ?? "devices",
-    query: config.query ?? { all: [] },
-    groupBy: config.dimension,
-    limit: config.limit,
-    // Stats render only `total`, so the API can skip row projection and (for
-    // device queries that do not reference installed apps) the application
-    // inventory scan.
-    countOnly: widget.type === "stat",
-  };
+/** Gallery table widgets render at most three rows. */
+export const dashboardPreviewQueryRequest = (
+  request: DashboardQueryRequest,
+): DashboardQueryRequest => ({ ...request, limit: 3 });
+
+/** The API caps one batch at 24 queries; extra widgets go in another request. */
+const DASHBOARD_BATCH_LIMIT = 24;
+
+export const dashboardWidgetRequestChunks = (
+  requests: ReadonlyArray<DashboardQueryRequest>,
+  options?: { readonly preview?: boolean },
+): DashboardQueryRequest[][] => {
+  const resolved = options?.preview ? requests.map(dashboardPreviewQueryRequest) : requests;
+  const chunks: DashboardQueryRequest[][] = [];
+
+  for (let index = 0; index < resolved.length; index += DASHBOARD_BATCH_LIMIT)
+    chunks.push(resolved.slice(index, index + DASHBOARD_BATCH_LIMIT));
+
+  return chunks;
 };
 
 type DashboardWidgetBatch = {
@@ -168,12 +270,17 @@ type DashboardWidgetBatch = {
   readonly retry: () => void;
 };
 
-type DashboardWidgetBatchLookup = (widget: DashboardWidget) => DashboardWidgetBatch | undefined;
+type DashboardWidgetBatchMode = "full" | "preview";
 
-/** The API caps one batch at 24 queries; extra widgets go in another request. */
-const DASHBOARD_BATCH_LIMIT = 24;
+type DashboardWidgetBatchContextValue = {
+  readonly batchFor: (
+    widget: DashboardWidget,
+    mode: DashboardWidgetBatchMode,
+  ) => DashboardWidgetBatch | undefined;
+  readonly request: (mode: DashboardWidgetBatchMode) => void;
+};
 
-const DashboardWidgetBatchContext = createContext<DashboardWidgetBatchLookup>();
+const DashboardWidgetBatchContext = createContext<DashboardWidgetBatchContextValue>();
 
 /**
  * Fetch every widget on a dashboard with one request.
@@ -187,27 +294,40 @@ export function DashboardWidgetBatchProvider(props: {
   tenantId: string;
   children?: JSX.Element;
 }) {
-  const queried = createMemo(() =>
+  // Consumers register their rendering mode during component setup. Solid v2
+  // requires an explicit opt-in for these intentional owned-scope writes.
+  const [fullRequested, setFullRequested] = createSignal(false, { ownedWrite: true });
+  const [previewRequested, setPreviewRequested] = createSignal(false, { ownedWrite: true });
+
+  const requests = createMemo(() =>
     props.widgets.filter((widget) => widget.type !== "markdown").map(dashboardWidgetQueryRequest),
   );
 
-  const chunks = createMemo(() => {
-    const requests = queried();
-    const groups: DashboardQueryRequest[][] = [];
+  const groupsFor = (mode: DashboardWidgetBatchMode, options?: { readonly preview?: boolean }) =>
+    dashboardWidgetRequestChunks(requests(), options).map((queries, chunk) => ({
+      mode,
+      chunk,
+      queries,
+    }));
 
-    for (let index = 0; index < requests.length; index += DASHBOARD_BATCH_LIMIT)
-      groups.push(requests.slice(index, index + DASHBOARD_BATCH_LIMIT));
-
-    return groups;
-  });
+  const activeGroups = createMemo(() => [
+    ...(fullRequested() ? groupsFor("full") : []),
+    ...(previewRequested() ? groupsFor("preview", { preview: true }) : []),
+  ]);
 
   const batches = useQueries(() => ({
-    queries: chunks().map((queries) => ({
+    queries: activeGroups().map(({ queries }) => ({
       queryKey: enterpriseKeys.dashboardQueryBatch(props.tenantId, queries),
       queryFn: () => enterprise.queryDashboardBatch(props.tenantId, queries),
-      enabled: queries.length > 0,
     })),
   }));
+
+  const activeGroupIndex = createMemo(
+    () =>
+      new Map(
+        activeGroups().map((group, index) => [`${group.mode}:${group.chunk}`, index] as const),
+      ),
+  );
 
   const batchIndex = createMemo(
     () =>
@@ -218,18 +338,25 @@ export function DashboardWidgetBatchProvider(props: {
       ),
   );
 
-  const batchFor: DashboardWidgetBatchLookup = (widget) => {
+  const batchFor: DashboardWidgetBatchContextValue["batchFor"] = (widget, mode) => {
     const index = batchIndex().get(widget.id);
 
     if (index === undefined) return undefined;
 
     const chunk = Math.floor(index / DASHBOARD_BATCH_LIMIT);
     const offset = index % DASHBOARD_BATCH_LIMIT;
-    const batch = () => batches[chunk];
+    const groupIndex = () => activeGroupIndex().get(`${mode}:${chunk}`);
+    const batch = () => {
+      const index = groupIndex();
+
+      return index === undefined ? undefined : batches[index];
+    };
 
     return {
       get data() {
-        return batch()?.data?.results[offset];
+        const current = batch();
+
+        return current ? settledQueryData(current)?.results[offset] : undefined;
       },
       get pending() {
         return batch()?.isPending ?? true;
@@ -241,11 +368,28 @@ export function DashboardWidgetBatchProvider(props: {
     };
   };
 
-  return <DashboardWidgetBatchContext value={batchFor}>{props.children}</DashboardWidgetBatchContext>;
+  const context: DashboardWidgetBatchContextValue = {
+    batchFor,
+    request: (mode) => {
+      if (mode === "preview") setPreviewRequested(true);
+      else setFullRequested(true);
+    },
+  };
+
+  return (
+    <DashboardWidgetBatchContext value={context}>{props.children}</DashboardWidgetBatchContext>
+  );
 }
 
 /** The shared batch lookup; present only inside the provider. */
-export const useDashboardWidgetBatch = () => useContext(DashboardWidgetBatchContext);
+export const useDashboardWidgetBatch = (options?: { readonly preview?: boolean }) => {
+  const context = useContext(DashboardWidgetBatchContext);
+  const mode = options?.preview ? "preview" : "full";
+
+  if (!isServer) context?.request(mode);
+
+  return context ? (widget: DashboardWidget) => context.batchFor(widget, mode) : undefined;
+};
 
 export function DashboardWidgetView(props: {
   widget: DashboardWidget;
@@ -253,15 +397,20 @@ export function DashboardWidgetView(props: {
   /** Present when the page fetched every widget with one batched request. */
   batch?: DashboardWidgetBatch;
 }) {
-  const config = () => configOf(props.widget);
-  const dataset = () => config().dataset ?? "devices";
-  const queryRequest = () => dashboardWidgetQueryRequest(props.widget);
+  const config = createMemo(() =>
+    props.widget.type === "markdown" ? {} : resolveQueryConfig(props.widget.config),
+  );
+  const dataset = createMemo(() => config().dataset ?? "devices");
+  const queryRequest = createMemo(() => queryRequestForConfig(props.widget, config()));
+  const markdown = createMemo(() =>
+    props.widget.type === "markdown" ? markdownOf(props.widget) : "",
+  );
 
-  const columns = () => {
+  const columns = createMemo(() => {
     const configured = config().columns;
 
     return configured && configured.length > 0 ? configured : defaultColumns(dataset());
-  };
+  });
 
   const result = useQuery(() => ({
     queryKey: enterpriseKeys.dashboardQuery(props.tenantId, queryRequest()),
@@ -269,16 +418,13 @@ export function DashboardWidgetView(props: {
     enabled: !isServer && !props.batch && props.widget.type !== "markdown",
   }));
 
-  const data = () => props.batch?.data ?? result.data;
+  const data = () => props.batch?.data ?? settledQueryData(result);
   const pending = () => props.batch?.pending ?? result.isPending;
   const error = () => props.batch?.error ?? result.error;
   const retry = () => (props.batch ? props.batch.retry() : void result.refetch());
 
   return (
-    <Show
-      when={props.widget.type !== "markdown"}
-      fallback={<Markdown content={markdownOf(props.widget)} />}
-    >
+    <Show when={props.widget.type !== "markdown"} fallback={<Markdown content={markdown()} />}>
       <Show
         when={!pending()}
         fallback={
@@ -292,20 +438,20 @@ export function DashboardWidgetView(props: {
         <Show
           when={!error()}
           fallback={
-            <div class="rounded-lg border border-destructive/20 bg-destructive/[0.05] p-3 text-[11.5px]">
+            <div class="rounded-lg border border-destructive/20 bg-destructive/[0.05] p-3 text-xs">
               <p class="font-medium text-destructive">
                 {errorPresentation(raisedFailure(error())).title}
               </p>
               <p class="mt-0.5 text-muted-foreground">
                 {errorPresentation(raisedFailure(error())).message}
               </p>
-              <button
+              <Button
                 type="button"
-                class="mt-2 rounded border border-border px-2 py-1 text-[10.5px] text-foreground transition-[color,background-color,border-color] duration-[var(--duration-hover)] ease-swift hover:border-border-strong hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                class="mt-2"
                 onClick={() => retry()}
               >
                 Try again
-              </button>
+              </Button>
             </div>
           }
         >
@@ -315,16 +461,14 @@ export function DashboardWidgetView(props: {
                 when={props.widget.type !== "stat"}
                 fallback={
                   <div class="flex h-full flex-col justify-center">
-                    <p class="text-[30px] font-semibold leading-none tracking-[-0.04em] tabular-nums text-foreground">
+                    <p class="text-3xl font-semibold leading-none tracking-tighter tabular-nums text-foreground">
                       {data().total}
                     </p>
-                    <p class="mt-1.5 text-[11px] text-muted-foreground">
-                      {config().label ?? (dataset() === "software" ? "applications" : "devices")}
+                    <p class="mt-1.5 text-xs text-muted-foreground">
+                      {config().label ?? datasetNoun(dataset())}
                     </p>
-                    <p class="mt-0.5 text-[10.5px] text-muted-foreground">
-                      {dataset() === "software"
-                        ? "matching installed software"
-                        : "matching the current query"}
+                    <p class="mt-0.5 text-xs text-muted-foreground">
+                      {datasetCaption(dataset())}
                     </p>
                   </div>
                 }
@@ -336,51 +480,18 @@ export function DashboardWidgetView(props: {
                   <Show
                     when={data().rows.length > 0}
                     fallback={
-                      <div class="flex h-full items-center justify-center text-[11.5px] text-muted-foreground">
+                      <div class="flex h-full items-center justify-center text-xs text-muted-foreground">
                         No rows match this query.
                       </div>
                     }
                   >
-                    <div class="overflow-x-auto" aria-busy={pending() ? "true" : undefined}>
-                      <table class="w-full text-[11.5px]">
-                        <caption class="sr-only">
-                          {dataset() === "software" ? "Applications" : "Devices"} matching this
-                          widget
-                        </caption>
-                        <thead class="text-left text-[9.5px] uppercase tracking-[0.1em] text-muted-foreground">
-                          <tr>
-                            <For each={columns()}>
-                              {(column) => (
-                                <th scope="col" class="whitespace-nowrap px-1.5 py-1.5 font-medium">
-                                  {(dataset() === "software"
-                                    ? SOFTWARE_COLUMNS
-                                    : DEVICE_COLUMNS
-                                  ).get(column) ?? column}
-                                </th>
-                              )}
-                            </For>
-                          </tr>
-                        </thead>
-                        <tbody class="divide-y divide-border">
-                          <For each={data().rows}>
-                            {(row) => (
-                              <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover">
-                                <For each={columns()}>
-                                  {(column) => (
-                                    <td class="max-w-[24ch] px-1.5 py-1.5 text-muted-foreground">
-                                      {cellValue(row, column, dataset())}
-                                    </td>
-                                  )}
-                                </For>
-                              </tr>
-                            )}
-                          </For>
-                        </tbody>
-                      </table>
-                    </div>
-                    <p role="status" class="mt-1.5 text-[10px] text-muted-foreground">
-                      {data().rows.length} of {data().total} rows
-                    </p>
+                    <WidgetTable
+                      rows={data().rows}
+                      columns={columns()}
+                      dataset={dataset()}
+                      total={data().total}
+                      pending={pending()}
+                    />
                   </Show>
                 </Show>
               </Show>
@@ -389,6 +500,53 @@ export function DashboardWidgetView(props: {
         </Show>
       </Show>
     </Show>
+  );
+}
+
+function WidgetTable(props: {
+  rows: ReadonlyArray<DashboardQueryRow>;
+  columns: ReadonlyArray<string>;
+  dataset: string | undefined;
+  total: number;
+  pending: boolean;
+}) {
+  return (
+    <>
+      <div class="overflow-x-auto" aria-busy={props.pending ? "true" : undefined}>
+        <table class="w-full text-xs">
+          <caption class="sr-only">{datasetRowsLabel(props.dataset)} matching this widget</caption>
+          <thead class="text-left text-xs uppercase tracking-widest text-muted-foreground">
+            <tr>
+              <For each={props.columns}>
+                {(column) => (
+                  <th scope="col" class="whitespace-nowrap px-1.5 py-1.5 font-medium">
+                    {columnsFor(props.dataset).get(column) ?? column}
+                  </th>
+                )}
+              </For>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border">
+            <For each={props.rows}>
+              {(row) => (
+                <tr class="transition-colors duration-150 ease-swift hover:bg-hover">
+                  <For each={props.columns}>
+                    {(column) => (
+                      <td class="max-w-48 px-1.5 py-1.5 text-muted-foreground">
+                        {cellValue(row, column, props.dataset)}
+                      </td>
+                    )}
+                  </For>
+                </tr>
+              )}
+            </For>
+          </tbody>
+        </table>
+      </div>
+      <p role="status" class="mt-1.5 text-xs text-muted-foreground">
+        {props.rows.length} of {props.total} rows
+      </p>
+    </>
   );
 }
 
@@ -407,7 +565,7 @@ function PieBuckets(props: {
       offset += bucket.value;
       const end = (offset / total) * 100;
 
-      return { ...bucket, start, end, color: CHART_COLORS[index % CHART_COLORS.length]! };
+      return { ...bucket, start, end, color: CHART_COLORS[index % CHART_COLORS.length] };
     });
   });
 
@@ -420,23 +578,23 @@ function PieBuckets(props: {
     <Show
       when={props.buckets.length > 0}
       fallback={
-        <div class="flex h-full items-center justify-center text-[11.5px] text-muted-foreground">
+        <div class="flex h-full items-center justify-center text-xs text-muted-foreground">
           No data to chart.
         </div>
       }
     >
       <div class="flex h-full flex-wrap items-center gap-4">
         <div
-          class="relative size-28 shrink-0 rounded-full"
+          class="relative size-28 shrink-0 rounded-full bg-(--chart-bg)"
           style={{
-            background: `conic-gradient(${gradient()})`,
+            "--chart-bg": `conic-gradient(${gradient()})`,
           }}
           role="img"
           aria-label={props.buckets.map((bucket) => `${bucket.label}: ${bucket.value}`).join(", ")}
         >
-          <div class="absolute inset-[18%] flex flex-col items-center justify-center rounded-full bg-card">
-            <span class="text-[18px] font-semibold leading-none tabular-nums">{props.total}</span>
-            <span class="mt-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
+          <div class="absolute inset-1/4 flex flex-col items-center justify-center rounded-full bg-card">
+            <span class="text-lg font-semibold leading-none tabular-nums">{props.total}</span>
+            <span class="mt-0.5 text-xs uppercase tracking-wide text-muted-foreground">
               total
             </span>
           </div>
@@ -444,10 +602,10 @@ function PieBuckets(props: {
         <div class="min-w-0 flex-1 space-y-1.5">
           <For each={slices()}>
             {(slice) => (
-              <div class="flex items-center gap-2 text-[11px]">
+              <div class="flex items-center gap-2 text-xs">
                 <span
-                  class="size-2 shrink-0 rounded-full"
-                  style={{ "background-color": slice.color }}
+                  class="size-2 shrink-0 rounded-full bg-(--chart-color)"
+                  style={{ "--chart-color": slice.color }}
                   aria-hidden="true"
                 />
                 <span class="min-w-0 flex-1 truncate text-muted-foreground">{slice.label}</span>

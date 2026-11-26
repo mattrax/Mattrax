@@ -15,10 +15,10 @@
 const native = (encoding: string): BufferEncoding => {
   const name = encoding.toLowerCase();
 
-  if (name === "cesu8" || name.startsWith("utf8") || name.startsWith("utf-8")) return "utf8";
+  if (name === "cesu8" || name.startsWith("utf8") || name.startsWith("utf8")) return "utf8";
 
   // SAFETY: `Buffer.isEncoding` is the runtime guard the return type relies on.
-  return Buffer.isEncoding(name) ? (name as BufferEncoding) : "utf8";
+  return Buffer.isEncoding(name) ? name : "utf8";
 };
 
 export const getDecoder = (encoding: string) => ({

@@ -3,7 +3,8 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { describeScepCa, generateScepCa, sealCaPrivateKey } from "@mattrax/scep";
 import { issueScepChallenge, ScepRepositoryLive } from "@mattrax/mdm-core";
-import { dbRows, makeDb as makeStoreDb, tableName, type Row } from "./fake-db.js";
+import { dbRows, makeDb as makeStoreDb, tableName } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const authSecret = "scep-test-secret";
 
@@ -26,6 +27,7 @@ const issueChallenge = (
     ttlSeconds?: number;
     now?: number;
     authSecret?: string;
+    referenceId?: string;
   } = {},
 ) =>
   Effect.runPromise(
@@ -36,6 +38,7 @@ const issueChallenge = (
       organizationId: options.organizationId ?? "tenant-1",
       authSecret: options.authSecret ?? authSecret,
       ttlSeconds: options.ttlSeconds ?? 7 * 24 * 60 * 60,
+      referenceId: options.referenceId,
       now: options.now,
     }),
   );
@@ -59,11 +62,20 @@ describe("ScepRepositoryLive challenge authentication", () => {
     const { challenge, expiresAt } = await issueChallenge(db);
 
     const repository = makeRepository(db);
+    const queryStart = db.queries.length;
 
     await expect(
       Effect.runPromise(repository.authenticatePkcsReq(scope, request(challenge))),
     ).resolves.toEqual({ organizationalUnit: "tenant-1", enrollmentId: "enrollment-1" });
 
+    expect(db.queries.slice(queryStart)).toMatchObject([
+      {
+        operation: "select",
+        table: tableName(schema.enterpriseEnrollment),
+        joins: [tableName(schema.scepChallenge)],
+      },
+      { operation: "update", table: tableName(schema.scepChallenge) },
+    ]);
     expect(challengeRows(db)).toMatchObject([
       {
         organizationId: "tenant-1",
@@ -71,6 +83,29 @@ describe("ScepRepositoryLive challenge authentication", () => {
         expiresAt,
         consumedAt: expect.any(Date),
       },
+    ]);
+  });
+
+  it("carries the BYOD reference from the joined challenge read without reading it again", async () => {
+    const db = makeScepDb();
+    const { challenge } = await issueChallenge(db, { referenceId: "byod-1" });
+    const repository = makeRepository(db);
+    const queryStart = db.queries.length;
+
+    await expect(
+      Effect.runPromise(repository.authenticatePkcsReq(scope, request(challenge))),
+    ).resolves.toEqual({
+      organizationalUnit: "tenant-1",
+      enrollmentId: "enrollment-1",
+      referenceId: "byod-1",
+    });
+    expect(db.queries.slice(queryStart)).toMatchObject([
+      {
+        operation: "select",
+        table: tableName(schema.enterpriseEnrollment),
+        joins: [tableName(schema.scepChallenge)],
+      },
+      { operation: "update", table: tableName(schema.scepChallenge) },
     ]);
   });
 
@@ -127,11 +162,15 @@ describe("ScepRepositoryLive challenge authentication", () => {
     // A long lifetime keeps the signed expiry valid, so only the persisted
     // row's `expiresAt` guard can reject it.
     const { challenge } = await issueChallenge(db);
-    db.store[tableName(schema.scepChallenge)]![0]!.expiresAt = new Date(Date.now() - 1_000);
+    db.store[tableName(schema.scepChallenge)][0].expiresAt = new Date(Date.now() - 1_000);
 
     await expect(
       Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
-    ).rejects.toMatchObject({ _tag: "ScepError" as const, message: "Invalid SCEP challenge" });
+    ).rejects.toMatchObject({
+      _tag: "ScepError" as const,
+      message: "Invalid SCEP challenge",
+      reason: "invalid_request",
+    });
   });
 
   it("rejects a challenge consumed for another tenant", async () => {
@@ -140,8 +179,12 @@ describe("ScepRepositoryLive challenge authentication", () => {
 
     await expect(
       Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
-    ).rejects.toMatchObject({ _tag: "ScepError" as const, message: "Invalid SCEP challenge" });
-    expect(challengeRows(db)[0]!.consumedAt).toBeNull();
+    ).rejects.toMatchObject({
+      _tag: "ScepError" as const,
+      message: "Invalid SCEP challenge",
+      reason: "invalid_request",
+    });
+    expect(challengeRows(db)[0].consumedAt).toBeNull();
   });
 
   it("allows only one of two concurrent uses of the same challenge", async () => {
@@ -162,7 +205,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     );
 
     expect(results.filter(Boolean)).toHaveLength(1);
-    expect(challengeRows(db)[0]!.consumedAt).toBeInstanceOf(Date);
+    expect(challengeRows(db)[0].consumedAt).toBeInstanceOf(Date);
   });
 
   it("rejects a challenge for an unknown enrollment", async () => {
@@ -171,7 +214,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
 
     await expect(
       Effect.runPromise(makeRepository(db).authenticatePkcsReq(scope, request(challenge))),
-    ).rejects.toMatchObject({ _tag: "ScepError" as const });
+    ).rejects.toMatchObject({ _tag: "ScepError" as const, reason: "invalid_request" });
   });
 
   it("fails closed when no secret is configured", async () => {
@@ -185,7 +228,7 @@ describe("ScepRepositoryLive challenge authentication", () => {
     try {
       await expect(
         Effect.runPromise(makeRepository(db, {}).authenticatePkcsReq(scope, request(challenge))),
-      ).rejects.toMatchObject({ _tag: "ScepError" as const });
+      ).rejects.toMatchObject({ _tag: "ScepError" as const, reason: "internal" });
     } finally {
       if (previous !== undefined) process.env.AUTH_SECRET = previous;
 
@@ -301,7 +344,7 @@ describe("ScepRepositoryLive identity revocation", () => {
 });
 
 const seedDevice = (db: ReturnType<typeof makeStoreDb>, overrides: Row = {}) =>
-  db.store[tableName(schema.device)]!.push({
+  db.store[tableName(schema.device)].push({
     id: "internal-device-1",
     organizationId: "tenant-1",
     proto: "win",
@@ -398,8 +441,8 @@ describe("ScepRepositoryLive certificate recording", () => {
     const repository = makeRepository(db);
     await Effect.runPromise(repository.recordIssuedCertificate!(certificate()));
     const [row] = dbRows(db, tableName(schema.scepIssuedCertificate));
-    expect(row!.revokedAt).toEqual(revokedAt);
-    expect(row!.notAfter).toBeInstanceOf(Date);
+    expect(row.revokedAt).toEqual(revokedAt);
+    expect(row.notAfter).toBeInstanceOf(Date);
   });
 
   it("refuses a colliding serial that belongs to another identity", async () => {

@@ -1,7 +1,8 @@
 import { Effect, Option, Schema } from "effect";
-import * as asn1js from "asn1js";
-import * as pkijs from "pkijs";
+import type * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
+import { loadPkijs } from "@mattrax/mdm-pki";
+import type { Asn1jsModule, PkijsModule } from "@mattrax/mdm-pki";
 import type { ScepCaScope, ScepRepository, ScepStoredCa } from "./repository.js";
 import {
   generateCaKeyPair,
@@ -123,7 +124,10 @@ const assertCertificateKeyPair = (
  * `undefined` when the extension is absent (RFC 5280 leaves the usage
  * unconstrained), `false` when it is present and keyCertSign is clear.
  */
-const certificateSigningPermitted = (cert: pkijs.Certificate): boolean | undefined => {
+const certificateSigningPermitted = (
+  asn1js: Asn1jsModule,
+  cert: pkijs.Certificate,
+): boolean | undefined => {
   const extension = cert.extensions?.find((item) => item.extnID === KEY_USAGE_OID);
 
   if (!extension) return undefined;
@@ -143,7 +147,12 @@ const certificateSigningPermitted = (cert: pkijs.Certificate): boolean | undefin
 };
 
 /** Reject a certificate that cannot sign device identities. */
-const assertSigningCa = (cert: pkijs.Certificate, now = new Date()): void => {
+const assertSigningCa = (
+  pkijs: PkijsModule,
+  asn1js: Asn1jsModule,
+  cert: pkijs.Certificate,
+  now = new Date(),
+): void => {
   const basicConstraints = cert.extensions?.find(
     (extension) => extension.extnID === BASIC_CONSTRAINTS_OID,
   );
@@ -158,7 +167,7 @@ const assertSigningCa = (cert: pkijs.Certificate, now = new Date()): void => {
     throw new ScepError({ message: "The supplied SCEP CA certificate is not a CA certificate" });
   }
 
-  if (certificateSigningPermitted(cert) === false) {
+  if (certificateSigningPermitted(asn1js, cert) === false) {
     throw new ScepError({
       message: "The supplied SCEP CA certificate does not permit certificate signing",
     });
@@ -254,7 +263,7 @@ export const openScepCa = (
   now = new Date(),
 ): Effect.Effect<ScepLoadedCa, ScepError> =>
   Effect.gen(function* () {
-    const caCert = yield* Effect.try({
+    const caCert = yield* Effect.tryPromise({
       try: () => pemToCert(stored.certPem),
       catch: (cause) => new ScepError({ message: "Stored SCEP CA certificate is invalid", cause }),
     });
@@ -365,7 +374,13 @@ export const importScepCa = (input: {
   readonly privateKeyPem: string;
 }): Effect.Effect<ScepStoredCa, ScepError> =>
   Effect.gen(function* () {
-    const caCert = yield* Effect.try({
+    const [pkijs, asn1js] = yield* Effect.tryPromise({
+      try: () => Promise.all([loadPkijs(), import("asn1js")]),
+      catch: (cause) =>
+        new ScepError({ message: "The SCEP certificate library could not be loaded", cause }),
+    });
+
+    const caCert = yield* Effect.tryPromise({
       try: () => pemToCert(input.certificatePem),
       catch: (cause) =>
         new ScepError({
@@ -375,7 +390,7 @@ export const importScepCa = (input: {
     });
 
     yield* Effect.try({
-      try: () => assertSigningCa(caCert),
+      try: () => assertSigningCa(pkijs, asn1js, caCert),
       catch: (cause) =>
         cause instanceof ScepError
           ? cause
@@ -423,7 +438,7 @@ export const certificateFingerprintSha256 = (
 /** Public description of a stored CA certificate (no key material). */
 export const describeScepCa = (certPem: string): Effect.Effect<ScepCaDescription, ScepError> =>
   Effect.gen(function* () {
-    const caCert = yield* Effect.try({
+    const caCert = yield* Effect.tryPromise({
       try: () => pemToCert(certPem),
       catch: (cause) => new ScepError({ message: "Stored SCEP CA certificate is invalid", cause }),
     });

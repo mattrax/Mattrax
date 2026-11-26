@@ -78,6 +78,8 @@ export type AnalyticsConfig = {
   readonly key?: string;
   readonly host?: string;
   readonly environment?: string;
+  /** `$lib` label; defaults to the API Worker's value. */
+  readonly lib?: string;
   readonly release?: string;
   readonly deploymentId?: string | null;
   readonly requestId: string;
@@ -116,8 +118,8 @@ export const redactAnalyticsText = (cause: unknown): string => {
   const text = error ? `${error.name}: ${error.message}` : String(cause);
 
   return text
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
+    .replaceAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replaceAll(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
     .slice(0, MAX_MESSAGE_LENGTH);
 };
 
@@ -162,7 +164,7 @@ export const shouldReportError = (status: number | undefined, uncaught: boolean)
 const errorTimestamps: number[] = [];
 
 const withinErrorBudget = (now: number, maxEvents: number): boolean => {
-  while (errorTimestamps.length > 0 && now - errorTimestamps[0]! >= 60_000) errorTimestamps.shift();
+  while (errorTimestamps.length > 0 && now - errorTimestamps[0] >= 60_000) errorTimestamps.shift();
 
   if (errorTimestamps.length >= maxEvents) return false;
   errorTimestamps.push(now);
@@ -238,7 +240,7 @@ const createClient = (config: AnalyticsConfig & { key: string }): AnalyticsClien
       .then((response) => {
         if (!response.ok) throw new Error(`PostHog responded ${response.status}`);
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         (config.warn ?? ((message: string) => console.warn(message)))(
           `PostHog delivery failed: ${redactAnalyticsText(error)}`,
         );
@@ -352,7 +354,7 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
 
   const baseProperties = (): AnalyticsBaseProperties => {
     const properties: AnalyticsBaseProperties = {
-      $lib: "mattrax-api",
+      $lib: config.lib ?? "mattrax-api",
       $current_url: path,
       request_id: config.requestId,
       method,
@@ -436,8 +438,8 @@ export const createRequestAnalytics = (config: AnalyticsConfig): RequestAnalytic
 
     try {
       active.captureException(cause, distinct, properties);
-    } catch (cause) {
-      warn(`PostHog exception capture failed: ${redactAnalyticsText(cause)}`);
+    } catch (error) {
+      warn(`PostHog exception capture failed: ${redactAnalyticsText(error)}`);
     }
   };
 
@@ -615,6 +617,8 @@ export const shouldTrackApiRequest = (path: string, method: string): boolean => 
     pathname === "/api/health" ||
     pathname === "/health" ||
     pathname === "/api/ready" ||
+    // A Prometheus scrape is operational traffic, not product usage.
+    pathname === "/api/metrics" ||
     pathname === "/api/version" ||
     pathname === "/api/openapi.json" ||
     pathname === "/api/webhooks/openapi.json" ||

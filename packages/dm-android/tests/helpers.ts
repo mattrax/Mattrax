@@ -32,8 +32,8 @@ export async function makeServiceAccount(): Promise<ServiceAccountFixture> {
 export function base64UrlToBytes(input: string): Uint8Array<ArrayBuffer> {
   const binary = atob(
     input
-      .replace(/-/g, "+")
-      .replace(/_/g, "/")
+      .replaceAll("-", "+")
+      .replaceAll("_", "/")
       .padEnd(input.length + ((4 - (input.length % 4)) % 4), "="),
   );
 
@@ -105,7 +105,12 @@ export function emptyResponse(status = 204): Response {
  * Build a `FetchHttpClient` layer backed by an in-memory handler. Every request
  * is recorded for assertions.
  */
-export function mockFetch(handler: (request: RecordedRequest) => Response | Promise<Response>) {
+export function mockFetch(
+  handler: (
+    request: RecordedRequest,
+    init: RequestInit | undefined,
+  ) => Response | Promise<Response>,
+) {
   const requests: Array<RecordedRequest> = [];
 
   const fetch: typeof globalThis.fetch = async (input, init) => {
@@ -127,7 +132,7 @@ export function mockFetch(handler: (request: RecordedRequest) => Response | Prom
 
     requests.push(recorded);
 
-    return handler(recorded);
+    return handler(recorded, { ...init, signal: request.signal });
   };
 
   return {

@@ -1,17 +1,23 @@
-import { Effect, Layer } from "effect";
+import { Effect, Exit, Layer } from "effect";
 import { describe, expect, it } from "vitest";
-import { Db } from "@mattrax/enterprise-core";
+import { Db, schema } from "@mattrax/enterprise-core";
 import {
   EnterpriseAuth,
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseForbidden,
   EnterpriseNotConfigured,
+  RecoveryRejected,
   StepUpRequired,
 } from "@mattrax/enterprise-domain";
 import { makeEnterpriseAuthLive } from "../src/Identity/enterpriseAuth.ts";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import { signStepUpGrant } from "../src/Account/stepUp.ts";
+import {
+  redeemRecoveryToken,
+  requestAccountRecovery,
+  verifyAccountRecoveryProof,
+} from "../src/Account/recovery.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const origin = "https://enterprise.test";
@@ -26,7 +32,7 @@ const sha256 = async (value: string) =>
 
 const makeContext = (
   initial: Record<string, any[]> = {},
-  options: { readonly email?: any } = {},
+  options: { readonly email?: any; readonly onboardingBranding?: any } = {},
 ) => {
   const db = makeDb(initial);
 
@@ -48,16 +54,17 @@ const makeContext = (
     origin,
     authSecret,
     email: options.email,
+    onboardingBranding: options.onboardingBranding,
   }).pipe(Layer.provide(Layer.succeed(Db, db)));
 
-  const run = <A>(work: (auth: EnterpriseAuth["Service"]) => Effect.Effect<A, any, any>) =>
-    runEffect(
+  const run = async <A>(work: (auth: EnterpriseAuth["Service"]) => Effect.Effect<A, any, any>) =>
+    (await runEffect(
       Effect.gen(function* () {
         const auth = yield* EnterpriseAuth;
 
         return yield* work(auth);
       }).pipe(Effect.provide(Live)),
-    );
+    )) as any;
 
   return { db, run };
 };
@@ -171,16 +178,8 @@ describe("enterprise API tokens", () => {
     );
 
     // A write permission carries its read companion.
-    expect(created.item.scopes).toEqual([
-      "devices.read",
-      "policies.read",
-      "policies.write",
-    ]);
-    expect(created.item.permissions).toEqual([
-      "devices.read",
-      "policies.read",
-      "policies.write",
-    ]);
+    expect(created.item.scopes).toEqual(["devices.read", "policies.read", "policies.write"]);
+    expect(created.item.permissions).toEqual(["devices.read", "policies.read", "policies.write"]);
     expect(db.store.account_api_token[0]).toMatchObject({
       scopes: ["devices.read", "policies.read", "policies.write"],
     });
@@ -427,17 +426,46 @@ describe("email verification", () => {
     return seed;
   };
 
+  it("uses deployment branding for verification email", async () => {
+    const sent: Array<{ text: string; html?: string }> = [];
+    const { run } = makeContext(unverified(), {
+      email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
+      onboardingBranding: {
+        brandName: "Acme Device Management",
+        brandColor: "#16a34a",
+        logoUrl: "/assets/acme.png",
+      },
+    });
+
+    await run((auth) => auth.requestEmailVerification(session()));
+
+    expect(sent[0].html).toContain("Acme Device Management</td>");
+    expect(sent[0].html).toContain('src="https://enterprise.test/assets/acme.png"');
+    expect(sent[0].html).toContain("background:#16a34a;");
+    expect(sent[0].html).toContain("color:#1c1917;");
+  });
+
   it("verifies a six-digit code and consumes it", async () => {
-    const sent: Array<{ text: string }> = [];
+    const sent: Array<{
+      text: string;
+      html?: string;
+      headers?: Readonly<Record<string, string>>;
+    }> = [];
 
     const { db, run } = makeContext(unverified(), {
       email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
-    const code = sent[0]!.text.match(/code is (\d{6})/)?.[1];
+    const code = sent[0].text.match(/code is:?\s+(\d{6})/)?.[1];
     expect(code).toMatch(/^\d{6}$/);
+    // The code is also a header for mail-client autofill.
+    expect(sent[0].headers).toEqual({ "OTP-Token": code });
     expect(requested.challenge).toEqual(expect.any(String));
+    expect(sent[0].html).toContain('role="presentation"');
+    expect(sent[0].html).toContain("email-code");
+    expect(sent[0].html).toContain(code!);
+    expect(sent[0].html).toContain('name="color-scheme"');
 
     const result = await run((auth) =>
       auth.verifyEmail(session(), { code, challenge: requested.challenge }),
@@ -447,7 +475,7 @@ describe("email verification", () => {
     expect(db.store.account[0]!.emailVerified).toBe(true);
   });
 
-  it("queues the code in the outbox for a provider transport", async () => {
+  it("tries the provider in the request and keeps a failed code queued", async () => {
     const sent: Array<unknown> = [];
 
     const { db, run } = makeContext(unverified(), {
@@ -458,16 +486,40 @@ describe("email verification", () => {
       }),
     });
 
-    await run((auth) => auth.requestEmailVerification(session()));
+    const requested = await run((auth) => auth.requestEmailVerification(session()));
 
-    // The provider is never called from the request; one row is queued.
-    expect(sent).toHaveLength(0);
+    // A code cannot wait for the sweep, so the request attempts the row once...
+    expect(sent).toHaveLength(1);
+    // ...and the row survives the failure for the cron to retry, which is what
+    // lets the page tell the person the mail did not go out.
+    expect(requested.challenge).toEqual(expect.any(String));
+    expect(requested.emailSent).toBe(false);
     expect(db.store.email_outbox).toHaveLength(1);
     expect(db.store.email_outbox[0]).toMatchObject({
       recipient: "owner@example.com",
       template: "email_verification",
       subjectAccountId: "user-1",
       status: "pending",
+      attempts: 1,
+    });
+  });
+
+  it("reports a delivered verification code as sent", async () => {
+    const sent: Array<unknown> = [];
+
+    const { db, run } = makeContext(unverified(), {
+      email: makeEmailTransport(async (message: any) => void sent.push(message)),
+    });
+
+    const requested = await run((auth) => auth.requestEmailVerification(session()));
+
+    // The address is waiting on this code, so it leaves in the request.
+    expect(sent).toHaveLength(1);
+    expect(requested.emailSent).toBe(true);
+    expect(db.store.email_outbox[0]).toMatchObject({
+      template: "email_verification",
+      status: "sent",
+      attempts: 1,
     });
   });
 
@@ -494,7 +546,7 @@ describe("email verification", () => {
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
-    const code = sent[0]!.text.match(/code is (\d{6})/)?.[1];
+    const code = sent[0].text.match(/code is:?\s+(\d{6})/)?.[1];
     expect(code).toMatch(/^\d{6}$/);
 
     await run((auth) => auth.verifyEmail(session(), { code, challenge: requested.challenge }));
@@ -506,7 +558,7 @@ describe("email verification", () => {
       from: { name: "Oscar from Mattrax", email: "hello@mattrax.cloud" },
       replyTo: "oscar@otbeaumont.me",
     });
-    expect(welcome[0]!.text).toContain("Hey Owner,");
+    expect(welcome[0].text).toContain("Hey Owner,");
     expect(db.store.account[0]!.welcomeEmailSentAt).toBeInstanceOf(Date);
 
     // A retried verification (or a duplicate hook) must not send again.
@@ -523,7 +575,7 @@ describe("email verification", () => {
     });
 
     await run((auth) => auth.requestEmailVerification(session()));
-    const token = sent[0]!.text.match(/verify-email\?token=([^\s]+)/)?.[1];
+    const token = sent[0].text.match(/verify-email\?token=([^\s]+)/)?.[1];
     expect(token).toBeTruthy();
 
     await run((auth) => auth.verifyEmail(session(), { token: decodeURIComponent(token!) }));
@@ -540,7 +592,7 @@ describe("email verification", () => {
     });
 
     const requested = await run((auth) => auth.requestEmailVerification(session()));
-    const code = sent[0]!.text.match(/code is (\d{6})/)?.[1];
+    const code = sent[0].text.match(/code is:?\s+(\d{6})/)?.[1];
     const wrong = String(Number(code) === 0 ? 1 : 0).padStart(6, "0");
     await expect(
       run((auth) => auth.verifyEmail(session(), { code: wrong, challenge: requested.challenge })),
@@ -567,7 +619,7 @@ describe("email verification", () => {
 });
 
 describe("email change ceremony", () => {
-  const sent: Array<{ to: string; subject: string; text: string }> = [];
+  const sent: Array<{ to: string; subject: string; text: string; html?: string }> = [];
 
   const makeEmailContext = (initial = seedAccountAndTenant()) => {
     sent.length = 0;
@@ -586,6 +638,19 @@ describe("email change ceremony", () => {
       confirm: decodeURIComponent(confirm?.match(/emailToken=([^\s]+)/)?.[1] ?? ""),
       cancel: decodeURIComponent(cancel?.match(/emailCancelToken=([^\s]+)/)?.[1] ?? ""),
     };
+  };
+
+  const recoveryDeps = (db: ReturnType<typeof makeDb>) => ({
+    db,
+    authSecret,
+    origin,
+    email: makeEmailTransport(async (message: any) => void sent.push(message), { local: true }),
+  });
+
+  const recoveryProofFromSent = () => {
+    const message = sent.find((item) => item.subject === "Recover access to your Mattrax account");
+
+    return decodeURIComponent(message?.text.match(/recover\?token=([^\s]+)/)?.[1] ?? "");
   };
 
   it("requires a step-up grant before it will start a change", async () => {
@@ -627,6 +692,24 @@ describe("email change ceremony", () => {
     expect(db.store.account_audit_log.map((row: any) => row.action)).toContain(
       "account.email_change_requested",
     );
+
+    expect(sent.every((message) => message.html?.includes('role="presentation"'))).toBe(true);
+    expect(sent.every((message) => message.html?.includes('name="color-scheme"'))).toBe(true);
+  });
+
+  it("escapes the requested address in the branded notices", async () => {
+    const { run } = makeEmailContext();
+    const grant = await grantFor("email-change");
+    const newEmail = "a&b@example.com";
+
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail }));
+
+    const confirmation = sent.find((message) => message.to === newEmail);
+    const notice = sent.find((message) => message.to === "owner@example.com");
+
+    expect(confirmation?.html).toContain('role="presentation"');
+    expect(notice?.html).toContain("a&amp;b@example.com");
+    expect(notice?.html).not.toContain("a&b@example.com");
   });
 
   it("bumps the security revision and consumes the token once", async () => {
@@ -659,6 +742,161 @@ describe("email change ceremony", () => {
     expect(db.store.account[0]!.email).toBe("new@example.com");
   });
 
+  it("cancels a pending recovery proof when the email changes", async () => {
+    const { db, run } = makeEmailContext();
+    const deps = recoveryDeps(db);
+    const grant = await grantFor("email-change");
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    const proof = recoveryProofFromSent();
+    expect(proof).not.toBe("");
+
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" }));
+    await run((auth) => auth.verifyEmailChange({ token: linksFrom().confirm }));
+
+    expect(db.store.account[0]!.email).toBe("new@example.com");
+    expect(db.store.account_recovery[0]).toMatchObject({
+      status: "cancelled",
+      cancelledAt: expect.any(Date),
+    });
+    await expect(
+      runEffect(verifyAccountRecoveryProof(deps, { token: proof })),
+    ).rejects.toBeInstanceOf(RecoveryRejected);
+  });
+
+  it("cancels an already-issued recovery completion token when the email changes", async () => {
+    const { db, run } = makeEmailContext();
+    const deps = recoveryDeps(db);
+    const grant = await grantFor("email-change");
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    const verified = await runEffect(
+      verifyAccountRecoveryProof(deps, { token: recoveryProofFromSent() }),
+    );
+
+    if (verified.status !== "ready") throw new Error("expected a completion token");
+
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" }));
+    await run((auth) => auth.verifyEmailChange({ token: linksFrom().confirm }));
+    const revisionAfterEmailChange = db.store.account[0]!.authRevision;
+
+    expect(db.store.account_recovery[0]).toMatchObject({
+      status: "cancelled",
+      cancelledAt: expect.any(Date),
+    });
+    await expect(runEffect(redeemRecoveryToken(db, verified.signInToken))).resolves.toBeUndefined();
+    expect(db.store.account[0]!.authRevision).toBe(revisionAfterEmailChange);
+  });
+
+  it("cannot leave a usable proof when proof verification races email rotation", async () => {
+    const { db, run } = makeEmailContext();
+    const deps = recoveryDeps(db);
+    const grant = await grantFor("email-change");
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    const proof = recoveryProofFromSent();
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" }));
+    const confirm = linksFrom().confirm;
+
+    const [change, verification] = await Promise.all([
+      run((auth) => Effect.exit(auth.verifyEmailChange({ token: confirm }))),
+      runEffect(Effect.exit(verifyAccountRecoveryProof(deps, { token: proof }))),
+    ]);
+
+    expect(Exit.isSuccess(change)).toBe(true);
+    expect(db.store.account[0]!.email).toBe("new@example.com");
+    expect(db.store.account_recovery[0]!.status).toBe("cancelled");
+
+    if (Exit.isSuccess(verification) && verification.value.status === "ready")
+      await expect(
+        runEffect(redeemRecoveryToken(db, verification.value.signInToken)),
+      ).resolves.toBeUndefined();
+  });
+
+  it("rejects a completion that read the old email before a concurrent rotation committed", async () => {
+    const { db, run } = makeEmailContext();
+    const deps = recoveryDeps(db);
+    const grant = await grantFor("email-change");
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    const verified = await runEffect(
+      verifyAccountRecoveryProof(deps, { token: recoveryProofFromSent() }),
+    );
+
+    if (verified.status !== "ready") throw new Error("expected a completion token");
+
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" }));
+    const confirm = linksFrom().confirm;
+    const originalTransaction = db.transaction;
+    let transactions = 0;
+    let entered!: () => void;
+    let release!: () => void;
+    const firstTransaction = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const resume = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    db.transaction = ((work: any) => {
+      transactions += 1;
+
+      if (transactions !== 1) return originalTransaction(work);
+
+      return Effect.gen(function* () {
+        entered();
+        yield* Effect.promise(() => resume);
+
+        return yield* originalTransaction(work);
+      });
+    }) as typeof db.transaction;
+
+    try {
+      const redemption = runEffect(redeemRecoveryToken(db, verified.signInToken));
+      await firstTransaction;
+      await run((auth) => auth.verifyEmailChange({ token: confirm }));
+      release();
+
+      await expect(redemption).resolves.toBeUndefined();
+    } finally {
+      release();
+      db.transaction = originalTransaction;
+    }
+
+    expect(db.store.account[0]!.email).toBe("new@example.com");
+    expect(db.store.account_recovery[0]!.status).toBe("cancelled");
+  });
+
+  it("rolls back email rotation when recovery cancellation fails", async () => {
+    const { db, run } = makeEmailContext();
+    const deps = recoveryDeps(db);
+    const grant = await grantFor("email-change");
+
+    await runEffect(requestAccountRecovery(deps, { email: "owner@example.com" }));
+    await run((auth) => auth.requestEmailChange(session(grant), { newEmail: "new@example.com" }));
+    const originalUpdate = db.update;
+    db.update = ((table: any) => {
+      if (table !== schema.accountRecovery) return originalUpdate(table);
+
+      return {
+        set: () => ({
+          where: () => Effect.fail(new Error("recovery cancellation unavailable")),
+        }),
+      };
+    }) as typeof db.update;
+
+    try {
+      await expect(
+        run((auth) => auth.verifyEmailChange({ token: linksFrom().confirm })),
+      ).rejects.toThrow("recovery cancellation unavailable");
+    } finally {
+      db.update = originalUpdate;
+    }
+
+    expect(db.store.account[0]!.email).toBe("owner@example.com");
+    expect(db.store.account_email_change[0]!.consumedAt).toBeNull();
+    expect(db.store.account_recovery[0]!.status).toBe("pending_proof");
+  });
   it("returns a conflict when the address is registered during the hour", async () => {
     const { db, run } = makeEmailContext();
     const grant = await grantFor("email-change");
@@ -741,7 +979,7 @@ describe("account audit stream", () => {
         cookie: "__Host-mattrax_session=test",
         "user-agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "cf-connecting-ip": "203.0.113.9",
+        "x-mattrax-client-address": "203.0.113.9",
       },
     });
 
@@ -803,5 +1041,138 @@ describe("account audit stream", () => {
         .map((row: any) => row.action)
         .filter((action: string) => action.startsWith("account.api_token")),
     ).toEqual(["account.api_token_created", "account.api_token_revoked"]);
+  });
+
+  it("records OAuth connection revocation with the client and permission names", async () => {
+    const initial = seedAccountAndTenant();
+    const now = new Date();
+    initial.account_api_token = [];
+    const { db, run } = makeContext({
+      ...initial,
+      mcp_oauth_client: [
+        {
+          id: "client-1",
+          name: "Fleet assistant",
+          redirectUris: ["https://client.example/callback"],
+          createdAt: now,
+          lastUsedAt: null,
+        },
+      ],
+      mcp_oauth_connection: [
+        {
+          id: "connection-1",
+          accountId: "user-1",
+          clientId: "client-1",
+          scopes: ["devices.read"],
+          requestCount: 0,
+          lastUsedAt: null,
+          lastAction: null,
+          revokedAt: null,
+          createdAt: now,
+        },
+      ],
+      mcp_oauth_token: [{ id: "token-1", connectionId: "connection-1", revokedAt: null }],
+      mcp_oauth_code: [{ id: "code-1", connectionId: "connection-1", consumedAt: null }],
+    });
+
+    await run((auth) => auth.requireUser(session()));
+    const request = new Request(`${origin}/api/v1/account/mcp-connections/connection-1`, {
+      method: "DELETE",
+      headers: {
+        cookie: "__Host-mattrax_session=test",
+        origin,
+        "x-effect-auth-csrf": "1",
+      },
+    });
+
+    await expect(run((auth) => auth.revokeMcpConnection(request, "connection-1"))).resolves.toEqual(
+      {
+        status: "ok",
+      },
+    );
+
+    expect(db.store.mcp_oauth_connection[0]!.revokedAt).toBeInstanceOf(Date);
+    expect(db.store.mcp_oauth_token[0]!.revokedAt).toBeInstanceOf(Date);
+    expect(db.store.mcp_oauth_code[0]!.consumedAt).toBeInstanceOf(Date);
+    expect(
+      db.store.account_audit_log.find((row: any) => row.action === "account.mcp_oauth_revoked"),
+    ).toMatchObject({
+      subjectAccountId: "user-1",
+      actorAccountId: "user-1",
+      targetType: "mcp_oauth_connection",
+      targetId: "connection-1",
+      metadata: {
+        clientId: "client-1",
+        clientName: "Fleet assistant",
+        scopes: ["devices.read"],
+        permissions: ["View devices"],
+      },
+    });
+    const audit = JSON.stringify(db.store.account_audit_log);
+    expect(audit).not.toContain("token-1");
+    expect(audit).not.toContain("code-1");
+  });
+
+  it("rolls back OAuth revocation when its account audit cannot be written", async () => {
+    const initial = seedAccountAndTenant();
+    const now = new Date();
+    const { db, run } = makeContext({
+      ...initial,
+      mcp_oauth_client: [
+        {
+          id: "client-1",
+          name: "Fleet assistant",
+          redirectUris: ["https://client.example/callback"],
+          createdAt: now,
+          lastUsedAt: null,
+        },
+      ],
+      mcp_oauth_connection: [
+        {
+          id: "connection-1",
+          accountId: "user-1",
+          clientId: "client-1",
+          scopes: ["devices.read"],
+          requestCount: 0,
+          lastUsedAt: null,
+          lastAction: null,
+          revokedAt: null,
+          createdAt: now,
+        },
+      ],
+      mcp_oauth_token: [{ id: "token-1", connectionId: "connection-1", revokedAt: null }],
+      mcp_oauth_code: [{ id: "code-1", connectionId: "connection-1", consumedAt: null }],
+    });
+
+    await run((auth) => auth.requireUser(session()));
+    const originalInsert = db.insert;
+    db.insert = ((table: any) => {
+      if (table !== schema.accountAuditLog) return originalInsert(table);
+
+      return { values: () => Effect.fail(new Error("account audit unavailable")) };
+    }) as typeof db.insert;
+    const request = new Request(`${origin}/api/v1/account/mcp-connections/connection-1`, {
+      method: "DELETE",
+      headers: {
+        cookie: "__Host-mattrax_session=test",
+        origin,
+        "x-effect-auth-csrf": "1",
+      },
+    });
+
+    try {
+      await expect(
+        run((auth) => auth.revokeMcpConnection(request, "connection-1")),
+      ).rejects.toThrow("account audit unavailable");
+    } finally {
+      db.insert = originalInsert;
+    }
+
+    expect(db.store.mcp_oauth_connection[0]!.revokedAt).toBeNull();
+    expect(db.store.mcp_oauth_token[0]!.revokedAt).toBeNull();
+    expect(db.store.mcp_oauth_code[0]!.consumedAt).toBeNull();
+    expect(
+      db.store.account_audit_log.some((row: any) => row.action === "account.mcp_oauth_revoked"),
+    ).toBe(false);
   });
 });

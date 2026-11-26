@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { chord, matchesChord, shortcutLabel, type ShortcutEvent } from "./commands";
+import { chord, matchesChord, shortcutLabel } from "./commands";
+import type { ShortcutEvent } from "./commands";
 
 const event = (overrides: Partial<ShortcutEvent> = {}): ShortcutEvent => ({
   key: "s",

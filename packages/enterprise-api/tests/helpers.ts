@@ -1,6 +1,7 @@
-import { Effect, Schema } from "effect";
-import type { HttpServerRequest } from "effect/http";
+import { Effect, Layer, Schema } from "effect";
+import { HttpRouter, HttpServerRequest } from "effect/http";
 import { createEnterpriseSchema } from "@mattrax/enterprise-backend";
+import type { EnterpriseDb } from "@mattrax/enterprise-backend";
 
 export const schema = createEnterpriseSchema();
 
@@ -20,9 +21,19 @@ type RowValue =
   | ReadonlyArray<RowValue>
   | Row;
 
-type Row = { [column: string]: RowValue };
+export type Row = { [column: string]: RowValue };
 
-type Store = Record<string, Row[]>;
+export type Store = Record<string, Row[]>;
+
+export type TestDb = EnterpriseDb & {
+  readonly store: Record<string, any[]>;
+  readonly query: any;
+  failNextWrite(
+    operation: WriteOperation,
+    table: string,
+    options?: { readonly occurrence?: number; readonly error?: unknown },
+  ): TestDb;
+};
 
 const tableSymbol = (description: string) => (value: Row) =>
   Object.getOwnPropertySymbols(value).find((symbol) => symbol.description === description)!;
@@ -66,6 +77,16 @@ const collectPredicates = (condition: any): Array<(row: Row) => boolean> => {
 
       if (op.toLowerCase().includes(" is null"))
         predicates.push((row) => (key in row ? row[key] : row[fallback]) == null);
+
+      if (op.includes(" > ") && "value" in param)
+        predicates.push(
+          (row) => comparable(key in row ? row[key] : row[fallback]) > comparable(param.value),
+        );
+
+      if (op.includes(" < ") && "value" in param)
+        predicates.push(
+          (row) => comparable(key in row ? row[key] : row[fallback]) < comparable(param.value),
+        );
     }
   }
 
@@ -81,7 +102,28 @@ const queryFor = (condition: any) =>
   });
 
 const camel = (value: string) =>
-  value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+  value.replaceAll(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+
+/**
+ * MySQL considers a row changed only when at least one assigned value differs.
+ * Dates compare by instant and JSON-shaped values compare structurally so a
+ * same-scope re-consent is modelled as `affectedRows: 0`.
+ */
+const sameValue = (left: RowValue | undefined, right: RowValue): boolean => {
+  // MySQL has one NULL value: assigning undefined/null over NULL is unchanged.
+  const a = left === undefined ? null : left;
+  const b = right === undefined ? null : right;
+
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+
+  if (Array.isArray(a) && Array.isArray(b))
+    return a.length === b.length && a.every((item, index) => sameValue(item, b[index]!));
+
+  if (a !== null && b !== null && typeof a === "object" && typeof b === "object")
+    return JSON.stringify(a) === JSON.stringify(b);
+
+  return a === b;
+};
 
 /** Values the fake orders and compares: everything normalises to one of these. */
 type Comparable = number | string;
@@ -120,7 +162,7 @@ const splitTopLevel = (sql: string, connector: string): string[] => {
   let start = 0;
 
   for (let index = 0; index < sql.length; index++) {
-    const character = sql[index]!;
+    const character = sql[index];
 
     if (character === '"') quoted = !quoted;
     else if (!quoted && character === "(") depth++;
@@ -145,7 +187,7 @@ const stripOuterParens = (sql: string) => {
     let closesAtEnd = false;
 
     for (let index = 0; index < value.length; index++) {
-      const character = value[index]!;
+      const character = value[index];
 
       if (character === "(") depth++;
       else if (character === ")") {
@@ -165,16 +207,16 @@ const stripOuterParens = (sql: string) => {
   return value;
 };
 
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (value: string) => value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 const likeRegex = (pattern: string) => {
   let source = "^";
 
   for (let index = 0; index < pattern.length; index++) {
-    const character = pattern[index]!;
+    const character = pattern[index];
 
     if (character === "\\" && index + 1 < pattern.length) {
-      source += escapeRegex(pattern[++index]!);
+      source += escapeRegex(pattern[++index]);
     } else if (character === "%") source += ".*";
     else if (character === "_") source += ".";
     else source += escapeRegex(character);
@@ -231,8 +273,8 @@ const mysqlDateFormat = (date: Date, format: string) => {
     ["%H", pad(date.getUTCHours())],
     ["%i", pad(date.getUTCMinutes())],
     ["%s", pad(date.getUTCSeconds())],
-    ["%b", MONTHS_SHORT[date.getUTCMonth()]!],
-    ["%M", MONTHS_LONG[date.getUTCMonth()]!],
+    ["%b", MONTHS_SHORT[date.getUTCMonth()]],
+    ["%M", MONTHS_LONG[date.getUTCMonth()]],
   ]);
 
   return format.replaceAll(/%[YymcdeHisbM]/g, (token) => replacements.get(token) ?? token);
@@ -248,7 +290,7 @@ const rowValue = (row: Row, table: string | undefined, column: string) => {
 const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   const isNull = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+is\s+null$/i);
 
-  if (isNull) return rowValue(row, isNull[1], isNull[2]!) == null;
+  if (isNull) return rowValue(row, isNull[1], isNull[2]) == null;
 
   // `date_format("device"."last_seen_at", '%Y-%m-%d') like $1`.
   const dateFormatLike = sql.match(
@@ -256,7 +298,7 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   );
 
   if (dateFormatLike) {
-    const value = rowValue(row, dateFormatLike[1], dateFormatLike[2]!);
+    const value = rowValue(row, dateFormatLike[1], dateFormatLike[2]);
 
     if (value == null) return false;
 
@@ -266,7 +308,7 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
     if (!date || Number.isNaN(date.getTime())) return false;
 
     return likeRegex(String(params[Number(dateFormatLike[4]) - 1])).test(
-      mysqlDateFormat(date, dateFormatLike[3]!),
+      mysqlDateFormat(date, dateFormatLike[3]),
     );
   }
 
@@ -277,7 +319,7 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   if (inParam) {
     const list = params[Number(inParam[4]) - 1];
     const values = Array.isArray(list) ? list.map((entry) => comparable(entry)) : [];
-    const found = values.includes(comparable(rowValue(row, inParam[1], inParam[2]!)));
+    const found = values.includes(comparable(rowValue(row, inParam[1], inParam[2])));
 
     return inParam[3] ? !found : found;
   }
@@ -285,11 +327,9 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   const inList = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+in\s+\(([^)]*)\)$/i);
 
   if (inList) {
-    const values = [...inList[3]!.matchAll(/\$(\d+)/g)].map(
-      (match) => params[Number(match[1]) - 1],
-    );
+    const values = [...inList[3].matchAll(/\$(\d+)/g)].map((match) => params[Number(match[1]) - 1]);
 
-    return values.includes(rowValue(row, inList[1], inList[2]!));
+    return values.includes(rowValue(row, inList[1], inList[2]));
   }
 
   // Column-to-column comparison, which is how drizzle renders a join's ON
@@ -299,8 +339,8 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
   );
 
   if (columnComparison) {
-    const left = rowValue(row, columnComparison[1], columnComparison[2]!);
-    const right = rowValue(row, columnComparison[4], columnComparison[5]!);
+    const left = rowValue(row, columnComparison[1], columnComparison[2]);
+    const right = rowValue(row, columnComparison[4], columnComparison[5]);
 
     // SQL comparisons against NULL are never true.
     if (left == null || right == null) return false;
@@ -314,8 +354,8 @@ const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
 
   // Unknown leaf (e.g. a generated literal): do not exclude the row.
   if (!comparison) return true;
-  const actual = rowValue(row, comparison[1], comparison[2]!);
-  const operator = comparison[3]!.toLowerCase();
+  const actual = rowValue(row, comparison[1], comparison[2]);
+  const operator = comparison[3].toLowerCase();
   const expected = params[Number(comparison[4]) - 1];
 
   if (operator === "=") {
@@ -436,18 +476,18 @@ const aggregateValue = (field: any, rows: Row[]): RowValue | undefined => {
   const distinct = /^count\(distinct\s+"([^"]+)"\."([^"]+)"\)$/i.exec(sql);
 
   if (distinct)
-    return new Set(rows.map((row) => comparable(rowValue(row, distinct[1], distinct[2]!)))).size;
+    return new Set(rows.map((row) => comparable(rowValue(row, distinct[1], distinct[2])))).size;
 
   const minMax = /^(max|min)\("([^"]+)"\."([^"]+)"\)$/i.exec(sql);
 
   if (!minMax) return undefined;
 
-  const descending = minMax[1]!.toLowerCase() === "max";
+  const descending = minMax[1].toLowerCase() === "max";
   let best: Comparable | undefined;
   let bestValue: RowValue = undefined;
 
   for (const row of rows) {
-    const value = rowValue(row, minMax[2], minMax[3]!);
+    const value = rowValue(row, minMax[2], minMax[3]);
     const normalized = comparable(value);
 
     if (
@@ -505,7 +545,7 @@ const project = (fields: any, row: Row) => {
       if (Schema.is(Schema.Record(Schema.String, Schema.Any))(field)) {
         const entries = Object.entries(field);
 
-        if (entries.length > 0 && entries.every(([, value]) => value?.table))
+        if (entries.length > 0 && entries.every(([, value]: [string, any]) => value?.table))
           return [
             key,
             Object.fromEntries(
@@ -523,6 +563,20 @@ const project = (fields: any, row: Row) => {
     }),
   );
 };
+
+type WriteOperation = "insert" | "update" | "delete";
+
+type WriteFailureRule = {
+  readonly operation: WriteOperation;
+  readonly table: string;
+  remaining: number;
+  readonly error: unknown;
+};
+
+type BeforeWrite = (
+  operation: WriteOperation,
+  table: string,
+) => { readonly error: unknown } | undefined;
 
 const prefix = (table: string, row: Row) =>
   Object.fromEntries(Object.entries(row).map(([key, value]) => [`${table}.${key}`, value]));
@@ -623,7 +677,7 @@ class SelectBuilder {
 
   /** Aggregate a bucket of rows for `groupBy`, keeping plain selected columns. */
   private projectGrouped(rows: Row[]) {
-    const projected = project(this.fields, rows[0]!);
+    const projected = project(this.fields, rows[0]);
 
     if (!this.fields) return projected;
 
@@ -743,16 +797,17 @@ class SelectBuilder {
 class InsertBuilder {
   private readonly store: Store;
   private readonly table: string;
+  private readonly beforeWrite: BeforeWrite;
   private rows: Row[] = [];
 
-  constructor(store: Store, table: string) {
+  constructor(store: Store, table: string, beforeWrite: BeforeWrite) {
     this.store = store;
     this.table = table;
+    this.beforeWrite = beforeWrite;
   }
 
   values(value: Row | Row[]) {
     this.rows = Array.isArray(value) ? value : [value];
-    this.store[this.table].push(...this.rows.map((row) => ({ ...row })));
 
     return this;
   }
@@ -774,18 +829,28 @@ class InsertBuilder {
   }
 
   [Symbol.iterator]() {
-    return Effect.succeed(this.rows)[Symbol.iterator]();
+    return Effect.suspend(() => {
+      const failure = this.beforeWrite("insert", this.table);
+
+      if (failure) return Effect.fail(failure.error);
+
+      this.store[this.table].push(...this.rows.map((row) => ({ ...row })));
+
+      return Effect.succeed(this.rows);
+    })[Symbol.iterator]();
   }
 }
 
 class UpdateBuilder {
   private readonly store: Store;
   private readonly table: string;
+  private readonly beforeWrite: BeforeWrite;
   private patch: Row = {};
 
-  constructor(store: Store, table: string) {
+  constructor(store: Store, table: string, beforeWrite: BeforeWrite) {
     this.store = store;
     this.table = table;
+    this.beforeWrite = beforeWrite;
   }
 
   set(value: Row) {
@@ -795,42 +860,55 @@ class UpdateBuilder {
   }
 
   where(condition: any) {
-    let affectedRows = 0;
+    return Effect.suspend(() => {
+      const failure = this.beforeWrite("update", this.table);
 
-    for (const row of this.store[this.table]) {
-      if (matches(condition, row)) {
-        affectedRows++;
+      if (failure) return Effect.fail(failure.error);
 
-        for (const [key, value] of Object.entries(this.patch))
-          if (value !== undefined) row[key] = value;
+      let affectedRows = 0;
+
+      for (const row of this.store[this.table]) {
+        if (matches(condition, row)) {
+          let changed = false;
+
+          for (const [key, value] of Object.entries(this.patch)) {
+            if (value === undefined) continue;
+
+            if (!sameValue(row[key], value)) changed = true;
+
+            // Store the assigned value even for a NULL no-op so fake rows
+            // match the column state a real MySQL row would have.
+            row[key] = value;
+          }
+
+          // MySQL reports changed rows, not matched rows, unless the driver
+          // enables CLIENT_FOUND_ROWS. Same-value updates therefore resolve
+          // with affectedRows: 0 and must not be mistaken for a lost row.
+          if (changed) affectedRows++;
+        }
       }
-    }
 
-    // Drizzle's MySQL update resolves to a result with `affectedRows`, which
-    // conditional claims rely on for compare-and-set semantics.
-    return Effect.succeed({ affectedRows });
+      return Effect.succeed({ affectedRows });
+    });
   }
 }
 
 class DeleteBuilder {
   private readonly store: Store;
   private readonly table: string;
+  private readonly beforeWrite: BeforeWrite;
+  private condition: any;
   private removed: Row[] = [];
 
-  constructor(store: Store, table: string) {
+  constructor(store: Store, table: string, beforeWrite: BeforeWrite) {
     this.store = store;
     this.table = table;
+    this.beforeWrite = beforeWrite;
   }
 
   where(condition: any) {
-    const kept: Row[] = [];
-
-    for (const row of this.store[this.table]) {
-      if (matches(condition, row)) this.removed.push(row);
-      else kept.push(row);
-    }
-
-    this.store[this.table] = kept;
+    this.condition = condition;
+    this.removed = [];
 
     return this;
   }
@@ -840,11 +918,26 @@ class DeleteBuilder {
   }
 
   [Symbol.iterator]() {
-    return Effect.succeed(this.removed)[Symbol.iterator]();
+    return Effect.suspend(() => {
+      const failure = this.beforeWrite("delete", this.table);
+
+      if (failure) return Effect.fail(failure.error);
+
+      const kept: Row[] = [];
+
+      for (const row of this.store[this.table]) {
+        if (matches(this.condition, row)) this.removed.push(row);
+        else kept.push(row);
+      }
+
+      this.store[this.table] = kept;
+
+      return Effect.succeed(this.removed);
+    })[Symbol.iterator]();
   }
 }
 
-export const makeDb = (initial: Partial<Store> = {}) => {
+export const makeDb = (initial: Partial<Store> = {}): TestDb => {
   const store: Store = Object.fromEntries(
     Object.values(schema).map((table) => [tableName(table), []]),
   );
@@ -864,16 +957,48 @@ export const makeDb = (initial: Partial<Store> = {}) => {
     ]),
   );
 
+  const failures: Array<WriteFailureRule> = [];
+  const beforeWrite: BeforeWrite = (operation, table) => {
+    const index = failures.findIndex(
+      (rule) => rule.operation === operation && rule.table === table,
+    );
+
+    if (index === -1) return undefined;
+
+    const rule = failures[index];
+    rule.remaining -= 1;
+
+    if (rule.remaining > 0) return undefined;
+
+    failures.splice(index, 1);
+
+    return { error: rule.error };
+  };
+
   const db: any = {
     store,
     query,
-    insert: (table: any) => new InsertBuilder(store, tableName(table)),
-    update: (table: any) => new UpdateBuilder(store, tableName(table)),
-    delete: (table: any) => new DeleteBuilder(store, tableName(table)),
+    insert: (table: any) => new InsertBuilder(store, tableName(table), beforeWrite),
+    update: (table: any) => new UpdateBuilder(store, tableName(table), beforeWrite),
+    delete: (table: any) => new DeleteBuilder(store, tableName(table), beforeWrite),
+    failNextWrite: (
+      operation: WriteOperation,
+      table: string,
+      options: { readonly occurrence?: number; readonly error?: unknown } = {},
+    ) => {
+      failures.push({
+        operation,
+        table,
+        remaining: options.occurrence ?? 1,
+        error: options.error ?? new Error(`Injected ${operation} failure for ${table}`),
+      });
+
+      return db;
+    },
     select: (fields?: any) => new SelectBuilder(store, fields),
-    // The production Db wraps this work in one transaction. The fake runs it
-    // eagerly but restores the previous rows if it fails, so rollback paths are
-    // observable without a database.
+    // The production Db wraps this work in one transaction. The fake applies
+    // writes lazily and restores the previous rows on failure, so rollback and
+    // failure-injection paths are observable without a database.
     transaction: <A, E, R>(work: (tx: any) => Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => {
       const snapshot = Object.fromEntries(
         Object.entries(store).map(([name, rows]) => [name, rows.map((row) => ({ ...row }))]),
@@ -896,12 +1021,26 @@ export const runEffect = async <A, E>(
   effect: Effect.Effect<A, E, any> | Promise<Effect.Effect<A, E, any>>,
 ) => Effect.runPromise((await effect) as Effect.Effect<A, E, never>);
 
+export const makeHttpHandler = <A, E, R>(layer: Layer.Layer<A, E, R>) =>
+  // SAFETY: these contract tests provide the service and HTTP platform layers;
+  // the cast only removes Effect's request-context requirement at the boundary.
+  HttpRouter.toWebHandler(layer as Layer.Layer<HttpRouter.HttpRouter>).handler;
+
+export const requireField = <T extends object, K extends string>(
+  value: T,
+  field: K,
+  // oxlint-disable-next-line quality/no-unsafe-dictionary-type -- The requested discriminant is validated at runtime.
+): T & { readonly [P in K]: any } => {
+  if (!(field in value)) throw new Error(`Expected fixture field ${field}`);
+
+  // oxlint-disable-next-line quality/no-unsafe-dictionary-type -- The requested discriminant is validated at runtime.
+  return value as T & { readonly [P in K]: any };
+};
+
 export const request = (
   headers: Record<string, string> = {},
 ): HttpServerRequest.HttpServerRequest =>
-  // SAFETY: handler tests only read `headers`; the service surfaces under test
-  // never touch the method, URL or body stream of the request.
-  ({ headers }) as HttpServerRequest.HttpServerRequest;
+  HttpServerRequest.fromWeb(new Request("https://enterprise.test/", { headers }));
 
 export const header = (response: any, name: string) =>
   response.headers?.get?.(name) ??
@@ -913,7 +1052,7 @@ export const cookieFrom = (response: any) => header(response, "set-cookie")?.spl
 const defaultStripeClient = () => ({
   customers: {
     search: async () => ({ data: [] }),
-    list: async function* () {},
+    async *list() {},
     create: async () => ({ id: "cus_created" }),
     update: async (id: string, params: { name?: string }) => ({ id, name: params.name ?? null }),
     retrieve: async (id: string) => ({ id, name: null }),

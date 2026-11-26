@@ -1,16 +1,16 @@
 import { isServer } from "@solidjs/web";
-import { useInfiniteQuery, type InfiniteData } from "@tanstack/solid-query";
+import { useInfiniteQuery } from "@tanstack/solid-query";
+import type { InfiniteData } from "@tanstack/solid-query";
 import { Option, Schema } from "effect";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { ErrorText, Panel } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import {
-  enterprise,
-  enterpriseKeys,
-  type AccountAuditEntry,
-  type AccountAuditSearchResponse,
-  type AuditSearchQuery,
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import type {
+  AccountAuditEntry,
+  AccountAuditSearchResponse,
+  AuditSearchQuery,
 } from "~/lib/enterprise";
 import { errorPresentation } from "~/lib/errors";
 import { downloadBlob } from "~/lib/download";
@@ -35,16 +35,20 @@ const KNOWN_ACTIONS = [
   "account.email_change_cancelled",
   "account.api_token_created",
   "account.api_token_revoked",
+  "account.mcp_oauth_granted",
+  "account.mcp_oauth_scopes_changed",
+  "account.mcp_oauth_revoked",
   "account.session_revoked",
   "account.sessions_revoked",
   "account.recovery_requested",
   "account.recovery_approved",
   "account.recovery_completed",
+  "account.recovery_cancelled",
   "account.deleted",
 ];
 
 const inputClass =
-  "h-8 w-full min-w-0 rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors placeholder:text-muted-foreground sm:text-[13px] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  "h-8 w-full min-w-0";
 
 const formatAction = (action: string) =>
   action
@@ -91,7 +95,7 @@ const decodeJson = Schema.decodeUnknownOption(Schema.Json);
  * Account → Activity. It is the account-scoped twin of the tenant audit page:
  * the same keyset cursor and the same CSV/JSON export, filtered by action.
  */
-export function AccountActivity(props: { userId: string | undefined }) {
+export default function AccountActivity(props: { userId: string | undefined }) {
   const [action, setAction] = createSignal("");
   const [exporting, setExporting] = createSignal<"csv" | "json" | null>(null);
   const [exportError, setExportError] = createSignal<unknown>();
@@ -134,9 +138,7 @@ export function AccountActivity(props: { userId: string | undefined }) {
       if (filters().action) query.set("action", filters().action!);
       query.set("format", format);
 
-      const response = await fetch(`/api/v1/account/audit/export?${query}`, {
-        credentials: "include",
-      });
+      const response = await enterprise.request(`/api/v1/account/audit/export?${query}`);
 
       if (!response.ok) {
         const body = Option.getOrUndefined(decodeJson(await response.json().catch(() => "")));
@@ -166,7 +168,7 @@ export function AccountActivity(props: { userId: string | undefined }) {
     >
       <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
         <label class="min-w-0 flex-1 space-y-1.5">
-          <span class="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+          <span class="text-xs font-medium uppercase tracking-widest text-muted-foreground">
             Action
           </span>
           <Input
@@ -218,7 +220,7 @@ export function AccountActivity(props: { userId: string | undefined }) {
       <Show
         when={entries().length > 0}
         fallback={
-          <p class="mt-4 text-[13px] text-muted-foreground">
+          <p class="mt-4 text-xs text-muted-foreground">
             {log.isPending ? "Loading activity…" : "No account activity recorded yet."}
           </p>
         }
@@ -228,11 +230,11 @@ export function AccountActivity(props: { userId: string | undefined }) {
             {(entry) => (
               <li class="px-3 py-2.5">
                 <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <p class="text-[13px] font-medium text-foreground">
+                  <p class="text-xs font-medium text-foreground">
                     {formatAction(entry.action)}
                   </p>
                   <time
-                    class="text-[11px] text-muted-foreground"
+                    class="text-xs text-muted-foreground"
                     datetime={entry.createdAt}
                     title={new Date(entry.createdAt).toISOString()}
                   >
@@ -241,13 +243,13 @@ export function AccountActivity(props: { userId: string | undefined }) {
                 </div>
                 <Show when={summarizeMetadata(Option.getOrUndefined(decodeJson(entry.metadata)))}>
                   {(summary) => (
-                    <p class="mt-0.5 break-words text-[11px] leading-relaxed text-muted-foreground">
+                    <p class="mt-0.5 break-words text-xs leading-relaxed text-muted-foreground">
                       {summary()}
                     </p>
                   )}
                 </Show>
                 <Show when={entry.targetType}>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground">
+                  <p class="mt-0.5 text-xs text-muted-foreground">
                     {entry.targetType}
                     <Show when={entry.targetId}> · {entry.targetId}</Show>
                   </p>

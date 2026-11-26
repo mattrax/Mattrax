@@ -15,6 +15,7 @@ export const PERMISSIONS = [
   "devices.write",
   "devices.command",
   "devices.recovery_key",
+  "devices.handover",
   "groups.read",
   "groups.write",
   "policies.read",
@@ -23,6 +24,8 @@ export const PERMISSIONS = [
   "applications.write",
   "scripts.read",
   "scripts.write",
+  "restricted_software.read",
+  "restricted_software.write",
   "dashboards.read",
   "dashboards.write",
   "enrollment.read",
@@ -42,6 +45,10 @@ export const PERMISSIONS = [
   "members.write",
   "roles.read",
   "roles.write",
+  "scope_tags.read",
+  "scope_tags.write",
+  "approvals.read",
+  "approvals.write",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -72,6 +79,12 @@ export const PERMISSION_GROUPS: ReadonlyArray<{
         id: "devices.recovery_key",
         label: "Reveal recovery keys",
         description: "Read escrowed FileVault recovery keys.",
+      },
+      {
+        id: "devices.handover",
+        label: "Hand over devices",
+        description:
+          "Export escrowed device secrets in a passphrase-sealed archive before deleting the device.",
       },
     ],
   },
@@ -128,6 +141,23 @@ export const PERMISSION_GROUPS: ReadonlyArray<{
         id: "scripts.write",
         label: "Manage and run scripts",
         description: "Create, edit, assign and run scripts.",
+      },
+    ],
+  },
+  {
+    id: "restricted_software",
+    label: "Restricted software",
+    description: "Deny-listed applications, violations and enforcement.",
+    permissions: [
+      {
+        id: "restricted_software.read",
+        label: "View restricted software",
+        description: "See deny-list rules and detected violations.",
+      },
+      {
+        id: "restricted_software.write",
+        label: "Manage restricted software",
+        description: "Create, edit, scope and delete deny-list rules.",
       },
     ],
   },
@@ -257,6 +287,40 @@ export const PERMISSION_GROUPS: ReadonlyArray<{
     ],
   },
   {
+    id: "scope_tags",
+    label: "Scope tags",
+    description: "Regional or team scopes for delegated administrators.",
+    permissions: [
+      {
+        id: "scope_tags.read",
+        label: "View scope tags",
+        description: "See tags and which resources carry them.",
+      },
+      {
+        id: "scope_tags.write",
+        label: "Manage scope tags",
+        description: "Create tags, rename them and tag resources.",
+      },
+    ],
+  },
+  {
+    id: "approvals",
+    label: "Approvals",
+    description: "Second-person approval policies and the approval queue.",
+    permissions: [
+      {
+        id: "approvals.read",
+        label: "View approvals",
+        description: "See approval requests, their payload summary and decisions.",
+      },
+      {
+        id: "approvals.write",
+        label: "Manage approvals",
+        description: "Configure approval policies and approve or reject requests.",
+      },
+    ],
+  },
+  {
     id: "tenant",
     label: "Tenant",
     description: "Tenant-wide settings, export and lifecycle.",
@@ -290,13 +354,20 @@ export const BUILT_IN_ROLE_PERMISSIONS: Record<BuiltInTenantRole, ReadonlyArray<
       permission !== "tenant.export" &&
       !permission.startsWith("backups."),
   ),
-  // Webhook secrets and delivery history are operational admin surfaces.
-  // Backups contain full tenant data and stay with owners.
+  // Webhook secrets, delivery history, backups and the approval queue are
+  // operational admin surfaces. Backups contain full tenant data and stay with
+  // owners; the queue exposes destructive requests and who is deciding them.
   member: READ_PERMISSIONS.filter(
-    (permission) => permission !== "webhooks.read" && !permission.startsWith("backups."),
+    (permission) =>
+      permission !== "webhooks.read" &&
+      permission !== "approvals.read" &&
+      !permission.startsWith("backups."),
   ),
   auditor: READ_PERMISSIONS.filter(
-    (permission) => permission !== "webhooks.read" && !permission.startsWith("backups."),
+    (permission) =>
+      permission !== "webhooks.read" &&
+      permission !== "approvals.read" &&
+      !permission.startsWith("backups."),
   ),
 };
 

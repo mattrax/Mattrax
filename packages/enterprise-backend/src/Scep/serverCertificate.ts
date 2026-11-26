@@ -1,7 +1,8 @@
 import { Effect, Option, Schema } from "effect";
 import { eq } from "drizzle-orm";
-import * as pkijs from "pkijs";
+import type * as pkijs from "pkijs";
 import { connect } from "node:tls";
+import { loadPkijs } from "@mattrax/scep";
 import { schema as s } from "@mattrax/enterprise-core";
 import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
 import { serverCertificateInfo } from "../Device/credentialHealth.ts";
@@ -21,14 +22,6 @@ import type { EnterpriseDb } from "../schema.ts";
  * or untrusted certificate must be *observed and reported*, not turned into a
  * probe error that hides why.
  */
-
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
-  try {
-    pkijs.getEngine();
-  } catch {
-    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
-  }
-}
 
 /** Default interval between probes. The hourly cron calls it, so one hour. */
 export const SERVER_CERTIFICATE_CHECK_INTERVAL_MINUTES = 60;
@@ -115,7 +108,8 @@ export const serverCertificatePeerFromDer = async (input: {
   readonly authorizationError: string | null;
   readonly chainLength: number;
 }): Promise<ServerCertificatePeer> => {
-  const certificate = pkijs.Certificate.fromBER(new Uint8Array(input.der).buffer);
+  const { Certificate } = await loadPkijs();
+  const certificate = Certificate.fromBER(new Uint8Array(input.der).buffer);
   const serial = certificate.serialNumber.valueBlock.valueHexView;
 
   return {
@@ -166,11 +160,14 @@ export const probeServerCertificate: ServerCertificateProbe = (options) =>
         if (url.protocol !== "https:")
           throw new Error(`The origin uses ${url.protocol}, not https`);
 
-        const hostname = url.hostname.replace(/^\[|\]$/g, "");
+        const hostname = url.hostname.replaceAll(/^\[|\]$/g, "");
         const port = url.port ? Number(url.port) : 443;
         const timeoutMs = options.timeoutMs ?? SERVER_CERTIFICATE_PROBE_TIMEOUT_MS;
 
         let settled = false;
+        // Assigned once, after the callbacks that read it are defined, so it
+        // cannot be a \`const\` declaration.
+        // oxlint-disable-next-line prefer-const -- assigned after the closures that capture it.
         let timer: ReturnType<typeof setTimeout> | undefined;
 
         const finish = (error: Error | null, peer?: ServerCertificatePeer) => {
@@ -232,8 +229,8 @@ export const probeServerCertificate: ServerCertificateProbe = (options) =>
                   chainLength: countChain(peer),
                 }),
               );
-            } catch (cause) {
-              finish(cause instanceof Error ? cause : new Error(String(cause)));
+            } catch (error) {
+              finish(error instanceof Error ? error : new Error(String(error)));
             }
           })();
         });
@@ -308,8 +305,8 @@ export const runServerCertificateCheck = (
       readonly error: string | null;
     } = yield* probe({ origin: options.origin, timeoutMs: options.timeoutMs }).pipe(
       Effect.map((peer) => ({ peer, error: null })),
-      Effect.catch((cause: Error) =>
-        Effect.succeed({ peer: null, error: cause.message || "TLS probe failed" }),
+      Effect.catch((error: Error) =>
+        Effect.succeed({ peer: null, error: error.message || "TLS probe failed" }),
       ),
     );
 

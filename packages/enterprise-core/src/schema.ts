@@ -1,6 +1,7 @@
 import { AuthPersistence } from "@yielded/auth-persistence-drizzle/Mysql2";
 import { requiredPasskeyPersistenceConstraints } from "@yielded/auth-persistence-drizzle";
-import { Schema as AuthSchema, Sessions } from "@yielded/auth";
+import type { Sessions } from "@yielded/auth";
+import { Schema as AuthSchema } from "@yielded/auth";
 import {
   AuthDefinition,
   LOGIN_ATTEMPT_FACTORS,
@@ -12,8 +13,13 @@ import {
   TOTP_POLICY,
   authenticationRequirement,
 } from "@mattrax/enterprise-domain";
-import type { DynamicGroupRules } from "@mattrax/enterprise-domain";
-import { defineRelations, sql, type SQL } from "drizzle-orm";
+import type {
+  AppAuthDefinition,
+  DeviceViewQuery,
+  DynamicGroupRules,
+} from "@mattrax/enterprise-domain";
+import { defineRelations, desc, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -21,6 +27,7 @@ import {
   index,
   int,
   json,
+  mediumtext,
   mysqlTable,
   primaryKey,
   text,
@@ -28,7 +35,8 @@ import {
   uniqueIndex,
   varchar,
 } from "drizzle-orm/mysql-core";
-import { Effect, Schema as EffectSchema } from "effect";
+import type { Schema as EffectSchema } from "effect";
+import { Effect } from "effect";
 
 /**
  * MySQL stores indexes as key prefixes. Every column that participates in a
@@ -57,7 +65,6 @@ export const account = mysqlTable(
     email: varchar("email", { length: 320 }).notNull(),
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
-    stripeCustomerId: shortText("stripe_customer_id"),
     /**
      * Account-level landing tenant, independent of the browser's last-used
      * tenant. Only honoured while the account is a member; membership loss
@@ -67,6 +74,12 @@ export const account = mysqlTable(
       onDelete: "set null",
     }),
     disabled: boolean("disabled").notNull().default(false),
+    /**
+     * Platform operator. This is not a tenant role: it grants the cross-tenant
+     * account catalogue independently of any membership. `MATTRAX_SUPERADMINS`
+     * can also grant the effective flag and is authoritative over this column.
+     */
+    superadmin: boolean("superadmin").notNull().default(false),
     /**
      * How this account was created. `manual` is website registration and
      * invitation acceptance; `sso` is first-sign-in provisioning. `scim` and
@@ -131,7 +144,7 @@ export const user = mysqlTable(
     email: varchar("email", { length: 320 }).notNull(),
     /** Provider object id (Graph id or SCIM external id), when known. */
     externalId: shortText("external_id"),
-    source: varchar("source", { length: 16, enum: ["manual", "entra", "scim"] })
+    source: varchar("source", { length: 16, enum: ["manual", "entra", "scim", "google"] })
       .notNull()
       .default("manual"),
     disabled: boolean("disabled").notNull().default(false),
@@ -206,11 +219,39 @@ export const authPasskeyFlows = mysqlTable(
   ],
 );
 
+/**
+ * Session storage mirrors the managed auth layout, with one application-owned
+ * retention index added. The persistence library has no index-extension hook,
+ * so supplying this table through `tables.sessions` keeps the generated column
+ * contract while making `(expires_at, session_id)` visible to Drizzle Kit.
+ */
+const authSessionsTable = mysqlTable(
+  "auth_sessions",
+  {
+    sessionId: varchar("session_id", { length: 191 }).notNull(),
+    subjectId: varchar("subject_id", { length: 191 }).notNull(),
+    digest: varchar("digest", { length: 191 }).notNull(),
+    securityRevision: varchar("security_revision", { length: 191 }).notNull(),
+    issuedAt: bigint("issued_at", { mode: "number" }).notNull(),
+    expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
+    absoluteExpiresAt: bigint("absolute_expires_at", { mode: "number" }).notNull(),
+    record: text("record").notNull(),
+  },
+  (table) => [
+    uniqueIndex("auth_sessions_key_0").on(table.sessionId),
+    uniqueIndex("auth_sessions_key_1").on(table.digest),
+    index("auth_sessions_index_0").on(table.subjectId, table.securityRevision, table.sessionId),
+    index("auth_sessions_expires_session_idx").on(table.expiresAt, table.sessionId),
+  ],
+);
+
 /* oxlint-disable typescript/no-explicit-any -- The persistence library erases its
  * generated table and layout types to `MySqlTable<TableConfig>`, so the concrete
  * drizzle column type is only available from the value itself. Annotating these
  * exports with the erased type breaks every `.update(table).set(...)` call. */
-export const AuthPersistenceConfig: any = AuthPersistence.make(AuthDefinition);
+export const AuthPersistenceConfig: any = AuthPersistence.make(
+  AuthDefinition as AppAuthDefinition & Parameters<typeof AuthPersistence.make>[0],
+);
 
 export const authStorage: any = AuthPersistenceConfig.managed({
   subjects: {
@@ -225,7 +266,7 @@ export const authStorage: any = AuthPersistenceConfig.managed({
     // authenticator code on top of a passkey step-up.
     actionRequirements: () => Effect.succeed(authRequirement),
   },
-  tables: { passkeyFlows: authPasskeyFlows },
+  tables: { passkeyFlows: authPasskeyFlows, sessions: authSessionsTable },
   prefix: "auth",
 });
 
@@ -411,7 +452,15 @@ const passkeyCredentialRow = (row: ManagedPasskeyCredentialRowInput) => {
   // SAFETY: the registration read selects every credential column, so the row
   // carries the fields below; the library types it as Partial because another
   // call site projects a subset of the columns.
-  return row as ManagedPasskeyCredentialRow;
+  const value = row as ManagedPasskeyCredentialRow;
+
+  // MySQL BIGINT values may arrive as strings through Hyperdrive. The passkey
+  // schemas type these as numbers, so normalise them at the mapping boundary.
+  return {
+    ...value,
+    algorithm: Number(value.algorithm),
+    counter: Number(value.counter),
+  };
 };
 
 /**
@@ -517,7 +566,10 @@ export const passkeyRegistrationMapping: any = {
   },
   clock: {
     encodeInstant: (millis: number) => millis,
-    decodeInstant: (value: number) => value,
+    // Hyperdrive/MySQL can return BIGINT as a string even when the column is
+    // configured as a number. Coerce here: the library compares this value with
+    // the numeric `issuedAtMillis`/`expiresAtMillis` using strict equality.
+    decodeInstant: Number,
     engineNowMillis: sql`cast(unix_timestamp(current_timestamp(3)) * 1000 as signed)`,
     toMillis: (expression: SQL) => expression,
     fromMillis: (expression: SQL) => expression,
@@ -610,12 +662,15 @@ export const passkeyRegistrationMapping: any = {
   applicationSnapshot: "applicationSnapshot",
   registration: {
     schema: Registration,
+    // `name` is the WebAuthn username shown by password managers, so it must
+    // be the email. `displayName` is the human label. PasskeyLabel caps both at
+    // 128 characters; the account schema allows a 320-character address.
     describe: (value: typeof Registration.Type) => ({
-      name: value.name,
+      name: value.email.slice(0, 128),
       displayName: value.name,
     }),
     eligible: (value: typeof Registration.Type) =>
-      sql`not exists(select 1 from ${account} where ${account.email} = ${value.email})`,
+      sql`not exists(select 1 from ${account} where ${account.email} = ${value.email}) and exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${value.email} and ${registrationVerification.grant} = ${value.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.verifiedAt} <= current_timestamp(3) and ${registrationVerification.expiresAt} > current_timestamp(3))`,
     finalEligibility: ({
       registration,
       subjectId,
@@ -623,7 +678,7 @@ export const passkeyRegistrationMapping: any = {
       registration: typeof Registration.Type;
       subjectId: string;
     }) =>
-      sql`exists(select 1 from ${account} where ${account.id} = ${subjectId} and ${account.email} = ${registration.email} and ${account.disabled} = false)`,
+      sql`exists(select 1 from ${account} where ${account.id} = ${subjectId} and ${account.email} = ${registration.email} and ${account.emailVerified} = true and ${account.disabled} = false) and exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.verifiedAt} <= current_timestamp(3) and ${registrationVerification.expiresAt} > current_timestamp(3))`,
     subject: ({
       registration,
       marker,
@@ -640,13 +695,10 @@ export const passkeyRegistrationMapping: any = {
           id: subjectId,
           name: registration.name,
           email: registration.email,
-          // A guest proves the address with a code before the passkey prompt;
-          // the grant it received is checked here, in the same insert.
-          emailVerified: registration.grant
-            ? sql`exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.expiresAt} > current_timestamp(3))`
-            : false,
+          // The grant is mandatory and is rechecked at eligibility, in this
+          // insert, and by finalEligibility before the credential commits.
+          emailVerified: sql`exists(select 1 from ${registrationVerification} where ${registrationVerification.email} = ${registration.email} and ${registrationVerification.grant} = ${registration.grant} and ${registrationVerification.verifiedAt} is not null and ${registrationVerification.verifiedAt} <= current_timestamp(3) and ${registrationVerification.expiresAt} > current_timestamp(3))`,
           image: null,
-          stripeCustomerId: null,
           disabled: false,
           source: "manual",
           totpEnabled: false,
@@ -688,7 +740,42 @@ export const organization = mysqlTable(
      * runs; existing execution history is retained until its normal expiry.
      */
     scriptsEnabled: boolean("scripts_enabled").notNull().default(true),
-    stripeCustomerId: shortText("stripe_customer_id"),
+    /**
+     * Tenant opt-out for local-account health reasons on macOS. Apple's
+     * `UserList` inventory is useful but a shared Mac with deliberate extra
+     * admin accounts should not be flagged as unhealthy unless the tenant
+     * wants it. Off suppresses those reasons; the inventory itself is kept.
+     */
+    localAccountHealthEnabled: boolean("local_account_health_enabled").notNull().default(true),
+    /**
+     * Days between automatic rotations of the managed local administrator
+     * password. Null disables the schedule; the manual action still works.
+     */
+    localAdminRotationDays: int("local_admin_rotation_days"),
+    /**
+     * Default App Store storefront used to resolve a store id when a device
+     * does not report a region. Null keeps the historical US default.
+     */
+    appStoreRegion: varchar("app_store_region", { length: 2 }),
+    /**
+     * Remove every assignment when a refresh finds the app missing from all
+     * recorded storefronts. Off by default: unlinking is an explicit decision
+     * unless the tenant opts into it.
+     */
+    autoUnlinkUnavailableApplications: boolean("auto_unlink_unavailable_applications")
+      .notNull()
+      .default(false),
+    /**
+     * Cached billing entitlement pushed by the services deployment. The
+     * billing database is the authority; these columns exist only so device
+     * and tenant limits can be enforced without a network call per request.
+     */
+    billingPlan: shortText("billing_plan"),
+    billingStatus: varchar("billing_status", { length: 32 }),
+    /** Newest billing entitlement revision applied to this cached projection. */
+    billingEntitlementRevision: bigint("billing_entitlement_revision", { mode: "number" })
+      .notNull()
+      .default(0),
     /**
      * When the once-per-tenant onboarding follow-up was claimed and sent.
      * Claiming is a conditional update, so repeated sweeps are idempotent.
@@ -738,6 +825,13 @@ export const member = mysqlTable(
     role: varchar("role", { length: 32 }).notNull(),
     /** Custom RBAC role; when set it replaces the built-in `role` capabilities. */
     customRoleId: id("custom_role_id").references(() => tenantRole.id, { onDelete: "set null" }),
+    /**
+     * When this member dismissed the overview onboarding checklist. Stored on
+     * the membership rather than in the browser so one administrator dismissing
+     * the card does not hide it for the rest of the tenant, and so the choice
+     * follows the account to another browser.
+     */
+    onboardingDismissedAt: timestamp("onboarding_dismissed_at"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
@@ -745,6 +839,277 @@ export const member = mysqlTable(
     uniqueIndex("member_account_organization_unique").on(table.accountId, table.organizationId),
     index("member_custom_role_idx").on(table.customRoleId),
     index("member_organization_id_idx").on(table.organizationId),
+  ],
+);
+
+/**
+ * A tenant-defined scope tag for delegated administration.
+ *
+ * Intune calls these "scope tags": a resource carries one or more tags and a
+ * member assignment lists the tags its holder may reach. Tags are deliberately
+ * data rather than code so a regional IT team can be carved out without
+ * creating a separate tenant. A resource with no tag is tenant-wide and is
+ * visible only to unscoped memberships, which keeps an upgrade from widening a
+ * scoped role's reach.
+ */
+export const scopeTag = mysqlTable(
+  "scope_tag",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    description: text("description"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    // The unique index leads with the tenant, so it also serves the
+    // organisation-scoped tag list; a separate organisation index would be a
+    // redundant prefix.
+    uniqueIndex("scope_tag_organization_name_unique").on(table.organizationId, table.name),
+  ],
+);
+
+/**
+ * The tags carried by one tagged resource.
+ *
+ * `resourceId` is polymorphic because devices, groups, policies, applications,
+ * scripts and dashboards each live in their own table. It intentionally has no
+ * foreign key: the owning row's delete path removes the assignments (and a
+ * tenant teardown cascades by organisation), but MySQL cannot enforce one
+ * reference across six tables.
+ */
+export const scopeTagAssignment = mysqlTable(
+  "scope_tag_assignment",
+  {
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    resourceType: varchar("resource_type", {
+      length: 24,
+      enum: ["device", "group", "policy", "application", "script", "dashboard"],
+    }).notNull(),
+    // Resource ids are generated 24-character strings. A 64-character bound
+    // keeps the composite primary key under InnoDB's 3072-byte index limit
+    // (organisation 255 + type 24 + resource 64 + tag 255 = 598 characters).
+    resourceId: varchar("resource_id", { length: 64 }).notNull(),
+    tagId: id("tag_id")
+      .notNull()
+      .references(() => scopeTag.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.organizationId, table.resourceType, table.resourceId, table.tagId],
+    }),
+    // Scope checks select resource ids for one tenant, resource type and set of
+    // tags; without this the tag predicate filters every resource of that kind
+    // in the tenant. The primary key cannot serve it because resource_id sits
+    // between resource_type and tag_id.
+    index("scope_tag_assignment_scope_idx").on(
+      table.organizationId,
+      table.resourceType,
+      table.tagId,
+    ),
+    // Foreign-key support for tag deletion.
+    index("scope_tag_assignment_tag_idx").on(table.tagId),
+    // No resource-leading index is needed: the primary key is
+    // (organization, resource_type, resource_id, tag_id), so its prefix
+    // answers "which tags does this resource carry?".
+  ],
+);
+
+/**
+ * The scope tags a membership may reach. An empty set means the membership is
+ * unscoped (tenant-wide); this is the upgrade default and cannot silently
+ * narrow access for an existing member. Built-in owners are always unscoped
+ * regardless of rows here, so a tenant can never be locked out.
+ */
+export const memberScopeTag = mysqlTable(
+  "member_scope_tag",
+  {
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    memberId: id("member_id")
+      .notNull()
+      .references(() => member.id, { onDelete: "cascade" }),
+    tagId: id("tag_id")
+      .notNull()
+      // Restrict, not cascade: deleting the last tag on a member must never
+      // silently turn a scoped membership into an unscoped one. The API
+      // requires the tag to be removed from members first.
+      .references(() => scopeTag.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.memberId, table.tagId] }),
+    // The organisation foreign key and the "members allowed to see this tag"
+    // lookup both need a tenant-leading index.
+    index("member_scope_tag_organization_idx").on(table.organizationId, table.tagId),
+    // Foreign-key support for tag deletion.
+    index("member_scope_tag_tag_idx").on(table.tagId),
+    // Member deletion is served by the (member_id, tag_id) primary key.
+  ],
+);
+
+/**
+ * A tenant's four-eyes policy for one destructive action.
+ *
+ * Policies are optional: when no row matches an action, the endpoint behaves
+ * exactly as it did before approvals existed. `scope_type` narrows a policy to
+ * a group or device where the action names one; anything else is tenant-wide.
+ * `approver_permission` and `approver_role` are alternatives (exactly one is
+ * expected), and `approvals_required` counts distinct approvers other than the
+ * requester.
+ */
+export const approvalPolicy = mysqlTable(
+  "approval_policy",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** A closed action key from `APPROVAL_ACTIONS`; not a free-text label. */
+    action: varchar("action", { length: 64 }).notNull(),
+    scopeType: varchar("scope_type", {
+      length: 16,
+      enum: ["tenant", "group", "device"],
+    })
+      .notNull()
+      .default("tenant"),
+    /** Group or device id for a narrowed policy; null for a tenant policy. */
+    scopeId: id("scope_id"),
+    approverPermission: varchar("approver_permission", { length: 64 }),
+    approverRole: varchar("approver_role", { length: 32 }),
+    approvalsRequired: int("approvals_required").notNull().default(1),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    // Every lookup is one action in one tenant; the pair also serves the list.
+    index("approval_policy_organization_action_idx").on(table.organizationId, table.action),
+    index("approval_policy_created_by_idx").on(table.createdByAccountId),
+  ],
+);
+
+/**
+ * One request for a second administrator to approve a destructive action.
+ *
+ * `payload_hash` is the canonical SHA-256 binding for the exact operation: the
+ * action, the policy, the resource and every device/argument involved. The
+ * request stores a metadata-only summary for the queue, never the payload or
+ * any secret. A request is single use; `consumed_at` records the execution and
+ * the row is kept as evidence. Expiry is enforced when the row is read and
+ * again before execution, so a missed sweep cannot extend a request's life.
+ */
+export const approvalRequest = mysqlTable(
+  "approval_request",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Policy that required the request; deleting the policy leaves the history. */
+    policyId: id("policy_id").references(() => approvalPolicy.id, { onDelete: "set null" }),
+    action: varchar("action", { length: 64 }).notNull(),
+    status: varchar("status", {
+      length: 16,
+      enum: ["pending", "approved", "rejected", "expired", "cancelled"],
+    })
+      .notNull()
+      .default("pending"),
+    scopeType: varchar("scope_type", {
+      length: 16,
+      enum: ["tenant", "group", "device"],
+    })
+      .notNull()
+      .default("tenant"),
+    scopeId: id("scope_id"),
+    requestedByAccountId: id("requested_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    /** Snapshot so history survives an account deletion. */
+    requestedByEmail: varchar("requested_by_email", { length: 320 }),
+    /** `session`, `api-token` or `oauth`; API credentials can request, never approve. */
+    requestedByCredential: varchar("requested_by_credential", { length: 16 }),
+    payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+    /** Metadata-only description shown in the queue. Never secrets. */
+    payloadSummary: json("payload_summary").notNull(),
+    /** Policy snapshot: in-flight requests keep the rules they were created under. */
+    approverPermission: varchar("approver_permission", { length: 64 }),
+    approverRole: varchar("approver_role", { length: 32 }),
+    approvalsRequired: int("approvals_required").notNull(),
+    breakGlass: boolean("break_glass").notNull().default(false),
+    breakGlassReason: text("break_glass_reason"),
+    consumedAt: timestamp("consumed_at"),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    // Queue reads filter by tenant and status, then order by creation.
+    index("approval_request_organization_status_idx").on(
+      table.organizationId,
+      table.status,
+      table.expiresAt,
+    ),
+    // "My pending requests" is the requester's own list. The account id leads
+    // so this also supports the foreign key that nulls it on account deletion.
+    index("approval_request_requester_idx").on(
+      table.requestedByAccountId,
+      table.organizationId,
+      table.createdAt,
+    ),
+    // Approval retention deletes terminal rows by age after filtering status.
+    index("approval_request_status_updated_idx").on(table.status, table.updatedAt),
+    // Reuse/dedupe looks up an existing request for the same binding.
+    index("approval_request_payload_idx").on(table.organizationId, table.payloadHash),
+    index("approval_request_policy_idx").on(table.policyId),
+  ],
+);
+
+/**
+ * One administrator's decision on a request.
+ *
+ * The unique key makes a decision idempotent per approver and prevents a
+ * double-click from counting twice. Rejections are terminal; approvals are
+ * counted until the policy's threshold is met. `rbac` records the effective
+ * role, permission and role kind at decision time.
+ */
+export const approvalDecision = mysqlTable(
+  "approval_decision",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    requestId: id("request_id")
+      .notNull()
+      .references(() => approvalRequest.id, { onDelete: "cascade" }),
+    approverAccountId: id("approver_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    approverEmail: varchar("approver_email", { length: 320 }),
+    decision: varchar("decision", { length: 16, enum: ["approve", "reject"] }).notNull(),
+    /** Bounded free-text rationale; never rendered as HTML. */
+    note: text("note"),
+    /** Effective RBAC snapshot at decision time. */
+    rbac: json("rbac"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("approval_decision_request_approver_unique").on(
+      table.requestId,
+      table.approverAccountId,
+    ),
+    index("approval_decision_organization_created_idx").on(table.organizationId, table.createdAt),
+    index("approval_decision_approver_idx").on(table.approverAccountId),
   ],
 );
 
@@ -973,6 +1338,12 @@ export const invitation = mysqlTable(
     email: varchar("email", { length: 320 }).notNull(),
     role: varchar("role", { length: 32 }),
     customRoleId: id("custom_role_id").references(() => tenantRole.id, { onDelete: "set null" }),
+    /**
+     * Scope tags to apply when the invitation is accepted. Copied into
+     * `member_scope_tag` in the acceptance transaction so an invitee never
+     * starts with wider reach than the inviter chose. Null means unscoped.
+     */
+    scopeTagIds: json("scope_tag_ids").$type<string[]>(),
     status: varchar("status", { length: 32 }).notNull(),
     /** SHA-256 of the one-time acceptance token; the raw token is only in the invite link. */
     tokenHash: varchar("token_hash", { length: 255 }),
@@ -1038,87 +1409,6 @@ export const tenantOwnershipTransfer = mysqlTable(
     // index. The target is displayed, never filtered on.
     index("tenant_ownership_transfer_target_idx").on(table.targetAccountId, table.status),
   ],
-);
-
-export const subscription = mysqlTable(
-  "subscription",
-  {
-    id: id().primaryKey(),
-    plan: shortText("plan").notNull(),
-    referenceId: shortText("reference_id").notNull(),
-    stripeCustomerId: shortText("stripe_customer_id"),
-    stripeSubscriptionId: shortText("stripe_subscription_id"),
-    status: varchar("status", { length: 32 }).notNull(),
-    periodStart: timestamp("period_start"),
-    periodEnd: timestamp("period_end"),
-    cancelAtPeriodEnd: boolean("cancel_at_period_end"),
-    createdAt: timestamp("created_at").notNull(),
-    updatedAt: timestamp("updated_at").notNull(),
-  },
-  (table) => [index("subscription_reference_id_idx").on(table.referenceId)],
-);
-
-/**
- * A self-hosted deployment licensed to run Mattrax.
- *
- * Hosted tenants are billed through `subscription`; a self-hosted operator is
- * billed once for the whole deployment. The license key is stored hashed and
- * authenticates the deployment's calls to the cloud billing API. Usage is
- * reported by the deployment, and the Stripe subscription quantity is
- * reconciled against `deviceCount`.
- */
-export const deploymentLicense = mysqlTable(
-  "deployment_license",
-  {
-    id: id().primaryKey(),
-    name: shortText("name").notNull(),
-    licenseKeyHash: shortText("license_key_hash").notNull(),
-    licenseKeyPrefix: shortText("license_key_prefix").notNull(),
-    /** Public origin of the deployment, bound on first contact. */
-    origin: shortText("origin"),
-    contactEmail: varchar("contact_email", { length: 320 }),
-    stripeCustomerId: shortText("stripe_customer_id"),
-    stripeSubscriptionId: shortText("stripe_subscription_id"),
-    plan: shortText("plan").notNull().default("device"),
-    status: varchar("status", { length: 32 }),
-    deviceCount: int("device_count").notNull().default(0),
-    tenantCount: int("tenant_count").notNull().default(0),
-    periodEnd: timestamp("period_end"),
-    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
-    lastSeenAt: timestamp("last_seen_at"),
-    createdAt: timestamp("created_at").notNull(),
-    updatedAt: timestamp("updated_at").notNull(),
-  },
-  (table) => [
-    uniqueIndex("deployment_license_key_unique").on(table.licenseKeyHash),
-    uniqueIndex("deployment_license_customer_unique").on(table.stripeCustomerId),
-  ],
-);
-
-/**
- * Stripe event ids already applied. The primary key is the dedupe key, so the
- * insert of a duplicate delivery fails atomically in MySQL even when two
- * isolates process the same event concurrently.
- *
- * It is written and removed inside the same transaction as the subscription
- * writes: a failed apply rolls the marker back so Stripe's retry can succeed,
- * and a committed marker means the event was fully applied. There is
- * deliberately no foreign key to `organization` so the ledger survives a
- * tenant teardown; it contains no tenant data beyond the id.
- *
- * The ledger is only ever read by id (the dedupe probe). Daily maintenance
- * prunes it by `received_at`, so that column carries its own index.
- */
-export const stripeEvent = mysqlTable(
-  "stripe_event",
-  {
-    /** Stripe's `event.id` (`evt_…`). */
-    id: id().primaryKey(),
-    type: shortText("type").notNull(),
-    organizationId: id("organization_id"),
-    receivedAt: timestamp("received_at").notNull(),
-  },
-  (table) => [index("stripe_event_received_at_idx").on(table.receivedAt)],
 );
 
 export const accountApiToken = mysqlTable(
@@ -1288,7 +1578,7 @@ export const deviceAppleUser = mysqlTable(
      */
     identitySource: varchar("identity_source", {
       length: 32,
-      enum: ["certificate", "managed-apple-account", "manual"],
+      enum: ["certificate", "managed-apple-account", "byod-sign-in", "manual"],
     }),
     /** The IdP subject (UPN/email) the binding was verified against. */
     identityUpn: shortText("identity_upn"),
@@ -1367,7 +1657,7 @@ export const userGroup = mysqlTable(
     name: shortText("name").notNull(),
     externalId: shortText("external_id"),
     description: text("description"),
-    source: varchar("source", { length: 16, enum: ["scim", "graph", "manual"] })
+    source: varchar("source", { length: 16, enum: ["scim", "graph", "manual", "google"] })
       .notNull()
       .default("manual"),
     createdAt: timestamp("created_at").notNull(),
@@ -1452,6 +1742,92 @@ export const ssoDomain = mysqlTable(
   (table) => [index("sso_domain_organization_idx").on(table.organizationId)],
 );
 
+/**
+ * Account-driven Apple User Enrollment (BYOD) configuration.
+ *
+ * Apple discovers the MDM by fetching
+ * `https://<managed-apple-account-domain>/.well-known/com.apple.remotemanagement`.
+ * That document can only be served from a hostname the tenant controls and has
+ * pointed at this deployment, so `domain` is an explicit, verified choice
+ * rather than a value derived from the tenant's directory. `validatedAt` is
+ * written only by the admin "test" action after a public-origin fetch of the
+ * document succeeds.
+ *
+ * `hardwareValidationRequired` keeps an unvalidated implementation from being
+ * exposed by default: the discovery document answers 403 until an operator has
+ * confirmed a real-device enrollment and set `hardwareValidatedAt` (or turned
+ * the requirement off for a controlled test).
+ */
+export const appleByodConfig = mysqlTable(
+  "apple_byod_config",
+  {
+    organizationId: id("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    enabled: boolean("enabled").notNull().default(false),
+    /** FQDN of the Managed Apple Account domain, pointed at this deployment. */
+    domain: shortText("domain"),
+    /** Last successful public-origin verification of the discovery document. */
+    validatedAt: timestamp("validated_at"),
+    hardwareValidationRequired: boolean("hardware_validation_required")
+      .notNull()
+      .default(true),
+    /** Set by an operator after a real-device account-driven enrollment. */
+    hardwareValidatedAt: timestamp("hardware_validated_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [uniqueIndex("apple_byod_config_domain_unique").on(table.domain)],
+);
+
+/**
+ * One account-driven BYOD enrollment request, from the device's first signed
+ * POST to the signed profile download.
+ *
+ * `requestHash` binds the access token to the bytes of the device request, so
+ * a token captured from the browser callback cannot be redeemed for a
+ * different device request. `tokenHash` stores only a SHA-256 digest and is
+ * consumed by one conditional UPDATE, which makes redemption single-use.
+ */
+export const appleByodEnrollment = mysqlTable(
+  "apple_byod_enrollment",
+  {
+    id: shortText("id").primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** User identifier from discovery, and the profile's AssignedManagedAppleID. */
+    managedAppleAccount: varchar("managed_apple_account", { length: 320 }),
+    /** SHA-256 of the first signed enrollment request body. */
+    requestHash: varchar("request_hash", { length: 64 }).notNull(),
+    /** Mattrax account authenticated by the tenant's IdP. */
+    accountId: id("account_id").references(() => account.id, { onDelete: "set null" }),
+    /** Directory person the resulting EnrollmentUserID channel binds to. */
+    directoryUserId: id("directory_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** SHA-256 of the one-time access token returned to Apple. */
+    tokenHash: varchar("token_hash", { length: 64 }),
+    tokenExpiresAt: timestamp("token_expires_at"),
+    tokenConsumedAt: timestamp("token_consumed_at"),
+    challengeExpiresAt: timestamp("challenge_expires_at").notNull(),
+    authorizedAt: timestamp("authorized_at"),
+    /** Apple's per-enrollment identifier, learned on the first device check-in. */
+    appleEnrollmentId: shortText("apple_enrollment_id"),
+    deviceId: id("device_id").references(() => device.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("apple_byod_enrollment_token_unique").on(table.tokenHash),
+    index("apple_byod_enrollment_organization_idx").on(table.organizationId),
+    index("apple_byod_enrollment_device_idx").on(table.deviceId),
+    index("apple_byod_enrollment_account_idx").on(table.accountId),
+    index("apple_byod_enrollment_directory_user_idx").on(table.directoryUserId),
+    index("apple_byod_enrollment_challenge_expires_idx").on(table.challengeExpiresAt),
+  ],
+);
+
 /** Microsoft Graph directory sync state and delta cursors. */
 export const entraDirectorySync = mysqlTable("entra_directory_sync", {
   organizationId: id("organization_id")
@@ -1461,6 +1837,45 @@ export const entraDirectorySync = mysqlTable("entra_directory_sync", {
   usersDeltaLink: text("users_delta_link"),
   groupsDeltaLink: text("groups_delta_link"),
   domainsSyncedAt: timestamp("domains_synced_at"),
+  lastSyncedAt: timestamp("last_synced_at"),
+  lastAttemptedAt: timestamp("last_attempted_at"),
+  lastError: text("last_error"),
+  lastCounts: json("last_counts"),
+  status: varchar("status", { length: 32, enum: ["idle", "running", "error"] })
+    .notNull()
+    .default("idle"),
+  /** Automatic sync cadence in minutes. `0` disables scheduled runs. */
+  syncIntervalMinutes: int("sync_interval_minutes").notNull().default(0),
+  /** When the next automatic sync is due; null until a cadence is configured. */
+  nextSyncAt: timestamp("next_sync_at"),
+  /** What started the most recent run (`manual` or `scheduled`). */
+  lastRunTrigger: varchar("last_run_trigger", { length: 16, enum: ["manual", "scheduled"] }),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
+/**
+ * Google Workspace directory sync state and tenant credentials.
+ *
+ * The service-account JSON is sealed with the deployment `AUTH_SECRET`; only
+ * its `client_email` is stored in the clear so the dashboard can show which
+ * identity is connected. A tenant without sealed credentials may use the
+ * deployment-wide service account instead. Admin email and customer are public
+ * settings, never secrets.
+ */
+export const googleDirectorySync = mysqlTable("google_directory_sync", {
+  organizationId: id("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  /** Workspace super-admin impersonated via domain-wide delegation. */
+  adminEmail: shortText("admin_email"),
+  /** `my_customer` (all users) or a primary domain. */
+  customer: shortText("customer"),
+  /** Display-only `client_email` of the sealed service account. */
+  serviceAccountEmail: shortText("service_account_email"),
+  /** AES-256-GCM sealed service-account JSON; never returned by the API. */
+  sealedServiceAccount: text("sealed_service_account"),
   lastSyncedAt: timestamp("last_synced_at"),
   lastAttemptedAt: timestamp("last_attempted_at"),
   lastError: text("last_error"),
@@ -1525,7 +1940,7 @@ export const scimToken = mysqlTable(
  *   an operator action.
  *
  * `ip` stores the verified client address for security audit. It is the value
- * the rate limiter uses (`@mattrax/net` trust policy), never a caller-supplied
+ * the rate limiter uses (`@mattrax/cloud-services` trust policy), never a caller-supplied
  * `x-forwarded-for` hop; deployments that cannot prove an address store null.
  * `userAgent` is bounded to 512 characters. Certificate PEMs, tokens, payload
  * bodies and device secrets are never written here.
@@ -1579,7 +1994,28 @@ export const auditLog = mysqlTable(
   },
   (table) => [
     index("audit_log_organization_created_idx").on(table.organizationId, table.createdAt),
-    index("audit_log_organization_action_idx").on(table.organizationId, table.action),
+    // Search/export add one equality filter before paging newest-first. The
+    // descending keys match the query exactly: MySQL otherwise prefers the
+    // unfiltered tenant index for deep keyset ranges. The action index replaces
+    // its narrower prefix rather than maintaining both on every audit insert.
+    index("audit_log_organization_category_created_idx").on(
+      table.organizationId,
+      table.category,
+      desc(table.createdAt),
+      desc(table.id),
+    ),
+    index("audit_log_organization_action_created_idx").on(
+      table.organizationId,
+      table.action,
+      desc(table.createdAt),
+      desc(table.id),
+    ),
+    index("audit_log_organization_protocol_created_idx").on(
+      table.organizationId,
+      table.protocol,
+      desc(table.createdAt),
+      desc(table.id),
+    ),
     // Device activity reads one target's newest entries; without this the
     // query scans the tenant's whole stream before filtering the target.
     index("audit_log_organization_target_created_idx").on(
@@ -1606,6 +2042,46 @@ export const auditLog = mysqlTable(
     // bound its scan to the cooldown window, but `(action, created_at)` would
     // be the exact shape for it; the prune is what this index exists for.
     index("audit_log_created_idx").on(table.createdAt),
+  ],
+);
+
+/**
+ * Transient realtime invalidation stream.
+ *
+ * The dashboard does not mirror MDM state; it needs to know which cached
+ * queries became stale. `audit_log` cannot serve as the cursor source: its
+ * ids are random, device check-ins are folded into an existing row inside a
+ * fixed time bucket (so the newest update has an older `created_at`), and its
+ * retention is a year. This table is append-only with an auto-increment cursor,
+ * carries no PII, and is pruned after a day (far longer than a browser stream
+ * or a reconnect).
+ *
+ * `device_id` is a plain id rather than a foreign key: the event is a
+ * notification, not history, and a device delete must not cascade-delete a
+ * tenant's pending notifications. `organization_id` does cascade so tenant
+ * teardown leaves nothing behind.
+ */
+export const realtimeEvent = mysqlTable(
+  "realtime_event",
+  {
+    /** Monotonic cursor; also the SSE `id:`. */
+    seq: bigint("seq", { mode: "number" }).autoincrement().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** `device.checkin`, `device.command`, ... (see enterprise-domain/realtime). */
+    kind: varchar("kind", { length: 32 }).notNull(),
+    /** Internal device row the event concerns; null for tenant-wide events. */
+    deviceId: id("device_id"),
+    protocol: varchar("protocol", { length: 16, enum: ["apple", "win", "android"] }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    // The tail query is `organization_id = ? AND seq > ? ORDER BY seq`.
+    // The composite also covers the organisation foreign key.
+    index("realtime_event_organization_seq_idx").on(table.organizationId, table.seq),
+    // Daily retention deletes by age across every tenant.
+    index("realtime_event_created_idx").on(table.createdAt),
   ],
 );
 
@@ -1671,7 +2147,15 @@ export const webhookDelivery = mysqlTable(
   (table) => [
     index("webhook_delivery_endpoint_created_idx").on(table.endpointId, table.createdAt),
     index("webhook_delivery_organization_created_idx").on(table.organizationId, table.createdAt),
-    index("webhook_delivery_status_attempt_idx").on(table.status, table.attempt),
+    // The retry queue filters failed rows below the attempt cap and reads
+    // oldest-first. Creation time precedes the residual attempt predicate so
+    // the index supplies the order without a filesort; no other query uses the
+    // old status/attempt prefix.
+    index("webhook_delivery_status_created_attempt_idx").on(
+      table.status,
+      table.createdAt,
+      table.attempt,
+    ),
     // Retention deletes by age across every endpoint; the endpoint- and
     // organisation-leading indexes cannot serve that prune.
     index("webhook_delivery_created_idx").on(table.createdAt),
@@ -1935,6 +2419,59 @@ export const androidPubSubMessage = mysqlTable(
   ],
 );
 
+/**
+ * Cached copy of an external OS-update feed.
+ *
+ * The feed is deployment-wide (not tenant-scoped): SOFA publishes the same
+ * macOS releases for every customer. `payload` is the trimmed catalog this
+ * product compares against, not the raw upstream document, so a cache row
+ * stays small. `checked_at` records the last attempt (success or failure) and
+ * drives both the refresh interval and the failure cooldown; `last_error` is a
+ * stable code so a feed outage never stores or returns upstream HTML.
+ */
+export const softwareUpdateFeed = mysqlTable("software_update_feed", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  sourceUrl: text("source_url").notNull(),
+  payload: json("payload"),
+  fetchedAt: timestamp("fetched_at"),
+  checkedAt: timestamp("checked_at").notNull(),
+  lastError: varchar("last_error", { length: 64 }),
+});
+
+/**
+ * Tenant OS update policy, one row per platform family.
+ *
+ * `minimum_version` is the operator's target, `enforcement` says whether it is
+ * only reported (`warn`) or acted on (`enforce`), and `deferral_days` is a
+ * grace period measured from `updated_at` so every save restarts the window.
+ * `off` keeps the row (and its last value) without applying a minimum.
+ *
+ * The row is keyed by (organisation, platform): there is never more than one
+ * active rule per platform, and the primary key also serves the tenant read.
+ */
+export const tenantOsPolicy = mysqlTable(
+  "tenant_os_policy",
+  {
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    platform: varchar("platform", {
+      length: 16,
+      enum: ["macos", "ios", "ipados", "windows", "android"],
+    }).notNull(),
+    minimumVersion: varchar("minimum_version", { length: 64 }),
+    enforcement: varchar("enforcement", {
+      length: 16,
+      enum: ["off", "warn", "enforce"],
+    })
+      .notNull()
+      .default("off"),
+    deferralDays: int("deferral_days").notNull().default(0),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.organizationId, table.platform] })],
+);
+
 export const device = mysqlTable(
   "device",
   {
@@ -1958,6 +2495,38 @@ export const device = mysqlTable(
     notes: text("notes"),
     assetTag: shortText("asset_tag"),
     physicalName: shortText("physical_name"),
+    /** When `physicalName` was last written from a device report. */
+    physicalNameAt: timestamp("physical_name_at"),
+    /**
+     * "Apply name to device with each sync". Null means the administrator has
+     * never chosen; the dashboard defaults it on for supervised Apple devices.
+     */
+    namePushEnabled: boolean("name_push_enabled"),
+    /** The last name an Apple `Settings`/`DeviceName` command acknowledged. */
+    appliedName: shortText("applied_name"),
+    /** When that acknowledgement arrived. */
+    appliedNameAt: timestamp("applied_name_at"),
+    /**
+     * Per-device lock screen message override. Null means the device uses its
+     * policy's lock-screen default, when one is assigned.
+     */
+    lockScreenMessage: text("lock_screen_message"),
+    /** Append the asset tag to the message; null inherits the policy default. */
+    lockScreenIncludeAssetTag: boolean("lock_screen_include_asset_tag"),
+    /** The last lock screen message the device acknowledged. */
+    appliedLockScreenMessage: text("applied_lock_screen_message"),
+    /** The asset tag included with that message, or null when none was sent. */
+    appliedLockScreenAssetTag: shortText("applied_lock_screen_asset_tag"),
+    /** The management name when that message was acknowledged. */
+    appliedLockScreenName: shortText("applied_lock_screen_name"),
+    /** The management name at the last queue, used to de-duplicate a rename. */
+    queuedLockScreenName: shortText("queued_lock_screen_name"),
+    /** Digest of the last queued lock screen profile, for retry throttling. */
+    queuedLockScreenDigest: shortText("queued_lock_screen_digest"),
+    /** When the lock screen profile was last queued. */
+    queuedLockScreenAt: timestamp("queued_lock_screen_at"),
+    /** When the lock screen message acknowledgement arrived. */
+    appliedLockScreenAt: timestamp("applied_lock_screen_at"),
     vendor: shortText("vendor"),
     osEdition: shortText("os_edition"),
     osVersion: shortText("os_version"),
@@ -1997,6 +2566,12 @@ export const device = mysqlTable(
     securityLockdownMode: boolean("security_lockdown_mode"),
     /** Number of certificates in the last `security.certificate.list` report. */
     managedCertificateCount: int("managed_certificate_count"),
+    /**
+     * Managed certificates from the last `security.certificate.list` report:
+     * identifier, subject, identity flag, SHA-256 fingerprint and expiry. The
+     * status item is a full list, so a report replaces this value.
+     */
+    managedCertificates: json("managed_certificates"),
     /**
      * Apps from the last `mdm.app` report (MDM-installed apps only; DDM-managed
      * apps are excluded by Apple). Bounded by the ingester.
@@ -2042,6 +2617,10 @@ export const device = mysqlTable(
     domainName: shortText("domain_name"),
     /** Windows `DMClient/Provider/{ProviderID}/AADDeviceID`, when Entra joined. */
     entraDeviceId: shortText("entra_device_id"),
+    /** When BitLocker key metadata was last read from Microsoft Entra ID. */
+    bitLockerKeysSyncedAt: timestamp("bitlocker_keys_synced_at"),
+    /** Bounded Graph failure from the last BitLocker key sync. */
+    bitLockerKeysSyncError: text("bitlocker_keys_sync_error"),
     /**
      * Windows activation state reported by mattraxd's WMI sample.
      * Null for non-Windows devices and Windows devices without the agent.
@@ -2093,6 +2672,9 @@ export const device = mysqlTable(
     // needed.
     index("device_organization_name_idx").on(table.organizationId, table.name),
     index("device_organization_last_seen_idx").on(table.organizationId, table.lastSeenAt),
+    // Daily maintenance scans every tenant for enrolled devices that stopped
+    // checking in. Tenant-leading indexes cannot serve that global sweep.
+    index("device_status_last_seen_idx").on(table.status, table.lastSeenAt),
     index("device_organization_status_idx").on(table.organizationId, table.status, table.name),
     // `sort=enrolledAt` (ascending by default) pages by `enrolled_at, id`; the
     // composite supplies that order through the implicit primary-key suffix.
@@ -2189,12 +2771,31 @@ export const attributeDefinition = mysqlTable(
     visibility: varchar("visibility", { length: 16, enum: ["visible", "hidden"] })
       .notNull()
       .default("visible"),
+    /**
+     * Where the value comes from. `manual` is the dashboard, CSV import and
+     * enrollment answers; `script` is only ever written by the result of the
+     * bound script, so manual writes are rejected; `directory` records an
+     * intended directory connector, which is not implemented yet, so the
+     * attribute still accepts manual values.
+     */
+    source: varchar("source", { length: 16, enum: ["manual", "script", "directory"] })
+      .notNull()
+      .default("manual"),
+    /** Script that reports a `script`-sourced value; null for the other sources. */
+    scriptId: id("script_id").references(() => script.id, { onDelete: "set null" }),
+    /**
+     * JSON key on the script's stdout object; null means the attribute key.
+     * Line-per-value output ignores it and uses the attribute list order.
+     */
+    scriptOutputKey: shortText("script_output_key"),
     sortOrder: int("sort_order").notNull().default(0),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
   (table) => [
     uniqueIndex("attribute_definition_organization_key_unique").on(table.organizationId, table.key),
+    // Ingestion looks up every attribute bound to the reporting script.
+    index("attribute_definition_script_idx").on(table.scriptId),
   ],
 );
 
@@ -2229,6 +2830,47 @@ export const deviceAttribute = mysqlTable(
     // Every read and search filters by tenant before joining the registry.
     index("device_attribute_organization_idx").on(table.organizationId),
     index("device_attribute_attribute_idx").on(table.attributeId),
+  ],
+);
+
+/**
+ * Last collection attempt for one device attribute that is not edited by hand.
+ *
+ * A successful collection clears `lastError` and moves `lastCollectedAt`; a
+ * failed one records the error and leaves `lastCollectedAt` alone, so the
+ * dashboard can say both "last worked at" and "failing since". There is no row
+ * until the bound script reports for that device.
+ */
+export const attributeCollection = mysqlTable(
+  "attribute_collection",
+  {
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    attributeId: id("attribute_id")
+      .notNull()
+      .references(() => attributeDefinition.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Definition source at the last attempt; only `script` is implemented. */
+    source: varchar("source", { length: 16, enum: ["script", "directory"] }).notNull(),
+    /** Script that produced the attempt; null once the definition is unbound. */
+    scriptId: id("script_id").references(() => script.id, { onDelete: "set null" }),
+    /** Last successful collection; a later failure does not move it. */
+    lastCollectedAt: timestamp("last_collected_at"),
+    /** Most recent failure text, in operator wording; never script output. */
+    lastError: text("last_error"),
+    lastErrorAt: timestamp("last_error_at"),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.deviceId, table.attributeId] }),
+    index("attribute_collection_organization_idx").on(table.organizationId),
+    index("attribute_collection_attribute_idx").on(table.attributeId),
+    // Covers the foreign key so InnoDB's implicit index is not the only one
+    // (see `schemaIndexes.test.ts`), and serves "drop this script's state".
+    index("attribute_collection_script_idx").on(table.scriptId),
   ],
 );
 
@@ -2364,8 +3006,10 @@ export const androidDevice = mysqlTable(
  * remote actions (lock, wipe, app install) still use the classic command
  * protocol and are delivered on the next device check-in.
  *
- * Lifecycle: `queued` -> `sent` -> `deferred` (the device returned NotNow) ->
- * terminal (`succeeded`, `failed`, `expired`, `superseded`, `cancelled`).
+ * Lifecycle: `queued` -> `sent` -> `accepted` (device acknowledged an async
+ * command) / `deferred` (the device returned NotNow) -> terminal
+ * (`succeeded`, `failed`, `expired`, `superseded`, `cancelled`). An accepted
+ * command is never re-delivered; its result/status channel closes it.
  * `expiresAt` is the hard deadline derived from the per-request-type budget; a
  * command is never delivered or retried after it, even if the device only
  * comes back online weeks later.
@@ -2505,7 +3149,104 @@ export const deviceApple = mysqlTable("device_apple", {
    * re-queue the same command.
    */
   securityInfoRequestedAt: timestamp("security_info_requested_at"),
+  /**
+   * Lost Mode state. Apple only accepts `EnableLostMode` on supervised
+   * iPhone/iPadOS, so a Mac, Apple TV or BYOD device never sets these columns.
+   * The message fields are what the operator asked for; the acknowledged clock
+   * is set only when the device accepts the command.
+   */
+  lostModeEnabled: boolean("lost_mode_enabled").notNull().default(false),
+  lostModeMessage: text("lost_mode_message"),
+  lostModePhone: shortText("lost_mode_phone"),
+  lostModeFootnote: text("lost_mode_footnote"),
+  lostModeRequestedAt: timestamp("lost_mode_requested_at"),
+  lostModeAcknowledgedAt: timestamp("lost_mode_acknowledged_at"),
+  /**
+   * Last location the device reported from Apple's `DeviceLocation` command
+   * while Lost Mode is active. Stored as text because Apple reports floats and
+   * the value is only ever displayed, never calculated with.
+   */
+  lostModeLatitude: shortText("lost_mode_latitude"),
+  lostModeLongitude: shortText("lost_mode_longitude"),
+  lostModeHorizontalAccuracy: shortText("lost_mode_horizontal_accuracy"),
+  lostModeVerticalAccuracy: shortText("lost_mode_vertical_accuracy"),
+  lostModeLocationReportedAt: timestamp("lost_mode_location_reported_at"),
+  lostModeLocationUpdatedAt: timestamp("lost_mode_location_updated_at"),
+  /**
+   * The GUID of the managed local administrator Apple created during ADE
+   * setup. `SetAutoAdminPassword` needs it; Apple reports it in `UserList`,
+   * not in the `AccountConfiguration` result. Null until the first
+   * `UserList` answer names the managed account.
+   */
+  localAdminGuid: shortText("local_admin_guid"),
+  /**
+   * The latest Lost Mode command Mattrax queued. An acknowledgement for an
+   * older command must not flip the state after a newer request superseded it.
+   */
+  lostModeCommandId: shortText("lost_mode_command_id"),
+  /** When a `UserList` answer last replaced the local-account inventory. */
+  localAccountsUpdatedAt: timestamp("local_accounts_updated_at"),
+  /** When Mattrax last queued `UserList`; throttles the daily refresh. */
+  localAccountsRequestedAt: timestamp("local_accounts_requested_at"),
 });
+
+/**
+ * One local account reported by macOS `UserList`.
+ *
+ * Metadata only: Apple never returns a password, home-directory contents or
+ * keychain data. Apple reports the username, full name, UID, GUID, secure
+ * token state, login state and data quota. It does **not** report whether an
+ * account is an administrator or when it last logged in, so those columns stay
+ * null rather than guessing.
+ */
+export const deviceLocalAccount = mysqlTable(
+  "device_local_account",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    /** macOS short name (`UserName`). */
+    username: shortText("username").notNull(),
+    fullName: shortText("full_name"),
+    uid: int("uid"),
+    /** `GeneratedUID` from `UserList`; also identifies the managed admin. */
+    guid: shortText("guid"),
+    /**
+     * Whether the account is an administrator. Apple does not report this, so
+     * it is null for every account except the managed administrator Mattrax
+     * created, which is known to be an admin. Never guessed from the UID.
+     */
+    isAdmin: boolean("is_admin"),
+    /** Whether the managed administrator is the one Mattrax provisioned. */
+    isManaged: boolean("is_managed").notNull().default(false),
+    /** `HasSecureToken`; only macOS 11+ reports it. */
+    hasSecureToken: boolean("has_secure_token"),
+    /** `IsLoggedIn` at the time of the report. */
+    isLoggedIn: boolean("is_logged_in"),
+    mobileAccount: boolean("mobile_account"),
+    /** `DataQuota`/`DataUsed` in bytes; iOS-family fields only. */
+    /** Bytes; Apple can report values above int32 (bigint column). */
+    dataQuota: bigint("data_quota", { mode: "number" }),
+    dataUsed: bigint("data_used", { mode: "number" }),
+    /**
+     * When the account last logged in. Apple's `UserList` does not report it,
+     * so this is null unless a future source provides it.
+     */
+    lastLoginAt: timestamp("last_login_at"),
+    firstSeenAt: timestamp("first_seen_at").notNull(),
+    /** Last report that still listed this account. */
+    lastSeenAt: timestamp("last_seen_at").notNull(),
+    reportedAt: timestamp("reported_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("device_local_account_device_username_unique").on(table.deviceId, table.username),
+    index("device_local_account_organization_idx").on(table.organizationId, table.deviceId),
+  ],
+);
 
 /**
  * Device secrets escrowed from a managed device. Values are sealed with the
@@ -2529,6 +3270,14 @@ export const deviceSecret = mysqlTable(
         "activation_lock_bypass_code",
         "recovery_lock_password",
         "local_admin_password",
+        /**
+         * A rotation queued but not yet acknowledged. It replaces
+         * `local_admin_password` only when the device reports success, so a
+         * reveal never shows a password the device never applied.
+         */
+        "local_admin_password_pending",
+        /** Cached Windows LAPS password retrieved from Microsoft Entra ID. */
+        "windows_laps_password",
       ],
     }).notNull(),
     /** AES-256-GCM sealed value produced by `sealSecret`. */
@@ -2545,10 +3294,207 @@ export const deviceSecret = mysqlTable(
     updatedAt: timestamp("updated_at").notNull(),
     /** When the escrowed value last changed (not merely re-reported). */
     rotatedAt: timestamp("rotated_at"),
+    /**
+     * For `local_admin_password_pending`: the command whose password hash this
+     * value belongs to. The secret is promoted only when that command is the
+     * one the device acknowledged.
+     */
+    pendingCommandId: shortText("pending_command_id"),
   },
   (table) => [
     primaryKey({ columns: [table.deviceId, table.kind] }),
     index("device_secret_organization_idx").on(table.organizationId),
+  ],
+);
+
+/**
+ * One BitLocker recovery key known from Microsoft Entra ID for a Windows
+ * device. The list endpoint supplies metadata; an authorised reveal fetches
+ * the key with `$select=key` and caches it sealed here. Multiple volumes and
+ * keys coexist, hence the separate row rather than `device_secret`'s
+ * one-row-per-kind shape.
+ */
+export const deviceBitlockerKey = mysqlTable(
+  "device_bitlocker_key",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    /** `operating-system`, `fixed-data` or `removable-data`. */
+    volumeType: varchar("volume_type", { length: 32 }).notNull(),
+    /** Internal grouping label; Graph exposes volume type, not a volume UUID. */
+    volumeId: shortText("volume_id").notNull(),
+    /** BitLocker recovery key id returned by Microsoft Graph. */
+    keyId: shortText("key_id").notNull(),
+    /** `numeric-password` (48 digits) or `recovery-password` (legacy key). */
+    keyType: varchar("key_type", { length: 32 }).notNull(),
+    /**
+     * Microsoft Graph does not return the protector type. `entra-id` is the
+     * source; the key came from the BitLocker recovery key store.
+     */
+    protectorType: shortText("protector_type").notNull(),
+    /**
+     * AES-256-GCM sealed value produced by `sealSecret`. Null until an
+     * authorised reveal fetches `$select=key` from Graph and caches it.
+     */
+    sealedValue: text("sealed_value"),
+    /** Where the key metadata came from. */
+    source: varchar("source", { length: 16, enum: ["entra-id"] })
+      .notNull()
+      .default("entra-id"),
+    /** Entra `createdDateTime`: when the key was first backed up. */
+    capturedAt: timestamp("captured_at").notNull(),
+    /** When the replacement key was captured after a rotation. */
+    rotatedAt: timestamp("rotated_at"),
+    /** Last time Graph still listed this key. */
+    reportedAt: timestamp("reported_at").notNull(),
+    /** Set when a complete sync no longer contains this key. */
+    retiredAt: timestamp("retired_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("device_bitlocker_key_device_key_unique").on(table.deviceId, table.keyId),
+    index("device_bitlocker_key_organization_idx").on(table.organizationId, table.deviceId),
+    index("device_bitlocker_key_device_volume_idx").on(table.deviceId, table.volumeId),
+  ],
+);
+
+/**
+ * Windows LAPS metadata. The password itself is sealed in `device_secret`; this
+ * row records where it came from, when Entra last backed it up and the last
+ * reset status so the device page can warn about an expired password without
+ * reading the secret.
+ */
+export const deviceWindowsLaps = mysqlTable(
+  "device_windows_laps",
+  {
+    deviceId: id("device_id")
+      .primaryKey()
+      .references(() => device.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    accountName: shortText("account_name"),
+    accountSid: shortText("account_sid"),
+    /** Entra `backupDateTime` for the cached password. */
+    backupAt: timestamp("backup_at"),
+    /** Entra `refreshDateTime`; when Windows expects to rotate it. */
+    refreshAt: timestamp("refresh_at"),
+    retrievedAt: timestamp("retrieved_at"),
+    source: varchar("source", { length: 32, enum: ["entra-id", "active-directory", "unknown"] })
+      .notNull()
+      .default("unknown"),
+    /** When an operator last queued `LAPS/Actions/ResetPassword`. */
+    resetRequestedAt: timestamp("reset_requested_at"),
+    /** Bounded `ResetPasswordStatus` or the last retrieval failure. */
+    resetStatus: shortText("reset_status"),
+    lastError: text("last_error"),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [index("device_windows_laps_organization_idx").on(table.organizationId)],
+);
+
+/**
+ * One on-demand Windows diagnostic archive. The CSP uploads the ZIP to a
+ * short-lived signed URL; this row tracks the request, the uploaded object and
+ * its expiry. Only metadata is stored in MySQL; bytes live in R2.
+ */
+export const deviceDiagnosticsArchive = mysqlTable(
+  "device_diagnostics_archive",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    requestedByAccountId: shortText("requested_by_account_id").notNull(),
+    requestedByEmail: varchar("requested_by_email", { length: 320 }).notNull(),
+    /** The CSP `Collection/ID`; reused requests are ignored by Windows. */
+    collectionId: shortText("collection_id").notNull(),
+    /** The `device_command` that invoked ArchiveDefinition. */
+    commandId: shortText("command_id"),
+    status: varchar("status", { length: 16, enum: ["pending", "uploaded", "failed", "expired"] })
+      .notNull()
+      .default("pending"),
+    r2Key: text("r2_key"),
+    sizeBytes: bigint("size_bytes", { mode: "number" }),
+    sha256: shortText("sha256"),
+    contentType: varchar("content_type", { length: 64 }),
+    /** Bounded failure detail; never an upload token. */
+    error: text("error"),
+    requestedAt: timestamp("requested_at").notNull(),
+    uploadedAt: timestamp("uploaded_at"),
+    expiresAt: timestamp("expires_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("device_diagnostics_archive_device_requested_idx").on(table.deviceId, table.requestedAt),
+    index("device_diagnostics_archive_organization_requested_idx").on(
+      table.organizationId,
+      table.requestedAt,
+    ),
+    // Maintenance expires pending and uploaded rows by deadline, regardless
+    // of status, so the index must lead with `expires_at`.
+    index("device_diagnostics_archive_expires_idx").on(table.expiresAt),
+  ],
+);
+
+/** One device entry in a handover archive's audit metadata; never a value. */
+export type DeviceHandoverArchiveEntry = {
+  readonly id: string;
+  readonly name: string;
+  readonly serial: string | null;
+  readonly secretKinds: ReadonlyArray<string>;
+};
+
+/**
+ * A passphrase-sealed device handover archive stored in R2.
+ *
+ * The row keeps only presence metadata: which devices and secret kinds were
+ * exported, who asked and why. The passphrase is never persisted, so losing the
+ * row (or the bucket) cannot expose an archive, and losing the passphrase
+ * cannot be recovered by Mattrax. The download is single-use: `downloadedAt`
+ * is set on the first successful read and the object is then deleted.
+ */
+export const deviceHandoverArchive = mysqlTable(
+  "device_handover_archive",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    createdByAccountId: shortText("created_by_account_id").notNull(),
+    createdByEmail: varchar("created_by_email", { length: 320 }).notNull(),
+    /** Operator-supplied reason, truncated before it is written. */
+    reason: text("reason").notNull(),
+    deviceCount: int("device_count").notNull(),
+    /** Devices and the kinds each one contributed; values stay in R2. */
+    devices: json("devices").$type<ReadonlyArray<DeviceHandoverArchiveEntry>>().notNull(),
+    secretKinds: json("secret_kinds").$type<ReadonlyArray<string>>().notNull(),
+    r2Key: text("r2_key").notNull(),
+    sizeBytes: int("size_bytes").notNull(),
+    /** SHA-256 of the envelope bytes written to R2, for integrity checks. */
+    sha256: shortText("sha256").notNull(),
+    /** Envelope format version recorded so a reader rejects what it cannot open. */
+    envelopeVersion: int("envelope_version").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    /** After this the signed download token and the row both refuse. */
+    expiresAt: timestamp("expires_at").notNull(),
+    /** Set once, on the first successful download. */
+    downloadedAt: timestamp("downloaded_at"),
+  },
+  (table) => [
+    index("device_handover_archive_organization_created_idx").on(
+      table.organizationId,
+      table.createdAt,
+    ),
   ],
 );
 
@@ -2612,6 +3558,166 @@ export const deviceApplication = mysqlTable(
     // `bundle_id` without a `device_id`, so the primary key serves those and
     // there is no `(organization_id, bundle_id)` index.
     index("device_application_organization_idx").on(table.organizationId),
+  ],
+);
+
+/**
+ * One tenant deny-list entry for an application that must not be installed or
+ * run. Unlike `application`, which is an install catalogue, a restricted
+ * software record is independent of installation policy: the same title can
+ * be both catalogued and restricted, and the restrictive rule wins.
+ *
+ * `matchKey` is a normalised copy of `matchValue`. It is what the unique index
+ * uses so two administrators cannot create rules that differ only by case or
+ * surrounding whitespace.
+ */
+export const restrictedSoftware = mysqlTable(
+  "restricted_software",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    /**
+     * Which property the inventory or agent compares. The value is validated
+     * against the platform so a bundle id can never be stored for Windows or
+     * an MSI ProductCode for Android.
+     */
+    matchType: varchar("match_type", {
+      length: 24,
+      enum: ["bundle-id", "process-name", "msi-product-code", "android-package"],
+    }).notNull(),
+    matchValue: shortText("match_value").notNull(),
+    /** Lower-cased, trimmed `matchValue`; the unique key and match input. */
+    matchKey: shortText("match_key").notNull(),
+    action: varchar("action", {
+      length: 20,
+      enum: ["block-install", "kill-process", "delete-app"],
+    }).notNull(),
+    /** Shown to the device user by an agent that can display one. */
+    message: text("message"),
+    /** Explicit recipients for the optional violation email. */
+    notificationEmails: json("notification_emails").$type<Array<string>>(),
+    enabled: boolean("enabled").notNull().default(true),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("restricted_software_match_unique").on(
+      table.organizationId,
+      table.platform,
+      table.matchKey,
+    ),
+    index("restricted_software_organization_created_idx").on(table.organizationId, table.createdAt),
+    // Supports the author foreign key when an account is deleted.
+    index("restricted_software_created_by_idx").on(table.createdByAccountId),
+  ],
+);
+
+/**
+ * Device or group scope for a restricted software rule.
+ *
+ * `include` adds a target; `exclude` vetoes group delivery. A direct device
+ * include wins over a group exclude, matching policy resolution so an
+ * administrator can carve one device back in.
+ */
+export const restrictedSoftwareAssignment = mysqlTable(
+  "restricted_software_assignment",
+  {
+    restrictedSoftwareId: id("restricted_software_id")
+      .notNull()
+      .references(() => restrictedSoftware.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    targetType: varchar("target_type", { length: 16, enum: ["device", "group"] }).notNull(),
+    targetId: id("target_id").notNull(),
+    mode: varchar("mode", { length: 16, enum: ["include", "exclude"] })
+      .notNull()
+      .default("include"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.restrictedSoftwareId, table.targetType, table.targetId] }),
+    index("restricted_software_assignment_target_idx").on(table.targetType, table.targetId),
+    index("restricted_software_assignment_organization_idx").on(table.organizationId),
+  ],
+);
+
+/**
+ * One detected violation of a restricted software rule on one device.
+ *
+ * The unique key `(restrictedSoftwareId, deviceId)` is the de-duplication
+ * boundary: a later inventory report updates `lastDetectedAt` and
+ * `occurrenceCount` instead of appending another row. A violation that was
+ * resolved and then reappears is reopened with a fresh audit/webhook event.
+ */
+export const restrictedSoftwareViolation = mysqlTable(
+  "restricted_software_violation",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    restrictedSoftwareId: id("restricted_software_id")
+      .notNull()
+      .references(() => restrictedSoftware.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    /** The rule's action when this episode was recorded; an edit resets enforcement. */
+    action: varchar("action", {
+      length: 20,
+      enum: ["block-install", "kill-process", "delete-app"],
+    }).notNull(),
+    matchType: shortText("match_type").notNull(),
+    matchKey: shortText("match_key").notNull(),
+    /** Inventory identifier that matched (bundle id, package or ProductCode). */
+    matchedBundleId: shortText("matched_bundle_id").notNull(),
+    applicationName: shortText("application_name"),
+    applicationVersion: shortText("application_version"),
+    status: varchar("status", { length: 16, enum: ["open", "resolved"] })
+      .notNull()
+      .default("open"),
+    /** Honest enforcement state for the platform/action combination. */
+    enforcementState: varchar("enforcement_state", {
+      length: 20,
+      enum: ["detection-only", "pending", "enforced", "failed"],
+    })
+      .notNull()
+      .default("detection-only"),
+    /** Bounded, secret-free explanation of the last enforcement attempt. */
+    enforcementDetail: text("enforcement_detail"),
+    occurrenceCount: int("occurrence_count").notNull().default(1),
+    firstDetectedAt: timestamp("first_detected_at").notNull(),
+    lastDetectedAt: timestamp("last_detected_at").notNull(),
+    lastEnforcedAt: timestamp("last_enforced_at"),
+    resolvedAt: timestamp("resolved_at"),
+    /** Set by the notification sweeper after webhook/email delivery. */
+    notifiedAt: timestamp("notified_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("restricted_software_violation_rule_device_unique").on(
+      table.restrictedSoftwareId,
+      table.deviceId,
+    ),
+    index("restricted_software_violation_organization_status_idx").on(
+      table.organizationId,
+      table.status,
+      table.lastDetectedAt,
+    ),
+    index("restricted_software_violation_device_idx").on(table.deviceId, table.lastDetectedAt),
+    // The notification sweep scans only pending rows; this keeps it bounded
+    // even in a tenant with a long violation history.
+    index("restricted_software_violation_notified_idx").on(table.notifiedAt),
   ],
 );
 
@@ -3040,6 +4146,179 @@ export const dashboardWidget = mysqlTable(
   ],
 );
 
+/**
+ * A report definition attached to a dashboard.
+ *
+ * The dashboard widgets are the report contents, so a report never stores its
+ * own query: it snapshots the dashboard as it is when the digest runs.
+ * Recipients are stored by account id (tenant members) and by address
+ * (external). Members are re-checked against the tenant on every send, so a
+ * removed member stops receiving mail; external addresses are only writable by
+ * an owner or admin.
+ */
+export const dashboardReport = mysqlTable(
+  "dashboard_report",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    dashboardId: id("dashboard_id")
+      .notNull()
+      .references(() => dashboard.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    frequency: varchar("frequency", { length: 16, enum: ["daily", "weekly", "monthly"] }).notNull(),
+    /** UTC hour the digest is scheduled for, 0-23. */
+    hourUtc: int("hour_utc").notNull().default(7),
+    format: varchar("format", { length: 8, enum: ["csv", "pdf"] })
+      .notNull()
+      .default("csv"),
+    enabled: boolean("enabled").notNull().default(true),
+    /** Tenant member account ids that receive the report. */
+    memberAccountIds: json("member_account_ids").$type<string[]>().notNull(),
+    /** External recipients; validated at write time and bounded. */
+    externalEmails: json("external_emails").$type<string[]>().notNull(),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    /** Latest scheduled period attempted, e.g. 2026-11-20. */
+    lastPeriod: varchar("last_period", { length: 32 }),
+    lastRunAt: timestamp("last_run_at"),
+    /** Next scheduled slot, shown in the report settings panel. */
+    nextRunAt: timestamp("next_run_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("dashboard_report_dashboard_idx").on(table.dashboardId),
+    index("dashboard_report_organization_enabled_idx").on(table.organizationId, table.enabled),
+  ],
+);
+
+/**
+ * One attempt at rendering and emailing a report.
+ *
+ * (reportId, period) is unique: a scheduled digest can be retried, but the
+ * row for a period is only ever created once, so two isolates (or two cron
+ * ticks in the same minute) cannot send the same digest twice. Manual downloads
+ * use a manual: period and are never retried.
+ */
+export const dashboardReportRun = mysqlTable(
+  "dashboard_report_run",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    reportId: id("report_id")
+      .notNull()
+      .references(() => dashboardReport.id, { onDelete: "cascade" }),
+    /** Snapshot so the run list survives a rename or deletion. */
+    reportName: shortText("report_name").notNull(),
+    format: varchar("format", { length: 8, enum: ["csv", "pdf"] }).notNull(),
+    /** Schedule slot key, or manual:<id> for an on-demand run. */
+    period: varchar("period", { length: 40 }).notNull(),
+    status: varchar("status", {
+      length: 16,
+      enum: ["pending", "sending", "queued", "failed"],
+    })
+      .notNull()
+      .default("pending"),
+    attempts: int("attempts").notNull().default(0),
+    /** Addresses the digest was queued for; empty until recipients resolve. */
+    recipients: json("recipients").$type<string[]>().notNull(),
+    /** Attachment size in bytes, recorded after rendering. */
+    sizeBytes: int("size_bytes").notNull().default(0),
+    /** Truncated, secret-free description of the last failure. */
+    lastError: text("last_error"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("dashboard_report_run_period_unique").on(table.reportId, table.period),
+    index("dashboard_report_run_report_created_idx").on(table.reportId, table.createdAt),
+    index("dashboard_report_run_organization_created_idx").on(
+      table.organizationId,
+      table.createdAt,
+    ),
+    index("dashboard_report_run_status_created_idx").on(table.status, table.createdAt),
+  ],
+);
+
+/**
+ * A named, reusable device-list view: the query a device table URL carries,
+ * plus the visible columns and page size.
+ *
+ * Views never drive group membership. `private` rows are visible only to
+ * their creator; `tenant` rows are readable by every member and writable by
+ * roles that hold `devices.write`. The query is deliberately stored as JSON
+ * rather than expanded into columns so new device filters do not require a
+ * migration; the API validates it on write.
+ */
+export const deviceView = mysqlTable(
+  "device_view",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 120 }).notNull(),
+    description: text("description"),
+    visibility: varchar("visibility", { length: 16, enum: ["private", "tenant"] })
+      .notNull()
+      .default("private"),
+    /** The exact device-search query, including columns and page size. */
+    query: json("query").$type<DeviceViewQuery>().notNull(),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("device_view_organization_visibility_idx").on(table.organizationId, table.visibility),
+    // The foreign key needs its own leading index; the unique name index below
+    // starts with the organisation, so InnoDB cannot reuse it.
+    index("device_view_creator_idx").on(table.createdByAccountId),
+    // A member cannot create two views with the same name; tenant views by
+    // different authors may share a name.
+    uniqueIndex("device_view_owner_name_unique").on(
+      table.organizationId,
+      table.createdByAccountId,
+      table.name,
+    ),
+  ],
+);
+
+/**
+ * One device-list view each member opens when the device page has no explicit
+ * search params. Kept separate from `device_view` so a view is never mutated
+ * by another member choosing it as their default.
+ */
+export const deviceViewDefault = mysqlTable(
+  "device_view_default",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    accountId: id("account_id")
+      .notNull()
+      .references(() => account.id, { onDelete: "cascade" }),
+    viewId: id("view_id")
+      .notNull()
+      .references(() => deviceView.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("device_view_default_member_unique").on(table.organizationId, table.accountId),
+    index("device_view_default_view_idx").on(table.viewId),
+    index("device_view_default_account_idx").on(table.accountId),
+  ],
+);
+
 export const policy = mysqlTable(
   "policy",
   {
@@ -3092,6 +4371,47 @@ export const configuration = mysqlTable(
     // The policy list counts kinds per policy, which does not use the
     // kind-leading primary key.
     index("configuration_policy_idx").on(table.policyId),
+  ],
+);
+
+/**
+ * Sealed PKCS#12 material for a policy's certificate configuration.
+ *
+ * The PFX and its password never live in `configuration.data`: that JSON is
+ * returned by the API, copied into deployment snapshots and included in tenant
+ * exports. Both secrets are AES-256-GCM sealed with `AUTH_SECRET` here and only
+ * opened while building a device payload.
+ */
+export const policyCertificateMaterial = mysqlTable(
+  "policy_certificate_material",
+  {
+    kind: shortText("kind").notNull(),
+    policyId: id("policy_id")
+      .notNull()
+      .references(() => policy.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Sealed base64 PKCS#12 bytes; uploads are capped at 5 MB. */
+    sealedPfx: mediumtext("sealed_pfx").notNull(),
+    /** Sealed PFX password; empty string is sealed as a value too. */
+    sealedPassword: text("sealed_password").notNull(),
+    fileName: shortText("file_name"),
+    /** Public leaf certificate PEM, used for expiry, renewal and the device page. */
+    certificatePem: mediumtext("certificate_pem").notNull(),
+    subject: shortText("subject").notNull(),
+    notAfter: timestamp("not_after").notNull(),
+    /** Lowercase hex SHA-256 of the leaf certificate DER. */
+    fingerprintSha256: varchar("fingerprint_sha256", { length: 64 }).notNull(),
+    /** Lowercase hex SHA-256 of the PFX bytes; changes the configuration hash. */
+    materialSha256: varchar("material_sha256", { length: 64 }).notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.kind, table.policyId] }),
+    index("policy_certificate_material_org_idx").on(table.organizationId, table.notAfter),
+    index("policy_certificate_material_policy_idx").on(table.policyId),
   ],
 );
 
@@ -3165,8 +4485,10 @@ export const groupDevice = mysqlTable(
      * recompute; manual rows survive recomputes as explicit exceptions.
      * `directory` rows are derived from the group's linked directory group and
      * are replaced whenever directory membership or a device-user link changes.
+     * `nested` rows are inherited from a child group and refreshed whenever the
+     * child's membership or the parent's child list changes.
      */
-    source: varchar("source", { length: 16, enum: ["manual", "dynamic", "directory"] })
+    source: varchar("source", { length: 16, enum: ["manual", "dynamic", "directory", "nested"] })
       .notNull()
       .default("manual"),
   },
@@ -3175,6 +4497,76 @@ export const groupDevice = mysqlTable(
     // Device check-ins evaluate that device's dynamic groups, so lookups by
     // device id must not scan the whole membership table.
     index("group_device_device_id_idx").on(table.deviceId),
+  ],
+);
+
+/**
+ * Parent → child edges between device groups.
+ *
+ * A parent group includes every member of its child groups, transitively. The
+ * edge is a real row (not a free-text id list) so tenant scoping is a join,
+ * deleting a group removes its edges by cascade, and cycle detection can read
+ * the actual graph.
+ *
+ * Inherited devices are materialised into `group_device` with
+ * `source = 'nested'`, so policy, script and scope resolution keep reading one
+ * membership table. A row's source records the strongest reason the device is a
+ * member: `manual` > `dynamic`/`directory` > `nested`.
+ */
+export const groupGroup = mysqlTable(
+  "group_group",
+  {
+    parentGroupId: id("parent_group_id")
+      .notNull()
+      .references(() => enterpriseGroup.id, { onDelete: "cascade" }),
+    childGroupId: id("child_group_id")
+      .notNull()
+      .references(() => enterpriseGroup.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.parentGroupId, table.childGroupId] }),
+    // Both foreign keys need a leading index. The primary key covers the
+    // parent; the child-leading lookup ("which groups include this one") and
+    // the child foreign key share this index.
+    index("group_group_child_idx").on(table.childGroupId),
+  ],
+);
+
+/** What a group exclusion targets: a device or a directory user. */
+export const GROUP_EXCLUSION_TARGETS = ["device", "user"] as const;
+
+/**
+ * Explicit exclusions from a group.
+ *
+ * Exclusions always win over manual membership, dynamic rule matches and
+ * directory-derived membership. A device exclusion removes the device from
+ * every membership source; a user exclusion removes that user's user-scoped
+ * delivery and the device mappings this group derives from the user (see
+ * `docs/reference/architecture.md`). Device-scoped membership a shared device
+ * gains through another source is deliberately kept; excluding a person must
+ * not silently pull a shared Mac out of a device policy.
+ *
+ * `target_id` is polymorphic, so it carries no foreign key: the write path
+ * verifies the target belongs to the tenant. A deleted device or user leaves an
+ * inert row behind; ids are random and never reused, and reads only apply to
+ * targets that still resolve inside the tenant.
+ */
+export const groupExclusion = mysqlTable(
+  "group_exclusion",
+  {
+    groupId: id("group_id")
+      .notNull()
+      .references(() => enterpriseGroup.id, { onDelete: "cascade" }),
+    target: varchar("target", { length: 16, enum: ["device", "user"] }).notNull(),
+    targetId: id("target_id").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.groupId, table.target, table.targetId] }),
+    // Policy resolution checks the device's exclusions across its groups in one
+    // read, and the group editor looks up a user's exclusions by user id.
+    index("group_exclusion_target_idx").on(table.target, table.targetId),
   ],
 );
 
@@ -3233,10 +4625,93 @@ export const application = mysqlTable(
     sha256: shortText("sha256"),
     r2Key: text("r2_key"),
     notes: text("notes"),
+    /**
+     * Provenance for an entry created from the curated software catalogue.
+     * The stable title and method ids let the dashboard show "already added"
+     * and give a later version feed (#589) one row to update.
+     */
+    catalogueTitleId: shortText("catalogue_title_id"),
+    catalogueMethodId: shortText("catalogue_method_id"),
+    /** OS target of the catalogue method, for example `macos` or `ios`. */
+    catalogueTarget: shortText("catalogue_target"),
+    /** Catalogue method kind, for example `apple-app-store` or `windows-msi`. */
+    catalogueKind: shortText("catalogue_kind"),
+    /** Roll-up of the per-storefront checks below. */
+    availability: varchar("availability", {
+      length: 16,
+      enum: ["unknown", "available", "unavailable"],
+    })
+      .notNull()
+      .default("unknown"),
+    /** Why the app is unavailable; kept for the dashboard banner and audits. */
+    availabilityReason: text("availability_reason"),
+    /** Last time any storefront still carried the app. */
+    lastSeenAt: timestamp("last_seen_at"),
+    /**
+     * Remove the app from devices that lose their assignment. Evaluated when
+     * the assignment is saved; the device is only reported removed once its
+     * next application inventory no longer lists the app.
+     */
+    removeOnUnassign: boolean("remove_on_unassign").notNull().default(false),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
-  (table) => [index("application_organization_id_idx").on(table.organizationId)],
+  (table) => [
+    index("application_organization_id_idx").on(table.organizationId),
+    // A retried or concurrent catalogue add must not create a second row for
+    // the same title/method. Manual applications leave these columns null, and
+    // MySQL permits many nulls in a unique index. The title-first order also
+    // serves the "additions for these titles" lookup.
+    uniqueIndex("application_catalogue_method_unique").on(
+      table.catalogueTitleId,
+      table.organizationId,
+      table.catalogueMethodId,
+    ),
+  ],
+);
+
+/**
+ * One App Store storefront for an application.
+ *
+ * Apple allocates the numeric `trackId` per app record rather than per
+ * storefront, so the same title normally has one id everywhere. Availability
+ * still differs by storefront, and a vendor that publishes separate records per
+ * market gets different ids. Keeping one row per region lets the catalogue
+ * record both cases and resolve the id a device should install from.
+ */
+export const applicationStorefront = mysqlTable(
+  "application_storefront",
+  {
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** ISO 3166-1 alpha-2 storefront code, upper-cased. */
+    region: varchar("region", { length: 2 }).notNull(),
+    /** App Store id in this storefront; null when the lookup found nothing. */
+    storeId: varchar("store_id", { length: 32 }),
+    available: boolean("available").notNull().default(true),
+    name: shortText("name"),
+    bundleId: shortText("bundle_id"),
+    version: shortText("version"),
+    /** `lookup` rows come from Apple; `manual` rows were entered by an admin. */
+    source: varchar("source", { length: 16, enum: ["lookup", "manual"] })
+      .notNull()
+      .default("manual"),
+    /** Last time this storefront still carried the app. */
+    lastSeenAt: timestamp("last_seen_at"),
+    /** Why the last check found nothing, when `available` is false. */
+    reason: text("reason"),
+    checkedAt: timestamp("checked_at").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.applicationId, table.region] }),
+    index("application_storefront_organization_idx").on(table.organizationId),
+  ],
 );
 
 /**
@@ -3277,6 +4752,13 @@ export const applicationInstaller = mysqlTable(
     requiredCapability: shortText("required_capability"),
     /** Higher values win when several installers match. */
     priority: int("priority").notNull().default(0),
+    /**
+     * Expiry of an uploaded `.ipa`'s embedded provisioning profile, read when
+     * the file was uploaded. Null when the file is not an `.ipa` or the profile
+     * could not be read; the dashboard then omits the expiry rather than
+     * guessing.
+     */
+    provisioningExpiresAt: timestamp("provisioning_expires_at"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },
@@ -3310,6 +4792,109 @@ export const applicationDevice = mysqlTable(
       .references(() => application.id, { onDelete: "cascade" }),
   },
   (table) => [primaryKey({ columns: [table.deviceId, table.applicationId] })],
+);
+
+/**
+ * Provenance for a catalogue app Mattrax installed on a device.
+ *
+ * Command history is pruned after 90 days and a busy device can push an old
+ * install past any read window, so the uninstall guard cannot rely on it
+ * alone. This row records which application and installer the tenant actually
+ * delivered, and is kept until the application (or device) is deleted. It is
+ * updated by every install path, including policy delivery.
+ */
+export const applicationInstall = mysqlTable(
+  "application_install",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+    /** Installer that delivered the app; null for legacy catalogue rows. */
+    installerId: shortText("installer_id"),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    /** Bundle id, MSI ProductCode or Android package name the inventory uses. */
+    bundleId: shortText("bundle_id").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("application_install_device_application_unique").on(
+      table.deviceId,
+      table.applicationId,
+    ),
+    index("application_install_organization_idx").on(table.organizationId),
+    // The unique (device, application) index already covers device lookups.
+    index("application_install_application_idx").on(table.applicationId),
+  ],
+);
+
+/**
+ * One device's outstanding or most recent catalogue-app uninstall.
+ *
+ * A device only proves the app is gone when it reports a new application
+ * inventory, so the request is tracked separately from the MDM command:
+ * absence before the deadline is `succeeded`, presence after it is `failed`
+ * with the version the device still runs. Android has no per-device uninstall
+ * command (the app leaves the compiled policy), so its row has no command id
+ * and is reconciled from `applicationReports` the same way.
+ *
+ * The row is unique per device and application: a second request replaces the
+ * previous outcome instead of growing history. Command history and the device
+ * timeline remain the audit trail.
+ */
+export const applicationUninstall = mysqlTable(
+  "application_uninstall",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    deviceId: id("device_id")
+      .notNull()
+      .references(() => device.id, { onDelete: "cascade" }),
+    applicationId: id("application_id")
+      .notNull()
+      .references(() => application.id, { onDelete: "cascade" }),
+    /** Installer whose bundle/product id was targeted, when one was selected. */
+    installerId: shortText("installer_id"),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    /** Bundle id, MSI ProductCode or Android package name the inventory uses. */
+    bundleId: shortText("bundle_id").notNull(),
+    /** Apps and Books asset to return once the app is gone, when licensed. */
+    adamId: shortText("adam_id"),
+    /** Queued MDM command; null for Android's policy-driven removal. */
+    commandId: shortText("command_id"),
+    status: varchar("status", {
+      length: 16,
+      enum: ["queued", "succeeded", "failed", "cancelled"],
+    })
+      .notNull()
+      .default("queued"),
+    requestedAt: timestamp("requested_at").notNull(),
+    /** Inventory reported after this instant must show the app gone. */
+    deadline: timestamp("deadline").notNull(),
+    /** Version the device still reported when the uninstall failed. */
+    observedVersion: shortText("observed_version"),
+    resultDetail: text("result_detail"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("application_uninstall_device_application_unique").on(
+      table.deviceId,
+      table.applicationId,
+    ),
+    index("application_uninstall_organization_status_idx").on(table.organizationId, table.status),
+    // The unique (device, application) index already covers device lookups.
+    index("application_uninstall_application_idx").on(table.applicationId),
+  ],
 );
 
 /** Direct device-to-policy assignment in addition to group membership. */
@@ -3473,6 +5058,16 @@ export const scepIssuedCertificate = mysqlTable(
     enrollmentId: shortText("enrollment_id"),
     deviceId: shortText("device_id"),
     /**
+     * Apple User Enrollment (BYOD) request this identity was issued for. It
+     * links the certificate presented after profile installation back to the
+     * directory person who signed in, so the EnrollmentUserID channel binds
+     * without guessing from a user-supplied account string.
+     */
+    byodEnrollmentId: shortText("byod_enrollment_id").references(
+      () => appleByodEnrollment.id,
+      { onDelete: "set null" },
+    ),
+    /**
      * SHA-256 of the issuing CA certificate. Rows issued before rotation keep
      * naming the CA that signed them so the overlap can be audited and a
      * retired CA is only dropped once no identity still chains to it.
@@ -3485,6 +5080,7 @@ export const scepIssuedCertificate = mysqlTable(
   },
   (table) => [
     index("scep_issued_certificate_device_idx").on(table.deviceId),
+    index("scep_issued_certificate_byod_idx").on(table.byodEnrollmentId),
     // Tenant-scoped reads (device certificates, CA overlap) lead with the
     // organisation, which also covers the organisation foreign key.
     index("scep_issued_certificate_ca_idx").on(table.organizationId, table.caFingerprintSha256),
@@ -3504,6 +5100,11 @@ export const scepChallenge = mysqlTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     enrollmentId: shortText("enrollment_id").notNull(),
+    /** Set for a BYOD profile challenge; copied to the issued identity row. */
+    byodEnrollmentId: shortText("byod_enrollment_id").references(
+      () => appleByodEnrollment.id,
+      { onDelete: "set null" },
+    ),
     expiresAt: timestamp("expires_at").notNull(),
     consumedAt: timestamp("consumed_at"),
     createdAt: timestamp("created_at").notNull(),
@@ -3514,6 +5115,7 @@ export const scepChallenge = mysqlTable(
     // enrollment's challenge history.
     index("scep_challenge_org_idx").on(table.organizationId),
     index("scep_challenge_expires_at_idx").on(table.expiresAt),
+    index("scep_challenge_byod_idx").on(table.byodEnrollmentId),
   ],
 );
 
@@ -3760,8 +5362,117 @@ export const scriptExecution = mysqlTable(
   ],
 );
 
+/**
+ * A fleet migration cohort: the devices an operator is moving from another MDM
+ * (Jamf, Intune, Kandji, ...) onto this tenant.
+ *
+ * The incumbent MDM is the only thing that can remove its own profile from a
+ * device, so the cohort is not a device group and does not move devices by
+ * itself. It records the intent (name, source, target platforms, optional group
+ * or explicit serial list), issues the one-shot unenrol handoff, and then tracks
+ * each device back to enrolment. The per-device rows live in
+ * `fleet_migration_device`, keyed by hardware serial because the device may not
+ * exist in Mattrax yet; `device_id` is filled in once it reappears.
+ */
+export const fleetMigration = mysqlTable(
+  "fleet_migration",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: shortText("name").notNull(),
+    /** The MDM the fleet is leaving. Remediation advice hangs off this value. */
+    sourceMdm: varchar("source_mdm", {
+      length: 16,
+      enum: ["jamf", "intune", "kandji", "other"],
+    }).notNull(),
+    /** Platforms this cohort expects to return. */
+    platforms: json("platforms").$type<Array<"apple" | "win" | "android">>().notNull(),
+    /** The group the cohort was seeded from, kept for audit and re-seeding. */
+    groupId: id("group_id").references(() => enterpriseGroup.id, { onDelete: "set null" }),
+    /**
+     * Days between issuing the unenrol and declaring a silent device stuck.
+     * A device that never comes back is the operator's real problem, so the
+     * window is per cohort rather than a deployment constant.
+     */
+    stuckAfterDays: int("stuck_after_days").notNull().default(7),
+    createdByAccountId: id("created_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("fleet_migration_organization_idx").on(table.organizationId, table.createdAt),
+    index("fleet_migration_group_idx").on(table.groupId),
+    index("fleet_migration_created_by_idx").on(table.createdByAccountId),
+  ],
+);
+
+/**
+ * One device in a migration cohort, keyed by serial.
+ *
+ * A row exists before the device enrolls (that is the point: the operator has a
+ * list of serials from the incumbent), so `device_id` is nullable and is filled
+ * in when a device with the serial appears in this tenant. `status` is the
+ * cohort's own state machine (`pending` → `unenrol-issued` →
+ * `awaiting-enrolment` → `enrolled` → `confirmed`, with `stuck` as the terminal
+ * failure). `last_evidence` always holds the observation that produced the
+ * current status, so a stale cohort explains itself.
+ */
+export const fleetMigrationDevice = mysqlTable(
+  "fleet_migration_device",
+  {
+    id: id().primaryKey(),
+    organizationId: id("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    migrationId: id("migration_id")
+      .notNull()
+      .references(() => fleetMigration.id, { onDelete: "cascade" }),
+    serial: shortText("serial").notNull(),
+    platform: varchar("platform", { length: 16, enum: ["apple", "win", "android"] }).notNull(),
+    status: varchar("status", {
+      length: 24,
+      enum: ["pending", "unenrol-issued", "awaiting-enrolment", "enrolled", "confirmed", "stuck"],
+    })
+      .notNull()
+      .default("pending"),
+    /** Present once a device with this serial enrols into the tenant. */
+    deviceId: id("device_id").references(() => device.id, { onDelete: "set null" }),
+    /** Script execution that carried the unenrol command, when one was queued. */
+    executionId: id("execution_id"),
+    unenrolIssuedAt: timestamp("unenrol_issued_at"),
+    awaitingEnrolmentAt: timestamp("awaiting_enrolment_at"),
+    enrolledAt: timestamp("enrolled_at"),
+    confirmedAt: timestamp("confirmed_at"),
+    stuckAt: timestamp("stuck_at"),
+    confirmedByAccountId: id("confirmed_by_account_id").references(() => account.id, {
+      onDelete: "set null",
+    }),
+    /** Operator-facing reason for the current status; never secrets. */
+    lastEvidence: text("last_evidence"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    // A serial appears once per cohort. Two cohorts may legitimately overlap
+    // (a staged rollout), so uniqueness is scoped to the migration.
+    uniqueIndex("fleet_migration_device_migration_serial_unique").on(
+      table.migrationId,
+      table.serial,
+    ),
+    index("fleet_migration_device_organization_idx").on(table.organizationId, table.status),
+    index("fleet_migration_device_device_idx").on(table.deviceId),
+    index("fleet_migration_device_confirmed_by_idx").on(table.confirmedByAccountId),
+  ],
+);
+
 export const relations = defineRelations(
   {
+    fleetMigration,
+    fleetMigrationDevice,
     account,
     user,
     organization,
@@ -3776,8 +5487,9 @@ export const relations = defineRelations(
     registrationVerification,
     invitation,
     tenantOwnershipTransfer,
-    subscription,
-    stripeEvent,
+    approvalPolicy,
+    approvalRequest,
+    approvalDecision,
     accountApiToken,
     mcpOAuthClient,
     mcpOAuthConnection,
@@ -3790,7 +5502,10 @@ export const relations = defineRelations(
     webhookDelivery,
     ssoConfig,
     ssoDomain,
+    appleByodConfig,
+    appleByodEnrollment,
     entraDirectorySync,
+    googleDirectorySync,
     ssoIdentity,
     scimToken,
     userGroup,
@@ -3813,8 +5528,12 @@ export const relations = defineRelations(
     deviceDeclaration,
     deviceApple,
     deviceAppleUser,
+    deviceLocalAccount,
     deviceUserDeclaration,
     deviceSecret,
+    deviceBitlockerKey,
+    deviceWindowsLaps,
+    deviceDiagnosticsArchive,
     appleFdeEscrowKey,
     deviceApplication,
     applePushCertificate,
@@ -3829,14 +5548,21 @@ export const relations = defineRelations(
     enterpriseGroup,
     dashboard,
     dashboardWidget,
+    deviceView,
+    deviceViewDefault,
     policy,
     policyDeployment,
+    policyCertificateMaterial,
     configuration,
     groupDevice,
+    groupGroup,
+    groupExclusion,
     groupPolicy,
     application,
     applicationGroup,
     applicationDevice,
+    applicationInstall,
+    applicationUninstall,
     devicePolicy,
     organizationDeviceUsage,
     scepCa,
@@ -3945,6 +5671,21 @@ export const relations = defineRelations(
       organization: r.one.organization({ from: r.member.organizationId, to: r.organization.id }),
       account: r.one.account({ from: r.member.accountId, to: r.account.id }),
     },
+    deviceView: {
+      organization: r.one.organization({
+        from: r.deviceView.organizationId,
+        to: r.organization.id,
+      }),
+      creator: r.one.account({ from: r.deviceView.createdByAccountId, to: r.account.id }),
+    },
+    deviceViewDefault: {
+      organization: r.one.organization({
+        from: r.deviceViewDefault.organizationId,
+        to: r.organization.id,
+      }),
+      account: r.one.account({ from: r.deviceViewDefault.accountId, to: r.account.id }),
+      view: r.one.deviceView({ from: r.deviceViewDefault.viewId, to: r.deviceView.id }),
+    },
     invitation: {
       organization: r.one.organization({
         from: r.invitation.organizationId,
@@ -3975,6 +5716,12 @@ export const relations = defineRelations(
     entraDirectorySync: {
       organization: r.one.organization({
         from: r.entraDirectorySync.organizationId,
+        to: r.organization.id,
+      }),
+    },
+    googleDirectorySync: {
+      organization: r.one.organization({
+        from: r.googleDirectorySync.organizationId,
         to: r.organization.id,
       }),
     },
@@ -4039,6 +5786,10 @@ export const relations = defineRelations(
       android: r.one.androidDevice({ from: r.device.id, to: r.androidDevice.deviceId }),
       groups: r.many.groupDevice({ from: r.device.id, to: r.groupDevice.deviceId }),
       secrets: r.many.deviceSecret({ from: r.device.id, to: r.deviceSecret.deviceId }),
+      localAccounts: r.many.deviceLocalAccount({
+        from: r.device.id,
+        to: r.deviceLocalAccount.deviceId,
+      }),
       applications: r.many.deviceApplication({
         from: r.device.id,
         to: r.deviceApplication.deviceId,
@@ -4047,6 +5798,13 @@ export const relations = defineRelations(
         from: r.device.id,
         to: r.scriptExecution.deviceId,
       }),
+    },
+    deviceLocalAccount: {
+      organization: r.one.organization({
+        from: r.deviceLocalAccount.organizationId,
+        to: r.organization.id,
+      }),
+      device: r.one.device({ from: r.deviceLocalAccount.deviceId, to: r.device.id }),
     },
     script: {
       organization: r.one.organization({ from: r.script.organizationId, to: r.organization.id }),
@@ -4063,6 +5821,28 @@ export const relations = defineRelations(
       script: r.one.script({ from: r.scriptAssignment.scriptId, to: r.script.id }),
       organization: r.one.organization({
         from: r.scriptAssignment.organizationId,
+        to: r.organization.id,
+      }),
+    },
+    fleetMigration: {
+      organization: r.one.organization({
+        from: r.fleetMigration.organizationId,
+        to: r.organization.id,
+      }),
+      group: r.one.enterpriseGroup({ from: r.fleetMigration.groupId, to: r.enterpriseGroup.id }),
+      devices: r.many.fleetMigrationDevice({
+        from: r.fleetMigration.id,
+        to: r.fleetMigrationDevice.migrationId,
+      }),
+    },
+    fleetMigrationDevice: {
+      migration: r.one.fleetMigration({
+        from: r.fleetMigrationDevice.migrationId,
+        to: r.fleetMigration.id,
+      }),
+      device: r.one.device({ from: r.fleetMigrationDevice.deviceId, to: r.device.id }),
+      organization: r.one.organization({
+        from: r.fleetMigrationDevice.organizationId,
         to: r.organization.id,
       }),
     },
@@ -4182,6 +5962,18 @@ export const relations = defineRelations(
         to: r.userGroup.id,
       }),
       devices: r.many.groupDevice({ from: r.enterpriseGroup.id, to: r.groupDevice.groupId }),
+      childGroups: r.many.groupGroup({
+        from: r.enterpriseGroup.id,
+        to: r.groupGroup.parentGroupId,
+      }),
+      parentGroups: r.many.groupGroup({
+        from: r.enterpriseGroup.id,
+        to: r.groupGroup.childGroupId,
+      }),
+      exclusions: r.many.groupExclusion({
+        from: r.enterpriseGroup.id,
+        to: r.groupExclusion.groupId,
+      }),
       policies: r.many.groupPolicy({ from: r.enterpriseGroup.id, to: r.groupPolicy.groupId }),
       applications: r.many.applicationGroup({
         from: r.enterpriseGroup.id,
@@ -4195,6 +5987,16 @@ export const relations = defineRelations(
       directDevices: r.many.devicePolicy({ from: r.policy.id, to: r.devicePolicy.policyId }),
       users: r.many.userPolicy({ from: r.policy.id, to: r.userPolicy.policyId }),
       userGroups: r.many.userGroupPolicy({ from: r.policy.id, to: r.userGroupPolicy.policyId }),
+      certificateMaterials: r.many.policyCertificateMaterial({
+        from: r.policy.id,
+        to: r.policyCertificateMaterial.policyId,
+      }),
+    },
+    policyCertificateMaterial: {
+      policy: r.one.policy({
+        from: r.policyCertificateMaterial.policyId,
+        to: r.policy.id,
+      }),
     },
     configuration: {
       policy: r.one.policy({ from: r.configuration.policyId, to: r.policy.id }),
@@ -4202,6 +6004,22 @@ export const relations = defineRelations(
     groupDevice: {
       group: r.one.enterpriseGroup({ from: r.groupDevice.groupId, to: r.enterpriseGroup.id }),
       device: r.one.device({ from: r.groupDevice.deviceId, to: r.device.id }),
+    },
+    groupGroup: {
+      parent: r.one.enterpriseGroup({
+        from: r.groupGroup.parentGroupId,
+        to: r.enterpriseGroup.id,
+      }),
+      child: r.one.enterpriseGroup({
+        from: r.groupGroup.childGroupId,
+        to: r.enterpriseGroup.id,
+      }),
+    },
+    groupExclusion: {
+      group: r.one.enterpriseGroup({
+        from: r.groupExclusion.groupId,
+        to: r.enterpriseGroup.id,
+      }),
     },
     groupPolicy: {
       group: r.one.enterpriseGroup({ from: r.groupPolicy.groupId, to: r.enterpriseGroup.id }),

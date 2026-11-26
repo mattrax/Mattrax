@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { EnterpriseForbidden, EnterpriseUnauthorized } from "@mattrax/enterprise-domain";
 import { parsePlanLimits, planLimitsFor } from "@mattrax/enterprise-core";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 /** Assert a service call rejected with the forbidden tag and message fragment. */
 const expectForbidden = async (run: Promise<unknown>, message?: string) => {
-  const failure = await run.catch((cause: unknown) => cause);
+  const failure = await run.catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(EnterpriseForbidden);
 
@@ -63,7 +63,6 @@ const makeContext = (planLimits = planConfig()) => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake only implements the auth methods these tests exercise.
@@ -86,6 +85,20 @@ const addDevice = (db: ReturnType<typeof makeDb>, organizationId: string, id: st
     enrolledAt: now,
     lastSeenAt: now,
   });
+};
+
+const setBilling = (
+  db: ReturnType<typeof makeContext>["db"],
+  tenantId: string,
+  plan: string,
+  status: string,
+) => {
+  const organization = db.store.organization.find((row: any) => row.id === tenantId);
+
+  if (!organization) throw new Error(`missing organization ${tenantId}`);
+
+  organization.billingPlan = plan;
+  organization.billingStatus = status;
 };
 
 describe("MATTRAX_PLAN_LIMITS parsing", () => {
@@ -177,15 +190,7 @@ describe("enterprise service plan limits", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
-    db.store.subscription.push({
-      id: "sub-1",
-      plan: "device",
-      referenceId: first.id,
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
-    });
+    setBilling(db, first.id, "device", "active");
 
     await expect(
       runEffect(service.createTenant(request(headers), { name: "Second", slug: "second" })),
@@ -199,15 +204,7 @@ describe("enterprise service plan limits", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
-    db.store.subscription.push({
-      id: "sub-1",
-      plan: "device",
-      referenceId: first.id,
-      status: "canceled",
-      createdAt: now,
-      updatedAt: now,
-    });
+    setBilling(db, first.id, "device", "canceled");
 
     await expectForbidden(
       runEffect(service.createTenant(request(headers), { name: "Second", slug: "second" })),
@@ -278,18 +275,7 @@ describe("enterprise service plan limits", () => {
       service.createTenant(request(headers), { name: "Acme", slug: "acme" }),
     );
 
-    const now = new Date();
-
-    const subscription = {
-      id: "sub-1",
-      plan: "team",
-      referenceId: tenant.id,
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    db.store.subscription.push(subscription);
+    setBilling(db, tenant.id, "team", "active");
     addDevice(db, tenant.id, "device-1");
     addDevice(db, tenant.id, "device-2");
 
@@ -300,7 +286,7 @@ describe("enterprise service plan limits", () => {
       overDeviceLimit: false,
     });
 
-    subscription.status = "canceled";
+    setBilling(db, tenant.id, "team", "canceled");
     await expect(runEffect(service.billing(request(headers), tenant.id))).resolves.toMatchObject({
       plan: "free",
       deviceLimit: 1,

@@ -1,7 +1,9 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useQuery } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
 import { Panel, QueryError, relativeTime } from "~/components/mdm/common";
+import { LoadingState } from "~/components/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { CheckCircle2, CircleAlert, MonitorSmartphone } from "~/components/ui/icons";
@@ -61,7 +63,7 @@ export default function DeliverySettingsPage() {
         label: "Succeeding",
         value: counts?.succeeded ?? 0,
         hint: "Last push succeeded",
-        tone: "text-success-foreground",
+        tone: "text-success",
         dot: "bg-success",
       },
       {
@@ -93,15 +95,7 @@ export default function DeliverySettingsPage() {
         }
       >
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Badge
-            variant="outline"
-            class={cn(
-              "gap-1.5",
-              apns.data?.configured
-                ? "border-success/25 bg-success/10 text-success-foreground"
-                : "border-warning/25 bg-warning/10 text-warning-foreground",
-            )}
-          >
+          <Badge variant={apns.data?.configured ? "success" : "warning"}>
             {apns.data?.configured ? (
               <CheckCircle2 class="size-3.5" />
             ) : (
@@ -110,8 +104,8 @@ export default function DeliverySettingsPage() {
             {apns.data?.configured ? "APNs configured" : "APNs not configured"}
           </Badge>
           <Show when={apns.data?.topic}>
-            <span class="break-all font-mono text-[11px] text-muted-foreground">
-              {apns.data!.topic}
+            <span class="break-all font-mono text-xs text-muted-foreground">
+              {apns.data.topic}
             </span>
           </Show>
         </div>
@@ -123,13 +117,13 @@ export default function DeliverySettingsPage() {
                 title={card.hint}
                 class="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-surface px-3 py-2.5"
               >
-                <span class="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+                <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <span class={cn("size-1.5 rounded-full", card.dot)} aria-hidden="true" />
                   <span class="truncate">{card.label}</span>
                 </span>
                 <span
                   class={cn(
-                    "text-[18px] font-semibold leading-none tracking-[-0.02em] tabular-nums",
+                    "text-lg font-semibold leading-none tracking-tight tabular-nums",
                     card.tone,
                   )}
                 >
@@ -156,7 +150,7 @@ export default function DeliverySettingsPage() {
         <Show
           when={(pushHealth.data?.recentFailures.length ?? 0) > 0}
           fallback={
-            <p class="rounded-lg border border-dashed border-border bg-surface px-4 py-5 text-[12.5px] text-muted-foreground">
+            <p class="rounded-lg border border-dashed border-border bg-surface px-4 py-5 text-xs text-muted-foreground">
               No recent push failures.
             </p>
           }
@@ -167,19 +161,19 @@ export default function DeliverySettingsPage() {
                 <li>
                   <a
                     href={`/t/${tenantId()}/devices/${failure.deviceId}`}
-                    class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[12.5px] transition-colors hover:bg-hover"
+                    class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-xs transition-colors hover:bg-hover"
                   >
                     <span class="min-w-0">
                       <span class="block truncate font-medium text-foreground">
                         {failure.deviceName}
                       </span>
-                      <span class="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                      <span class="mt-0.5 block truncate text-xs text-muted-foreground">
                         {failure.errorCode === "invalid_token"
                           ? "Invalid token · the device must enroll again"
                           : (failure.error ?? "Delivery failed")}
                       </span>
                     </span>
-                    <span class="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+                    <span class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                       <span class="tabular-nums">{failure.consecutiveFailures} consecutive</span>
                       <span class="text-muted-foreground/40" aria-hidden="true">
                         ·
@@ -205,7 +199,7 @@ export default function DeliverySettingsPage() {
         title="Windows enrollment & management"
         description="Faults returned to Windows devices at discovery, certificate issuance, policy or check-in. A device that never enrolls appears only here."
         actions={
-          <Badge variant="outline" class="gap-1.5">
+          <Badge variant="outline">
             <MonitorSmartphone class="size-3.5" />
             {windowsFailures.data?.count ?? 0}{" "}
             {windowsFailures.data?.retentionDays
@@ -217,9 +211,18 @@ export default function DeliverySettingsPage() {
         <Show
           when={(windowsFailures.data?.failures.length ?? 0) > 0}
           fallback={
-            <p class="rounded-lg border border-dashed border-border bg-surface px-4 py-5 text-[12.5px] text-muted-foreground">
-              {windowsFailures.isPending ? "Loading…" : "No failures recorded."}
-            </p>
+            <Show
+              when={windowsFailures.isPending}
+              fallback={
+                <p class="rounded-lg border border-dashed border-border bg-surface px-4 py-5 text-xs text-muted-foreground">
+                  No failures recorded.
+                </p>
+              }
+            >
+              <div class="flex justify-center rounded-lg border border-dashed border-border bg-surface px-4 py-5">
+                <LoadingState label="Loading delivery failures…" size={16} />
+              </div>
+            </Show>
           }
         >
           <ul class="divide-y divide-border overflow-hidden rounded-lg border border-border">
@@ -235,11 +238,11 @@ export default function DeliverySettingsPage() {
                   <>
                     <span class="min-w-0">
                       <span class="block truncate font-medium text-foreground">{label}</span>
-                      <span class="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                      <span class="mt-0.5 block truncate text-xs text-muted-foreground">
                         {failure.phase.toUpperCase()} · {failure.message}
                       </span>
                     </span>
-                    <span class="flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+                    <span class="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                       <span class="font-mono">{failure.code}</span>
                       <span class="text-muted-foreground/40" aria-hidden="true">
                         ·
@@ -254,7 +257,7 @@ export default function DeliverySettingsPage() {
                     <Show
                       when={failure.deviceId}
                       fallback={
-                        <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[12.5px]">
+                        <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-xs">
                           {body()}
                         </div>
                       }
@@ -262,7 +265,7 @@ export default function DeliverySettingsPage() {
                       {(deviceId) => (
                         <a
                           href={`/t/${tenantId()}/devices/${deviceId()}`}
-                          class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-[12.5px] transition-colors hover:bg-hover"
+                          class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-xs transition-colors hover:bg-hover"
                         >
                           {body()}
                         </a>

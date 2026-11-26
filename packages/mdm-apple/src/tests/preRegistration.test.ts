@@ -4,7 +4,8 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
+import { dbRows, makeDb, tableName } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -135,11 +136,11 @@ describe("Apple Authenticate pre-registration", () => {
       notes: "Front desk",
     });
     expect(dbRows(db, tableName(schema.groupDevice))).toEqual([
-      { groupId: "group-1", deviceId: device!.id },
+      { groupId: "group-1", deviceId: device.id },
     ]);
     expect(
       dbRows(db, tableName(schema.devicePreRegistration)).find((row) => row.id === "pre-1"),
-    ).toMatchObject({ consumedDeviceId: device!.id });
+    ).toMatchObject({ consumedDeviceId: device.id });
   });
 
   it("does not apply a pre-registration from another tenant", async () => {
@@ -163,7 +164,7 @@ describe("Apple Authenticate pre-registration", () => {
 
   it("applies metadata to an already-enrolled row with the same serial", async () => {
     const { db, backend } = setup();
-    db.store[tableName(schema.device)]!.push({
+    db.store[tableName(schema.device)].push({
       __table: tableName(schema.device),
       id: "existing-device",
       organizationId: "org-1",

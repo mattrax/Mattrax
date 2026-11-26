@@ -18,13 +18,43 @@ after the device fetches the items, so a failed sync retries from the previous s
 
 ## Built-in declarations
 
-Every tenant gets three declarations:
+Every tenant gets three declarations, plus a fourth pair when an Apple OS
+policy is enforcing:
 
 | Type          | Identifier                             | Purpose                                                                         |
 | ------------- | -------------------------------------- | ------------------------------------------------------------------------------- |
 | Activation    | `DAAF574F-36D4-4089-B2E3-D2008B65D5BE` | Activates the status subscription configuration                                 |
 | Configuration | `13DE3EE0-D5A8-46E9-B967-27E56A4D918F` | `com.apple.configuration.management.status-subscriptions`, item list per device |
 | Management    | `F8C4C3A1-…`                           | `com.apple.management.organization-info` from tenant branding                   |
+| Activation    | `2E0D4D7C-…`                           | Activates the tenant software-update enforcement configuration                  |
+| Configuration | `C6A1E9D4-…`                           | `com.apple.configuration.softwareupdate.enforcement.specific`                   |
+
+### Tenant software-update enforcement
+
+The software-update pair is generated from the tenant OS policy rather than
+stored as a policy configuration. When the macOS, iOS or iPadOS rule is set to
+`enforce`, every supervised device that can apply declarations receives:
+
+- an activation whose `StandardConfigurations` names the enforcement
+  configuration, and
+- the declaration itself, with `TargetOSVersion` set to the rule minimum and
+  `TargetLocalDateTime` set to the deferral deadline (or the time the rule was
+  saved when there is no deferral).
+
+The declaration is only emitted for DDM devices on macOS 14+, iOS 17+ or
+iPadOS 17+, and only for a supervised device enrolment (Shared iPad included)
+at system scope. A user-enrolled (BYOD) device cannot apply it and has no
+fallback command either. Devices with legacy delivery or older releases fall
+back to the explicit `ScheduleOSUpdate` command. A `warn` or `off` rule emits
+nothing. The configuration `ServerToken` is derived from the rule, its
+platform and its `updatedAt`, so an edit rotates the token and the device
+fetches the declaration again.
+
+Apple only installs a target version its servers still publish, and Mattrax
+has no GDMF lookup for iOS/iPadOS (macOS uses SOFA), so an exact version that
+Apple has withdrawn leaves the declaration active without an update. `TargetLocalDateTime`
+is sent as the UTC wall clock because the device time zone is not reported.
+These are documented gaps, not silently retargeted versions.
 
 Status items include serial number, model, OS version/build, FileVault state, battery
 health, disk capacity, client capabilities and declaration state. They populate device
@@ -82,7 +112,10 @@ device assignment.
 | ----------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------- |
 | `mttx.apple.device`           | Legacy profile via DDM                                            | Currently only `{ "camera": boolean }`                  |
 | `mttx.apple.custom.<id>`      | Legacy profile via DDM                                            | Your uploaded `.mobileconfig`, served verbatim          |
-| `mttx.apple.certificate.<id>` | `com.apple.configuration.security.certificate` + credential asset | Certificate is a PEM asset with SHA-256 and size        |
+| `mttx.apple.certificate.<id>` | `com.apple.configuration.security.certificate` + credential asset | Trusted root; PEM asset with SHA-256 and size            |
+| `mttx.apple.pkcs.<id>`        | `com.apple.configuration.security.identity` + identity asset      | Sealed PKCS#12 issued by an enterprise CA               |
+| `mttx.apple.pfx.<id>`         | `com.apple.configuration.security.identity` + identity asset      | Imported PKCS#12; device or user channel                |
+| `mttx.apple.mail.<id>`        | `com.apple.configuration.account.mail`                            | Mail account with S/MIME identity references            |
 | `mttx.apple.declaration.<id>` | Raw Apple declaration                                             | You supply `kind` and `configuration`                   |
 | `mttx.apple.application.<id>` | Imperative install command                                        | Catalogue reference or inline manifest/store/upload app |
 
@@ -188,8 +221,11 @@ debugging a device.
   `InstallProfile` commands instead. `mttx.apple.device` and custom profiles have a legacy
   equivalent, raw declarations do not.
 - There is no CRL/OCSP endpoint for certificates.
-- DDM status reports persist declaration state and inventory but do not implement a
-  compliance engine.
+- DDM status reports persist declaration state and inventory. The tenant OS policy is
+  the only DDM compliance rule; there is no general declarative compliance engine.
+- The software-update declaration requires supervision. Mattrax does not receive a
+  supervision flag from Apple, so it treats device enrolment as supervised and user
+  enrolment as unsupervised; the fallback command is never offered to user enrolment.
 
 ## Next
 

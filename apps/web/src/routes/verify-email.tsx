@@ -1,22 +1,22 @@
 import { Title } from "@solidjs/meta";
-import { BrandLogo } from "~/components/brand-logo";
+import BrandLogo from "~/components/brand-logo";
 import { isServer } from "@solidjs/web";
 import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { Match } from "effect";
 import { createSignal, onSettled, Show } from "solid-js";
-import { EmailCodeForm } from "~/components/email-code-form";
+import EmailCodeForm from "~/components/email-code-form";
 import { authClient } from "~/lib/auth";
 import { Spinner } from "~/components/ui";
 
 const primaryLink =
-  "inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90";
+  "inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors duration-(--duration-hover) ease-swift hover:bg-primary/90";
 
 const outlineLink =
-  "inline-flex w-full items-center justify-center rounded-lg border border-stone-300 px-4 py-2 text-sm font-medium text-stone-800 transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-stone-100";
+  "inline-flex w-full items-center justify-center rounded-lg border border-border-strong px-4 py-2 text-sm font-medium text-primary transition-colors duration-(--duration-hover) ease-swift hover:bg-shell";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
-const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
+const feedbackEnter = "page-enter";
 
 export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
@@ -66,6 +66,20 @@ export default function VerifyEmailPage() {
       }
 
       await session().refetch();
+
+      // The link may be opened without a session, and a token can belong to a
+      // different account than the one signed in here. Refresh only the signed-
+      // in account, and never optimistically patch its row: the session claim
+      // plus the refetched /me decide whether this account is verified.
+      if (session().data?.user) {
+        const [{ refreshMeAfterEmailVerification }, { queryClient }] = await Promise.all([
+          import("~/lib/me-refresh"),
+          import("~/lib/query-client"),
+        ]);
+
+        await refreshMeAfterEmailVerification(queryClient);
+      }
+
       setTokenStatus("ok");
       setMessage("Your email address is verified.");
     })();
@@ -83,7 +97,7 @@ export default function VerifyEmailPage() {
 
         <Show when={token()}>
           <div class="space-y-5 text-center">
-            <h1 class="text-2xl font-semibold text-stone-900">
+            <h1 class="text-2xl font-semibold text-foreground">
               {Match.value(tokenStatus()).pipe(
                 Match.when("ok", () => "Email verified"),
                 Match.when("error", () => "Verification failed"),
@@ -93,7 +107,7 @@ export default function VerifyEmailPage() {
             <p
               role={tokenStatus() === "error" ? "alert" : "status"}
               aria-live={tokenStatus() === "error" ? "assertive" : "polite"}
-              class="text-sm text-stone-500"
+              class="text-sm text-subtle-foreground"
             >
               {message()}
             </p>
@@ -126,7 +140,7 @@ export default function VerifyEmailPage() {
             fallback={
               <p
                 role="status"
-                class="flex items-center justify-center gap-2 text-center text-sm text-stone-500"
+                class="flex items-center justify-center gap-2 text-center text-sm text-subtle-foreground"
               >
                 <span aria-hidden="true">
                   <Spinner class="size-3.5" />
@@ -139,8 +153,8 @@ export default function VerifyEmailPage() {
               when={session().data?.user}
               fallback={
                 <div class="space-y-5 text-center">
-                  <h1 class="text-2xl font-semibold text-stone-900">Verify your email</h1>
-                  <p class="text-sm text-stone-500">
+                  <h1 class="text-2xl font-semibold text-foreground">Verify your email</h1>
+                  <p class="text-sm text-subtle-foreground">
                     Sign in first, then we can send a verification code to your address.
                   </p>
                   <a
@@ -157,8 +171,8 @@ export default function VerifyEmailPage() {
                   when={!user().emailVerified}
                   fallback={
                     <div class="space-y-5 text-center">
-                      <h1 class="text-2xl font-semibold text-stone-900">Email verified</h1>
-                      <p class="text-sm text-stone-500">{user().email} is already verified.</p>
+                      <h1 class="text-2xl font-semibold text-foreground">Email verified</h1>
+                      <p class="text-sm text-subtle-foreground">{user().email} is already verified.</p>
                       <a href={returnTo() ?? "/dashboard"} class={primaryLink}>
                         Continue to dashboard
                       </a>
@@ -167,9 +181,18 @@ export default function VerifyEmailPage() {
                 >
                   <EmailCodeForm
                     email={user().email}
-                    autoSend
                     onVerified={async () => {
                       await session().refetch();
+                      const [{ refreshMeAfterEmailVerification }, { queryClient }] =
+                        await Promise.all([
+                          import("~/lib/me-refresh"),
+                          import("~/lib/query-client"),
+                        ]);
+
+                      // The code proves this session's address, so it is safe to
+                      // optimistically mark the row before the refetch lands.
+                      await refreshMeAfterEmailVerification(queryClient, { optimistic: true });
+
                       // Defer past the query-cache write: navigation issued in
                       // the same tick is dropped by the router transition.
                       setTimeout(() => navigate(returnTo() ?? "/dashboard", { replace: true }), 0);

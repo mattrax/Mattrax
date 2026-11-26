@@ -2,10 +2,11 @@ import { Schema } from "effect";
 import {
   compareVersionStrings,
   DeviceCondition,
+  deviceConditionGroupIds,
+  deviceQueryGroupIds,
   evaluateDeviceQuery,
-  type DeviceQueryDevice,
-  type DeviceQueryEvaluationOptions,
 } from "./deviceQuery.ts";
+import type { DeviceQueryDevice, DeviceQueryEvaluationOptions } from "./deviceQuery.ts";
 
 export { compareVersionStrings };
 
@@ -37,6 +38,17 @@ export type DynamicGroupHealthLevel = typeof DynamicGroupHealthLevel.Type;
  * A rule set with no conditions at all matches **no devices**. That is
  * deliberately the safe default: creating a dynamic group never silently
  * assigns every device in the tenant.
+ *
+ * Version 1 is extended additively: the `group` condition was added without
+ * changing the version because every previously valid rule set still decodes
+ * to exactly the same meaning. There is no migration that reinterprets saved
+ * rules. Bumping the version instead would have invalidated every saved rule,
+ * which is why this is deliberately not a version bump.
+ *
+ * Rollback caveat: a build that predates the field decodes the condition but
+ * its evaluator has no `group` case, so the condition never matches. A rule
+ * that relied on it can silently empty a group after a downgrade. Clear group
+ * criteria before rolling back (or gate the rollback).
  */
 export const DYNAMIC_GROUP_RULES_VERSION = 1;
 
@@ -66,6 +78,349 @@ export const isSupportedDynamicGroupRulesVersion = (
 const conditionCount = (rules: DynamicGroupRules): number =>
   (rules.all?.length ?? 0) + (rules.any?.length ?? 0) + (rules.none?.length ?? 0);
 
+/**
+ * Every tenant-scoped group id a rule set references, in condition-list order.
+ * Duplicates are dropped so a graph walk sees each edge once.
+ */
+export const dynamicGroupRuleGroupIds = (
+  rules: DynamicGroupRules | null | undefined,
+): ReadonlyArray<string> =>
+  rules && rules.version === DYNAMIC_GROUP_RULES_VERSION ? deviceQueryGroupIds(rules) : [];
+
+/**
+ * Rewrite the group ids a rule set names.
+ *
+ * A tenant restore/cutover regenerates every group id, so a rule that names
+ * another group would point at the export's old id. `resolve` maps an exported
+ * id to the new one; ids it cannot resolve are returned so the caller can fail
+ * with a clear message instead of silently dropping a criterion.
+ */
+export type DynamicGroupRulesRemap = {
+  readonly rules: DynamicGroupRules | null;
+  readonly missing: ReadonlyArray<string>;
+};
+
+export const remapDynamicGroupRuleGroups = (
+  rules: DynamicGroupRules | null | undefined,
+  resolve: (groupId: string) => string | undefined,
+): DynamicGroupRulesRemap => {
+  if (!rules) return { rules: null, missing: [] };
+
+  const missing = new Set<string>();
+
+  const remap = (condition: DeviceCondition): DeviceCondition => {
+    if (condition.field !== "group") return condition;
+
+    return {
+      ...condition,
+      value: deviceConditionGroupIds(condition).map((groupId) => {
+        const next = resolve(groupId);
+
+        if (next === undefined) {
+          missing.add(groupId);
+
+          return groupId;
+        }
+
+        return next;
+      }),
+    };
+  };
+
+  return {
+    rules: {
+      ...rules,
+      ...(rules.all === undefined ? {} : { all: rules.all.map(remap) }),
+      ...(rules.any === undefined ? {} : { any: rules.any.map(remap) }),
+      ...(rules.none === undefined ? {} : { none: rules.none.map(remap) }),
+    },
+    missing: [...missing],
+  };
+};
+
+export type DynamicGroupReferenceNode = {
+  readonly id: string;
+  /** Null for manual groups: they are valid reference targets but have no refs. */
+  readonly rules?: DynamicGroupRules | null;
+};
+
+/**
+ * A parent → child nesting edge. The parent's membership includes the child's,
+ * so the parent depends on the child for the purposes of ordering and cycle
+ * detection. Rule references and nesting share one graph: a group whose rules
+ * name one of its own ancestors closes a loop across both.
+ */
+export type DynamicGroupHierarchyEdge = {
+  readonly parentId: string;
+  readonly childId: string;
+};
+
+/** Why a dynamic group cannot be evaluated. */
+export type DynamicGroupSkipReason = "cycle" | "missing" | "invalid";
+
+export type DynamicGroupSkip = {
+  readonly groupId: string;
+  readonly reason: DynamicGroupSkipReason;
+  /** Reference path that explains the skip, starting at `groupId`. */
+  readonly path: ReadonlyArray<string>;
+  readonly message: string;
+};
+
+export type DynamicGroupDependencyPlan = {
+  /**
+   * Dynamic group ids in dependency order: every referenced group appears
+   * before the group that uses it. Groups that must not be evaluated (a
+   * circular or missing reference) are absent.
+   */
+  readonly order: ReadonlyArray<string>;
+  /** Groups that must be skipped, keyed by id. */
+  readonly problems: ReadonlyMap<string, DynamicGroupSkip>;
+  /** Direct reverse references, including references to manual groups. */
+  readonly dependents: ReadonlyMap<string, ReadonlyArray<string>>;
+};
+
+const referencePathText = (path: ReadonlyArray<string>): string => path.join(" → ");
+
+/**
+ * Order dynamic groups by their references and detect circular ones.
+ *
+ * The walk is a DFS with a visiting stack, so a direct self-reference, a rule
+ * that reaches an ancestor through nesting, and any longer cycle are reported
+ * with the path that closes them. Nesting edges make a parent depend on its
+ * children, which is what places a dynamic child before a group that watches
+ * the parent.
+ *
+ * A group that depends on a skipped group is skipped too: evaluating it
+ * against a stale or empty referenced membership would silently change its
+ * members.
+ *
+ * Manual groups may be referenced (their materialised membership is used) but
+ * never contribute rule edges of their own.
+ */
+export const planDynamicGroupDependencies = (
+  nodes: ReadonlyArray<DynamicGroupReferenceNode>,
+  hierarchyEdges: ReadonlyArray<DynamicGroupHierarchyEdge> = [],
+): DynamicGroupDependencyPlan => {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const references = new Map<string, ReadonlyArray<string>>(
+    nodes.map((node) => [node.id, dynamicGroupRuleGroupIds(node.rules)]),
+  );
+
+  // Everything the group must observe before it can be evaluated: groups named
+  // by its rules, plus each nested child (the parent's union includes it).
+  const dependencies = new Map<string, Array<string>>(
+    nodes.map((node) => [node.id, [...(references.get(node.id) ?? [])]]),
+  );
+
+  for (const edge of hierarchyEdges) {
+    if (!byId.has(edge.parentId) || !byId.has(edge.childId)) continue;
+
+    dependencies.get(edge.parentId)?.push(edge.childId);
+  }
+
+  const dependents = new Map<string, Array<string>>();
+
+  for (const node of nodes) {
+    for (const reference of references.get(node.id) ?? []) {
+      const list = dependents.get(reference) ?? [];
+
+      list.push(node.id);
+      dependents.set(reference, list);
+    }
+  }
+
+  const problems = new Map<string, DynamicGroupSkip>();
+
+  const skip = (
+    groupId: string,
+    reason: DynamicGroupSkipReason,
+    path: ReadonlyArray<string>,
+    message: string,
+  ) => {
+    if (!problems.has(groupId)) problems.set(groupId, { groupId, reason, path, message });
+  };
+
+  // A reference to a group outside this tenant (deleted, or a forged id) is a
+  // skip, never an empty membership: `notIn` would otherwise match everything.
+  for (const node of nodes) {
+    for (const reference of references.get(node.id) ?? []) {
+      if (byId.has(reference)) continue;
+
+      skip(
+        node.id,
+        "missing",
+        [node.id, reference],
+        `This group references a group that does not exist in the tenant (${reference}).`,
+      );
+    }
+  }
+
+  const state = new Map<string, "visiting" | "done">();
+  const stack: Array<string> = [];
+  const order: Array<string> = [];
+  const cycles: Array<Array<string>> = [];
+
+  const visit = (groupId: string) => {
+    const current = state.get(groupId);
+
+    if (current === "done") return;
+
+    if (current === "visiting") {
+      const start = stack.indexOf(groupId);
+
+      cycles.push([...stack.slice(start), groupId]);
+
+      return;
+    }
+
+    state.set(groupId, "visiting");
+    stack.push(groupId);
+
+    for (const dependency of dependencies.get(groupId) ?? []) {
+      if (!byId.has(dependency)) continue;
+
+      if (state.get(dependency) === "visiting") {
+        const start = stack.indexOf(dependency);
+
+        cycles.push([...stack.slice(start), dependency]);
+      } else visit(dependency);
+    }
+
+    stack.pop();
+    state.set(groupId, "done");
+    order.push(groupId);
+  };
+
+  for (const node of nodes) visit(node.id);
+
+  for (const cycle of cycles) {
+    const members = cycle.slice(0, -1);
+    const message = `Circular group reference: ${referencePathText(cycle)}.`;
+
+    for (const groupId of members)
+      // A manual group in the loop is a nesting parent, not something to
+      // evaluate. Only dynamic members need the skip recorded for reporting.
+      if (byId.get(groupId)?.rules != null) skip(groupId, "cycle", cycle, message);
+  }
+
+  // Skip every group whose referenced membership cannot be trusted.
+  const queue = [...problems.keys()];
+
+  while (queue.length > 0) {
+    const skipped = queue.pop()!;
+
+    for (const dependent of dependents.get(skipped) ?? []) {
+      if (problems.has(dependent) || byId.get(dependent)?.rules == null) continue;
+
+      skip(
+        dependent,
+        problems.get(skipped)!.reason,
+        [dependent, ...problems.get(skipped)!.path],
+        `This group depends on a group that cannot be evaluated (${referencePathText(
+          problems.get(skipped)!.path,
+        )}).`,
+      );
+      queue.push(dependent);
+    }
+  }
+
+  return {
+    order: order.filter((groupId) => !problems.has(groupId) && byId.get(groupId)?.rules != null),
+    problems,
+    dependents,
+  };
+};
+
+/** Every group that directly or transitively references `groupId`. */
+export const dynamicGroupDependentsOf = (
+  plan: DynamicGroupDependencyPlan,
+  groupId: string,
+): ReadonlySet<string> => {
+  const found = new Set<string>();
+  const stack = [groupId];
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+
+    for (const dependent of plan.dependents.get(current) ?? []) {
+      if (found.has(dependent)) continue;
+
+      found.add(dependent);
+      stack.push(dependent);
+    }
+  }
+
+  return found;
+};
+
+/**
+ * Why a rule set cannot reference the given groups, or `null`.
+ *
+ * Used on the write path so a circular, ancestor or cross-tenant reference is
+ * rejected before it is saved. `groups` is the tenant's group list and
+ * `hierarchyEdges` its nesting edges; when `groupId` is null (a create) only
+ * the referenced ids and self-reference are checked.
+ */
+export const dynamicGroupReferenceProblem = (
+  groupId: string | null,
+  rules: DynamicGroupRules | null | undefined,
+  groups: ReadonlyArray<DynamicGroupReferenceNode>,
+  hierarchyEdges: ReadonlyArray<DynamicGroupHierarchyEdge> = [],
+): string | null => {
+  const ids = dynamicGroupRuleGroupIds(rules);
+
+  if (ids.length === 0) return null;
+
+  if (groupId !== null && ids.includes(groupId))
+    return "A group cannot use itself as a rule criterion.";
+
+  if (groupId !== null) {
+    // A parent includes its children, so naming an ancestor means the ancestor
+    // and this group would each need the other to be complete first.
+    const parents = new Map<string, Array<string>>();
+
+    for (const edge of hierarchyEdges) {
+      const list = parents.get(edge.childId) ?? [];
+
+      list.push(edge.parentId);
+      parents.set(edge.childId, list);
+    }
+
+    const ancestors = new Set<string>();
+    const stack = [...(parents.get(groupId) ?? [])];
+
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+
+      if (current === groupId || ancestors.has(current)) continue;
+
+      ancestors.add(current);
+      stack.push(...(parents.get(current) ?? []));
+    }
+
+    if (ids.some((id) => ancestors.has(id)))
+      return "A group cannot use a group that contains it as a rule criterion.";
+  }
+
+  const known = new Set(groups.map((group) => group.id));
+  const missing = ids.filter((id) => !known.has(id));
+
+  if (missing.length > 0) return "A group rule can only reference groups in the same tenant.";
+
+  if (groupId === null) return null;
+
+  // Replace the stored rules with the candidate so a rule that closes a loop
+  // through this group is detected against the graph as it would be saved.
+  const nodes = groups.map((group) => (group.id === groupId ? { ...group, rules } : group));
+  const problem = planDynamicGroupDependencies(nodes, hierarchyEdges).problems.get(groupId);
+
+  if (!problem) return null;
+
+  return problem.reason === "cycle"
+    ? `That rule creates a circular group reference (${referencePathText(problem.path)}).`
+    : problem.message;
+};
+
 /** A dynamic group must carry at least one condition. */
 export const hasDynamicGroupConditions = (rules: DynamicGroupRules | null | undefined): boolean =>
   rules != null && conditionCount(rules) > 0;
@@ -89,6 +444,16 @@ export const dynamicGroupRulesProblem = (
     for (const condition of list) {
       if (Schema.is(Schema.String)(condition.value) && condition.value.trim() === "")
         return `The ${condition.field} condition needs a value`;
+
+      if (condition.field === "group") {
+        const ids = deviceConditionGroupIds(condition);
+        const named = ids.filter((id) => id.trim() !== "");
+
+        if (named.length === 0) return "A group condition needs at least one group";
+
+        if (named.length !== ids.length)
+          return "A group condition cannot contain an empty group id";
+      }
 
       if (
         (condition.field === "staleDays" || condition.field === "enrolledDays") &&

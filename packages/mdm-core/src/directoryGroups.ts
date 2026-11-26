@@ -1,6 +1,9 @@
 import { Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { syncDynamicGroupDependents } from "./dynamicGroups.ts";
+import { syncGroupInheritance } from "./groupInheritance.ts";
 
 export type DirectoryGroupSyncOptions = {
   /** Injectable clock. Defaults to `new Date()`. */
@@ -92,9 +95,14 @@ const syncDirectoryGroupLocked = (
     if (!directoryGroupId || group.kind !== "manual") {
       const removed = yield* db
         .delete(s.groupDevice)
-        .where(
-          and(eq(s.groupDevice.groupId, groupId), eq(s.groupDevice.source, "directory")),
-        );
+        .where(and(eq(s.groupDevice.groupId, groupId), eq(s.groupDevice.source, "directory")));
+
+      // Unlinking can drop members that enclosing groups were inheriting.
+      yield* syncGroupInheritance(db, organizationId, groupId);
+
+      // A dynamic group can use this group as a criterion, so a membership
+      // change here must reach its referencing rules immediately.
+      yield* syncDynamicGroupDependents(db, organizationId, groupId, { now });
 
       return emptyResult(
         groupId,
@@ -127,7 +135,25 @@ const syncDirectoryGroupLocked = (
           )
       : [];
 
-    const activeIds = activeUsers.map((row) => row.id);
+    // A user exclusion stops this group deriving devices from that person. A
+    // device shared with a non-excluded user stays, which is the documented
+    // difference between a person exclusion and a device exclusion.
+    const exclusions = yield* db
+      .select({ target: s.groupExclusion.target, targetId: s.groupExclusion.targetId })
+      .from(s.groupExclusion)
+      .where(eq(s.groupExclusion.groupId, groupId));
+
+    const excludedUsers = new Set(
+      exclusions.filter((row) => row.target === "user").map((row) => row.targetId),
+    );
+
+    const excludedDevices = new Set(
+      exclusions.filter((row) => row.target === "device").map((row) => row.targetId),
+    );
+
+    const activeIds = activeUsers
+      .map((row) => row.id)
+      .filter((userId) => !excludedUsers.has(userId));
 
     const deviceLinks = activeIds.length
       ? yield* db
@@ -159,7 +185,10 @@ const syncDirectoryGroupLocked = (
       : [];
 
     const deviceIds = new Set(tenantDevices.map((row) => row.id));
-    const desired = candidateDeviceIds.filter((deviceId) => deviceIds.has(deviceId));
+
+    const desired = candidateDeviceIds.filter(
+      (deviceId) => deviceIds.has(deviceId) && !excludedDevices.has(deviceId),
+    );
 
     const links = yield* db.select().from(s.groupDevice).where(eq(s.groupDevice.groupId, groupId));
 
@@ -167,23 +196,25 @@ const syncDirectoryGroupLocked = (
       links.filter((link) => link.source === "directory").map((link) => link.deviceId),
     );
 
-    const staleSources = links.filter((link) => link.source !== "directory");
+    // Inherited rows belong to the parent's child list, not to this link, so a
+    // directory recompute must not delete them.
+    const staleSources = links.filter(
+      (link) => link.source !== "directory" && link.source !== "nested",
+    );
 
     const toAdd = desired.filter((deviceId) => !existingDirectory.has(deviceId));
     const toRemove = [...existingDirectory].filter((deviceId) => !desired.includes(deviceId));
 
     if (staleSources.length > 0)
-      yield* db
-        .delete(s.groupDevice)
-        .where(
-          and(
-            eq(s.groupDevice.groupId, groupId),
-            inArray(
-              s.groupDevice.deviceId,
-              staleSources.map((link) => link.deviceId),
-            ),
+      yield* db.delete(s.groupDevice).where(
+        and(
+          eq(s.groupDevice.groupId, groupId),
+          inArray(
+            s.groupDevice.deviceId,
+            staleSources.map((link) => link.deviceId),
           ),
-        );
+        ),
+      );
 
     if (toRemove.length > 0)
       yield* db
@@ -211,6 +242,13 @@ const syncDirectoryGroupLocked = (
           eq(s.enterpriseGroup.organizationId, organizationId),
         ),
       );
+
+    // Enclosing groups include this group's membership.
+    yield* syncGroupInheritance(db, organizationId, groupId);
+
+    // Reference the evaluator rather than duplicating rule logic: a dynamic
+    // group that names this one must see the new membership now.
+    yield* syncDynamicGroupDependents(db, organizationId, groupId, { now });
 
     return {
       groupId,
@@ -255,12 +293,7 @@ export const syncDirectoryGroupsForTenant = (
     const directoryRows = yield* db
       .select({ groupId: s.groupDevice.groupId })
       .from(s.groupDevice)
-      .where(
-        and(
-          eq(s.groupDevice.source, "directory"),
-          inArray(s.groupDevice.groupId, ids),
-        ),
-      );
+      .where(and(eq(s.groupDevice.source, "directory"), inArray(s.groupDevice.groupId, ids)));
 
     const orphaned = new Set(directoryRows.map((row) => row.groupId));
 

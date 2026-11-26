@@ -1,7 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
-import { Option, Schema } from "effect";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
+import { DateTime, Effect, FileSystem, Option, PlatformError, Schema } from "effect";
 import type {
   R2Bucket,
   R2GetOptions,
@@ -9,7 +8,6 @@ import type {
   R2Object,
   R2ObjectBody,
   R2Objects,
-  R2PutOptions,
   R2PutValue,
 } from "@mattrax/enterprise-core";
 
@@ -22,14 +20,34 @@ import type {
  * rather than a listed object with no bytes.
  */
 
-type StoredObject = {
-  readonly key: string;
-  readonly size: number;
-  readonly etag: string;
-  readonly uploaded: string;
-  readonly httpMetadata?: R2PutOptions["httpMetadata"];
-  readonly customMetadata?: Record<string, string>;
-};
+const StoredObject = Schema.Struct({
+  key: Schema.String,
+  size: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  etag: Schema.String,
+  uploaded: Schema.String.check(
+    Schema.makeFilter<string>((value) => {
+      const decoded = Option.getOrUndefined(
+        Schema.decodeUnknownOption(Schema.DateTimeUtcFromString)(value),
+      );
+
+      return decoded && DateTime.toDateUtc(decoded).toISOString() === value
+        ? true
+        : "a valid UTC timestamp";
+    }),
+  ),
+  httpMetadata: Schema.optional(
+    Schema.Struct({
+      contentType: Schema.optional(Schema.String),
+      contentLanguage: Schema.optional(Schema.String),
+      cacheControl: Schema.optional(Schema.String),
+      contentDisposition: Schema.optional(Schema.String),
+      contentEncoding: Schema.optional(Schema.String),
+    }),
+  ),
+  customMetadata: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+});
+
+type StoredObject = Schema.Schema.Type<typeof StoredObject>;
 
 const encodeKey = (key: string) => Buffer.from(key, "utf8").toString("base64url");
 
@@ -113,149 +131,161 @@ const rangeOf = (bytes: Uint8Array, range: R2GetOptions["range"]): Uint8Array =>
   return bytes.subarray(offset, end);
 };
 
+const isNotFound = (error: PlatformError.PlatformError): boolean =>
+  PlatformError.isPlatformError(error) && error.reason._tag === "NotFound";
+
 export type FileSystemR2Options = {
   readonly root: string;
 };
 
 /**
- * Build a bucket backed by `root`. `bodyPath` and `metaPath` are derived from
- * the encoded key so listing never has to trust the key for filesystem access.
+ * Build a bucket backed by `root` using Effect's FileSystem service. The Node
+ * entry supplies NodeFileSystem; tests can supply an in-memory or failing
+ * filesystem without changing the adapter.
  */
-export const fileSystemR2 = ({ root }: FileSystemR2Options): R2Bucket => {
-  const bodies = path.join(root, "objects");
-  const metas = path.join(root, "meta");
+export const fileSystemR2 = ({ root }: FileSystemR2Options) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const bodies = path.join(root, "objects");
+    const metas = path.join(root, "meta");
 
-  const bodyPath = (key: string) => path.join(bodies, `${encodeKey(key)}.bin`);
-  const metaPath = (key: string) => path.join(metas, `${encodeKey(key)}.json`);
+    const bodyPath = (key: string) => path.join(bodies, `${encodeKey(key)}.bin`);
+    const metaPath = (key: string) => path.join(metas, `${encodeKey(key)}.json`);
+    const run = <A>(effect: Effect.Effect<A, unknown, never>) => Effect.runPromise(effect);
 
-  const readMeta = async (key: string): Promise<StoredObject | null> => {
-    try {
-      // SAFETY: `put` writes this exact shape; a malformed file is treated as absent.
-      return JSON.parse(await readFile(metaPath(key), "utf8")) as StoredObject;
-    } catch {
-      return null;
-    }
-  };
-
-  const writeAtomic = async (target: string, data: string | Uint8Array) => {
-    const temporary = `${target}.${randomUUID()}.tmp`;
-
-    await writeFile(temporary, data, { mode: 0o600 });
-    await rename(temporary, target);
-  };
-
-  return {
-    async head(key) {
-      const stored = await readMeta(key);
-
-      return stored ? toObject(stored) : null;
-    },
-
-    async get(key, options) {
-      const stored = await readMeta(key);
-
-      if (!stored) return null;
-
-      try {
-        const bytes = new Uint8Array(await readFile(bodyPath(key)));
-
-        return toBody(stored, rangeOf(bytes, options?.range));
-      } catch {
-        return null;
-      }
-    },
-
-    async put(key, value, options) {
-      const bytes = await toBytes(value);
-      const etag = createHash("md5").update(bytes).digest("hex");
-
-      const stored: StoredObject = {
-        key,
-        size: bytes.byteLength,
-        etag,
-        uploaded: new Date().toISOString(),
-        httpMetadata: options?.httpMetadata,
-        customMetadata: options?.customMetadata,
-      };
-
-      await mkdir(bodies, { recursive: true, mode: 0o700 });
-      await mkdir(metas, { recursive: true, mode: 0o700 });
-      await writeAtomic(bodyPath(key), bytes);
-      await writeAtomic(metaPath(key), JSON.stringify(stored));
-
-      return toObject(stored);
-    },
-
-    async delete(keys) {
-      const list = Schema.is(Schema.String)(keys) ? [keys] : keys;
-
-      await Promise.all(
-        list.flatMap((key) => [
-          rm(bodyPath(key), { force: true }),
-          rm(metaPath(key), { force: true }),
-        ]),
+    const readMeta = (key: string) =>
+      fs.readFileString(metaPath(key)).pipe(
+        Effect.catchIf(isNotFound, () => Effect.succeed(null)),
+        Effect.flatMap((text) =>
+          text === null
+            ? Effect.succeed(null)
+            : Schema.decodeUnknownEffect(StoredObject)(JSON.parse(text)),
+        ),
       );
-    },
 
-    async list(options?: R2ListOptions): Promise<R2Objects> {
-      const prefix = options?.prefix ?? "";
-      const limit = Math.max(1, Math.min(options?.limit ?? 1000, 1000));
+    const writeAtomic = (target: string, data: string | Uint8Array) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const temporary = yield* fs.makeTempFileScoped({ directory: path.dirname(target) });
+          const write =
+            typeof data === "string"
+              ? fs.writeFileString(temporary, data, { mode: 0o600 })
+              : fs.writeFile(temporary, data, { mode: 0o600 });
 
-      let names: string[];
+          yield* write;
+          yield* fs.rename(temporary, target);
+        }),
+      );
 
-      try {
-        names = await readdir(metas);
-      } catch {
-        return { objects: [], truncated: false, delimitedPrefixes: [] };
-      }
+    const bucket: R2Bucket = {
+      head: (key) =>
+        run(readMeta(key).pipe(Effect.map((stored) => (stored ? toObject(stored) : null)))),
 
-      const stored: StoredObject[] = [];
+      get: (key, options) =>
+        run(
+          readMeta(key).pipe(
+            Effect.flatMap((stored) => {
+              if (!stored) return Effect.succeed(null);
 
-      for (const name of names) {
-        if (!name.endsWith(".json")) continue;
+              return fs.readFile(bodyPath(key)).pipe(
+                Effect.catchIf(isNotFound, () => Effect.succeed(null)),
+                Effect.map((bytes) =>
+                  bytes === null ? null : toBody(stored, rangeOf(bytes, options?.range)),
+                ),
+              );
+            }),
+          ),
+        ),
 
-        try {
-          // SAFETY: metadata is written by `put` with this shape; any other
-          // content is ignored rather than listed.
-          const item = JSON.parse(await readFile(path.join(metas, name), "utf8")) as StoredObject;
+      put: async (key, value, options) => {
+        const bytes = await toBytes(value);
+        const etag = createHash("md5").update(bytes).digest("hex");
+        const stored: StoredObject = {
+          key,
+          size: bytes.byteLength,
+          etag,
+          uploaded: new Date().toISOString(),
+          httpMetadata: options?.httpMetadata,
+          customMetadata: options?.customMetadata,
+        };
 
-          if (item.key.startsWith(prefix)) stored.push(item);
-        } catch {
-          // A half-written metadata file is not a listed object.
-        }
-      }
+        await run(
+          Effect.gen(function* () {
+            yield* fs.makeDirectory(bodies, { recursive: true, mode: 0o700 });
+            yield* fs.makeDirectory(metas, { recursive: true, mode: 0o700 });
+            yield* writeAtomic(bodyPath(key), bytes);
+            yield* writeAtomic(metaPath(key), JSON.stringify(stored));
+          }),
+        );
 
-      stored.sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0));
+        return toObject(stored);
+      },
 
-      const start = options?.cursor
-        ? stored.findIndex(
-            (item) => item.key > Buffer.from(options.cursor!, "base64url").toString("utf8"),
-          )
-        : 0;
+      delete: (keys) => {
+        const list = Schema.is(Schema.String)(keys) ? [keys] : keys;
 
-      const slice = start < 0 ? [] : stored.slice(start, start + limit + 1);
-      const truncated = slice.length > limit;
-      const page = truncated ? slice.slice(0, limit) : slice;
+        return run(
+          Effect.forEach(
+            list.flatMap((key) => [bodyPath(key), metaPath(key)]),
+            (target) => fs.remove(target, { force: true }),
+            { concurrency: 8, discard: true },
+          ),
+        );
+      },
 
-      const delimitedPrefixes = new Set<string>();
+      list: (options?: R2ListOptions) =>
+        run(
+          Effect.gen(function* () {
+            const prefix = options?.prefix ?? "";
+            const limit = Math.max(1, Math.min(options?.limit ?? 1000, 1000));
+            const names = yield* fs
+              .readDirectory(metas)
+              .pipe(Effect.catchIf(isNotFound, () => Effect.succeed([])));
+            const stored = yield* Effect.forEach(
+              names.filter((name) => name.endsWith(".json")),
+              (name) =>
+                fs
+                  .readFileString(path.join(metas, name))
+                  .pipe(
+                    Effect.flatMap((text) =>
+                      Schema.decodeUnknownEffect(StoredObject)(JSON.parse(text)),
+                    ),
+                  ),
+              { concurrency: 8 },
+            );
 
-      if (options?.delimiter)
-        for (const item of page) {
-          const rest = item.key.slice(prefix.length);
-          const index = rest.indexOf(options.delimiter);
+            const matching = stored
+              .filter((item) => item.key.startsWith(prefix))
+              .sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0));
+            const cursor = options?.cursor
+              ? Buffer.from(options.cursor, "base64url").toString("utf8")
+              : undefined;
+            const start = cursor ? matching.findIndex((item) => item.key > cursor) : 0;
+            const slice = start < 0 ? [] : matching.slice(start, start + limit + 1);
+            const truncated = slice.length > limit;
+            const page = truncated ? slice.slice(0, limit) : slice;
+            const delimitedPrefixes = new Set<string>();
 
-          if (index >= 0)
-            delimitedPrefixes.add(prefix + rest.slice(0, index + options.delimiter.length));
-        }
+            if (options?.delimiter)
+              for (const item of page) {
+                const rest = item.key.slice(prefix.length);
+                const index = rest.indexOf(options.delimiter);
 
-      return {
-        objects: page.map(toObject),
-        truncated,
-        cursor: truncated
-          ? Buffer.from(page[page.length - 1]!.key, "utf8").toString("base64url")
-          : undefined,
-        delimitedPrefixes: [...delimitedPrefixes],
-      };
-    },
-  };
-};
+                if (index >= 0)
+                  delimitedPrefixes.add(prefix + rest.slice(0, index + options.delimiter.length));
+              }
+
+            return {
+              objects: page.map(toObject),
+              truncated,
+              cursor: truncated
+                ? Buffer.from(page.at(-1)!.key, "utf8").toString("base64url")
+                : undefined,
+              delimitedPrefixes: [...delimitedPrefixes],
+            } satisfies R2Objects;
+          }),
+        ),
+    };
+
+    return bucket;
+  });

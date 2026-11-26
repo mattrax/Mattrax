@@ -140,6 +140,49 @@ deferred command palette.
   available: the launcher mounts it as soon as the chunk arrives, rather than
   waiting for the first keypress.
 
+### Dashboard navigation cache
+
+The signed-in shell (`/me`) is shared by the layout, tenant guard and every
+permission check, but each page mounts its own observer. It previously used a zero
+stale window, so the first observer mounted by a route change refetched the payload
+that had just painted. Every observer also parsed the persisted shell JSON.
+
+`me` now stays fresh for 60 seconds (`ME_QUERY_STALE_TIME`), with a 30-minute
+retention window. Explicit invalidations cover every membership or role mutation
+(tenant create, invitations, administrators, profile, email verification). A stale
+entry still refreshes on the next mount or window focus.
+
+The localStorage read still runs for each observer (`getItem` is cheap); the JSON
+parse above it is memoised until the stored string changes. Cross-tab cache
+messages invalidate tenant-scoped keys, not the account-wide `/me` payload. A
+membership change accepted in another tab becomes visible on the next mount after
+the 60-second window, or on the next focus once stale. The SSR-preloaded shell
+paints immediately but is marked stale once, because its permission claims can be
+up to the five-minute SSR token lifetime old; the first observer revalidates in
+the background and the 60-second policy applies afterwards.
+
+The policy claim is a unit test, not a network measurement. `me-query.test.ts`
+mounts ten query observers and asserts how many fetches the policy allows:
+
+| Policy                  | Fetches across ten observer mounts |
+| ----------------------- | ---------------------------------- |
+| Before (`staleTime: 0`)  | 10                                 |
+| After (60 s)            | 1                                  |
+
+The shell-layout browser suite separately checks that a cold document makes
+exactly one `/api/v1/me` request to revalidate the preload, then zero across
+sidebar navigations.
+
+Email verification has one deliberate exception: the dashboard gate waits while
+`/me` is missing or fetching and only redirects when the row explicitly says
+`emailVerified: false`. A refreshed session claim wins over a stale row, so a
+just-verified account is not bounced back to `/verify-email`.
+
+Auth and landing pages do not import the query client. The verification page
+loads the refresh helper and query client dynamically only when a signed-in
+account completes verification, keeping the full enterprise API module out of
+the public auth chunk.
+
 ### Measured and rejected
 
 These looked like wins and were not, so the code stays simpler:
@@ -169,23 +212,17 @@ These looked like wins and were not, so the code stays simpler:
 
 ## Static guards
 
-`packages/config/oxlint` runs through `pnpm lint` (and `vp lint`). Two rules
-target the layout-shift and jank sources directly:
+`pnpm lint` runs Oxlint with the Cloudflare preset plus the Effect rules. The
+layout-shift sources below are not automated any more, so they stay review
+rules of thumb:
 
-- `anti-slop/no-layout-animating-transition` rejects `transition-all`,
-  `transition-[...]` property lists that include width, height, inset, margin,
-  padding or gap, and `animate-[...]` values that begin with one of those
-  properties. Animate `transform` and `opacity` instead
-  (`transition-transform`, `transition-[transform,opacity]`, `animate-spin`).
-  `transition-colors` and `transition-shadow` are valid and are not flagged.
-- `anti-slop/require-media-dimensions` requires `<img>`, `<video>` and
-  `<iframe>` to reserve their box with explicit `width`/`height` attributes, an
-  `aspect-ratio` style or `aspect-*` class, or fixed `h-`/`w-`/`size-` classes.
-  Empty or spread-only media is ignored because the values cannot be proven
-  statically.
-
-Both rules have table-driven tests under
-`packages/config/oxlint/rules/*.test.ts`; `pnpm test` includes them.
+- Animate `transform` and `opacity` instead of `transition-all`,
+  `transition-[...]` lists that include width, height, inset, margin, padding or
+  gap, and `animate-[...]` values that begin with one of those properties.
+  `transition-colors` and `transition-shadow` are valid.
+- Reserve the box of `<img>`, `<video>` and `<iframe>` with explicit
+  `width`/`height` attributes, an `aspect-ratio` style or `aspect-*` class, or
+  fixed `h-`/`w-`/`size-` classes.
 
 ### Accessibility rules
 

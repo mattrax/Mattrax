@@ -1,8 +1,37 @@
 import { Effect, Schema } from "effect";
 import type { HttpServerRequest } from "effect/http";
+import { MySqlTable } from "drizzle-orm/mysql-core";
 import { createEnterpriseSchema } from "../src/schema.ts";
+import type { EnterpriseDb, EnterpriseOrganization } from "../src/schema.ts";
 
 export const schema = createEnterpriseSchema();
+
+export const makeOrganization = (
+  input: Partial<EnterpriseOrganization> & Pick<EnterpriseOrganization, "id" | "name" | "slug">,
+): EnterpriseOrganization => {
+  const now = new Date("2026-01-01T00:00:00.000Z");
+
+  return {
+    logo: null,
+    displayName: null,
+    supportEmail: null,
+    brandColor: null,
+    metadata: null,
+    requireMfa: false,
+    scriptsEnabled: true,
+    localAccountHealthEnabled: true,
+    localAdminRotationDays: null,
+    appStoreRegion: null,
+    autoUnlinkUnavailableApplications: false,
+    billingPlan: null,
+    billingStatus: null,
+    billingEntitlementRevision: 0,
+    onboardingFollowUpSentAt: null,
+    createdAt: now,
+    updatedAt: now,
+    ...input,
+  };
+};
 
 /**
  * A value the fake store holds for one column: the scalars, dates and nested
@@ -20,16 +49,36 @@ type RowValue =
   | ReadonlyArray<RowValue>
   | Row;
 
-type Row = { [column: string]: RowValue };
+export type Row = { [column: string]: RowValue };
 
-type Store = Record<string, Row[]>;
+export type Store = Record<string, Row[]>;
 
-const tableSymbol = (description: string) => (value: Row) =>
+type DrizzleTable = MySqlTable;
+
+const isDrizzleTable = (value: unknown): value is DrizzleTable => value instanceof MySqlTable;
+
+const defaultTables = Object.fromEntries(
+  Object.entries(schema).filter(([, value]) => isDrizzleTable(value)),
+);
+
+export type TestDb = EnterpriseDb & {
+  readonly store: Record<string, any[]>;
+  readonly query: any;
+};
+
+const tableSymbol = (description: string) => (value: DrizzleTable) =>
   Object.getOwnPropertySymbols(value).find((symbol) => symbol.description === description)!;
 
 const nameSymbol = tableSymbol("drizzle:Name");
 
-const tableName = (table: any): string => table?.[nameSymbol(table)];
+const tableName = (table: DrizzleTable): string => {
+  const key = nameSymbol(table);
+  const descriptor =
+    Object.getOwnPropertyDescriptor(table, key) ??
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(table), key);
+
+  return String(descriptor?.value);
+};
 
 const columnName = (column: any): string => column?.name;
 
@@ -64,6 +113,9 @@ const collectPredicates = (condition: any): Array<(row: Row) => boolean> => {
       if (op.includes(" = ") && "value" in param)
         predicates.push((row) => (key in row ? row[key] : row[fallback]) === param.value);
 
+      if (op.toLowerCase().includes(" is not null"))
+        predicates.push((row) => (key in row ? row[key] : row[fallback]) != null);
+
       if (op.toLowerCase().includes(" is null"))
         predicates.push((row) => (key in row ? row[key] : row[fallback]) == null);
     }
@@ -81,7 +133,28 @@ const queryFor = (condition: any) =>
   });
 
 const camel = (value: string) =>
-  value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+  value.replaceAll(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+
+/**
+ * MySQL considers a row changed only when at least one assigned value differs.
+ * Dates compare by instant and JSON-shaped values compare structurally so a
+ * same-value update is modelled as `affectedRows: 0`.
+ */
+const sameValue = (left: RowValue | undefined, right: RowValue): boolean => {
+  // MySQL has one NULL value: assigning undefined/null over NULL is unchanged.
+  const a = left === undefined ? null : left;
+  const b = right === undefined ? null : right;
+
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+
+  if (Array.isArray(a) && Array.isArray(b))
+    return a.length === b.length && a.every((item, index) => sameValue(item, b[index]!));
+
+  if (a !== null && b !== null && typeof a === "object" && typeof b === "object")
+    return JSON.stringify(a) === JSON.stringify(b);
+
+  return a === b;
+};
 
 /** Values the fake orders and compares: everything normalises to one of these. */
 type Comparable = number | string;
@@ -120,7 +193,7 @@ const splitTopLevel = (sql: string, connector: string): string[] => {
   let start = 0;
 
   for (let index = 0; index < sql.length; index++) {
-    const character = sql[index]!;
+    const character = sql[index];
 
     if (character === '"') quoted = !quoted;
     else if (!quoted && character === "(") depth++;
@@ -145,7 +218,7 @@ const stripOuterParens = (sql: string) => {
     let closesAtEnd = false;
 
     for (let index = 0; index < value.length; index++) {
-      const character = value[index]!;
+      const character = value[index];
 
       if (character === "(") depth++;
       else if (character === ")") {
@@ -165,16 +238,16 @@ const stripOuterParens = (sql: string) => {
   return value;
 };
 
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (value: string) => value.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
 const likeRegex = (pattern: string) => {
   let source = "^";
 
   for (let index = 0; index < pattern.length; index++) {
-    const character = pattern[index]!;
+    const character = pattern[index];
 
     if (character === "\\" && index + 1 < pattern.length) {
-      source += escapeRegex(pattern[++index]!);
+      source += escapeRegex(pattern[++index]);
     } else if (character === "%") source += ".*";
     else if (character === "_") source += ".";
     else source += escapeRegex(character);
@@ -191,26 +264,28 @@ const rowValue = (row: Row, table: string | undefined, column: string) => {
 };
 
 const matchesLeaf = (sql: string, params: any[], row: Row): boolean => {
+  const isNotNull = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+is\s+not\s+null$/i);
+
+  if (isNotNull) return rowValue(row, isNotNull[1], isNotNull[2]) != null;
+
   const isNull = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+is\s+null$/i);
 
-  if (isNull) return rowValue(row, isNull[1], isNull[2]!) == null;
+  if (isNull) return rowValue(row, isNull[1], isNull[2]) == null;
 
   const inList = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s+in\s+\(([^)]*)\)$/i);
 
   if (inList) {
-    const values = [...inList[3]!.matchAll(/\$(\d+)/g)].map(
-      (match) => params[Number(match[1]) - 1],
-    );
+    const values = [...inList[3].matchAll(/\$(\d+)/g)].map((match) => params[Number(match[1]) - 1]);
 
-    return values.includes(rowValue(row, inList[1], inList[2]!));
+    return values.includes(rowValue(row, inList[1], inList[2]));
   }
 
   const comparison = sql.match(/^(?:"([^"]+)"\.)?"([^"]+)"\s*(<=|>=|<|>|=|like)\s*\$(\d+)$/i);
 
   // Unknown leaf (e.g. a generated literal): do not exclude the row.
   if (!comparison) return true;
-  const actual = rowValue(row, comparison[1], comparison[2]!);
-  const operator = comparison[3]!.toLowerCase();
+  const actual = rowValue(row, comparison[1], comparison[2]);
+  const operator = comparison[3].toLowerCase();
   const expected = params[Number(comparison[4]) - 1];
 
   if (operator === "=") {
@@ -245,7 +320,6 @@ const matchesSql = (sql: string, params: any[], row: Row): boolean => {
 
   if (orParts.length > 1) return orParts.some((part) => matchesSql(part, params, row));
   const andParts = splitTopLevel(text, " and ");
-
   if (andParts.length > 1) return andParts.every((part) => matchesSql(part, params, row));
 
   return matchesLeaf(text, params, row);
@@ -309,7 +383,7 @@ const project = (fields: any, row: Row) => {
 
       // A whole table selected as a named field (`{ member: schema.member }`)
       // is projected as an unprefixed row so callers get a nested object.
-      const nested = tableName(field);
+      const nested = field?.table ? undefined : tableName(field);
 
       if (nested) {
         const prefix = `${nested}.`;
@@ -557,15 +631,25 @@ class UpdateBuilder {
 
     for (const row of this.store[this.table]) {
       if (matches(condition, row)) {
-        affectedRows++;
+        let changed = false;
 
-        for (const [key, value] of Object.entries(this.patch))
-          if (value !== undefined) row[key] = value;
+        for (const [key, value] of Object.entries(this.patch)) {
+          if (value === undefined) continue;
+
+          if (!sameValue(row[key], value)) changed = true;
+
+          // Store the assigned value even for a NULL no-op so fake rows match
+          // the column state a real MySQL row would have.
+          row[key] = value;
+        }
+
+        // MySQL reports changed rows, not matched rows, unless the driver
+        // enables CLIENT_FOUND_ROWS. Same-value updates therefore resolve
+        // with affectedRows: 0 and must not be mistaken for a lost row.
+        if (changed) affectedRows++;
       }
     }
 
-    // Drizzle's MySQL update resolves to a result with `affectedRows`, which
-    // conditional claims rely on for compare-and-set semantics.
     return Effect.succeed({ affectedRows });
   }
 }
@@ -573,7 +657,9 @@ class UpdateBuilder {
 class DeleteBuilder {
   private readonly store: Store;
   private readonly table: string;
-  private removed: Row[] = [];
+  private condition: any;
+  private limitCount?: number;
+  private returnRows = false;
 
   constructor(store: Store, table: string) {
     this.store = store;
@@ -581,37 +667,52 @@ class DeleteBuilder {
   }
 
   where(condition: any) {
-    const kept: Row[] = [];
+    this.condition = condition;
 
-    for (const row of this.store[this.table]) {
-      if (matches(condition, row)) this.removed.push(row);
-      else kept.push(row);
-    }
+    return this;
+  }
 
-    this.store[this.table] = kept;
+  limit(count: number) {
+    this.limitCount = count;
 
     return this;
   }
 
   returning() {
+    this.returnRows = true;
+
     return this;
   }
 
   [Symbol.iterator]() {
-    return Effect.succeed(this.removed)[Symbol.iterator]();
+    // Drizzle executes deletes lazily and resolves to affectedRows unless a
+    // RETURNING clause was requested. Keeping that shape lets chunk-bound
+    // maintenance tests observe the same termination condition as MySQL.
+    return Effect.sync(() => {
+      const matching = (this.store[this.table] ?? []).filter((row) => matches(this.condition, row));
+      const removed = this.limitCount === undefined ? matching : matching.slice(0, this.limitCount);
+      const removedSet = new Set(removed);
+
+      this.store[this.table] = (this.store[this.table] ?? []).filter((row) => !removedSet.has(row));
+
+      return this.returnRows ? removed : { affectedRows: removed.length };
+    })[Symbol.iterator]();
   }
 }
 
-export const makeDb = (initial: Partial<Store> = {}) => {
+export const makeDb = (
+  initial: Partial<Store> = {},
+  tables: Record<string, DrizzleTable> = defaultTables,
+): TestDb => {
   const store: Store = Object.fromEntries(
-    Object.values(schema).map((table) => [tableName(table), []]),
+    Object.values(tables).map((table) => [tableName(table), []]),
   );
 
   for (const [key, rows] of Object.entries(initial))
     store[key] = (rows ?? []).map((row) => ({ ...row }));
 
   const query = Object.fromEntries(
-    Object.entries(schema).map(([key, table]) => [
+    Object.entries(tables).map(([key, table]) => [
       key,
       {
         findFirst: ({ where }: { where?: any } = {}) =>
@@ -671,7 +772,7 @@ export const cookieFrom = (response: any) => header(response, "set-cookie")?.spl
 const defaultStripeClient = () => ({
   customers: {
     search: async () => ({ data: [] }),
-    list: async function* () {},
+    async *list() {},
     create: async () => ({ id: "cus_created" }),
     update: async (id: string, params: { name?: string }) => ({ id, name: params.name ?? null }),
     retrieve: async (id: string) => ({ id, name: null }),
@@ -744,3 +845,8 @@ export const makeStripeClient = (overrides: StripeClientOverrides = {}): any => 
     subscriptions: { ...client.subscriptions, ...overrides.subscriptions },
   };
 };
+
+import { servicesSchema } from "@mattrax/enterprise-billing";
+
+/** A fake database whose tables are the isolated services billing schema. */
+export const makeServicesDb = (initial: Partial<Store> = {}) => makeDb(initial, servicesSchema);

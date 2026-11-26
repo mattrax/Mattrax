@@ -1,3 +1,4 @@
+import { Checkbox } from "@mattrax/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { AdmxBundle, AdmxCatalogueIndex } from "@mattrax/enterprise-domain/admx";
 import { parseAdmxBundle } from "@mattrax/enterprise-domain/admx";
@@ -16,8 +17,8 @@ import {
   admxPolicySelection,
   loadAdmxCatalogueIndex,
   readAdmxFiles,
-  type AdmxSelection,
 } from "~/lib/policy-designer/admx";
+import type { AdmxSelection } from "~/lib/policy-designer/admx";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { cn } from "~/lib/utils";
 
@@ -43,7 +44,7 @@ const blockedReason = (policy: AdmxBundle["policies"][number]) =>
     ? "User-scoped ADMX policies are not supported by the designer, which saves a device-scoped configuration. Add them as a user-scoped raw Windows setting in the policy editor."
     : undefined);
 
-export function AdmxImportDialog(props: AdmxImportDialogProps) {
+export default function AdmxImportDialog(props: AdmxImportDialogProps) {
   let fileInput: HTMLInputElement | undefined;
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -78,9 +79,9 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
 
       void loadAdmxCatalogueIndex()
         .then(setCatalogue)
-        .catch((cause) =>
+        .catch((error_: unknown) =>
           setCatalogueError(
-            errorMessage(raisedFailure(cause), "The in-box ADMX lookup could not be loaded."),
+            errorMessage(raisedFailure(error_), "The in-box ADMX lookup could not be loaded."),
           ),
         );
     },
@@ -101,9 +102,9 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
         try {
           index = await loadAdmxCatalogueIndex();
           setCatalogue(index);
-        } catch (cause) {
+        } catch (error_) {
           setCatalogueError(
-            errorMessage(raisedFailure(cause), "The in-box ADMX lookup could not be loaded."),
+            errorMessage(raisedFailure(error_), "The in-box ADMX lookup could not be loaded."),
           );
         }
       }
@@ -112,12 +113,10 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
 
       setBundle(next);
       setSelected(
-        new Set(
-          next.policies.flatMap((policy, index) => (blockedReason(policy) ? [] : [index])),
-        ),
+        new Set(next.policies.flatMap((policy, index) => (blockedReason(policy) ? [] : [index]))),
       );
-    } catch (cause) {
-      setError(errorMessage(raisedFailure(cause), "The template could not be read."));
+    } catch (error_) {
+      setError(errorMessage(raisedFailure(error_), "The template could not be read."));
     } finally {
       setBusy(false);
     }
@@ -137,7 +136,9 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
     (bundle()?.policies ?? []).filter((policy) => !blockedReason(policy)).length;
 
   const chosen = () =>
-    (bundle()?.policies ?? []).filter((policy, index) => selected().has(index) && !blockedReason(policy));
+    (bundle()?.policies ?? []).filter(
+      (policy, index) => selected().has(index) && !blockedReason(policy),
+    );
 
   const add = () => {
     const selections = (bundle()?.policies ?? []).flatMap((policy, index) => {
@@ -154,10 +155,10 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
 
   return (
     <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogContent class="max-h-[85vh] max-w-3xl overflow-hidden rounded-xl p-5">
+      <DialogContent class="max-h-7/8 max-w-3xl overflow-hidden">
         <DialogHeader>
-          <DialogTitle class="text-base">Import ADMX template</DialogTitle>
-          <DialogDescription class="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+          <DialogTitle>Import ADMX template</DialogTitle>
+          <DialogDescription>
             Add a vendor Administrative Template (.admx + .adml, or a .zip containing them).
             Microsoft in-box templates map to the settings already in the catalogue.
           </DialogDescription>
@@ -165,11 +166,11 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
 
         <Show when={bundle()}>
           {(loaded) => (
-            <div class="mt-3 space-y-2 text-[12px]">
+            <div class="mt-3 space-y-2 text-xs">
               <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
                 <span>
-                  <span class="font-medium text-foreground">{loaded().policies.length}</span>{" "}
-                  polic{loaded().policies.length === 1 ? "y" : "ies"} found
+                  <span class="font-medium text-foreground">{loaded().policies.length}</span> polic
+                  {loaded().policies.length === 1 ? "y" : "ies"} found
                 </span>
                 <span aria-hidden="true">·</span>
                 <span>
@@ -181,7 +182,7 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
               </div>
               <Show when={catalogueError()}>
                 {(message) => (
-                  <p class="rounded-lg border border-warning/30 bg-warning/[0.07] px-2.5 py-1.5 text-[11px] text-warning-foreground">
+                  <p class="rounded-lg border border-warning/30 bg-warning/[0.07] px-2.5 py-1.5 text-xs text-warning-foreground">
                     The in-box lookup could not be loaded ({message()}). Vendor templates can still
                     be imported; Microsoft in-box policies cannot be matched.
                   </p>
@@ -210,12 +211,12 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
                 void accept(Array.from(event.dataTransfer?.files ?? []));
               }}
             >
-              <p class="text-[13px] font-medium text-foreground">
+              <p class="text-xs font-medium text-foreground">
                 Drop an .admx/.adml pair or a .zip here
               </p>
-              <p class="max-w-sm text-[11px] leading-relaxed text-muted-foreground">
-                Files are parsed in your browser. Nothing is executed, and templates larger than
-                1 MiB per file or 4 MiB in total are refused.
+              <p class="max-w-sm text-xs leading-relaxed text-muted-foreground">
+                Files are parsed in your browser. Nothing is executed, and templates larger than 1
+                MiB per file or 4 MiB in total are refused.
               </p>
               <input
                 ref={fileInput}
@@ -240,11 +241,11 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
             </div>
           }
         >
-          <div class="mt-3 max-h-[52vh] overflow-y-auto rounded-lg border border-border">
+          <div class="mt-3 max-h-1/2 overflow-y-auto rounded-lg border border-border">
             <Show
               when={(bundle()?.policies.length ?? 0) > 0}
               fallback={
-                <p class="px-3 py-4 text-[12px] text-muted-foreground">
+                <p class="px-3 py-4 text-xs text-muted-foreground">
                   No policies were found in those files.
                 </p>
               }
@@ -258,27 +259,26 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
                     return (
                       <li class="border-b border-border/60 px-3 py-2 last:border-b-0">
                         <div class="flex items-start gap-2">
-                          <input
+                          <Checkbox
                             id={id()}
-                            type="checkbox"
-                            class="mt-0.5 size-3.5 accent-[var(--brand-solid)]"
+                            class="mt-0.5 size-3.5"
                             checked={selected().has(index())}
                             disabled={Boolean(blocked())}
-                            onChange={() => toggle(index())}
+                            onCheckedChange={() => toggle(index())}
                           />
                           <label for={id()} class="min-w-0 flex-1 cursor-pointer">
                             <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <span class="truncate text-[13px] font-medium text-foreground">
+                              <span class="truncate text-xs font-medium text-foreground">
                                 {policy.policy.displayName || policy.policy.name}
                               </span>
-                              <Badge variant="outline" class="h-4 px-1 text-[9px]">
+                              <Badge variant="outline">
                                 {policy.source === "inbox" ? "Microsoft in-box" : "Vendor"}
                               </Badge>
-                              <Badge variant="secondary" class="h-4 px-1 text-[9px]">
+                              <Badge variant="secondary">
                                 {policy.scope === "device" ? "Device" : "User"}
                               </Badge>
                             </span>
-                            <span class="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
+                            <span class="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
                               {policy.policy.name}
                               {policy.policy.categoryDisplayPath.length > 0
                                 ? ` · ${policy.policy.categoryDisplayPath.join(" › ")}`
@@ -287,13 +287,13 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
                             <Show
                               when={blocked()}
                               fallback={
-                                <span class="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
+                                <span class="mt-0.5 block truncate font-mono text-xs text-muted-foreground">
                                   {policy.omaUri}
                                 </span>
                               }
                             >
                               {(reason) => (
-                                <span class="mt-1 flex items-start gap-1 text-[11px] leading-relaxed text-destructive">
+                                <span class="mt-1 flex items-start gap-1 text-xs leading-relaxed text-destructive">
                                   <CircleAlert class="mt-0.5 size-3 shrink-0" />
                                   <span>{reason()}</span>
                                 </span>
@@ -315,7 +315,7 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
                 {(issue) => (
                   <li
                     class={cn(
-                      "flex items-start gap-1.5 text-[11px] leading-relaxed",
+                      "flex items-start gap-1.5 text-xs leading-relaxed",
                       issue.severity === "error" ? "text-destructive" : "text-warning-foreground",
                     )}
                   >
@@ -342,7 +342,7 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
           {(message) => (
             <p
               role="alert"
-              class="mt-3 flex items-start gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-destructive"
+              class="mt-3 flex items-start gap-1.5 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-xs leading-relaxed text-destructive"
             >
               <CircleAlert class="mt-0.5 size-3.5 shrink-0" />
               <span class="min-w-0">{message()}</span>
@@ -350,13 +350,13 @@ export function AdmxImportDialog(props: AdmxImportDialogProps) {
           )}
         </Show>
 
-        <p class="mt-2 flex items-start gap-1.5 text-[10px] leading-relaxed text-muted-foreground">
+        <p class="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
           <Info class="mt-0.5 size-3 shrink-0" />
           Vendor templates are installed with the Policy CSP ADMXInstall node before their settings
           are written. Names and descriptions come from the file and are rendered as text only.
         </p>
 
-        <DialogFooter class="mt-4 flex-row justify-end gap-2 bg-transparent p-0">
+        <DialogFooter class="mt-4 flex-row justify-end">
           <Show when={bundle()}>
             <Button
               size="sm"

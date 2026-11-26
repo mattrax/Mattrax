@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
+import { drizzle } from "drizzle-orm/mysql2";
 import {
-  type AuditExportEntry,
   AUDIT_EXPORT_MAX_ROWS,
   AUDIT_SEARCH_DEFAULT_LIMIT,
   AUDIT_SEARCH_MAX_LIMIT,
   auditCsv,
+  auditOrder,
+  auditWhere,
   decodeAuditCursor,
   encodeAuditCursor,
   encodeAuditOffsetCursor,
   escapeLike,
   normalizeAuditSearchQuery,
 } from "../src/Account/auditLog.ts";
+import type { AuditExportEntry } from "../src/Account/auditLog.ts";
+import { schema } from "./helpers.js";
 
 describe("normalizeAuditSearchQuery", () => {
   it("applies bounded defaults", () => {
@@ -69,9 +73,11 @@ describe("normalizeAuditSearchQuery", () => {
   });
 
   it("rejects unknown enum filters", () => {
-    expect(() => normalizeAuditSearchQuery({ category: "everything" })).toThrow(/category/);
-    expect(() => normalizeAuditSearchQuery({ protocol: "ios" })).toThrow(/protocol/);
-    expect(() => normalizeAuditSearchQuery({ actorType: "robot" })).toThrow(/actorType/);
+    expect(() => normalizeAuditSearchQuery({ category: "everything" as never })).toThrow(
+      /category/,
+    );
+    expect(() => normalizeAuditSearchQuery({ protocol: "ios" as never })).toThrow(/protocol/);
+    expect(() => normalizeAuditSearchQuery({ actorType: "robot" as never })).toThrow(/actorType/);
   });
 
   it("rejects over-long filters", () => {
@@ -143,9 +149,53 @@ describe("audit cursors", () => {
   });
 });
 
+describe("audit ordered filter queries", () => {
+  const db = drizzle.mock();
+
+  const compile = (query: Parameters<typeof normalizeAuditSearchQuery>[0]) => {
+    const filters = normalizeAuditSearchQuery(query);
+
+    return db
+      .select({ id: schema.auditLog.id })
+      .from(schema.auditLog)
+      .where(auditWhere(schema, "org-1", filters))
+      .orderBy(...auditOrder(schema))
+      .limit(filters.limit)
+      .toSQL();
+  };
+
+  it.each([
+    ["category", "mdm"],
+    ["action", "device.enrolled"],
+    ["protocol", "apple"],
+  ] as const)("uses an equality filter and keyset order for %s", (filter, value) => {
+    const first = compile({ [filter]: value, limit: 50 });
+    const order = "order by `audit_log`.`created_at` desc, `audit_log`.`id` desc";
+
+    expect(first.sql).toContain(`\`audit_log\`.\`${filter}\` = ?`);
+    expect(first.sql).not.toContain("like");
+    expect(first.sql).toContain(order);
+    expect(first.params).toContain(value);
+
+    const deep = compile({
+      [filter]: value,
+      limit: 50,
+      cursor: encodeAuditCursor({
+        createdAt: new Date("2026-11-11T10:00:00.123Z"),
+        id: "audit-42",
+      }),
+    });
+    expect(deep.sql).toContain(`\`audit_log\`.\`${filter}\` = ?`);
+    expect(deep.sql).toContain("`audit_log`.`created_at` < ?");
+    expect(deep.sql).toContain("`audit_log`.`id` < ?");
+    expect(deep.sql).toContain(order);
+    expect(deep.params).toContain("audit-42");
+  });
+});
+
 describe("escapeLike", () => {
   it("escapes wildcards and the escape character", () => {
-    expect(escapeLike("100%_done\\now")).toBe("100\\%\\_done\\\\now");
+    expect(escapeLike(String.raw`100%_done\now`)).toBe(String.raw`100\%\_done\\now`);
   });
 });
 
@@ -200,7 +250,9 @@ describe("audit export", () => {
 
     const [, row] = csv.split("\r\n");
 
-    expect(row).toContain(",system,system,mdm,mdm.checkin,device,device-1,apple,dev-9,203.0.113.9,");
+    expect(row).toContain(
+      ",system,system,mdm,mdm.checkin,device,device-1,apple,dev-9,203.0.113.9,",
+    );
     expect(row).toContain(",0a1b,,MDM/1.0,");
   });
 

@@ -4,13 +4,13 @@ import {
   CROSS_TAB_MAX_KEYS,
   crossTabTabId,
   decodeCrossTabMessage,
+  invalidationScope,
   isOwnMessage,
   keyTouchesTenant,
   mergeInvalidationKeys,
   queryKeyId,
-  type CrossTabCache,
-  type CrossTabMessage,
 } from "./cross-tab-sync";
+import type { CrossTabCache, CrossTabMessage } from "./cross-tab-sync";
 
 const envelope = () => ({
   v: 1 as const,
@@ -63,6 +63,15 @@ describe("cross-tab messages", () => {
 
     const many = Array.from({ length: CROSS_TAB_MAX_KEYS + 1 }, (_, index) => ["key", index]);
     expect(mergeInvalidationKeys([], many)).toBeUndefined();
+  });
+
+  test("an empty key list flushes as tenant scope instead of a no-op", () => {
+    expect(invalidationScope([])).toEqual({ scope: "tenant" });
+    expect(invalidationScope([["enterprise", "list", "tenant-1"]])).toEqual({
+      scope: "keys",
+      keys: [["enterprise", "list", "tenant-1"]],
+    });
+    expect(invalidationScope([], true)).toEqual({ scope: "tenant" });
   });
 
   test("tenant keys are matched by the tenant id inside the key", () => {

@@ -14,9 +14,10 @@ import {
   scepCaHealth,
 } from "../ca.js";
 import { pemToCert } from "../pkcs7.js";
-import { ScepRepository, type ScepCaScope, type ScepStoredCa } from "../repository.js";
+import { ScepRepository } from "../repository.js";
+import type { ScepCaScope, ScepStoredCa } from "../repository.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -57,7 +58,7 @@ describe("SCEP CA lifetime", () => {
     expect(description.notBefore.toISOString()).toBe(now.toISOString());
     expect(description.notAfter.getTime()).toBe(now.getTime() + SCEP_CA_LIFETIME_DAYS * DAY);
     // The certificate is self-describing: the tenant id is in the OU.
-    const certificate = pemToCert(stored.certPem);
+    const certificate = await pemToCert(stored.certPem);
 
     const ou = certificate.subject.typesAndValues.find(
       (attribute) => attribute.type === "2.5.4.11",
@@ -162,7 +163,7 @@ describe("rotateScepCa", () => {
 
     expect(saved).toHaveLength(1);
     expect(rotated).toBe(0);
-    expect(loaded.certPem).toBe(saved[0]!.certPem);
+    expect(loaded.certPem).toBe(saved[0].certPem);
   });
 
   it("refuses to open an expired CA for issuance", async () => {

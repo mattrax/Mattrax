@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { HttpApiBuilder } from "effect/http-api";
+import type { HttpApiBuilder } from "effect/http-api";
 import { HttpServerResponse } from "effect/http";
 import type { HttpServerRequest } from "effect/http/HttpServerRequest";
 import {
@@ -8,7 +8,7 @@ import {
   InternalServerError,
   ManagementBackend,
 } from "@mattrax/management-backend";
-import { managementWebhookGroup } from "./http.ts";
+import type { managementWebhookGroup } from "./http.ts";
 
 const encoder = new TextEncoder();
 
@@ -44,7 +44,7 @@ const timingSafeEqual = (left: string, right: string) => {
   if (a.length !== b.length) return false;
   let difference = 0;
 
-  for (let index = 0; index < a.length; index++) difference |= a[index]! ^ b[index]!;
+  for (let index = 0; index < a.length; index++) difference |= a[index] ^ b[index];
 
   return difference === 0;
 };
@@ -184,6 +184,20 @@ export const managementWebhookHandlers = (
         );
       }),
     )
+    .handle("getAppleManifest", ({ request, payload }) =>
+      Effect.gen(function* () {
+        yield* verifySignature(request, "getAppleManifest", payload, options.secret);
+        const backend = yield* ManagementBackend;
+
+        if (!backend.getAppleManifest) return null;
+
+        return yield* backend.getAppleManifest(
+          payload.identityCertificate,
+          payload.identifier,
+          payload.token,
+        );
+      }),
+    )
     .handle("getAppleProfile", ({ request, payload }) =>
       Effect.gen(function* () {
         yield* verifySignature(request, "getAppleProfile", payload, options.secret);
@@ -207,8 +221,12 @@ export const managementWebhookHandlers = (
         yield* verifySignature(request, "getWindowsEnrollmentPolicy", payload, options.secret);
         const backend = yield* ManagementBackend;
 
+        // The signature authenticates the audit metadata supplied by the
+        // trusted Mattrax gateway after it verified the enrollment request.
         return yield* backend.getWindowsEnrollmentPolicy(payload.authToken, {
           tenantToken: payload.tenantToken,
+          clientIp: payload.clientIp,
+          userAgent: payload.userAgent,
         });
       }),
     )

@@ -1,18 +1,16 @@
 import { Effect, Option, Schema } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
-import {
-  containsPolicyVariables,
-  substitutePolicyVariables,
-  type PolicyVariableContext,
-} from "@mattrax/enterprise-domain";
-import { policyDataHash } from "./policy.ts";
-import {
-  resolveEffectivePolicy,
-  type EffectivePolicy,
-  type PolicyResolutionGroup,
-  type PolicyResolutionUser,
-  type PolicyResolutionUserGroup,
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { containsPolicyVariables, substitutePolicyVariables } from "@mattrax/enterprise-domain";
+import type { PolicyVariableContext } from "@mattrax/enterprise-domain";
+import { policyDataHashEffect } from "./policyHash.ts";
+import { resolveEffectivePolicy } from "./policyResolution.ts";
+import type {
+  EffectivePolicy,
+  PolicyResolutionGroup,
+  PolicyResolutionUser,
+  PolicyResolutionUserGroup,
 } from "./policyResolution.ts";
 
 const unique = (values: Iterable<string>) => [...new Set(values)];
@@ -30,12 +28,43 @@ export const loadPolicyResolutionInput = (
   device: { readonly id: string; readonly organizationId: string },
 ): Effect.Effect<Parameters<typeof resolveEffectivePolicy>[0], unknown> =>
   Effect.gen(function* () {
-    const groupLinks = yield* db
+    // Explicit exclusions are filtered here as well as at write time, so a row
+    // that somehow survived a membership write still cannot deliver policy.
+    // Group ids are resolved through the tenant so a stale edge is inert.
+    const rawGroupLinks = yield* db
       .select()
       .from(s.groupDevice)
       .where(eq(s.groupDevice.deviceId, device.id));
 
+    const exclusionRows = yield* db
+      .select({ groupId: s.groupExclusion.groupId })
+      .from(s.groupExclusion)
+      .innerJoin(s.enterpriseGroup, eq(s.enterpriseGroup.id, s.groupExclusion.groupId))
+      .where(
+        and(
+          eq(s.enterpriseGroup.organizationId, device.organizationId),
+          eq(s.groupExclusion.target, "device"),
+          eq(s.groupExclusion.targetId, device.id),
+        ),
+      );
+
+    const excludedGroupIds = new Set(exclusionRows.map((row) => row.groupId));
+
+    const groupLinks = rawGroupLinks.filter((link) => !excludedGroupIds.has(link.groupId));
+
     const groupIds = unique(groupLinks.map((link) => link.groupId));
+
+    const groupUserExclusions = groupIds.length
+      ? yield* db
+          .select({
+            groupId: s.groupExclusion.groupId,
+            userId: s.groupExclusion.targetId,
+          })
+          .from(s.groupExclusion)
+          .where(
+            and(eq(s.groupExclusion.target, "user"), inArray(s.groupExclusion.groupId, groupIds)),
+          )
+      : [];
 
     const groups: Array<PolicyResolutionGroup> = groupIds.length
       ? yield* db
@@ -215,7 +244,7 @@ export const loadPolicyResolutionInput = (
 
       // The resolved text is what the device receives, so the declaration
       // server token must change when an attribute value changes.
-      return Effect.promise(() => policyDataHash(data)).pipe(
+      return policyDataHashEffect(data).pipe(
         Effect.map((hash) => ({ ...configuration, data, hash })),
       );
     });
@@ -229,6 +258,10 @@ export const loadPolicyResolutionInput = (
       deviceAssignments: deviceAssignments.filter((assignment) =>
         knownPolicyIds.has(assignment.policyId),
       ),
+      groupUserExclusions: groupUserExclusions.map((row) => ({
+        groupId: row.groupId,
+        userId: row.userId,
+      })),
       users,
       userGroups,
       userGroupMembers,

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { isAccountMethod, permissionForMethod } from "@mattrax/enterprise-identity";
 import { verifySsrRevision, verifySsrToken } from "@mattrax/enterprise-backend";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -85,7 +85,6 @@ const makeContext = () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods bootstrap and `me` use.
@@ -106,15 +105,24 @@ describe("GET /api/v1/bootstrap", () => {
     expect(permissionForMethod("bootstrap")).toBeUndefined();
     // The tenant endpoints keep their existing mappings.
     expect(permissionForMethod("listDevices")).toBe("devices.read");
+    expect(permissionForMethod("getSoftwareUpdateSummary")).toBe("devices.read");
     expect(permissionForMethod("patchTenant")).toBe("tenant.write");
     // Reverse scope reads enumerate devices, groups and linked users, so they
     // must not fall through to the tenant-wide read permission.
     expect(permissionForMethod("getPolicyScope")).toBe("policies.read");
     expect(permissionForMethod("getGroupScope")).toBe("groups.read");
+    // Directory people are member data, not a tenant-wide read.
+    expect(permissionForMethod("listUsers")).toBe("members.read");
+    expect(permissionForMethod("getUser")).toBe("members.read");
     // Device secrets are not ordinary reads: a read-only role must not reveal
     // the managed local-admin password or Activation Lock bypass code.
     expect(permissionForMethod("getDeviceLocalAdmin")).toBe("devices.recovery_key");
     expect(permissionForMethod("getDeviceActivationLockBypassCode")).toBe("devices.recovery_key");
+    // Handing over every escrowed secret is its own permission, while the
+    // delete-warning check returns presence metadata only.
+    expect(permissionForMethod("createDeviceHandover")).toBe("devices.handover");
+    expect(permissionForMethod("downloadDeviceHandover")).toBe("devices.handover");
+    expect(permissionForMethod("deviceHandoverImpact")).toBe("devices.read");
   });
 
   it("returns the session, me shell and a verifiable token after one requireUser", async () => {
@@ -228,7 +236,6 @@ describe("GET /api/v1/bootstrap", () => {
       db: makeDb(),
       schema,
       origin,
-      stripeClient: makeStripeClient(),
       storage: {} as any,
       auth: {
         requireUser: () => Effect.succeed({ user, session: undefined }),

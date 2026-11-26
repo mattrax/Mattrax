@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Layer, type Schema } from "effect";
+import { Effect, Layer } from "effect";
+import type { Schema } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { Db } from "@mattrax/enterprise-core";
 import { signInFactorForPath } from "@mattrax/enterprise-backend";
@@ -9,7 +10,10 @@ import { normalisePath } from "./rateLimit.js";
 const chrome =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-const delay = (millis: number) => new Promise((resolve) => setTimeout(resolve, millis));
+const delay = (millis: number) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, millis);
+  });
 
 /** The recorder runs detached, so give its fiber a moment to finish. */
 const waitForRows = async (rows: Array<Schema.Json>, expected: number) => {
@@ -21,6 +25,10 @@ const requestWith = async (
   rows: Array<Schema.Json>,
   response: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown>,
   path: string,
+  headers: Record<string, string> = {
+    "user-agent": chrome,
+    "x-mattrax-client-address": "203.0.113.8",
+  },
 ): Promise<Response> => {
   const db = {
     insert: () => ({
@@ -55,7 +63,7 @@ const requestWith = async (
           handler(
             new Request(`http://localhost${path}`, {
               method: "POST",
-              headers: { "user-agent": chrome, "cf-connecting-ip": "203.0.113.8" },
+              headers,
             }),
           ),
         ),
@@ -69,6 +77,32 @@ const request = (rows: Array<Schema.Json>, body: Schema.Json, path: string) =>
   requestWith(rows, HttpServerResponse.json(body), path);
 
 describe("login attempt observer", () => {
+  it("stores no address when only spoofable forwarding headers are present", async () => {
+    const rows: Array<Schema.Json> = [];
+    const body = {
+      _tag: "Success",
+      value: {
+        _tag: "Authenticated",
+        session: {
+          subjectId: "account-1",
+          claims: { email: "owner@example.com" },
+          assurance: { method: "passkey" },
+        },
+      },
+    };
+
+    await requestWith(rows, HttpServerResponse.json(body), "/api/v1/completePasskeySignIn", {
+      "user-agent": chrome,
+      "cf-connecting-ip": "203.0.113.200",
+      "x-forwarded-for": "203.0.113.201",
+      "x-real-ip": "203.0.113.202",
+    });
+
+    await waitForRows(rows, 1);
+
+    expect(rows).toMatchObject([{ accountId: "account-1", ip: null }]);
+  });
+
   it("records a completed session without changing the response", async () => {
     const rows: Array<Schema.Json> = [];
 

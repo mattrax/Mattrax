@@ -35,17 +35,17 @@ function DialogContent(props: DialogContentProps) {
       <DialogBackdrop
         data-slot="dialog-backdrop"
         class={cn(
-          "fixed inset-0 z-[70] bg-scrim backdrop-blur-[2px] transition-opacity duration-[var(--duration-popover)] ease-swift",
+          "fixed inset-0 z-50 bg-scrim backdrop-blur-xs transition-opacity duration-150 ease-out",
           "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0",
         )}
       />
       <DialogContentPrimitive
         data-slot="dialog-content"
         class={cn(
-          "fixed left-1/2 top-1/2 z-[71] flex max-h-[min(85vh,44rem)] w-[min(calc(100vw-2rem),32rem)] -translate-x-1/2 -translate-y-1/2 flex-col gap-4",
+          "fixed left-1/2 top-1/2 z-50 flex max-h-dvh w-full max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col gap-4",
           "overflow-y-auto rounded-xl border border-border bg-popover p-5 text-popover-foreground shadow-panel outline-none",
-          "transition-[opacity,transform] duration-[var(--duration-panel)] ease-swift",
-          "data-[starting-style]:scale-[0.98] data-[starting-style]:opacity-0 data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0",
+          "transition duration-200 ease-out",
+          "data-[starting-style]:scale-95 data-[starting-style]:opacity-0 data-[ending-style]:scale-95 data-[ending-style]:opacity-0",
           local.class,
         )}
         {...others}
@@ -54,7 +54,7 @@ function DialogContent(props: DialogContentProps) {
         {local.showCloseButton === false ? null : (
           <DialogClose
             aria-label="Close"
-            class="absolute right-3 top-3 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/30"
+            class="absolute right-3 top-3 flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
           >
             <X class="size-4" />
           </DialogClose>
@@ -75,7 +75,10 @@ function DialogFooter(props: ComponentProps<"div">) {
 
   return (
     <div
-      class={cn("-mx-5 -mb-5 mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-xl border-t border-border bg-surface px-5 py-3", local.class)}
+      class={cn(
+        "-mx-5 -mb-5 mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-xl border-t border-border bg-surface px-5 py-3",
+        local.class,
+      )}
       {...others}
     />
   );
@@ -86,7 +89,7 @@ function DialogTitleText(props: ComponentProps<typeof DialogTitle>) {
 
   return (
     <DialogTitle
-      class={cn("text-[15px] font-[600] leading-6 tracking-[-0.02em]", local.class)}
+      class={cn("text-sm font-semibold leading-6 tracking-tight", local.class)}
       {...others}
     />
   );
@@ -97,7 +100,7 @@ function DialogDescriptionText(props: ComponentProps<typeof DialogDescription>) 
 
   return (
     <DialogDescription
-      class={cn("text-[12.5px] leading-5 text-muted-foreground", local.class)}
+      class={cn("text-xs leading-5 text-muted-foreground", local.class)}
       {...others}
     />
   );

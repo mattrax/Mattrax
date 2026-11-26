@@ -1,9 +1,6 @@
-import { readFile } from "node:fs/promises";
-import { Effect, Schema } from "effect";
+import { Effect, FileSystem, Schema } from "effect";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import {
-  DynamicGroupKind,
-  DynamicGroupRules,
+import type {
   CreateGroupRequest as CreateGroupRequestSchema,
   DeviceListResponse as DeviceListResponseSchema,
   GroupListResponse as GroupListResponseSchema,
@@ -11,18 +8,12 @@ import {
   PatchGroupMembersRequest as PatchGroupMembersRequestSchema,
   PatchGroupRequest as PatchGroupRequestSchema,
   PolicyListResponse as PolicyListResponseSchema,
-  type DeviceRow,
-  type GroupNode,
-  type GroupRow,
-  type PolicyRow,
 } from "@mattrax/enterprise-domain/client";
+import { DynamicGroupKind, DynamicGroupRules } from "@mattrax/enterprise-domain/client";
+import type { DeviceRow, GroupNode, GroupRow, PolicyRow } from "@mattrax/enterprise-domain/client";
 import { CliFailure } from "./settings.ts";
-import {
-  type PolicyDocumentFormat,
-  type PolicyDocumentIssue,
-  formatPolicyIssues,
-  stableJson,
-} from "./policyDocument.ts";
+import { formatPolicyIssues, stableJson } from "./policyDocument.ts";
+import type { PolicyDocumentFormat, PolicyDocumentIssue } from "./policyDocument.ts";
 
 type GroupList = typeof GroupListResponseSchema.Type;
 
@@ -66,12 +57,14 @@ export interface GroupDocumentSource {
   readonly document: PortableGroupDocument;
 }
 
-export const readGroupDocument = (path: string): Effect.Effect<GroupDocumentSource, CliFailure> =>
+export const readGroupDocument = (
+  path: string,
+): Effect.Effect<GroupDocumentSource, CliFailure, FileSystem.FileSystem> =>
   Effect.gen(function* () {
-    const text = yield* Effect.tryPromise({
-      try: () => readFile(path, "utf8"),
-      catch: () => new CliFailure({ message: `Could not read ${path}.` }),
-    });
+    const fs = yield* FileSystem.FileSystem;
+    const text = yield* fs
+      .readFileString(path)
+      .pipe(Effect.mapError(() => new CliFailure({ message: `Could not read ${path}.` })));
 
     const parsed = yield* Effect.try({
       try: () => parseYaml(text),

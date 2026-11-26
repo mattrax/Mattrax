@@ -1,12 +1,15 @@
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { Effect, Schema } from "effect";
+import { beforeAll, describe, expect, it } from "vitest";
+import type { Schema } from "effect";
+import { Effect, Layer } from "effect";
+import { FetchHttpClient } from "effect/http";
 import {
   AndroidManagement,
   base64UrlEncode,
-  clearJwksCache,
   GoogleApiError,
-  type AndroidManagementService,
+  PubSubOidcVerifier,
+  PubSubOidcVerifierLive,
 } from "@mattrax/dm-android";
+import type { AndroidManagementService } from "@mattrax/dm-android";
 import {
   AndroidDeliveryError,
   DEFAULT_ANDROID_POLICY_ID,
@@ -27,11 +30,17 @@ import {
   syncAndroidPoliciesForTenant,
   unenrollAndroidDevice,
   withStatusReporting,
-  type AndroidDeliveryConfig,
 } from "../src/Device/android.ts";
+import type { AndroidDeliveryConfig } from "../src/Device/android.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
 const organizationId = "org-1";
+
+const deliveryError = (error: unknown) => {
+  if (!(error instanceof AndroidDeliveryError)) throw new Error("Expected Android delivery error");
+
+  return error;
+};
 
 const otherOrganizationId = "org-2";
 
@@ -102,6 +111,20 @@ const jwksFetch = (async () =>
     status: 200,
     headers: { "content-type": "application/json" },
   })) satisfies typeof globalThis.fetch;
+
+const makeVerifierLayer = (fetch: typeof globalThis.fetch = jwksFetch) =>
+  PubSubOidcVerifierLive({
+    audience,
+    serviceAccountEmail,
+    jwksUri,
+  }).pipe(
+    Layer.provide(
+      FetchHttpClient.layer.pipe(
+        Layer.provide(Layer.succeed(FetchHttpClient.Fetch, fetch)),
+        Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })),
+      ),
+    ),
+  );
 
 function base64Json(value: Schema.Json): string {
   const bytes = encoder.encode(JSON.stringify(value));
@@ -236,10 +259,84 @@ function makeAndroid(overrides: Partial<AndroidManagementService> = {}) {
   return { service, calls };
 }
 
+const tableName = (table: any): string => {
+  const symbol = Object.getOwnPropertySymbols(table).find(
+    (candidate) => candidate.description === "drizzle:Name",
+  );
+
+  return String(Object.getOwnPropertyDescriptor(table, symbol!)?.value);
+};
+
+const recordQueries = (db: ReturnType<typeof makeDb>) => {
+  const queries: Array<{ operation: "select" | "insert" | "update" | "delete"; table: string }> =
+    [];
+  const mutable = db as any;
+  const select = db.select.bind(db) as (...args: any[]) => any;
+
+  mutable.select = (fields?: any) => {
+    const builder: any = select(fields);
+    const from = builder.from.bind(builder);
+    builder.from = (table: any) => {
+      queries.push({ operation: "select", table: tableName(table) });
+      return from(table);
+    };
+    return builder;
+  };
+
+  for (const operation of ["insert", "update", "delete"] as const) {
+    const original = (db[operation] as any).bind(db);
+    mutable[operation] = (table: any) => {
+      queries.push({ operation, table: tableName(table) });
+      return original(table);
+    };
+  }
+
+  return queries;
+};
+
+const androidDevices = (count: number) =>
+  Array.from({ length: count }, (_, index) => {
+    const id = `device-${index + 1}`;
+
+    return {
+      ...androidDeviceRow(),
+      id,
+      dmIdentifier: `${enterpriseName}/devices/${id}`,
+    };
+  });
+
+const androidRestrictedRuleBase = {
+  id: "rule-1",
+  organizationId,
+  name: "Block Banned",
+  platform: "android",
+  matchType: "android-package",
+  matchValue: "com.example.banned",
+  matchKey: "com.example.banned",
+  action: "block-install",
+  message: null,
+  notificationEmails: [],
+  enabled: true,
+  createdByAccountId: null,
+  createdAt: new Date("2026-01-01T00:00:00Z"),
+  updatedAt: new Date("2026-01-01T00:00:00Z"),
+};
+
+const androidRestrictedRule = (overrides: Partial<typeof androidRestrictedRuleBase> = {}) => ({
+  ...androidRestrictedRuleBase,
+  ...overrides,
+});
+
 const provideAndroid = <A, E>(
-  effect: Effect.Effect<A, E, AndroidManagement>,
+  effect: Effect.Effect<A, E, AndroidManagement | PubSubOidcVerifier>,
   service: AndroidManagementService,
-) => Effect.runPromise(effect.pipe(Effect.provideService(AndroidManagement, service)));
+) =>
+  Effect.runPromise(
+    effect.pipe(
+      Effect.provideService(AndroidManagement, service),
+      Effect.provide(makeVerifierLayer()),
+    ),
+  );
 
 function organizationRow(id: string, name: string) {
   return {
@@ -339,7 +436,7 @@ describe("Android Enterprise delivery", () => {
   beforeAll(async () => {
     // SAFETY: WebCrypto returns a `CryptoKeyPair` for the RSA key pair it was
     // asked to generate; the DOM runtime type is wider than that overload.
-    const pair = (await crypto.subtle.generateKey(
+    const pair = await crypto.subtle.generateKey(
       {
         name: "RSASSA-PKCS1-v1_5",
         hash: "SHA-256",
@@ -348,7 +445,7 @@ describe("Android Enterprise delivery", () => {
       },
       true,
       ["sign", "verify"],
-    )) as CryptoKeyPair;
+    );
 
     privateKey = pair.privateKey;
     publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
@@ -356,8 +453,6 @@ describe("Android Enterprise delivery", () => {
     publicJwk.alg = "RS256";
     publicJwk.use = "sig";
   });
-
-  beforeEach(() => clearJwksCache());
 
   it("reports unconfigured tenants and fails closed", async () => {
     const db = makeDb({
@@ -414,7 +509,7 @@ describe("Android Enterprise delivery", () => {
 
     expect(signup.url).toBe("https://enterprise.google.test/signup");
     expect(calls.signupUrls).toHaveLength(1);
-    const callback = new URL(calls.signupUrls[0]!.callbackUrl);
+    const callback = new URL(calls.signupUrls[0].callbackUrl);
     expect(callback.pathname).toBe("/api/v1/android/signup/callback");
     const state = callback.searchParams.get("state");
     expect(state).toBeTruthy();
@@ -475,7 +570,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
-    const callback = new URL(calls.signupUrls[0]!.callbackUrl);
+    const callback = new URL(calls.signupUrls[0].callbackUrl);
     const state = callback.searchParams.get("state")!;
 
     const error = await Effect.runPromise(
@@ -520,7 +615,6 @@ describe("Android Enterprise delivery", () => {
         origin: "https://mattrax.test",
         authorization: `Bearer ${token}`,
         body: pushBody(device, "ENROLLMENT"),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -536,7 +630,7 @@ describe("Android Enterprise delivery", () => {
     });
     expect(db.store.android_device).toHaveLength(1);
     expect(calls.devices[0]).toMatchObject({ deviceName });
-    const assigned = calls.policies[0]!;
+    const assigned = calls.policies[0];
     expect(assigned.enterpriseName).toBe(enterpriseName);
     expect(assigned.policyId).toMatch(/^mattrax-/);
 
@@ -548,7 +642,6 @@ describe("Android Enterprise delivery", () => {
         origin: "https://mattrax.test",
         authorization: `Bearer ${token}`,
         body: pushBody(device, "ENROLLMENT"),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -556,6 +649,48 @@ describe("Android Enterprise delivery", () => {
     expect(duplicate.status).toBe("duplicate");
     expect(db.store.device).toHaveLength(1);
     expect(calls.policies).toHaveLength(1);
+  });
+
+  it("shares one scoped JWKS cache across Pub/Sub deliveries", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+    });
+
+    const { service } = makeAndroid();
+    const token = await sign();
+    const body = pushBody({ name: deviceName, state: "ACTIVE" }, "ENROLLMENT");
+    let jwksRequests = 0;
+    const fetch: typeof globalThis.fetch = async () => {
+      jwksRequests++;
+
+      return jwksFetch();
+    };
+
+    const program = Effect.gen(function* () {
+      yield* handleAndroidPubSub({
+        db,
+        config,
+        authSecret: "test-secret",
+        origin: "https://mattrax.test",
+        authorization: `Bearer ${token}`,
+        body,
+      });
+      yield* handleAndroidPubSub({
+        db,
+        config,
+        authSecret: "test-secret",
+        origin: "https://mattrax.test",
+        authorization: `Bearer ${token}`,
+        body,
+      });
+    }).pipe(
+      Effect.provideService(AndroidManagement, service),
+      Effect.provide(makeVerifierLayer(fetch)),
+    );
+
+    await Effect.runPromise(program);
+    expect(jwksRequests).toBe(1);
   });
 
   it("records Android notifications and policy delivery in the organisation event log", async () => {
@@ -585,7 +720,6 @@ describe("Android Enterprise delivery", () => {
           origin: "https://mattrax.test",
           authorization: `Bearer ${token}`,
           body: pushBody(device, type, messageId),
-          fetch: jwksFetch,
         }),
         service,
       );
@@ -637,11 +771,14 @@ describe("Android Enterprise delivery", () => {
           config,
           origin: "https://mattrax.test",
           body,
-        }).pipe(Effect.provideService(AndroidManagement, service)),
+        }).pipe(
+          Effect.provideService(AndroidManagement, service),
+          Effect.provide(makeVerifierLayer()),
+        ),
       ),
     );
 
-    expect(missing.kind).toBe("unauthorized");
+    expect(deliveryError(missing).kind).toBe("unauthorized");
 
     const wrongAudienceToken = await sign({ aud: "https://other.test/pubsub" });
 
@@ -653,12 +790,14 @@ describe("Android Enterprise delivery", () => {
           origin: "https://mattrax.test",
           authorization: `Bearer ${wrongAudienceToken}`,
           body,
-          fetch: jwksFetch,
-        }).pipe(Effect.provideService(AndroidManagement, service)),
+        }).pipe(
+          Effect.provideService(AndroidManagement, service),
+          Effect.provide(makeVerifierLayer()),
+        ),
       ),
     );
 
-    expect(wrongAudience.kind).toBe("unauthorized");
+    expect(deliveryError(wrongAudience).kind).toBe("unauthorized");
 
     const wrongIssuerToken = await sign({ iss: "https://evil.test" });
 
@@ -670,16 +809,18 @@ describe("Android Enterprise delivery", () => {
           origin: "https://mattrax.test",
           authorization: `Bearer ${wrongIssuerToken}`,
           body,
-          fetch: jwksFetch,
-        }).pipe(Effect.provideService(AndroidManagement, service)),
+        }).pipe(
+          Effect.provideService(AndroidManagement, service),
+          Effect.provide(makeVerifierLayer()),
+        ),
       ),
     );
 
-    expect(wrongIssuer.kind).toBe("unauthorized");
+    expect(deliveryError(wrongIssuer).kind).toBe("unauthorized");
 
     const validToken = await sign();
     const [header, payload, signature] = validToken.split(".");
-    const tampered = `${header}.${payload}.${signature!.slice(0, -2)}AA`;
+    const tampered = `${header}.${payload}.${signature.slice(0, -2)}AA`;
 
     const badSignature = await Effect.runPromise(
       Effect.flip(
@@ -689,12 +830,14 @@ describe("Android Enterprise delivery", () => {
           origin: "https://mattrax.test",
           authorization: `Bearer ${tampered}`,
           body,
-          fetch: jwksFetch,
-        }).pipe(Effect.provideService(AndroidManagement, service)),
+        }).pipe(
+          Effect.provideService(AndroidManagement, service),
+          Effect.provide(makeVerifierLayer()),
+        ),
       ),
     );
 
-    expect(badSignature.kind).toBe("unauthorized");
+    expect(deliveryError(badSignature).kind).toBe("unauthorized");
     expect(db.store.device).toHaveLength(0);
   });
 
@@ -720,7 +863,6 @@ describe("Android Enterprise delivery", () => {
         origin: "https://mattrax.test",
         authorization: `Bearer ${token}`,
         body: pushBody(foreign, "ENROLLMENT"),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -777,7 +919,7 @@ describe("Android Enterprise delivery", () => {
 
     expect(first).toEqual({ devices: 1, updated: 1, skipped: 0, failed: 0 });
     expect(calls.policies).toHaveLength(1);
-    expect(calls.policies[0]!.policy).toEqual({
+    expect(calls.policies[0].policy).toEqual({
       applications: [{ packageName: "com.example.app", installType: "FORCE_INSTALLED" }],
       cameraDisabled: true,
       statusReportingSettings: {
@@ -787,10 +929,10 @@ describe("Android Enterprise delivery", () => {
         networkInfoEnabled: true,
       },
     });
-    expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0]!.policyId }]);
+    expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0].policyId }]);
     expect(db.store.android_device![0]).toMatchObject({
       deviceId: "device-1",
-      policyId: calls.policies[0]!.policyId,
+      policyId: calls.policies[0].policyId,
     });
 
     const second = await provideAndroid(
@@ -825,7 +967,7 @@ describe("Android Enterprise delivery", () => {
     );
 
     expect(result).toEqual({ devices: 1, updated: 1, skipped: 0, failed: 0 });
-    expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0]!.policyId }]);
+    expect(calls.devices).toEqual([{ deviceName, policyName: calls.policies[0].policyId }]);
   });
 
   it("adds assigned Managed Google Play apps and removes unassigned ones", async () => {
@@ -892,7 +1034,7 @@ describe("Android Enterprise delivery", () => {
 
     await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
 
-    expect(calls.policies[0]!.policy.applications).toEqual([
+    expect(calls.policies[0].policy.applications).toEqual([
       // The explicit policy fragment keeps its install type.
       { packageName: "com.microsoft.teams", installType: "AVAILABLE" },
       // The direct assignment is added as a required install. The Apple entry
@@ -910,8 +1052,285 @@ describe("Android Enterprise delivery", () => {
 
     await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
 
-    expect(calls.policies[1]!.policy.applications).toEqual([
+    expect(calls.policies[1].policy.applications).toEqual([
       { packageName: "com.microsoft.teams", installType: "AVAILABLE" },
+    ]);
+  });
+
+  it("compiles in-scope restricted software as installType BLOCKED", async () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      policy: [
+        {
+          id: "policy-1",
+          organizationId,
+          name: "Android baseline",
+          notes: null,
+          priority: 10,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      configuration: [
+        {
+          policyId: "policy-1",
+          kind: "mttx.android.policy.designer",
+          data: {
+            policy: {
+              applications: [{ packageName: "com.example.banned", installType: "FORCE_INSTALLED" }],
+            },
+          },
+          hash: "hash-1",
+        },
+      ],
+      device_policy: [{ deviceId: "device-1", policyId: "policy-1", mode: "include" }],
+      restricted_software: [
+        {
+          id: "rule-1",
+          organizationId,
+          name: "Block Banned",
+          platform: "android",
+          matchType: "android-package",
+          matchValue: "com.example.banned",
+          matchKey: "com.example.banned",
+          action: "block-install",
+          message: null,
+          notificationEmails: [],
+          enabled: true,
+          createdByAccountId: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: "rule-2",
+          organizationId,
+          name: "Unscoped",
+          platform: "android",
+          matchType: "android-package",
+          matchValue: "com.example.unscoped",
+          matchKey: "com.example.unscoped",
+          action: "block-install",
+          message: null,
+          notificationEmails: [],
+          enabled: true,
+          createdByAccountId: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      restricted_software_assignment: [
+        {
+          restrictedSoftwareId: "rule-1",
+          organizationId,
+          targetType: "device",
+          targetId: "device-1",
+          mode: "include",
+          createdAt: now,
+        },
+        {
+          restrictedSoftwareId: "rule-2",
+          organizationId,
+          targetType: "group",
+          targetId: "group-without-members",
+          mode: "include",
+          createdAt: now,
+        },
+      ],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
+
+    expect(calls.policies[0].policy.applications).toEqual([
+      { packageName: "com.example.banned", installType: "BLOCKED" },
+    ]);
+  });
+
+  it("does not compile a restricted rule from another tenant", async () => {
+    const now = new Date("2026-01-01T00:00:00Z");
+
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: [androidDeviceRow()],
+      restricted_software: [
+        {
+          id: "rule-foreign",
+          organizationId: otherOrganizationId,
+          name: "Foreign",
+          platform: "android",
+          matchType: "android-package",
+          matchValue: "com.example.banned",
+          matchKey: "com.example.banned",
+          action: "block-install",
+          message: null,
+          notificationEmails: [],
+          enabled: true,
+          createdByAccountId: null,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      restricted_software_assignment: [
+        {
+          restrictedSoftwareId: "rule-foreign",
+          organizationId: otherOrganizationId,
+          targetType: "device",
+          targetId: "device-1",
+          mode: "include",
+          createdAt: now,
+        },
+      ],
+    });
+
+    const { service, calls } = makeAndroid();
+
+    await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
+
+    expect(calls.policies[0].policy.applications ?? []).toEqual([]);
+  });
+
+  it("resolves group-scoped Android rules from the tenant membership snapshot", async () => {
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: androidDevices(2),
+      restricted_software: [androidRestrictedRule()],
+      restricted_software_assignment: [
+        {
+          restrictedSoftwareId: "rule-1",
+          organizationId,
+          targetType: "group",
+          targetId: "group-1",
+          mode: "include",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+      group_device: [{ groupId: "group-1", deviceId: "device-1" }],
+    });
+    const { service, calls } = makeAndroid();
+
+    await provideAndroid(syncAndroidPoliciesForTenant({ db, config, organizationId }), service);
+
+    expect(calls.policies[0].policy.applications).toContainEqual({
+      packageName: "com.example.banned",
+      installType: "BLOCKED",
+    });
+    expect(calls.policies[1].policy.applications ?? []).toEqual([]);
+  });
+
+  it("bounds restricted-software queries when no Android rules apply", async () => {
+    const sync = async (deviceCount: number) => {
+      const db = makeDb({
+        organization: [organizationRow(organizationId, "Acme")],
+        android_enterprise: [activeEnterpriseRow()],
+        device: androidDevices(deviceCount),
+      });
+      const queries = recordQueries(db);
+      const { service } = makeAndroid();
+      const result = await provideAndroid(
+        syncAndroidPoliciesForTenant({ db, config, organizationId }),
+        service,
+      );
+      const featureQueries = queries.filter((query) =>
+        query.table.startsWith("restricted_software"),
+      );
+
+      return { result, featureQueries };
+    };
+
+    const single = await sync(1);
+    const many = await sync(6);
+
+    expect(single.result).toEqual({ devices: 1, updated: 1, skipped: 0, failed: 0 });
+    expect(many.result).toEqual({ devices: 6, updated: 6, skipped: 0, failed: 0 });
+    expect(single.featureQueries).toEqual([{ operation: "select", table: "restricted_software" }]);
+    expect(many.featureQueries).toEqual(single.featureQueries);
+  });
+
+  it("skips violation queries when enabled Android rules apply to no devices", async () => {
+    const sync = async (deviceCount: number) => {
+      const db = makeDb({
+        organization: [organizationRow(organizationId, "Acme")],
+        android_enterprise: [activeEnterpriseRow()],
+        device: androidDevices(deviceCount),
+        restricted_software: [androidRestrictedRule()],
+        restricted_software_assignment: [
+          {
+            restrictedSoftwareId: "rule-1",
+            organizationId,
+            targetType: "device",
+            targetId: "missing-device",
+            mode: "include",
+            createdAt: new Date("2026-01-01T00:00:00Z"),
+          },
+        ],
+      });
+      const queries = recordQueries(db);
+      const { service } = makeAndroid();
+      const result = await provideAndroid(
+        syncAndroidPoliciesForTenant({ db, config, organizationId }),
+        service,
+      );
+      const featureQueries = queries.filter((query) =>
+        query.table.startsWith("restricted_software"),
+      );
+
+      return { result, featureQueries };
+    };
+
+    const single = await sync(1);
+    const many = await sync(6);
+
+    expect(single.result).toEqual({ devices: 1, updated: 1, skipped: 0, failed: 0 });
+    expect(many.result).toEqual({ devices: 6, updated: 6, skipped: 0, failed: 0 });
+    expect(single.featureQueries).toEqual([
+      { operation: "select", table: "restricted_software" },
+      { operation: "select", table: "restricted_software_assignment" },
+    ]);
+    expect(many.featureQueries).toEqual(single.featureQueries);
+  });
+
+  it("loads Android rules once and batches the empty violation lookup across devices", async () => {
+    const devices = androidDevices(3);
+    const db = makeDb({
+      organization: [organizationRow(organizationId, "Acme")],
+      android_enterprise: [activeEnterpriseRow()],
+      device: devices,
+      restricted_software: [androidRestrictedRule()],
+      restricted_software_assignment: devices.map((device) => ({
+        restrictedSoftwareId: "rule-1",
+        organizationId,
+        targetType: "device",
+        targetId: device.id,
+        mode: "include",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      })),
+    });
+    const queries = recordQueries(db);
+    const { service, calls } = makeAndroid();
+
+    const result = await provideAndroid(
+      syncAndroidPoliciesForTenant({ db, config, organizationId }),
+      service,
+    );
+
+    expect(result).toEqual({ devices: 3, updated: 3, skipped: 0, failed: 0 });
+    expect(calls.policies).toHaveLength(3);
+    for (const policy of calls.policies)
+      expect(policy.policy.applications).toContainEqual({
+        packageName: "com.example.banned",
+        installType: "BLOCKED",
+      });
+    expect(queries.filter((query) => query.table.startsWith("restricted_software"))).toEqual([
+      { operation: "select", table: "restricted_software" },
+      { operation: "select", table: "restricted_software_assignment" },
+      { operation: "select", table: "restricted_software_violation" },
     ]);
   });
 
@@ -1015,7 +1434,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
-    const state = new URL(calls.signupUrls[0]!.callbackUrl).searchParams.get("state")!;
+    const state = new URL(calls.signupUrls[0].callbackUrl).searchParams.get("state")!;
 
     await provideAndroid(
       completeAndroidSignup({
@@ -1027,7 +1446,7 @@ describe("Android Enterprise delivery", () => {
       }),
       service,
     );
-    expect(db.store.android_enterprise!).toHaveLength(1);
+    expect(db.store.android_enterprise).toHaveLength(1);
     expect(db.store.android_enterprise![0]!.organizationId).toBe(organizationId);
     expect(db.store.android_enterprise![0]!.organizationId).not.toBe(otherOrganizationId);
   });
@@ -1294,7 +1713,7 @@ describe("Android remote actions", () => {
       },
     });
     // A blocked package is in the policy but was never installed.
-    expect(calls.commands[3]!.clearAppsDataParams?.packageNames).not.toContain(
+    expect(calls.commands[3].clearAppsDataParams?.packageNames).not.toContain(
       "com.example.blocked",
     );
   });
@@ -1346,7 +1765,7 @@ describe("Android remote actions", () => {
       service,
     );
 
-    const sent = calls.commands[0]!;
+    const sent = calls.commands[0];
 
     expect(sent).toMatchObject({ deviceName, type: "RESET_PASSWORD" });
     expect(sent.resetPasswordFlags).toEqual(["REQUIRE_ENTRY", "LOCK_NOW"]);
@@ -1500,7 +1919,6 @@ describe("Android remote actions", () => {
           "COMMAND",
           "command-message-1",
         ),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -1530,7 +1948,6 @@ describe("Android remote actions", () => {
           "COMMAND",
           "command-message-2",
         ),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -1590,7 +2007,6 @@ describe("Android remote actions", () => {
           "COMMAND",
           "command-message-eid",
         ),
-        fetch: jwksFetch,
       }),
       service,
     );
@@ -1718,7 +2134,7 @@ describe("Android device inventory", () => {
     // The fixture is the complete `device` row shape this merge is written for;
     // `Object.assign` keeps its required columns while the patch overrides the
     // ones the merge produced.
-    const existing: AndroidDeviceRow = Object.assign(androidDeviceRow(), first);
+    const existing = Object.assign(androidDeviceRow(), first) as AndroidDeviceRow;
 
     const partial = parseAndroidDeviceResource(
       { name: deviceName, state: "ACTIVE", lastStatusReportTime: statusReportTime },
@@ -1803,7 +2219,6 @@ describe("Android device inventory", () => {
           origin: "https://mattrax.test",
           authorization: `Bearer ${token}`,
           body: pushBody(body, "STATUS_REPORT", messageId),
-          fetch: jwksFetch,
         }),
         service,
       );

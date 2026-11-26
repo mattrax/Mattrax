@@ -4,7 +4,8 @@ import { openSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { dbRows, makeDb, tableName, type Row, stringValue } from "./fake-db.js";
+import { dbRows, makeDb, tableName, stringValue } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -102,7 +103,7 @@ describe("SecurityInfo command results", () => {
     });
     // The plaintext key must never be persisted.
     expect(JSON.stringify(rows[0])).not.toContain(key);
-    expect(await openSecret(authSecret, stringValue(rows[0]!.sealedValue))).toBe(key);
+    expect(await openSecret(authSecret, stringValue(rows[0].sealedValue))).toBe(key);
     expect(dbRows(db, tableName(schema.device))[0]).toMatchObject({
       fileVaultEnabled: true,
     });
@@ -120,7 +121,7 @@ describe("SecurityInfo command results", () => {
     );
 
     await run(backend.appleDeviceEvent(scope, first));
-    const before = secretRows(db)[0]!;
+    const before = secretRows(db)[0];
     expect(secretRows(db)).toHaveLength(1);
 
     // Same key: no duplicate and no rotation.
@@ -147,8 +148,8 @@ describe("SecurityInfo command results", () => {
     );
     const after = secretRows(db);
     expect(after).toHaveLength(1);
-    expect(await openSecret(authSecret, stringValue(after[0]!.sealedValue))).toBe("KEY-TWO");
-    expect(after[0]!.rotatedAt).not.toBeNull();
+    expect(await openSecret(authSecret, stringValue(after[0].sealedValue))).toBe("KEY-TWO");
+    expect(after[0].rotatedAt).not.toBeNull();
     expect(before.createdAt).toBeDefined();
   });
 
@@ -187,7 +188,7 @@ describe("InstalledApplicationList command results", () => {
       ),
     );
     expect(applicationRows(db)).toHaveLength(2);
-    expect(dbRows(db, tableName(schema.device))[0]!.applicationsUpdatedAt).toBeInstanceOf(Date);
+    expect(dbRows(db, tableName(schema.device))[0].applicationsUpdatedAt).toBeInstanceOf(Date);
 
     await run(
       backend.appleDeviceEvent(

@@ -1,10 +1,11 @@
 import type { ComponentProps } from "@solidjs/web";
 import { splitProps } from "./lib/solid";
-import { cva, type VariantProps } from "class-variance-authority";
+import { cva } from "class-variance-authority";
+import type { VariantProps } from "class-variance-authority";
 import { cn } from "./lib/cn";
 
 const badgeVariants = cva(
-  "inline-flex h-[20px] shrink-0 items-center gap-1 rounded-[5px] border px-1.5 text-[11px] font-[520] tracking-[-0.004em] whitespace-nowrap [&_svg:not([class*='size-'])]:size-3",
+  "inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border px-1.5 text-xs font-medium tracking-normal whitespace-nowrap [&_svg:not([class*='size-'])]:size-3",
   {
     variants: {
       variant: {

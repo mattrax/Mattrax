@@ -1,10 +1,14 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
-import { startCronScheduler } from "./cron.ts";
-import { migrate } from "./migrate.ts";
+import { Effect, Exit, Scope } from "effect";
+import { createBackgroundTasks } from "./backgroundTasks.js";
+import { runtimeConfigFromEnv } from "./config.js";
+import { startCronScheduler } from "./cron.js";
+import { migrate } from "./migrate.js";
+import { makeApiHttpHandler } from "./httpBridge.js";
+import type { ApiRuntime, RuntimeContext } from "./httpBridge.js";
 
 /**
  * Self-hosted Node runtime.
@@ -15,46 +19,15 @@ import { migrate } from "./migrate.ts";
  * platform cron trigger.
  */
 
-type ScheduledController = {
-  cron: string;
-  scheduledTime: number;
-  noRetry: () => void;
-};
-
-type ApiRuntime = {
-  fetch(request: Request, context: RuntimeContext): Promise<Response>;
-  scheduled(controller: ScheduledController, context: RuntimeContext): Promise<void>;
-};
-
 type WebRuntime = {
   listener: (request: IncomingMessage, response: ServerResponse) => void;
 };
 
-type RuntimeContext = {
-  waitUntil: (promise: Promise<unknown>) => void;
-  passThroughOnException: () => void;
-};
-
+// Validate host and database configuration before importing the API bundle or
+// running migrations. Invalid values fail the container immediately.
+const config = runtimeConfigFromEnv(process.env);
+const { host, port, origin, databaseUrl, skipMigrations } = config;
 const root = path.resolve(import.meta.dirname, "..");
-
-const requireEnv = (name: string): string => {
-  const value = process.env[name]?.trim();
-
-  if (!value) {
-    console.error(`mattrax self-host: ${name} is required`);
-    process.exit(1);
-  }
-
-  return value;
-};
-
-const port = Number(process.env.PORT ?? 8080);
-
-const host = process.env.HOST ?? "0.0.0.0";
-
-const origin = requireEnv("ORIGIN");
-
-const databaseUrl = requireEnv("DATABASE_URL");
 
 // SAFETY: the staged layout places the two bundles at these paths and each
 // exports the shape declared above.
@@ -63,18 +36,11 @@ const api = (await import(pathToFileURL(path.join(root, "api/node.js")).href)) a
 // SAFETY: same staged layout; the dashboard host exports `listener`.
 const web = (await import(pathToFileURL(path.join(root, "web/server/node.js")).href)) as WebRuntime;
 
-/**
- * Workers hand `waitUntil` promises to the platform. A Node process lives until
- * it is stopped, so the only job here is surfacing a failure instead of leaving
- * an unhandled rejection behind.
- */
+const backgroundTasks = createBackgroundTasks();
 const context: RuntimeContext = {
-  waitUntil: (promise) => {
-    void promise.catch((cause) =>
-      console.error("mattrax self-host: background work failed", cause),
-    );
-  },
+  waitUntil: backgroundTasks.waitUntil,
   passThroughOnException: () => {},
+  signal: backgroundTasks.signal,
 };
 
 const apiPath = (pathname: string): boolean =>
@@ -85,69 +51,11 @@ const apiPath = (pathname: string): boolean =>
   pathname === "/scim" ||
   pathname.startsWith("/scim/");
 
-const toHeaders = (request: IncomingMessage): Headers => {
-  const headers = new Headers();
-
-  for (const [name, value] of Object.entries(request.headers)) {
-    if (value === undefined) continue;
-
-    // RFC 6265 cookies are separated by `; `, not the generic list comma.
-    headers.set(
-      name,
-      Array.isArray(value) ? value.join(name.toLowerCase() === "cookie" ? "; " : ", ") : value,
-    );
-  }
-
-  return headers;
-};
-
-type NodeRequestInit = RequestInit & { duplex?: "half" };
-
-type NodeReadableStream = Parameters<typeof Readable.fromWeb>[0];
-
-const toRequest = (request: IncomingMessage): Request => {
-  const method = request.method ?? "GET";
-
-  // SAFETY: Node's `toWeb` returns a WHATWG stream of the request bytes;
-  // `BodyInit` is the same runtime contract despite the differing declarations.
-  const body: BodyInit | undefined =
-    method === "GET" || method === "HEAD" ? undefined : (Readable.toWeb(request) as BodyInit);
-
-  const init: NodeRequestInit = {
-    method,
-    headers: toHeaders(request),
-    body,
-  };
-
-  // Node's fetch requires `duplex` when the body is a stream.
-  if (body !== undefined) init.duplex = "half";
-
-  return new Request(new URL(request.url ?? "/", origin), init);
-};
-
-const writeResponse = async (response: Response, target: ServerResponse): Promise<void> => {
-  target.statusCode = response.status;
-
-  if (response.statusText) target.statusMessage = response.statusText;
-
-  const cookies = response.headers.getSetCookie();
-
-  response.headers.forEach((value, name) => {
-    if (name.toLowerCase() !== "set-cookie") target.setHeader(name, value);
-  });
-
-  if (cookies.length > 0) target.setHeader("set-cookie", cookies);
-
-  if (response.body === null) {
-    target.end();
-
-    return;
-  }
-
-  // SAFETY: both sides consume the WHATWG stream contract; only the ambient
-  // Node/DOM declarations differ.
-  await pipeline(Readable.fromWeb(response.body as NodeReadableStream), target);
-};
+// A single Effect scope owns every API request fiber. NodeHttpServer handles
+// streaming, client disconnects and post-header failures without allowing this
+// bridge to append a second error body.
+const requestScope = await Effect.runPromise(Scope.make());
+const apiHandler = await Effect.runPromise(makeApiHttpHandler(api, context, requestScope));
 
 const server = createServer((request, response) => {
   const pathname = new URL(request.url ?? "/", origin).pathname;
@@ -158,25 +66,10 @@ const server = createServer((request, response) => {
     return;
   }
 
-  void (async () => {
-    try {
-      const result = await api.fetch(toRequest(request), context);
-
-      await writeResponse(result, response);
-    } catch (cause) {
-      console.error("mattrax self-host: API request failed", cause);
-
-      if (!response.headersSent) {
-        response.statusCode = 500;
-        response.setHeader("content-type", "text/plain; charset=utf-8");
-      }
-
-      response.end("Internal Server Error");
-    }
-  })();
+  apiHandler(request, response);
 });
 
-if (!process.env.SKIP_MIGRATIONS)
+if (!skipMigrations)
   await migrate({ databaseUrl, migrationsDirectory: path.join(root, "migrations") });
 
 /**
@@ -185,8 +78,12 @@ if (!process.env.SKIP_MIGRATIONS)
  */
 const stopCron = startCronScheduler({
   expressions: ["17 3 * * *", "47 * * * *"],
-  trigger: (cron) =>
-    api.scheduled(
+  trigger: async (cron) => {
+    // Only work registered by this tick may hold the overlap guard. Request
+    // analytics and other process-wide work stay in the shutdown collector.
+    const tickTasks = backgroundTasks.fork();
+
+    await api.scheduled(
       // SAFETY: `ScheduledController` only requires the cron expression and
       // schedule time for these handlers; `noRetry` is a no-op in-process.
       {
@@ -194,8 +91,12 @@ const stopCron = startCronScheduler({
         scheduledTime: Date.now(),
         noRetry: () => {},
       },
-      context,
-    ),
+      { ...context, waitUntil: tickTasks.waitUntil, signal: tickTasks.signal },
+    );
+    // scheduled returns after registering Workers waitUntil work. Keep the
+    // scheduler's running guard set until this tick's jobs actually finish.
+    await tickTasks.idle();
+  },
   log: (message) => console.log(message),
 });
 
@@ -203,15 +104,35 @@ server.listen(port, host, () => {
   console.log(`mattrax self-host: listening on http://${host}:${port}`);
 });
 
-const shutdown = (signal: string) => {
+const shutdown = async (signal: string): Promise<void> => {
   console.log(`mattrax self-host: ${signal} received, shutting down`);
 
   stopCron();
-  server.close(() => process.exit(0));
+  const deadline = Date.now() + 10_000;
+  const forceExit = setTimeout(() => {
+    void Effect.runPromise(Scope.close(requestScope, Exit.void)).finally(() => process.exit(0));
+  }, 10_000);
+  forceExit.unref();
+  const serverClosed = new Promise<void>((resolve) => {
+    server.close(() => {
+      resolve();
+    });
+  });
+  const remaining = () => Math.max(0, deadline - Date.now());
+  const results = await Promise.all([
+    serverClosed,
+    backgroundTasks.drain(remaining()),
+    api.backgroundTasks?.drain(remaining()),
+    stopCron.idle(),
+  ]);
 
-  // A hanging connection must not keep the container alive past its grace
-  // period. The reverse proxy drains first in normal operation.
-  setTimeout(() => process.exit(0), 10_000).unref();
+  if (results.some((result) => result === "interrupted"))
+    console.warn("mattrax self-host: background work exceeded the shutdown deadline");
+
+  await Effect.runPromise(Scope.close(requestScope, Exit.void));
+  clearTimeout(forceExit);
+  process.exit(0);
 };
 
-for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => shutdown(signal));
+for (const signal of ["SIGTERM", "SIGINT"] as const)
+  process.once(signal, () => void shutdown(signal));

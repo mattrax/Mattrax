@@ -25,20 +25,109 @@ export const EmailVerificationResponse = Schema.Struct({
   status: Schema.Literal("ok"),
   /** Present when a verification code was issued. */
   challenge: Schema.optional(Schema.String),
+  /**
+   * Whether the code email was accepted for delivery. Absent on flows that send
+   * nothing; `false` lets the page say the mail did not go out instead of
+   * leaving someone waiting for it.
+   */
+  emailSent: Schema.optional(Schema.Boolean),
 });
+
+/**
+ * Cookie binding an Email Verification API nonce to the anonymous sign-up
+ * session. Registration has no account session yet, so this cookie is the
+ * session state the nonce is stored in: the page renders the same value into
+ * the hidden token input and the server only accepts a token whose nonce is
+ * the one this browser was issued.
+ *
+ * The nonce is not a secret (it is an attribute in the HTML), so the flags are
+ * about keeping it scoped to this origin, this page and this flow rather than
+ * hiding it. It is short-lived because a token is only useful while the form
+ * is open.
+ */
+export const REGISTRATION_NONCE_COOKIE = "mattrax_register_nonce";
+
+/** Long enough for a slow sign-up, short enough that a stale nonce dies. */
+export const REGISTRATION_NONCE_TTL_SECONDS = 30 * 60;
+
+/** One server-generated nonce per sign-up form render. */
+export const newRegistrationNonce = (): string => crypto.randomUUID();
+
+export const registrationNonceCookie = (nonce: string, secure: boolean): string =>
+  `${REGISTRATION_NONCE_COOKIE}=${encodeURIComponent(nonce)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${REGISTRATION_NONCE_TTL_SECONDS}${secure ? "; Secure" : ""}`;
+
+/** Read this browser session's nonce from a raw `Cookie` header. */
+export const readRegistrationNonce = (
+  header: string | string[] | undefined,
+): string | undefined => {
+  const joined = Array.isArray(header) ? header.join("; ") : header;
+
+  if (!joined) return undefined;
+
+  for (const part of joined.split(";")) {
+    const separator = part.indexOf("=");
+
+    if (separator === -1) continue;
+
+    if (part.slice(0, separator).trim() !== REGISTRATION_NONCE_COOKIE) continue;
+
+    const value = part.slice(separator + 1).trim();
+
+    if (!value) return undefined;
+
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
+};
 
 /**
  * Guest sign-up verification. The address is proven before the passkey prompt,
  * so the account is created already verified and no callback URL is needed.
+ *
+ * `token` and `nonce` are the Email Verification API pair: the browser fills a
+ * hidden input when it can verify the address inline. Both are optional and
+ * inert without browser support; the emailed six-digit code remains the
+ * fallback.
  */
 export const BeginRegistrationVerificationRequest = Schema.Struct({
   name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(120)),
   email: Schema.String.check(Schema.isMaxLength(320)),
+  /**
+   * SD-JWT+KB presentation filled by the browser. No length check here: a
+   * token that is too unusual to parse must fall back to the code flow, not
+   * turn the whole sign-up request into a validation error.
+   */
+  token: Schema.optional(Schema.String),
+  /** The nonce the browser was served for this form. */
+  nonce: Schema.optional(Schema.String),
 });
 
 export const BeginRegistrationVerificationResponse = Schema.Struct({
   status: Schema.Literal("ok"),
+  /**
+   * Whether a code email was accepted for delivery. `false` on an EVP
+   * verification because no code was sent.
+   */
   emailSent: Schema.Boolean,
+  /** True when the browser token verified the address inline. */
+  verified: Schema.optional(Schema.Boolean),
+  /** Proof for passkey registration when `verified` is true. */
+  grant: Schema.optional(Schema.String),
+  /**
+   * Freshly rotated nonce. Present after a token attempt so the page can bind
+   * another attempt (and the previous nonce is no longer in the cookie).
+   */
+  nonce: Schema.optional(Schema.String),
+});
+
+/** Optional `Set-Cookie` rotation for the sign-up nonce. */
+export const RegistrationNonceHeaders = Schema.Struct({
+  "set-cookie": Schema.optional(Schema.String),
 });
 
 export const CompleteRegistrationVerificationRequest = Schema.Struct({
@@ -64,6 +153,89 @@ export const UpdateMeRequest = Schema.Struct({
 });
 
 export type UpdateMeRequest = typeof UpdateMeRequest.Type;
+
+/**
+ * Account deletion is also tenant deletion.
+ *
+ * The flow is deliberately narrow: it only succeeds for an account that is the
+ * sole member of a single tenant, so one person can never remove a shared
+ * tenant or silently lose access to another one. The preview endpoint reports
+ * every reason the account cannot be deleted so the dashboard can explain the
+ * next step before anything is destructive.
+ */
+export const AccountDeletionRequest = Schema.Struct({
+  /** Typed by the person; compared case-insensitively with the account email. */
+  confirmEmail: Schema.String,
+});
+
+export type AccountDeletionRequest = typeof AccountDeletionRequest.Type;
+
+export const ACCOUNT_DELETION_BLOCKERS = [
+  /** More than one membership; deleting would strand or destroy another tenant. */
+  "multiple_tenants",
+  /** The tenant has another owner, so it would not be deleted with the account. */
+  "tenant_has_other_owners",
+  /** The tenant has other members who would lose their tenant in the cascade. */
+  "tenant_has_other_members",
+  /** The single member is not a built-in owner, so it cannot cascade a tenant. */
+  "tenant_owner_required",
+  /** The tenant's four-eyes policy requires the explicit tenant delete flow. */
+  "tenant_delete_requires_approval",
+] as const;
+
+export const AccountDeletionBlockerCode = Schema.Literals(ACCOUNT_DELETION_BLOCKERS);
+
+export type AccountDeletionBlockerCode = typeof AccountDeletionBlockerCode.Type;
+
+/** One reason the account cannot be deleted, with copy the dashboard can show. */
+export const AccountDeletionBlocker = Schema.Struct({
+  code: AccountDeletionBlockerCode,
+  message: Schema.String,
+});
+
+export type AccountDeletionBlocker = typeof AccountDeletionBlocker.Type;
+
+/** The tenant that would be torn down with the account. */
+export const AccountDeletionTenant = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  slug: Schema.String,
+  memberCount: Schema.Number,
+  ownerCount: Schema.Number,
+  deviceCount: Schema.Number,
+});
+
+export type AccountDeletionTenant = typeof AccountDeletionTenant.Type;
+
+export const AccountDeletionPreview = Schema.Struct({
+  /** True only when `blockers` is empty; the API enforces the same checks. */
+  canDelete: Schema.Boolean,
+  blockers: Schema.Array(AccountDeletionBlocker),
+  /**
+   * The single tenant inspected by the check. Present whenever the account has
+   * exactly one membership, even when a blocker prevents deletion, so the
+   * dashboard can show what is at stake and link to the right settings. Absent
+   * for multiple tenants or an account with no tenant.
+   */
+  tenant: Schema.optional(AccountDeletionTenant),
+  /** True when no other account exists on the deployment. */
+  lastAccount: Schema.Boolean,
+});
+
+export type AccountDeletionPreview = typeof AccountDeletionPreview.Type;
+
+export const AccountDeletionResponse = Schema.Struct({
+  status: Schema.Literal("ok"),
+  /** Tenants torn down in the same operation, in the order they were removed. */
+  deletedTenants: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      name: Schema.String,
+    }),
+  ),
+});
+
+export type AccountDeletionResponse = typeof AccountDeletionResponse.Type;
 
 export const AuthUser = AccountInfo;
 

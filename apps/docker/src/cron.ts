@@ -99,57 +99,80 @@ export interface CronSchedulerOptions {
   log?: (message: string) => void;
 }
 
+export type CronSchedulerStop = (() => void) & {
+  /** Wait for an in-flight tick, including the work registered by its trigger. */
+  readonly idle: () => Promise<void>;
+};
+
 export const startCronScheduler = ({
   expressions,
   trigger,
   log = console.log,
-}: CronSchedulerOptions): (() => void) => {
+}: CronSchedulerOptions): CronSchedulerStop => {
   const schedules: CronSchedule[] = [];
 
   for (const expression of expressions) {
     try {
       schedules.push({ expression, matches: parseCron(expression) });
-    } catch (cause) {
+    } catch (error) {
       console.error(
         `mattrax self-host: ignoring cron "${expression}"`,
-        cause instanceof Error ? cause.message : cause,
+        error instanceof Error ? error.message : error,
       );
     }
   }
 
-  if (schedules.length === 0) return () => {};
+  if (schedules.length === 0)
+    return Object.assign(() => {}, {
+      idle: async () => {},
+    });
 
   let lastMinute: string | undefined;
   let running = false;
+  let active: Promise<void> | undefined;
 
-  const tick = async (): Promise<void> => {
+  const tick = (): Promise<void> | undefined => {
     const now = new Date();
     const minute = now.toISOString().slice(0, 16);
 
-    if (minute === lastMinute || running) return;
+    if (minute === lastMinute || running) return undefined;
     lastMinute = minute;
     running = true;
 
-    try {
-      for (const schedule of schedules) {
-        if (!schedule.matches(now)) continue;
+    const work = (async () => {
+      try {
+        for (const schedule of schedules) {
+          if (!schedule.matches(now)) continue;
 
-        log(`mattrax self-host: running cron ${schedule.expression}`);
+          log(`mattrax self-host: running cron ${schedule.expression}`);
 
-        try {
-          await trigger(schedule.expression);
-        } catch (cause) {
-          console.error(`mattrax self-host: cron ${schedule.expression} failed`, cause);
+          try {
+            await trigger(schedule.expression);
+          } catch (error) {
+            console.error(`mattrax self-host: cron ${schedule.expression} failed`, error);
+          }
         }
+      } finally {
+        running = false;
       }
-    } finally {
-      running = false;
-    }
+    })();
+    active = work;
+    void work.finally(() => {
+      if (active === work) active = undefined;
+    });
+
+    return work;
   };
 
   const timer = setInterval(() => void tick(), 15_000);
 
   timer.unref();
 
-  return () => clearInterval(timer);
+  const stop = () => clearInterval(timer);
+
+  return Object.assign(stop, {
+    idle: async () => {
+      while (active) await active;
+    },
+  });
 };

@@ -15,6 +15,14 @@ describe("route builders", () => {
     expect(tenant.overview()).toBe("/t/acme%20corp");
     expect(tenant.device("dev/1")).toBe("/t/acme%20corp/devices/dev%2F1");
     expect(tenant.policy("policy#1")).toBe("/t/acme%20corp/policies/policy%231");
+    expect(tenant.users()).toBe("/t/acme%20corp/users");
+    expect(tenant.user("user/1")).toBe("/t/acme%20corp/users/user%2F1");
+  });
+
+  it("keeps platform routes outside every tenant", () => {
+    expect(routes.adminAccounts()).toBe("/admin/accounts");
+    expect(routes.account()).toBe("/account");
+    expect(routes.accountDelete()).toBe("/account/delete");
   });
 
   it("builds settings tabs and the general tab", () => {
@@ -41,6 +49,12 @@ describe("route builders", () => {
 
     expect(tenant.dashboard("dash-1")).toBe("/t/acme/dashboards/dash-1");
     expect(tenant.dashboard("dash-1", { edit: "1" })).toBe("/t/acme/dashboards/dash-1?edit=1");
+  });
+
+  it("keeps reports on their own dashboard subpage", () => {
+    expect(routes.tenant("acme").dashboardReports("dash-1")).toBe(
+      "/t/acme/dashboards/dash-1/reports",
+    );
   });
 });
 
@@ -104,6 +118,45 @@ describe("device search codecs", () => {
       direction: "desc",
       import: "1",
     });
+  });
+
+  it("keeps a shareable page index and drops invalid ones", () => {
+    expect(decodeDeviceSearchParams({ page: "3" })).toEqual({ page: "3" });
+    expect(decodeDeviceSearchParams({ page: "0" })).toEqual({});
+    expect(decodeDeviceSearchParams({ page: "-2" })).toEqual({});
+    expect(decodeDeviceSearchParams({ page: "2.5" })).toEqual({});
+    expect(decodeDeviceSearchParams({ page: "next" })).toEqual({});
+  });
+
+  it("round-trips saved-view params and validates the page size", () => {
+    expect(
+      decodeDeviceSearchParams({
+        columns: "name, health, attribute:cost_centre",
+        pageSize: "100",
+        view: "view-1",
+        setup: "awaiting",
+        notSeenSince: "2026-01-01T00:00:00.000Z",
+        staleDays: "13",
+      }),
+    ).toEqual({
+      columns: "name,health,attribute:cost_centre",
+      pageSize: "100",
+      view: "view-1",
+      setup: "awaiting",
+      notSeenSince: "2026-01-01T00:00:00.000Z",
+      staleDays: "13",
+    });
+    expect(decodeDeviceSearchParams({ pageSize: "500" })).toEqual({});
+    expect(decodeDeviceSearchParams({ pageSize: "0" })).toEqual({});
+    expect(decodeDeviceSearchParams({ setup: "bogus" })).toEqual({});
+    expect(decodeDeviceSearchParams({ staleDays: "0" })).toEqual({});
+    expect(decodeDeviceSearchParams({ staleDays: "2.5" })).toEqual({});
+  });
+
+  it("serialises the page alongside the filters", () => {
+    expect(routes.tenant("acme").devices({ health: "attention", page: "2" })).toBe(
+      "/t/acme/devices?health=attention&page=2",
+    );
   });
 
   it("has a schema that matches the decoded shape", () => {

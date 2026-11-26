@@ -18,7 +18,8 @@
  * `Command` body, never the outer `CommandUUID` envelope or the plist.
  */
 
-import { Schema } from "effect";
+import type { Schema } from "effect";
+import { appleOsFamily } from "./supportedOs.js";
 
 /**
  * How long a package URL embedded in an install command stays valid.
@@ -119,7 +120,7 @@ export const buildInstallEnterpriseApplicationPayload = (input: {
   const entries: Array<[string, Schema.Json]> = [
     // SAFETY: AppleManifest is a JSON-compatible dictionary of strings and
     // arrays of dictionaries; Schema.Json accepts exactly that shape.
-    ["Manifest", input.manifest as Schema.Json],
+    ["Manifest", input.manifest],
     ["InstallAsManaged", true],
   ];
 
@@ -167,28 +168,96 @@ const PKG_CONTENT_TYPES = new Set([
   "application/octet-stream",
 ]);
 
+/** The two uploaded Apple artefacts Mattrax can install. */
+export type AppleUploadKind = "pkg" | "ipa";
+
 /**
- * Whether an uploaded Apple artefact is a `.pkg`.
+ * Classify an uploaded Apple artefact.
  *
- * Only a package can be installed with `InstallEnterpriseApplication`. An
- * uploaded `.ipa` needs an OTA manifest URL (iOS `InstallApplication`), which a
- * bare upload does not provide, so callers must report that instead of queueing
- * an install the device cannot perform.
+ * A `.pkg` installs on macOS with `InstallEnterpriseApplication`. A signed
+ * `.ipa` installs on iOS/iPadOS with `InstallApplication` and an OTA manifest
+ * Mattrax generates. Anything else has no delivery path and must be reported
+ * rather than queued.
  */
+export const appleUploadKind = (input: {
+  readonly fileName?: string | null;
+  readonly contentType?: string | null;
+}): AppleUploadKind | undefined => {
+  const fileName = input.fileName?.trim().toLowerCase() ?? "";
+
+  if (fileName.endsWith(".pkg")) return "pkg";
+
+  if (fileName.endsWith(".ipa")) return "ipa";
+
+  if (fileName.endsWith(".dmg") || fileName.endsWith(".zip")) return undefined;
+
+  return input.contentType !== null &&
+    input.contentType !== undefined &&
+    PKG_CONTENT_TYPES.has(input.contentType.toLowerCase())
+    ? "pkg"
+    : undefined;
+};
+
+/** Whether an uploaded Apple artefact is a `.pkg`. */
 export const isApplePackageUpload = (input: {
   readonly fileName?: string | null;
   readonly contentType?: string | null;
+}): boolean => appleUploadKind(input) === "pkg";
+
+/** Whether an uploaded Apple artefact is a signed `.ipa`. */
+export const isAppleIpaUpload = (input: {
+  readonly fileName?: string | null;
+  readonly contentType?: string | null;
+}): boolean => appleUploadKind(input) === "ipa";
+
+/**
+ * Whether a device's Apple OS can install an uploaded artefact.
+ *
+ * A `.pkg` is macOS-only and an `.ipa` is iPhone/iPad-only; other Apple
+ * families (tvOS, visionOS, watchOS) have neither delivery path. An unknown
+ * family is skipped rather than guessed, matching installer selection.
+ */
+export const appleUploadSupportsDevice = (input: {
+  readonly fileName?: string | null;
+  readonly contentType?: string | null;
+  readonly osEdition?: string | null;
 }): boolean => {
-  const fileName = input.fileName?.trim().toLowerCase() ?? "";
+  const kind = appleUploadKind(input);
+  const family = appleOsFamily(input.osEdition);
 
-  if (fileName.endsWith(".pkg")) return true;
+  if (kind === "pkg") return family === "macOS";
 
-  if (fileName.endsWith(".ipa") || fileName.endsWith(".dmg") || fileName.endsWith(".zip"))
-    return false;
+  if (kind === "ipa") return family === "iOS";
 
-  return (
-    input.contentType !== null &&
-    input.contentType !== undefined &&
-    PKG_CONTENT_TYPES.has(input.contentType.toLowerCase())
-  );
+  return false;
 };
+
+/**
+ * Whether a manifest URL is really a vendor PKG.
+ *
+ * `InstallApplication` expects an OTA plist at `ManifestURL`, so a vendor PKG
+ * URL must go through `InstallEnterpriseApplication` with an inline manifest
+ * instead. The path is the only signal Apple gives before download; a query
+ * string or redirect can hide the extension, in which case the caller keeps
+ * the existing manifest behaviour rather than guessing.
+ */
+export const isApplePackageUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+
+    return url.protocol === "https:" && url.pathname.toLowerCase().endsWith(".pkg");
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * `RemoveApplication` asks the device to delete a managed app.
+ *
+ * Apple only removes apps installed by MDM, and the bundle id is the only
+ * identifier the command carries. There is no keep-user-data option: a
+ * managed app's container is removed with it.
+ */
+export const buildRemoveApplicationPayload = (bundleId: string): Schema.JsonObject => ({
+  BundleIdentifier: bundleId,
+});

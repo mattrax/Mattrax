@@ -3,7 +3,8 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { makeDb, tableName, type Row } from "./fake-db.js";
+import { appleIdentityCertificate, makeDb, tableName } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -18,6 +19,7 @@ const scope = (udid: string) => ({
   udid,
   identityCertificate: "CN=Device,OU=org-1",
   identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin: new MdmOrigin({ url: origin }),
 });
 
@@ -46,6 +48,7 @@ const setup = (organization: Row) => {
         dmIdentityFingerprint: "fingerprint-1",
       },
     ],
+    [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
   });
 
   // SAFETY: The fake store implements only the query chains these tests exercise.

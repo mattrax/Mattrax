@@ -1,4 +1,5 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Show } from "solid-js";
 import { scriptTriggerLabel } from "@mattrax/enterprise-domain/client";
@@ -16,7 +17,8 @@ import {
 import { toast } from "~/components/toast";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { enterprise, enterpriseKeys, enterpriseQueries, type ScriptInfo } from "~/lib/enterprise";
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type { ScriptInfo } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { optimisticUpdate } from "~/lib/optimistic";
 import { AccessDenied, ReadOnlyNotice, useCan } from "~/lib/permissions";
@@ -32,18 +34,14 @@ export const route = {
   },
 };
 
-const statusTone = (status: string | null | undefined) => {
+const statusVariant = (status: string | null | undefined) => {
   switch (status) {
     case "succeeded":
-      return "border-success/30 text-success-foreground";
+      return "success";
     case "failed":
-      return "border-destructive/30 text-destructive";
-    case "queued":
-    case "sent":
-    case "running":
-      return "border-border text-muted-foreground";
+      return "destructive";
     default:
-      return "border-border text-muted-foreground";
+      return "outline";
   }
 };
 
@@ -57,6 +55,7 @@ export default function ScriptsPage() {
 
   const setEnabled = useMutation(() => ({
     mutationFn: (enabled: boolean) => enterprise.patchScriptSettings(params.tenantId, { enabled }),
+    meta: { inlineError: true },
     onMutate: (enabled) =>
       optimisticUpdate<Awaited<ReturnType<typeof enterprise.listScripts>>>(
         qc,
@@ -101,7 +100,7 @@ export default function ScriptsPage() {
             <span class="text-muted-foreground/60"> · {row.trigger.intervalSeconds}s</span>
           </Show>
           <Show when={row.trigger.type === "cron" && row.trigger.cronExpression}>
-            <span class="font-mono text-[11.5px] text-muted-foreground/60">
+            <span class="font-mono text-xs text-muted-foreground/60">
               {" "}
               · {row.trigger.cronExpression}
             </span>
@@ -112,7 +111,7 @@ export default function ScriptsPage() {
     {
       header: "Runs as",
       cell: (row: ScriptInfo) => (
-        <span class="font-mono text-[12px] text-muted-foreground">
+        <span class="font-mono text-xs text-muted-foreground">
           {row.language} · {row.runAs}
         </span>
       ),
@@ -131,10 +130,10 @@ export default function ScriptsPage() {
             when={row.lastRunStatus}
             fallback={<span class="text-muted-foreground">Never</span>}
           >
-            <Badge variant="outline" class={statusTone(row.lastRunStatus)}>
+            <Badge variant={statusVariant(row.lastRunStatus)}>
               {row.lastRunStatus}
             </Badge>
-            <span class="text-[11.5px] text-muted-foreground">{relativeTime(row.lastRunAt)}</span>
+            <span class="text-xs text-muted-foreground">{relativeTime(row.lastRunAt)}</span>
           </Show>
         </div>
       ),
@@ -188,7 +187,7 @@ export default function ScriptsPage() {
               </Show>
             }
           >
-            <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+            <p class="text-xs leading-relaxed text-muted-foreground">
               Existing execution history is retained until its retention window expires. Enabling
               scripts again re-delivers the currently assigned scripts on each device's next
               check-in.
@@ -211,8 +210,9 @@ export default function ScriptsPage() {
 
         <Show when={!writable() && rows().length > 0}>
           <ReadOnlyNotice>
-            You can view scripts and run history. Creating, editing and running scripts requires the
-            Scripts write permission and a fresh sign-in confirmation.
+            You can view scripts and run history. Creating a script requires the Scripts write
+            permission; editing, assigning and running one also requires a fresh sign-in
+            confirmation.
           </ReadOnlyNotice>
         </Show>
 
@@ -233,6 +233,7 @@ export default function ScriptsPage() {
             rows={rows()}
             columns={columns}
             caption="Scripts"
+            swipeHint="Swipe the table sideways to see more columns."
             empty={
               <EmptyState
                 title="No scripts yet"
@@ -247,11 +248,11 @@ export default function ScriptsPage() {
           />
         </Show>
 
-        <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+        <p class="text-xs leading-relaxed text-muted-foreground">
           Apple devices receive scripts as <code class="font-mono">com.mattrax.script</code>{" "}
-          profiles executed by mattraxd. Windows uses the same binary because Windows MDM
-          has no arbitrary-script channel. Android Management API exposes no script command, so
-          Android devices are never targeted.
+          profiles executed by mattraxd. Windows uses the same binary because Windows MDM has no
+          arbitrary-script channel. Android Management API exposes no script command, so Android
+          devices are never targeted.
         </p>
       </Page>
     </Show>

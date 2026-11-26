@@ -1,6 +1,7 @@
-import { Data, Effect, Match, Option, Schema } from "effect";
+import { Data, Effect, Match } from "effect";
 import { and, eq, lte, or } from "drizzle-orm";
-import { schema, type R2Bucket, type TenantDeletionStep } from "@mattrax/enterprise-core";
+import { isUniqueViolationForConstraint, schema } from "@mattrax/enterprise-core";
+import type { R2Bucket, TenantDeletionStep } from "@mattrax/enterprise-core";
 import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
 
 /** Object prefixes owned by a tenant; see `@mattrax/enterprise-domain/storage`. */
@@ -8,6 +9,7 @@ export const tenantObjectPrefixes = (organizationId: string): ReadonlyArray<stri
   `p/${organizationId}/`,
   `a/${organizationId}/`,
   `backups/${organizationId}/`,
+  `handovers/${organizationId}/`,
 ];
 
 /**
@@ -138,29 +140,14 @@ export type TenantTeardownOptions = {
 
 const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
-const ErrorDetails = Schema.Struct({
-  code: Schema.optional(Schema.String),
-  errno: Schema.optional(Schema.Number),
-  message: Schema.optional(Schema.String),
-  cause: Schema.optional(Schema.Unknown),
-});
-
 /**
- * MySQL reports the unique `tenant_deletion.organization_id` index as
- * `ER_DUP_ENTRY`/1062. Losing that insert race means another request claimed
- * the job first, so this attempt must not repeat its side effects.
+ * MySQL reports the unique organization index as `ER_DUP_ENTRY`/1062. Losing
+ * that insert race means another request claimed the job first, so this
+ * attempt must not repeat its side effects.
  */
-const isDuplicateJobError = (cause: unknown): boolean => {
-  const top = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorDetails)(cause));
-  const nested = Option.getOrUndefined(Schema.decodeUnknownOption(ErrorDetails)(top?.cause));
-  const code = top?.code ?? nested?.code;
-  const errno = top?.errno ?? nested?.errno;
-  const message = top?.message ?? nested?.message ?? "";
-
-  if (code === "ER_DUP_ENTRY" || errno === 1062) return true;
-
-  return /tenant_deletion/i.test(message);
-};
+const isDuplicateJobError = (cause: unknown): boolean =>
+  isUniqueViolationForConstraint(cause, "tenant_deletion_organization_unique") ||
+  isUniqueViolationForConstraint(cause, "tenant_deletion.tenant_deletion_organization_unique");
 
 type MutableStep = { -readonly [Key in keyof TenantDeletionStep]: TenantDeletionStep[Key] };
 
@@ -365,22 +352,22 @@ export const teardownTenant = (
     // deployment without billing configured).
     if (deps.preflight)
       yield* deps.preflight().pipe(
-        Effect.catch((cause) =>
+        Effect.catch((error) =>
           Effect.gen(function* () {
             return yield* fail(
               "subscription",
-              `Teardown preflight failed: ${describeTeardownError(cause)}`,
+              `Teardown preflight failed: ${describeTeardownError(error)}`,
             );
           }),
         ),
       );
 
     const devices = yield* deps.unenrollDevices(organizationId).pipe(
-      Effect.catch((cause) =>
+      Effect.catch((error) =>
         Effect.gen(function* () {
           return yield* fail(
             "devices",
-            `Could not send unenroll requests: ${describeTeardownError(cause)}`,
+            `Could not send unenroll requests: ${describeTeardownError(error)}`,
           );
         }),
       ),
@@ -396,25 +383,18 @@ export const teardownTenant = (
     yield* persist({ status: "pending" });
 
     const subscription = yield* deps.cancelSubscription(organization).pipe(
-      Effect.catch((cause) =>
+      Effect.catch((error) =>
         Effect.gen(function* () {
           return yield* fail(
             "subscription",
-            `Could not cancel billing: ${describeTeardownError(cause)}`,
+            `Could not cancel billing: ${describeTeardownError(error)}`,
           );
         }),
       ),
     );
 
-    yield* db
-      .delete(schema.subscription)
-      .where(eq(schema.subscription.referenceId, organizationId));
-
-    if (organization.stripeCustomerId)
-      yield* db
-        .update(schema.organization)
-        .set({ stripeCustomerId: null, updatedAt: now() })
-        .where(eq(schema.organization.id, organizationId));
+    // Billing owns the customer and subscription rows; cancelling through the
+    // billing service is the only cleanup this deployment can perform.
 
     yield* record(
       "subscription",
@@ -428,11 +408,11 @@ export const teardownTenant = (
       try: () => deleteTenantObjects(storage, organizationId),
       catch: (cause) => cause,
     }).pipe(
-      Effect.catch((cause) =>
+      Effect.catch((error) =>
         Effect.gen(function* () {
           return yield* fail(
             "storage",
-            `Could not delete tenant objects: ${describeTeardownError(cause)}`,
+            `Could not delete tenant objects: ${describeTeardownError(error)}`,
           );
         }),
       ),
@@ -517,8 +497,8 @@ const describeSubscription = (subscription: SubscriptionReclamation): string => 
 /** Bounded, secret-free error text for the support journal. */
 const describeTeardownError = (cause: unknown): string =>
   (cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause))
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
+    .replaceAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replaceAll(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
     .slice(0, 500);
 
 /** Age after which a completed teardown journal entry may be pruned. */

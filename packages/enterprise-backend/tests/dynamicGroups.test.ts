@@ -1,17 +1,18 @@
-import { Schema } from "effect";
+import type { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   compareVersionStrings,
   dynamicGroupRulesProblem,
   evaluateDynamicGroupRules,
-  type DeviceQueryDevice,
-  type DynamicGroupRules,
 } from "@mattrax/enterprise-domain";
+import type { DeviceQueryDevice, DynamicGroupRules } from "@mattrax/enterprise-domain";
 import {
   previewDynamicGroup,
   syncDynamicGroup,
+  syncDynamicGroupDependents,
   syncDynamicGroupsForDevice,
-} from "@mattrax/mdm-apple";
+  syncDynamicGroupsForTenant,
+} from "@mattrax/mdm-core";
 import { makeDb, runEffect } from "./helpers.js";
 
 const now = new Date("2026-11-10T12:00:00.000Z");
@@ -52,7 +53,7 @@ describe("dynamic group evaluator", () => {
     ).toBe(false);
     expect(
       evaluateDynamicGroupRules(
-        rules({ all: [{ field: "proto", op: "eq", value: "APPLE" }] }),
+        rules({ all: [{ field: "proto", op: "eq", value: "APPLE" as never }] }),
         device(),
         { now },
       ),
@@ -415,4 +416,349 @@ describe("dynamic group materialisation", () => {
     expect(manual).toMatchObject({ kind: "manual", count: 1 });
     expect(manual!.devices.map((row) => row.id)).toEqual(["win-1"]);
   });
+});
+
+describe("dynamic groups referencing other groups", () => {
+  type Db = ReturnType<typeof makeDb>;
+
+  const seedGroup = (db: Db, id: string, overrides: Schema.JsonObject = {}) =>
+    db.store.enterprise_group.push({
+      id,
+      organizationId: "org-1",
+      name: id,
+      notes: null,
+      kind: "manual",
+      rules: null,
+      directoryGroupId: null,
+      lastEvaluatedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    });
+
+  const seedDevice = (db: Db, id: string, organizationId = "org-1") =>
+    db.store.device.push({
+      id,
+      organizationId,
+      proto: "apple",
+      status: "enrolled",
+      name: id,
+      model: "MacBook Pro",
+      serial: `SERIAL-${id}`,
+      osVersion: "14.4.1",
+      assetTag: null,
+      enrolledAt: now,
+      lastSeenAt: at(1),
+    });
+
+  const member = (db: Db, groupId: string, deviceId: string, source = "manual") =>
+    db.store.group_device.push({ groupId, deviceId, source });
+
+  const groupIds = (db: Db, groupId: string) =>
+    db.store.group_device
+      .filter((row) => row.groupId === groupId)
+      .map((row) => row.deviceId)
+      .sort();
+
+  const groupRule = (references: ReadonlyArray<string>, op: "in" | "notIn" = "in") => ({
+    version: 1,
+    all: [{ field: "group", op, value: [...references] }],
+  });
+
+  it("materialises devices from a referenced manual group", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "pilot");
+    seedGroup(db, "ring", { kind: "dynamic", rules: groupRule(["pilot"]) });
+    seedDevice(db, "apple-1");
+    seedDevice(db, "apple-2");
+    member(db, "pilot", "apple-1");
+
+    const result = await runEffect(syncDynamicGroup(db, "org-1", "ring", { now }));
+
+    expect(result).toMatchObject({ matched: 1, added: 1, removed: 0 });
+    expect(groupIds(db, "ring")).toEqual(["apple-1"]);
+  });
+
+  it("matches a dynamic group and keeps exclusion precedence", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "pilot");
+    seedGroup(db, "exceptions");
+    seedGroup(db, "dynamic-pilot", {
+      kind: "dynamic",
+      rules: { version: 1, all: [{ field: "platform", op: "eq", value: "apple" }] },
+    });
+    seedGroup(db, "ring", {
+      kind: "dynamic",
+      rules: groupRule(["pilot", "dynamic-pilot"]),
+    });
+    seedDevice(db, "apple-1");
+    seedDevice(db, "apple-2");
+    seedDevice(db, "apple-3");
+    member(db, "pilot", "apple-1");
+    member(db, "exceptions", "apple-2");
+
+    await runEffect(syncDynamicGroupsForTenant(db, "org-1", { now }));
+
+    // The dynamic reference matches all three; the manual reference adds
+    // nothing new, so the union is the same set.
+    expect(groupIds(db, "ring")).toEqual(["apple-1", "apple-2", "apple-3"]);
+
+    // A device excluded from the referencing group never matches, even though
+    // it is a member of a referenced group.
+    db.store.group_exclusion.push({
+      groupId: "ring",
+      target: "device",
+      targetId: "apple-1",
+      createdAt: now,
+    });
+
+    await runEffect(syncDynamicGroup(db, "org-1", "ring", { now }));
+
+    expect(groupIds(db, "ring")).toEqual(["apple-2", "apple-3"]);
+
+    // "Everyone except the exception group" is one notIn criterion.
+    db.store.enterprise_group.find((row) => row.id === "ring")!.rules = {
+      version: 1,
+      all: [
+        { field: "platform", op: "eq", value: "apple" },
+        { field: "group", op: "notIn", value: ["exceptions"] },
+      ],
+    };
+
+    await runEffect(syncDynamicGroup(db, "org-1", "ring", { now }));
+
+    // apple-1 matches the rule but its exclusion still wins; apple-2 is in the
+    // exception group.
+    expect(groupIds(db, "ring")).toEqual(["apple-3"]);
+  });
+
+  it("recomputes a referencing group when the referenced membership changes", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "pilot");
+    seedGroup(db, "ring", { kind: "dynamic", rules: groupRule(["pilot"]) });
+    seedDevice(db, "apple-1");
+    seedDevice(db, "apple-2");
+    member(db, "pilot", "apple-1");
+
+    await runEffect(syncDynamicGroup(db, "org-1", "ring", { now }));
+    expect(groupIds(db, "ring")).toEqual(["apple-1"]);
+
+    member(db, "pilot", "apple-2");
+    const added = await runEffect(syncDynamicGroupDependents(db, "org-1", "pilot", { now }));
+
+    expect(added.map((row) => row.groupId)).toEqual(["ring"]);
+    expect(groupIds(db, "ring")).toEqual(["apple-1", "apple-2"]);
+
+    db.store.group_device = db.store.group_device.filter(
+      (row) => !(row.groupId === "pilot" && row.deviceId === "apple-1"),
+    );
+    await runEffect(syncDynamicGroupDependents(db, "org-1", "pilot", { now }));
+
+    expect(groupIds(db, "ring")).toEqual(["apple-2"]);
+  });
+
+  it("recomputes dependents transitively in dependency order", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "base");
+    seedGroup(db, "middle", { kind: "dynamic", rules: groupRule(["base"]) });
+    seedGroup(db, "outer", { kind: "dynamic", rules: groupRule(["middle"]) });
+    seedDevice(db, "apple-1");
+    member(db, "base", "apple-1");
+
+    await runEffect(syncDynamicGroup(db, "org-1", "outer", { now }));
+    // A full pass is needed once because neither derived group had rows yet.
+    await runEffect(syncDynamicGroupsForTenant(db, "org-1", { now }));
+
+    expect(groupIds(db, "middle")).toEqual(["apple-1"]);
+    expect(groupIds(db, "outer")).toEqual(["apple-1"]);
+
+    seedDevice(db, "apple-2");
+    member(db, "base", "apple-2");
+
+    const results = await runEffect(syncDynamicGroupDependents(db, "org-1", "base", { now }));
+
+    expect(results.map((row) => row.groupId)).toEqual(["middle", "outer"]);
+    expect(groupIds(db, "middle")).toEqual(["apple-1", "apple-2"]);
+    expect(groupIds(db, "outer")).toEqual(["apple-1", "apple-2"]);
+  });
+
+  it("skips a circular reference and reports it in the preview", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "group-a", { kind: "dynamic", rules: groupRule(["group-b"]) });
+    seedGroup(db, "group-b", { kind: "dynamic", rules: groupRule(["group-a"]) });
+    seedDevice(db, "apple-1");
+    // Membership from before the loop was introduced must survive the skip.
+    member(db, "group-a", "apple-1", "dynamic");
+
+    const result = await runEffect(syncDynamicGroup(db, "org-1", "group-a", { now }));
+
+    expect(result).toMatchObject({ skipped: "cycle", matched: 0 });
+    expect(groupIds(db, "group-a")).toEqual(["apple-1"]);
+    // A skipped group is not marked as freshly evaluated.
+    expect(
+      db.store.enterprise_group.find((row) => row.id === "group-a")!.lastEvaluatedAt,
+    ).toBeNull();
+
+    const preview = await runEffect(previewDynamicGroup(db, "org-1", "group-a", { now }));
+
+    expect(preview?.problem).toMatch(/circular/i);
+    expect(preview?.references?.map((reference) => reference.id)).toEqual(["group-b"]);
+    expect(preview?.references?.[0]?.problem).toMatch(/circular/i);
+  });
+
+  it("skips a group that references a deleted group", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "ring", { kind: "dynamic", rules: groupRule(["deleted-group"]) });
+    seedDevice(db, "apple-1");
+    member(db, "ring", "apple-1", "dynamic");
+
+    const result = await runEffect(syncDynamicGroup(db, "org-1", "ring", { now }));
+    const preview = await runEffect(previewDynamicGroup(db, "org-1", "ring", { now }));
+
+    expect(result).toMatchObject({ skipped: "missing" });
+    expect(groupIds(db, "ring")).toEqual(["apple-1"]);
+    expect(preview?.problem).toMatch(/does not exist/i);
+  });
+
+  it("follows the referenced membership on a device check-in", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "pilot");
+    seedGroup(db, "ring", { kind: "dynamic", rules: groupRule(["pilot"]) });
+    seedDevice(db, "apple-1");
+    member(db, "pilot", "apple-1");
+
+    await runEffect(syncDynamicGroupsForDevice(db, "org-1", "apple-1", { now }));
+    expect(groupIds(db, "ring")).toEqual(["apple-1"]);
+
+    db.store.group_device = db.store.group_device.filter(
+      (row) => !(row.groupId === "pilot" && row.deviceId === "apple-1"),
+    );
+    await runEffect(syncDynamicGroupsForDevice(db, "org-1", "apple-1", { now }));
+
+    expect(groupIds(db, "ring")).toEqual([]);
+  });
+
+  it("skips a rule that references its own nested ancestor", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "parent");
+    seedGroup(db, "child", {
+      kind: "dynamic",
+      rules: {
+        version: 1,
+        all: [
+          { field: "platform", op: "eq", value: "apple" },
+          { field: "group", op: "notIn", value: ["parent"] },
+        ],
+      },
+    });
+    db.store.group_group.push({
+      parentGroupId: "parent",
+      childGroupId: "child",
+      createdAt: now,
+    });
+    seedDevice(db, "apple-1");
+    member(db, "child", "apple-1", "dynamic");
+
+    const first = await runEffect(syncDynamicGroupsForTenant(db, "org-1", { now }));
+    const second = await runEffect(syncDynamicGroupsForTenant(db, "org-1", { now }));
+
+    expect(first.find((row) => row.groupId === "child")).toMatchObject({ skipped: "cycle" });
+    expect(second.find((row) => row.groupId === "child")).toMatchObject({ skipped: "cycle" });
+    // The existing row survives both passes: no membership flapping.
+    expect(groupIds(db, "child")).toEqual(["apple-1"]);
+  });
+
+  it("materialises a nested dynamic child before a group watching the parent", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "parent");
+    seedGroup(db, "child", {
+      kind: "dynamic",
+      rules: { version: 1, all: [{ field: "platform", op: "eq", value: "apple" }] },
+    });
+    seedGroup(db, "watcher", { kind: "dynamic", rules: groupRule(["parent"]) });
+    db.store.group_group.push({
+      parentGroupId: "parent",
+      childGroupId: "child",
+      createdAt: now,
+    });
+    seedDevice(db, "apple-1");
+
+    const results = await runEffect(syncDynamicGroupsForTenant(db, "org-1", { now }));
+
+    // One pass is enough: the plan orders the nested child before the watcher.
+    expect(results.map((row) => row.groupId)).toEqual(["child", "watcher"]);
+    expect(groupIds(db, "child")).toEqual(["apple-1"]);
+    expect(groupIds(db, "watcher")).toEqual(["apple-1"]);
+    expect(groupIds(db, "parent")).toEqual(["apple-1"]);
+  });
+
+  it("follows nested ancestry on a device check-in, including removal", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "parent");
+    seedGroup(db, "child", {
+      kind: "dynamic",
+      rules: { version: 1, all: [{ field: "platform", op: "eq", value: "apple" }] },
+    });
+    seedGroup(db, "watcher", { kind: "dynamic", rules: groupRule(["parent"]) });
+    db.store.group_group.push({
+      parentGroupId: "parent",
+      childGroupId: "child",
+      createdAt: now,
+    });
+    seedDevice(db, "apple-1");
+
+    await runEffect(syncDynamicGroupsForDevice(db, "org-1", "apple-1", { now }));
+    expect(groupIds(db, "watcher")).toEqual(["apple-1"]);
+
+    db.store.device.find((row) => row.id === "apple-1")!.proto = "win";
+    await runEffect(syncDynamicGroupsForDevice(db, "org-1", "apple-1", { now }));
+
+    expect(groupIds(db, "child")).toEqual([]);
+    expect(groupIds(db, "watcher")).toEqual([]);
+  });
+
+  it("recomputes a larger fleet in dependency order", async () => {
+    const db = makeDb();
+
+    seedGroup(db, "fleet");
+    seedGroup(db, "blocked");
+    seedGroup(db, "all-apple", {
+      kind: "dynamic",
+      rules: { version: 1, all: [{ field: "platform", op: "eq", value: "apple" }] },
+    });
+    seedGroup(db, "ring", {
+      kind: "dynamic",
+      rules: {
+        version: 1,
+        all: [
+          { field: "group", op: "in", value: ["all-apple"] },
+          { field: "group", op: "notIn", value: ["blocked"] },
+        ],
+      },
+    });
+
+    for (let index = 0; index < 2000; index++) {
+      const id = `device-${index}`;
+      seedDevice(db, id);
+      member(db, "fleet", id);
+      if (index < 500) member(db, "blocked", id);
+    }
+
+    const results = await runEffect(syncDynamicGroupsForTenant(db, "org-1", { now }));
+
+    expect(results.map((row) => row.groupId)).toEqual(["all-apple", "ring"]);
+    expect(results[0]).toMatchObject({ matched: 2000 });
+    expect(results[1]).toMatchObject({ matched: 1500 });
+    expect(db.store.group_device.filter((row) => row.groupId === "ring")).toHaveLength(1500);
+  }, 20_000);
 });

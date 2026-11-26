@@ -1,13 +1,13 @@
-import * as pkijs from "pkijs";
 import { Effect } from "effect";
 import { eq } from "drizzle-orm";
 import {
-  certificateMatchesKey,
+  certificatePemMatchesKey,
   importApnsKeyJwk,
   isApnsMdmTopic,
   parseApnsCertificate,
 } from "@mattrax/apns";
 import { openSecret, pemDecode } from "@mattrax/crypto";
+import { loadPkijs } from "@mattrax/scep";
 import type {
   ApnsCredentialHealth,
   DeviceCertificateCounts,
@@ -16,18 +16,12 @@ import type {
 } from "@mattrax/enterprise-domain";
 import { schema } from "../schema.ts";
 import type { EnterpriseDb } from "../schema.ts";
-import { loadScepCaState, type ScepCaState } from "../Scep/scepLifecycle.ts";
+import { loadScepCaState } from "../Scep/scepLifecycle.ts";
+import type { ScepCaState } from "../Scep/scepLifecycle.ts";
 
-// pkijs needs a WebCrypto engine before it can parse certificates. The APNs
-// helper does the same dance, but this module must stand alone (maintenance
-// imports it without the APNs service).
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
-  try {
-    pkijs.getEngine();
-  } catch {
-    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
-  }
-}
+// Certificate parsing is deferred to the operations that need it: pkijs is
+// loaded on first use so it stays out of the Worker's startup closure. This
+// module must stand alone (maintenance imports it without the APNs service).
 
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -59,12 +53,15 @@ export type CredentialHealth = {
  * subject. Returns null for malformed input so a historical/rotated
  * certificate never breaks the dashboard or the maintenance job.
  */
-export const parseCertificateNotAfter = (pem: string | null | undefined): Date | null => {
+export const parseCertificateNotAfter = async (
+  pem: string | null | undefined,
+): Promise<Date | null> => {
   if (!pem) return null;
 
   try {
     const der = pemDecode("CERTIFICATE", pem);
-    const certificate = pkijs.Certificate.fromBER(der);
+    const { Certificate } = await loadPkijs();
+    const certificate = Certificate.fromBER(der);
     const value = certificate.notAfter?.value;
 
     if (!(value instanceof Date) || Number.isNaN(value.getTime())) return null;
@@ -203,7 +200,7 @@ export const apnsCredentialHealth = async (input: {
 
   const base = credentialInfo(
     configured,
-    parseCertificateNotAfter(input.certificatePem),
+    await parseCertificateNotAfter(input.certificatePem),
     input.now,
   );
 
@@ -218,10 +215,10 @@ export const apnsCredentialHealth = async (input: {
       renewalUrl: APNS_RENEWAL_URL,
     };
 
-  let parsed: ReturnType<typeof parseApnsCertificate> | null = null;
+  let parsed: Awaited<ReturnType<typeof parseApnsCertificate>> | null;
 
   try {
-    parsed = parseApnsCertificate(input.certificatePem!);
+    parsed = await parseApnsCertificate(input.certificatePem);
   } catch {
     parsed = null;
   }
@@ -242,7 +239,7 @@ export const apnsCredentialHealth = async (input: {
         const jwk: JsonWebKey = JSON.parse(await openSecret(input.authSecret, input.encryptedKey));
 
         const privateKey = await importApnsKeyJwk(jwk);
-        keyMatchesCertificate = await certificateMatchesKey(parsed.certificate, privateKey);
+        keyMatchesCertificate = await certificatePemMatchesKey(input.certificatePem, privateKey);
       } catch {
         // The key exists but cannot be opened: pushes cannot be signed.
         keyMatchesCertificate = false;

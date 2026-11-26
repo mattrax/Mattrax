@@ -1,14 +1,17 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { Layer, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
+import * as SqlError from "effect/sql/SqlError";
 import { HttpRouter } from "effect/http";
-import { Db } from "@mattrax/enterprise-core";
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core/errors";
+import { ServicesDbService, servicesSchema } from "@mattrax/enterprise-billing";
 import {
   BillingWebhookError,
   billingWebhookRoutes,
   processStripeWebhook,
+  tenantEntitlement,
 } from "@mattrax/enterprise-billing";
-import { makeDb, runEffect, schema } from "./helpers.js";
+import { makeServicesDb as makeDb, runEffect } from "./helpers.js";
 
 const webhookSecret = "whsec_test_secret";
 
@@ -20,16 +23,42 @@ const periodStart = 1_767_225_600;
 
 const periodEnd = 1_769_817_600;
 
+const ledgerQuery = "insert into services_stripe_event (id, type) values (?, ?)";
+
+const mysqlDriverError = (errno: number, code: string, message: string) =>
+  Object.assign(new Error(message), { code, errno, sqlMessage: message });
+
+const drizzleSqlError = (reason: SqlError.SqlErrorReason, query = ledgerQuery) =>
+  new EffectDrizzleQueryError({
+    query,
+    params: undefined,
+    cause: new SqlError.SqlError({ reason }),
+  });
+
+const duplicateEventError = (eventId: string) =>
+  drizzleSqlError(
+    new SqlError.UniqueViolation({
+      cause: mysqlDriverError(
+        1062,
+        "ER_DUP_ENTRY",
+        `Duplicate entry '${eventId}' for key 'services_stripe_event.PRIMARY'`,
+      ),
+      message: `Duplicate entry '${eventId}' for key 'services_stripe_event.PRIMARY'`,
+      operation: "insert",
+      constraint: "services_stripe_event.PRIMARY",
+    }),
+  );
+
 const seedOrganization = (
   db: ReturnType<typeof makeDb>,
   id: string,
   stripeCustomerId: string | null = null,
 ) => {
-  db.store.organization.push({
+  db.store.services_tenant.push({
     id,
     name: id,
-    slug: id,
     stripeCustomerId,
+    entitlementSyncedAt: null,
     createdAt: now,
     updatedAt: now,
   });
@@ -80,33 +109,43 @@ const signed = (payload: string, secret = webhookSecret) => ({
 /**
  * The fake database does not enforce primary keys, so this wrapper adds the one
  * constraint the Stripe ledger relies on: a second insert with the same event id
- * fails with MySQL's `ER_DUP_ENTRY`, exactly as production does.
+ * fails through Drizzle and Effect's structured unique-violation error, as in
+ * production.
  */
 const makeLedgerDb = () => {
   const db = makeDb();
   const insert = db.insert.bind(db);
 
-  db.insert = (table: any) => {
-    const builder = insert(table);
+  db.insert = ((table: any) => {
+    const builder: any = insert(table);
 
-    if (table !== schema.stripeEvent) return builder;
+    if (table !== servicesSchema.stripeEvent) return builder;
 
     const values = builder.values.bind(builder);
 
     builder.values = (rows: any) => {
       const row = Array.isArray(rows) ? rows[0] : rows;
 
-      if (db.store.stripe_event.some((existing: any) => existing.id === row.id))
-        throw Object.assign(
-          new Error(`Duplicate entry '${row.id}' for key 'stripe_event.PRIMARY'`),
-          { code: "ER_DUP_ENTRY", errno: 1062 },
-        );
+      if (db.store.services_stripe_event.some((existing: any) => existing.id === row.id))
+        return Effect.fail(duplicateEventError(row.id));
 
       return values(rows);
     };
 
     return builder;
-  };
+  }) as typeof db.insert;
+
+  return db;
+};
+
+const makeFailingLedgerDb = (error: unknown) => {
+  const db = makeDb();
+  const insert = db.insert.bind(db);
+
+  db.insert = ((table: any) =>
+    table === servicesSchema.stripeEvent
+      ? { values: () => Effect.fail(error) }
+      : insert(table)) as typeof db.insert;
 
   return db;
 };
@@ -143,7 +182,7 @@ const deliverEvent = (
  * matching both the tagged class and the HTTP status it maps to.
  */
 const expectWebhookFailure = async (run: Promise<unknown>, statusCode: number) => {
-  const failure = await run.catch((cause: unknown) => cause);
+  const failure = await run.catch((error: unknown) => error);
 
   expect(failure).toBeInstanceOf(BillingWebhookError);
   expect(failure).toMatchObject({ statusCode });
@@ -156,13 +195,13 @@ describe("Stripe webhook signature verification", () => {
 
     await expect(
       deliverEvent(db, "customer.subscription.created", subscription()),
-    ).resolves.toMatchObject({ organizationId: "org-1", stripeSubscriptionId: "sub_1" });
-    expect(db.store.subscription).toHaveLength(1);
+    ).resolves.toMatchObject({ tenantId: "org-1" });
+    expect(db.store.services_subscription).toHaveLength(1);
   });
 
   it("links a deployment licence subscription without touching a tenant", async () => {
     const db = makeDb({
-      deployment_license: [
+      services_deployment_license: [
         {
           id: "lic-1",
           name: "Acme self-hosted",
@@ -191,14 +230,14 @@ describe("Stripe webhook signature verification", () => {
         "customer.subscription.created",
         subscription({ metadata: { deploymentLicenseId: "lic-1" } }),
       ),
-    ).resolves.toMatchObject({ organizationId: null });
+    ).resolves.toMatchObject({ licenseId: "lic-1" });
 
-    expect(db.store.deployment_license[0]).toMatchObject({
+    expect(db.store.services_deployment_license[0]).toMatchObject({
       stripeSubscriptionId: "sub_1",
       stripeCustomerId: "cus_1",
       status: "active",
     });
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("rejects a missing signature", async () => {
@@ -219,7 +258,7 @@ describe("Stripe webhook signature verification", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("rejects an invalid signature", async () => {
@@ -240,7 +279,7 @@ describe("Stripe webhook signature verification", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("rejects a payload that changed after signing", async () => {
@@ -263,7 +302,7 @@ describe("Stripe webhook signature verification", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("reports unconfigured billing instead of crashing", async () => {
@@ -294,10 +333,10 @@ describe("Stripe subscription lifecycle", () => {
 
     await deliverEvent(db, "customer.subscription.created", subscription());
 
-    expect(db.store.subscription).toMatchObject([
+    expect(db.store.services_subscription).toMatchObject([
       {
         plan: "device",
-        referenceId: "org-1",
+        tenantId: "org-1",
         stripeCustomerId: "cus_1",
         stripeSubscriptionId: "sub_1",
         status: "active",
@@ -306,6 +345,7 @@ describe("Stripe subscription lifecycle", () => {
         cancelAtPeriodEnd: false,
         createdAt: now,
         updatedAt: now,
+        entitlementRevision: 1,
       },
     ]);
   });
@@ -315,7 +355,7 @@ describe("Stripe subscription lifecycle", () => {
     seedOrganization(db, "org-1", "cus_1");
 
     await deliverEvent(db, "customer.subscription.created", subscription());
-    const createdAt = db.store.subscription[0]!.createdAt;
+    const createdAt = db.store.services_subscription[0]!.createdAt;
 
     const updated = subscription({
       status: "past_due",
@@ -337,8 +377,8 @@ describe("Stripe subscription lifecycle", () => {
     // for row identity and deterministic fields.
     await deliverEvent(db, "customer.subscription.updated", updated);
 
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
       status: "past_due",
       cancelAtPeriodEnd: true,
       periodEnd: new Date((periodEnd + 86_400) * 1000),
@@ -353,8 +393,8 @@ describe("Stripe subscription lifecycle", () => {
     await deliverEvent(db, "customer.subscription.created", subscription());
     await deliverEvent(db, "customer.subscription.deleted", subscription({ status: "canceled" }));
 
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
       stripeSubscriptionId: "sub_1",
       status: "canceled",
     });
@@ -363,13 +403,14 @@ describe("Stripe subscription lifecycle", () => {
   it("maps invoices paid and failed onto the existing subscription", async () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
-    db.store.subscription.push({
+    db.store.services_subscription.push({
       id: "local-sub",
       plan: "device",
-      referenceId: "org-1",
+      tenantId: "org-1",
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "past_due",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -384,23 +425,30 @@ describe("Stripe subscription lifecycle", () => {
     };
 
     await deliverEvent(db, "invoice.paid", invoice);
-    expect(db.store.subscription[0]).toMatchObject({ status: "active" });
+    expect(db.store.services_subscription[0]).toMatchObject({
+      status: "active",
+      entitlementRevision: 1,
+    });
 
     await deliverEvent(db, "invoice.payment_failed", { ...invoice, status: "open" });
-    expect(db.store.subscription[0]).toMatchObject({ status: "past_due" });
-    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
+      status: "past_due",
+      entitlementRevision: 2,
+    });
+    expect(db.store.services_subscription).toHaveLength(1);
   });
 
   it("does not resurrect a canceled subscription from a late paid invoice", async () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
-    db.store.subscription.push({
+    db.store.services_subscription.push({
       id: "local-sub",
       plan: "device",
-      referenceId: "org-1",
+      tenantId: "org-1",
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "canceled",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -414,7 +462,7 @@ describe("Stripe subscription lifecycle", () => {
       status: "paid",
     });
 
-    expect(db.store.subscription[0]).toMatchObject({ status: "canceled" });
+    expect(db.store.services_subscription[0]).toMatchObject({ status: "canceled" });
   });
 
   it("ignores unrelated event types", async () => {
@@ -424,6 +472,62 @@ describe("Stripe subscription lifecycle", () => {
     await expect(
       deliverEvent(db, "customer.created", { id: "cus_1", object: "customer" }),
     ).resolves.toEqual({ ignored: true });
+  });
+
+  it("increments the entitlement revision for each committed subscription mutation", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+
+    await deliverEvent(db, "customer.subscription.created", subscription());
+    expect(db.store.services_subscription[0]).toMatchObject({ entitlementRevision: 1 });
+
+    await deliverEvent(db, "customer.subscription.updated", subscription({ status: "past_due" }));
+    expect(db.store.services_subscription[0]).toMatchObject({
+      status: "past_due",
+      entitlementRevision: 2,
+    });
+  });
+
+  it("reloads the committed revision for the post-commit entitlement push", async () => {
+    const db = makeDb();
+    const pushed: Array<{ revision: number; status: string }> = [];
+    seedOrganization(db, "org-1", "cus_1");
+
+    await deliverEvent(db, "customer.subscription.created", subscription(), {
+      onApplied: (result, servicesDb) =>
+        Effect.gen(function* () {
+          if (!result.tenantId) return;
+          const entitlement = yield* tenantEntitlement(servicesDb, result.tenantId);
+          if (entitlement)
+            pushed.push({ revision: entitlement.revision, status: entitlement.status });
+        }),
+    });
+
+    expect(pushed).toEqual([{ revision: 1, status: "active" }]);
+  });
+
+  it("locks the exact subscription row before mutating its revision", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+    const select = db.select.bind(db);
+    const locks: string[] = [];
+
+    db.select = ((fields?: any) => {
+      const builder: any = select(fields);
+      const lock = builder.for.bind(builder);
+
+      builder.for = (strength: string) => {
+        locks.push(strength);
+        return lock(strength);
+      };
+
+      return builder;
+    }) as typeof db.select;
+
+    await deliverEvent(db, "customer.subscription.updated", subscription());
+
+    expect(locks).toEqual(["update", "update"]);
+    expect(db.store.services_subscription[0]).toMatchObject({ entitlementRevision: 1 });
   });
 });
 
@@ -447,19 +551,19 @@ describe("Stripe Checkout completion", () => {
 
     await expect(
       deliverEvent(db, "checkout.session.completed", checkoutSession()),
-    ).resolves.toMatchObject({ organizationId: "org-1", stripeSubscriptionId: "sub_1" });
+    ).resolves.toMatchObject({ tenantId: "org-1" });
 
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
       plan: "device",
-      referenceId: "org-1",
+      tenantId: "org-1",
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "active",
     });
     // The completed session links the customer so later invoice events (which
     // may only carry a customer id) resolve without metadata.
-    expect(db.store.organization[0]).toMatchObject({ stripeCustomerId: "cus_1" });
+    expect(db.store.services_tenant[0]).toMatchObject({ stripeCustomerId: "cus_1" });
   });
 
   it("keeps a trial active until the subscription event refines it", async () => {
@@ -472,7 +576,7 @@ describe("Stripe Checkout completion", () => {
       checkoutSession({ payment_status: "no_payment_required" }),
     );
 
-    expect(db.store.subscription[0]).toMatchObject({ status: "active" });
+    expect(db.store.services_subscription[0]).toMatchObject({ status: "active" });
   });
 
   it("ignores a payment-mode session", async () => {
@@ -486,7 +590,7 @@ describe("Stripe Checkout completion", () => {
         checkoutSession({ mode: "payment", subscription: null }),
       ),
     ).resolves.toEqual({ ignored: true });
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("refuses a session whose metadata and customer disagree", async () => {
@@ -501,7 +605,7 @@ describe("Stripe Checkout completion", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("dedupes a redelivered completion through the event ledger", async () => {
@@ -511,28 +615,95 @@ describe("Stripe Checkout completion", () => {
     const payload = JSON.stringify(event("checkout.session.completed", checkoutSession()));
 
     await expect(deliver(db, payload)).resolves.toMatchObject({
-      organizationId: "org-1",
-      stripeSubscriptionId: "sub_1",
+      tenantId: "org-1",
     });
     await expect(deliver(db, payload)).resolves.toEqual({ duplicate: true });
-    expect(db.store.stripe_event).toHaveLength(1);
-    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.services_stripe_event).toHaveLength(1);
+    expect(db.store.services_subscription).toHaveLength(1);
+  });
+
+  it("allows replacement only through a validated Checkout completion", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+    db.store.services_subscription.push({
+      id: "local-sub",
+      plan: "device",
+      tenantId: "org-1",
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_old",
+      status: "canceled",
+      entitlementRevision: 4,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expect(
+      deliverEvent(
+        db,
+        "checkout.session.completed",
+        checkoutSession({ subscription: "sub_new", metadata: { organizationId: "org-1" } }),
+      ),
+    ).resolves.toMatchObject({ tenantId: "org-1" });
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_new",
+      status: "active",
+      entitlementRevision: 5,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(
+        db,
+        "customer.subscription.updated",
+        subscription({ id: "sub_old", status: "active" }),
+      ),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_new",
+      status: "active",
+      entitlementRevision: 5,
+    });
+  });
+
+  it("rejects Checkout that names another tenant's recorded subscription", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+    seedOrganization(db, "org-2", "cus_2");
+    db.store.services_subscription.push({
+      id: "local-sub-2",
+      plan: "device",
+      tenantId: "org-2",
+      stripeCustomerId: "cus_2",
+      stripeSubscriptionId: "sub_2",
+      status: "active",
+      entitlementRevision: 1,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(db, "checkout.session.completed", checkoutSession({ subscription: "sub_2" })),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({ tenantId: "org-2" });
   });
 });
 
 describe("Stripe webhook tenant resolution", () => {
-  it("rejects an unknown organization metadata id", async () => {
+  it("creates a local tenant projection for metadata the service has not seen", async () => {
     const db = makeDb();
 
-    await expectWebhookFailure(
+    await expect(
       deliverEvent(
         db,
         "customer.subscription.created",
         subscription({ metadata: { organizationId: "missing-org" } }),
       ),
-      400,
-    );
-    expect(db.store.subscription).toHaveLength(0);
+    ).resolves.toMatchObject({ tenantId: "missing-org" });
+
+    expect(db.store.services_tenant).toHaveLength(1);
   });
 
   it("rejects an unknown Stripe customer", async () => {
@@ -546,7 +717,7 @@ describe("Stripe webhook tenant resolution", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("rejects metadata and customer that map to different organizations", async () => {
@@ -562,20 +733,21 @@ describe("Stripe webhook tenant resolution", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("rejects a subscription id that already belongs to another tenant", async () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
     seedOrganization(db, "org-2", "cus_2");
-    db.store.subscription.push({
+    db.store.services_subscription.push({
       id: "local-org-2",
       plan: "device",
-      referenceId: "org-2",
+      tenantId: "org-2",
       stripeCustomerId: "cus_2",
       stripeSubscriptionId: "sub_2",
       status: "active",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -593,9 +765,9 @@ describe("Stripe webhook tenant resolution", () => {
       ),
       400,
     );
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({
-      referenceId: "org-2",
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
+      tenantId: "org-2",
       status: "active",
     });
   });
@@ -604,13 +776,14 @@ describe("Stripe webhook tenant resolution", () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
     seedOrganization(db, "org-2", "cus_2");
-    db.store.subscription.push({
+    db.store.services_subscription.push({
       id: "local-org-2",
       plan: "device",
-      referenceId: "org-2",
+      tenantId: "org-2",
       stripeCustomerId: "cus_2",
       stripeSubscriptionId: "sub_2",
       status: "active",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -627,11 +800,75 @@ describe("Stripe webhook tenant resolution", () => {
       400,
     );
 
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({
-      referenceId: "org-2",
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({
+      tenantId: "org-2",
       stripeSubscriptionId: "sub_2",
       status: "active",
+    });
+  });
+
+  it("rejects a stale invoice subscription id instead of falling back to the tenant row", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+    db.store.services_subscription.push({
+      id: "local-sub",
+      plan: "device",
+      tenantId: "org-1",
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(db, "invoice.paid", {
+        id: "in_stale",
+        object: "invoice",
+        customer: "cus_1",
+        subscription: "sub_replaced",
+        status: "paid",
+      }),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+    });
+  });
+
+  it("rejects a stale subscription id instead of replacing the tenant's current pointer", async () => {
+    const db = makeDb();
+    seedOrganization(db, "org-1", "cus_1");
+    db.store.services_subscription.push({
+      id: "local-sub",
+      plan: "device",
+      tenantId: "org-1",
+      stripeCustomerId: "cus_1",
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
+      cancelAtPeriodEnd: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await expectWebhookFailure(
+      deliverEvent(
+        db,
+        "customer.subscription.updated",
+        subscription({ id: "sub_replaced", status: "active" }),
+      ),
+      400,
+    );
+    expect(db.store.services_subscription[0]).toMatchObject({
+      stripeSubscriptionId: "sub_current",
+      status: "unpaid",
+      entitlementRevision: 3,
     });
   });
 
@@ -639,13 +876,14 @@ describe("Stripe webhook tenant resolution", () => {
     const db = makeDb();
     seedOrganization(db, "org-1", "cus_1");
     seedOrganization(db, "org-2", "cus_2");
-    db.store.subscription.push({
+    db.store.services_subscription.push({
       id: "local-org-1",
       plan: "device",
-      referenceId: "org-1",
+      tenantId: "org-1",
       stripeCustomerId: "cus_1",
       stripeSubscriptionId: "sub_1",
       status: "active",
+      entitlementRevision: 0,
       cancelAtPeriodEnd: false,
       createdAt: now,
       updatedAt: now,
@@ -661,12 +899,16 @@ describe("Stripe webhook tenant resolution", () => {
       }),
     );
 
-    expect(db.store.subscription).toHaveLength(2);
-    expect(db.store.subscription.find((row: any) => row.referenceId === "org-1")).toMatchObject({
+    expect(db.store.services_subscription).toHaveLength(2);
+    expect(
+      db.store.services_subscription.find((row: any) => row.tenantId === "org-1"),
+    ).toMatchObject({
       stripeSubscriptionId: "sub_1",
       status: "active",
     });
-    expect(db.store.subscription.find((row: any) => row.referenceId === "org-2")).toMatchObject({
+    expect(
+      db.store.services_subscription.find((row: any) => row.tenantId === "org-2"),
+    ).toMatchObject({
       stripeSubscriptionId: "sub_2",
       status: "active",
     });
@@ -681,20 +923,19 @@ describe("Stripe event ledger", () => {
     const payload = JSON.stringify(event("customer.subscription.created", subscription()));
 
     await expect(deliver(db, payload)).resolves.toMatchObject({
-      organizationId: "org-1",
-      stripeSubscriptionId: "sub_1",
+      tenantId: "org-1",
     });
     await expect(deliver(db, payload)).resolves.toEqual({ duplicate: true });
 
-    expect(db.store.stripe_event).toMatchObject([
+    expect(db.store.services_stripe_event).toMatchObject([
       {
         id: "evt_customer_subscription_created",
         type: "customer.subscription.created",
-        organizationId: "org-1",
+        tenantId: "org-1",
         receivedAt: now,
       },
     ]);
-    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.services_subscription).toHaveLength(1);
   });
 
   it("rejects a concurrent duplicate delivery atomically", async () => {
@@ -714,8 +955,8 @@ describe("Stripe event ledger", () => {
     );
 
     expect(duplicates).toHaveLength(1);
-    expect(db.store.stripe_event).toHaveLength(1);
-    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.services_stripe_event).toHaveLength(1);
+    expect(db.store.services_subscription).toHaveLength(1);
   });
 
   it("records ignored event types so their redelivery is also deduped", async () => {
@@ -724,7 +965,7 @@ describe("Stripe event ledger", () => {
 
     await expect(deliver(db, payload)).resolves.toEqual({ ignored: true });
     await expect(deliver(db, payload)).resolves.toEqual({ duplicate: true });
-    expect(db.store.stripe_event).toHaveLength(1);
+    expect(db.store.services_stripe_event).toHaveLength(1);
   });
 
   it("keeps different event ids independent", async () => {
@@ -734,12 +975,12 @@ describe("Stripe event ledger", () => {
     await deliverEvent(db, "customer.subscription.created", subscription());
     await deliverEvent(db, "customer.subscription.updated", subscription({ status: "past_due" }));
 
-    expect(db.store.stripe_event.map((row: any) => row.id).sort()).toEqual([
+    expect(db.store.services_stripe_event.map((row: any) => row.id).sort()).toEqual([
       "evt_customer_subscription_created",
       "evt_customer_subscription_updated",
     ]);
-    expect(db.store.subscription).toHaveLength(1);
-    expect(db.store.subscription[0]).toMatchObject({ status: "past_due" });
+    expect(db.store.services_subscription).toHaveLength(1);
+    expect(db.store.services_subscription[0]).toMatchObject({ status: "past_due" });
   });
 });
 
@@ -752,7 +993,7 @@ describe("POST /api/v1/billing/webhook", () => {
     },
   ) =>
     HttpRouter.toWebHandler(
-      billingWebhookRoutes(config).pipe(Layer.provideMerge(Layer.succeed(Db, db))),
+      billingWebhookRoutes(config).pipe(Layer.provideMerge(Layer.succeed(ServicesDbService, db))),
     ).handler;
 
   it("accepts a signed event and returns 200", async () => {
@@ -773,7 +1014,144 @@ describe("POST /api/v1/billing/webhook", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ received: true });
-    expect(db.store.subscription).toHaveLength(1);
+    expect(db.store.services_subscription).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      name: "connection",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.ConnectionError({
+            cause: mysqlDriverError(2003, "ECONNREFUSED", "connect ECONNREFUSED"),
+            message: "connect ECONNREFUSED",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "deadlock",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.DeadlockError({
+            cause: mysqlDriverError(1213, "ER_LOCK_DEADLOCK", "Deadlock found"),
+            message: "Deadlock found",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "lock timeout",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.LockTimeoutError({
+            cause: mysqlDriverError(1205, "ER_LOCK_WAIT_TIMEOUT", "Lock wait timeout"),
+            message: "Lock wait timeout",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "non-unique constraint",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.ConstraintError({
+            cause: mysqlDriverError(1452, "ER_NO_REFERENCED_ROW_2", "Constraint failed"),
+            message: "Constraint failed",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unique constraint on another table",
+      error: () =>
+        drizzleSqlError(
+          new SqlError.UniqueViolation({
+            cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+            constraint: "services_subscription.PRIMARY",
+            operation: "insert",
+          }),
+        ),
+    },
+    {
+      name: "unstructured driver duplicate",
+      error: () =>
+        new EffectDrizzleQueryError({
+          query: ledgerQuery,
+          params: undefined,
+          cause: mysqlDriverError(1062, "ER_DUP_ENTRY", "Duplicate entry"),
+        }),
+    },
+  ])("returns 500 for a Drizzle-wrapped $name failure", async ({ error }) => {
+    const db = makeFailingLedgerDb(error());
+    seedOrganization(db, "org-1", "cus_1");
+    const payload = JSON.stringify(event("customer.subscription.created", subscription()));
+
+    const response = await makeHandler(db)(
+      new Request("http://localhost/api/v1/billing/webhook", {
+        method: "POST",
+        headers: {
+          "stripe-signature": signed(payload).signature,
+          "content-type": "application/json",
+        },
+        body: payload,
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: "Webhook processing failed" });
+    expect(db.store.services_stripe_event).toEqual([]);
+    expect(db.store.services_subscription).toEqual([]);
+  });
+
+  it("returns 500 when a later stripe_event update fails", async () => {
+    const db = makeLedgerDb();
+    seedOrganization(db, "org-1", "cus_1");
+    const update = db.update.bind(db);
+
+    db.update = ((table: any) => {
+      const builder: any = update(table);
+
+      if (table !== servicesSchema.stripeEvent) return builder;
+
+      const set = builder.set.bind(builder);
+
+      builder.set = (patch: any) => {
+        const next: any = set(patch);
+
+        next.where = (_condition: any) =>
+          Effect.fail(
+            drizzleSqlError(
+              new SqlError.ConnectionError({
+                cause: mysqlDriverError(2013, "CR_SERVER_LOST", "Lost connection"),
+                message: "Lost connection",
+                operation: "update",
+              }),
+              "update services_stripe_event set tenant_id = ? where id = ?",
+            ),
+          );
+
+        return next;
+      };
+
+      return builder;
+    }) as typeof db.update;
+
+    const payload = JSON.stringify(event("customer.subscription.created", subscription()));
+    const response = await makeHandler(db)(
+      new Request("http://localhost/api/v1/billing/webhook", {
+        method: "POST",
+        headers: {
+          "stripe-signature": signed(payload).signature,
+          "content-type": "application/json",
+        },
+        body: payload,
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(db.store.services_stripe_event).toEqual([]);
+    expect(db.store.services_subscription).toEqual([]);
   });
 
   it("returns 400 for a missing signature", async () => {
@@ -790,7 +1168,7 @@ describe("POST /api/v1/billing/webhook", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(db.store.subscription).toHaveLength(0);
+    expect(db.store.services_subscription).toHaveLength(0);
   });
 
   it("returns 503 when the webhook secret is not configured", async () => {

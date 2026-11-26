@@ -19,10 +19,11 @@ import { ScriptSettings } from "../scripts.js";
 import { WindowsActivationReportRequest } from "../deviceInventory.js";
 import { WindowsActivationReportResponse } from "../deviceInventory.js";
 import { EnterpriseAuthRequiredErrors } from "../Errors.js";
+import { EnterpriseConditionalWriteErrors } from "../Errors.js";
 import { EnterpriseBadRequest } from "../Errors.js";
 import { EnterpriseConflict } from "../Errors.js";
 import { EnterpriseNotFound } from "../Errors.js";
-import { EnterpriseStepUpRequired } from "../Errors.js";
+import { EnterpriseApprovalRequired, EnterpriseStepUpRequired } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
 import { EnterpriseTenantWriteErrors } from "../Errors.js";
 import { TenantIdParam } from "./Params.js";
@@ -60,7 +61,8 @@ export const scriptApi = HttpApiGroup.make("ScriptApi")
   )
   .add(
     HttpApiEndpoint.post("createScript", "/v1/tenants/:tenantId/scripts", {
-      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      // Creating a script is additive and needs no step-up.
+      error: [...EnterpriseTenantWriteErrors, ...EnterpriseApprovalRequired],
       params: TenantParam,
       payload: CreateScriptRequest,
       success: Schema.Struct({ id: Schema.String }),
@@ -68,7 +70,11 @@ export const scriptApi = HttpApiGroup.make("ScriptApi")
   )
   .add(
     HttpApiEndpoint.patch("patchScript", "/v1/tenants/:tenantId/scripts/:id", {
-      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      error: [
+        ...EnterpriseConditionalWriteErrors,
+        ...EnterpriseStepUpRequired,
+        ...EnterpriseApprovalRequired,
+      ],
       params: TenantIdParam,
       payload: PatchScriptRequest,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
@@ -76,7 +82,11 @@ export const scriptApi = HttpApiGroup.make("ScriptApi")
   )
   .add(
     HttpApiEndpoint.delete("deleteScript", "/v1/tenants/:tenantId/scripts/:id", {
-      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      error: [
+        ...EnterpriseTenantWriteErrors,
+        ...EnterpriseStepUpRequired,
+        ...EnterpriseApprovalRequired,
+      ],
       params: TenantIdParam,
       success: Schema.Struct({ status: Schema.Literal("ok") }),
     }),
@@ -93,7 +103,11 @@ export const scriptApi = HttpApiGroup.make("ScriptApi")
       "patchScriptAssignments",
       "/v1/tenants/:tenantId/scripts/:id/assignments",
       {
-        error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+        error: [
+          ...EnterpriseTenantWriteErrors,
+          ...EnterpriseStepUpRequired,
+          ...EnterpriseApprovalRequired,
+        ],
         params: TenantIdParam,
         payload: PatchScriptAssignmentsRequest,
         success: Schema.Struct({ status: Schema.Literal("ok") }),
@@ -102,7 +116,11 @@ export const scriptApi = HttpApiGroup.make("ScriptApi")
   )
   .add(
     HttpApiEndpoint.post("runScript", "/v1/tenants/:tenantId/scripts/:id/run", {
-      error: [...EnterpriseTenantWriteErrors, ...EnterpriseStepUpRequired],
+      error: [
+        ...EnterpriseTenantWriteErrors,
+        ...EnterpriseStepUpRequired,
+        ...EnterpriseApprovalRequired,
+      ],
       params: TenantIdParam,
       payload: RunScriptRequest,
       success: RunScriptResponse,

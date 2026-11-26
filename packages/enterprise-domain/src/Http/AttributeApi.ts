@@ -1,5 +1,7 @@
 import { AttributeDefinitionListResponse } from "../attributes.js";
 import { AttributeDefinitionRow } from "../attributes.js";
+import { CollectDeviceAttributeResponse } from "../attributes.js";
+import { DeviceAttributeCollectionResponse } from "../attributes.js";
 import { CreateAttributeRequest } from "../attributes.js";
 import { DeviceAttributeImportResponse } from "../attributes.js";
 import { EnrollmentQuestionListResponse } from "../attributes.js";
@@ -13,22 +15,56 @@ import { Schema } from "effect";
 import { SetDeviceAttributesRequest } from "../attributes.js";
 import { SubmitEnrollmentAnswersRequest } from "../attributes.js";
 import { SubmitEnrollmentAnswersResponse } from "../attributes.js";
-import { EnterpriseBadRequest, EnterpriseNoDomainErrors } from "../Errors.js";
+import {
+  EnterpriseAuthRequiredErrors,
+  EnterpriseBadRequest,
+  EnterpriseDbErrors,
+  EnterpriseForbidden,
+} from "../Errors.js";
 import { EnterprisePublicEnrollmentProfileErrors } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
+import { EnterpriseApprovalRequired, EnterpriseStepUpRequired } from "../Errors.js";
 import { EnterpriseTenantWriteErrors } from "../Errors.js";
 import { HttpApiSchema } from "effect/http-api";
 import { MobileconfigPreview } from "../Policy.js";
 import { GroupScopeSummary, PolicyScopeSummary } from "../PolicyScope.js";
+import { PolicyDeploymentProgressResponse } from "../PolicyDeployment.js";
 import { IdParam } from "./Params.js";
 import { TenantAttributeParam } from "./Params.js";
+import { TenantDeviceAttributeParam } from "./Params.js";
 import { TenantIdParam } from "./Params.js";
 import { TenantParam } from "./Params.js";
 import { BulkUpdateResult } from "../Common.js";
 import { AddUserGroupMembersRequest } from "../Directory.js";
 import { PatchTenantAccountRolesRequest } from "../Tenant.js";
 
-const MobileconfigRequest = Schema.Struct({ mobileconfig: Schema.String });
+/**
+ * Largest decoded mobileconfig the preview/extract helpers will process.
+ * Applied to the decoded string; the request cap below leaves room for base64.
+ */
+export const MOBILECONFIG_MAX_CHARS = 8 * 1024 * 1024;
+
+/**
+ * These helpers authenticate before parsing, so their contract must carry the
+ * auth failures: an undeclared error cannot be encoded and becomes a 500.
+ */
+const MobileconfigHelperErrors = [
+  ...EnterpriseAuthRequiredErrors,
+  ...EnterpriseDbErrors,
+  EnterpriseForbidden.pipe(HttpApiSchema.status(403)),
+  EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
+] as const;
+
+/**
+ * Raw HTTP body cap for the stateless helpers. Base64 expands by 4/3, so this
+ * leaves room for the encoded limit and JSON framing while keeping the body
+ * bounded before it is materialised as a string.
+ */
+export const MOBILECONFIG_REQUEST_MAX_BYTES = 12 * 1024 * 1024;
+
+export const MobileconfigRequest = Schema.Struct({
+  mobileconfig: Schema.String.check(Schema.isMaxLength(MOBILECONFIG_MAX_CHARS)),
+});
 
 const MobileconfigExtractResponse = Schema.Struct({ plist: Schema.String });
 
@@ -96,6 +132,25 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
     }),
   )
   .add(
+    // Per-device progress for one saved policy version. This lives here rather
+    // than in `EnterpriseApi` for the same compiler-size reason as the scope
+    // endpoints above. `:version` accepts a number or "latest"; the handler
+    // resolves "latest" to the newest row so the dashboard needs one request.
+    HttpApiEndpoint.get(
+      "getPolicyDeploymentDevices",
+      "/v1/tenants/:tenantId/policies/:id/deployments/:version/devices",
+      {
+        error: EnterpriseTenantReadErrors,
+        params: { tenantId: Schema.String, id: Schema.String, version: Schema.String },
+        query: Schema.Struct({
+          limit: Schema.optional(Schema.Number),
+          offset: Schema.optional(Schema.Number),
+        }),
+        success: PolicyDeploymentProgressResponse,
+      },
+    ),
+  )
+  .add(
     HttpApiEndpoint.get("getGroupScope", "/v1/tenants/:tenantId/groups/:id/scope", {
       error: EnterpriseTenantReadErrors,
       params: TenantIdParam,
@@ -107,14 +162,14 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
     // that group's generated declaration is already at the compiler's size
     // limit, and these endpoints are stateless policy helpers.
     HttpApiEndpoint.post("extractMobileconfig", "/v1/policy/extract-mobileconfig", {
-      error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
+      error: MobileconfigHelperErrors,
       payload: MobileconfigRequest,
       success: MobileconfigExtractResponse,
     }),
   )
   .add(
     HttpApiEndpoint.post("previewMobileconfig", "/v1/policy/preview-mobileconfig", {
-      error: [...EnterpriseNoDomainErrors, EnterpriseBadRequest.pipe(HttpApiSchema.status(400))],
+      error: MobileconfigHelperErrors,
       payload: MobileconfigRequest,
       success: MobileconfigPreview,
     }),
@@ -148,18 +203,46 @@ export const enterpriseAttributeApi = HttpApiGroup.make("EnterpriseAttribute")
     }),
   )
   .add(
-    // Bulk member operations live here rather than in `EnterpriseApi`: that
-    // group's generated declaration is already at the compiler's size limit.
-    HttpApiEndpoint.post(
-      "patchTenantAccountRoles",
-      "/v1/tenants/:tenantId/accounts/roles",
+    // Collection state is its own read rather than another field on the device
+    // payload: it is only needed by the Attributes panel, and `EnterpriseApi`
+    // is already at the compiler's declaration-size limit.
+    HttpApiEndpoint.get(
+      "listDeviceAttributeCollection",
+      "/v1/tenants/:tenantId/devices/:id/attributes/collection",
       {
-        error: EnterpriseTenantWriteErrors,
-        params: TenantParam,
-        payload: PatchTenantAccountRolesRequest,
-        success: BulkUpdateResult,
+        error: EnterpriseTenantReadErrors,
+        params: TenantIdParam,
+        success: DeviceAttributeCollectionResponse,
       },
     ),
+  )
+  .add(
+    // "Collect now" queues the attribute's bound script for this device through
+    // the normal manual-run path, so expiry, deduplication and output caps are
+    // the ones already tested there rather than a second scheduler.
+    HttpApiEndpoint.post(
+      "collectDeviceAttribute",
+      "/v1/tenants/:tenantId/devices/:id/attributes/:attributeId/collect",
+      {
+        error: [
+          ...EnterpriseTenantWriteErrors,
+          ...EnterpriseStepUpRequired,
+          ...EnterpriseApprovalRequired,
+        ],
+        params: TenantDeviceAttributeParam,
+        success: CollectDeviceAttributeResponse,
+      },
+    ),
+  )
+  .add(
+    // Bulk member operations live here rather than in `EnterpriseApi`: that
+    // group's generated declaration is already at the compiler's size limit.
+    HttpApiEndpoint.post("patchTenantAccountRoles", "/v1/tenants/:tenantId/accounts/roles", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: PatchTenantAccountRolesRequest,
+      success: BulkUpdateResult,
+    }),
   )
   .add(
     HttpApiEndpoint.post(

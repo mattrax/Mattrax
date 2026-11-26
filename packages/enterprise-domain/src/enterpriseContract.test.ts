@@ -7,8 +7,15 @@ import {
   UpdateMeRequest,
   enterpriseAccountApi,
   enterpriseApi,
+  enterpriseApplicationApi,
+  enterpriseApprovalApi,
+  enterpriseDeviceHandoverApi,
   enterpriseAttributeApi,
+  enterpriseGroupApi,
   enterpriseIdentityApi,
+  enterpriseUserApi,
+  enterpriseSoftwareUpdateApi,
+  enterpriseOsPolicyApi,
 } from "./enterprise.ts";
 import { EnterpriseNotConfigured, EnterpriseUpstreamError } from "./Errors.js";
 import { Registration } from "./auth.js";
@@ -17,8 +24,15 @@ import { StepUpRequired } from "./stepUp.js";
 const endpoints = {
   ...enterpriseAccountApi.endpoints,
   ...enterpriseApi.endpoints,
+  ...enterpriseApplicationApi.endpoints,
+  ...enterpriseDeviceHandoverApi.endpoints,
+  ...enterpriseApprovalApi.endpoints,
+  ...enterpriseGroupApi.endpoints,
   ...enterpriseAttributeApi.endpoints,
   ...enterpriseIdentityApi.endpoints,
+  ...enterpriseUserApi.endpoints,
+  ...enterpriseSoftwareUpdateApi.endpoints,
+  ...enterpriseOsPolicyApi.endpoints,
 };
 
 describe("enterprise API error contract", () => {
@@ -83,8 +97,12 @@ describe("account profile contract", () => {
     expect(() => decodeUpdateMe({ name: overLimit })).toThrow();
 
     // Keep the two account-name schemas in lockstep.
-    expect(decodeRegistration({ name: atLimit, email: "user@example.com" }).name).toBe(atLimit);
-    expect(() => decodeRegistration({ name: overLimit, email: "user@example.com" })).toThrow();
+    expect(
+      decodeRegistration({ name: atLimit, email: "user@example.com", grant: "mailbox-proof" }).name,
+    ).toBe(atLimit);
+    expect(() =>
+      decodeRegistration({ name: overLimit, email: "user@example.com", grant: "mailbox-proof" }),
+    ).toThrow();
   });
 
   it("still allows omitting the name or changing only the image", () => {

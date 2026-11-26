@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Schema } from "effect";
+import { Effect } from "effect";
+import type { Schema } from "effect";
+import { serializePlist } from "@mattrax/plist";
 import {
   assignVppLicence,
   openVppToken,
@@ -38,6 +40,7 @@ const jsonResponse = (body: Schema.Json, status = 200) =>
 const makeFetch = (
   options: {
     assets?: Array<Schema.JsonObject>;
+    assetsPage?: Schema.Json;
     tokenStatus?: number;
   } = {},
 ) => {
@@ -58,12 +61,15 @@ const makeFetch = (
     if (url.includes("/v2/assets/disassociate"))
       return jsonResponse({ eventId: "disassociate-event-1" });
 
-    if (url.includes("/v2/assets"))
+    if (url.includes("/v2/assets")) {
+      if (options.assetsPage !== undefined) return jsonResponse(options.assetsPage);
+
       return jsonResponse({
         assets: options.assets ?? [],
         currentPageIndex: 0,
         totalPages: 1,
       });
+    }
 
     return jsonResponse({ errorMessage: `Unexpected URL ${url}` }, 500);
   }) satisfies typeof globalThis.fetch;
@@ -85,26 +91,28 @@ const makeDbWithTenant = () => {
     });
   }
 
-  db.store.device.push({
-    id: "device-1",
-    organizationId,
-    proto: "apple",
-    status: "enrolled",
-    name: "Mac 1",
-    serial: "SERIAL-1",
-    enrolledAt: now,
-    lastSeenAt: now,
-  });
-  db.store.device.push({
-    id: "device-other",
-    organizationId: otherOrganizationId,
-    proto: "apple",
-    status: "enrolled",
-    name: "Other Mac",
-    serial: "OTHER-SERIAL",
-    enrolledAt: now,
-    lastSeenAt: now,
-  });
+  db.store.device.push(
+    {
+      id: "device-1",
+      organizationId,
+      proto: "apple",
+      status: "enrolled",
+      name: "Mac 1",
+      serial: "SERIAL-1",
+      enrolledAt: now,
+      lastSeenAt: now,
+    },
+    {
+      id: "device-other",
+      organizationId: otherOrganizationId,
+      proto: "apple",
+      status: "enrolled",
+      name: "Other Mac",
+      serial: "OTHER-SERIAL",
+      enrolledAt: now,
+      lastSeenAt: now,
+    },
+  );
 
   return db;
 };
@@ -152,6 +160,23 @@ describe("Apps and Books tokens", () => {
         content: contentToken({ expDate: "2000-01-01T00:00:00+0000" }),
       }),
     ).rejects.toMatchObject({ kind: "expired" });
+  });
+
+  it("accepts plist date values and normalizes them into the content token", async () => {
+    const expiresAt = new Date("2030-11-08T22:33:22.000Z");
+    const plist = await Effect.runPromise(
+      serializePlist({
+        token: "vpp-org-token",
+        expDate: expiresAt,
+        orgName: "ORG12345",
+      }),
+    );
+
+    const parsed = await parseVppTokenUpload({ content: plist });
+    const decoded = JSON.parse(atob(parsed.contentToken));
+
+    expect(parsed).toMatchObject({ tokenId: "vpp-org-token", orgName: "ORG12345", expiresAt });
+    expect(decoded.expDate).toBe(expiresAt.toISOString());
   });
 
   it("seals the content token and never exposes it in info", async () => {
@@ -226,6 +251,31 @@ describe("Apps and Books asset sync and licences", () => {
         (row: { organizationId: string }) => row.organizationId === otherOrganizationId,
       ),
     ).toBe(false);
+  });
+
+  it("does not zero licence pools when Apple returns a malformed page", async () => {
+    const db = makeDbWithTenant();
+    const valid = makeFetch();
+    await saveToken(db, valid.fetchImpl);
+    seedAsset(db);
+
+    const malformed = makeFetch({ assetsPage: { totalPages: 1 } });
+
+    await expect(
+      runEffect(
+        syncVppAssets({
+          db,
+          organizationId,
+          authSecret,
+          config: { fetch: malformed.fetchImpl },
+        }),
+      ),
+    ).rejects.toMatchObject({ kind: "invalid_response" });
+    expect(db.store.vpp_asset[0]).toMatchObject({
+      totalLicenses: 5,
+      availableLicenses: 5,
+      assignedLicenses: 0,
+    });
   });
 
   it("consumes a licence, records the assignment and is idempotent", async () => {

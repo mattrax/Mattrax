@@ -9,6 +9,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Skeleton,
 } from "@mattrax/ui";
 import { LogOut } from "~/components/ui/icons";
 
@@ -37,15 +38,11 @@ function getInitials(name: string) {
   return parts[0]?.[0]?.toUpperCase() ?? "?";
 }
 
-export function UserDropdown(props: UserDropdownProps) {
+export default function UserDropdown(props: UserDropdownProps) {
   return (
     <Show
       when={!props.pending}
-      fallback={
-        <div
-          class={props.placeholderClass ?? "size-7 animate-pulse rounded-full bg-hover opacity-50"}
-        />
-      }
+      fallback={<Skeleton class={props.placeholderClass ?? "size-7"} />}
     >
       <Show
         when={props.user}
@@ -62,7 +59,7 @@ export function UserDropdown(props: UserDropdownProps) {
             <DropdownMenuTrigger
               class={
                 props.triggerClass ??
-                "flex size-7 items-center justify-center overflow-hidden rounded-full bg-hover text-[10px] font-[600] text-foreground ring-1 ring-inset ring-border outline-none transition-[box-shadow] duration-[var(--duration-hover)] ease-swift hover:ring-border-strong focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                "flex size-7 items-center justify-center overflow-hidden "
               }
               aria-label={
                 user().image ? "Account menu" : `${getInitials(user().name ?? "?")}, account menu`
@@ -76,10 +73,10 @@ export function UserDropdown(props: UserDropdownProps) {
               </Show>
             </DropdownMenuTrigger>
 
-            <DropdownMenuContent class={props.contentClass ?? "w-[248px]"}>
+            <DropdownMenuContent class={props.contentClass ?? "w-62"}>
               <DropdownMenuGroup>
                 <div class="flex items-center gap-2.5 px-2 py-2">
-                  <Avatar size="sm" class="size-6 text-[9px]">
+                  <Avatar size="sm" class="size-6">
                     <Show
                       when={user().image}
                       fallback={<span aria-hidden="true">{getInitials(user().name ?? "?")}</span>}
@@ -88,10 +85,10 @@ export function UserDropdown(props: UserDropdownProps) {
                     </Show>
                   </Avatar>
                   <div class="min-w-0">
-                    <DropdownMenuLabel class="block h-auto truncate py-0 text-[12.5px] font-[550] normal-case tracking-normal text-foreground">
+                    <DropdownMenuLabel class="block h-auto">
                       {user().name}
                     </DropdownMenuLabel>
-                    <p class="mt-0.5 truncate text-[11px] text-muted-foreground">{user().email}</p>
+                    <p class="mt-0.5 truncate text-xs text-muted-foreground">{user().email}</p>
                   </div>
                 </div>
               </DropdownMenuGroup>
@@ -103,7 +100,7 @@ export function UserDropdown(props: UserDropdownProps) {
               </Show>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => props.onSignOut()}>
-                <LogOut class="size-3.5 text-muted-foreground" />
+                <LogOut class="size-3.5" />
                 Sign out
               </DropdownMenuItem>
             </DropdownMenuContent>

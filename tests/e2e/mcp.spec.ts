@@ -57,7 +57,7 @@ test.describe("MCP", () => {
     });
 
     expect(authorize.status()).toBe(302);
-    const location = new URL(authorize.headers()["location"]!);
+    const location = new URL(authorize.headers()["location"]);
     expect(location.searchParams.get("state")).toBe("e2e");
     const code = location.searchParams.get("code")!;
 
@@ -178,7 +178,7 @@ test.describe("MCP", () => {
 
     await gotoHydrated(page, "/account");
     await expect(page.getByText("Agent access (MCP)")).toBeVisible();
-    await expect(page.getByText("E2E Agent")).toBeVisible();
+    await expect(page.getByText("E2E Agent", { exact: true })).toBeVisible();
 
     await api(page, `/api/v1/account/mcp-connections/${connection!.id}`, {
       method: "DELETE",
@@ -234,7 +234,7 @@ test.describe("MCP", () => {
     });
 
     expect(authorize.status()).toBe(302);
-    const code = new URL(authorize.headers()["location"]!).searchParams.get("code")!;
+    const code = new URL(authorize.headers()["location"]).searchParams.get("code")!;
 
     const tokenResponse = await page.request.post("/api/oauth/token", {
       form: {
@@ -273,7 +273,7 @@ test.describe("MCP", () => {
     expect(names).not.toContain("query_data");
 
     await gotoHydrated(page, "/account");
-    await expect(page.getByText("Read-only Agent")).toBeVisible();
+    await expect(page.getByText("Read-only Agent", { exact: true })).toBeVisible();
     await expect(page.getByText(/1 permission · Connected/)).toBeVisible();
   });
 

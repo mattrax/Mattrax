@@ -1,15 +1,16 @@
 import { Match, Option, Schema } from "effect";
+import type { DeviceProtocol, DeviceStatus } from "@mattrax/enterprise-domain";
 import {
   EnterpriseBadRequest,
-  DeviceProtocol,
-  DeviceStatus,
   deviceQueryProblem,
   parseDeviceQueryText,
-  type DeviceQuery,
-  type DeviceSearchQuery,
-  type DeviceSearchSort,
-  type SortDirection,
-  type WindowsActivationStatus,
+} from "@mattrax/enterprise-domain";
+import type {
+  DeviceQuery,
+  DeviceSearchQuery,
+  DeviceSearchSort,
+  SortDirection,
+  WindowsActivationStatus,
 } from "@mattrax/enterprise-domain";
 import { decodeAttributeFilter } from "../Policy/attributes.ts";
 
@@ -37,6 +38,12 @@ export type DeviceHealthFilter =
 /** APNs delivery state filters for the device list. */
 export type DevicePushFilter = "failing" | "invalid";
 
+/** Apple Lost Mode state for the device list. */
+export type DeviceLostModeFilter = "active" | "inactive";
+
+/** macOS local-account risk filters. */
+export type DeviceLocalAccountFilter = "without-secure-token" | "not-seen-30-days";
+
 export type DeviceSearchFilters = {
   readonly q?: string;
   readonly status?: DeviceStatusValue;
@@ -48,6 +55,10 @@ export type DeviceSearchFilters = {
   readonly health?: DeviceHealthFilter;
   /** Only Apple devices whose APNs delivery is failing or has an invalid token. */
   readonly push?: DevicePushFilter;
+  /** Apple Lost Mode state from `device_apple.lost_mode_enabled`. */
+  readonly lostMode?: DeviceLostModeFilter;
+  /** macOS local-account risk filter. */
+  readonly localAccount?: DeviceLocalAccountFilter;
   /** ADE setup state, from `device_apple.awaiting_configuration`. */
   readonly setup?: "awaiting" | "complete";
   /** Windows activation state reported by mattraxd. */
@@ -78,6 +89,24 @@ const optionalText = (value: string | undefined) => {
   const text = value?.trim();
 
   return text ? text : undefined;
+};
+
+const lostModeFilter = (value: string | undefined): DeviceLostModeFilter | undefined => {
+  if (value === "active" || value === "inactive") return value;
+
+  if (value === undefined || value === "") return undefined;
+
+  throw new EnterpriseBadRequest({ message: "lostMode must be active or inactive" });
+};
+
+const localAccountFilter = (value: string | undefined): DeviceLocalAccountFilter | undefined => {
+  if (value === "without-secure-token" || value === "not-seen-30-days") return value;
+
+  if (value === undefined || value === "") return undefined;
+
+  throw new EnterpriseBadRequest({
+    message: "localAccount must be without-secure-token or not-seen-30-days",
+  });
 };
 
 /**
@@ -125,9 +154,9 @@ export const normalizeDeviceSearchQuery = (
 
   try {
     attributes = decodeAttributeFilter(query.attributes);
-  } catch (cause) {
+  } catch (error) {
     throw new EnterpriseBadRequest({
-      message: cause instanceof Error ? cause.message : "Invalid attribute filter",
+      message: error instanceof Error ? error.message : "Invalid attribute filter",
     });
   }
 
@@ -139,6 +168,8 @@ export const normalizeDeviceSearchQuery = (
     notSeenBefore,
     health: query.health,
     push: query.push,
+    lostMode: lostModeFilter(query.lostMode),
+    localAccount: localAccountFilter(query.localAccount),
     setup: query.setup,
     activation: query.activation,
     attributes: attributes && Object.keys(attributes).length ? attributes : undefined,

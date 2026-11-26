@@ -1,24 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   clientKey,
-  createRateLimiter,
   rateLimitBindingsFromEnv,
   rateLimitResponse,
   rateLimitRuleFor,
-  type RateLimitBindings,
 } from "./rateLimit.js";
 
 const request = (path: string, init: RequestInit = {}) =>
   new Request(`https://e.mattrax.app${path}`, init);
-
-/** A request shaped like one received by a Cloudflare Worker. */
-const cloudflareRequest = (path: string, init: RequestInit = {}) => {
-  const req = request(path, init);
-
-  Object.defineProperty(req, "cf", { value: {} });
-
-  return req;
-};
 
 describe("rate limit rule selection", () => {
   it("covers auth, enrollment, billing, SCIM and MDM/SCEP", () => {
@@ -34,6 +23,12 @@ describe("rate limit rule selection", () => {
     expect(rateLimitRuleFor(request("/api/v1/recoverySignIn", { method: "POST" }))?.bucket).toBe(
       "auth",
     );
+    expect(rateLimitRuleFor(request("/api/v1/account/recovery", { method: "POST" }))?.bucket).toBe(
+      "auth",
+    );
+    expect(
+      rateLimitRuleFor(request("/api/v1/account/recovery/verify", { method: "POST" }))?.bucket,
+    ).toBe("auth");
     expect(rateLimitRuleFor(request("/api/v1/sso/azure/callback", { method: "GET" }))?.bucket).toBe(
       "auth",
     );
@@ -68,6 +63,17 @@ describe("rate limit rule selection", () => {
       "auth",
     );
     expect(rateLimitRuleFor(request("/api/oauth/token", { method: "GET" }))).toBeUndefined();
+    // Profile helpers parse caller-supplied documents; they get their own
+    // bucket rather than the generic MDM/enrollment allowance.
+    expect(
+      rateLimitRuleFor(request("/api/v1/policy/preview-mobileconfig", { method: "POST" }))?.bucket,
+    ).toBe("policy");
+    expect(
+      rateLimitRuleFor(request("/api/v1/policy/extract-mobileconfig", { method: "POST" }))?.bucket,
+    ).toBe("policy");
+    expect(
+      rateLimitRuleFor(request("/api/v1/policy/preview-mobileconfig", { method: "GET" })),
+    ).toBeUndefined();
   });
 
   it("normalises paths before matching so an equivalent spelling cannot bypass a rule", () => {
@@ -82,7 +88,9 @@ describe("rate limit rule selection", () => {
         ?.bucket,
     ).toBe("auth");
   });
+});
 
+describe("client key", () => {
   it("uses the edge connecting IP on Cloudflare", () => {
     const cloudflare = (init: RequestInit) => {
       const req = request("/api/v1/completePasskeySignIn", init);
@@ -112,193 +120,6 @@ describe("rate limit rule selection", () => {
   });
 });
 
-describe("per-isolate fallback limiter", () => {
-  it("allows up to the limit and then returns Retry-After", async () => {
-    let now = 1_000;
-    const limiter = createRateLimiter({ now: () => now });
-
-    const req = () =>
-      request("/api/v1/completePasskeySignIn", {
-        method: "POST",
-        headers: { "cf-connecting-ip": "203.0.113.4" },
-      });
-
-    for (let index = 0; index < 600; index++) {
-      expect((await limiter.check(req())).limited).toBe(false);
-      now += 10;
-    }
-
-    const blocked = await limiter.check(req());
-    expect(blocked.limited).toBe(true);
-    expect(blocked.bucket).toBe("auth");
-    expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
-
-    // A new window resets the counter.
-    now += 60_000;
-    expect((await limiter.check(req())).limited).toBe(false);
-  });
-
-  it("keeps buckets and clients independent", async () => {
-    const limiter = createRateLimiter({ now: () => 1_000 });
-
-    const ipA = cloudflareRequest("/api/v1/enrollment/a", {
-      headers: { "cf-connecting-ip": "203.0.113.4" },
-    });
-
-    const ipB = cloudflareRequest("/api/v1/enrollment/a", {
-      headers: { "cf-connecting-ip": "198.51.100.9" },
-    });
-
-    for (let index = 0; index < 600; index++) await limiter.check(ipA);
-    expect((await limiter.check(ipA)).limited).toBe(true);
-    expect((await limiter.check(ipB)).limited).toBe(false);
-  });
-});
-
-describe("shared limiter bindings", () => {
-  it("uses the Cloudflare binding when present", async () => {
-    const keys: string[] = [];
-
-    const bindings: RateLimitBindings = {
-      auth: {
-        limit: async ({ key }) => {
-          keys.push(key);
-
-          return { success: false };
-        },
-      },
-    };
-
-    const limiter = createRateLimiter();
-
-    const outcome = await limiter.check(
-      cloudflareRequest("/api/v1/completePasskeySignIn", {
-        method: "POST",
-        headers: { "cf-connecting-ip": "203.0.113.4" },
-      }),
-      bindings,
-    );
-
-    expect(outcome.limited).toBe(true);
-    expect(keys).toEqual(["auth:203.0.113.4"]);
-  });
-
-  it("falls back locally when the edge limiter throws", async () => {
-    const warnings: string[] = [];
-
-    const bindings: RateLimitBindings = {
-      enrollment: {
-        limit: async () => {
-          throw new Error("binding unavailable");
-        },
-      },
-    };
-
-    const limiter = createRateLimiter({
-      now: () => 1_000,
-      warn: (message) => warnings.push(message),
-    });
-
-    const outcome = await limiter.check(request("/api/v1/enrollment/a"), bindings);
-    expect(outcome.limited).toBe(false);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("local fallback");
-  });
-
-  it("fails closed when the auth edge limiter is configured but unavailable", async () => {
-    const warnings: string[] = [];
-
-    const bindings: RateLimitBindings = {
-      auth: {
-        limit: async () => {
-          throw new Error("binding unavailable");
-        },
-      },
-    };
-
-    const limiter = createRateLimiter({
-      now: () => 1_000,
-      warn: (message) => warnings.push(message),
-    });
-
-    const outcome = await limiter.check(
-      cloudflareRequest("/api/v1/completePasskeySignIn", {
-        method: "POST",
-        headers: { "cf-connecting-ip": "203.0.113.4" },
-      }),
-      bindings,
-    );
-
-    expect(outcome).toMatchObject({
-      limited: true,
-      bucket: "auth",
-      limit: 600,
-      retryAfterSeconds: 60,
-    });
-    expect(outcome.retryAfterSeconds).toBeGreaterThan(0);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("failing closed");
-
-    // The failed closed request must not have charged the local counter: a
-    // recovered binding (or another credential route) is not penalised by the
-    // outage itself.
-    expect(limiter.store.size).toBe(0);
-  });
-
-  it("treats a malformed binding result as unavailable", async () => {
-    const warnings: string[] = [];
-
-    const limiter = createRateLimiter({
-      now: () => 1_000,
-      warn: (message) => warnings.push(message),
-    });
-
-    const outcome = await limiter.check(
-      request("/api/v1/completePasskeySignIn", { method: "POST" }),
-      // SAFETY: the test proves the limiter refuses an unexpected result shape.
-      { auth: { limit: async () => ({}) } } as any,
-    );
-
-    expect(outcome.limited).toBe(true);
-    expect(warnings[0]).toContain("failing closed");
-  });
-
-  it("keeps the local auth fallback when no edge binding is configured", async () => {
-    let now = 1_000;
-    const limiter = createRateLimiter({ now: () => now });
-
-    const signIn = () =>
-      request("/api/v1/completePasskeySignIn", {
-        method: "POST",
-        headers: { "cf-connecting-ip": "203.0.113.4" },
-      });
-
-    // Local development has no namespace at all; it must keep working up to
-    // the documented per-isolate ceiling.
-    for (let index = 0; index < 600; index++) {
-      expect((await limiter.check(signIn())).limited).toBe(false);
-      now += 10;
-    }
-
-    expect((await limiter.check(signIn())).limited).toBe(true);
-  });
-
-  it("fails closed for MCP token exchange when the edge limiter is unavailable", async () => {
-    const limiter = createRateLimiter({ warn: () => {} });
-
-    const outcome = await limiter.check(request("/api/oauth/token", { method: "POST" }), {
-      auth: {
-        limit: async () => {
-          throw new Error("binding unavailable");
-        },
-      },
-    });
-
-    expect(outcome.limited).toBe(true);
-    expect(outcome.bucket).toBe("auth");
-  });
-});
-
 describe("rate limit bindings from env", () => {
   it("maps every bucket binding and leaves unconfigured buckets undefined", () => {
     const limiter = { limit: async () => ({ success: true }) };
@@ -310,6 +131,7 @@ describe("rate limit bindings from env", () => {
       RATE_LIMITER_SCIM: limiter,
       RATE_LIMITER_BILLING: limiter,
       RATE_LIMITER_SCEP: limiter,
+      RATE_LIMITER_POLICY: limiter,
     });
 
     expect(Object.keys(bindings).sort()).toEqual([
@@ -317,6 +139,7 @@ describe("rate limit bindings from env", () => {
       "billing",
       "enrollment",
       "mdm",
+      "policy",
       "scep",
       "scim",
     ]);
@@ -326,34 +149,14 @@ describe("rate limit bindings from env", () => {
     expect(rateLimitBindingsFromEnv(otherEnv)).toEqual({ auth: limiter });
   });
 
-  it("selects the matching bucket binding for MDM, SCIM, billing and SCEP", async () => {
-    const seen: string[] = [];
+  it("leaves buckets without a namespace undefined so they fall back", () => {
+    const binding = { limit: async () => ({ success: true }) };
+    const bindings = rateLimitBindingsFromEnv({ RATE_LIMITER_MDM: binding });
 
-    const bindingFor = (bucket: string) => ({
-      limit: async ({ key }: { key: string }) => {
-        seen.push(`${bucket}:${key}`);
-
-        return { success: true };
-      },
-    });
-
-    const bindings: RateLimitBindings = {
-      mdm: bindingFor("mdm"),
-      scim: bindingFor("scim"),
-      billing: bindingFor("billing"),
-      scep: bindingFor("scep"),
-    };
-
-    const limiter = createRateLimiter();
-    await limiter.check(request("/mdm/apple/mdm", { method: "PUT" }), bindings);
-    await limiter.check(request("/scim/v2/org/Users"), bindings);
-    await limiter.check(request("/api/v1/billing/webhook", { method: "POST" }), bindings);
-    await limiter.check(request("/mdm/apple/scep"), bindings);
-    expect(seen).toEqual([
-      "mdm:mdm:local",
-      "scim:scim:local",
-      "billing:billing:local",
-      "scep:scep:local",
+    // Every bucket key is present; only the configured ones hold a binding, so
+    // a partial deployment degrades per bucket instead of losing the rest.
+    expect(Object.entries(bindings).filter(([, value]) => value !== undefined)).toEqual([
+      ["mdm", binding],
     ]);
   });
 });

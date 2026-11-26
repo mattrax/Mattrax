@@ -103,8 +103,27 @@ use a third-party signal.
 
 ## BitLocker
 
-Mattrax does not escrow BitLocker keys. Keep Intune or another escrow system for Windows
-recovery keys.
+Mattrax reads BitLocker recovery keys from **Microsoft Entra ID**. This works for Entra
+joined and hybrid joined devices whose BitLocker policy backs recovery information up to
+Entra. It does not use an agent, and plain AD-domain-joined devices are not supported.
+
+Grant the Graph application `BitlockerKey.Read.All` and admin consent. The device's
+**Windows security** card lists key metadata and flags missing/stale escrow. A reveal
+requires `devices.recovery_key`, step-up and a reason; the server seals the key after
+fetching it from Graph with `$select=key`. Rotation uses `RotateRecoveryPasswords` and
+polls its status on later check-ins. It requires an encrypted Entra/hybrid device on Windows
+10 1909 or later and Microsoft's recovery-information-backup prerequisite.
+
+During migration, verify escrow coverage under each Windows security card before
+decommissioning Intune. A device that has not backed a key up to Entra has no recovery
+material in Mattrax.
+
+## Windows LAPS
+
+A LAPS policy is the structured `mttx.windows.laps` kind. Retrieval requires a Graph app
+with `DeviceLocalCredential.Read.All` admin consent and a password backed up to Microsoft
+Entra ID. AD-only backup is delivered and rotated but cannot be read from Mattrax. LAPS
+requires Windows 11 22H2+/Server 2025. See [Windows LAPS](/platforms/windows/#windows-laps).
 
 ## Coexistence and cutover
 

@@ -1,7 +1,9 @@
 import { useLocation, useParams } from "@solidjs/router";
-import { For, type ParentProps } from "solid-js";
+import { Loading } from "solid-js";
+import type { ParentProps } from "solid-js";
+import { LoadingState } from "@mattrax/ui";
+import SectionTabs from "~/components/settings/section-tabs";
 import { useCan } from "~/lib/permissions";
-import { cn } from "~/lib/utils";
 
 const tabs = [
   { id: "", label: "Overview" },
@@ -23,34 +25,27 @@ export default function IdentitySettingsLayout(props: ParentProps) {
   };
 
   return (
-    <div class="flex flex-col gap-5">
-      <nav
-        class="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 sm:mx-0 sm:w-fit sm:rounded-lg sm:border sm:border-border sm:bg-surface sm:p-1"
-        aria-label="Identity sections"
-      >
-        <For each={visibleTabs()}>
-          {(tab) => {
-            const href = tab.id ? `${base()}/${tab.id}` : base();
-            const isActive = () => active() === tab.id;
-
-            return (
-              <a
-                href={href}
-                class={cn(
-                  "relative shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-[12.5px] font-medium transition-colors",
-                  isActive()
-                    ? "bg-hover text-foreground shadow-[var(--card-highlight)]"
-                    : "text-muted-foreground hover:bg-hover hover:text-foreground",
-                )}
-                aria-current={isActive() ? "page" : undefined}
-              >
-                {tab.label}
-              </a>
-            );
-          }}
-        </For>
-      </nav>
-      <div class="flex min-w-0 flex-col">{props.children}</div>
+    <div class="flex flex-col">
+      <SectionTabs
+        label="Identity sections"
+        active={active()}
+        tabs={visibleTabs().map((tab) => ({
+          id: tab.id,
+          label: tab.label,
+          href: tab.id ? `${base()}/${tab.id}` : base(),
+        }))}
+      />
+      <div class="flex min-w-0 flex-col pt-5">
+        <Loading
+          fallback={
+            <div class="flex min-h-40 items-center justify-center py-12">
+              <LoadingState label="Loading identity section…" size={18} />
+            </div>
+          }
+        >
+          {props.children}
+        </Loading>
+      </div>
     </div>
   );
 }

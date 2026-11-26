@@ -1,5 +1,6 @@
 import { MeResponse } from "@mattrax/enterprise-domain/client";
 import { Option, Schema } from "effect";
+import { setRequestTenantDirectory } from "~/lib/tenant";
 
 /**
  * The session the server already loaded for a page request.
@@ -28,6 +29,7 @@ const sessions = new WeakMap<Request, PreloadedSession>();
 
 export function setPreloadedSession(request: Request, session: PreloadedSession): void {
   sessions.set(request, session);
+  setRequestTenantDirectory(request, session?.me?.tenants);
 }
 
 export function getPreloadedSession(request: Request): PreloadedSession | undefined {
@@ -44,9 +46,7 @@ const ClientSessionGlobal = Schema.Struct({
  * `window.__MATTRAX_SESSION__`) so a client-side query can seed from it too.
  */
 export function readClientPreloadedMe(): MeResponse | undefined {
-  const stored = Option.getOrUndefined(
-    Schema.decodeUnknownOption(ClientSessionGlobal)(globalThis),
-  );
+  const stored = Option.getOrUndefined(Schema.decodeUnknownOption(ClientSessionGlobal)(globalThis));
 
   return stored?.__MATTRAX_SESSION__?.me ?? undefined;
 }

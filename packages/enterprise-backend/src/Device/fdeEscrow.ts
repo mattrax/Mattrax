@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { eq } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { openSecret, sealSecret } from "@mattrax/crypto";
 import {
   certificateCommonName,
@@ -61,8 +62,14 @@ const describeCertificate = (certificatePem: string) =>
   Effect.gen(function* () {
     return {
       certificateFingerprintSha256: yield* escrowCertificateFingerprint(certificatePem),
-      subject: certificateCommonName(certificatePem),
-      certificateNotAfter: certificateNotAfter(certificatePem),
+      subject: yield* Effect.tryPromise({
+        try: () => certificateCommonName(certificatePem),
+        catch: () => new EscrowKeyError("The escrow certificate could not be read"),
+      }),
+      certificateNotAfter: yield* Effect.tryPromise({
+        try: () => certificateNotAfter(certificatePem),
+        catch: () => new EscrowKeyError("The escrow certificate could not be read"),
+      }),
     };
   });
 
@@ -148,7 +155,7 @@ export const generateTenantEscrowKey = (input: {
     const { certificatePem, privateKeyPem } = yield* Effect.tryPromise({
       try: async () => {
         // SAFETY: RSA generation with signing usages always yields a key pair.
-        const keyPair = (await crypto.subtle.generateKey(
+        const keyPair = await crypto.subtle.generateKey(
           {
             name: "RSASSA-PKCS1-v1_5",
             modulusLength: 2048,
@@ -157,7 +164,7 @@ export const generateTenantEscrowKey = (input: {
           },
           true,
           ["sign", "verify"],
-        )) as CryptoKeyPair;
+        );
 
         const certificate = await createEscrowCertificate(
           keyPair,
@@ -199,9 +206,9 @@ export const uploadTenantEscrowKey = (input: {
   authSecret: string;
 }): Effect.Effect<EscrowKeyRow, EscrowKeyError | unknown> =>
   Effect.gen(function* () {
-    yield* Effect.try({
-      try: () => {
-        const certificate = pemToCert(input.certificatePem.trim());
+    yield* Effect.tryPromise({
+      try: async () => {
+        const certificate = await pemToCert(input.certificatePem.trim());
 
         // Apple wraps the key with CMS RSA key transport, so a non-RSA
         // certificate can never be used for escrow.
@@ -308,7 +315,7 @@ export const revealRecoveryKey = (input: {
     );
 
     const cms = yield* Effect.try({
-      try: () => Uint8Array.from(atob(secret.replace(/\s/g, "")), (char) => char.charCodeAt(0)),
+      try: () => Uint8Array.from(atob(secret.replaceAll(/\s/g, "")), (char) => char.charCodeAt(0)),
       catch: () => new EscrowKeyError("The escrowed recovery key is not valid CMS data"),
     });
 

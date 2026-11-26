@@ -1,6 +1,8 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { NodeFileSystem } from "@effect/platform-node";
+import { Effect, FileSystem, PlatformError } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
 import { fileSystemR2 } from "./r2Node.js";
 
@@ -11,7 +13,11 @@ const bucket = async () => {
 
   roots.push(root);
 
-  return { root, r2: fileSystemR2({ root }) };
+  const r2 = await Effect.runPromise(
+    fileSystemR2({ root }).pipe(Effect.provide(NodeFileSystem.layer)),
+  );
+
+  return { root, r2 };
 };
 
 afterEach(async () => {
@@ -117,5 +123,132 @@ describe("filesystem R2", () => {
     const { readdir } = await import("node:fs/promises");
 
     expect(await readdir(root)).toEqual(expect.arrayContaining(["meta", "objects"]));
+  });
+
+  it("propagates metadata parse failures instead of treating them as missing", async () => {
+    const { r2, root } = await bucket();
+    const key = "broken";
+    const metadataPath = path.join(
+      root,
+      "meta",
+      `${Buffer.from(key, "utf8").toString("base64url")}.json`,
+    );
+    await mkdir(path.dirname(metadataPath), { recursive: true });
+    await writeFile(metadataPath, "{not json", "utf8");
+
+    await expect(r2.head(key)).rejects.toThrow();
+    await expect(r2.get(key)).rejects.toThrow();
+    await expect(r2.list()).rejects.toThrow();
+  });
+
+  it("distinguishes a missing body from a body read failure", async () => {
+    const stored = {
+      key: "denied",
+      size: 3,
+      etag: "etag",
+      uploaded: "2026-11-24T00:00:00.000Z",
+    };
+    const permissionDenied = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "readFile",
+    });
+    const r2 = await Effect.runPromise(
+      fileSystemR2({ root: "/unused" }).pipe(
+        Effect.provide(
+          FileSystem.layerNoop({
+            readFileString: () => Effect.succeed(JSON.stringify(stored)),
+            readFile: () => Effect.fail(permissionDenied),
+          }),
+        ),
+      ),
+    );
+
+    await expect(r2.get("denied")).rejects.toThrow(/PermissionDenied/);
+  });
+
+  it("propagates directory failures and only treats not-found as empty", async () => {
+    const permissionDenied = PlatformError.systemError({
+      _tag: "PermissionDenied",
+      module: "FileSystem",
+      method: "readDirectory",
+    });
+    const notFound = PlatformError.systemError({
+      _tag: "NotFound",
+      module: "FileSystem",
+      method: "readDirectory",
+    });
+    const failing = await Effect.runPromise(
+      fileSystemR2({ root: "/unused" }).pipe(
+        Effect.provide(
+          FileSystem.layerNoop({ readDirectory: () => Effect.fail(permissionDenied) }),
+        ),
+      ),
+    );
+    const missing = await Effect.runPromise(
+      fileSystemR2({ root: "/unused" }).pipe(
+        Effect.provide(FileSystem.layerNoop({ readDirectory: () => Effect.fail(notFound) })),
+      ),
+    );
+
+    await expect(failing.list()).rejects.toThrow(/PermissionDenied/);
+    await expect(missing.list()).resolves.toEqual({
+      objects: [],
+      truncated: false,
+      delimitedPrefixes: [],
+    });
+  });
+
+  it("removes scoped temporary files when an atomic write fails", async () => {
+    const { root } = await bucket();
+    const fs = await Effect.runPromise(
+      Effect.service(FileSystem.FileSystem).pipe(Effect.provide(NodeFileSystem.layer)),
+    );
+    const r2 = await Effect.runPromise(
+      fileSystemR2({ root }).pipe(
+        Effect.provide(
+          FileSystem.layerNoop({
+            ...fs,
+            rename: () =>
+              Effect.fail(
+                PlatformError.systemError({
+                  _tag: "PermissionDenied",
+                  module: "FileSystem",
+                  method: "rename",
+                }),
+              ),
+          }),
+        ),
+      ),
+    );
+
+    await expect(r2.put("failed", "bytes")).rejects.toThrow(/PermissionDenied/);
+    expect(await readdir(path.join(root, "objects"))).toEqual([]);
+    expect(await readdir(path.join(root, "meta"))).toEqual([]);
+  });
+
+  it("bounds concurrent removals", async () => {
+    let active = 0;
+    let maximum = 0;
+    const r2 = await Effect.runPromise(
+      fileSystemR2({ root: "/unused" }).pipe(
+        Effect.provide(
+          FileSystem.layerNoop({
+            remove: () =>
+              Effect.gen(function* () {
+                active += 1;
+                maximum = Math.max(maximum, active);
+                yield* Effect.sleep("5 millis");
+                active -= 1;
+              }),
+          }),
+        ),
+      ),
+    );
+
+    await r2.delete(Array.from({ length: 20 }, (_, index) => `key-${index}`));
+
+    expect(maximum).toBeGreaterThan(1);
+    expect(maximum).toBeLessThanOrEqual(8);
   });
 });

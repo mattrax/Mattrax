@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 import { DeviceQuery } from "./deviceQuery.js";
 
 /** Widgets supported by the dashboard grid. */
@@ -6,8 +6,14 @@ export const DashboardWidgetType = Schema.Literals(["table", "pie", "stat", "mar
 
 export type DashboardWidgetType = typeof DashboardWidgetType.Type;
 
-/** Datasets a query widget can project. */
-export const DashboardDataset = Schema.Literals(["devices", "software"]);
+/**
+ * Datasets a query widget can project.
+ *
+ * `users` reads the tenant directory (name, email, status, source) so a
+ * dashboard can report on user inventory and active/inactive users without a
+ * separate report type.
+ */
+export const DashboardDataset = Schema.Literals(["devices", "software", "users"]);
 
 export type DashboardDataset = typeof DashboardDataset.Type;
 
@@ -37,6 +43,11 @@ export const DashboardSummary = Schema.Struct({
   description: Schema.optional(Schema.NullOr(Schema.String)),
   isDefault: Schema.Boolean,
   widgetCount: Schema.Number,
+  /**
+   * The first few widgets in layout order, used to draw a live gallery preview.
+   * The detail endpoint keeps the full list in `widgets`.
+   */
+  previewWidgets: Schema.optional(Schema.Array(DashboardWidget)),
   createdAt: Schema.String,
   updatedAt: Schema.String,
 });
@@ -117,9 +128,29 @@ export const DashboardLayoutRequest = Schema.Struct({
 
 export type DashboardLayoutRequest = typeof DashboardLayoutRequest.Type;
 
+/** Status filter for the user-inventory dataset. */
+export const DashboardUserStatus = Schema.Literals(["active", "disabled"]);
+
+export type DashboardUserStatus = typeof DashboardUserStatus.Type;
+
+export const DashboardUserFilter = Schema.Struct({
+  status: Schema.optional(DashboardUserStatus),
+  source: Schema.optional(Schema.Literals(["manual", "entra", "scim"])),
+});
+
+export type DashboardUserFilter = typeof DashboardUserFilter.Type;
+
 export const DashboardQueryRequest = Schema.Struct({
   dataset: DashboardDataset,
+  /**
+   * Device filter. Applies to the `devices` dataset and narrows the devices
+   * whose installed software is projected for `software`. The `users` dataset
+   * ignores it in favour of `userFilter`, and every widget still sends
+   * `{ all: [] }` so old clients stay valid.
+   */
   query: DeviceQuery,
+  /** Directory filter for the `users` dataset. */
+  userFilter: Schema.optional(DashboardUserFilter),
   /** Bucket dimension for pie widgets. */
   groupBy: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.Number),
@@ -152,6 +183,9 @@ export const DashboardQueryRow = Schema.Struct({
   version: Schema.optional(Schema.NullOr(Schema.String)),
   bundleId: Schema.optional(Schema.NullOr(Schema.String)),
   deviceCount: Schema.optional(Schema.NullOr(Schema.Number)),
+  /** User-inventory projections. */
+  email: Schema.optional(Schema.NullOr(Schema.String)),
+  source: Schema.optional(Schema.NullOr(Schema.String)),
 });
 
 export type DashboardQueryRow = typeof DashboardQueryRow.Type;
@@ -311,3 +345,153 @@ export const defaultOverviewWidgets = (): ReadonlyArray<{
     h: 3,
   },
 ];
+
+/** How often a report digest is generated. Weekly is Monday, monthly is the 1st. */
+export const DashboardReportFrequency = Schema.Literals(["daily", "weekly", "monthly"]);
+
+export type DashboardReportFrequency = typeof DashboardReportFrequency.Type;
+
+/** What a report is rendered as. The emailed attachment has the same format. */
+export const DashboardReportFormat = Schema.Literals(["csv", "pdf"]);
+
+export type DashboardReportFormat = typeof DashboardReportFormat.Type;
+
+export const DashboardReportRunStatus = Schema.Literals(["pending", "sending", "queued", "failed"]);
+
+export type DashboardReportRunStatus = typeof DashboardReportRunStatus.Type;
+
+/** At most this many addresses may receive one report. */
+export const DASHBOARD_REPORT_MAX_RECIPIENTS = 20;
+
+/** Bounds the settings panel and the number of work items one dashboard adds. */
+export const DASHBOARD_REPORTS_PER_DASHBOARD = 20;
+
+/**
+ * Tenant members are stored by account id so a renamed address follows the
+ * account. They are re-resolved against the tenant on every send; an external
+ * address is stored verbatim and only owners/admins may add one.
+ */
+export const DashboardReportRecipients = Schema.Struct({
+  memberAccountIds: Schema.Array(Schema.String).check(
+    Schema.isMaxLength(DASHBOARD_REPORT_MAX_RECIPIENTS),
+  ),
+  emails: Schema.Array(Schema.String).check(Schema.isMaxLength(DASHBOARD_REPORT_MAX_RECIPIENTS)),
+});
+
+export type DashboardReportRecipients = typeof DashboardReportRecipients.Type;
+
+const ReportHour = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 23 }));
+
+export const CreateDashboardReportRequest = Schema.Struct({
+  name: Schema.String,
+  frequency: DashboardReportFrequency,
+  /** UTC hour, 0–23. */
+  hourUtc: Schema.optional(ReportHour),
+  format: DashboardReportFormat,
+  recipients: DashboardReportRecipients,
+  enabled: Schema.optional(Schema.Boolean),
+});
+
+export type CreateDashboardReportRequest = typeof CreateDashboardReportRequest.Type;
+
+export const PatchDashboardReportRequest = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  frequency: Schema.optional(DashboardReportFrequency),
+  hourUtc: Schema.optional(ReportHour),
+  format: Schema.optional(DashboardReportFormat),
+  recipients: Schema.optional(DashboardReportRecipients),
+  enabled: Schema.optional(Schema.Boolean),
+});
+
+export type PatchDashboardReportRequest = typeof PatchDashboardReportRequest.Type;
+
+export const DashboardReport = Schema.Struct({
+  id: Schema.String,
+  dashboardId: Schema.String,
+  name: Schema.String,
+  frequency: DashboardReportFrequency,
+  hourUtc: Schema.Number,
+  format: DashboardReportFormat,
+  enabled: Schema.Boolean,
+  recipients: DashboardReportRecipients,
+  lastPeriod: Schema.NullOr(Schema.String),
+  lastRunAt: Schema.NullOr(Schema.String),
+  nextRunAt: Schema.NullOr(Schema.String),
+  createdAt: Schema.String,
+  updatedAt: Schema.String,
+});
+
+export type DashboardReport = typeof DashboardReport.Type;
+
+export const DashboardReportListResponse = Schema.Struct({
+  reports: Schema.Array(DashboardReport),
+});
+
+export type DashboardReportListResponse = typeof DashboardReportListResponse.Type;
+
+export const DashboardReportRun = Schema.Struct({
+  id: Schema.String,
+  reportId: Schema.String,
+  reportName: Schema.String,
+  format: DashboardReportFormat,
+  period: Schema.String,
+  status: DashboardReportRunStatus,
+  attempts: Schema.Number,
+  recipients: Schema.Array(Schema.String),
+  sizeBytes: Schema.Number,
+  error: Schema.NullOr(Schema.String),
+  startedAt: Schema.NullOr(Schema.String),
+  completedAt: Schema.NullOr(Schema.String),
+  createdAt: Schema.String,
+});
+
+export type DashboardReportRun = typeof DashboardReportRun.Type;
+
+export const DashboardReportRunListResponse = Schema.Struct({
+  runs: Schema.Array(DashboardReportRun),
+});
+
+export type DashboardReportRunListResponse = typeof DashboardReportRunListResponse.Type;
+
+export const DashboardReportExportQuery = Schema.Struct({
+  format: Schema.optional(DashboardReportFormat),
+});
+
+export type DashboardReportExportQuery = typeof DashboardReportExportQuery.Type;
+
+const WidgetQueryConfig = Schema.Struct({
+  dataset: Schema.optional(DashboardDataset),
+  query: Schema.optional(DeviceQuery),
+  userFilter: Schema.optional(DashboardUserFilter),
+  dimension: Schema.optional(Schema.String),
+  limit: Schema.optional(Schema.Number),
+});
+
+/**
+ * The query a widget sends, shared by the browser and the report renderer.
+ *
+ * Keeping this in the domain contract is what makes a scheduled report show
+ * exactly what the dashboard shows: both paths build the same request and go
+ * through the same query endpoint.
+ */
+export const dashboardQueryForWidget = (widget: {
+  readonly type: DashboardWidgetType;
+  readonly config: unknown;
+}): DashboardQueryRequest => {
+  const config: {
+    readonly dataset?: DashboardDataset;
+    readonly query?: DeviceQuery;
+    readonly userFilter?: DashboardUserFilter;
+    readonly dimension?: string;
+    readonly limit?: number;
+  } = Option.getOrElse(Schema.decodeUnknownOption(WidgetQueryConfig)(widget.config), () => ({}));
+
+  return {
+    dataset: config.dataset ?? "devices",
+    query: config.query ?? { all: [] },
+    userFilter: config.userFilter,
+    groupBy: config.dimension,
+    limit: config.limit,
+    countOnly: widget.type === "stat",
+  };
+};

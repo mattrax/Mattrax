@@ -8,10 +8,8 @@ import {
   parsePolicyDraft,
   policyToConfigurations,
   validateDraft,
-  type Draft,
-  type PolicyValueMap,
-  type Selection,
 } from "./build";
+import type { Draft, PolicyValueMap, Selection } from "./build";
 import type { Property } from "./catalog";
 
 const property = (overrides: Partial<Property>): Property => ({

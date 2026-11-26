@@ -18,7 +18,8 @@ export const DIRECTORY_SYNC_STALE_MS = 15 * 60_000;
 export type DirectorySyncCounts = {
   readonly users: number;
   readonly groups: number;
-  readonly domains: number;
+  /** Entra imports verified domains; Workspace has no equivalent, so it omits this. */
+  readonly domains?: number;
 };
 
 export type DirectorySyncProgress =
@@ -29,13 +30,16 @@ export type DirectorySyncProgress =
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
 
-export const formatDirectorySyncCounts = (counts: DirectorySyncCounts): string =>
-  `${plural(counts.users, "user")}, ${plural(counts.groups, "group")} and ${plural(
-    counts.domains,
-    "domain",
-  )}`;
+export const formatDirectorySyncCounts = (counts: DirectorySyncCounts): string => {
+  const users = plural(counts.users, "user");
+  const groups = plural(counts.groups, "group");
 
-const runningMessage = "Syncing users, groups and domains from Entra ID…";
+  return counts.domains === undefined
+    ? `${users} and ${groups}`
+    : `${users}, ${groups} and ${plural(counts.domains, "domain")}`;
+};
+
+const DEFAULT_RUNNING_MESSAGE = "Syncing users, groups and domains from Entra ID…";
 
 const parseTime = (value: string | null | undefined): number | null => {
   if (!value) return null;
@@ -93,12 +97,16 @@ export const directorySyncProgress = (options: {
   remoteStatus?: string | null;
   remoteError?: string | null;
   remoteCounts?: DirectorySyncCounts | null;
+  /** Provider-specific progress copy; defaults to the Entra wording. */
+  runningMessage?: string;
   lastSyncedAt?: string | null;
   lastAttemptedAt?: string | null;
   lastHeartbeatAt?: string | null;
   now?: number;
   staleAfterMs?: number;
 }): DirectorySyncProgress | null => {
+  const runningMessage = options.runningMessage ?? DEFAULT_RUNNING_MESSAGE;
+
   if (options.isPending) return { state: "running", message: runningMessage };
 
   if (options.remoteStatus === "running") {

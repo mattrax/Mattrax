@@ -62,6 +62,16 @@ export const TenantExportGroup = Schema.Struct({
   directoryGroupId: Schema.optional(NullableString),
   /** Device members are metadata only; devices themselves are never imported. */
   devices: Schema.optional(Schema.Array(TenantExportDeviceRef)),
+  /**
+   * Child groups this group nests. Inherited device rows are not exported;
+   * restore re-derives them from these edges. Older bundles omit the field and
+   * restore a flat group.
+   */
+  childGroupKeys: Schema.optional(Schema.Array(Schema.String)),
+  /** Devices explicitly excluded from this group. */
+  excludedDeviceKeys: Schema.optional(Schema.Array(Schema.String)),
+  /** Directory people explicitly excluded, matched by email on restore. */
+  excludedUserEmails: Schema.optional(Schema.Array(Schema.String)),
   policyKeys: Schema.Array(Schema.String),
 });
 
@@ -113,6 +123,8 @@ export const TenantExportInstaller = Schema.Struct({
   minOsVersion: Schema.optional(NullableString),
   requiredCapability: Schema.optional(NullableString),
   priority: Schema.optional(Schema.Number),
+  /** Provisioning-profile expiry read from an uploaded `.ipa`, when known. */
+  provisioningExpiresAt: Schema.optional(NullableString),
 });
 
 export type TenantExportInstaller = typeof TenantExportInstaller.Type;
@@ -133,6 +145,13 @@ export const TenantExportApplication = Schema.Struct({
   /** Hint only. Object bytes are never part of a bundle. */
   r2Key: Schema.optional(NullableString),
   notes: Schema.optional(NullableString),
+  /** Curated catalogue provenance; absent on manual entries and older bundles. */
+  catalogueTitleId: Schema.optional(NullableString),
+  catalogueMethodId: Schema.optional(NullableString),
+  catalogueTarget: Schema.optional(NullableString),
+  catalogueKind: Schema.optional(NullableString),
+  /** Remove the app from devices that lose their assignment. */
+  removeOnUnassign: Schema.optional(Schema.Boolean),
   /** Multi-installer catalogues; older bundles omit this and use the flat fields. */
   installers: Schema.optional(Schema.Array(TenantExportInstaller)),
   groupKeys: Schema.Array(Schema.String),
@@ -204,7 +223,7 @@ export const TenantExportDirectoryUser = Schema.Struct({
   email: Schema.String,
   name: Schema.String,
   externalId: Schema.optional(NullableString),
-  source: Schema.Literals(["manual", "entra", "scim"]),
+  source: Schema.Literals(["manual", "entra", "google", "scim"]),
   disabled: Schema.Boolean,
 });
 

@@ -110,864 +110,983 @@ export const appleChecks: ReadonlyArray<Check> = [
     "enrollment",
     "Enrollment profile contains SCEP and MDM payloads",
     "The profile must bind a per-enrollment SCEP challenge to the MDM check-in URL and advertise bootstrap-token support.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const raw = await Effect.runPromise(
-        harness.service.generateEnrollmentProfile({
+        const raw = yield* harness.service.generateEnrollmentProfile({
           challenge: "challenge-compliance",
           organizationId: "tenant-compliance",
           organizationName: "Compliance Test",
-        }),
-      );
+        });
 
-      const profile = readPlist(await parseAppleBody(raw));
-      assert.equal(profile.PayloadType, "Configuration");
-      assert.equal(profile.PayloadContent.length, 2);
+        const profile = readPlist(yield* Effect.promise(async () => parseAppleBody(raw)));
+        assert.equal(profile.PayloadType, "Configuration");
+        assert.equal(profile.PayloadContent.length, 2);
 
-      const scep = profile.PayloadContent.find(
-        (payload) => payload.PayloadType === "com.apple.security.scep",
-      );
+        const scep = profile.PayloadContent.find(
+          (payload) => payload.PayloadType === "com.apple.security.scep",
+        );
 
-      const mdm = profile.PayloadContent.find((payload) => payload.PayloadType === "com.apple.mdm");
+        const mdm = profile.PayloadContent.find(
+          (payload) => payload.PayloadType === "com.apple.mdm",
+        );
 
-      assert.ok(scep && mdm);
-      assert.equal(scep.PayloadContent.Challenge, "challenge-compliance");
-      assert.equal(scep.PayloadContent.URL, `${origin}/mdm/apple/scep/tenant-compliance`);
-      assert.equal(scep.PayloadContent["Key Usage"], 5);
-      assert.equal(mdm.IdentityCertificateUUID, scep.PayloadUUID);
-      assert.equal(mdm.ServerURL, `${origin}/mdm/apple/mdm`);
-      assert.equal(mdm.CheckInURL, `${origin}/mdm/apple/mdm`);
-      assert.equal(mdm.CheckOutWhenRemoved, true);
-      assert.equal(mdm.SignMessage, true);
-      assert.ok(
-        mdm.ServerCapabilities.some((capability) => capability === "com.apple.mdm.bootstraptoken"),
-      );
-      assert.ok(
-        mdm.ServerCapabilities.some(
-          (capability) => capability === "com.apple.mdm.per-user-connections",
-        ),
-      );
-      // GetToken is not implemented; the capability must not be advertised.
-      assert.ok(mdm.ServerCapabilities.every((capability) => capability !== "com.apple.mdm.token"));
-    },
+        assert.ok(scep && mdm);
+        assert.equal(scep.PayloadContent.Challenge, "challenge-compliance");
+        assert.equal(scep.PayloadContent.URL, `${origin}/mdm/apple/scep/tenant-compliance`);
+        assert.equal(scep.PayloadContent["Key Usage"], 5);
+        assert.equal(mdm.IdentityCertificateUUID, scep.PayloadUUID);
+        assert.equal(mdm.ServerURL, `${origin}/mdm/apple/mdm`);
+        assert.equal(mdm.CheckInURL, `${origin}/mdm/apple/mdm`);
+        assert.equal(mdm.CheckOutWhenRemoved, true);
+        assert.equal(mdm.SignMessage, true);
+        assert.ok(
+          mdm.ServerCapabilities.some(
+            (capability) => capability === "com.apple.mdm.bootstraptoken",
+          ),
+        );
+        assert.ok(
+          mdm.ServerCapabilities.some(
+            (capability) => capability === "com.apple.mdm.per-user-connections",
+          ),
+        );
+        // GetToken is not implemented; the capability must not be advertised.
+        assert.ok(
+          mdm.ServerCapabilities.every((capability) => capability !== "com.apple.mdm.token"),
+        );
+      }),
   ),
   check(
     "checkin.authenticate",
     "check-in",
     "Authenticate records device identity",
     "A valid Authenticate check-in must be accepted and surface serial, model, OS version and UDID to the backend.",
-    async () => {
-      const harness = createAppleHarness();
-      const response = await harness.handler(await appleMdmRequest(authenticate()));
-      assert.equal(response.status, 200);
-      assert.equal(harness.state.events.length, 1);
-      const recorded = harness.state.events[0]!;
-      assert.ok(Predicate.isTagged(recorded.event, "Authenticate"));
-      assert.equal(recorded.scope._tag, "device");
-      assert.equal(recorded.scope.udid, udid);
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest(authenticate())),
+        );
+        assert.equal(response.status, 200);
+        assert.equal(harness.state.events.length, 1);
+        const recorded = harness.state.events[0];
+        assert.ok(Predicate.isTagged(recorded.event, "Authenticate"));
+        assert.equal(recorded.scope._tag, "device");
+        assert.equal(recorded.scope.udid, udid);
 
-      if (Predicate.isTagged(recorded.event, "Authenticate")) {
-        assert.equal(recorded.event.serialNumber, "C02COMPLIANCE");
-        assert.equal(recorded.event.osVersion, "15.4");
-        assert.equal(recorded.event.model, "MacBookPro18,3");
-      }
-    },
+        if (Predicate.isTagged(recorded.event, "Authenticate")) {
+          assert.equal(recorded.event.serialNumber, "C02COMPLIANCE");
+          assert.equal(recorded.event.osVersion, "15.4");
+          assert.equal(recorded.event.model, "MacBookPro18,3");
+        }
+      }),
   ),
   check(
     "checkin.authenticate-invalid",
     "errors",
     "Authenticate without required fields is rejected",
     "Malformed check-in plists must be rejected with HTTP 400 rather than partially processed.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({ MessageType: "Authenticate", UDID: udid }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest({ MessageType: "Authenticate", UDID: udid })),
+        );
 
-      assert.equal(response.status, 400);
-      assert.equal(harness.state.events.length, 0);
-    },
+        assert.equal(response.status, 400);
+        assert.equal(harness.state.events.length, 0);
+      }),
   ),
   check(
     "checkin.token-update-device",
     "check-in",
     "Device TokenUpdate records APNs push token",
     "The base64 APNs token must be converted to lowercase hexadecimal and recorded with PushMagic and topic.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest(tokenUpdate({ EnrollmentID: "enrollment-1" })),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest(tokenUpdate({ EnrollmentID: "enrollment-1" }))),
+        );
 
-      assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
-      assert.ok(Predicate.isTagged(event, "TokenUpdate"));
+        assert.equal(response.status, 200);
+        const event = harness.state.events[0].event;
+        assert.ok(Predicate.isTagged(event, "TokenUpdate"));
 
-      if (!Predicate.isTagged(event, "TokenUpdate")) return;
-      assert.equal(event.pushToken, "deadbeef");
-      assert.equal(event.pushMagic, "push-magic");
-      assert.equal(event.topic, topic);
-      assert.equal(event.channel, "device");
-      assert.equal(event.enrollmentId, "enrollment-1");
-    },
+        if (!Predicate.isTagged(event, "TokenUpdate")) return;
+        assert.equal(event.pushToken, "deadbeef");
+        assert.equal(event.pushMagic, "push-magic");
+        assert.equal(event.topic, topic);
+        assert.equal(event.channel, "device");
+        assert.equal(event.enrollmentId, "enrollment-1");
+      }),
   ),
   check(
     "checkin.token-update-user",
     "check-in",
     "User TokenUpdate retains user channel",
     "User-channel TokenUpdate must be attributed to the user scope with unlock token and user metadata.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest(
-          tokenUpdate({
-            UserID: "user-1",
-            UserShortName: "oscar",
-            UserLongName: "Oscar Beaumont",
-            UnlockToken: "dW5sb2Nr",
-            AwaitingConfiguration: true,
-          }),
-        ),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest(
+              tokenUpdate({
+                UserID: "user-1",
+                UserShortName: "oscar",
+                UserLongName: "Oscar Beaumont",
+                UnlockToken: "dW5sb2Nr",
+                AwaitingConfiguration: true,
+              }),
+            ),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      const recorded = harness.state.events[0]!;
-      assert.ok(Predicate.isTagged(recorded.scope, "user"));
+        assert.equal(response.status, 200);
+        const recorded = harness.state.events[0];
+        assert.ok(Predicate.isTagged(recorded.scope, "user"));
 
-      if (Predicate.isTagged(recorded.scope, "user")) assert.equal(recorded.scope.userId, "user-1");
-      const event = recorded.event;
-      assert.ok(Predicate.isTagged(event, "TokenUpdate"));
+        if (Predicate.isTagged(recorded.scope, "user"))
+          assert.equal(recorded.scope.userId, "user-1");
+        const event = recorded.event;
+        assert.ok(Predicate.isTagged(event, "TokenUpdate"));
 
-      if (!Predicate.isTagged(event, "TokenUpdate")) return;
-      assert.equal(event.channel, "user");
-      assert.equal(event.userId, "user-1");
-      assert.equal(event.unlockToken, "dW5sb2Nr");
-      assert.equal(event.awaitingConfiguration, true);
-      assert.equal(event.userShortName, "oscar");
-      assert.equal(event.userLongName, "Oscar Beaumont");
-    },
+        if (!Predicate.isTagged(event, "TokenUpdate")) return;
+        assert.equal(event.channel, "user");
+        assert.equal(event.userId, "user-1");
+        assert.equal(event.unlockToken, "dW5sb2Nr");
+        assert.equal(event.awaitingConfiguration, true);
+        assert.equal(event.userShortName, "oscar");
+        assert.equal(event.userLongName, "Oscar Beaumont");
+      }),
   ),
   check(
     "checkin.token-update-invalid",
     "errors",
     "TokenUpdate without a token is rejected",
     "A TokenUpdate missing the APNs token cannot be stored and must return HTTP 400.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({
-          MessageType: "TokenUpdate",
-          Topic: topic,
-          UDID: udid,
-          PushMagic: "push-magic",
-        }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({
+              MessageType: "TokenUpdate",
+              Topic: topic,
+              UDID: udid,
+              PushMagic: "push-magic",
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 400);
-    },
+        assert.equal(response.status, 400);
+      }),
   ),
   check(
     "checkin.checkout-device",
     "check-in",
     "Device CheckOut is recorded",
     "Device CheckOut must be accepted and forwarded as a CheckOut event.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({ MessageType: "CheckOut", Topic: topic, UDID: udid }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({ MessageType: "CheckOut", Topic: topic, UDID: udid }),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      assert.equal(harness.state.events[0]!.event._tag, "CheckOut");
-    },
+        assert.equal(response.status, 200);
+        assert.equal(harness.state.events[0].event._tag, "CheckOut");
+      }),
   ),
   check(
     "checkin.checkout-user",
     "check-in",
     "User CheckOut is scoped to the user",
     "A user-channel CheckOut must identify the user so only that user's management context is removed.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({
-          MessageType: "CheckOut",
-          Topic: topic,
-          UDID: udid,
-          UserID: "user-1",
-        }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({
+              MessageType: "CheckOut",
+              Topic: topic,
+              UDID: udid,
+              UserID: "user-1",
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      assert.equal(harness.state.events[0]!.scope._tag, "user");
-      const event = harness.state.events[0]!.event;
-      assert.ok(Predicate.isTagged(event, "CheckOut"));
+        assert.equal(response.status, 200);
+        assert.equal(harness.state.events[0].scope._tag, "user");
+        const event = harness.state.events[0].event;
+        assert.ok(Predicate.isTagged(event, "CheckOut"));
 
-      if (Predicate.isTagged(event, "CheckOut")) assert.equal(event.userId, "user-1");
-    },
+        if (Predicate.isTagged(event, "CheckOut")) assert.equal(event.userId, "user-1");
+      }),
   ),
   check(
     "commands.poll",
     "commands",
     "Command poll returns the queued MDM command",
     "Idle device polls must receive a plist containing CommandUUID and Command.RequestType.",
-    async () => {
-      const harness = createAppleHarness();
-      harness.state.checkinQueue.push(
-        ManagementManifest.members[1].make({
-          commandUUID: "command-1",
-          requestType: "DeviceInformation",
-          payload: { Queries: ["DeviceName"] },
-        }),
-      );
-      const response = await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" }));
-      assert.equal(response.status, 200);
-      assert.match(response.headers.get("content-type") ?? "", /xml/);
-      const plist = readPlist(await applePlistResponse(response));
-      assert.equal(plist.CommandUUID, "command-1");
-      assert.equal(plist.Command.RequestType, "DeviceInformation");
-      assert.deepEqual(plist.Command.Queries, ["DeviceName"]);
-    },
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        harness.state.checkinQueue.push(
+          ManagementManifest.members[1].make({
+            commandUUID: "command-1",
+            requestType: "DeviceInformation",
+            payload: { Queries: ["DeviceName"] },
+          }),
+        );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
+        );
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get("content-type") ?? "", /xml/);
+        const plist = readPlist(yield* Effect.promise(async () => applePlistResponse(response)));
+        assert.equal(plist.CommandUUID, "command-1");
+        assert.equal(plist.Command.RequestType, "DeviceInformation");
+        assert.deepEqual(plist.Command.Queries, ["DeviceName"]);
+      }),
   ),
   check(
     "commands.poll-idle",
     "commands",
     "Idle poll returns an empty response",
     "When there is no work, the server must return 200 with no command body rather than an error.",
-    async () => {
-      const harness = createAppleHarness();
-      const response = await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" }));
-      assert.equal(response.status, 200);
-      const text = await response.text();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
+        );
+        assert.equal(response.status, 200);
+        const text = yield* Effect.promise(async () => response.text());
 
-      if (text.trim() !== "") {
-        const plist = readPlist(await parseAppleBody(text));
-        assert.equal(Object.keys(plist).length, 0);
-      }
-    },
+        if (text.trim() !== "") {
+          const plist = readPlist(yield* Effect.promise(async () => parseAppleBody(text)));
+          assert.equal(Object.keys(plist).length, 0);
+        }
+      }),
   ),
   check(
     "commands.result-follow-up",
     "commands",
     "Acknowledged command result triggers the next poll",
     "A Status=Acknowledged result must be recorded and the same response may carry the next command.",
-    async () => {
-      const harness = createAppleHarness();
-      harness.state.checkinQueue.push(
-        ManagementManifest.members[1].make({
-          commandUUID: "command-2",
-          requestType: "SecurityInfo",
-          payload: {},
-        }),
-      );
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        harness.state.checkinQueue.push(
+          ManagementManifest.members[1].make({
+            commandUUID: "command-2",
+            requestType: "SecurityInfo",
+            payload: {},
+          }),
+        );
 
-      const response = await harness.handler(
-        await appleMdmRequest({
-          UDID: udid,
-          Status: "Acknowledged",
-          CommandUUID: "command-1",
-          Command: { RequestType: "DeviceInformation" },
-          QueryResponses: { DeviceName: "Mac" },
-        }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({
+              UDID: udid,
+              Status: "Acknowledged",
+              CommandUUID: "command-1",
+              Command: { RequestType: "DeviceInformation" },
+              QueryResponses: { DeviceName: "Mac" },
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
-      assert.ok(Predicate.isTagged(event, "CommandResult"));
+        assert.equal(response.status, 200);
+        const event = harness.state.events[0].event;
+        assert.ok(Predicate.isTagged(event, "CommandResult"));
 
-      if (Predicate.isTagged(event, "CommandResult")) {
-        assert.equal(event.commandUUID, "command-1");
-        assert.equal(event.status, "Acknowledged");
-        assert.deepEqual(event.queryResponses, { DeviceName: "Mac" });
-      }
+        if (Predicate.isTagged(event, "CommandResult")) {
+          assert.equal(event.commandUUID, "command-1");
+          assert.equal(event.status, "Acknowledged");
+          assert.deepEqual(event.queryResponses, { DeviceName: "Mac" });
+        }
 
-      const plist = readPlist(await applePlistResponse(response));
-      assert.equal(plist.CommandUUID, "command-2");
-      assert.equal(plist.Command.RequestType, "SecurityInfo");
-    },
+        const plist = readPlist(yield* Effect.promise(async () => applePlistResponse(response)));
+        assert.equal(plist.CommandUUID, "command-2");
+        assert.equal(plist.Command.RequestType, "SecurityInfo");
+      }),
   ),
   check(
     "commands.result-error",
     "commands",
     "Error command result preserves ErrorChain",
     "The server must record ErrorDomain and ErrorCode from a failed command result.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({
-          UDID: udid,
-          Status: "Error",
-          CommandUUID: "command-3",
-          ErrorChain: [
-            { ErrorDomain: "MCMDMErrorDomain", ErrorCode: 12013 },
-            { ErrorDomain: "MCMDMErrorDomain", ErrorCode: 12014 },
-          ],
-        }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({
+              UDID: udid,
+              Status: "Error",
+              CommandUUID: "command-3",
+              ErrorChain: [
+                { ErrorDomain: "MCMDMErrorDomain", ErrorCode: 12013 },
+                { ErrorDomain: "MCMDMErrorDomain", ErrorCode: 12014 },
+              ],
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
-      assert.ok(Predicate.isTagged(event, "CommandResult"));
+        assert.equal(response.status, 200);
+        const event = harness.state.events[0].event;
+        assert.ok(Predicate.isTagged(event, "CommandResult"));
 
-      if (Predicate.isTagged(event, "CommandResult"))
-        assert.equal(event.errorDetail, "MCMDMErrorDomain:12013, MCMDMErrorDomain:12014");
-    },
+        if (Predicate.isTagged(event, "CommandResult"))
+          assert.equal(event.errorDetail, "MCMDMErrorDomain:12013, MCMDMErrorDomain:12014");
+      }),
   ),
   check(
     "commands.result-no-uuid",
     "commands",
     "Command result without CommandUUID is not misfiled",
     "A Status payload with no CommandUUID must not be recorded as a command result.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({ UDID: udid, Status: "Acknowledged" }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest({ UDID: udid, Status: "Acknowledged" })),
+        );
 
-      assert.equal(response.status, 200);
-      assert.equal(eventTags(harness).includes("CommandResult"), false);
-    },
+        assert.equal(response.status, 200);
+        assert.equal(eventTags(harness).includes("CommandResult"), false);
+      }),
   ),
   check(
     "commands.not-now",
     "commands",
     "NotNow result is recorded without acknowledging the command",
     "NotNow means later, not never: the device status must be preserved for the backend to retry.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({
-          UDID: udid,
-          Status: "NotNow",
-          CommandUUID: "command-not-now",
-        }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({
+              UDID: udid,
+              Status: "NotNow",
+              CommandUUID: "command-not-now",
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
-      assert.ok(Predicate.isTagged(event, "CommandResult"));
+        assert.equal(response.status, 200);
+        const event = harness.state.events[0].event;
+        assert.ok(Predicate.isTagged(event, "CommandResult"));
 
-      if (Predicate.isTagged(event, "CommandResult")) {
-        assert.equal(event.status, "NotNow");
-        assert.equal(event.commandUUID, "command-not-now");
-      }
-    },
+        if (Predicate.isTagged(event, "CommandResult")) {
+          assert.equal(event.status, "NotNow");
+          assert.equal(event.commandUUID, "command-not-now");
+        }
+      }),
   ),
   check(
     "commands.clear-passcode",
     "commands",
     "ClearPasscode sends UnlockToken as plist data",
     "The backend stores UnlockToken as base64 but the device command must contain binary plist data.",
-    async () => {
-      const harness = createAppleHarness();
-      harness.state.checkinQueue.push(
-        ManagementManifest.members[1].make({
-          commandUUID: "command-clear",
-          requestType: "ClearPasscode",
-          payload: { UnlockToken: btoa(String.fromCharCode(1, 2, 3, 4)) },
-        }),
-      );
-      const response = await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" }));
-      assert.equal(response.status, 200);
-      const text = await response.text();
-      assert.match(text, /<key>UnlockToken<\/key><data>AQIDBA==<\/data>/);
-      const plist = readPlist(await parseAppleBody(text));
-      assert.equal(plist.Command.RequestType, "ClearPasscode");
-      assert.equal(plist.Command.UnlockToken, "AQIDBA==");
-    },
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        harness.state.checkinQueue.push(
+          ManagementManifest.members[1].make({
+            commandUUID: "command-clear",
+            requestType: "ClearPasscode",
+            payload: { UnlockToken: btoa(String.fromCharCode(1, 2, 3, 4)) },
+          }),
+        );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
+        );
+        assert.equal(response.status, 200);
+        const text = yield* Effect.promise(async () => response.text());
+        assert.match(text, /<key>UnlockToken<\/key><data>AQIDBA==<\/data>/);
+        const plist = readPlist(yield* Effect.promise(async () => parseAppleBody(text)));
+        assert.equal(plist.Command.RequestType, "ClearPasscode");
+        assert.equal(plist.Command.UnlockToken, "AQIDBA==");
+      }),
   ),
   check(
     "commands.unenroll-410",
     "management",
     "Server-initiated unenrollment returns 410",
     "A backend unenrollment decision must produce HTTP 410 Gone so the device removes its MDM profile.",
-    async () => {
-      const harness = createAppleHarness();
-      harness.state.checkinError = "unenrolled";
-      const response = await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" }));
-      assert.equal(response.status, 410);
-    },
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        harness.state.checkinError = "unenrolled";
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
+        );
+        assert.equal(response.status, 410);
+      }),
   ),
   check(
     "ddm.tokens",
     "declarative-management",
     "DDM tokens endpoint returns SyncTokens",
     "DeclarativeManagement Endpoint=tokens must return SyncTokens.DeclarationsToken and an RFC 3339 timestamp.",
-    async () => {
-      const harness = createAppleHarness();
-      const response = await harness.handler(await appleMdmRequest(declarative("tokens")));
-      assert.equal(response.status, 200);
-      assert.match(response.headers.get("content-type") ?? "", /json/);
-      const body = await response.json();
-      assert.equal(body.SyncTokens.DeclarationsToken, "declarations-token");
-      assert.match(body.SyncTokens.Timestamp, /^\d{4}-\d{2}-\d{2}T/);
-    },
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest(declarative("tokens"))),
+        );
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get("content-type") ?? "", /json/);
+        const body = yield* Effect.promise(async () => response.json());
+        assert.equal(body.SyncTokens.DeclarationsToken, "declarations-token");
+        assert.match(body.SyncTokens.Timestamp, /^\d{4}-\d{2}-\d{2}T/);
+      }),
   ),
   check(
     "ddm.declaration-items",
     "declarative-management",
     "DDM declaration-items classifies every declaration",
     "Activations, configurations, assets and management declarations must be returned in separate arrays with the current token.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest(declarative("declaration-items")),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest(declarative("declaration-items"))),
+        );
 
-      assert.equal(response.status, 200);
-      const body = await response.json();
-      assert.equal(body.DeclarationsToken, "declarations-token");
-      assert.deepEqual(body.Declarations.Activations, [
-        { Identifier: "activation.one", ServerToken: "a1" },
-      ]);
-      assert.deepEqual(body.Declarations.Configurations, [
-        { Identifier: "configuration.one", ServerToken: "c1" },
-      ]);
-      assert.deepEqual(body.Declarations.Assets, [{ Identifier: "asset.one", ServerToken: "s1" }]);
-      assert.deepEqual(body.Declarations.Management, [
-        { Identifier: "management.one", ServerToken: "m1" },
-      ]);
-    },
+        assert.equal(response.status, 200);
+        const body = yield* Effect.promise(async () => response.json());
+        assert.equal(body.DeclarationsToken, "declarations-token");
+        assert.deepEqual(body.Declarations.Activations, [
+          { Identifier: "activation.one", ServerToken: "a1" },
+        ]);
+        assert.deepEqual(body.Declarations.Configurations, [
+          { Identifier: "configuration.one", ServerToken: "c1" },
+        ]);
+        assert.deepEqual(body.Declarations.Assets, [
+          { Identifier: "asset.one", ServerToken: "s1" },
+        ]);
+        assert.deepEqual(body.Declarations.Management, [
+          { Identifier: "management.one", ServerToken: "m1" },
+        ]);
+      }),
   ),
   check(
     "ddm.declaration",
     "declarative-management",
     "DDM declaration returns the signed declaration document",
     "A declaration fetch must return the exact declaration object for the requested identifier.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest(declarative("declaration/configuration/configuration.one")),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest(declarative("declaration/configuration/configuration.one")),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      const body = await response.json();
-      assert.equal(body.Identifier, "configuration.one");
-      assert.equal(body.Type, "com.apple.configuration.management.test");
-      assert.equal(body.Payload.Enabled, true);
-    },
+        assert.equal(response.status, 200);
+        const body = yield* Effect.promise(async () => response.json());
+        assert.equal(body.Identifier, "configuration.one");
+        assert.equal(body.Type, "com.apple.configuration.management.test");
+        assert.equal(body.Payload.Enabled, true);
+      }),
   ),
   check(
     "ddm.declaration-unknown-type",
     "errors",
     "DDM declaration rejects an unknown type",
     "Only activation, configuration, asset and management declaration types are valid.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest(declarative("declaration/unknown/configuration.one")),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest(declarative("declaration/unknown/configuration.one")),
+          ),
+        );
 
-      assert.equal(response.status, 404);
-    },
+        assert.equal(response.status, 404);
+      }),
   ),
   check(
     "ddm.status",
     "declarative-management",
     "DDM status report records status items and errors",
     "The base64 JSON status report must be decoded and forwarded with mapped error reasons.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const report = {
-        StatusItems: { "device.operating-system.version": "15.4" },
-        Errors: [
-          {
-            StatusItem: "configuration.one",
-            Reasons: [{ Code: "Error", Description: "Invalid payload", Details: { field: "x" } }],
-          },
-        ],
-      };
+        const report = {
+          StatusItems: { "device.operating-system.version": "15.4" },
+          Errors: [
+            {
+              StatusItem: "configuration.one",
+              Reasons: [{ Code: "Error", Description: "Invalid payload", Details: { field: "x" } }],
+            },
+          ],
+        };
 
-      const response = await harness.handler(
-        await appleMdmRequest(declarative("status", { Data: base64Utf8(JSON.stringify(report)) })),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest(
+              declarative("status", { Data: base64Utf8(JSON.stringify(report)) }),
+            ),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
-      assert.ok(Predicate.isTagged(event, "DeclarationStatus"));
+        assert.equal(response.status, 200);
+        const event = harness.state.events[0].event;
+        assert.ok(Predicate.isTagged(event, "DeclarationStatus"));
 
-      if (Predicate.isTagged(event, "DeclarationStatus")) {
-        assert.deepEqual(event.statusItems, report.StatusItems);
-        assert.equal(event.errors?.[0]?.statusItem, "configuration.one");
-        assert.equal(event.errors?.[0]?.reasons?.[0]?.code, "Error");
-      }
-    },
+        if (Predicate.isTagged(event, "DeclarationStatus")) {
+          assert.deepEqual(event.statusItems, report.StatusItems);
+          assert.equal(event.errors?.[0]?.statusItem, "configuration.one");
+          assert.equal(event.errors?.[0]?.reasons?.[0]?.code, "Error");
+        }
+      }),
   ),
   check(
     "ddm.status-invalid",
     "errors",
     "DDM status with invalid JSON is rejected",
     "A status Data value that is not base64 JSON must return HTTP 400.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest(declarative("status", { Data: "bm90LWpzb24=" })),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest(declarative("status", { Data: "bm90LWpzb24=" }))),
+        );
 
-      assert.equal(response.status, 400);
-    },
+        assert.equal(response.status, 400);
+      }),
   ),
   check(
     "ddm.unknown-endpoint",
     "errors",
     "DDM unknown endpoint returns 404",
     "Unknown DeclarativeManagement endpoints must not be treated as commands.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest(declarative("not-a-real-endpoint")),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest(declarative("not-a-real-endpoint"))),
+        );
 
-      assert.equal(response.status, 404);
-    },
+        assert.equal(response.status, 404);
+      }),
   ),
   check(
     "bootstrap.set",
     "check-in",
     "SetBootstrapToken escrows the bootstrap token",
     "A SetBootstrapToken check-in must forward the opaque bootstrap token with the device UDID.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({
-          MessageType: "SetBootstrapToken",
-          UDID: udid,
-          BootstrapToken: "Ym9vdHN0cmFwLXRva2Vu",
-        }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({
+              MessageType: "SetBootstrapToken",
+              UDID: udid,
+              BootstrapToken: "Ym9vdHN0cmFwLXRva2Vu",
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      const event = harness.state.events[0]!.event;
-      assert.ok(Predicate.isTagged(event, "BootstrapToken"));
+        assert.equal(response.status, 200);
+        const event = harness.state.events[0].event;
+        assert.ok(Predicate.isTagged(event, "BootstrapToken"));
 
-      if (Predicate.isTagged(event, "BootstrapToken"))
-        assert.equal(event.token, "Ym9vdHN0cmFwLXRva2Vu");
-    },
+        if (Predicate.isTagged(event, "BootstrapToken"))
+          assert.equal(event.token, "Ym9vdHN0cmFwLXRva2Vu");
+      }),
   ),
   check(
     "bootstrap.get",
     "check-in",
     "GetBootstrapToken returns plist data",
     "A GetBootstrapToken request must return the escrowed token as binary plist data.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({ MessageType: "GetBootstrapToken", UDID: udid }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest({ MessageType: "GetBootstrapToken", UDID: udid })),
+        );
 
-      assert.equal(response.status, 200);
-      const text = await response.text();
-      assert.match(text, /<key>BootstrapToken<\/key><data>/);
-      const plist = readPlist(await parseAppleBody(text));
-      assert.equal(plist.BootstrapToken, "Ym9vdHN0cmFwLXRva2Vu");
-    },
+        assert.equal(response.status, 200);
+        const text = yield* Effect.promise(async () => response.text());
+        assert.match(text, /<key>BootstrapToken<\/key><data>/);
+        const plist = readPlist(yield* Effect.promise(async () => parseAppleBody(text)));
+        assert.equal(plist.BootstrapToken, "Ym9vdHN0cmFwLXRva2Vu");
+      }),
   ),
   check(
     "bootstrap.get-empty",
     "check-in",
     "GetBootstrapToken with no escrowed token is a quiet success",
     "A device that has no bootstrap token must receive an empty 200 response, not an error.",
-    async () => {
-      const harness = createAppleHarness();
-      harness.state.bootstrapToken = null;
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        harness.state.bootstrapToken = null;
 
-      const response = await harness.handler(
-        await appleMdmRequest({ MessageType: "GetBootstrapToken", UDID: udid }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest({ MessageType: "GetBootstrapToken", UDID: udid })),
+        );
 
-      assert.equal(response.status, 200);
-      assert.equal((await response.text()).trim(), "");
-    },
+        assert.equal(response.status, 200);
+        assert.equal((yield* Effect.promise(async () => response.text())).trim(), "");
+      }),
   ),
   check(
     "bootstrap.get-missing-udid",
     "errors",
     "GetBootstrapToken without an identifier returns no token",
     "EnrollmentID is a valid identifier, so a request with neither identifier cannot resolve a device and answers an empty 200 instead of failing the plist decoder.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({ MessageType: "GetBootstrapToken" }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest({ MessageType: "GetBootstrapToken" })),
+        );
 
-      assert.equal(response.status, 200);
-    },
+        assert.equal(response.status, 200);
+      }),
   ),
   check(
     "checkin.user-authenticate",
     "check-in",
     "UserAuthenticate opens a user channel without a password",
     "macOS asks for a DigestChallenge before a user-channel session. Mattrax answers with an empty challenge (no AuthToken required), which tells the client to continue without a password.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({ MessageType: "UserAuthenticate", UDID: udid, UserID: "user-1" }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({
+              MessageType: "UserAuthenticate",
+              UDID: udid,
+              UserID: "user-1",
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      const plist = readPlist(await applePlistResponse(response));
-      assert.equal(plist.DigestChallenge, "");
-      assert.equal(plist.AuthToken, undefined);
+        assert.equal(response.status, 200);
+        const plist = readPlist(yield* Effect.promise(async () => applePlistResponse(response)));
+        assert.equal(plist.DigestChallenge, "");
+        assert.equal(plist.AuthToken, undefined);
 
-      const recorded = harness.state.events[0]!;
-      assert.equal(recorded.scope._tag, "user");
-      assert.equal(
-        Predicate.isTagged(recorded.scope, "user") ? recorded.scope.userId : null,
-        "user-1",
-      );
-      assert.equal(recorded.event._tag, "UserAuthenticate");
-    },
+        const recorded = harness.state.events[0];
+        assert.equal(recorded.scope._tag, "user");
+        assert.equal(
+          Predicate.isTagged(recorded.scope, "user") ? recorded.scope.userId : null,
+          "user-1",
+        );
+        assert.equal(recorded.event._tag, "UserAuthenticate");
+      }),
   ),
   check(
     "checkin.user-authenticate-unmanaged",
     "errors",
     "UserAuthenticate refuses a user the device cannot bind",
     "A backend that cannot map the user to the authenticated device must produce Apple's 410 so the client stops managing that user.",
-    async () => {
-      const harness = createAppleHarness({ unmanagedUser: true });
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness({ unmanagedUser: true });
 
-      const response = await harness.handler(
-        await appleMdmRequest({ MessageType: "UserAuthenticate", UDID: udid, UserID: "user-1" }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({
+              MessageType: "UserAuthenticate",
+              UDID: udid,
+              UserID: "user-1",
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 410);
-    },
+        assert.equal(response.status, 410);
+      }),
   ),
   check(
     "checkin.user-authenticate-digest",
     "check-in",
     "An unsolicited digest is rejected without a challenge",
     "Mattrax never asks for a password, so a DigestResponse can never be verified. Apple requires an empty AuthToken rather than an error.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({
-          MessageType: "UserAuthenticate",
-          UDID: udid,
-          UserID: "user-1",
-          DigestResponse: "digest",
-        }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({
+              MessageType: "UserAuthenticate",
+              UDID: udid,
+              UserID: "user-1",
+              DigestResponse: "digest",
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      const plist = readPlist(await applePlistResponse(response));
-      assert.equal(plist.AuthToken, "");
-      assert.equal(harness.state.events.length, 0);
-    },
+        assert.equal(response.status, 200);
+        const plist = readPlist(yield* Effect.promise(async () => applePlistResponse(response)));
+        assert.equal(plist.AuthToken, "");
+        assert.equal(harness.state.events.length, 0);
+      }),
   ),
   check(
     "errors.get-token",
     "errors",
     "Unsupported GetToken service types are rejected",
     "GetToken serves Managed Apple Account and watch-pairing tokens, which Mattrax does not issue. Apple requires HTTP 400 for a service type the server does not recognise.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({
-          MessageType: "GetToken",
-          UDID: udid,
-          TokenServiceType: "com.apple.maid",
-        }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest({
+              MessageType: "GetToken",
+              UDID: udid,
+              TokenServiceType: "com.apple.maid",
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 400);
-    },
+        assert.equal(response.status, 400);
+      }),
   ),
   check(
     "errors.unknown-message",
     "errors",
     "Unknown check-in MessageType is rejected",
     "Unrecognised MessageType values must not fall through to command polling.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        await appleMdmRequest({ MessageType: "SomethingElse", UDID: udid }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest({ MessageType: "SomethingElse", UDID: udid })),
+        );
 
-      assert.equal(response.status, 400);
-    },
+        assert.equal(response.status, 400);
+      }),
   ),
   check(
     "errors.malformed-plist",
     "errors",
     "Malformed plist is rejected",
     "A non-plist body must return HTTP 400 without logging a 500.",
-    async () => {
-      const harness = createAppleHarness();
-      const response = await harness.handler(rawMdmRequest("<not-a-plist>"));
-      assert.equal(response.status, 400);
-    },
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        const response = yield* Effect.promise(async () =>
+          harness.handler(rawMdmRequest("<not-a-plist>")),
+        );
+        assert.equal(response.status, 400);
+      }),
   ),
   check(
     "errors.signature-required",
     "authentication",
     "Required Mdm-Signature is enforced",
     "When the host requires signed device messages, a request without Mdm-Signature must be rejected.",
-    async () => {
-      const harness = createAppleHarness({
-        trust: { requireSignature: true, caCertPems: () => Effect.succeed([]) },
-      });
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness({
+          trust: { requireSignature: true, caCertPems: () => Effect.succeed([]) },
+        });
 
-      const response = await harness.handler(await appleMdmRequest(authenticate()));
-      assert.equal(response.status, 400);
-    },
+        const response = yield* Effect.promise(async () =>
+          harness.handler(await appleMdmRequest(authenticate())),
+        );
+        assert.equal(response.status, 400);
+      }),
   ),
   check(
     "assets.fetch",
     "management",
     "Assets are served with their content type",
     "A signed/known asset request must return the backend bytes and media type.",
-    async () => {
-      const harness = createAppleHarness();
-      harness.state.assets.set("asset-1", {
-        content: new TextEncoder().encode("asset-content"),
-        contentType: "application/octet-stream",
-      });
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        harness.state.assets.set("asset-1", {
+          content: new TextEncoder().encode("asset-content"),
+          contentType: "application/octet-stream",
+        });
 
-      const response = await harness.handler(
-        new Request(`${origin}/mdm/apple/assets/asset-1?token=asset-token`, {
-          headers: { "x-device-identity-certificate": "device-cert" },
-        }),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            new Request(`${origin}/mdm/apple/assets/asset-1?token=asset-token`, {
+              headers: { "x-device-identity-certificate": "device-cert" },
+            }),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      assert.equal(response.headers.get("content-type"), "application/octet-stream");
-      assert.equal(await response.text(), "asset-content");
-    },
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get("content-type"), "application/octet-stream");
+        assert.equal(yield* Effect.promise(async () => response.text()), "asset-content");
+      }),
   ),
   check(
     "assets.unknown",
     "errors",
     "Unknown asset returns 404",
     "A missing asset must not leak a 500 or an empty 200 response.",
-    async () => {
-      const harness = createAppleHarness();
-      const response = await harness.handler(new Request(`${origin}/mdm/apple/assets/missing`));
-      assert.equal(response.status, 404);
-    },
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        const response = yield* Effect.promise(async () =>
+          harness.handler(new Request(`${origin}/mdm/apple/assets/missing`)),
+        );
+        assert.equal(response.status, 404);
+      }),
   ),
   check(
     "profiles.signed",
     "management",
     "Signed legacy profile URL serves mobileconfig",
     "DDM legacy profile fetches must verify the HMAC token before returning the profile bytes.",
-    async () => {
-      const harness = createAppleHarness();
-      harness.state.profile = {
-        content: new TextEncoder().encode("profile-content"),
-        contentType: "application/x-apple-aspen-config",
-      };
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        harness.state.profile = {
+          content: new TextEncoder().encode("profile-content"),
+          contentType: "application/x-apple-aspen-config",
+        };
 
-      const expiresAt = Math.floor(Date.now() / 1000) + 60;
+        const expiresAt = Math.floor(Date.now() / 1000) + 60;
 
-      const token = await signAppleProfileToken(harness.config.authSecret, {
-        deviceToken: "device-token",
-        policyId: "policy-1",
-        kind: "configuration",
-        deviceId: "device-1",
-        expiresAt,
-      });
+        const token = yield* Effect.promise(async () =>
+          signAppleProfileToken(harness.config.authSecret, {
+            deviceToken: "device-token",
+            policyId: "policy-1",
+            kind: "configuration",
+            deviceId: "device-1",
+            expiresAt,
+          }),
+        );
 
-      const response = await harness.handler(
-        new Request(
-          `${origin}/mdm/apple/profiles/device-token/policy-1/configuration?token=${encodeURIComponent(token)}&deviceId=device-1&expiresAt=${expiresAt}`,
-        ),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            new Request(
+              `${origin}/mdm/apple/profiles/device-token/policy-1/configuration?token=${encodeURIComponent(token)}&deviceId=device-1&expiresAt=${expiresAt}`,
+            ),
+          ),
+        );
 
-      assert.equal(response.status, 200);
-      assert.equal(response.headers.get("content-type"), "application/x-apple-aspen-config");
-      assert.match(response.headers.get("content-disposition") ?? "", /policy-1\.mobileconfig/);
-      assert.equal(await response.text(), "profile-content");
-    },
+        assert.equal(response.status, 200);
+        assert.equal(response.headers.get("content-type"), "application/x-apple-aspen-config");
+        assert.match(response.headers.get("content-disposition") ?? "", /policy-1\.mobileconfig/);
+        assert.equal(yield* Effect.promise(async () => response.text()), "profile-content");
+      }),
   ),
   check(
     "profiles.invalid-token",
     "errors",
     "Legacy profile URL rejects an invalid HMAC",
     "A profile URL with a bad token must return 404 without calling the backend.",
-    async () => {
-      const harness = createAppleHarness();
-      harness.state.profile = {
-        content: new TextEncoder().encode("secret-profile"),
-        contentType: "application/x-apple-aspen-config",
-      };
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        harness.state.profile = {
+          content: new TextEncoder().encode("secret-profile"),
+          contentType: "application/x-apple-aspen-config",
+        };
 
-      const response = await harness.handler(
-        new Request(`${origin}/mdm/apple/profiles/device-token/policy-1/configuration?token=bad`),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(
+            new Request(
+              `${origin}/mdm/apple/profiles/device-token/policy-1/configuration?token=bad`,
+            ),
+          ),
+        );
 
-      assert.equal(response.status, 404);
-    },
+        assert.equal(response.status, 404);
+      }),
   ),
   check(
     "profiles.missing-parts",
     "errors",
     "Malformed profile path returns 404",
     "Profile URLs must include device token, policy id and kind.",
-    async () => {
-      const harness = createAppleHarness();
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
 
-      const response = await harness.handler(
-        new Request(`${origin}/mdm/apple/profiles/only-a-token`),
-      );
+        const response = yield* Effect.promise(async () =>
+          harness.handler(new Request(`${origin}/mdm/apple/profiles/only-a-token`)),
+        );
 
-      assert.equal(response.status, 404);
-    },
+        assert.equal(response.status, 404);
+      }),
   ),
   check(
     "day-n.ddm-resync",
     "day-n",
     "DDM re-sync uses a stable deterministic command UUID",
     "Repeated DDM sync tokens must produce the same command UUID per UDID/token pair, and a new token a different UUID.",
-    async () => {
-      const harness = createAppleHarness();
-      harness.state.checkinQueue.push(
-        ManagementManifest.members[2].make({ serverToken: "server-token-a" }),
-        ManagementManifest.members[2].make({ serverToken: "server-token-b" }),
-      );
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        harness.state.checkinQueue.push(
+          ManagementManifest.members[2].make({ serverToken: "server-token-a" }),
+          ManagementManifest.members[2].make({ serverToken: "server-token-b" }),
+        );
 
-      const first = readPlist(
-        await applePlistResponse(
-          await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
-        ),
-      );
+        const first = readPlist(
+          yield* Effect.promise(async () =>
+            applePlistResponse(
+              await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
+            ),
+          ),
+        );
 
-      const second = readPlist(
-        await applePlistResponse(
-          await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
-        ),
-      );
+        const second = readPlist(
+          yield* Effect.promise(async () =>
+            applePlistResponse(
+              await harness.handler(await appleMdmRequest({ UDID: udid, Status: "Idle" })),
+            ),
+          ),
+        );
 
-      assert.equal(first.Command.RequestType, "DeclarativeManagement");
-      assert.equal(second.Command.RequestType, "DeclarativeManagement");
-      assert.notEqual(first.CommandUUID, second.CommandUUID);
-      assert.match(
-        String(first.CommandUUID),
-        /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-      );
-    },
+        assert.equal(first.Command.RequestType, "DeclarativeManagement");
+        assert.equal(second.Command.RequestType, "DeclarativeManagement");
+        assert.notEqual(first.CommandUUID, second.CommandUUID);
+        assert.match(
+          String(first.CommandUUID),
+          /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        );
+      }),
     true,
   ),
   check(
@@ -975,29 +1094,34 @@ export const appleChecks: ReadonlyArray<Check> = [
     "day-n",
     "APNs token rotation is recorded without losing older state",
     "A device whose APNs token changes must produce a second TokenUpdate event with the new token.",
-    async () => {
-      const harness = createAppleHarness();
-      await harness.handler(
-        await appleMdmRequest(
-          tokenUpdate({
-            Token: btoa(String.fromCharCode(1, 1, 1, 1)),
-          }),
-        ),
-      );
-      await harness.handler(
-        await appleMdmRequest(
-          tokenUpdate({
-            Token: btoa(String.fromCharCode(2, 2, 2, 2)),
-          }),
-        ),
-      );
+    () =>
+      Effect.gen(function* () {
+        const harness = createAppleHarness();
+        yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest(
+              tokenUpdate({
+                Token: btoa(String.fromCharCode(1, 1, 1, 1)),
+              }),
+            ),
+          ),
+        );
+        yield* Effect.promise(async () =>
+          harness.handler(
+            await appleMdmRequest(
+              tokenUpdate({
+                Token: btoa(String.fromCharCode(2, 2, 2, 2)),
+              }),
+            ),
+          ),
+        );
 
-      const tokens = harness.state.events.flatMap((entry) =>
-        Predicate.isTagged(entry.event, "TokenUpdate") ? [entry.event.pushToken] : [],
-      );
+        const tokens = harness.state.events.flatMap((entry) =>
+          Predicate.isTagged(entry.event, "TokenUpdate") ? [entry.event.pushToken] : [],
+        );
 
-      assert.deepEqual(tokens, ["01010101", "02020202"]);
-    },
+        assert.deepEqual(tokens, ["01010101", "02020202"]);
+      }),
     true,
   ),
 ];

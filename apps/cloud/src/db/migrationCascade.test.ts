@@ -1,9 +1,8 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "../../migrations");
+const migrationsDir = join(import.meta.dirname, "../../migrations");
 
 type ForeignKey = {
   name: string;
@@ -44,25 +43,25 @@ const migratedForeignKeys = (): Map<string, ForeignKey> => {
     const existing = new Set(keys.keys());
 
     for (const match of sql.matchAll(/CREATE TABLE `(\w+)` \(([\s\S]*?)\n\);/g)) {
-      const table = match[1]!;
+      const table = match[1];
 
-      for (const line of match[2]!.split("\n")) {
+      for (const line of match[2].split("\n")) {
         const constraint = line.match(
           /CONSTRAINT `(\w+)` FOREIGN KEY \(([^)]*)\) REFERENCES `(\w+)`\s*\(([^)]*)\)([\s\S]*)/,
         );
 
         if (!constraint) continue;
-        keys.set(constraint[1]!, {
-          name: constraint[1]!,
+        keys.set(constraint[1], {
+          name: constraint[1],
           table,
-          tableTo: constraint[3]!,
-          onDelete: deleteRule(constraint[5]!),
+          tableTo: constraint[3],
+          onDelete: deleteRule(constraint[5]),
         });
       }
     }
 
     for (const match of sql.matchAll(/ALTER TABLE `\w+` DROP FOREIGN KEY `(\w+)`;/g))
-      keys.delete(match[1]!);
+      keys.delete(match[1]);
 
     // `RENAME TABLE` moves the table object; MySQL keeps existing constraint
     // names, so the replay must not rename them either.
@@ -81,11 +80,11 @@ const migratedForeignKeys = (): Map<string, ForeignKey> => {
     for (const match of sql.matchAll(
       /ALTER TABLE `(\w+)` ADD CONSTRAINT `(\w+)` FOREIGN KEY \(([^)]*)\) REFERENCES `(\w+)`\s*\(([^)]*)\)([^;]*);/g,
     )) {
-      keys.set(match[2]!, {
-        name: match[2]!,
-        table: match[1]!,
-        tableTo: match[4]!,
-        onDelete: deleteRule(match[6]!),
+      keys.set(match[2], {
+        name: match[2],
+        table: match[1],
+        tableTo: match[4],
+        onDelete: deleteRule(match[6]),
       });
     }
   }

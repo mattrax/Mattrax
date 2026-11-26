@@ -11,7 +11,7 @@ import {
 } from "../src/Scep/scepLifecycle.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -133,8 +133,7 @@ describe("loadScepCaState", () => {
     const current = await makeCa({ lifetimeDays: 1000 });
     const retired = await makeCa({ lifetimeDays: 500 });
 
-    db.store.scep_ca.push(caRow({ ca: current.ca, sealed: current.sealed }));
-    db.store.scep_ca.push({
+    db.store.scep_ca.push(caRow({ ca: current.ca, sealed: current.sealed }), {
       ...caRow({ ca: retired.ca, sealed: retired.sealed }),
       id: 2,
       organizationId: "org-b",
@@ -184,7 +183,7 @@ describe("loadScepCaState", () => {
     });
 
     // Tenant scoping: org-b's identity is not counted against org-a.
-    expect(state.retiring[0]!.identities).toBe(1);
+    expect(state.retiring[0].identities).toBe(1);
   });
 });
 

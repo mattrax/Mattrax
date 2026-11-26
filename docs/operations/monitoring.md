@@ -1,15 +1,16 @@
 # Monitoring
 
-Mattrax exposes liveness, readiness, structured logs and tenant-level health signals. There
-is no Prometheus metrics endpoint; use logs, PostHog and the health APIs.
+Mattrax exposes liveness, readiness, structured request logs with W3C trace context, an
+opt-in Prometheus metrics endpoint and tenant-level health signals.
 
 ## Health endpoints
 
-| Endpoint           | Purpose                                                         |
-| ------------------ | --------------------------------------------------------------- |
-| `GET /api/health`  | Dependency-free liveness; returns `ok`                          |
-| `GET /api/ready`   | Runs `select 1` with a two-second timeout; 200/503 plus version |
-| `GET /api/version` | Package version                                                 |
+| Endpoint           | Purpose                                                                  |
+| ------------------ | ------------------------------------------------------------------------ |
+| `GET /api/health`  | Dependency-free liveness; returns `ok`                                   |
+| `GET /api/ready`   | Runs `select 1` with a two-second timeout; 200/503 plus version          |
+| `GET /api/version` | Package version                                                          |
+| `GET /api/metrics` | Prometheus text format; disabled unless `MATTRAX_METRICS` says otherwise |
 
 The API Worker also has `/health` as an alias. Only `/api/*` is proxied by the public web
 Worker, so use `/api/health` and `/api/ready` from outside.
@@ -26,19 +27,115 @@ One JSON line per request:
 {
   "event": "http.request",
   "requestId": "…",
-  "method": "GET",
-  "path": "/api/v1/tenants/…/devices",
+  "method": "PUT",
+  "path": "/mdm/apple/mdm",
   "status": 200,
-  "outcome": "success",
-  "durationMs": 42,
-  "tenantId": "…"
+  "outcome": "ok",
+  "durationMs": 84,
+  "tenantId": "…",
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "spanId": "00f067aa0ba902b7",
+  "spans": [
+    { "name": "mdm.apple.backend.checkin", "durationMs": 71.2, "status": "ok" },
+    { "name": "mysql", "durationMs": 12.4, "status": "ok" }
+  ],
+  "spanCount": 7
 }
 ```
 
 Bodies, query strings, cookies, tokens and email addresses are never logged. Every response
 carries `x-request-id`; a valid caller-supplied id is propagated.
 
-Successful health and readiness probes are not logged.
+`traceId` and `spanId` are present whenever telemetry is on (the default). `spans` holds
+the **slowest** child spans of the request, at most 16 of them, and `spanCount` is how many
+were recorded in total. Query text is never included.
+
+Successful health, readiness and metric-scrape requests are not logged.
+
+## Tracing
+
+Every request is a trace. The web handler parses the W3C `traceparent` header when a
+caller sends one and continues that trace; an absent or invalid header starts a new one.
+The root span is named `http.request`, and its id is the `spanId` on the request log line,
+so one line locates the whole request.
+
+Spans recorded today:
+
+| Span                          | Source                                               |
+| ----------------------------- | ---------------------------------------------------- |
+| `http.request`                | The API Worker's fetch handler (root, kind `server`) |
+| `mdm.apple.backend.checkin`   | Apple check-in, around the management backend call   |
+| `mdm.apple.backend.enroll`    | Apple `Authenticate` (first enrollment transaction)  |
+| `mdm.windows.backend.checkin` | Windows management check-in                          |
+| `mysql`                       | Every SQL statement, emitted by `@effect/sql`        |
+| Any `Effect.withSpan("…")`    | Service code that opts in                            |
+
+To diagnose a slow check-in, take the `traceId` from the log line and search for it. The
+`spans` array already splits the request into protocol, management-backend and SQL time,
+so manual correlation is usually unnecessary.
+
+Limitations to keep in mind:
+
+- Spans are recorded in-process and summarised into the request log and the metrics. There
+  is no OTLP exporter and no long-term span store.
+- Outbound vendor calls (APNs relay, Microsoft Graph, Stripe, PostHog) are not instrumented.
+- `tracestate` is not interpreted, and `traceparent` is not added to outbound requests.
+- A trace id is inherited from `traceparent`, so two concurrent requests that send the same
+  header share a trace id; their child-span breakdown may interleave.
+
+Set `MATTRAX_TELEMETRY=off` to install Effect's no-op tracer: no spans are recorded, the
+handler does no per-request telemetry work, and `/api/metrics` returns 404.
+
+## Metrics
+
+`GET /api/metrics` serves the Prometheus text format. It is **off by default**: set
+`MATTRAX_METRICS=public` to serve it, or `MATTRAX_METRICS=token` plus
+`MATTRAX_METRICS_TOKEN` to require `Authorization: Bearer <token>`. `token` without a
+token fails closed (404). The payload is aggregate only.
+
+```sh
+curl -fsS -H "Authorization: Bearer $MATTRAX_METRICS_TOKEN" \
+  https://mdm.example.com/api/metrics
+```
+
+| Metric                                   | Type      | Labels                            | Meaning                                |
+| ---------------------------------------- | --------- | --------------------------------- | -------------------------------------- |
+| `mattrax_http_requests_total`            | counter   | `route`, `method`, `status_class` | Requests handled, by route class       |
+| `mattrax_http_request_duration_seconds`  | histogram | `route`, `method`, `status_class` | End-to-end request time                |
+| `mattrax_mdm_checkin_total`              | counter   | `platform`, `outcome`             | MDM check-in outcomes                  |
+| `mattrax_mdm_enrollment_total`           | counter   | `platform`, `outcome`             | MDM enrollment outcomes                |
+| `mattrax_spans_total`                    | counter   | `operation`, `kind`, `status`     | Spans recorded                         |
+| `mattrax_span_duration_seconds`          | histogram | `operation`, `kind`, `status`     | Span duration                          |
+| `mattrax_db_queries_total`               | counter   | `operation`, `status`             | SQL statements executed                |
+| `mattrax_db_query_duration_seconds`      | histogram | `operation`, `status`             | SQL statement duration                 |
+| `mattrax_telemetry_series_dropped_total` | counter   | `metric`                          | Observations dropped at the series cap |
+
+`route` is one of `health`, `ready`, `metrics`, `api`, `webhook`, `mdm`,
+`mdm.apple`, `mdm.apple.checkin`, `mdm.apple.enrollment`, `mdm.windows`,
+`mdm.windows.checkin`, `mdm.windows.enrollment`, `scep`, `scim` or `other`.
+`status_class` is `1xx`–`5xx`. An MDM `outcome` is `ok`, `redirect`, `rejected`,
+`unauthorized`, `not_found`, `unenrolled` (Apple's 410), `rate_limited` or `error`.
+
+**No tenant, device, user, email or raw URL ever appears in a label.** Label values are
+truncated to 64 characters, dynamic span names are sanitised, and each metric caps its
+series count (200 by default); overflow is counted in
+`mattrax_telemetry_series_dropped_total` rather than published.
+
+The registry lives in the isolate. A Cloudflare Worker runs many isolates, so a scrape sees
+one isolate's counters and histograms: treat the numbers as a sample, and use Cloudflare's
+own Workers metrics for deployment-wide request totals. A self-hosted Node deployment runs
+one process and reports complete figures. Counters reset when the isolate is recycled.
+
+Useful queries:
+
+```text
+# p95 request latency over 5 minutes
+histogram_quantile(0.95, sum by (le, route) (rate(mattrax_http_request_duration_seconds_bucket[5m])))
+
+# check-in failure ratio
+sum(rate(mattrax_mdm_checkin_total{outcome!="ok"}[5m]))
+  / sum(rate(mattrax_mdm_checkin_total[5m]))
+```
 
 ## Product analytics
 
@@ -125,6 +222,8 @@ database at least quarterly.
 
 - `/api/ready` non-200 for 5 minutes.
 - 5xx rate above baseline.
+- p95 `mattrax_http_request_duration_seconds` above baseline for 10 minutes.
+- `mattrax_mdm_checkin_total{outcome="error"}` or `{outcome="rejected"}` rising.
 - APNs invalid-token count increasing.
 - SCEP or APNs expiry under 30 days.
 - Backup failures for two consecutive days.

@@ -42,8 +42,8 @@ updates:
         update-types: [major]
 
   - package-ecosystem: docker
-    # The only Dockerfile lives beside the self-host app; the root build passes
-    # it with `-f apps/docker/Dockerfile`.
+    # The only Dockerfile lives beside the self-host app; the compose files in
+    # the same directory build from it.
     directory: /apps/docker
     schedule:
       interval: weekly
@@ -52,7 +52,7 @@ updates:
         patterns: ["*"]
 
   - package-ecosystem: docker-compose
-    directory: /
+    directory: /apps/docker
     schedule:
       interval: weekly
     groups:

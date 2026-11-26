@@ -15,8 +15,8 @@ import {
   policyPlatforms,
   policySelectionCount,
   policyToConfigurations,
-  type PolicyDraft,
 } from "~/lib/policy-designer/build";
+import type { PolicyDraft } from "~/lib/policy-designer/build";
 
 const parseDraft = (value: string | null): PolicyDraft | undefined => parsePolicyDraft(value);
 
@@ -108,26 +108,26 @@ export default function DashboardRedirectPage() {
       when={draft()}
       fallback={
         <div class="flex flex-1 items-center justify-center py-24">
-          <p class="text-[12px] text-muted-foreground">Opening your tenant…</p>
+          <p class="text-xs text-muted-foreground">Opening your tenant…</p>
         </div>
       }
     >
       {(current) => (
-        <Page class="max-w-[560px]">
+        <Page class="max-w-140">
           <Card class="relative overflow-hidden">
-            <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-[radial-gradient(70%_100%_at_30%_0%,var(--brand-muted),transparent_75%)]" />
+            <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-linear-to-b from-brand-muted to-transparent" />
             <div class="relative p-5 sm:p-6">
               <span class="label-caps inline-flex items-center gap-1.5 text-brand">
                 <Sparkles class="size-3" />
                 Designer handoff
               </span>
-              <h1 class="mt-2 text-[20px] font-[560] leading-tight tracking-[-0.026em]">
+              <h1 class="mt-2 text-xl font-semibold leading-tight tracking-tight">
                 Policy draft ready
               </h1>
-              <p class="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
+              <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                 {current().name} ·{" "}
                 {policyPlatforms(current())
-                  .map((platform) => platform[0]!.toUpperCase() + platform.slice(1))
+                  .map((platform) => platform[0].toUpperCase() + platform.slice(1))
                   .join(", ")}{" "}
                 · {policySelectionCount(current())} collections ·{" "}
                 {Object.values(current().platforms)
@@ -142,7 +142,7 @@ export default function DashboardRedirectPage() {
               <Show
                 when={(me.data?.tenants.length ?? 0) > 0}
                 fallback={
-                  <div class="mt-5 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-[12.5px] text-warning-foreground">
+                  <div class="mt-5 rounded-lg border border-warning/25 bg-warning/[0.07] p-3 text-xs text-warning-foreground">
                     Create a tenant before deploying this draft.{" "}
                     <a href="/tenants/new" class="font-medium underline underline-offset-2">
                       Create tenant
@@ -156,7 +156,7 @@ export default function DashboardRedirectPage() {
                   </label>
                   <select
                     id="draft-tenant"
-                    class="h-8 rounded-md border border-input bg-card px-2.5 text-[12.5px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+                    class="h-8 rounded-md border border-input bg-card px-2.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring focus-visible:ring-ring/30"
                     value={tenantId()}
                     onChange={(event) => setTenantId(event.currentTarget.value)}
                   >
@@ -178,7 +178,7 @@ export default function DashboardRedirectPage() {
                   </Button>
                   <a
                     href="/designer"
-                    class="text-[12px] text-muted-foreground underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground"
+                    class="text-xs text-muted-foreground underline underline-offset-2 transition-colors duration-(--duration-hover) ease-swift hover:text-foreground"
                   >
                     Edit draft
                   </a>
@@ -186,7 +186,7 @@ export default function DashboardRedirectPage() {
               </Show>
               <Show when={deployDraft.error}>
                 {(error) => (
-                  <p role="alert" class="mt-3 text-[12.5px] text-destructive">
+                  <p role="alert" class="mt-3 text-xs text-destructive">
                     {errorMessage(error())}
                   </p>
                 )}

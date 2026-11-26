@@ -6,7 +6,9 @@ import {
   EnterpriseForbidden,
   EnterpriseNotFound,
 } from "@mattrax/enterprise-domain";
-import { type EnterpriseDb, schema } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { directoryProviderRegistry } from "../Directory/registry.ts";
 
 export type LinkDirectoryUserSsoInput = {
   readonly organizationId: string;
@@ -51,11 +53,18 @@ export const linkDirectoryUserSso = (
     if (!directoryUser)
       return yield* Effect.fail(new EnterpriseNotFound({ message: "Directory user not found" }));
 
-    if (directoryUser.source !== "entra" || !directoryUser.externalId)
+    // Only a provider with a deployed sign-in integration can be linked. This
+    // is the registry's answer, not a source string in this handler: Google
+    // Workspace sync is supported while its OIDC sign-in is not, so claiming a
+    // link there would promise a sign-in that cannot happen.
+    const provider = directoryProviderRegistry.byUserSource(directoryUser.source);
+
+    if (!provider || !provider.capabilities.ssoSignIn || !directoryUser.externalId)
       return yield* Effect.fail(
         new EnterpriseBadRequest({
-          message:
-            "Only a directory user imported from Microsoft Entra ID has an SSO identity to link.",
+          message: provider
+            ? `${provider.label} directory users cannot sign in to Mattrax yet. ${provider.label} single sign-on requires an OpenID Connect client for this deployment; directory sync alone does not provide one.`
+            : "Only a directory user imported from an identity provider with single sign-on can be linked.",
         }),
       );
 

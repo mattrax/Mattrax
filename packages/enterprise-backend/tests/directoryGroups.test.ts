@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { syncDirectoryGroupsForTenant, syncDirectoryGroup } from "@mattrax/mdm-apple";
+import { syncDirectoryGroupsForTenant, syncDirectoryGroup } from "@mattrax/mdm-core";
 import { makeDb, runEffect } from "./helpers.js";
 
 const now = new Date("2026-11-18T12:00:00.000Z");
@@ -102,15 +102,10 @@ describe("directory-linked device groups", () => {
       ],
     });
 
-    const results = await runEffect(
-      syncDirectoryGroupsForTenant(db, organizationId, { now }),
-    );
+    const results = await runEffect(syncDirectoryGroupsForTenant(db, organizationId, { now }));
 
     expect(results).toMatchObject([{ groupId: "group-1", matched: 2, added: 2, removed: 0 }]);
-    expect(memberships(db)).toEqual([
-      "group-1:device-1:directory",
-      "group-1:device-2:directory",
-    ]);
+    expect(memberships(db)).toEqual(["group-1:device-1:directory", "group-1:device-2:directory"]);
   });
 
   it("adds and removes devices as directory membership changes", async () => {
@@ -146,10 +141,7 @@ describe("directory-linked device groups", () => {
     });
 
     await runEffect(syncDirectoryGroup(db, organizationId, "group-1", { now }));
-    expect(memberships(db)).toEqual([
-      "group-1:device-1:directory",
-      "group-1:device-2:directory",
-    ]);
+    expect(memberships(db)).toEqual(["group-1:device-1:directory", "group-1:device-2:directory"]);
 
     // The first person leaves the directory group.
     db.store.user_group_member = db.store.user_group_member.filter(
@@ -245,8 +237,8 @@ describe("directory-linked device groups", () => {
 
     // SAFETY: the fake select builder exposes `for`; wrapping it lets the test
     // observe that the recompute takes a row lock before reading memberships.
-    (db as any).select = (...args: any[]) => {
-      const builder = originalSelect(...args);
+    db.select = ((...args: any[]) => {
+      const builder: any = originalSelect(args[0]);
       const originalFor = builder.for.bind(builder);
 
       builder.for = (strength: string) => {
@@ -256,7 +248,7 @@ describe("directory-linked device groups", () => {
       };
 
       return builder;
-    };
+    }) as typeof db.select;
 
     await runEffect(syncDirectoryGroup(db, organizationId, "group-1", { now }));
 
@@ -288,20 +280,22 @@ describe("directory-linked device groups", () => {
       updatedAt: timestamp,
     });
     db.store.user_group_member.push({ groupId: "directory-1", userId: "other-user" });
-    db.store.device_user.push({
-      organizationId,
-      deviceId: "device-1",
-      userId: "other-user",
-      source: "manual",
-      createdAt: timestamp,
-    });
-    db.store.device_user.push({
-      organizationId,
-      deviceId: "device-2",
-      userId: "other-user",
-      source: "manual",
-      createdAt: timestamp,
-    });
+    db.store.device_user.push(
+      {
+        organizationId,
+        deviceId: "device-1",
+        userId: "other-user",
+        source: "manual",
+        createdAt: timestamp,
+      },
+      {
+        organizationId,
+        deviceId: "device-2",
+        userId: "other-user",
+        source: "manual",
+        createdAt: timestamp,
+      },
+    );
 
     await runEffect(syncDirectoryGroup(db, organizationId, "group-1", { now }));
     // Only user-1's device is derived; the cross-tenant person contributes

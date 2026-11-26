@@ -1,8 +1,8 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, PlatformError, Stdio, Stream } from "effect";
 
 export interface CliOutputContract {
-  readonly out: (text: string) => Effect.Effect<void>;
-  readonly err: (text: string) => Effect.Effect<void>;
+  readonly out: (text: string) => Effect.Effect<void, PlatformError.PlatformError>;
+  readonly err: (text: string) => Effect.Effect<void, PlatformError.PlatformError>;
 }
 
 /**
@@ -13,23 +13,32 @@ export class CliOutput extends Context.Service<CliOutput, CliOutputContract>()(
   "@mattrax/cli/CliOutput",
 ) {}
 
-const write = (stream: NodeJS.WriteStream, text: string): Effect.Effect<void> =>
-  Effect.sync(() => {
-    stream.write(text.endsWith("\n") ? text : `${text}\n`);
-  });
+const write = (
+  stdio: Stdio.Stdio,
+  stream: "out" | "err",
+  text: string,
+): Effect.Effect<void, PlatformError.PlatformError> => {
+  const sink = stream === "out" ? stdio.stdout() : stdio.stderr();
 
-export const processOutputLayer = Layer.succeed(
+  return Stream.run(Stream.make(text.endsWith("\n") ? text : `${text}\n`), sink);
+};
+
+export const processOutputLayer = Layer.effect(
   CliOutput,
-  CliOutput.of({
-    out: (text) => write(process.stdout, text),
-    err: (text) => write(process.stderr, text),
-  }),
+  Effect.map(Stdio.Stdio, (stdio) =>
+    CliOutput.of({
+      out: (text) => write(stdio, "out", text),
+      err: (text) => write(stdio, "err", text),
+    }),
+  ),
 );
 
-export const line = (text: string): Effect.Effect<void, never, CliOutput> =>
+export const line = (text: string): Effect.Effect<void, PlatformError.PlatformError, CliOutput> =>
   Effect.flatMap(CliOutput, (output) => output.out(text));
 
-export const errorLine = (text: string): Effect.Effect<void, never, CliOutput> =>
+export const errorLine = (
+  text: string,
+): Effect.Effect<void, PlatformError.PlatformError, CliOutput> =>
   Effect.flatMap(CliOutput, (output) => output.err(text));
 
 export const formatJson = <A>(value: A): string => JSON.stringify(value, null, 2);

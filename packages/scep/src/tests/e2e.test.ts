@@ -6,7 +6,8 @@ import * as asn1js from "asn1js";
 import { privateDecrypt, constants } from "node:crypto";
 import { scepRoutes } from "../routes.js";
 import { ScepService } from "../service.js";
-import { ScepRepository, type ScepIssuedCertificate } from "../repository.js";
+import type { ScepRepository } from "../repository.js";
+import type { ScepIssuedCertificate } from "../repository.js";
 import { pemEncode } from "../crypto.js";
 import { certificateSerialHex, certToPem, createDeviceCertificate } from "../pkcs7.js";
 import {
@@ -18,7 +19,7 @@ import {
   mockScepRepository,
 } from "./helpers.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -313,7 +314,7 @@ describe("SCEP E2E", () => {
     });
 
     expect(
-      signedData.signerInfos[0]!.signedAttrs!.attributes.some(
+      signedData.signerInfos[0].signedAttrs!.attributes.some(
         (attribute) => attribute.type === "2.16.840.1.113733.1.9.3",
       ),
     ).toBe(true);
@@ -338,6 +339,6 @@ describe("SCEP E2E", () => {
       deviceId: "device-1",
       enrollmentId: "enrollment-1",
     });
-    expect(recorded[0]!.caFingerprintSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(recorded[0].caFingerprintSha256).toMatch(/^[0-9a-f]{64}$/);
   });
 });

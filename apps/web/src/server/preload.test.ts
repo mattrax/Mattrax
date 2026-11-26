@@ -533,7 +533,7 @@ describe("SSR preload", () => {
       secret,
       verifyToken: async () =>
         tokenPayload({
-          tenants: [{ ...me.tenants[0]!, permissions: undefined }],
+          tenants: [{ ...me.tenants[0], permissions: undefined }],
         }),
       verifyRevision,
       fetchBootstrap: async () => {
@@ -548,7 +548,7 @@ describe("SSR preload", () => {
 
   it("keeps three owner tenants warm after built-in permission compression", async () => {
     const tenants = Array.from({ length: 3 }, (_, index) => ({
-      ...me.tenants[0]!,
+      ...me.tenants[0],
       id: `tenant-${index}`,
       name: `Tenant ${index}`,
       slug: `tenant-${index}`,

@@ -12,4 +12,8 @@ interface Window {
     release?: string;
     deploymentId?: string;
   };
+  /** Deployment support or calendar URL injected by the SSR shell. */
+  __MATTRAX_SUPPORT__?: {
+    url: string;
+  };
 }

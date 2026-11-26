@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { api, bootstrapTenant, gotoHydrated, register, uniqueEmail } from "./helpers";
 
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
@@ -32,13 +33,23 @@ test.describe("RBAC UI gating", () => {
     await expect(page.getByRole("link", { name: "Create policy", exact: true })).toBeVisible();
 
     await gotoHydrated(page, `${base}/settings`);
+    // The save control lives in the shared floating bar, which appears once the
+    // profile differs from what the server last returned.
+    await page.getByLabel(/^Name/).fill("RBAC Owner Renamed");
     await expect(page.getByRole("button", { name: "Save changes", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Export tenant", exact: true })).toBeEnabled();
-    await expect(page.getByRole("button", { name: "Import tenant", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Delete tenant", exact: true })).toBeVisible();
 
+    await gotoHydrated(page, `${base}/settings/migration/export`);
+    await expect(page.getByRole("button", { name: "Export tenant", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Import tenant", exact: true })).toBeVisible();
+
+    await gotoHydrated(page, `${base}/settings/backups`);
+    await expect(page.getByText("Automatic tenant backups")).toBeVisible();
+
     await expect(
-      primaryNav(page).getByRole("link", { name: "Settings", exact: true }),
+      page
+        .getByRole("navigation", { name: "Tenant settings", exact: true })
+        .getByRole("link", { name: "Settings", exact: true }),
     ).toBeVisible();
   });
 
@@ -67,12 +78,15 @@ test.describe("RBAC UI gating", () => {
       "Groups",
       "Policies",
       "Applications",
-      "Settings",
     ]) {
-      await expect(
-        primaryNav(member).getByRole("link", { name: label, exact: true }),
-      ).toBeVisible();
+      await expect(primaryNav(member).getByRole("link", { name: label, exact: true })).toBeVisible();
     }
+
+    await expect(
+      member
+        .getByRole("navigation", { name: "Tenant settings", exact: true })
+        .getByRole("link", { name: "Settings", exact: true }),
+    ).toBeVisible();
 
     await gotoHydrated(member, `/t/${tenant.id}/devices`);
     await expect(member.getByRole("heading", { name: "Devices", exact: true })).toBeVisible();
@@ -93,8 +107,14 @@ test.describe("RBAC UI gating", () => {
     await expect(member.getByRole("heading", { name: "General", exact: true })).toBeVisible();
     await expect(member.getByRole("button", { name: "Delete tenant", exact: true })).toHaveCount(0);
     await expect(member.getByRole("button", { name: "Save changes", exact: true })).toHaveCount(0);
+
+    await gotoHydrated(member, `/t/${tenant.id}/settings/migration/export`);
+    await expect(member.getByText("No tenant transfer access")).toBeVisible();
     await expect(member.getByRole("button", { name: "Import tenant", exact: true })).toHaveCount(0);
-    await expect(member.getByRole("button", { name: "Export tenant", exact: true })).toBeDisabled();
+    await expect(member.getByRole("button", { name: "Export tenant", exact: true })).toHaveCount(0);
+
+    await gotoHydrated(member, `/t/${tenant.id}/settings/backups`);
+    await expect(member.getByText("Your role cannot view tenant backups")).toBeVisible();
     await expect(member.getByText("Automatic tenant backups")).toHaveCount(0);
 
     // The invitation form belongs to members.write, which a read-only
@@ -150,6 +170,14 @@ test.describe("RBAC UI gating", () => {
         primaryNav(reviewer).getByRole("link", { name: label, exact: true }),
       ).toHaveCount(0);
     }
+
+    // devices.read makes Migration and OS updates readable, so Settings must be
+    // visible and land on the first readable tab rather than a denied General.
+    await expect(
+      reviewer
+        .getByRole("navigation", { name: "Tenant settings", exact: true })
+        .getByRole("link", { name: "Settings", exact: true }),
+    ).toHaveAttribute("href", new RegExp(`/t/${tenant.slug}/settings/migration$`));
 
     // Device and policy reads work; their mutation controls are absent.
     await expect(reviewer.getByRole("button", { name: "Import CSV", exact: true })).toHaveCount(0);

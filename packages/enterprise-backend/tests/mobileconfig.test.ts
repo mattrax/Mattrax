@@ -3,7 +3,7 @@ import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { parseMobileconfigPreview, payloadCategory } from "../src/Policy/mobileconfig.ts";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -87,6 +87,34 @@ describe("mobileconfig preview", () => {
     await expect(parseMobileconfigPreview(btoa("not a plist"))).rejects.toThrow();
   });
 
+  it("rejects a profile nested beyond the parser depth guard", async () => {
+    const nested = `<plist><dict>${"<array>".repeat(70)}${"</array>".repeat(70)}</dict></plist>`;
+
+    await expect(parseMobileconfigPreview(btoa(nested))).rejects.toThrow("nested too deeply");
+  });
+
+  it("does not let comments cancel real nesting", async () => {
+    // The parser skips comments, so closing tags inside one must not buy depth
+    // headroom for a deeply nested document.
+    const nested = `<plist><dict><!--${"</dict></array>".repeat(70)}-->${"<array>".repeat(
+      70,
+    )}${"</array>".repeat(70)}</dict></plist>`;
+
+    await expect(parseMobileconfigPreview(btoa(nested))).rejects.toThrow("nested too deeply");
+  });
+
+  it("rejects a profile whose closers have nothing to close", async () => {
+    await expect(parseMobileconfigPreview(btoa("<plist></dict></plist>"))).rejects.toThrow(
+      "not well formed",
+    );
+  });
+
+  it("rejects a profile with too many values before parsing", async () => {
+    const wide = `<plist><array>${"<true/>".repeat(100_001)}</array></plist>`;
+
+    await expect(parseMobileconfigPreview(btoa(wide))).rejects.toThrow("too many values");
+  });
+
   it("maps unknown payload types to themselves", () => {
     expect(payloadCategory("com.example.custom")).toBe("com.example.custom");
   });
@@ -94,7 +122,7 @@ describe("mobileconfig preview", () => {
   it("extracts the embedded plist from a PKCS#7 signed mobileconfig", async () => {
     // SAFETY: WebCrypto returns a `CryptoKeyPair` for the RSA key pair it was
     // asked to generate; the DOM runtime type is wider than that overload.
-    const keyPair = (await crypto.subtle.generateKey(
+    const keyPair = await crypto.subtle.generateKey(
       {
         name: "RSASSA-PKCS1-v1_5",
         hash: "SHA-256",
@@ -103,7 +131,7 @@ describe("mobileconfig preview", () => {
       } satisfies RsaHashedKeyGenParams,
       true,
       ["sign", "verify"],
-    )) as CryptoKeyPair;
+    );
 
     const name = new pkijs.RelativeDistinguishedNames({
       typesAndValues: [

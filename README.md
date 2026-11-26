@@ -60,30 +60,41 @@ for the file layout and regeneration steps.
 
 The browser suite drives a real Chrome via CDP by default. Set
 `E2E_BASE_URL` to test an already-running deployment, or `E2E_CHANNEL=bundled`
-to use Playwright's bundled Chromium (as CI does). The suite creates its own
-users and tenants, so it is safe to point at a disposable database.
+to use Playwright's bundled Chromium (as CI does). For the default local URL,
+Playwright applies pending database migrations before tests, including when it
+reuses an already-running dev server; an `E2E_BASE_URL` target must already be
+migrated. Migrations use only `MATTRAX_DEV_DATABASE_URL` or the local default;
+inherited `DATABASE_URL`/`DATABASE_*` values are ignored. A non-local dev database
+requires `E2E_ALLOW_REMOTE_DATABASE=1`. The suite creates its own users and
+tenants, so it is safe to point at a disposable database.
 
 The suite runs with a single Playwright worker because its tests share the dev
-mailbox and rate-limit buckets through one server. CI shards it across four
-runners instead — each gets its own database and dev server — with
-`pnpm test:e2e --shard=1/4`; use the same flag to reproduce a single shard
-locally.
+mailbox and rate-limit buckets through one server. CI splits it across eight
+runners instead — each gets its own database and dev server. The split is not
+Playwright's `--shard`: that cuts the alphabetically ordered file list into
+contiguous slices, which leaves one shard holding every heavy spec. Instead
+`packages/config/scripts/e2e-shard.ts` assigns spec files largest-first to the
+emptiest shard. To reproduce one shard locally:
+
+```sh
+pnpm test:e2e $(pnpm exec tsx packages/config/scripts/e2e-shard.ts 3/8)
+```
 
 ## Architecture
 
 The repository is split into protocol, management and product layers so each
 piece can be tested in isolation:
 
-| Layer               | Packages / apps                                   |
-| ------------------- | ------------------------------------------------- |
-| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist` |
-| Management contract | `management-backend`, `management-backend-http`   |
-| Management services | `mdm-core`, `mdm-apple`, `mdm-windows`            |
-| Product contracts   | `enterprise-domain` (entity modules + HTTP)       |
+| Layer               | Packages / apps                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Protocol            | `dm-apple`, `dm-windows`, `dm-android`, `scep`, `soap`, `plist`                                                           |
+| Management contract | `management-backend`, `management-backend-http`                                                                           |
+| Management services | `mdm-core`, `mdm-apple`, `mdm-windows`                                                                                    |
+| Product contracts   | `enterprise-domain` (entity modules + HTTP)                                                                               |
 | Product services    | `enterprise-api`, `enterprise-backend`, `enterprise-billing`, `enterprise-identity`, `entra-id`, `apple-business-manager` |
-| Data                | `enterprise-core` (Drizzle/MySQL, R2, secrets)    |
-| Hosted services     | `cloud-services`                                  |
-| Surfaces            | `apps/web` (dashboard, landing, docs)             |
+| Data                | `enterprise-core` (Drizzle/MySQL, R2, secrets)                                                                            |
+| Hosted services     | `cloud-services`                                                                                                          |
+| Surfaces            | `apps/web` (dashboard, landing, docs)                                                                                     |
 
 ## Cloud
 
@@ -93,17 +104,22 @@ through the web Worker's service binding.
 
 ### Self-hosting
 
-The same dashboard and API run as one Node container. It needs MySQL and an HTTPS
-reverse proxy, and nothing else:
+The same dashboard and API run as one Node container, published as
+`ghcr.io/mattrax/mattrax`. It needs MySQL and an HTTPS reverse proxy, and
+nothing else:
 
 ```bash
 export ORIGIN=https://mdm.example.com
 export AUTH_SECRET="$(openssl rand -base64 32)"
-docker compose -f docker-compose.selfhost.yml up -d --build
+
+docker compose -f apps/docker/docker-compose.yml pull
+docker compose -f apps/docker/docker-compose.yml up -d
 ```
 
-See [docs/operations/self-hosting.md](docs/operations/self-hosting.md) for configuration,
-TLS, storage, backups and upgrade notes.
+Build from a checkout instead with
+`docker compose -f apps/docker/docker-compose.yml -f apps/docker/docker-compose.build.yml up -d --build`.
+See [docs/operations/self-hosting.md](docs/operations/self-hosting.md) for version
+pinning, TLS, storage, backups and upgrade notes.
 
 Configuration lives in each app's `cloudflare.config.ts` and deployments use the
 [`cf` CLI](https://github.com/cloudflare/cf). Authenticate once with:

@@ -1,16 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { Effect, Schema } from "effect";
 import { schema } from "@mattrax/enterprise-core";
-import { MdmOrigin } from "@mattrax/management-backend";
+import { AppleDeviceEvent, MdmOrigin } from "@mattrax/management-backend";
+import { parsePlist } from "@mattrax/plist";
 import { signAppleAssetToken } from "@mattrax/dm-apple";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
 import {
   CATALOGUE_APPLICATION_ASSET_KIND,
   catalogueApplicationAssetIdentifier,
 } from "@mattrax/mdm-core";
-import { makeDb, tableName, type Store } from "./fake-db.js";
+import { appleIdentityCertificate, makeDb, tableName } from "./fake-db.js";
+import type { Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
+
+const CommandResultEvent = AppleDeviceEvent.members[5];
 
 const authSecret = "application-delivery-secret";
 
@@ -26,6 +30,8 @@ const scope = {
   _tag: "device" as const,
   udid: "udid-1",
   identityCertificate: "CN=Device,OU=org-1",
+  identityCertificateFingerprintSha256: "fingerprint-1",
+  identityCertificateSerial: "A1:B2:C3",
   mdmOrigin,
 };
 
@@ -36,6 +42,7 @@ const device = (overrides: { osEdition?: string; osVersion?: string } = {}) => (
   status: "enrolled",
   name: "device-1",
   dmIdentifier: "udid-1",
+  dmIdentityFingerprint: "fingerprint-1",
   osEdition: overrides.osEdition ?? "macOS",
   osVersion: overrides.osVersion ?? "14.0",
   capabilities: null,
@@ -61,6 +68,7 @@ const setup = (
     readonly applications?: Store[string];
     readonly installers?: Store[string];
     readonly readApplicationObject?: (key: string) => Promise<Uint8Array | null>;
+    readonly enrollmentMode?: "device" | "user";
     readonly vpp?: boolean;
   } = {},
 ) => {
@@ -78,8 +86,14 @@ const setup = (
       },
     ],
     [tableName(schema.device)]: [options.device ?? device()],
+    [tableName(schema.scepIssuedCertificate)]: [appleIdentityCertificate()],
     [tableName(schema.deviceApple)]: [
-      { deviceId: "device-1", deviceToken: "token-1", declarationMode: "ddm" },
+      {
+        deviceId: "device-1",
+        deviceToken: "token-1",
+        declarationMode: "ddm",
+        enrollmentMode: options.enrollmentMode ?? "device",
+      },
     ],
     [tableName(schema.devicePolicy)]: [
       { deviceId: "device-1", policyId: "policy-1", mode: "include" },
@@ -130,7 +144,7 @@ const manifestAssetUrl = (payload: Schema.Json): string => {
     }),
   )(payload);
 
-  return decoded.Manifest.items[0]!.assets[0]!.url;
+  return decoded.Manifest.items[0].assets[0].url;
 };
 
 const fetchAsset = (
@@ -160,7 +174,7 @@ describe("Apple policy application delivery", () => {
     expect(command).toBeTruthy();
     // SAFETY: the command was queued by this test with an object payload; the
     // assertions below check the exact keys that matter.
-    const payload = command!.payload as Record<string, Schema.Json>;
+    const payload = command.payload as Record<string, Schema.Json>;
     expect(payload).toMatchObject({
       InstallAsManaged: true,
       ManagementFlags: 1,
@@ -244,7 +258,7 @@ describe("Apple policy application delivery", () => {
 
     // SAFETY: the catalogued command payload is a JSON object by construction;
     // manifestAssetUrl asserts the manifest shape it was queued with.
-    const url = manifestAssetUrl(command!.payload as Schema.Json);
+    const url = manifestAssetUrl(command.payload as Schema.Json);
     expect(url).toContain(
       `/mdm/apple/assets/${encodeURIComponent(catalogueApplicationAssetIdentifier("app-1"))}`,
     );
@@ -316,7 +330,7 @@ describe("Apple policy application delivery", () => {
 
     // SAFETY: the upload path queues this exact payload shape; the helper
     // decodes the manifest URL it contains.
-    const url = manifestAssetUrl(command!.payload as Schema.Json);
+    const url = manifestAssetUrl(command.payload as Schema.Json);
     expect(url).toContain(
       `/mdm/apple/assets/${encodeURIComponent(catalogueApplicationAssetIdentifier("installer-14"))}`,
     );
@@ -329,7 +343,7 @@ describe("Apple policy application delivery", () => {
 
     // SAFETY: the upload path queues this exact payload shape; the helper
     // decodes the manifest URL it contains.
-    const newerUrl = manifestAssetUrl(newer!.payload as Schema.Json);
+    const newerUrl = manifestAssetUrl(newer.payload as Schema.Json);
     expect(newerUrl).toContain(
       `/mdm/apple/assets/${encodeURIComponent(catalogueApplicationAssetIdentifier("installer-15"))}`,
     );
@@ -423,7 +437,7 @@ describe("Apple policy application delivery", () => {
     const [command] = commands(db, "InstallApplication");
     expect(command).toBeTruthy();
     // SAFETY: the manifest path builds this exact payload shape.
-    expect((command!.payload as Record<string, Schema.Json>).ManifestURL).toBe(
+    expect((command.payload as Record<string, Schema.Json>).ManifestURL).toBe(
       "https://example.com/slack.plist",
     );
     expect(commands(db, "InstallEnterpriseApplication")).toHaveLength(0);
@@ -483,6 +497,272 @@ describe("Apple policy application delivery", () => {
     expect(commands(licensedDb, "InstallApplication")).toHaveLength(0);
   });
 
+  it("installs a catalogue .ipa through a generated OTA manifest on an iPhone", async () => {
+    const ipa = new Uint8Array([9, 8, 7]);
+    const configurationData = { applicationId: "app-ipa" };
+
+    const { db, backend } = setup({
+      device: device({ osEdition: "iOS", osVersion: "17.0" }),
+      configurationData,
+      applications: [
+        {
+          id: "app-ipa",
+          organizationId: "org-1",
+          name: "Internal",
+          platform: "apple",
+          bundleId: "com.example.internal",
+          version: "1.4.0",
+          source: "upload",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Internal.ipa",
+          contentType: "application/octet-stream",
+          size: ipa.byteLength,
+          sha256,
+          r2Key: "a/org-1/app-ipa/sha",
+          notes: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      readApplicationObject: async (key) => (key === "a/org-1/app-ipa/sha" ? ipa : null),
+    });
+
+    await run(backend.appleManagementCheckin(scope));
+
+    const [command] = commands(db, "InstallApplication");
+    expect(command).toBeTruthy();
+    // SAFETY: the .ipa policy path queues exactly this payload shape.
+    const payload = command.payload as Record<string, Schema.Json>;
+    expect(payload).toMatchObject({ InstallAsManaged: true, ManagementFlags: 1 });
+    expect(payload.ManifestURL).toBeTypeOf("string");
+
+    const manifestUrl = new URL(payload.ManifestURL as string);
+    expect(manifestUrl.pathname).toContain(
+      `/mdm/apple/manifests/${encodeURIComponent(catalogueApplicationAssetIdentifier("app-ipa"))}`,
+    );
+
+    const token = manifestUrl.searchParams.get("token") ?? undefined;
+    const identifier = decodeURIComponent(manifestUrl.pathname.split("/").pop()!);
+
+    const manifest = await run(backend.getAppleManifest!(undefined, identifier, token));
+
+    expect(manifest?.contentType).toBe("application/xml");
+
+    const plist = await Effect.runPromise(parsePlist(new TextDecoder().decode(manifest!.content)));
+
+    // SAFETY: the manifest is built by buildAppleManifest and asserted below.
+    const item = (
+      plist as {
+        items: Array<{
+          metadata: Record<string, string>;
+          assets: Array<{ url: string }>;
+        }>;
+      }
+    ).items[0]!;
+    expect(item.metadata).toMatchObject({
+      "bundle-identifier": "com.example.internal",
+      "bundle-version": "1.4.0",
+      kind: "software",
+      title: "Internal",
+    });
+
+    const assetUrl = new URL(item.assets[0].url);
+    expect(assetUrl.pathname).toContain(
+      `/mdm/apple/assets/${encodeURIComponent(catalogueApplicationAssetIdentifier("app-ipa"))}`,
+    );
+    await expect(fetchAsset(backend, item.assets[0].url)).resolves.toEqual({
+      content: ipa,
+      contentType: "application/octet-stream",
+    });
+  });
+
+  it("does not send a catalogue .ipa to an Apple User Enrollment device", async () => {
+    const { db, backend } = setup({
+      device: device({ osEdition: "iOS", osVersion: "17.0" }),
+      enrollmentMode: "user",
+      configurationData: { applicationId: "app-ipa" },
+      applications: [
+        {
+          id: "app-ipa",
+          organizationId: "org-1",
+          name: "Internal",
+          platform: "apple",
+          bundleId: "com.example.internal",
+          version: "1.4.0",
+          source: "upload",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Internal.ipa",
+          contentType: "application/octet-stream",
+          size: 3,
+          sha256,
+          r2Key: "a/org-1/app-ipa/sha",
+          notes: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      readApplicationObject: async () => new Uint8Array([9, 8, 7]),
+    });
+
+    await run(backend.appleManagementCheckin(scope));
+
+    expect(commands(db, "InstallApplication")).toHaveLength(0);
+  });
+
+  it("does not send a catalogue .ipa to a Mac", async () => {
+    const { db, backend } = setup({
+      configurationData: { applicationId: "app-ipa" },
+      applications: [
+        {
+          id: "app-ipa",
+          organizationId: "org-1",
+          name: "Internal",
+          platform: "apple",
+          bundleId: "com.example.internal",
+          version: "1.4.0",
+          source: "upload",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Internal.ipa",
+          contentType: "application/octet-stream",
+          size: 3,
+          sha256,
+          r2Key: "a/org-1/app-ipa/sha",
+          notes: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      readApplicationObject: async () => new Uint8Array([9, 8, 7]),
+    });
+
+    await run(backend.appleManagementCheckin(scope));
+
+    expect(commands(db, "InstallApplication")).toHaveLength(0);
+  });
+
+  it("re-queues a failed legacy .ipa install by application id", async () => {
+    const { db, backend } = setup({
+      device: device({ osEdition: "iOS", osVersion: "17.0" }),
+      configurationData: { applicationId: "app-legacy-ipa" },
+      applications: [
+        {
+          id: "app-legacy-ipa",
+          organizationId: "org-1",
+          name: "Legacy",
+          platform: "apple",
+          bundleId: null,
+          version: "1.0",
+          source: "upload",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Legacy.ipa",
+          contentType: "application/octet-stream",
+          size: 3,
+          sha256,
+          r2Key: "a/org-1/app-legacy-ipa/sha",
+          notes: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      installers: [
+        {
+          id: "installer-legacy-ipa",
+          organizationId: "org-1",
+          applicationId: "app-legacy-ipa",
+          platform: "apple",
+          source: "upload",
+          bundleId: "com.example.legacy",
+          version: "1.0",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Legacy.ipa",
+          contentType: "application/octet-stream",
+          size: 3,
+          sha256,
+          r2Key: "a/org-1/app-legacy-ipa/sha",
+          minOsVersion: null,
+          requiredCapability: null,
+          priority: 0,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      readApplicationObject: async () => new Uint8Array([9, 8, 7]),
+    });
+
+    const applicationDevices = (db.store[tableName(schema.applicationDevice)] ??= []);
+
+    applicationDevices.push({
+      deviceId: "device-1",
+      applicationId: "app-legacy-ipa",
+      __table: tableName(schema.applicationDevice),
+    });
+
+    await run(backend.appleManagementCheckin(scope));
+
+    const [first] = commands(db, "InstallApplication");
+    expect(first).toBeTruthy();
+
+    await run(
+      backend.appleDeviceEvent(
+        scope,
+        CommandResultEvent.make({
+          commandUUID: String(first.id),
+          status: "Error",
+        }),
+      ),
+    );
+
+    const installs = commands(db, "InstallApplication");
+
+    expect(installs.length).toBeGreaterThanOrEqual(2);
+    expect(installs.at(-1)!.status).toBe("queued");
+  });
+
+  it("refuses to serve a manifest for a package upload", async () => {
+    const { backend } = setup({
+      applications: [
+        {
+          id: "app-1",
+          organizationId: "org-1",
+          name: "Slack",
+          platform: "apple",
+          bundleId: "com.tinyspeck.slackmacgap",
+          version: "4.0",
+          source: "upload",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Slack.pkg",
+          contentType: "application/vnd.apple.installer+xml",
+          size: 4,
+          sha256,
+          r2Key: "a/org-1/app-1/sha",
+          notes: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      readApplicationObject: async () => pkg,
+    });
+
+    const token = await signAppleAssetToken(authSecret, {
+      policyId: "app-1",
+      kind: CATALOGUE_APPLICATION_ASSET_KIND,
+      deviceId: "device-1",
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+    });
+
+    await expect(
+      run(
+        backend.getAppleManifest!(undefined, catalogueApplicationAssetIdentifier("app-1"), token),
+      ),
+    ).resolves.toBeNull();
+  });
+
   it("binds a catalogue package URL to the synthetic asset kind", async () => {
     const token = await signAppleAssetToken(authSecret, {
       policyId: "app-1",
@@ -519,5 +799,51 @@ describe("Apple policy application delivery", () => {
     await expect(
       run(backend.getAppleAsset(undefined, catalogueApplicationAssetIdentifier("app-1"), token)),
     ).resolves.toMatchObject({ content: pkg });
+  });
+
+  it("refuses a catalogue object stored under another tenant prefix", async () => {
+    const token = await signAppleAssetToken(authSecret, {
+      policyId: "app-1",
+      kind: CATALOGUE_APPLICATION_ASSET_KIND,
+      deviceId: "device-1",
+      expiresAt: Math.floor(Date.now() / 1000) + 60,
+    });
+
+    let reads = 0;
+
+    const { backend } = setup({
+      applications: [
+        {
+          id: "app-1",
+          organizationId: "org-1",
+          name: "Imported",
+          platform: "apple",
+          bundleId: "com.example.imported",
+          version: "1.0",
+          source: "upload",
+          manifestUrl: null,
+          storeId: null,
+          fileName: "Imported.pkg",
+          contentType: "application/octet-stream",
+          size: pkg.byteLength,
+          sha256,
+          // A row written before key validation, or by a cutover import.
+          r2Key: "a/org-2/app-1/sha",
+          notes: null,
+          createdAt: at,
+          updatedAt: at,
+        },
+      ],
+      readApplicationObject: async () => {
+        reads += 1;
+
+        return pkg;
+      },
+    });
+
+    await expect(
+      run(backend.getAppleAsset(undefined, catalogueApplicationAssetIdentifier("app-1"), token)),
+    ).resolves.toBeNull();
+    expect(reads).toBe(0);
   });
 });

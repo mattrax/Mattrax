@@ -1,5 +1,6 @@
 import { Effect, Option, Schema } from "effect";
-import { parsePlist, serializePlist, type PlistValue } from "@mattrax/plist";
+import { parsePlist, serializePlist } from "@mattrax/plist";
+import type { PlistValue } from "@mattrax/plist";
 
 /**
  * Apple delivery for Mattrax scripts.
@@ -61,8 +62,8 @@ const stableUuid = async (value: string): Promise<string> => {
     16,
   );
 
-  digest[6] = (digest[6]! & 0x0f) | 0x50;
-  digest[8] = (digest[8]! & 0x3f) | 0x80;
+  digest[6] = (digest[6] & 0x0f) | 0x50;
+  digest[8] = (digest[8] & 0x3f) | 0x80;
   const hex = Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
 
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
@@ -70,6 +71,13 @@ const stableUuid = async (value: string): Promise<string> => {
 
 /** Profile identifier for a script; stable across edits so a reinstall replaces it. */
 export const scriptProfileIdentifier = (scriptId: string) => `com.mattrax.script.${scriptId}`;
+
+/**
+ * The outer `.mobileconfig` identifier the device reports. Delivery keys the
+ * installed map by this value, while the payload keeps the shorter identifier.
+ */
+export const scriptProfileDocumentIdentifier = (scriptId: string) =>
+  `${scriptProfileIdentifier(scriptId)}.profile`;
 
 /** Legacy trigger names the agent understands. */
 type ScriptTriggerPayload =
@@ -145,12 +153,12 @@ export const scriptPayload = async (
  * across reinstalls.
  */
 export const buildScriptProfile = async (input: ScriptPayloadInput): Promise<Uint8Array> => {
-  const identifier = scriptProfileIdentifier(input.scriptId);
+  const documentIdentifier = scriptProfileDocumentIdentifier(input.scriptId);
 
   const profile: PlistValue = {
     PayloadContent: [await scriptPayload(input)],
     PayloadDisplayName: `Mattrax script: ${input.name}`.slice(0, 120),
-    PayloadIdentifier: `${identifier}.profile`,
+    PayloadIdentifier: documentIdentifier,
     PayloadOrganization: "Mattrax",
     PayloadType: "Configuration",
     PayloadUUID: await stableUuid(`mattrax:script-profile:${input.scriptId}`),

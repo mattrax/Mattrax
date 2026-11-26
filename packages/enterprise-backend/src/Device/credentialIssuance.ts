@@ -1,9 +1,11 @@
-import { Effect, Exit, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect, Exit } from "effect";
 import { and, eq, gte, inArray } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import type { ServerCertificateInfo } from "@mattrax/enterprise-domain";
 import { ensureScepCa } from "@mattrax/scep";
-import { ScepRepositoryLive } from "@mattrax/mdm-apple";
+import { ScepRepositoryLive } from "@mattrax/mdm-core";
 import { exportApnsKeyJwk, generateApnsKeyPair } from "@mattrax/apns";
 import { sealSecret } from "@mattrax/crypto";
 import { loadCredentialHealth } from "./credentialHealth.ts";
@@ -138,8 +140,8 @@ const recordSystemAudit = (
       createdAt: input.now,
     });
   }).pipe(
-    Effect.catch((cause) =>
-      Effect.logWarning("Failed to write maintenance audit entry", input.action, cause),
+    Effect.catch((error) =>
+      Effect.logWarning("Failed to write maintenance audit entry", input.action, error),
     ),
     Effect.map(() => undefined),
   );
@@ -184,8 +186,8 @@ const recordIssuanceFailureOncePerDay = (
         : { reason: input.reason },
     });
   }).pipe(
-    Effect.catch((cause) =>
-      Effect.logWarning("Failed to record SCEP CA issuance failure", input.organizationId, cause),
+    Effect.catch((error) =>
+      Effect.logWarning("Failed to record SCEP CA issuance failure", input.organizationId, error),
     ),
   );
 

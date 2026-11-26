@@ -1,27 +1,28 @@
-import { Effect, Layer, Match, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect, Layer, Match } from "effect";
 import { HttpRouter } from "effect/http";
 import {
   ManagementBackend,
   ManagementManifest,
   ManagementNotSupported,
   UnknownDevice,
-  type WindowsDeviceEvent,
-  type WindowsDiscoveryRequest,
-  type WindowsEnrollmentPolicy,
-  type WindowsEnrollmentRequest,
-  type WindowsManagementRequest,
-  type WindowsManagementResponse,
-  type WindowsManagementScope,
 } from "@mattrax/management-backend";
+import type {
+  WindowsDeviceEvent,
+  WindowsDiscoveryRequest,
+  WindowsEnrollmentPolicy,
+  WindowsEnrollmentRequest,
+  WindowsManagementRequest,
+  WindowsManagementResponse,
+  WindowsManagementScope,
+} from "@mattrax/management-backend";
+import { WindowsMdmService, WindowsMdmServiceLive, windowsMdmRoutes } from "@mattrax/dm-windows";
 import {
   DiscoverResponse,
   GetPoliciesResponse,
   RequestSecurityTokenResponseCollection,
-  WindowsMdmService,
-  WindowsMdmServiceLive,
-  windowsMdmRoutes,
-  parseSyncML,
-} from "@mattrax/dm-windows";
+} from "@mattrax/dm-windows/messages";
+import { parseSyncML } from "@mattrax/dm-windows/syncml";
 import { deserializeSoapElement, extractSoapBody } from "@mattrax/soap";
 
 export type WindowsHarnessState = {

@@ -6,8 +6,7 @@ const collections = [
     id: "windows/settings/access-denied-assistance",
     properties: [
       {
-        address:
-          "./Device/Vendor/MSFT/Policy/Config/ADMX_srmfci/AccessDeniedConfiguration",
+        address: "./Device/Vendor/MSFT/Policy/Config/ADMX_srmfci/AccessDeniedConfiguration",
       },
       {
         address: "./Device/Vendor/MSFT/Policy/Config/ADMX_srmfci/EnableShellAccessCheck",
@@ -102,10 +101,7 @@ describe("matchAdmxCataloguePolicy", () => {
 
   it("matches by name and class", () => {
     expect(
-      matchAdmxCataloguePolicy(
-        { name: "AccessDeniedConfiguration", className: "machine" },
-        index,
-      ),
+      matchAdmxCataloguePolicy({ name: "AccessDeniedConfiguration", className: "machine" }, index),
     ).toEqual({
       status: "matched",
       entry: expect.objectContaining({ area: "ADMX_srmfci", scope: "device" }),
@@ -198,7 +194,10 @@ describe("matchAdmxCataloguePolicy", () => {
 
   it("reports a missing lookup instead of guessing", () => {
     expect(
-      matchAdmxCataloguePolicy({ name: "AccessDeniedConfiguration", className: "machine" }, undefined),
+      matchAdmxCataloguePolicy(
+        { name: "AccessDeniedConfiguration", className: "machine" },
+        undefined,
+      ),
     ).toEqual({ status: "unmatched", reason: expect.stringMatching(/lookup could not be loaded/) });
   });
 });

@@ -31,6 +31,15 @@ export type DeviceQueryHealth = typeof DeviceHealthLevel.Type | "stale";
 
 const DeviceFileVault = Schema.Literals(["enabled", "disabled", "unknown"]);
 
+/**
+ * Identity provider that provisioned a directory user, as recorded on
+ * `user.source`. Entra covers the tenant's SSO/Graph import; `scim` is a
+ * generic SCIM directory; `manual` users were created by an administrator.
+ */
+export const DeviceUserSource = Schema.Literals(["manual", "entra", "google", "scim"]);
+
+export type DeviceUserSource = typeof DeviceUserSource.Type;
+
 const TextField = Schema.Literals([
   "name",
   "model",
@@ -40,10 +49,25 @@ const TextField = Schema.Literals([
   "batteryHealth",
 ]);
 
+/**
+ * Conditions that read the directory users linked to a device rather than the
+ * device itself. They are part of the shared query language so a dynamic group
+ * can express "signed-in user's domain is …", but a caller that has no linked
+ * users (for example a device-table filter) must leave `DeviceQueryDevice.users`
+ * undefined: user conditions then match nothing, including `ne` ones.
+ */
+const UserTextField = Schema.Literals(["userEmail", "userDomain", "userName", "userExternalId"]);
+
 const TextCondition = Schema.Struct({
-  field: TextField,
+  field: Schema.Union([TextField, UserTextField]),
   op: Schema.optional(Schema.Literals(["eq", "ne", "contains", "prefix"])),
   value: Schema.String,
+});
+
+const UserSourceCondition = Schema.Struct({
+  field: Schema.Literal("userSource"),
+  op: Schema.optional(Schema.Literals(["eq", "ne"])),
+  value: DeviceUserSource,
 });
 
 const PlatformCondition = Schema.Struct({
@@ -100,8 +124,25 @@ const ApplicationCondition = Schema.Struct({
   value: Schema.String,
 });
 
+/**
+ * Membership in another device group.
+ *
+ * `in` matches when the device is a member of **any** listed group; `notIn`
+ * matches when it is a member of **none**. Group ids are tenant-scoped and
+ * resolved by the caller through {@link DeviceQueryEvaluationOptions.groupMembership}.
+ * Group conditions are only offered by the dynamic-group builder; a query with
+ * no group membership context (a device table, for example) never matches one.
+ */
+const GroupCondition = Schema.Struct({
+  field: Schema.Literal("group"),
+  op: Schema.optional(Schema.Literals(["in", "notIn"])),
+  /** One group id or a non-empty list of ids. */
+  value: Schema.Union([Schema.String, Schema.Array(Schema.String)]),
+});
+
 export const DeviceCondition = Schema.Union([
   TextCondition,
+  UserSourceCondition,
   PlatformCondition,
   OsVersionCondition,
   StatusCondition,
@@ -110,9 +151,33 @@ export const DeviceCondition = Schema.Union([
   FileVaultCondition,
   ActivationCondition,
   ApplicationCondition,
+  GroupCondition,
 ]);
 
 export type DeviceCondition = typeof DeviceCondition.Type;
+
+/**
+ * The tenant-scoped group ids a condition references.
+ *
+ * A group condition accepts a bare id for convenience, so both shapes are
+ * normalised here. Every other field returns an empty list.
+ */
+export const deviceConditionGroupIds = (condition: DeviceCondition): ReadonlyArray<string> => {
+  if (condition.field !== "group") return [];
+
+  return Schema.is(Schema.String)(condition.value) ? [condition.value] : [...condition.value];
+};
+
+/** Every group id a query references, across all three condition lists. */
+export const deviceQueryGroupIds = (
+  query: DeviceQuery | null | undefined,
+): ReadonlyArray<string> => [
+  ...new Set(
+    [...(query?.all ?? []), ...(query?.any ?? []), ...(query?.none ?? [])].flatMap(
+      deviceConditionGroupIds,
+    ),
+  ),
+];
 
 /**
  * All lists are optional. `all` is AND, `any` is OR, `none` is NOT. A query
@@ -140,6 +205,17 @@ export const deviceQueryProblem = (query: DeviceQuery | null | undefined): strin
     for (const condition of list) {
       if (Schema.is(Schema.String)(condition.value) && condition.value.trim() === "")
         return `The ${condition.field} condition needs a value`;
+
+      if (condition.field === "group") {
+        const ids = deviceConditionGroupIds(condition).filter((id) => id.trim() !== "");
+
+        if (ids.length === 0) return "The group condition needs at least one group";
+
+        if (ids.length !== deviceConditionGroupIds(condition).length)
+          return "A group condition cannot contain an empty group id";
+
+        continue;
+      }
 
       if (
         (condition.field === "staleDays" || condition.field === "enrolledDays") &&
@@ -179,11 +255,48 @@ export type DeviceQueryDevice = {
     readonly bundleId: string;
     readonly name?: string | null;
   }>;
+  /**
+   * Directory users linked to the device. `undefined` means "not loaded" and
+   * makes every user condition fail; an empty array means "no linked users" and
+   * is a real answer (positive conditions fail, negative ones hold).
+   */
+  readonly users?: ReadonlyArray<DeviceQueryUser>;
+};
+
+export type DeviceQueryUser = {
+  /** Present when the caller can attribute a matched condition to a person. */
+  readonly id?: string;
+  readonly email?: string | null;
+  readonly name?: string | null;
+  readonly externalId?: string | null;
+  /** `manual`, `entra` or `scim`. */
+  readonly source?: string | null;
+};
+
+/**
+ * Materialised membership of a group referenced by a `group` condition.
+ *
+ * `problem` is set when the referenced group cannot be used (a circular
+ * reference, or a group that no longer exists). A condition on such a group
+ * never matches, and callers that evaluate a whole dynamic group must skip
+ * that group rather than materialise a misleadingly empty result.
+ */
+export type DeviceQueryGroupMembership = {
+  readonly members: ReadonlySet<string>;
+  readonly problem?: string | null;
 };
 
 export type DeviceQueryEvaluationOptions = {
   /** Injectable clock so day comparisons are deterministic in tests. */
   readonly now?: Date;
+  /** The device being evaluated; required to resolve `group` conditions. */
+  readonly deviceId?: string;
+  /**
+   * Membership for every group referenced by the query, keyed by group id.
+   * Callers without it (device tables, dashboards) leave group conditions
+   * unanswered, so they never match.
+   */
+  readonly groupMembership?: ReadonlyMap<string, DeviceQueryGroupMembership>;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -337,11 +450,92 @@ const matchesApplication = (
   return condition.op === "lacks" ? !found : found;
 };
 
+/** The domain part of an email address, lowercased, or `null`. */
+const emailDomain = (email: string | null | undefined): string | null => {
+  const text = email?.trim().toLowerCase() ?? "";
+  const at = text.lastIndexOf("@");
+
+  return at > 0 && at < text.length - 1 ? text.slice(at + 1) : null;
+};
+
+/**
+ * Evaluate a condition against the users linked to a device.
+ *
+ * Semantics (documented on `DeviceQueryUser` and in the group editor):
+ * - `undefined` user data means the answer is unknown, so the condition fails
+ *   (including `ne`, which would otherwise sweep in every device).
+ * - Positive operators are existential: at least one linked user must match.
+ *   Two user conditions in `all` therefore do not have to describe the same
+ *   person.
+ * - `ne` is universal: no linked user may match. A device with no linked users
+ *   satisfies it, because nobody has the excluded value.
+ */
+const userConditionMatches = (
+  device: DeviceQueryDevice,
+  matches: (user: DeviceQueryUser) => boolean,
+  negative: boolean,
+): boolean => {
+  if (device.users === undefined) return false;
+
+  return negative ? device.users.every((user) => !matches(user)) : device.users.some(matches);
+};
+
+const matchesUserText = (
+  device: DeviceQueryDevice,
+  read: (user: DeviceQueryUser) => string | null | undefined,
+  condition: { op?: string; value: string },
+) => {
+  const op = condition.op ?? "contains";
+
+  if (op === "ne")
+    return userConditionMatches(
+      device,
+      (user) => textMatches(read(user), { op: "eq", value: condition.value }),
+      true,
+    );
+
+  return userConditionMatches(device, (user) => textMatches(read(user), condition), false);
+};
+
+type ConditionContext = {
+  readonly now: Date;
+  readonly deviceId?: string;
+  readonly groupMembership?: ReadonlyMap<string, DeviceQueryGroupMembership>;
+};
+
+const matchesGroupCondition = (
+  condition: Extract<DeviceCondition, { field: "group" }>,
+  context: ConditionContext,
+): boolean => {
+  const ids = deviceConditionGroupIds(condition);
+  const deviceId = context.deviceId;
+
+  if (ids.length === 0 || deviceId === undefined) return false;
+
+  // An unresolved reference is not "no members": treating it as empty would
+  // make `notIn` match every device. Fail the condition and let the caller
+  // skip (and report) the group instead.
+  const resolved = ids.every((id) => {
+    const membership = context.groupMembership?.get(id);
+
+    return membership != null && !membership.problem;
+  });
+
+  if (!resolved) return false;
+
+  const member = ids.some((id) => context.groupMembership?.get(id)?.members.has(deviceId));
+  const op = condition.op ?? "in";
+
+  return op === "notIn" ? !member : member;
+};
+
 const matchesCondition = (
   condition: DeviceCondition,
   device: DeviceQueryDevice,
-  now: Date,
+  context: ConditionContext,
 ): boolean => {
+  const { now } = context;
+
   switch (condition.field) {
     case "name":
     case "model":
@@ -350,6 +544,21 @@ const matchesCondition = (
     case "osEdition":
     case "batteryHealth":
       return textMatches(device[condition.field], condition);
+    case "userEmail":
+      return matchesUserText(device, (user) => user.email, condition);
+    case "userDomain":
+      return matchesUserText(device, (user) => emailDomain(user.email), condition);
+    case "userName":
+      return matchesUserText(device, (user) => user.name, condition);
+    case "userExternalId":
+      return matchesUserText(device, (user) => user.externalId, condition);
+    case "userSource": {
+      const expected = normalized(condition.value);
+      const matches = (user: DeviceQueryUser) => normalized(user.source) === expected;
+
+      return userConditionMatches(device, matches, condition.op === "ne");
+    }
+
     case "platform":
     case "proto": {
       const actual = normalized(device.proto);
@@ -423,6 +632,8 @@ const matchesCondition = (
 
     case "application":
       return matchesApplication(device, condition);
+    case "group":
+      return matchesGroupCondition(condition, context);
     default:
       return false;
   }
@@ -438,27 +649,33 @@ export const evaluateDeviceQuery = (
   options: DeviceQueryEvaluationOptions = {},
 ): boolean => {
   if (!query) return true;
-  const now = options.now ?? new Date();
+  const context: ConditionContext = {
+    now: options.now ?? new Date(),
+    ...(options.deviceId !== undefined ? { deviceId: options.deviceId } : {}),
+    ...(options.groupMembership !== undefined ? { groupMembership: options.groupMembership } : {}),
+  };
   const every = query.all ?? [];
 
-  if (!every.every((condition) => matchesCondition(condition, device, now))) return false;
+  if (!every.every((condition) => matchesCondition(condition, device, context))) return false;
   const some = query.any ?? [];
 
-  if (some.length > 0 && !some.some((condition) => matchesCondition(condition, device, now)))
+  if (some.length > 0 && !some.some((condition) => matchesCondition(condition, device, context)))
     return false;
   const none = query.none ?? [];
 
-  if (none.some((condition) => matchesCondition(condition, device, now))) return false;
+  if (none.some((condition) => matchesCondition(condition, device, context))) return false;
 
   return true;
 };
 
 /** The URL/search representation used by the device table. */
 const quoteValue = (value: string) =>
-  /[\s"]/u.test(value) ? `"${value.replaceAll('"', '\\"')}"` : value;
+  /[\s"]/u.test(value) ? `"${value.replaceAll('"', String.raw`\"`)}"` : value;
 
 const unquoteValue = (value: string) =>
-  value.startsWith('"') && value.endsWith('"') ? value.slice(1, -1).replaceAll('\\"', '"') : value;
+  value.startsWith('"') && value.endsWith('"')
+    ? value.slice(1, -1).replaceAll(String.raw`\"`, '"')
+    : value;
 
 const operatorText = (condition: DeviceCondition): string => {
   const op = condition.op;
@@ -472,6 +689,8 @@ const operatorText = (condition: DeviceCondition): string => {
       return op === "ne" ? "is not" : "is";
     case "application":
       return op === "lacks" ? "lacks" : "has";
+    case "group":
+      return op === "notIn" ? "is not in" : "is in";
     case "fileVault":
       return "is";
     case "activation":
@@ -509,9 +728,11 @@ const operatorText = (condition: DeviceCondition): string => {
 
 const formatCondition = (condition: DeviceCondition): string => {
   const value =
-    condition.field === "staleDays" || condition.field === "enrolledDays"
-      ? String(condition.value)
-      : condition.value;
+    condition.field === "group"
+      ? deviceConditionGroupIds(condition).join(",")
+      : condition.field === "staleDays" || condition.field === "enrolledDays"
+        ? String(condition.value)
+        : condition.value;
 
   return `${condition.field} ${operatorText(condition)} ${quoteValue(String(value))}`;
 };
@@ -616,6 +837,35 @@ const parseOperator = (field: string, operator: string, value: string): ParsedCo
 
       return null;
 
+    case "group": {
+      const ids = value
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id !== "");
+
+      if (ids.length === 0) return null;
+
+      if (op === "is not in" || op === "not in") return { field, op: "notIn", value: ids };
+
+      if (op === "is in" || op === "in") return { field, op: "in", value: ids };
+
+      return null;
+    }
+
+    case "userSource": {
+      if (!Schema.is(DeviceUserSource)(value)) return null;
+
+      if (op === "is not") return { field, op: "ne", value };
+
+      if (op === "is") return { field, op: "eq", value };
+
+      return null;
+    }
+
+    case "userEmail":
+    case "userDomain":
+    case "userName":
+    case "userExternalId":
     case "name":
     case "model":
     case "serial":
@@ -644,7 +894,7 @@ const splitAnd = (text: string): string[] => {
   let quoted = false;
 
   for (let index = 0; index < text.length; index++) {
-    const character = text[index]!;
+    const character = text[index];
 
     if (character === '"' && text[index - 1] !== "\\") quoted = !quoted;
 
@@ -674,12 +924,22 @@ export const parseDeviceQueryText = (text: string | null | undefined): DeviceQue
   const conditions: DeviceCondition[] = [];
 
   for (const clause of splitAnd(trimmed)) {
-    const match = clause.match(
-      /^([A-Za-z][A-Za-z0-9]*)\s+(is not|is|contains|starts with|has|lacks|older than|newer than|at most|at least|more than|less than|>=|<=|>|<|=)\s+(.+)$/i,
-    );
+    // The field comes first, then the operator. Group list operators are only
+    // recognised for `group`; otherwise `name is in stock` would be read as a
+    // group-style `in` clause and dropped.
+    const fieldMatch = clause.match(/^([A-Za-z][A-Za-z0-9]*)\s+(.+)$/);
+
+    if (!fieldMatch) continue;
+    const field = fieldMatch[1];
+    const rest = fieldMatch[2];
+    const operatorPattern =
+      field.toLowerCase() === "group"
+        ? /^(is not in|is in|not in|in)\s+(.+)$/i
+        : /^(is not|is|contains|starts with|has|lacks|older than|newer than|at most|at least|more than|less than|>=|<=|>|<|=)\s+(.+)$/i;
+    const match = rest.match(operatorPattern);
 
     if (!match) continue;
-    const condition = parseOperator(match[1]!, match[2]!, unquoteValue(match[3]!.trim()));
+    const condition = parseOperator(field, match[1], unquoteValue(match[2].trim()));
 
     if (condition) conditions.push(condition);
   }

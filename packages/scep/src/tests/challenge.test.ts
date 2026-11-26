@@ -5,7 +5,7 @@ import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { createScepChallenge, verifyScepChallenge } from "../challenge.js";
 import { ScepService } from "../service.js";
-import { ScepRepository } from "../repository.js";
+import type { ScepRepository } from "../repository.js";
 import { ScepError } from "../schema.js";
 import {
   buildPkcsReq,
@@ -16,7 +16,7 @@ import {
   mockScepRepository,
 } from "./helpers.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {

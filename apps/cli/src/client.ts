@@ -1,27 +1,36 @@
-import { Effect, Option, Schema } from "effect";
+import { Cause, Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import {
+  Headers,
+  HttpClient,
+  HttpClientError,
+  HttpClientRequest,
+  HttpClientResponse,
+} from "effect/http";
+import type {
   CreateGroupRequest as CreateGroupRequestSchema,
   CreatePolicyRequest as CreatePolicyRequestSchema,
   DeviceActionRequest as DeviceActionRequestSchema,
+  DeviceSearchQuery as DeviceSearchQuerySchema,
+  PatchGroupMembersRequest as PatchGroupMembersRequestSchema,
+  PatchGroupRequest as PatchGroupRequestSchema,
+  PatchPolicyRequest as PatchPolicyRequestSchema,
+} from "@mattrax/enterprise-domain/client";
+import {
   DeviceActionResponse as DeviceActionResponseSchema,
   DeviceHealthResponse as DeviceHealthResponseSchema,
   DeviceListResponse as DeviceListResponseSchema,
   DeviceRow as DeviceRowSchema,
-  DeviceSearchQuery as DeviceSearchQuerySchema,
   DeviceSearchResponse as DeviceSearchResponseSchema,
   GroupListResponse as GroupListResponseSchema,
   GroupNode as GroupNodeSchema,
   IdResponse as IdResponseSchema,
   MeResponse as MeResponseSchema,
-  PatchGroupMembersRequest as PatchGroupMembersRequestSchema,
-  PatchGroupRequest as PatchGroupRequestSchema,
-  PatchPolicyRequest as PatchPolicyRequestSchema,
   PolicyListResponse as PolicyListResponseSchema,
   PolicyRow as PolicyRowSchema,
   TenantEnrollmentInfo as TenantEnrollmentInfoSchema,
   TenantListResponse as TenantListResponseSchema,
 } from "@mattrax/enterprise-domain/client";
-import { CliFailure } from "./settings.ts";
+import { CliFailure } from "./failure.ts";
 
 type TenantList = typeof TenantListResponseSchema.Type;
 
@@ -132,6 +141,31 @@ export interface MattraxApi {
 
 const apiUrl = (origin: string, path: string): string => `${origin}/api/v1${path}`;
 
+const responseText = (
+  response: HttpClientResponse.HttpClientResponse,
+): Effect.Effect<string, HttpClientError.HttpClientError> => {
+  const web = HttpClientResponse.toWeb(response);
+
+  if (Option.isSome(web) && web.value.body === null) return Effect.succeed("");
+
+  return response.stream.pipe(
+    Stream.runCollect,
+    Effect.map((chunks) => {
+      const arrays = Array.from(chunks);
+      const length = arrays.reduce((total, chunk) => total + chunk.byteLength, 0);
+      const bytes = new Uint8Array(length);
+      let offset = 0;
+
+      for (const chunk of arrays) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+
+      return new TextDecoder().decode(bytes);
+    }),
+  );
+};
+
 const decodeErrorBody = (body: string): Option.Option<typeof ApiErrorBody.Type> => {
   try {
     return Schema.decodeUnknownOption(ApiErrorBody)(JSON.parse(body));
@@ -140,17 +174,12 @@ const decodeErrorBody = (body: string): Option.Option<typeof ApiErrorBody.Type> 
   }
 };
 
-const errorFromResponse = (
-  status: number,
-  statusText: string,
-  body: string,
-  requestId: string | null,
-): CliFailure => {
+const errorFromResponse = (status: number, body: string, requestId: string | null): CliFailure => {
   const parsed = decodeErrorBody(body);
 
   const rawDetail = Option.isSome(parsed)
     ? (parsed.value.message ?? "Request failed")
-    : body.trim().slice(0, 500) || statusText || "Request failed";
+    : body.trim().slice(0, 500) || "Request failed";
 
   const detail = rawDetail.slice(0, 500);
 
@@ -163,56 +192,78 @@ const errorFromResponse = (
 };
 
 /**
- * A small fetch-based client for the versioned Enterprise API. Every response
+ * A small HttpClient-based client for the versioned Enterprise API. Every response
  * is decoded with the shared `@mattrax/enterprise-domain` schema so a server
  * change fails loudly instead of producing partial output.
  */
-export const createHttpApi = (origin: string, token: string): MattraxApi => {
+export const createHttpApi = (
+  client: HttpClient.HttpClient,
+  origin: string,
+  token: string,
+): MattraxApi => {
   const call = <A>(
     schema: Schema.ConstraintDecoder<A, never>,
     request: ApiRequest,
   ): Effect.Effect<A, CliFailure> =>
     Effect.gen(function* () {
-      const url = new URL(apiUrl(origin, request.path));
+      const requestForMethod = {
+        GET: HttpClientRequest.get,
+        POST: HttpClientRequest.post,
+        PATCH: HttpClientRequest.patch,
+        PUT: HttpClientRequest.put,
+        DELETE: HttpClientRequest.delete,
+      }[request.method];
+      let httpRequest = requestForMethod(apiUrl(origin, request.path)).pipe(
+        HttpClientRequest.setHeaders({
+          authorization: `Bearer ${token}`,
+          accept: "application/json",
+        }),
+      );
 
-      for (const [key, value] of Object.entries(request.query ?? {}))
-        if (value !== undefined) url.searchParams.set(key, String(value));
+      if (request.query) {
+        const query = Object.fromEntries(
+          Object.entries(request.query).filter(
+            (entry): entry is [string, string | number] => entry[1] !== undefined,
+          ),
+        );
 
-      const headers = new Headers({
-        authorization: `Bearer ${token}`,
-        accept: "application/json",
-      });
+        httpRequest = HttpClientRequest.setUrlParams(httpRequest, query);
+      }
 
-      if (request.body) headers.set("content-type", "application/json");
+      if (request.body)
+        httpRequest = HttpClientRequest.bodyText(httpRequest, request.body, "application/json");
 
-      const response = yield* Effect.tryPromise({
-        try: (signal) =>
-          fetch(url, {
-            method: request.method,
-            headers,
-            body: request.body,
-            signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
-          }),
-        catch: (cause) =>
-          new CliFailure({
-            message: `Could not reach ${origin}: ${
-              cause instanceof Error ? cause.message : "network error"
-            }`,
-          }),
-      });
+      const { response, text } = yield* client.execute(httpRequest).pipe(
+        Effect.mapError(
+          (cause) =>
+            new CliFailure({
+              message: `Could not reach ${origin}: ${
+                cause instanceof Error ? cause.message : "network error"
+              }`,
+            }),
+        ),
+        Effect.flatMap((response) =>
+          responseText(response).pipe(
+            Effect.mapError(
+              () => new CliFailure({ message: `Could not read the response from ${origin}.` }),
+            ),
+            Effect.map((text) => ({ response, text })),
+          ),
+        ),
+        Effect.timeout(30_000),
+        Effect.mapError((cause) =>
+          Cause.isTimeoutError(cause)
+            ? new CliFailure({ message: `Request to ${origin} timed out after 30 seconds.` })
+            : cause,
+        ),
+      );
 
-      const text = yield* Effect.tryPromise({
-        try: () => response.text(),
-        catch: () => new CliFailure({ message: `Could not read the response from ${origin}.` }),
-      });
-
-      if (!response.ok)
+      if (response.status < 200 || response.status >= 300)
         return yield* Effect.fail(
           errorFromResponse(
             response.status,
-            response.statusText,
             text,
-            response.headers.get("x-request-id"),
+            Option.getOrUndefined(Headers.get(response.headers, "x-request-id")) ?? null,
           ),
         );
 
@@ -343,3 +394,14 @@ export const createHttpApi = (origin: string, token: string): MattraxApi => {
       }),
   };
 };
+
+/** Process-bound API layer; tests can substitute HttpClient or this service. */
+export class MattraxApiLive extends Context.Service<MattraxApiLive, MattraxApi>()(
+  "@mattrax/cli/MattraxApiLive",
+) {
+  static readonly layer = (origin: string, token: string) =>
+    Layer.effect(
+      MattraxApiLive,
+      Effect.map(HttpClient.HttpClient, (client) => createHttpApi(client, origin, token)),
+    );
+}

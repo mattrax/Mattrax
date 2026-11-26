@@ -7,7 +7,8 @@ import fs from "node:fs";
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Plugin, defineConfig } from "vite";
+import { defineConfig } from "vite";
+import type { Plugin } from "vite";
 import { apiWorker } from "../cloud/cloudflare.config.ts";
 import { docsRoutesFromBuildFiles, docsRoutesFromSourceFiles } from "./src/lib/public-routes.ts";
 
@@ -55,11 +56,13 @@ const docsBuildDirectory = fileURLToPath(new URL("../../doc_build/", import.meta
  */
 const clientOnlyPreloadRoutes = [
   "routes/(dashboard)/t/[tenantId]/applications/[applicationId].tsx",
-  "routes/(dashboard)/t/[tenantId]/dashboards/[dashboardId].tsx",
+  "routes/(dashboard)/t/[tenantId]/dashboards/[dashboardId]/index.tsx",
+  "routes/(dashboard)/t/[tenantId]/dashboards/[dashboardId]/reports.tsx",
   "routes/(dashboard)/t/[tenantId]/devices/[deviceId].tsx",
   "routes/(dashboard)/t/[tenantId]/groups/[groupId].tsx",
   "routes/(dashboard)/t/[tenantId]/groups/new.tsx",
   "routes/(dashboard)/t/[tenantId]/policies/[policyId]/assignments.tsx",
+  "routes/(dashboard)/t/[tenantId]/policies/[policyId]/deployment.tsx",
   "routes/(dashboard)/t/[tenantId]/policies/[policyId]/design.tsx",
   "routes/(dashboard)/t/[tenantId]/policies/[policyId]/editor.tsx",
   "routes/(dashboard)/t/[tenantId]/policies/[policyId]/index.tsx",
@@ -68,16 +71,22 @@ const clientOnlyPreloadRoutes = [
   "routes/(dashboard)/t/[tenantId]/settings/administrators.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/attributes.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/audit.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/backups.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/billing.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/storage.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/delivery.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/enrollment.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/identity/directory.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/identity/domains.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/migration/index.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/migration/[migrationId].tsx",
   "routes/(dashboard)/t/[tenantId]/settings/identity/index.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/index.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/integrations.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/legal.tsx",
   "routes/(dashboard)/t/[tenantId]/settings/management.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/migration/export.tsx",
+  "routes/(dashboard)/t/[tenantId]/settings/os-updates.tsx",
 ];
 
 const emptyRouteConfig = "\0mattrax:client-only-preload";

@@ -1,6 +1,13 @@
 import type { JSX } from "@solidjs/web";
 import { createSignal, createUniqueId, Show } from "solid-js";
-import { Badge, HoverCard, HoverCardContent, HoverCardTrigger, type BadgeProps } from "@mattrax/ui";
+import {
+  Badge,
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+  SegmentedProgress,
+} from "@mattrax/ui";
+import type { BadgeProps } from "@mattrax/ui";
 import { formatDate, formatDeviceDate, relativeTime } from "~/components/mdm/common";
 import {
   Laptop,
@@ -118,11 +125,11 @@ const plural = (count: number, singular: string, pluralForm: string) =>
 function Fact(props: { label: string; title?: string; mono?: boolean; children: JSX.Element }) {
   return (
     <div class="flex items-baseline gap-3">
-      <dt class="label-caps w-[4.35rem] shrink-0">{props.label}</dt>
+      <dt class="label-caps w-17 shrink-0">{props.label}</dt>
       <dd
         class={cn(
-          "min-w-0 flex-1 truncate text-[12px] leading-5 text-foreground/90",
-          props.mono && "font-mono text-[11px]",
+          "min-w-0 flex-1 truncate text-xs leading-5 text-foreground/90",
+          props.mono && "font-mono text-xs",
         )}
         title={props.title}
       >
@@ -142,13 +149,13 @@ function Header(props: {
     <div class="flex items-start gap-3 px-3.5 pt-3.5 pb-2.5">
       <span
         aria-hidden="true"
-        class="flex size-9 shrink-0 items-center justify-center rounded-[10px] border border-border bg-surface text-muted-foreground [&_svg]:size-[18px]"
+        class="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground [&_svg]:size-4.5"
       >
         {props.icon}
       </span>
       <div class="min-w-0 flex-1 pt-0.5">
         <p
-          class="truncate text-[13.5px] leading-4 font-[560] tracking-[-0.012em] text-foreground"
+          class="truncate text-sm leading-4 font-semibold tracking-tight text-foreground"
           title={props.title}
         >
           {props.title}
@@ -156,7 +163,7 @@ function Header(props: {
         <Show when={props.subtitle}>
           {(subtitle) => (
             <p
-              class="mt-1 truncate text-[11.5px] leading-4 text-muted-foreground"
+              class="mt-1 truncate text-xs leading-4 text-muted-foreground"
               title={subtitle()}
             >
               {subtitle()}
@@ -204,9 +211,11 @@ function DeviceCard(props: { device: DeviceRow }) {
           device().model ? ` · ${device().model}` : ""
         }`}
         badge={
-          <Badge variant={status().variant} dot={status().dot} class="capitalize">
-            {device().status}
-          </Badge>
+          <span class="capitalize">
+            <Badge variant={status().variant} dot={status().dot}>
+              {device().status}
+            </Badge>
+          </span>
         }
       />
       <Facts>
@@ -225,7 +234,7 @@ function DeviceCard(props: { device: DeviceRow }) {
         <Badge variant={health().variant} dot={health().dot}>
           {healthLabel(device().health?.level)}
         </Badge>
-        <span class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+        <span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {reasons().length > 0 ? reasons().join(" · ") : "All checks passing"}
         </span>
       </Footer>
@@ -246,22 +255,23 @@ function DeliveryBar(props: { delivery: NonNullable<PolicyRow["delivery"]> | und
     const pending = Math.max(0, 100 - done - failed);
 
     return [
-      { width: done, class: "bg-success" },
-      { width: pending, class: "bg-warning/30" },
-      { width: failed, class: "bg-destructive" },
+      { label: "Delivered", width: done, class: "bg-success" },
+      { label: "Pending", width: pending, class: "bg-warning/30" },
+      { label: "Failed", width: failed, class: "bg-destructive" },
     ].filter((segment) => segment.width > 0);
   };
 
   return (
     <Show when={segments().length > 0}>
-      <div class="flex h-1.5 w-full gap-px overflow-hidden rounded-full bg-hover">
-        {segments().map((segment) => (
-          <span
-            class={cn("h-full first:rounded-l-full last:rounded-r-full", segment.class)}
-            style={{ width: `${segment.width}%` }}
-          />
-        ))}
-      </div>
+      <SegmentedProgress
+        label="Policy delivery"
+        class="h-1.5"
+        segments={segments().map((segment) => ({
+          label: segment.label,
+          value: segment.width,
+          class: segment.class,
+        }))}
+      />
     </Show>
   );
 }
@@ -321,14 +331,14 @@ function PolicyCard(props: { policy: PolicyRow }) {
         <Show
           when={enabled()}
           fallback={
-            <span class="min-w-0 text-[11px] leading-relaxed text-muted-foreground">
+            <span class="min-w-0 text-xs leading-relaxed text-muted-foreground">
               {policyStatePresentation(policy()).description}
             </span>
           }
         >
           <DeliveryBar delivery={delivery()} />
           <span
-            class="min-w-0 shrink-0 text-[11px] text-muted-foreground"
+            class="min-w-0 shrink-0 text-xs text-muted-foreground"
             title={scope().devices.description}
           >
             {delivery() && delivery()!.trackedDevices > 0
@@ -368,7 +378,7 @@ function GroupCard(props: { group: GroupRow }) {
         </Fact>
       </Facts>
       <Footer>
-        <span class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+        <span class="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {dynamic()
             ? group().lastEvaluatedAt
               ? `Rules last evaluated ${relativeTime(group().lastEvaluatedAt)}`
@@ -387,7 +397,7 @@ function UserCard(props: { account: TenantAccount }) {
   return (
     <>
       <Header
-        icon={<span class="text-[11px] font-[600]">{initials(account().name)}</span>}
+        icon={<span class="text-xs font-semibold">{initials(account().name)}</span>}
         title={account().name}
         subtitle={account().email}
       />
@@ -409,7 +419,7 @@ function UserCard(props: { account: TenantAccount }) {
  * hover or focus. The preview is supplemental: everything in it is reachable
  * by following the link, so the card never traps focus or blocks the click.
  */
-export function EntityHoverCard(props: {
+export default function EntityHoverCard(props: {
   preview: EntityPreview;
   /** Omit for a preview on content that has no destination of its own. */
   href?: string;
@@ -447,12 +457,8 @@ export function EntityHoverCard(props: {
         id={id}
         aria-describedby={open() ? `${id}-content` : undefined}
         tabindex={props.href ? undefined : -1}
-        class={cn(
-          "rounded-[3px] focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
-          props.class,
-        )}
       >
-        {props.children}
+        <span class={props.class}>{props.children}</span>
       </HoverCardTrigger>
       <HoverCardContent id={`${id}-content`} role="tooltip" align="start">
         {content()}

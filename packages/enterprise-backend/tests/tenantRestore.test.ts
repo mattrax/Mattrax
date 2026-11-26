@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import type { R2Bucket } from "@mattrax/enterprise-core";
 import type { BackupActionError } from "../src/Tenant/backup.ts";
 import {
+  isTenantApplicationObjectKey,
   parseTenantRestoreBundle,
+  redactAuditObjectKeys,
   restoreTenantFromBackup,
-  type TenantRestoreError,
 } from "../src/Tenant/tenantRestore.ts";
+import type { TenantRestoreError } from "../src/Tenant/tenantRestore.ts";
 import { buildTenantExport } from "../src/Tenant/tenantExport.ts";
-import { makeDb, runEffect } from "./helpers.js";
+import { makeDb, makeOrganization, runEffect } from "./helpers.js";
 
 const failureReason = (failure: BackupActionError | TenantRestoreError | null) => failure?.reason;
 
@@ -82,20 +84,13 @@ const makeContext = () => {
   const db = makeDb();
   const timestamp = new Date();
 
-  const organization = {
+  const organization = makeOrganization({
     id: "org-1",
     name: "Acme",
     slug: "acme",
-    logo: null,
-    displayName: null,
-    supportEmail: null,
-    brandColor: null,
-    metadata: null,
-    stripeCustomerId: null,
-    onboardingFollowUpSentAt: null,
     createdAt: timestamp,
     updatedAt: timestamp,
-  };
+  });
 
   db.store.organization.push(organization);
   db.store.device.push({
@@ -158,6 +153,195 @@ const makeContext = () => {
 };
 
 describe("in-place tenant restore", () => {
+  it("restores nested group edges and exclusions", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    db.store.user.push({
+      id: "user-1",
+      organizationId: "org-1",
+      name: "Ada",
+      email: "ada@acme.test",
+      externalId: null,
+      source: "manual",
+      disabled: false,
+      createdAt: startedAt,
+      updatedAt: startedAt,
+    });
+
+    const nested = {
+      ...bundle,
+      groups: [
+        {
+          key: "group-child",
+          name: "Child",
+          policyKeys: [],
+          devices: [{ key: "device-1", name: "Laptop", serial: "SERIAL-1" }],
+        },
+        {
+          key: "group-parent",
+          name: "Parent",
+          policyKeys: [],
+          childGroupKeys: ["group-child"],
+          excludedUserEmails: ["ada@acme.test"],
+          excludedDeviceKeys: [],
+        },
+      ],
+    };
+
+    objects.set("backups/org-1/run-1.json", JSON.stringify(nested));
+
+    await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    const parent = db.store.enterprise_group.find(
+      (group: { name: string }) => group.name === "Parent",
+    );
+
+    const child = db.store.enterprise_group.find(
+      (group: { name: string }) => group.name === "Child",
+    );
+
+    expect(db.store.group_group).toMatchObject([
+      { parentGroupId: parent.id, childGroupId: child.id },
+    ]);
+
+    // Inherited rows are re-derived from the edge, not trusted from the bundle.
+    expect(db.store.group_device).toContainEqual({
+      groupId: parent.id,
+      deviceId: "device-1",
+      source: "nested",
+    });
+
+    expect(db.store.group_exclusion).toMatchObject([
+      { groupId: parent.id, target: "user", targetId: "user-1" },
+    ]);
+  });
+
+  it("preserves software catalogue provenance on restore", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    objects.set(
+      "backups/org-1/run-1.json",
+      JSON.stringify({
+        ...bundle,
+        applications: [
+          {
+            key: "app-1",
+            name: "Slack",
+            platform: "apple",
+            source: "store",
+            storeId: "803453959",
+            groupKeys: [],
+            catalogueTitleId: "slack",
+            catalogueMethodId: "macos-app-store",
+            catalogueTarget: "macos",
+            catalogueKind: "apple-app-store",
+          },
+        ],
+      }),
+    );
+
+    await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    expect(db.store.application[0]).toMatchObject({
+      name: "Slack",
+      catalogueTitleId: "slack",
+      catalogueMethodId: "macos-app-store",
+      catalogueTarget: "macos",
+      catalogueKind: "apple-app-store",
+    });
+  });
+
+  it("remaps group references in dynamic rules to the restored ids", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    const linked = {
+      ...bundle,
+      groups: [
+        { key: "group-pilot", name: "Pilot", policyKeys: [], devices: [] },
+        {
+          key: "group-ring",
+          name: "Ring",
+          kind: "dynamic",
+          rules: {
+            version: 1,
+            all: [{ field: "group", op: "in", value: ["group-pilot"] }],
+          },
+          policyKeys: [],
+          devices: [],
+        },
+      ],
+    };
+
+    objects.set("backups/org-1/run-1.json", JSON.stringify(linked));
+
+    await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    const pilot = db.store.enterprise_group.find(
+      (group: { name: string }) => group.name === "Pilot",
+    );
+    const ring = db.store.enterprise_group.find((group: { name: string }) => group.name === "Ring");
+
+    expect(ring.rules).toEqual({
+      version: 1,
+      all: [{ field: "group", op: "in", value: [pilot.id] }],
+    });
+    // The old exported key must not survive as a dangling criterion.
+    expect(JSON.stringify(ring.rules)).not.toContain("group-pilot");
+  });
+
+  it("rejects a restored dynamic rule that names a group outside the backup", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    const dangling = {
+      ...bundle,
+      groups: [
+        {
+          key: "group-ring",
+          name: "Ring",
+          kind: "dynamic",
+          rules: { version: 1, all: [{ field: "group", op: "in", value: ["gone"] }] },
+          policyKeys: [],
+          devices: [],
+        },
+      ],
+    };
+
+    objects.set("backups/org-1/run-1.json", JSON.stringify(dangling));
+
+    const failure = await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }).pipe(Effect.flip),
+    );
+
+    expect(failure).toMatchObject({ reason: "invalid_bundle" });
+    expect(failure.message).toMatch(/not in this backup/i);
+  });
+
   it("replaces configuration, keeps devices, and takes a pinned pre-restore snapshot", async () => {
     const { db, storage, objects, organization } = makeContext();
 
@@ -480,7 +664,9 @@ describe("in-place tenant restore", () => {
       ]),
     );
     expect(exported.bundle.applications).toEqual(
-      expect.arrayContaining([expect.objectContaining({ key: "app-1", userGroupIds: ["directory-1"] })]),
+      expect.arrayContaining([
+        expect.objectContaining({ key: "app-1", userGroupIds: ["directory-1"] }),
+      ]),
     );
 
     objects.set("backups/org-1/run-2.json", exported.body);
@@ -589,6 +775,119 @@ describe("in-place tenant restore", () => {
     // Validation happens before the snapshot and before any write.
     expect(db.store.backup_run).toHaveLength(1);
     expect(db.store.policy.map((row: { name: string }) => row.name)).toEqual(["Old policy"]);
+  });
+});
+
+describe("application object ownership", () => {
+  const uploadedApplication = (r2Key: string) => ({
+    key: "app-1",
+    name: "Fixture",
+    platform: "apple",
+    source: "upload",
+    bundleId: null,
+    version: null,
+    manifestUrl: null,
+    storeId: null,
+    fileName: "Fixture.pkg",
+    contentType: "application/octet-stream",
+    size: 12,
+    sha256: "a".repeat(64),
+    r2Key,
+    notes: null,
+    groupKeys: [],
+    userGroupIds: [],
+    installers: [
+      {
+        platform: "apple",
+        source: "upload",
+        bundleId: null,
+        version: null,
+        manifestUrl: null,
+        storeId: null,
+        fileName: "Fixture.pkg",
+        contentType: "application/octet-stream",
+        size: 12,
+        sha256: "a".repeat(64),
+        r2Key,
+        minOsVersion: null,
+        requiredCapability: null,
+        priority: 0,
+      },
+    ],
+  });
+
+  it("never persists a foreign application or installer key and reports the file", async () => {
+    const { db, storage, objects, organization } = makeContext();
+
+    objects.set(
+      "backups/org-1/run-1.json",
+      JSON.stringify({
+        ...bundle,
+        applications: [uploadedApplication("a/org-2/app-1/sha")],
+      }),
+    );
+
+    const result = await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    expect(db.store.application[0]).toMatchObject({ name: "Fixture", r2Key: null });
+    expect(db.store.application_installer[0]).toMatchObject({ fileName: "Fixture.pkg", r2Key: null });
+    expect(result.applicationsWithoutFiles).toBe(1);
+    // The row (and therefore assignments) survives; only the object reference
+    // is dropped.
+    expect(db.store.application).toHaveLength(1);
+  });
+
+  it("keeps an object under the same tenant prefix", async () => {
+    const { db, storage, objects, organization } = makeContext();
+    const key = "a/org-1/app-1/sha";
+
+    objects.set(
+      "backups/org-1/run-1.json",
+      JSON.stringify({ ...bundle, applications: [uploadedApplication(key)] }),
+    );
+
+    const result = await runEffect(
+      restoreTenantFromBackup(db, storage, organization, {
+        backupId: "run-1",
+        actor: { accountId: "user-1", email: "owner@example.com" },
+        confirm: "acme",
+        now: new Date("2026-11-01T00:00:00Z"),
+      }),
+    );
+
+    expect(db.store.application[0]).toMatchObject({ r2Key: key });
+    expect(db.store.application_installer[0]).toMatchObject({ r2Key: key });
+    expect(result.applicationsWithoutFiles).toBe(0);
+  });
+
+  it("does not accept a key from a tenant id that shares a prefix", () => {
+    expect(isTenantApplicationObjectKey("org-1", "a/org-1/app/sha")).toBe(true);
+    expect(isTenantApplicationObjectKey("org-1", "a/org-10/app/sha")).toBe(false);
+    expect(isTenantApplicationObjectKey("org-1", "backups/org-2/run.json")).toBe(false);
+    expect(isTenantApplicationObjectKey("org-1", null)).toBe(false);
+  });
+
+  it("redacts object-key shapes from audit metadata", () => {
+    expect(
+      redactAuditObjectKeys({
+        key: "backups/org-2/run.json",
+        r2Key: "a/org-2/app/sha",
+        nested: { objectKey: "p/org-2/policy/sha", note: "kept" },
+        safe: "backup completed",
+      }),
+    ).toEqual({
+      key: "[redacted]",
+      r2Key: "[redacted]",
+      nested: { objectKey: "[redacted]", note: "kept" },
+      safe: "backup completed",
+    });
   });
 });
 

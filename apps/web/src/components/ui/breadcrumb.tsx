@@ -1,4 +1,3 @@
-
 import { splitProps } from "~/lib/solid";
 import type { ComponentProps } from "@solidjs/web";
 import { ChevronRight, Ellipsis } from "~/components/ui/icons";
@@ -13,7 +12,7 @@ function Breadcrumb(props: BreadcrumbProps) {
     <nav
       aria-label="breadcrumb"
       data-slot="breadcrumb"
-      class={cn("min-w-0 text-[11.5px] text-muted-foreground", local.class)}
+      class={cn("min-w-0 text-xs text-muted-foreground", local.class)}
       {...others}
     />
   );
@@ -52,11 +51,7 @@ function BreadcrumbPage(props: ComponentProps<"span">) {
   const [local, others] = splitProps(props, ["class"]);
 
   return (
-    <span
-      aria-current="page"
-      class={cn("truncate text-foreground", local.class)}
-      {...others}
-    />
+    <span aria-current="page" class={cn("truncate text-foreground", local.class)} {...others} />
   );
 }
 

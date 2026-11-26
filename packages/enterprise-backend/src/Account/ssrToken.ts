@@ -1,13 +1,12 @@
-import { Effect, Option, Schema } from "effect";
+import { DateTime, Effect, Option, Schema } from "effect";
 import {
   SSR_TOKEN_MAX_LENGTH,
   SSR_TOKEN_TTL_MILLIS,
   SsrRevisionPayload,
   SsrTokenPayload,
   ssrSessionFingerprint,
-  type SsrTokenTenant,
-  type SsrTokenAccount,
 } from "@mattrax/enterprise-domain";
+import type { SsrTokenTenant, SsrTokenAccount } from "@mattrax/enterprise-domain";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 export {
@@ -90,7 +89,7 @@ export const signSsrToken = (secret: string, input: SignSsrTokenInput) =>
   Effect.gen(function* () {
     if (!input.emailVerified) return undefined;
 
-    const iat = input.now ?? Date.now();
+    const iat = input.now ?? DateTime.toEpochMillis(yield* DateTime.now);
     const exp = iat + SSR_TOKEN_TTL_MILLIS;
 
     const ch = yield* Effect.promise(() => ssrSessionFingerprint(secret, input.sessionCookie));
@@ -140,7 +139,7 @@ export type SignedSsrRevision = {
  */
 export const signSsrRevision = (secret: string, input: SignSsrRevisionInput) =>
   Effect.gen(function* () {
-    const iat = input.now ?? Date.now();
+    const iat = input.now ?? DateTime.toEpochMillis(yield* DateTime.now);
     const exp = iat + SSR_TOKEN_TTL_MILLIS;
 
     const token = yield* signToken(secret, {
@@ -160,11 +159,12 @@ export const signSsrRevision = (secret: string, input: SignSsrRevisionInput) =>
  * Verify and strictly decode an SSR token. Any failure is `undefined` so a
  * tampered, expired or foreign-purpose token simply falls through to the API.
  */
-export const verifySsrToken = (secret: string, token: string, now = Date.now()) =>
+export const verifySsrToken = (secret: string, token: string, now?: number) =>
   Effect.gen(function* () {
     const raw = yield* verifyToken(secret, token);
+    const currentTime = now ?? DateTime.toEpochMillis(yield* DateTime.now);
 
-    if (raw.exp <= now) return yield* Effect.fail(new Error("Expired SSR token"));
+    if (raw.exp <= currentTime) return yield* Effect.fail(new Error("Expired SSR token"));
 
     const payload = Option.getOrUndefined(decodePayload(raw));
 
@@ -175,11 +175,12 @@ export const verifySsrToken = (secret: string, token: string, now = Date.now()) 
 
 const decodeRevision = Schema.decodeUnknownOption(SsrRevisionPayload);
 
-export const verifySsrRevision = (secret: string, token: string, now = Date.now()) =>
+export const verifySsrRevision = (secret: string, token: string, now?: number) =>
   Effect.gen(function* () {
     const raw = yield* verifyToken(secret, token);
+    const currentTime = now ?? DateTime.toEpochMillis(yield* DateTime.now);
 
-    if (raw.exp <= now) return yield* Effect.fail(new Error("Expired SSR revision"));
+    if (raw.exp <= currentTime) return yield* Effect.fail(new Error("Expired SSR revision"));
 
     const payload = Option.getOrUndefined(decodeRevision(raw));
 

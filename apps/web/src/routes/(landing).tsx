@@ -1,19 +1,22 @@
 import { useLocation } from "@solidjs/router";
 import { raisedFailure } from "~/lib/errors";
-import { Errored, type ParentProps, Show } from "solid-js";
+import { Errored, Show } from "solid-js";
+import type { ParentProps } from "solid-js";
 import { Button } from "~/components/ui/button";
-import { BrandLogo } from "~/components/brand-logo";
+import BrandLogo from "~/components/brand-logo";
 import { PageErrorFallback } from "~/components/error-boundary";
-import { UserDropdown } from "~/components/user-dropdown";
+import UserDropdown from "~/components/user-dropdown";
 import { authClient } from "~/lib/auth";
 import { reportGlobalError } from "~/lib/global-errors";
+import { publicPrimaryCta } from "~/lib/public-auth-cta";
 
 export default function Layout(props: ParentProps) {
   const location = useLocation();
 
   return (
     <div
-      class={`lx-layout flex min-h-screen flex-col bg-background font-sans text-foreground ${
+      style="--lx-max: 1200px; --lx-gutter: clamp(20px, 4vw, 32px); --lx-header: 56px; --lx-fast: 180ms; --lx-base: 320ms; --lx-slow: 560ms; --lx-stagger: 26ms;"
+      class={`flex min-h-screen flex-col bg-background font-sans text-foreground ${
         location.pathname === "/designer" ? "h-svh min-h-0 overflow-hidden" : ""
       }`}
     >
@@ -58,7 +61,7 @@ function SkipLink() {
     <a
       href="#main-content"
       onClick={focusMain}
-      class="sr-only z-[100] rounded-md bg-primary px-3 py-2 text-[12.5px] font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+      class="sr-only z-50 rounded-md bg-primary px-3 py-2 text-xs font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
     >
       Skip to content
     </a>
@@ -69,7 +72,7 @@ function NavigationLink(props: { href: string; label: string; target?: string; a
   return (
     <a
       href={props.href}
-      class={`rounded-sm transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${props.active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+      class={`rounded-sm transition-colors duration-(--duration-hover) ease-swift focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${props.active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
       target={props.target}
     >
       {props.label}
@@ -81,7 +84,7 @@ function FooterLink(props: { href: string; label: string; target?: string }) {
   return (
     <a
       href={props.href}
-      class="touch-target rounded-sm transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background max-sm:inline-flex max-sm:min-h-11 max-sm:items-center"
+      class="touch-target rounded-sm transition-colors duration-(--duration-hover) ease-swift hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background max-sm:inline-flex max-sm:min-h-11 max-sm:items-center"
       target={props.target}
     >
       {props.label}
@@ -99,6 +102,7 @@ const navigation = [
 
 function TopNavigation() {
   const session = authClient.useSession();
+  const cta = () => publicPrimaryCta(session().isPending, Boolean(session().data?.user));
   const location = useLocation();
 
   const isActive = (href: string) =>
@@ -123,8 +127,8 @@ function TopNavigation() {
   };
 
   return (
-    <header class="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/90">
-      <div class="mx-auto flex h-14 w-full max-w-[var(--lx-max)] items-center justify-between gap-6 px-[var(--lx-gutter)]">
+    <header class="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/90">
+      <div class="mx-auto flex h-14 w-full max-w-(--lx-max) items-center justify-between gap-6 px-(--lx-gutter)">
         <div class="flex min-w-0 items-center gap-9">
           <a
             href="/"
@@ -134,7 +138,7 @@ function TopNavigation() {
             <BrandLogo class="h-3.5" />
           </a>
 
-          <nav aria-label="Primary" class="hidden items-center gap-6 text-[12.5px] md:flex">
+          <nav aria-label="Primary" class="hidden items-center gap-6 text-xs md:flex">
             {navigation.map((item) => (
               <NavigationLink
                 href={item.href}
@@ -151,11 +155,11 @@ function TopNavigation() {
             <Button
               as="a"
               href="/dashboard"
-              variant="outline"
+              variant="default"
               size="sm"
-              class="hidden h-7 px-2.5 text-[12px] sm:inline-flex"
+              class="hidden sm:inline-flex"
             >
-              Dashboard
+              Open dashboard
             </Button>
           </Show>
           <UserDropdown
@@ -168,11 +172,13 @@ function TopNavigation() {
 
           {/* Native popover: light-dismiss (outside click) and Escape come from
               the platform, with no JS listener to keep in sync. */}
-          <button
+          <Button
             type="button"
+            variant="outline"
+            size="icon-sm"
             popovertarget="landing-site-menu"
             aria-label="Open navigation menu"
-            class="touch-target flex size-7 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 md:hidden"
+            class="touch-target cursor-pointer md:hidden"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -187,30 +193,43 @@ function TopNavigation() {
             >
               <path d="M4 6h16M4 12h16M4 18h16" />
             </svg>
-          </button>
+          </Button>
           <div
             id="landing-site-menu"
             popover="auto"
-            class="fixed inset-auto top-[3.75rem] right-4 m-0 w-56 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover motion-safe:animate-[mt-rise-in_140ms_var(--ease-swift)_both] md:hidden"
+            class="fixed inset-auto top-15 right-4 m-0 w-56 max-w-full overflow-hidden rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-popover page-enter md:hidden"
           >
             <nav aria-label="Site">
               {navigation.map((item) => (
                 <a
                   href={item.href}
                   target={item.target}
-                  class="flex min-h-11 items-center rounded-md px-3 text-[13px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
+                  class="flex min-h-11 items-center rounded-md px-3 text-xs text-muted-foreground transition-colors duration-(--duration-hover) ease-swift hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
                 >
                   {item.label}
                 </a>
               ))}
             </nav>
             <div class="mt-1 border-t border-border p-1">
-              <a
-                href={session().data?.user ? "/dashboard" : "/register"}
-                class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+              <Show
+                when={cta()}
+                fallback={
+                  <span
+                    data-js-pending
+                    class="block h-9 w-full animate-pulse rounded-md bg-hover"
+                    aria-hidden="true"
+                  />
+                }
               >
-                {session().data?.user ? "Open dashboard" : "Create an account"}
-              </a>
+                {(action) => (
+                  <a
+                    href={action().href}
+                    class="flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors duration-(--duration-hover) ease-swift hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+                  >
+                    {action().label}
+                  </a>
+                )}
+              </Show>
             </div>
           </div>
         </div>
@@ -222,8 +241,8 @@ function TopNavigation() {
 function Footer() {
   return (
     <footer class="border-t border-border bg-background">
-      <div class="mx-auto w-full max-w-[var(--lx-max)] px-[var(--lx-gutter)] py-14">
-        <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
+      <div class="mx-auto w-full max-w-(--lx-max) px-(--lx-gutter) py-14">
+        <div class="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <a
               href="/"
@@ -232,7 +251,7 @@ function Footer() {
             >
               <BrandLogo class="h-3.5" />
             </a>
-            <p class="mt-4 max-w-[15rem] text-[12px] leading-5 text-muted-foreground">
+            <p class="mt-4 max-w-60 text-xs leading-5 text-muted-foreground">
               Device management infrastructure for Apple, Windows and Android fleets.
             </p>
           </div>
@@ -269,7 +288,7 @@ function Footer() {
           />
         </div>
 
-        <div class="mt-12 flex flex-col gap-3 border-t border-border pt-5 text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <div class="mt-12 flex flex-col gap-3 border-t border-border pt-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} Mattrax Technologies Inc.</p>
           <p>AGPL-3.0 source · free during alpha</p>
         </div>
@@ -285,7 +304,7 @@ function FooterColumn(props: {
   return (
     <div>
       <p class="label-caps">{props.title}</p>
-      <ul class="mt-3.5 space-y-2 text-[12.5px] text-muted-foreground">
+      <ul class="mt-3.5 space-y-2 text-xs text-muted-foreground">
         {props.links.map((link) => (
           <li>
             <FooterLink href={link.href} label={link.label} target={link.target} />

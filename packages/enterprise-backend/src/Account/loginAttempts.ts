@@ -6,9 +6,11 @@ import {
   LOGIN_ATTEMPT_FACTORS,
   LOGIN_ATTEMPT_METHODS,
   normalisePath,
-  type LoginAttemptFactor,
-  type LoginAttemptFailure,
-  type LoginAttemptMethod,
+} from "@mattrax/enterprise-domain";
+import type {
+  LoginAttemptFactor,
+  LoginAttemptFailure,
+  LoginAttemptMethod,
 } from "@mattrax/enterprise-domain";
 import { schema } from "../schema.ts";
 import { clientAddress, parseUserAgent } from "./accountAudit.ts";
@@ -88,8 +90,8 @@ export const approximateNetwork = (address: string | null | undefined): string |
   const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(value);
 
   if (mappedHex) {
-    const high = Number.parseInt(mappedHex[1]!, 16);
-    const low = Number.parseInt(mappedHex[2]!, 16);
+    const high = Number.parseInt(mappedHex[1], 16);
+    const low = Number.parseInt(mappedHex[2], 16);
     const octets = [high >> 8, high & 0xff, low >> 8, low & 0xff].map((part) => part & 0xff);
 
     return `${octets[0]}.${octets[1]}.${octets[2]}.0/24`;
@@ -107,7 +109,7 @@ export const approximateNetwork = (address: string | null | undefined): string |
   }
 
   // A zone id (`fe80::1%en0`) is local interface metadata, not part of the address.
-  const withoutZone = value.split("%")[0]!;
+  const withoutZone = value.split("%")[0];
 
   if (!withoutZone.includes(":")) return null;
 
@@ -138,12 +140,11 @@ export const approximateNetwork = (address: string | null | undefined): string |
 /** The bounded client fields for one request, or nulls when the host supplies none. */
 export const loginAttemptClient = (
   headers: Readonly<Record<string, string | string[] | undefined>>,
-  remoteAddress?: string | null,
 ) => {
   const rawUserAgent = headers["user-agent"];
 
   return {
-    ip: approximateNetwork(clientAddress(headers) ?? remoteAddress ?? null),
+    ip: approximateNetwork(clientAddress(headers)),
     userAgent: bounded(
       Array.isArray(rawUserAgent) ? rawUserAgent[0] : rawUserAgent,
       LOGIN_ATTEMPT_USER_AGENT_LIMIT,
@@ -468,7 +469,6 @@ export const recordObservedLoginAttempt = (
   input: {
     readonly path: string;
     readonly headers: Readonly<Record<string, string | string[] | undefined>>;
-    readonly remoteAddress?: string | null;
     readonly body: string | null;
   },
 ): Effect.Effect<void> =>
@@ -478,7 +478,7 @@ export const recordObservedLoginAttempt = (
     if (factor === undefined) return;
 
     const outcome = decodeLoginAttemptOutcome(input.body);
-    const client = loginAttemptClient(input.headers, input.remoteAddress);
+    const client = loginAttemptClient(input.headers);
 
     // A pending MFA step is not a completed sign-in; the completion request
     // writes the row that represents the login.

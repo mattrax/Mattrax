@@ -33,7 +33,7 @@ export const admxInstallOmaUri = (appName: string, fileId: string) =>
 
 /** Characters allowed in the path segments the CSP requires. */
 export const admxSegment = (value: string, fallback = "ADMX") => {
-  const cleaned = value.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "");
+  const cleaned = value.replaceAll(/[^A-Za-z0-9._-]+/g, "_").replaceAll(/^_+|_+$/g, "");
 
   return (cleaned || fallback).slice(0, 64);
 };
@@ -115,8 +115,7 @@ const booleanValue = (value: AdmxElementValue): string | undefined => {
 const LIST_SEPARATOR = "\u{F000}";
 
 const listValue = (value: AdmxElementValue): string | undefined => {
-  if (Schema.is(Schema.Array(Schema.String))(value))
-    return value.map((entry) => String(entry)).join(LIST_SEPARATOR);
+  if (Schema.is(Schema.Array(Schema.String))(value)) return value.map(String).join(LIST_SEPARATOR);
 
   // A textarea (or a hand-written value) may use newlines instead of the
   // separator; normalise both to the character the CSP expects.

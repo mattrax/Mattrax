@@ -1,10 +1,6 @@
 import { Effect, Option, Schema } from "effect";
-import { parse as parseYaml } from "yaml";
-import {
-  PortablePolicy,
-  PortablePolicyDocument,
-  type PolicyRow,
-} from "@mattrax/enterprise-domain/client";
+import { PortablePolicy, PortablePolicyDocument } from "@mattrax/enterprise-domain/client";
+import type { PolicyRow } from "@mattrax/enterprise-domain/client";
 
 /**
  * Policy import: turn a portable policy document or a `.mobileconfig` into the
@@ -124,10 +120,30 @@ export const parsePolicyImportText = (
     if (trimmed.length > POLICY_IMPORT_MAX_CHARS)
       return yield* Effect.fail("The policy document is too large to import.");
 
-    const decoded = yield* Effect.try({
-      try: () => Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(parseYaml(trimmed))),
-      catch: () => `${source} is not valid JSON or YAML.`,
-    });
+    let value: unknown;
+    let json = true;
+
+    // Most imports are JSON. Parsing that first keeps the YAML parser out of
+    // the page and downloads it only when the input is not JSON.
+    try {
+      value = JSON.parse(trimmed);
+    } catch {
+      json = false;
+    }
+
+    if (!json) {
+      const yaml = yield* Effect.tryPromise({
+        try: () => import("yaml"),
+        catch: () => "Could not load the YAML parser. Reload and try again.",
+      });
+
+      value = yield* Effect.try({
+        try: () => yaml.parse(trimmed),
+        catch: () => `${source} is not valid JSON or YAML.`,
+      });
+    }
+
+    const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(value));
 
     if (decoded === undefined) return yield* Effect.fail(`${source} is not valid JSON or YAML.`);
 
@@ -151,7 +167,7 @@ export const parsePolicyImportText = (
           `${source} contains ${document.policies.length} policies. Import one at a time, for example \`mattrax policies export --id <policy-id> --format json\`.`,
         );
 
-      return document.policies[0]!;
+      return document.policies[0];
     }
 
     const policy = decodePolicy(decoded);
@@ -252,7 +268,7 @@ export const normalizeMobileconfig = (input: {
   // A PEM-wrapped CMS signature is signed content the validator cannot read.
   if (looksLikePem(raw)) throw new Error(PEM_SIGNED_ERROR);
 
-  const content = raw.replace(base64Prefix, "").replace(/\s/g, "");
+  const content = raw.replace(base64Prefix, "").replaceAll(/\s/g, "");
 
   if (!base64Body.test(content) || content.length === 0)
     throw new Error("This file is not a .mobileconfig profile.");

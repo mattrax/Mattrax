@@ -1,52 +1,5 @@
-export {
-  BillingWebhookError,
-  billingWebhookRoutes,
-  processStripeWebhook,
-} from "@mattrax/enterprise-billing";
-
-export type { BillingWebhookConfig, ProcessStripeWebhookInput } from "@mattrax/enterprise-billing";
-
-export {
-  BillingService,
-  BillingServiceLive,
-  makeStripeBillingService,
-} from "@mattrax/enterprise-billing";
-
-export { licenseBillingRoutes } from "@mattrax/enterprise-billing";
-
-export type { LicenseBillingConfig } from "@mattrax/enterprise-billing";
-
-export { makeRemoteBillingService } from "@mattrax/enterprise-billing";
-
-export type { RemoteBillingOptions } from "@mattrax/enterprise-billing";
-
-export type {
-  BillingCheckoutInput,
-  BillingError,
-  BillingInvoicesInput,
-  BillingPortalInput,
-  BillingOperations,
-  BillingSummaryInput,
-  BillingUsageInput,
-  StripeBillingOptions,
-} from "@mattrax/enterprise-billing";
-
-export {
-  billableDeviceCount,
-  deploymentUsage,
-  reconcileSubscriptionQuantity,
-  reconcileSubscriptionSweep,
-  syncStripeCustomerName,
-} from "@mattrax/enterprise-billing";
-
-export type {
-  ReconcileSeatsInput,
-  SeatReconcileResult,
-  SeatReconcileSkipReason,
-  SubscriptionSweepInput,
-  SubscriptionSweepResult,
-  SyncCustomerNameInput,
-} from "@mattrax/enterprise-billing";
+export { billingEntitlementRoutes } from "./billingEntitlement.ts";
+export type { BillingEntitlementConfig } from "./billingEntitlement.ts";
 
 export {
   WEBHOOK_DELIVERY_PAGE_DEFAULT,
@@ -168,30 +121,10 @@ export { makeApplePush } from "./Device/push.ts";
 
 export type { ApplePush, ApplePushOptions } from "./Device/push.ts";
 
-export {
-  ABM_BUSINESS_BASE_URL,
-  ABM_DEFAULT_ASSERTION_AUDIENCE,
-  ABM_DEFAULT_TOKEN_URL,
-  ABM_SCHOOL_BASE_URL,
-  ADE_PROFILE_PURPOSE,
-  AppleBusinessManagerError,
-  appleBusinessManagerInfo,
-  assignAppleBusinessManagerDevice,
-  buildClientAssertion,
-  clearAppleBusinessManagerToken,
-  createAdeProfileToken,
-  describeAppleError,
-  loadAppleBusinessManager,
-  makeAbmClient,
-  openAbmCredential,
-  parseAbmTokenUpload,
-  parseAppleDate,
-  readAdeProfileToken,
-  saveAppleBusinessManagerToken,
-  sealAbmCredential,
-  syncAppleBusinessManagerDevices,
-  validateAbmPrivateKey,
-} from "@mattrax/apple-business-manager";
+// Apple Business Manager and the volume-purchase client are admin/cron-only
+// paths. Their runtime exports are not re-exported here: every consumer imports
+// them directly (and lazily where that matters), so the barrel does not drag
+// them into the startup closure. Types are still re-exported.
 
 export type {
   AbmAccessToken,
@@ -209,25 +142,6 @@ export type {
   AppleBusinessManagerInfo,
   AppleBusinessManagerRow,
   LegacyDepCredential,
-} from "@mattrax/apple-business-manager";
-
-export {
-  VPP_BASE_URL,
-  VppError,
-  assignVppLicence,
-  clearVppToken,
-  findVppAsset,
-  findVppAssetByStoreId,
-  loadVppToken,
-  makeVppClient,
-  openVppToken,
-  parseVppTokenUpload,
-  releaseVppLicence,
-  saveVppToken,
-  sealVppToken,
-  syncScheduledVppAssets,
-  syncVppAssets,
-  vppInfo,
 } from "@mattrax/apple-business-manager";
 
 export type {
@@ -273,6 +187,17 @@ export type {
   ScriptResultIngestion,
   ScriptSweepResult,
 } from "./Policy/scripts.ts";
+
+export {
+  createRestrictedSoftware,
+  deleteRestrictedSoftware,
+  deviceRestrictedSoftware,
+  getRestrictedSoftwareDetail,
+  listRestrictedSoftware,
+  listRestrictedSoftwareViolations,
+  patchRestrictedSoftwareAssignments,
+  updateRestrictedSoftware,
+} from "./Policy/restrictedSoftware.ts";
 
 export {
   ANDROID_NOTIFICATION_TYPES,
@@ -328,6 +253,18 @@ export type {
   LinkDirectoryUserSsoResult,
 } from "./Identity/linkSsoIdentity.ts";
 
+export {
+  DIRECTORY_USER_MERGE_ACTION,
+  listDirectoryUserMergeCandidates,
+  mergeDirectoryUsers,
+  previewDirectoryUserMerge,
+} from "./Identity/mergeDirectoryUsers.ts";
+
+export type {
+  MergeDirectoryUsersInput,
+  PreviewDirectoryUserMergeInput,
+} from "./Identity/mergeDirectoryUsers.ts";
+
 export { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 export {
@@ -341,6 +278,19 @@ export {
   type SignSsrTokenInput,
 } from "./Account/ssrToken.ts";
 
+export {
+  DEFAULT_EMAIL_BRAND_COLOR,
+  emailButton,
+  emailCode,
+  emailDocument,
+  emailFootnote,
+  emailHeading,
+  emailIsolate,
+  emailParagraph,
+  emailTextLink,
+  resolveEmailBrand,
+} from "./Mail/emailLayout.ts";
+
 export { invitationEmail } from "./Mail/invitationEmail.ts";
 
 export type { InvitationEmail, InvitationEmailInput } from "./Mail/invitationEmail.ts";
@@ -352,10 +302,23 @@ export type {
   OwnershipTransferEmailInput,
 } from "./Mail/ownershipTransferEmail.ts";
 
+export { restrictedSoftwareViolationEmail } from "./Mail/restrictedSoftwareEmail.ts";
+
+export type {
+  RestrictedSoftwareViolationEmail,
+  RestrictedSoftwareViolationEmailInput,
+} from "./Mail/restrictedSoftwareEmail.ts";
+
+export {
+  RESTRICTED_SOFTWARE_NOTIFICATION_BATCH,
+  notifyRestrictedSoftwareViolations,
+} from "./Mail/restrictedSoftwareNotifications.ts";
+
 export { onboardingFollowUpEmail, welcomeEmail } from "./Tenant/onboardingEmail.ts";
 
 export type {
   OnboardingEmail,
+  OnboardingEmailBranding,
   OnboardingFollowUpEmailInput,
   WelcomeEmailInput,
 } from "./Tenant/onboardingEmail.ts";
@@ -368,6 +331,7 @@ export {
   runOnboardingEmails,
   runWelcomeEmailSweep,
   sendWelcomeEmailOnce,
+  OnboardingEmailWarnings,
 } from "./Tenant/onboardingEmails.ts";
 
 export type {
@@ -390,12 +354,9 @@ export {
   makeEmailTransport,
   parseEmailSender,
   replyToAddress,
-  smtpEmailTransport,
 } from "@mattrax/email";
 
 export type { EmailAddress } from "@mattrax/email";
-
-export type { SmtpTransportOptions } from "@mattrax/email";
 
 export {
   ACCOUNT_EMAIL_DELIVERY_FAILED_ACTION,
@@ -428,9 +389,10 @@ export { settlePendingInvitations } from "@mattrax/enterprise-identity";
 
 export { makeAuthLive, sessionCookie } from "./Account/auth.ts";
 
-export { makeAppAuth } from "@mattrax/enterprise-domain";
+export { makeAppAuth } from "./Account/auth.ts";
+export type { AppAuthService } from "./Account/auth.ts";
 
-export type { AppAuthService, AuthLiveOptions } from "./Account/auth.ts";
+export type { AuthLiveOptions } from "./Account/auth.ts";
 
 export { makeEnterpriseAuthLive } from "./Identity/enterpriseAuth.ts";
 
@@ -491,6 +453,27 @@ export { buildTenantExport } from "./Tenant/tenantExport.ts";
 export type { TenantExportBundle } from "./Tenant/tenantExport.ts";
 
 export {
+  buildTenantCutover,
+  preflightTenantOriginSwitch,
+  TenantCutoverError,
+} from "./Tenant/cutover.ts";
+
+export type { TenantCutoverExport } from "./Tenant/cutover.ts";
+
+export { importTenantCutover, previewTenantCutover } from "./Tenant/cutoverImport.ts";
+
+export type { CutoverActor, CutoverImportOptions, CutoverTarget } from "./Tenant/cutoverImport.ts";
+
+export {
+  applyTenantBundle,
+  isTenantApplicationObjectKey,
+  redactAuditObjectKeys,
+  tenantApplicationObjectPrefix,
+} from "./Tenant/tenantRestore.ts";
+
+export type { TenantRestoreApplied, TenantRestoreTransaction } from "./Tenant/tenantRestore.ts";
+
+export {
   ENTRA_GRAPH_NOT_CONFIGURED,
   ENTRA_SYNC_CONCURRENCY,
   ENTRA_SYNC_STALE_MS,
@@ -511,15 +494,33 @@ export type {
   ScheduledEntraSyncResult,
 } from "@mattrax/entra-id";
 
+export { directoryProviderRegistry } from "./Directory/registry.ts";
+
 export {
-  syncDirectoryGroup,
-  syncDirectoryGroupsForTenant,
-} from "@mattrax/mdm-apple";
+  GOOGLE_SYNC_CONCURRENCY,
+  GOOGLE_SYNC_STALE_MS,
+  GOOGLE_WORKSPACE_NOT_CONFIGURED,
+  acquireGoogleSyncLock,
+  googleDirectorySyncStatus,
+  isGoogleSyncDue,
+  loadGoogleDirectoryConfig,
+  runGoogleDirectorySyncForTenant,
+  runScheduledGoogleSync,
+} from "@mattrax/google-workspace";
 
 export type {
-  DirectoryGroupSyncOptions,
-  DirectoryGroupSyncResult,
-} from "@mattrax/mdm-apple";
+  GoogleDirectorySyncOutcome,
+  GoogleDirectorySyncRow,
+  GoogleDirectorySyncStatusView,
+  GoogleSyncLockState,
+  GoogleSyncTrigger,
+  LoadedGoogleCredentials,
+  ScheduledGoogleSyncResult,
+} from "@mattrax/google-workspace";
+
+export { syncDirectoryGroup, syncDirectoryGroupsForTenant } from "@mattrax/mdm-core";
+
+export type { DirectoryGroupSyncOptions, DirectoryGroupSyncResult } from "@mattrax/mdm-core";
 
 export {
   WEBHOOK_DELIVERY_RETENTION_DAYS,
@@ -531,13 +532,13 @@ export {
   sendTestWebhook,
   signWebhookDelivery,
   verifyWebhookSignature,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 
 export type {
   WebhookDeliveryOutcome,
   WebhookRetryOptions,
   WebhookRetryResult,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 
 export {
   APNS_RENEWAL_URL,
@@ -600,8 +601,10 @@ export {
   attributeDefinitionRow,
   attributeValuesProblem,
   claimEnrollmentAnswers,
+  collectScriptAttributeValues,
   definitionInputProblem,
   listAttributeDefinitions,
+  loadDeviceAttributeCollection,
   loadDeviceAttributes,
   loadEnrollmentQuestions,
   mergeAttributeValues,
@@ -639,6 +642,58 @@ export {
 } from "./Policy/dashboardQuery.ts";
 
 export {
+  loadDeviceSnapshots,
+  rowDeviceHealth,
+  runDashboardQuery,
+  runDashboardQueryBatch,
+} from "./Dashboard/dashboardQuery.ts";
+
+export type { DeviceDashboardSnapshot } from "./Dashboard/dashboardQuery.ts";
+
+export {
+  buildReportDocument,
+  nextScheduledReportSlot,
+  normalizeReportEmails,
+  reportAttachment,
+  reportCsv,
+  reportEmailText,
+  reportHtml,
+  reportPdf,
+  reportScheduleProblem,
+  REPORT_RUN_MAX_ATTEMPTS,
+  scheduledReportSlot,
+} from "./Dashboard/report.ts";
+
+export type {
+  ReportAttachment,
+  ReportDocument,
+  ReportSection,
+  ScheduledReportSlot,
+} from "./Dashboard/report.ts";
+
+export {
+  DASHBOARD_REPORT_RUN_RETENTION_DAYS,
+  dashboardReportInfo,
+  dashboardReportRunInfo,
+  listDashboardReportRuns,
+  loadDashboardReportDocument,
+  purgeDashboardReportRuns,
+  resolveReportRecipients,
+  runScheduledReports,
+  sendDashboardReportNow,
+  validateReportRecipients,
+} from "./Dashboard/reportRun.ts";
+
+export type {
+  DashboardReportRow,
+  DashboardReportRunRow,
+  ReportRecipientResult,
+  RunScheduledReportsOptions,
+  RunScheduledReportsResult,
+  SendReportNowResult,
+} from "./Dashboard/reportRun.ts";
+
+export {
   DEVICE_ACTIVITY_AUDIT_PREFIX,
   DEVICE_ACTIVITY_COMMAND_PREFIX,
   decodeDeviceActivityCursor,
@@ -656,6 +711,30 @@ export {
 } from "./Device/deviceHealth.ts";
 
 export {
+  DEFAULT_SOFTWARE_UPDATE_CACHE_TTL_MS,
+  DEFAULT_SOFTWARE_UPDATE_RETRY_MS,
+  DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS,
+  MAX_SOFTWARE_UPDATE_FEED_BYTES,
+  MAX_SOFTWARE_UPDATE_CACHE_URLS,
+  SOFA_MACOS_FEED_ID,
+  SOFA_MACOS_FEED_URL,
+  SoftwareUpdateCache,
+  SoftwareUpdateBackground,
+  loadSoftwareUpdateCatalog,
+  type LoadSoftwareUpdateCatalogOptions,
+  type SoftwareUpdateCatalogState,
+  type SoftwareUpdateFetchResult,
+} from "./Device/softwareUpdates.ts";
+
+export {
+  ENTITY_LIST_DEFAULT_LIMIT,
+  ENTITY_LIST_MAX_LIMIT,
+  normalizeEntityListQuery,
+  type EntityListQuery,
+  type NormalizedEntityListQuery,
+} from "./Search/entityList.ts";
+
+export {
   DEVICE_EXPORT_MAX_ROWS,
   deviceSearchPlatforms,
   deviceSearchStatuses,
@@ -666,6 +745,25 @@ export {
   toCsv,
   type DeviceSearchFilters,
 } from "./Device/deviceSearch.ts";
+
+export {
+  confirmFleetMigrationEntry,
+  createFleetMigration,
+  deleteFleetMigration,
+  exportFleetMigration,
+  fleetMigrationCounts,
+  fleetMigrationExportCsv,
+  fleetMigrationExportJson,
+  fleetMigrationExportRows,
+  getFleetMigration,
+  issueFleetMigrationUnenrol,
+  listFleetMigrations,
+  markFleetMigrationUnenrolled,
+  reconcileFleetMigration,
+  sweepFleetMigrations,
+  type FleetMigrationExportRow,
+  type FleetMigrationProblem,
+} from "./Device/fleetMigration.ts";
 
 export {
   ENROLLMENT_ATTEMPT_DEDUPE_MS,
@@ -707,6 +805,8 @@ export { cookieValue } from "./Account/ssrToken.ts";
 
 export { restoreTenantFromBackup, TenantRestoreError } from "./Tenant/tenantRestore.ts";
 
+export { collectTenantStorageUsage, STORAGE_SCAN_MAX_OBJECTS } from "./Tenant/storageUsage.ts";
+
 export {
   teardownTenant,
   TenantTeardownStepFailed,
@@ -719,6 +819,7 @@ export {
   isMsiProductCode,
   normalizeMsiProductCode,
   windowsMsiInstallPayload,
+  windowsMsiUninstallPayload,
 } from "./Device/windowsApplications.ts";
 
 export type { DeviceActivityPage } from "./Device/deviceActivity.ts";
@@ -735,7 +836,9 @@ export type {
   EnterpriseDevice,
   EnterpriseEnrollment,
   EnterpriseGroup,
+  EnterpriseGroupChildGroup,
   EnterpriseGroupDevice,
+  EnterpriseGroupExclusion,
   EnterpriseGroupPolicy,
   EnterpriseApplication,
   EnterpriseApplicationInstaller,

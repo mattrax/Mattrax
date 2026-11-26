@@ -18,7 +18,8 @@ import {
 } from "@mattrax/scep/testing";
 import { schema } from "@mattrax/enterprise-core";
 import { ScepRepositoryLive } from "@mattrax/mdm-core";
-import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
+import { dbRows, makeDb, tableName } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -183,7 +184,7 @@ describe("SCEP renewal during a CA rotation (management layer)", () => {
     const { db, identitySerial, renewal } = await setup();
     // Mutate the live row (dbRows returns copies) so the repository sees the
     // closed trust window.
-    db.store[tableName(schema.scepCaTrust)]![0]!.trustUntil = new Date(now.getTime() - DAY);
+    db.store[tableName(schema.scepCaTrust)][0].trustUntil = new Date(now.getTime() - DAY);
 
     const repositoryLayer = Layer.succeed(
       ScepRepository,
@@ -203,7 +204,7 @@ describe("SCEP renewal during a CA rotation (management layer)", () => {
       schema: pkijs.ContentInfo.fromBER(response).content,
     });
 
-    const pkiStatus = signedData.signerInfos[0]!.signedAttrs!.attributes.find(
+    const pkiStatus = signedData.signerInfos[0].signedAttrs!.attributes.find(
       (attribute) => attribute.type === "2.16.840.1.113733.1.9.3",
     );
 

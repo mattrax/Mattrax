@@ -10,8 +10,8 @@ import {
   readMiaBannerDismissed,
   shouldShowMiaBanner,
   writeMiaBannerDismissed,
-  type MiaBannerStorage,
 } from "~/lib/mia-banner";
+import type { MiaBannerStorage } from "~/lib/mia-banner";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";
 
@@ -33,7 +33,15 @@ const browserSessionStorage = (): MiaBannerStorage | undefined => {
  * the banner is a nudge, not a modal, and a tenant with a permanently lost
  * device must not be warned again on every navigation.
  */
-export function MissingDevicesBanner(props: { tenantId: string }) {
+/** Read secondary query data only after success so pending async values never throw or suspend during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
+export default function MissingDevicesBanner(props: { tenantId: string }) {
   const { can } = useCan();
   // Dismissal is per tenant. The component survives a tenant switch, so the
   // stored flag must be re-read for the current tenant rather than captured
@@ -50,7 +58,7 @@ export function MissingDevicesBanner(props: { tenantId: string }) {
     enabled: can("devices.read"),
   }));
 
-  const count = () => missingDeviceCount(summary.data?.counts);
+  const count = () => missingDeviceCount(settledQueryData(summary)?.counts);
 
   const visible = () =>
     shouldShowMiaBanner({
@@ -74,7 +82,7 @@ export function MissingDevicesBanner(props: { tenantId: string }) {
       <div
         role="status"
         aria-live="polite"
-        class="flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/[0.06] px-3.5 py-3 text-[12.5px] leading-relaxed text-warning-foreground"
+        class="flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/[0.06] px-3.5 py-3 text-xs leading-relaxed text-warning-foreground"
       >
         <CircleAlert class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <div class="min-w-0 flex-1">
@@ -95,14 +103,15 @@ export function MissingDevicesBanner(props: { tenantId: string }) {
             Review MIA devices
           </Button>
         </div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon-xs"
           aria-label="Dismiss MIA device warning"
-          class="rounded p-1 text-muted-foreground hover:bg-hover hover:text-foreground"
           onClick={dismiss}
         >
           <X class="size-3.5" />
-        </button>
+        </Button>
       </div>
     </Show>
   );

@@ -1,13 +1,13 @@
 import { Cause, Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { ApnsError, ApnsService } from "@mattrax/apns";
+import type { ApnsService } from "@mattrax/apns";
+import { APNS_REQUEST_TIMEOUT_MS, ApnsError } from "@mattrax/apns";
 import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
-import { OUTBOUND_TIMEOUTS } from "@mattrax/net";
 import {
   SYSTEM_AUDIT_ACTIONS,
   pushInvalidTokenTransition,
   writeSystemAudit,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 import type { EnterpriseDb, EnterpriseSchema } from "../schema.ts";
 import { forEachBounded } from "../bounded.ts";
 
@@ -16,7 +16,7 @@ import { forEachBounded } from "../bounded.ts";
  * but a custom/injected transport (or a wedged DNS resolver inside one) must
  * not be able to hold the request that triggered the push open indefinitely.
  */
-const APNS_PUSH_BACKSTOP_MS = OUTBOUND_TIMEOUTS.apns + 1_000;
+const APNS_PUSH_BACKSTOP_MS = APNS_REQUEST_TIMEOUT_MS + 1_000;
 
 /** Machine-readable class for a failed APNs delivery. */
 export type ApplePushFailureCode = "invalid_token" | "delivery_failed";
@@ -69,7 +69,7 @@ export const classifyApplePushFailure = (error: ApplePushFailure): ApplePushFail
 
 /** Condense an error into the short, secret-free string stored on the device. */
 export const describeApplePushFailure = (error: ApplePushFailure, limit = 255) => {
-  const text = apnsErrorText(error).replace(/\s+/g, " ").trim();
+  const text = apnsErrorText(error).replaceAll(/\s+/g, " ").trim();
 
   return (text || "APNs push failed").slice(0, limit);
 };
@@ -450,6 +450,7 @@ export const applePushService = ({
           pushAppleDeviceInternal(deviceId).pipe(
             Effect.map((outcome) => {
               outcomes[index] = outcome;
+              return undefined;
             }),
           ),
       );

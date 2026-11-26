@@ -1,10 +1,8 @@
 import { Data, Effect } from "effect";
 import { arrayBufferToBase64, pemDecode, toArrayBuffer, uint8ArrayToBase64 } from "@mattrax/crypto";
 import { serializeSoapElement } from "@mattrax/soap";
-import {
-  WapProvisioningDoc,
-  type WapProvisioningDoc as WapProvisioningDocType,
-} from "./messages.js";
+import { WapProvisioningDoc } from "./messages.js";
+import type { WapProvisioningDoc as WapProvisioningDocType } from "./messages.js";
 import type { WindowsEnrollmentResult } from "@mattrax/management-backend";
 
 export class WstepError extends Data.TaggedError("WstepError")<{

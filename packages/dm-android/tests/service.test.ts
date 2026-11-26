@@ -5,17 +5,10 @@ import {
   AndroidManagementLive,
   AndroidManagementValidationError,
   GoogleApiError,
-  type AndroidManagementConfig,
 } from "../src/index.js";
-import {
-  emptyResponse,
-  jsonBody,
-  jsonResponse,
-  makeServiceAccount,
-  mockFetch,
-  type RecordedRequest,
-  type ServiceAccountFixture,
-} from "./helpers.js";
+import type { AndroidManagementConfig } from "../src/index.js";
+import { emptyResponse, jsonBody, jsonResponse, makeServiceAccount, mockFetch } from "./helpers.js";
+import type { RecordedRequest, ServiceAccountFixture } from "./helpers.js";
 
 let account: ServiceAccountFixture;
 

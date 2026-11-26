@@ -1,11 +1,11 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import {
-  AzureGraphConsentRequired,
-  type AutopilotDeploymentProfileInput,
-  type AzureGraphService,
-  type GraphAutopilotDevice,
-  type ImportAutopilotDeviceIdentity,
+import { AzureGraphConsentRequired } from "@mattrax/azure-graph";
+import type {
+  AutopilotDeploymentProfileInput,
+  AzureGraphService,
+  GraphAutopilotDevice,
+  ImportAutopilotDeviceIdentity,
 } from "@mattrax/azure-graph";
 import {
   AutopilotError,
@@ -78,7 +78,7 @@ const graphMock = (
           nextLink: index + 1 < pages.length ? `https://graph.test/next?page=${index + 1}` : null,
         };
       }),
-    createAutopilotProfile: (tenantId: string, input: AutopilotDeploymentProfileInput) =>
+    createAutopilotProfile: (_tenantId: string, input: AutopilotDeploymentProfileInput) =>
       Effect.sync(() => {
         calls.profiles.push(input);
 
@@ -226,8 +226,8 @@ describe("Autopilot Graph mirroring", () => {
 
     expect(result.imported).toBe(1);
     expect(calls.imports).toHaveLength(1);
-    expect(calls.imports[0]!.tenantId).toBe(azureTenantId);
-    expect(calls.imports[0]!.devices[0]).toMatchObject({
+    expect(calls.imports[0].tenantId).toBe(azureTenantId);
+    expect(calls.imports[0].devices[0]).toMatchObject({
       serialNumber: "ABC123",
       hardwareIdentifier: "aGFzaA==",
       groupTag: "Engineering",

@@ -5,6 +5,7 @@ import type {
   DeviceHealthLevel,
   DeviceHealthReason,
 } from "./enterprise.ts";
+import { deriveDevicePresence } from "./devicePresence.ts";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -109,6 +110,15 @@ export type DeviceHealthInput = {
   readonly recoveryKeyUpdatedAt?: Date | string | null;
   /** When the last `SecurityInfo` answer was persisted. */
   readonly securityInfoUpdatedAt?: Date | string | null;
+  /**
+   * Apple Lost Mode. A device an operator marked lost is not healthy even when
+   * it checks in: it is locked and displaying a return message.
+   */
+  readonly lostModeEnabled?: boolean | null;
+  /** Local accounts reported by macOS `UserList`. */
+  readonly localAccounts?: ReadonlyArray<DeviceHealthLocalAccount> | null;
+  /** Tenant opt-out for the local-account risk reasons. Defaults to enabled. */
+  readonly localAccountHealthEnabled?: boolean;
   /** Injectable clock so the derivation stays pure and testable. */
   readonly now?: Date;
   readonly staleAfterDays?: number;
@@ -124,11 +134,25 @@ export const DeviceHealthManagementApp = Schema.Struct({
 
 export type DeviceHealthManagementApp = typeof DeviceHealthManagementApp.Type;
 
+/** The local-account fields health evaluates. */
+export type DeviceHealthLocalAccount = {
+  readonly username: string;
+  /** Null when Apple did not report administrator status (it normally does not). */
+  readonly isAdmin?: boolean | null;
+  readonly isManaged?: boolean;
+  readonly hasSecureToken?: boolean | null;
+};
+
 export type DeviceHealthSummary = {
   readonly level: DeviceHealthLevel;
   readonly reasons: ReadonlyArray<DeviceHealthReason>;
   readonly lastSeenAt: string | null;
   readonly stale: boolean;
+  /**
+   * Check-in recency presence, derived from the same clock and row as
+   * `lastSeenAt`/`stale` so a badge and the health reasons cannot disagree.
+   */
+  readonly online: boolean;
 };
 
 export const normalizeDeviceHealth = (health: DeviceHealthSummary): DeviceHealth => ({
@@ -136,6 +160,7 @@ export const normalizeDeviceHealth = (health: DeviceHealthSummary): DeviceHealth
   reasons: [...health.reasons],
   lastSeenAt: health.lastSeenAt,
   stale: health.stale,
+  online: health.online,
 });
 
 const parseDate = (value: Date | string | null | undefined): Date | null => {
@@ -230,6 +255,26 @@ export const isMacOsDevice = (input: {
   return input.proto === "apple";
 };
 
+/**
+ * A positive macOS signal, for commands Apple only implements on macOS.
+ * Unlike `isMacOsDevice`, an Apple device with no OS or model is not treated as
+ * a Mac, so a fresh/unidentified enrolment cannot consume a Mac-only sweep or
+ * receive `UserList`.
+ */
+export const isConfirmedMacOsDevice = (input: {
+  readonly model?: string | null;
+  readonly osEdition?: string | null;
+}): boolean => {
+  const edition = input.osEdition?.trim() ?? "";
+
+  if (/macos/i.test(edition)) return true;
+
+  if (NON_MAC_OS.test(edition)) return false;
+  const model = input.model?.trim() ?? "";
+
+  return model !== "" && /mac/i.test(model);
+};
+
 /** Battery conditions that mean the battery needs service or replacement. */
 export const needsBatteryService = (batteryHealth: string | null | undefined): boolean => {
   if (!batteryHealth) return false;
@@ -298,6 +343,14 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
   const stale = age !== null && age > staleAfterDays * MS_PER_DAY;
   const reasons: DeviceHealthReason[] = [];
   const status = input.status?.trim();
+
+  // One presence rule for the API, the table badge and health: a device is
+  // online based on its newest check-in, and never before its first one.
+  const presence = deriveDevicePresence({
+    status: input.status,
+    lastSeenAt: input.lastSeenAt,
+    now,
+  });
 
   // Only an enrolled device can be MIA. Once maintenance retires it the
   // `unenrolled` status and its critical reason take precedence. MIA also
@@ -411,6 +464,35 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
     reasons.push(
       reason("filevault_disabled", "FileVault disk encryption is turned off", "warning"),
     );
+  }
+
+  if (input.lostModeEnabled === true) {
+    reasons.push(
+      reason("lost_mode", "Device is in Lost Mode and shows a return message", "warning"),
+    );
+  }
+
+  // Apple's `UserList` does not report administrator status, so only the
+  // managed administrator Mattrax created is known to be an admin. A rule for
+  // "unexpected admin" would therefore never fire in production, so only the
+  // known managed account's SecureToken state is evaluated.
+  if (input.localAccountHealthEnabled !== false) {
+    const localAccounts = input.localAccounts ?? [];
+    const adminsWithoutSecureToken = localAccounts.filter(
+      (account) => account.isAdmin === true && account.hasSecureToken === false,
+    );
+
+    if (adminsWithoutSecureToken.length > 0) {
+      reasons.push(
+        reason(
+          "local_admin_no_secure_token",
+          adminsWithoutSecureToken.length === 1
+            ? `Local administrator "${adminsWithoutSecureToken[0]!.username}" has no SecureToken`
+            : `${adminsWithoutSecureToken.length} local administrators have no SecureToken`,
+          "warning",
+        ),
+      );
+    }
   }
 
   if (isWindowsDevice(input) && input.windowsSecurityReported === true) {
@@ -548,7 +630,13 @@ export const deriveDeviceHealth = (input: DeviceHealthInput): DeviceHealthSummar
     );
   }
 
-  return { level: healthLevel(status, reasons, missing), reasons, lastSeenAt, stale };
+  return {
+    level: healthLevel(status, reasons, missing),
+    reasons,
+    lastSeenAt,
+    stale,
+    online: presence.online,
+  };
 };
 
 /**
@@ -612,6 +700,8 @@ const REASON_GROUP_LABELS = new Map<string, string>([
   ["disk_critical", "Storage full"],
   ["disk_low", "Storage low"],
   ["filevault_disabled", "FileVault off"],
+  ["lost_mode", "Lost Mode"],
+  ["local_admin_no_secure_token", "Local admin without SecureToken"],
   ["bitlocker_disabled", "BitLocker off"],
   ["tpm_absent", "No TPM"],
   ["tpm_outdated", "TPM below 2.0"],

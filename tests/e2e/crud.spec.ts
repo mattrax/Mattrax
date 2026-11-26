@@ -101,7 +101,7 @@ test.describe("groups and policies", () => {
     const detailUrl = page.url().replace(/\/editor$/, "");
     await gotoHydrated(page, detailUrl);
     await expect(page.getByText("Deployment history")).toBeVisible();
-    await expect(page.getByText(/Version 2/)).toBeVisible();
+    await expect(page.getByRole("link", { name: /Version 2/ })).toBeVisible();
 
     await page.goto(`/t/${tenant.id}/policies`);
     await expect(page.getByRole("link", { name: "Camera Policy" })).toBeVisible();

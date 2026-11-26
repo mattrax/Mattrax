@@ -30,7 +30,7 @@ export const parseCsvRecords = (input: string): string[][] => {
   let quoted = false;
 
   for (let index = 0; index < text.length; index++) {
-    const character = text[index]!;
+    const character = text[index];
 
     if (quoted) {
       if (character === '"') {
@@ -74,7 +74,7 @@ const normalizeHeader = (value: string) =>
   value
     .trim()
     .toLowerCase()
-    .replace(/[\s-]+/g, "_");
+    .replaceAll(/[\s-]+/g, "_");
 
 const ALIASES = new Map<string, "serial" | "name" | "asset_tag" | "group" | "notes">([
   ["serial", "serial"],
@@ -109,7 +109,7 @@ export const parseDeviceImportCsv = (input: string): DeviceImportParseResult => 
   if (records.length === 0)
     return { rows: [], issues: [{ row: 1, message: "The file is empty." }], headers: [] };
 
-  const rawHeaders = records[0]!;
+  const rawHeaders = records[0];
   const headers = rawHeaders.map((header) => ALIASES.get(normalizeHeader(header)) ?? null);
 
   if (!headers.includes("serial"))
@@ -124,7 +124,7 @@ export const parseDeviceImportCsv = (input: string): DeviceImportParseResult => 
   const seen = new Set<string>();
 
   for (let index = 1; index < records.length; index++) {
-    const record = records[index]!;
+    const record = records[index];
     const rowNumber = index + 1;
 
     const value = (column: (typeof headers)[number]) => {

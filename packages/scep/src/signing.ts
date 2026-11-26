@@ -1,7 +1,8 @@
 import { Effect, Schema } from "effect";
-import * as asn1js from "asn1js";
-import * as pkijs from "pkijs";
+import type * as pkijs from "pkijs";
 import { ScepError } from "./schema.js";
+import { loadPkijs } from "@mattrax/mdm-pki";
+import type { Asn1jsModule, PkijsModule } from "@mattrax/mdm-pki";
 import { base64ToArrayBuffer, importPrivateKeyJwk } from "@mattrax/crypto";
 import { randomCertificateSerial } from "./crypto.js";
 import { certToPem, createDeviceCertificate, pemToCert } from "./pkcs7.js";
@@ -26,14 +27,14 @@ const decodeCsr = (csr: string | ArrayBuffer): ArrayBuffer => {
     // Accept both the PKCS#10 "CERTIFICATE REQUEST" and legacy "NEW
     // CERTIFICATE REQUEST" PEM labels.
     const base64 = input
-      .replace(/-----BEGIN [^-]+-----/g, "")
-      .replace(/-----END [^-]+-----/g, "")
-      .replace(/\s/g, "");
+      .replaceAll(/-----BEGIN [^-]+-----/g, "")
+      .replaceAll(/-----END [^-]+-----/g, "")
+      .replaceAll(/\s/g, "");
 
     return base64ToArrayBuffer(base64);
   }
 
-  return base64ToArrayBuffer(input.replace(/\s/g, ""));
+  return base64ToArrayBuffer(input.replaceAll(/\s/g, ""));
 };
 
 type AttributeValueBlock = { readonly value?: unknown };
@@ -66,7 +67,7 @@ const subjectFromCsr = (csr: pkijs.CertificationRequest, fallback: string) => {
   return subject;
 };
 
-const microsoftDeviceIdExtension = (deviceId: string) =>
+const microsoftDeviceIdExtension = (pkijs: PkijsModule, asn1js: Asn1jsModule, deviceId: string) =>
   new pkijs.Extension({
     extnID: MS_DEVICE_ID_OID,
     critical: false,
@@ -105,13 +106,15 @@ export type SignedCsr = {
 export const signScepCsr = (options: SignCsrOptions): Effect.Effect<SignedCsr, ScepError> =>
   Effect.tryPromise({
     try: async () => {
+      const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
+
       const csr = pkijs.CertificationRequest.fromBER(decodeCsr(options.csr));
 
       if (!(await csr.verify())) {
         throw new Error("CSR signature is invalid");
       }
 
-      const caCert = pemToCert(options.caCertPem);
+      const caCert = await pemToCert(options.caCertPem);
       const caPrivateKey = await importPrivateKeyJwk(options.caPrivateKeyJwk);
       const deviceId = options.deviceId ?? "Windows Device";
       // Windows emits a CN containing `!` and NULs in its CSR. Normalize to the
@@ -133,7 +136,9 @@ export const signScepCsr = (options: SignCsrOptions): Effect.Effect<SignedCsr, S
 
       // createDeviceCertificate already adds the client-auth EKU; adding it
       // here would produce a duplicate 2.5.29.37 extension.
-      const extensions = options.deviceId ? [microsoftDeviceIdExtension(options.deviceId)] : [];
+      const extensions = options.deviceId
+        ? [microsoftDeviceIdExtension(pkijs, asn1js, options.deviceId)]
+        : [];
 
       const certificate = await createDeviceCertificate(
         randomCertificateSerial(),

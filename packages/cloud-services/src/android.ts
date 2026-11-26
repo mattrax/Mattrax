@@ -1,10 +1,9 @@
 import { Effect, Layer, Schema } from "effect";
-import {
-  AndroidManagement,
-  AndroidManagementFetchLive,
-  GoogleApiError,
-  type GoogleError,
-} from "@mattrax/dm-android";
+import { AndroidManagement, AndroidManagementFetchLive, GoogleApiError } from "@mattrax/dm-android";
+import type { AndroidManagementLiveOptions, GoogleError } from "@mattrax/dm-android";
+
+export { makeGoogleTokenCache } from "@mattrax/dm-android";
+export type { GoogleTokenCache } from "@mattrax/dm-android";
 import type { AndroidDeliveryConfig } from "@mattrax/enterprise-backend";
 
 /** Deployment bindings needed to construct Android Management delivery. */
@@ -115,9 +114,10 @@ const unavailable = (label: string): Effect.Effect<never, GoogleError> =>
  */
 export const androidManagementLayer = (
   config?: AndroidDeliveryConfig,
+  options: AndroidManagementLiveOptions = {},
 ): Layer.Layer<AndroidManagement> =>
   config
-    ? AndroidManagementFetchLive({ serviceAccount: config.serviceAccount })
+    ? AndroidManagementFetchLive({ serviceAccount: config.serviceAccount }, options)
     : Layer.succeed(
         AndroidManagement,
         AndroidManagement.of({

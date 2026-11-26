@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  evaluateDeviceQuery,
-  formatDeviceQueryText,
-  parseDeviceQueryText,
-  type DeviceQuery,
-  type DeviceQueryDevice,
-} from "./deviceQuery.ts";
+import { evaluateDeviceQuery, formatDeviceQueryText, parseDeviceQueryText } from "./deviceQuery.ts";
+import type { DeviceQuery, DeviceQueryDevice } from "./deviceQuery.ts";
 
 const now = new Date("2026-05-20T12:00:00.000Z");
 
@@ -215,5 +210,34 @@ describe("device query", () => {
       value: "activated",
     });
     expect(parseDeviceQueryText("activation is something-else")).toBeNull();
+  });
+
+  it("round-trips a group clause through the URL text", () => {
+    const query = parseDeviceQueryText("group is in pilot,exceptions");
+
+    expect(query).toEqual({
+      version: 1,
+      all: [{ field: "group", op: "in", value: ["pilot", "exceptions"] }],
+    });
+    expect(formatDeviceQueryText(query)).toBe("group is in pilot,exceptions");
+    expect(parseDeviceQueryText(formatDeviceQueryText(query))).toEqual(query);
+    expect(parseDeviceQueryText("group not in pilot")?.all?.[0]).toMatchObject({
+      field: "group",
+      op: "notIn",
+      value: ["pilot"],
+    });
+  });
+
+  it('does not read a text value that starts with "in" as a group clause', () => {
+    expect(parseDeviceQueryText("name is in stock")?.all?.[0]).toEqual({
+      field: "name",
+      op: "eq",
+      value: "in stock",
+    });
+    expect(parseDeviceQueryText("model is in drawer")?.all?.[0]).toEqual({
+      field: "model",
+      op: "eq",
+      value: "in drawer",
+    });
   });
 });

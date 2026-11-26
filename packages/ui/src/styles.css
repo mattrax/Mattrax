@@ -12,10 +12,8 @@
 @custom-variant dark (&:is(.dark, .dark *));
 
 @theme inline {
-  --font-sans:
-    "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono:
-    "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -48,6 +46,8 @@
   --color-active: var(--active);
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
+  --color-shell: var(--shell);
+  --color-page: var(--page);
   --color-scrim: var(--scrim);
 
   --color-brand: var(--brand);
@@ -83,7 +83,7 @@
 .theme-light {
   color-scheme: light;
 
-  --background: #f6f6f3;
+  --background: #e9e9e6;
   --foreground: #1a1a18;
   --card: #ffffff;
   --card-foreground: #1a1a18;
@@ -96,11 +96,12 @@
   --muted: #f1f1ed;
   --muted-foreground: #5f5f58;
   --subtle-foreground: #696961;
-  --accent: #ededE7;
+  --accent: #edede7;
   --accent-foreground: #1a1a18;
   --destructive: #b4382e;
   --destructive-foreground: #ffffff;
-  --success: #157a52;
+  /** Tone for success text and icons, including 10% tints over the page. */
+  --success: #116b47;
   --success-foreground: #ffffff;
   --warning: #8a5208;
   --warning-foreground: #7a4a06;
@@ -114,12 +115,34 @@
   --active: #e8e8e2;
   --surface: #f1f1ed;
   --surface-raised: #ffffff;
+  /** The app-frame chrome: sidebar and top bar. */
+  --shell: #f7f7f4;
+  /** The content canvas inside the frame, one tone for every dashboard page. */
+  --page: #fbfbf9;
+  /**
+   * The region globe. Land and ocean are at least 3:1 against each other and
+   * the coastline is at least 3:1 against both, so the map stays legible
+   * without relying on colour alone (country shapes and borders remain).
+   */
+  --globe-ocean: #6587a6;
+  --globe-land: #f8f4e9;
+  --globe-land-stroke: #1f3549;
+  --globe-selected: #6b1d42;
+  --globe-hover: #a63f6d;
   --scrim: rgb(24 24 22 / 0.28);
 
   --brand: #6550b9;
   --brand-solid: #6e56cf;
   --brand-foreground: #ffffff;
   --brand-muted: #efecfb;
+
+  /* Default chart ramp for custom dashboards; the overview declares its own
+     monochrome ramp inline. */
+  --chart-1: var(--brand-solid);
+  --chart-2: var(--success);
+  --chart-3: var(--warning);
+  --chart-4: var(--info);
+  --chart-5: var(--destructive);
 
   --shadow-card-value: 0 1px 2px rgb(24 24 22 / 0.04), 0 0 0 1px rgb(24 24 22 / 0.02);
   --shadow-popover-value:
@@ -137,7 +160,7 @@
   --card-foreground: #ecece6;
   --popover: #1c1c1a;
   --popover-foreground: #ecece6;
-  --primary: #eeeeE8;
+  --primary: #eeeee8;
   --primary-foreground: #151514;
   --secondary: #222220;
   --secondary-foreground: #ecece6;
@@ -162,6 +185,13 @@
   --active: #2c2c29;
   --surface: #1b1b19;
   --surface-raised: #242421;
+  --shell: #151514;
+  --page: #131312;
+  --globe-ocean: #0b1a2b;
+  --globe-land: #667887;
+  --globe-land-stroke: #dbe6ef;
+  --globe-selected: #f3e8ff;
+  --globe-hover: #a5f3fc;
   --scrim: rgb(0 0 0 / 0.55);
 
   --brand: #b3a4f5;
@@ -170,10 +200,8 @@
   --brand-muted: #241f3a;
 
   --shadow-card-value: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 1px rgb(255 255 255 / 0.02);
-  --shadow-popover-value:
-    0 16px 40px -16px rgb(0 0 0 / 0.6), 0 2px 8px -2px rgb(0 0 0 / 0.4);
-  --shadow-panel-value:
-    0 32px 80px -32px rgb(0 0 0 / 0.7), 0 12px 32px -16px rgb(0 0 0 / 0.5);
+  --shadow-popover-value: 0 16px 40px -16px rgb(0 0 0 / 0.6), 0 2px 8px -2px rgb(0 0 0 / 0.4);
+  --shadow-panel-value: 0 32px 80px -32px rgb(0 0 0 / 0.7), 0 12px 32px -16px rgb(0 0 0 / 0.5);
 }
 
 @layer base {
@@ -303,8 +331,16 @@
 
 @utility hairline-grid {
   background-image:
-    linear-gradient(to right, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in oklab, var(--border) 70%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--border) 70%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--border) 70%, transparent) 1px,
+      transparent 1px
+    );
   background-size: 56px 56px;
 }
 
@@ -334,5 +370,89 @@
   }
   to {
     background-position: -200% 0;
+  }
+}
+
+/* Dot-matrix activity. Every dot runs the same pulse; only its delay changes,
+   which turns one field into a wave, spiral, rain, ripple, snake or scan. */
+@keyframes mt-dot {
+  0%,
+  100% {
+    opacity: 0.18;
+    transform: scale(0.72);
+  }
+  45% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes mt-dot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+[data-slot="dot-matrix-dot"][data-animated="true"] {
+  animation: mt-dot 1.25s var(--ease-in-out) infinite;
+  animation-delay: var(--mt-dot-delay, 0s);
+}
+
+[data-slot="dot-matrix-dot"][data-enter="true"] {
+  animation: mt-dot-in 260ms var(--ease-swift) both;
+  animation-delay: var(--mt-dot-delay, 0s);
+}
+
+/* Indeterminate sweep used by route changes and background jobs. */
+@keyframes mt-indeterminate {
+  0% {
+    transform: translateX(-110%) scaleX(0.55);
+  }
+  55% {
+    transform: translateX(70%) scaleX(1);
+  }
+  100% {
+    transform: translateX(310%) scaleX(0.6);
+  }
+}
+
+@keyframes mt-pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.mt-indeterminate {
+  animation: mt-indeterminate 1.1s linear infinite;
+}
+
+.mt-skeleton {
+  background-image: linear-gradient(90deg, var(--muted), var(--hover), var(--muted));
+  background-size: 200% 100%;
+  animation: mt-shimmer 1.6s linear infinite;
+}
+
+/* Activity marks may keep a gentle pulse, but complex travel stops. */
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dot-matrix-dot"] {
+    animation: none !important;
+    opacity: 0.7;
+  }
+
+  .mt-indeterminate {
+    animation: mt-pulse-soft 1.4s ease-in-out infinite;
+  }
+
+  .mt-skeleton {
+    animation: none;
   }
 }

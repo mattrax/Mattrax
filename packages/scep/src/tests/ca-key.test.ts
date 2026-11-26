@@ -7,8 +7,8 @@ import {
   isSealedCaPrivateKey,
   openCaPrivateKey,
   sealCaPrivateKey,
-  type StoredCaPrivateKey,
 } from "../ca-key.js";
+import type { StoredCaPrivateKey } from "../ca-key.js";
 
 const secret = "scep-ca-test-secret";
 
@@ -25,7 +25,7 @@ const tamper = (base64: string) => {
 
   for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
   const last = bytes.byteLength - 1;
-  bytes[last] = bytes[last]! ^ 0x01;
+  bytes[last] = bytes[last] ^ 0x01;
   let out = "";
 
   for (const byte of bytes) out += String.fromCharCode(byte);
@@ -136,7 +136,7 @@ describe("SCEP CA private key sealing", () => {
     ];
 
     for (const stored of cases) {
-      const error = await openCaPrivateKey(stored, secret).catch((cause: unknown) => cause);
+      const error = await openCaPrivateKey(stored, secret).catch((error_: unknown) => error_);
       expect(error).toBeInstanceOf(ScepCaKeyError);
 
       if (!(error instanceof ScepCaKeyError)) throw new Error("expected ScepCaKeyError");
@@ -151,7 +151,7 @@ describe("SCEP CA private key sealing", () => {
     const sealed = await sealCaPrivateKey(secret, jwk);
 
     const error = await openCaPrivateKey({ v: 1, sealed: tamper(sealed.sealed) }, secret).catch(
-      (cause: unknown) => cause,
+      (error_: unknown) => error_,
     );
 
     expect(error).toBeInstanceOf(ScepCaKeyError);

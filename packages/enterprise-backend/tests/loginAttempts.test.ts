@@ -40,7 +40,7 @@ describe("login attempt recording", () => {
         path: "/api/v1/completePasskeySignIn",
         headers: {
           "user-agent": chrome,
-          "cf-connecting-ip": "203.0.113.77",
+          "x-mattrax-client-address": "203.0.113.77",
         },
         body: authenticated({}),
       }),
@@ -91,7 +91,7 @@ describe("login attempt recording", () => {
         path: "/api/v1/verifytotppending",
         headers: {
           cookie: `${PENDING_PROOF_COOKIE}=${credential}`,
-          "cf-connecting-ip": "198.51.100.4",
+          "x-mattrax-client-address": "198.51.100.4",
           "user-agent": chrome,
         },
         body: JSON.stringify({ _tag: "Failure", error: { _tag: "TotpRejected" } }),
@@ -251,7 +251,7 @@ describe("login attempt recording", () => {
     const rows = await runEffect(listLoginAttempts(db, "account-1"));
 
     expect(rows).toHaveLength(50);
-    expect(rows[0]!.createdAt.getSeconds()).toBe(59);
+    expect(rows[0].createdAt.getSeconds()).toBe(59);
   });
 
   it("prunes only attempts older than the cutoff", async () => {
@@ -376,5 +376,19 @@ describe("login attempt presentation", () => {
 
   it("falls back to the endpoint when there is no parsed client header", () => {
     expect(loginAttemptClient({})).toEqual({ ip: null, userAgent: null });
+  });
+
+  it("ignores spoofable forwarding headers", () => {
+    expect(
+      loginAttemptClient({
+        "cf-connecting-ip": "203.0.113.7",
+        "x-forwarded-for": "203.0.113.7, 198.51.100.9",
+        "x-real-ip": "203.0.113.7",
+      }),
+    ).toEqual({ ip: null, userAgent: null });
+    expect(loginAttemptClient({ "x-mattrax-client-address": "not-an-ip" })).toEqual({
+      ip: null,
+      userAgent: null,
+    });
   });
 });

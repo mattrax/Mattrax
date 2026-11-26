@@ -6,6 +6,9 @@ export class MdmError extends Data.TaggedError("MdmError")<{ message: string; ca
 
 export class DeviceNotFound extends Data.TaggedError("DeviceNotFound")<{ deviceId: string }> {}
 
+// Effect's tagged-error payload is deliberately empty; \`Record<string, never>\`
+// changes how it combines with sibling error unions.
+// oxlint-disable-next-line typescript/no-empty-object-type -- Effect tagged error with no payload.
 export class DeviceUnenrolled extends Data.TaggedError("DeviceUnenrolled")<{}> {}
 
 export class DeclarationNotFound extends Data.TaggedError("DeclarationNotFound")<{
@@ -105,27 +108,35 @@ export const GetTokenPlist = Schema.Struct({
 
 export type GetTokenPlist = typeof GetTokenPlist.Type;
 
-export const CommandResultPlist = Schema.Struct({
-  ...CheckinIdentifierFields,
-  ...UserChannelIdentifierFields,
-  Status: Schema.String,
-  CommandUUID: Schema.optional(Schema.String),
-  Command: Schema.optional(
-    Schema.Struct({
-      RequestType: Schema.String,
-    }),
-  ),
-  QueryResponses: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
-  ErrorChain: Schema.optional(
-    Schema.Array(
+/**
+ * A command result. Apple puts some answers under `QueryResponses` and others
+ * (`UserList`, `DeviceLocation`) at the top level, so unknown keys must survive
+ * decoding instead of being stripped before the management backend sees them.
+ */
+export const CommandResultPlist = Schema.StructWithRest(
+  Schema.Struct({
+    ...CheckinIdentifierFields,
+    ...UserChannelIdentifierFields,
+    Status: Schema.String,
+    CommandUUID: Schema.optional(Schema.String),
+    Command: Schema.optional(
       Schema.Struct({
-        ErrorCode: Schema.Number,
-        ErrorDomain: Schema.optional(Schema.String),
-        localizedDescription: Schema.optional(Schema.String),
+        RequestType: Schema.String,
       }),
     ),
-  ),
-});
+    QueryResponses: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+    ErrorChain: Schema.optional(
+      Schema.Array(
+        Schema.Struct({
+          ErrorCode: Schema.Number,
+          ErrorDomain: Schema.optional(Schema.String),
+          localizedDescription: Schema.optional(Schema.String),
+        }),
+      ),
+    ),
+  }),
+  [Schema.Record(Schema.String, Schema.Unknown)],
+);
 
 export type CommandResultPlist = typeof CommandResultPlist.Type;
 

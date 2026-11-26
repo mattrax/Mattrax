@@ -8,6 +8,35 @@ For the recorded threat model, trust boundaries and accepted risks, see
 [Threat model](/reference/threat-model). It maps each mitigation to the test suite
 that exercises it.
 
+## Certificate security
+
+Mattrax issues its own SCEP identity for device mTLS. Enterprise certificates for Wi-Fi,
+VPN and S/MIME are separate policy profiles: a trusted root, a PKCS profile or an imported
+PFX. See [Policies → Certificate profiles](/manage/policies#certificate-profiles).
+
+The PFX and its password are sealed with AES-256-GCM under `AUTH_SECRET` in a dedicated
+row. The policy configuration stores only public leaf metadata (subject, expiry,
+fingerprint) and a material digest, so the API, deployment snapshots and tenant exports
+never carry the key material. The upload is parsed as PKCS#12, the password is verified and
+the supplied leaf certificate must match a certificate in the file; metadata is derived
+from the PFX rather than trusted from the request. Restoring a tenant bundle therefore
+leaves certificate profiles without material until the PKCS#12 is uploaded again, and a
+rollback that would pair old metadata with different material is refused. Rotating
+`AUTH_SECRET` requires re-uploading certificate material, just like APNs keys and escrowed
+secrets.
+
+Two delivery copies are protected as well. Legacy Apple `InstallProfile` commands seal
+their payload in `device_command` and decrypt only at dispatch and installed-profile
+reconciliation. Windows `PFXCertBlob`/`PFXCertPassword` command payloads are sealed for the
+same reason.
+Apple identity assets are served only with the signed per-device token and after
+re-resolving that device's effective policy; a tenant-wide mTLS certificate is enough only
+for a public certificate/root asset, never for an identity.
+
+SCEP challenges are one-time and tenant-bound; SCEP CA keys are sealed with the same
+deployment secret and record retirement windows so a rotated CA can verify but never sign
+again.
+
 ## Account security
 
 Open **Account** to manage:
@@ -93,18 +122,146 @@ account, session and action.
 Actions:
 
 `tenant-delete`, `tenant-mfa-policy`, `api-token-create`, `api-token-revoke`,
-`mfa-enroll`, `mfa-disable`, `mfa-regenerate`, `email-change`,
-`sessions-revoke-all`, `recovery-approve`, `recovery-key-reveal`,
-`backup-download`, `device-command`, `billing-portal`, `sso-policy`,
+`scim-token-create`, `mfa-enroll`, `mfa-disable`, `mfa-regenerate`,
+`email-change`, `sessions-revoke-all`, `recovery-approve`,
+`recovery-key-reveal`, `device-handover`, `backup-download`, `backup-pin`,
+`backup-delete`, `backup-restore`, `cutover-export`, `cutover-import`,
+`device-command`, `android-disconnect`, `script-change`, `script-run`,
+`billing-portal`, `sso-policy`, `scep-ca-rotate`, `scep-ca-import`,
 `passkey-enroll`, `passkey-remove`.
+
+Most additive writes need the resource's write permission but no step-up: creating a
+policy or a script has no existing object to protect. Credential creation is the
+exception — creating an API token (`api-token-create`) or a SCIM token
+(`scim-token-create`) still requires step-up, because the token itself is a durable
+credential. Changing an existing object is not enough on its own: editing a
+policy, group, tenant profile or device assignment needs only the write permission.
+Step-up is reserved for the actions listed above — deleting a tenant, changing its MFA
+or SSO policy, editing/assigning/running/deleting a script or toggling scripts for the
+tenant, changing or removing a sign-in credential, changing the account email or
+revoking every session, issuing a device command or handover, disconnecting Android,
+rotating/importing the SCEP CA, downloading/pinning/deleting/restoring a backup, and
+exporting/importing a cutover archive.
 
 If a grant is missing or expired, the API returns a 403 `StepUpRequired` with the action
 and available factors. The browser retries with `x-mattrax-step-up: <grant>`.
 
 :::tip Bearer tokens
-API tokens are exempt from step-up because they are already an explicitly issued, scoped
-credential. Protect them accordingly.
+Requests authenticated with a bearer API token are exempt from step-up because the token
+is already an explicitly issued, scoped credential. Creating or revoking a token still
+requires step-up. Protect tokens accordingly.
 :::
+
+## Four-eyes approvals
+
+Step-up proves the **same** administrator is present. It does not prove a **different**
+person agreed to a destructive change. Four-eyes approval adds that second signature for
+the actions a tenant chooses to gate.
+
+Approval policies are optional. When no policy matches an action, the endpoint behaves
+exactly as before: step-up still applies where it already did, and nothing else changes.
+
+### Gated actions
+
+A policy can name any of these action keys:
+
+| Action key         | Endpoint(s)                                                       |
+| ------------------ | ----------------------------------------------------------------- |
+| `device.wipe`      | Device actions `wipe` and `return-to-service` (mode is bound)     |
+| `tenant.delete`    | Delete the tenant                                                 |
+| `tenant.export`    | Export tenant data, including the encrypted cutover archive       |
+| `policy.delete`    | Bulk policy deletion, and a backup restore (it replaces policies) |
+| `script.run`       | Run a script                                                      |
+| `script.write`     | Create, edit, delete or reassign a script                         |
+| `backup.download`  | Download a tenant backup                                          |
+| `api-token.create` | Create an API token bound to the tenant                           |
+
+`device.wipe` and `script.run` accept a **scope**: the whole tenant, a device, or a
+group. Other actions are tenant-wide. `api-token.create` covers tokens bound to the
+tenant; an account-wide token is reviewed by the first tenant the account belongs to, because a
+token with no owning tenant can be used against every one of them. When scopes overlap,
+the most specific policy wins (device, then group, then tenant); ties prefer the policy with the higher approval count,
+then the newest. The request stores the policy id and the rules it was created under, so
+editing a policy affects new requests, not in-flight ones.
+
+### Request and approve
+
+1. The caller runs the action as usual. If a policy matches and no approval id is
+   supplied, **nothing executes**. The API returns a 403 `ApprovalRequired` naming the
+   pending request; an approved request returns the same error with `status: "approved"`
+   and the message asks the caller to retry.
+2. Eligible administrators open **Settings → Approvals**. The queue shows the requester,
+   the action, a metadata-only summary, the approvals needed and the decisions so far.
+   They approve with an optional note or reject with a required note.
+3. The requester retries the original request with
+   `x-mattrax-approval: <request id>`. The server checks the state, expiry, requester,
+   canonical payload and single-use before executing. The dashboard keeps the blocked
+   call in memory and offers **Retry with this approval** on the approved request; after
+   a reload, run the action again and retry from the request it names.
+
+Approvals are bound to a canonical SHA-256 digest of the action, policy, resource and
+targets. An approval for one device, one set of script targets, one script body, one
+backup or one API-token scope cannot be reused for another. A request names the number of
+distinct approvers required, **excluding the requester**: the requester can never approve
+their own request.
+
+Requests last 24 hours. Expiry is enforced both when the queue is read and immediately
+before execution; an approved request that is not used in time expires. Execution consumes
+the request atomically, so two retries cannot both run the action. Decisions and the status
+flip run in one transaction with the request row locked, so concurrent approvers cannot
+leave a request at N of N while still pending. The payload summary is metadata only — device
+counts, ids, script names, token scopes and similar — and never a secret; the script body
+itself is hashed with canonical JSON, not stored.
+
+Terminal approval history is deleted after 90 days by the daily maintenance sweep. Pending
+requests are never pruned. A tenant owner deleting their **account** cannot take a tenant
+with it when that tenant has a `tenant.delete` policy: the operator must delete the tenant
+explicitly so another administrator can approve it or the owner can break-glass.
+
+Bearer credentials (API tokens and MCP connections) can **request** approval but can never
+**approve**: decisions require a signed-in administrator session.
+
+### Who can approve
+
+An approver needs `approvals.write` and then the configured requirement from the policy:
+
+- a permission (for example `devices.command`), checked against the approver's effective
+  role in that tenant; or
+- a built-in role, which is a floor: an owner can approve anything an administrator can.
+  A custom role never satisfies a built-in role requirement.
+
+A member without the configured permission is rejected with a typed
+`EnterpriseForbidden` naming the permission or role. Policy configuration itself requires
+`approvals.write`. Owners and administrators have it by default; members and auditors do
+not.
+
+### Break-glass
+
+An owner can bypass a policy when a second administrator is genuinely unavailable. Send
+`x-mattrax-approval-break-glass: <reason>` on the original request. The reason is
+mandatory (maximum 1,000 characters), only a built-in owner can use it, and bearer
+credentials are refused. The server records a prominent `approval.break_glass_used` audit
+event with the action, policy and reason, plus the normal consumption event, then runs the
+action. Break-glass is a deliberate exception for an emergency, not an administrative
+shortcut. While the blocked call is still in the browser session, **Settings → Approvals →
+Mine** offers **Break-glass and run** with the mandatory reason field.
+
+### Audit
+
+The tenant audit log records:
+
+- `approval.policy_created`, `approval.policy_updated`, `approval.policy_deleted`;
+- `approval.requested` (with the effective requester RBAC);
+- `approval.approved` and `approval.rejected` (with the approver's effective RBAC);
+- `approval.cancelled`;
+- `approval.expired` (system actor);
+- `approval.consumed` (execution);
+- `approval.break_glass_used`.
+
+A gated request that is blocked returns a 403 `ApprovalRequired` with `requestId` and
+`status` (`pending` or `approved`), so a client can prompt for the decision and retry
+with the header. Expired, consumed and payload-mismatched approvals return typed
+`EnterpriseBadRequest`/`EnterpriseConflict` errors.
 
 ## API tokens
 
@@ -114,7 +271,9 @@ Create tokens under **Account → API tokens**:
 - Permissions: pick groups (No access / Read / Write) and expand to individual
   permissions. The picker only offers permissions your role holds in at least
   one tenant.
-- Optional tenant binding.
+- Tenant binding. A tenant member should usually create a token bound to that tenant, so
+  it is governed by that tenant's `api-token.create` policy. An account-wide token is
+  reviewed by the first tenant the account belongs to that has such a policy.
 - Optional expiry.
 
 The token's grant is a ceiling, never a grant: every request also checks your

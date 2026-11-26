@@ -42,7 +42,12 @@ import { AppleFdeEscrowKeyInfo } from "../Device.js";
 import { AppleUserActionRequest } from "../Device.js";
 import { AppleUserActionResponse } from "../Device.js";
 import { BindAppleUserIdentityRequest } from "../Device.js";
-import { ApplicationInstallResult } from "../Application.js";
+import { ApplicationStorefrontListResponse } from "../Application.js";
+import { ApplicationStorefrontRefreshResult } from "../Application.js";
+import { PatchApplicationStorefrontsRequest } from "../Application.js";
+import { RefreshApplicationStorefrontsRequest } from "../Application.js";
+import { UnlinkApplicationRequest } from "../Application.js";
+import { UnlinkApplicationResult } from "../Application.js";
 import { ApplicationInventoryQuery } from "../Device.js";
 import { ApplicationInventoryResponse } from "../Device.js";
 import { ApplicationListResponse } from "../Application.js";
@@ -60,8 +65,6 @@ import { AutopilotProfileInfo } from "../Autopilot.js";
 import { AutopilotProfilesResponse } from "../Autopilot.js";
 import { AutopilotSettingsResponse } from "../Autopilot.js";
 import { AutopilotSyncResponse } from "../Autopilot.js";
-import { BackupRestoreRequest } from "../Backup.js";
-import { BackupRestoreResponse } from "../Backup.js";
 import { BackupRunInfo } from "../Backup.js";
 import { BillingCheckoutRequest } from "../Billing.js";
 import { BillingCheckoutResponse } from "../Billing.js";
@@ -69,6 +72,7 @@ import { BillingInvoicesResponse } from "../Billing.js";
 import { BillingPortalRequest } from "../Billing.js";
 import { BillingPortalResponse } from "../Billing.js";
 import { BillingSummary } from "../Tenant.js";
+import { StorageUsageResponse } from "../storageUsage.js";
 import { BulkOperationResult } from "../Common.js";
 import { CreateApplicationRequest } from "../Application.js";
 import { CreateAutopilotProfileRequest } from "../Autopilot.js";
@@ -76,9 +80,6 @@ import { CreateInvitationResponse } from "../Audit.js";
 import { CreatePolicyRequest } from "../Policy.js";
 import { CreateScimTokenResponse } from "../Scim.js";
 import { CredentialHealthResponse } from "../Device.js";
-import { DeleteTenantResponse } from "../Backup.js";
-import { DeviceActionRequest } from "../Device.js";
-import { DeviceActionResponse } from "../Device.js";
 import { DeviceActivationLockBypassCodeResponse } from "../Device.js";
 import { DeviceActivityResponse } from "../Device.js";
 import { DeviceApplicationsResponse } from "../Device.js";
@@ -105,6 +106,11 @@ import { EffectivePolicyResponse } from "../Policy.js";
 import { EnrollmentAttemptsResponse } from "../Enrollment.js";
 import { EnrollmentQuery } from "../Enrollment.js";
 import { EnrollmentResponse } from "../Enrollment.js";
+import { AppleByodConfigInfo } from "../Enrollment.js";
+import { AppleByodTestResult } from "../Enrollment.js";
+import { ConfirmAppleByodHardwareRequest } from "../Enrollment.js";
+import { PatchAppleByodConfigRequest } from "../Enrollment.js";
+import { TestAppleByodConfigRequest } from "../Enrollment.js";
 import { AndroidEnterpriseInfo } from "../Android.js";
 import { AndroidSignupResponse } from "../Android.js";
 import { AndroidSyncResponse } from "../Android.js";
@@ -115,9 +121,8 @@ import { EnterpriseStepUpRequired } from "../Errors.js";
 import { PatchTenantAndroidRequest } from "../Android.js";
 import { EnterpriseAppleReadErrors } from "../Errors.js";
 import { EnterpriseAppleWriteErrors } from "../Errors.js";
-import { EnterpriseApplicationDownloadErrors } from "../Policy.js";
 import { EnterpriseApplicationErrors } from "../Errors.js";
-import { EnterpriseApplicationUploadErrors } from "../Policy.js";
+import { EnterpriseConditionalWriteErrors } from "../Errors.js";
 import { EnterpriseAuthRequiredErrors } from "../Errors.js";
 import { EnterpriseAutopilotReadErrors } from "../Errors.js";
 import { EnterpriseAutopilotWriteErrors } from "../Errors.js";
@@ -128,7 +133,6 @@ import { EnterpriseBillingReadErrors } from "../Errors.js";
 import { EnterpriseConflict } from "../Errors.js";
 import { EnterpriseDbErrors } from "../Errors.js";
 import { EnterpriseForbidden } from "../Errors.js";
-import { EnterpriseInternal } from "../Errors.js";
 import { EnterpriseNoDomainErrors } from "../Errors.js";
 import { EnterpriseNotFound } from "../Errors.js";
 import { EnterprisePolicyApplicationDownloadErrors } from "../Errors.js";
@@ -137,9 +141,6 @@ import { EnterprisePublicAdeProfileErrors } from "../Errors.js";
 import { EnterprisePublicEnrollmentProfileErrors } from "../Errors.js";
 import { EnterprisePublicNotFoundErrors } from "../Errors.js";
 import { EnterpriseSsoErrors } from "../Errors.js";
-import { EnterpriseTenantBackupDownloadErrors } from "../Errors.js";
-import { EnterpriseTenantDeleteErrors } from "../Errors.js";
-import { EnterpriseTenantExportErrors } from "../Errors.js";
 import { EnterpriseTenantImportErrors } from "../Errors.js";
 import { EnterpriseTenantReadErrors } from "../Errors.js";
 import { EnterpriseTenantAccountRemoveErrors } from "../Errors.js";
@@ -148,9 +149,9 @@ import { EnterpriseTenantWriteErrors } from "../Errors.js";
 import { EntraDirectorySyncResult } from "../Tenant.js";
 import { EntraDirectorySyncStatus } from "../Tenant.js";
 import { EntraDomainsResponse } from "../Tenant.js";
-import { GroupListResponse } from "../Search.js";
-import { GroupNode } from "../Group.js";
-import { GroupPreviewResponse } from "../Search.js";
+import { GoogleDirectoryCredentialsRequest } from "../Tenant.js";
+import { GoogleDirectorySyncResult } from "../Tenant.js";
+import { GoogleDirectorySyncStatus } from "../Tenant.js";
 import { IdParam } from "./Params.js";
 import { ImportTenantScepCaRequest } from "../Enrollment.js";
 import { InvitationOptionsResponse } from "../Tenant.js";
@@ -169,8 +170,7 @@ import { TenantOwnershipTransferResponse } from "../Tenant.js";
 import { PatchApplicationRequest } from "../Application.js";
 import { PatchDeviceRequest } from "../Device.js";
 import { PatchEntraDirectorySyncRequest } from "../Tenant.js";
-import { PatchGroupMembersRequest } from "../Group.js";
-import { PatchGroupRequest } from "../Group.js";
+import { PatchGoogleDirectorySyncRequest } from "../Tenant.js";
 import { PatchPolicyRequest } from "../Policy.js";
 import { PatchSsoConfigRequest } from "../Tenant.js";
 import { PolicyApplicationObject } from "../Policy.js";
@@ -190,7 +190,6 @@ import { TenantDashboardWidgetParam } from "./Params.js";
 import { TenantDetail } from "../Tenant.js";
 import { TenantDeviceUserParam } from "./Params.js";
 import { TenantEnrollmentInfo } from "../Enrollment.js";
-import { TenantExportQuery } from "../Backup.js";
 import { TenantIdParam } from "./Params.js";
 import { TenantImportRequest } from "../Backup.js";
 import { TenantImportResponse } from "../Backup.js";
@@ -219,7 +218,6 @@ import { VppReleaseRequest } from "../Apple.js";
 import { VppReleaseResponse } from "../Apple.js";
 import { VppSyncResponse } from "../Apple.js";
 import { WebhookDeliveryQuery } from "../Common.js";
-import { CreateGroupRequest } from "../Group.js";
 import { CreateScimTokenRequest } from "../Scim.js";
 import { CreateTenantRequest } from "../Tenant.js";
 import { IdResponse } from "../Common.js";
@@ -270,16 +268,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.get("exportTenant", "/v1/tenants/:tenantId/export", {
-      error: EnterpriseTenantExportErrors,
-      params: TenantParam,
-      query: TenantExportQuery,
-      success: Schema.String.pipe(
-        HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
-      ),
-    }),
-  )
-  .add(
     HttpApiEndpoint.post("importTenant", "/v1/tenants/import", {
       error: EnterpriseTenantImportErrors,
       payload: TenantImportRequest,
@@ -298,15 +286,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
       success: TenantBackupsResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("downloadTenantBackup", "/v1/tenants/:tenantId/backups/:id/download", {
-      error: [...EnterpriseTenantBackupDownloadErrors, ...EnterpriseStepUpRequired],
-      params: TenantIdParam,
-      success: Schema.String.pipe(
-        HttpApiSchema.asText({ contentType: "application/json; charset=utf-8" }),
-      ),
     }),
   )
   .add(
@@ -331,32 +310,11 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.post("restoreTenantBackup", "/v1/tenants/:tenantId/backups/:id/restore", {
-      error: [
-        ...EnterpriseBackupWriteErrors,
-        EnterpriseConflict.pipe(HttpApiSchema.status(409)),
-        EnterpriseBadRequest.pipe(HttpApiSchema.status(400)),
-        EnterpriseInternal.pipe(HttpApiSchema.status(500)),
-        ...EnterpriseStepUpRequired,
-      ],
-      params: TenantIdParam,
-      payload: BackupRestoreRequest,
-      success: BackupRestoreResponse,
-    }),
-  )
-  .add(
     HttpApiEndpoint.patch("patchTenant", "/v1/tenants/:tenantId", {
       error: EnterpriseTenantWriteErrors,
       params: TenantParam,
       payload: PatchTenantRequest,
       success: OkResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.delete("deleteTenant", "/v1/tenants/:tenantId", {
-      error: [...EnterpriseTenantDeleteErrors, ...EnterpriseStepUpRequired],
-      params: TenantParam,
-      success: DeleteTenantResponse,
     }),
   )
   .add(
@@ -418,6 +376,63 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantParam,
       success: EntraDirectorySyncResult,
     }),
+  )
+  .add(
+    HttpApiEndpoint.get(
+      "getGoogleDirectorySync",
+      "/v1/tenants/:tenantId/identity/directory/google",
+      {
+        error: EnterpriseTenantReadErrors,
+        params: TenantParam,
+        success: GoogleDirectorySyncStatus,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.patch(
+      "patchGoogleDirectorySync",
+      "/v1/tenants/:tenantId/identity/directory/google",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        payload: PatchGoogleDirectorySyncRequest,
+        success: OkResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.put(
+      "putGoogleDirectoryCredentials",
+      "/v1/tenants/:tenantId/identity/directory/google/credentials",
+      {
+        error: [...EnterpriseSsoErrors, ...EnterpriseStepUpRequired],
+        params: TenantParam,
+        payload: GoogleDirectoryCredentialsRequest,
+        success: GoogleDirectorySyncStatus,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete(
+      "deleteGoogleDirectoryCredentials",
+      "/v1/tenants/:tenantId/identity/directory/google/credentials",
+      {
+        error: [...EnterpriseSsoErrors, ...EnterpriseStepUpRequired],
+        params: TenantParam,
+        success: GoogleDirectorySyncStatus,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "syncGoogleDirectory",
+      "/v1/tenants/:tenantId/identity/directory/google/sync",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        success: GoogleDirectorySyncResult,
+      },
+    ),
   )
   .add(
     HttpApiEndpoint.get("listEntraDomains", "/v1/tenants/:tenantId/identity/domains", {
@@ -888,6 +903,41 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
+    HttpApiEndpoint.get("getAppleByodConfig", "/v1/tenants/:tenantId/apple/byod", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: AppleByodConfigInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.patch("patchAppleByodConfig", "/v1/tenants/:tenantId/apple/byod", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: PatchAppleByodConfigRequest,
+      success: AppleByodConfigInfo,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post("testAppleByodConfig", "/v1/tenants/:tenantId/apple/byod/test", {
+      error: EnterpriseTenantWriteErrors,
+      params: TenantParam,
+      payload: TestAppleByodConfigRequest,
+      success: AppleByodTestResult,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "confirmAppleByodHardware",
+      "/v1/tenants/:tenantId/apple/byod/validation",
+      {
+        error: EnterpriseTenantWriteErrors,
+        params: TenantParam,
+        payload: ConfirmAppleByodHardwareRequest,
+        success: AppleByodConfigInfo,
+      },
+    ),
+  )
+  .add(
     HttpApiEndpoint.get("getApns", "/v1/tenants/:tenantId/apns", {
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
@@ -1349,20 +1399,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.post("deviceAction", "/v1/tenants/:tenantId/devices/:id/action", {
-      // Android and Apple command issues are upstream calls and can require a
-      // step-up grant; declare those errors so they encode instead of 500ing.
-      error: [
-        ...EnterpriseAndroidErrors,
-        ...EnterpriseAppleWriteErrors,
-        ...EnterpriseStepUpRequired,
-      ],
-      params: TenantIdParam,
-      payload: DeviceActionRequest,
-      success: DeviceActionResponse,
-    }),
-  )
-  .add(
     HttpApiEndpoint.get("listDeviceCommands", "/v1/tenants/:tenantId/devices/:id/commands", {
       error: EnterpriseTenantReadErrors,
       params: TenantIdParam,
@@ -1499,75 +1535,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.get("listGroups", "/v1/tenants/:tenantId/groups", {
-      error: EnterpriseTenantReadErrors,
-      params: TenantParam,
-      success: GroupListResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("getGroup", "/v1/tenants/:tenantId/groups/:id", {
-      error: EnterpriseTenantReadErrors,
-      params: TenantIdParam,
-      success: GroupNode,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("previewGroup", "/v1/tenants/:tenantId/groups/:id/preview", {
-      error: EnterpriseTenantReadErrors,
-      params: TenantIdParam,
-      success: GroupPreviewResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("createGroup", "/v1/tenants/:tenantId/groups", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantParam,
-      payload: CreateGroupRequest,
-      success: IdResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.delete("deleteGroups", "/v1/tenants/:tenantId/groups", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantParam,
-      payload: IdsRequest,
-      success: BulkOperationResult,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.patch("patchGroup", "/v1/tenants/:tenantId/groups/:id", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantIdParam,
-      payload: PatchGroupRequest,
-      success: OkResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.patch("patchGroupMembers", "/v1/tenants/:tenantId/groups/:id/members", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantIdParam,
-      payload: PatchGroupMembersRequest,
-      success: OkResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("syncGroups", "/v1/tenants/:tenantId/groups/sync", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantParam,
-      payload: IdsRequest,
-      success: OkResponse,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("duplicateGroup", "/v1/tenants/:tenantId/groups/:id/duplicate", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantIdParam,
-      payload: DuplicateRequest,
-      success: IdResponse,
-    }),
-  )
-  .add(
     HttpApiEndpoint.get("listDirectory", "/v1/tenants/:tenantId/directory", {
       error: EnterpriseTenantReadErrors,
       params: TenantParam,
@@ -1619,16 +1586,8 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
     }),
   )
   .add(
-    HttpApiEndpoint.delete("deletePolicies", "/v1/tenants/:tenantId/policies", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantParam,
-      payload: IdsRequest,
-      success: BulkOperationResult,
-    }),
-  )
-  .add(
     HttpApiEndpoint.patch("patchPolicy", "/v1/tenants/:tenantId/policies/:id", {
-      error: EnterpriseTenantWriteErrors,
+      error: EnterpriseConditionalWriteErrors,
       params: TenantIdParam,
       payload: PatchPolicyRequest,
       success: OkResponse,
@@ -1689,7 +1648,7 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.patch("patchApplication", "/v1/tenants/:tenantId/applications/:id", {
-      error: EnterpriseApplicationErrors,
+      error: EnterpriseConditionalWriteErrors,
       params: TenantIdParam,
       payload: PatchApplicationRequest,
       success: OkResponse,
@@ -1705,6 +1664,42 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
   )
   .add(
     HttpApiEndpoint.patch(
+      "patchApplicationStorefronts",
+      "/v1/tenants/:tenantId/applications/:id/storefronts",
+      {
+        error: EnterpriseApplicationErrors,
+        params: TenantIdParam,
+        payload: PatchApplicationStorefrontsRequest,
+        success: ApplicationStorefrontListResponse,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "refreshApplicationStorefronts",
+      "/v1/tenants/:tenantId/applications/:id/storefronts/refresh",
+      {
+        error: EnterpriseApplicationErrors,
+        params: TenantIdParam,
+        payload: RefreshApplicationStorefrontsRequest,
+        success: ApplicationStorefrontRefreshResult,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post(
+      "unlinkApplicationAssignments",
+      "/v1/tenants/:tenantId/applications/:id/unlink",
+      {
+        error: EnterpriseApplicationErrors,
+        params: TenantIdParam,
+        payload: UnlinkApplicationRequest,
+        success: UnlinkApplicationResult,
+      },
+    ),
+  )
+  .add(
+    HttpApiEndpoint.patch(
       "patchApplicationAssignments",
       "/v1/tenants/:tenantId/applications/:id/assignments",
       {
@@ -1712,68 +1707,6 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
         params: TenantIdParam,
         payload: PatchApplicationAssignmentsRequest,
         success: OkResponse,
-      },
-    ),
-  )
-  .add(
-    HttpApiEndpoint.post("installApplication", "/v1/tenants/:tenantId/applications/:id/install", {
-      error: EnterpriseTenantWriteErrors,
-      params: TenantIdParam,
-      success: ApplicationInstallResult,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("uploadApplication", "/v1/tenants/:tenantId/applications/:id/upload", {
-      error: EnterpriseApplicationUploadErrors,
-      params: TenantIdParam,
-      payload: UploadPolicyApplicationRequest,
-      success: PolicyApplicationObject,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post(
-      "uploadApplicationInstaller",
-      "/v1/tenants/:tenantId/applications/:id/installers/:installerId/upload",
-      {
-        error: EnterpriseApplicationUploadErrors,
-        params: Schema.Struct({
-          tenantId: Schema.String,
-          id: Schema.String,
-          installerId: Schema.String,
-        }),
-        payload: UploadPolicyApplicationRequest,
-        success: PolicyApplicationObject,
-      },
-    ),
-  )
-  .add(
-    HttpApiEndpoint.get(
-      "downloadApplicationInstaller",
-      "/v1/tenants/:tenantId/applications/:id/installers/:installerId/download/:sha256",
-      {
-        error: EnterpriseApplicationDownloadErrors,
-        params: Schema.Struct({
-          tenantId: Schema.String,
-          id: Schema.String,
-          installerId: Schema.String,
-          sha256: Schema.String,
-        }),
-        success: DownloadPolicyApplicationResponse,
-      },
-    ),
-  )
-  .add(
-    HttpApiEndpoint.get(
-      "downloadApplication",
-      "/v1/tenants/:tenantId/applications/:id/download/:sha256",
-      {
-        error: EnterpriseApplicationDownloadErrors,
-        params: Schema.Struct({
-          tenantId: Schema.String,
-          id: Schema.String,
-          sha256: Schema.String,
-        }),
-        success: DownloadPolicyApplicationResponse,
       },
     ),
   )
@@ -1825,6 +1758,13 @@ export const enterpriseApi = HttpApiGroup.make("EnterpriseApi")
       params: TenantIdParam,
       payload: DuplicateRequest,
       success: IdResponse,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("storageUsage", "/v1/tenants/:tenantId/storage", {
+      error: EnterpriseTenantReadErrors,
+      params: TenantParam,
+      success: StorageUsageResponse,
     }),
   )
   .add(

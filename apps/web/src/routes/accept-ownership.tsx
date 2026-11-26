@@ -1,5 +1,5 @@
 import { Meta, Title } from "@solidjs/meta";
-import { BrandLogo } from "~/components/brand-logo";
+import BrandLogo from "~/components/brand-logo";
 import { useNavigate } from "~/lib/navigation";
 import { createEffect, createMemo, createSignal, onSettled, Show } from "solid-js";
 import type { OwnershipTransferPreviewResponse } from "@mattrax/enterprise-domain/client";
@@ -14,7 +14,7 @@ import { queryClient } from "~/lib/query-client";
 import { rememberTenantAlias } from "~/lib/tenant";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
-const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
+const feedbackEnter = "page-enter";
 
 type Stage =
   | "loading"
@@ -104,8 +104,8 @@ export default function AcceptOwnershipPage() {
 
     try {
       setPreview(await enterprise.previewOwnershipTransfer(value));
-    } catch (cause) {
-      setPreviewError(cause);
+    } catch (error) {
+      setPreviewError(error);
     } finally {
       setPreviewLoading(false);
     }
@@ -238,8 +238,8 @@ export default function AcceptOwnershipPage() {
       });
       void queryClient.invalidateQueries({ queryKey: enterpriseKeys.accounts(result.tenantId) });
       navigate(`/t/${tenant?.slug ?? result.tenantId}/settings/administrators`, { replace: true });
-    } catch (cause) {
-      const tag = errorTag(raisedFailure(cause));
+    } catch (error) {
+      const tag = errorTag(raisedFailure(error));
 
       if (tag === "EnterpriseUnauthorized") {
         await authClient.signOut();
@@ -251,12 +251,12 @@ export default function AcceptOwnershipPage() {
       }
 
       if (tag === "EnterpriseForbidden") {
-        const message = errorMessage(raisedFailure(cause)).toLowerCase();
+        const message = errorMessage(raisedFailure(error)).toLowerCase();
 
         if (message.includes("verify your email")) setAccountVerified(false);
       }
 
-      setAcceptError(cause);
+      setAcceptError(error);
     } finally {
       setAccepting(false);
     }
@@ -288,7 +288,7 @@ export default function AcceptOwnershipPage() {
                   when={tenant().logo}
                   fallback={
                     <span
-                      class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-hover text-[13px] font-semibold text-foreground"
+                      class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-hover text-xs font-semibold text-foreground"
                       aria-hidden="true"
                     >
                       {(tenant().displayName ?? tenant().name).slice(0, 1).toUpperCase()}
@@ -306,23 +306,23 @@ export default function AcceptOwnershipPage() {
                   )}
                 </Show>
                 <div class="min-w-0">
-                  <p class="truncate text-[13px] font-medium text-foreground">
+                  <p class="truncate text-xs font-medium text-foreground">
                     {tenant().displayName ?? tenant().name}
                   </p>
                   <Show when={tenant().displayName && tenant().displayName !== tenant().name}>
-                    <p class="truncate text-[11px] text-muted-foreground">{tenant().name}</p>
+                    <p class="truncate text-xs text-muted-foreground">{tenant().name}</p>
                   </Show>
                 </div>
               </div>
             )}
           </Show>
 
-          <h1 class="text-xl font-semibold tracking-[-0.02em] text-foreground">{heading()}</h1>
+          <h1 class="text-xl font-semibold tracking-tight text-foreground">{heading()}</h1>
 
           <Show
             when={preview() && preview()!.state !== "cancelled" && preview()!.state !== "unknown"}
           >
-            <dl class="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12px]">
+            <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
               <Show when={preview()?.requestedByName}>
                 {(requester) => (
                   <>
@@ -353,7 +353,7 @@ export default function AcceptOwnershipPage() {
             </dl>
           </Show>
 
-          <div class="mt-4 space-y-3 text-[12.5px] leading-relaxed text-muted-foreground">
+          <div class="mt-4 space-y-3 text-xs leading-relaxed text-muted-foreground">
             <Show when={stage() === "loading"}>
               <p role="status" aria-live="polite" class="flex items-center gap-2">
                 <span aria-hidden="true">
@@ -492,7 +492,7 @@ export default function AcceptOwnershipPage() {
                     ? `Taking over ${tenantLabel(preview())}…`
                     : `Accept ownership of ${tenantLabel(preview())}`}
               </Button>
-              <p role="status" aria-live="polite" class="text-[11px]">
+              <p role="status" aria-live="polite" class="text-xs">
                 {accepting() ? `Taking over ${tenantLabel(preview())}…` : ""}
               </p>
               <Show when={acceptError()}>

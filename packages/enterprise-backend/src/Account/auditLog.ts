@@ -4,9 +4,10 @@ import {
   AUDIT_CATEGORIES,
   AUDIT_PROTOCOLS,
   EnterpriseBadRequest,
-  type AuditSearchQuery,
 } from "@mattrax/enterprise-domain";
-import { and, desc, eq, gte, like, lt, lte, or, type SQL } from "drizzle-orm";
+import type { AuditSearchQuery } from "@mattrax/enterprise-domain";
+import { and, desc, eq, gte, like, lt, lte, or } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import type { EnterpriseSchema } from "../schema.ts";
 import { toCsv } from "../Device/deviceSearch.ts";
 
@@ -105,12 +106,15 @@ const optionalEnum = <const Values extends ReadonlyArray<string>>(
     });
 
   // SAFETY: the membership check above proved `text` is one of `values`.
-  return text as Values[number];
+  return text;
 };
 
 /** Escape `%`, `_` and `\` so a LIKE pattern is matched literally. */
 export const escapeLike = (value: string) =>
-  value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+  value
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll("%", String.raw`\%`)
+    .replaceAll("_", String.raw`\_`);
 
 const base64UrlEncode = (value: string) => {
   const bytes = new TextEncoder().encode(value);
@@ -209,9 +213,9 @@ export const normalizeAuditSearchQuery = (query: AuditSearchQuery): AuditSearchF
 };
 
 /**
- * Tenant-scoped WHERE clause. Action and target columns compare exactly so the
- * `(organizationId, action)` index can be used; actor and free-text target ids
- * use an escaped LIKE on indexed-prefix columns.
+ * Tenant-scoped WHERE clause. Category, action and protocol compare exactly
+ * so their ordered tenant composites can serve newest-first keyset pages;
+ * actor and free-text target ids use an escaped LIKE on indexed-prefix columns.
  *
  * Category, actor type, protocol and device are equality filters. Free text is
  * the only operator that fans out across columns; it stays inside the tenant

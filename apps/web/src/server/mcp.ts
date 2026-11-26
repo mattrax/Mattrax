@@ -1,18 +1,27 @@
-import { fetchApi } from "./api";
-import { Effect, Layer, Option, Schema } from "effect";
-import { HttpRouter, HttpServer } from "effect/http";
+import { runApiEffect } from "./api";
+import { ApiClient } from "./api-client";
+import { Effect, Layer, Option, Predicate, Schema, Scope } from "effect";
+import {
+  HttpBody,
+  HttpClientRequest,
+  HttpClientResponse,
+  HttpMethod,
+  HttpRouter,
+  HttpServer,
+} from "effect/http";
 import { McpProtocol, McpServer, Tool, Toolkit } from "effect/ai";
+import type { DashboardQueryRequest } from "@mattrax/enterprise-domain/client";
 import {
   DashboardDataset,
-  DashboardQueryRequest,
   DeviceQuery,
   enterpriseAccountApi,
   enterpriseApi,
+  enterpriseApplicationApi,
+  enterpriseApprovalApi,
   enterpriseAttributeApi,
   McpContextResponse as McpContextResponseSchema,
-  type McpContextResponse,
-  type MeResponse,
 } from "@mattrax/enterprise-domain/client";
+import type { MeResponse } from "@mattrax/enterprise-domain/client";
 
 const API_BASE = "https://api.mattrax.internal";
 
@@ -20,22 +29,20 @@ const SERVER_NAME = "mattrax";
 
 const SERVER_VERSION = "1.0.0";
 
+const isOk = (status: number) => status >= 200 && status < 300;
+
 const isString = Schema.is(Schema.String);
 
 const isNumber = Schema.is(Schema.Number);
 
 const isJsonObject = Schema.is(Schema.JsonObject);
 
-const decodeJson = Schema.decodeUnknownOption(Schema.Json);
-
 const decodeDataset = Schema.decodeUnknownOption(DashboardDataset);
 
 const decodeDeviceQuery = Schema.decodeUnknownOption(DeviceQuery);
 
-const decodeMcpContext = Schema.decodeUnknownOption(McpContextResponseSchema);
-
 const asError = (cause: unknown): Error =>
-  cause instanceof Error ? cause : new Error(String(cause));
+  Predicate.isError(cause) ? cause : new Error(String(cause));
 
 type ApiRequestBody = Schema.Json | DashboardQueryRequest;
 
@@ -46,7 +53,9 @@ interface ApiRequestInit {
 
 type ToolParameters = Record<string, Schema.Json | undefined>;
 
-type ToolHandler = (params: ToolParameters) => Effect.Effect<Schema.Json | MeResponse, Error>;
+type ToolHandler = (
+  params: ToolParameters,
+) => Effect.Effect<Schema.Json | MeResponse, Error, ApiClient>;
 
 const withCors = (response: Response, request: Request) => {
   const headers = new Headers(response.headers);
@@ -139,7 +148,7 @@ const failureMessage = (operation: string, status: number, data: Schema.Json) =>
 
   const summary =
     isString(description) && description.trim()
-      ? description.trim().replace(/\s+/g, " ").slice(0, 200)
+      ? description.trim().replaceAll(/\s+/g, " ").slice(0, 200)
       : statusMessage(status);
 
   return `${operation} failed (${status}): ${summary}`;
@@ -157,84 +166,74 @@ const toBase64 = (bytes: Uint8Array) => {
   return btoa(chunks.join(""));
 };
 
-const apiFetch = async (
+const MCP_MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+type ApiResult = {
+  readonly status: number;
+  readonly ok: boolean;
+  readonly contentType: string;
+  readonly data: Schema.Json;
+};
+
+/** Every MCP response is decoded through Schema or consumed under a byte limit. */
+export const fetchMcpApi = (
   authorization: string,
   path: string,
   init: { method?: string; body?: ApiRequestBody } = {},
-) => {
-  let response: Response;
-
-  const headers = new Headers({
-    authorization,
-    "x-mattrax-mcp-authorization": authorization,
-    accept: "application/json",
-  });
-
-  const requestInit: RequestInit = { method: init.method ?? "GET", headers };
-
-  if (init.body !== undefined) {
-    headers.set("content-type", "application/json");
-    requestInit.body = JSON.stringify(init.body);
-  }
-
-  try {
-    response = await fetchApi(new Request(`${API_BASE}${path}`, requestInit));
-  } catch {
-    throw new Error("The Mattrax API could not be reached");
-  }
-
-  const contentType = response.headers.get("content-type") ?? "";
-  let data: Schema.Json;
-
-  if (contentType.includes("application/json") || contentType.includes("+json")) {
-    data = Option.getOrUndefined(decodeJson(await response.json().catch(() => null))) ?? null;
-  } else if (
-    contentType.startsWith("text/") ||
-    contentType.includes("csv") ||
-    contentType.includes("xml") ||
-    contentType.includes("javascript")
-  ) {
-    data = await response.text();
-  } else {
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    data = {
-      contentType,
-      base64: toBase64(bytes),
-      bytes: bytes.byteLength,
+): Effect.Effect<ApiResult, Error, ApiClient> =>
+  Effect.gen(function* () {
+    const client = yield* ApiClient;
+    const headers = {
+      authorization,
+      "x-mattrax-mcp-authorization": authorization,
+      accept: "application/json",
+      ...(init.body === undefined ? {} : { "content-type": "application/json" }),
     };
-  }
 
-  return {
-    status: response.status,
-    ok: response.ok,
-    contentType,
-    data,
-  };
-};
+    const response = yield* client
+      .execute(
+        HttpClientRequest.make((init.method ?? "GET") as HttpMethod.HttpMethod)(
+          `${API_BASE}${path}`,
+          {
+            headers,
+            ...(init.body === undefined ? {} : { body: HttpBody.jsonUnsafe(init.body) }),
+          },
+        ),
+      )
+      .pipe(Effect.catch(() => Effect.fail(new Error("The Mattrax API could not be reached"))));
 
-const recordActivity = async (
-  authorization: string,
-  tenantId: string,
-  entry: { tool: string; method: string; path: string; status: number },
-) => {
-  try {
-    const response = await fetchApi(
-      new Request(`${API_BASE}/api/v1/tenants/${encodeURIComponent(tenantId)}/mcp/activity`, {
-        method: "POST",
-        headers: {
-          authorization,
-          "x-mattrax-mcp-authorization": authorization,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(entry),
-      }),
-    );
+    const limited = yield* client
+      .bounded(response, MCP_MAX_BODY_BYTES)
+      .pipe(Effect.catch((error) => Effect.fail(asError(error))));
+    const contentType = limited.headers["content-type"] ?? "";
+    let data: Schema.Json;
 
-    if (!response.ok) console.error(`MCP activity recording failed with status ${response.status}`);
-  } catch (cause) {
-    console.error("MCP activity recording failed", cause);
-  }
-};
+    if (contentType.includes("application/json") || contentType.includes("+json")) {
+      data = yield* HttpClientResponse.schemaBodyJson(Schema.Json)(limited).pipe(
+        Effect.catch((error) =>
+          Effect.fail(new Error("The Mattrax API returned malformed JSON", { cause: error })),
+        ),
+      );
+    } else if (
+      contentType.startsWith("text/") ||
+      contentType.includes("csv") ||
+      contentType.includes("xml") ||
+      contentType.includes("javascript")
+    ) {
+      data = yield* limited.text.pipe(Effect.catch((error) => Effect.fail(asError(error))));
+    } else {
+      const bytes = new Uint8Array(
+        yield* limited.arrayBuffer.pipe(Effect.catch((error) => Effect.fail(asError(error)))),
+      );
+      data = {
+        contentType,
+        base64: toBase64(bytes),
+        bytes: bytes.byteLength,
+      };
+    }
+
+    return { status: response.status, ok: isOk(response.status), contentType, data };
+  });
 
 const queryString = (value: Schema.Json | undefined) => {
   if (!isJsonObject(value)) return "";
@@ -254,8 +253,8 @@ const queryString = (value: Schema.Json | undefined) => {
 
 const toolName = (identifier: string) => {
   const name = identifier
-    .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-    .replace(/[^A-Za-z0-9_]/g, "_")
+    .replaceAll(/([a-z0-9])([A-Z])/g, "$1_$2")
+    .replaceAll(/[^A-Za-z0-9_]/g, "_")
     .toLowerCase();
 
   if (name.length <= 64) return name;
@@ -269,14 +268,17 @@ const toolName = (identifier: string) => {
 };
 
 const pathParameters = (path: string) =>
-  [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]!);
+  [...path.matchAll(/:([A-Za-z][A-Za-z0-9]*)/g)].map((match) => match[1]);
 
-const shouldExpose = (path: string) => {
+/** Exported for the MCP exposure test; paths are matched as substrings. */
+export const shouldExposeMcpPath = (path: string) => {
   if (path.includes("/account")) return false;
 
   if (path.includes("/mcp/")) return false;
 
-  if (path === "/v1/me" || path === "/v1/deleteMe") return false;
+  // Account deletion (and its preview) is personal lifecycle, never an MCP tool.
+  if (path.endsWith("/v1/me") || path.includes("/v1/me/") || path.endsWith("/v1/deleteMe"))
+    return false;
 
   if (path.includes("email-change") || path.includes("email-verification")) return false;
 
@@ -296,6 +298,14 @@ const shouldExpose = (path: string) => {
     "/vpp",
     "/api-tokens",
     "/backups",
+    // Approving and editing four-eyes policies is never delegated to an MCP
+    // client, even one that holds approvals.write.
+    "/approvals",
+    "/approval-policies",
+    // Handover archives contain every escrowed device secret and are not part
+    // of the consent grant an MCP client receives. The token-bearing download
+    // in particular must never be reachable through a generated tool.
+    "/devices/handover",
   ])
     if (path.includes(blocked)) return false;
 
@@ -367,11 +377,18 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
   for (const [identifier, endpoint] of Object.entries({
     ...enterpriseAccountApi.endpoints,
     ...enterpriseApi.endpoints,
+    // The application endpoints moved out of the main group to keep its
+    // generated declaration small; keep them in the same tool surface.
+    ...enterpriseApplicationApi.endpoints,
+    // Gated destructive endpoints now live on the approval group; the approval
+    // queue and policy administration themselves stay human-only (blocked in
+    // shouldExposeMcpPath).
+    ...enterpriseApprovalApi.endpoints,
     ...enterpriseAttributeApi.endpoints,
   })) {
     const path = endpoint.path;
 
-    if (!shouldExpose(path) || !allowed.has(identifier)) continue;
+    if (!shouldExposeMcpPath(path) || !allowed.has(identifier)) continue;
     const name = toolName(identifier);
 
     if (name === "list_tenants" || name === "query_data" || rest.has(name)) continue;
@@ -385,7 +402,7 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
 
     tools.push(
       Tool.make(name, {
-        description: `${identifier.replace(/([a-z])([A-Z])/g, "$1 $2")} — ${endpoint.method.toUpperCase()} ${path}. Pass path parameters by name; use queryParams for query strings and body for JSON payloads.`,
+        description: `${identifier.replaceAll(/([a-z])([A-Z])/g, "$1 $2")} — ${endpoint.method.toUpperCase()} ${path}. Pass path parameters by name; use queryParams for query strings and body for JSON payloads.`,
         parameters,
         success: Schema.Unknown,
       })
@@ -407,39 +424,32 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
           return Effect.fail(new Error("Search requires tenantId and q"));
 
         const limit = isNumber(params.limit) ? params.limit : undefined;
+        const path = `/api/v1/tenants/${encodeURIComponent(tenantId)}/search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ""}`;
 
-        return Effect.tryPromise({
-          try: async () => {
-            const path = `/api/v1/tenants/${encodeURIComponent(tenantId)}/search?q=${encodeURIComponent(q)}${limit ? `&limit=${limit}` : ""}`;
-            const result = await apiFetch(authorization, path);
-            await recordActivity(authorization, tenantId, {
-              tool: "search",
-              method: "GET",
-              path,
-              status: result.status,
-            });
+        return Effect.gen(function* () {
+          const result = yield* fetchMcpApi(authorization, path);
 
-            if (!result.ok) throw new Error(failureMessage("Search", result.status, result.data));
+          if (!result.ok)
+            return yield* Effect.fail(
+              new Error(failureMessage("Search", result.status, result.data)),
+            );
 
-            return result.data;
-          },
-          catch: asError,
+          return result.data;
         });
       },
     ],
     [
       "get_openapi",
       () =>
-        Effect.tryPromise({
-          try: async () => {
-            const result = await apiFetch(authorization, "/api/openapi.json");
+        Effect.gen(function* () {
+          const result = yield* fetchMcpApi(authorization, "/api/openapi.json");
 
-            if (!result.ok)
-              throw new Error(failureMessage("OpenAPI discovery", result.status, result.data));
+          if (!result.ok)
+            return yield* Effect.fail(
+              new Error(failureMessage("OpenAPI discovery", result.status, result.data)),
+            );
 
-            return result.data;
-          },
-          catch: asError,
+          return result.data;
         }),
     ],
     [
@@ -458,24 +468,17 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
           groupBy: isString(params.groupBy) ? params.groupBy : undefined,
           limit: isNumber(params.limit) ? params.limit : undefined,
         };
+        const path = `/api/v1/tenants/${encodeURIComponent(tenantId)}/dashboard-query`;
 
-        return Effect.tryPromise({
-          try: async () => {
-            const path = `/api/v1/tenants/${encodeURIComponent(tenantId)}/dashboard-query`;
-            const result = await apiFetch(authorization, path, { method: "POST", body });
+        return Effect.gen(function* () {
+          const result = yield* fetchMcpApi(authorization, path, { method: "POST", body });
 
-            await recordActivity(authorization, tenantId, {
-              tool: "query_data",
-              method: "POST",
-              path,
-              status: result.status,
-            });
+          if (!result.ok)
+            return yield* Effect.fail(
+              new Error(failureMessage("Query", result.status, result.data)),
+            );
 
-            if (!result.ok) throw new Error(failureMessage("Query", result.status, result.data));
-
-            return result.data;
-          },
-          catch: asError,
+          return result.data;
         });
       },
     ],
@@ -483,41 +486,27 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
 
   for (const [name, endpoint] of rest) {
     handlers.set(name, (params) =>
-      Effect.tryPromise({
-        try: async () => {
-          const path = endpoint.path.replace(/:([A-Za-z][A-Za-z0-9]*)/g, (_, key: string) =>
-            encodeURIComponent(String(params[key] ?? "")),
+      Effect.gen(function* () {
+        const path = endpoint.path.replaceAll(/:([A-Za-z][A-Za-z0-9]*)/g, (_, key: string) =>
+          encodeURIComponent(String(params[key] ?? "")),
+        );
+        const query = queryString(params.queryParams);
+        const body =
+          endpoint.method === "GET" || endpoint.method === "HEAD" ? undefined : params.body;
+        const init: ApiRequestInit = { method: endpoint.method };
+
+        if (body !== undefined) init.body = body;
+
+        const result = yield* fetchMcpApi(authorization, `${path}${query}`, init);
+
+        if (!result.ok)
+          return yield* Effect.fail(
+            new Error(
+              failureMessage(`${endpoint.method} ${endpoint.path}`, result.status, result.data),
+            ),
           );
 
-          const query = queryString(params.queryParams);
-
-          const body =
-            endpoint.method === "GET" || endpoint.method === "HEAD" ? undefined : params.body;
-
-          const init: ApiRequestInit = { method: endpoint.method };
-
-          if (body !== undefined) init.body = body;
-
-          const result = await apiFetch(authorization, `${path}${query}`, init);
-
-          const tenantId = isString(params.tenantId) ? params.tenantId : undefined;
-
-          if (tenantId)
-            await recordActivity(authorization, tenantId, {
-              tool: name,
-              method: endpoint.method,
-              path,
-              status: result.status,
-            });
-
-          if (!result.ok)
-            throw new Error(
-              failureMessage(`${endpoint.method} ${endpoint.path}`, result.status, result.data),
-            );
-
-          return { status: result.status, body: result.data };
-        },
-        catch: asError,
+        return { status: result.status, body: result.data };
       }),
     );
   }
@@ -551,76 +540,95 @@ const mcpLayer = (authorization: string, me: MeResponse, methods: ReadonlyArray<
   });
 };
 
-const handleMcp = async (request: Request): Promise<Response> => {
-  const url = new URL(request.url);
+export const handleMcpRequestEffect = (
+  request: Request,
+): Effect.Effect<Response, never, ApiClient | Scope.Scope> =>
+  Effect.gen(function* () {
+    const url = new URL(request.url);
 
-  if (request.method === "OPTIONS") {
-    return withCors(new Response(null, { status: 204 }), request);
-  }
+    if (request.method === "OPTIONS") return withCors(new Response(null, { status: 204 }), request);
 
-  const authorization = request.headers.get("authorization") ?? "";
+    const authorization = request.headers.get("authorization") ?? "";
 
-  if (!/^Bearer\s+\S+/i.test(authorization)) return unauthorized(url.origin, request);
+    if (!/^Bearer\s+\S+/i.test(authorization)) return unauthorized(url.origin, request);
 
-  let contextResponse: Response;
+    const client = yield* ApiClient;
+    const contextResponse = yield* client
+      .execute(
+        HttpClientRequest.get(`${API_BASE}/api/v1/mcp/context`, {
+          headers: {
+            authorization,
+            "x-mattrax-mcp-authorization": authorization,
+            accept: "application/json",
+          },
+        }),
+      )
+      .pipe(Effect.catch((error) => Effect.succeed(error)));
 
-  try {
-    contextResponse = await fetchApi(
-      new Request("https://api.mattrax.internal/api/v1/mcp/context", {
-        headers: {
-          authorization,
-          "x-mattrax-mcp-authorization": authorization,
-          accept: "application/json",
-        },
-      }),
+    if (contextResponse instanceof Error) {
+      yield* Effect.sync(() => console.error("MCP context lookup failed", contextResponse));
+
+      return unavailable(request);
+    }
+
+    // Only a rejected credential is an MCP authentication failure. Anything
+    // else (including a 5xx or malformed JSON) is an availability problem.
+    if (contextResponse.status === 401 || contextResponse.status === 403) {
+      yield* client.discard(contextResponse).pipe(Effect.catch(() => Effect.void));
+
+      return unauthorized(url.origin, request);
+    }
+
+    if (!isOk(contextResponse.status)) {
+      yield* client.discard(contextResponse).pipe(Effect.catch(() => Effect.void));
+      yield* Effect.sync(() =>
+        console.error(`MCP context lookup failed with status ${contextResponse.status}`),
+      );
+
+      return unavailable(request);
+    }
+
+    const context = yield* client.bounded(contextResponse, MCP_MAX_BODY_BYTES).pipe(
+      Effect.flatMap(HttpClientResponse.schemaBodyJson(McpContextResponseSchema)),
+      Effect.catch((error) => Effect.succeed(error)),
     );
-  } catch (cause) {
-    console.error("MCP context lookup failed", cause);
 
-    return unavailable(request);
-  }
+    if (context instanceof Error) {
+      yield* Effect.sync(() => console.error("MCP context response could not be read", context));
 
-  // Only a rejected credential is an MCP authentication failure. Anything else
-  // (including a 5xx or a malformed response) is an availability problem.
-  if (contextResponse.status === 401 || contextResponse.status === 403)
-    return unauthorized(url.origin, request);
+      return unavailable(request);
+    }
 
-  if (!contextResponse.ok) {
-    console.error(`MCP context lookup failed with status ${contextResponse.status}`);
+    const layer = mcpLayer(authorization, context.me, context.methods).pipe(
+      Layer.provide(HttpServer.layerServices),
+      Layer.provide(Layer.succeed(ApiClient, client)),
+    );
 
-    return unavailable(request);
-  }
+    // SAFETY: the built layer provides every service the router reads; the
+    // cast only hides the opaque registration layer's concrete type.
+    const web = HttpRouter.toWebHandler(
+      layer as Layer.Layer<unknown, unknown, HttpRouter.HttpRouter>,
+    );
+    const response = yield* Effect.acquireUseRelease(
+      Effect.succeed(web),
+      (handler) =>
+        Effect.promise(() => handler.handler(request)).pipe(
+          Effect.catch((error) => {
+            console.error("MCP request failed", error);
 
-  let context: McpContextResponse;
+            return Effect.succeed(unavailable(request));
+          }),
+        ),
+      (handler) =>
+        Effect.promise(() => handler.dispose()).pipe(
+          Effect.catch((error) =>
+            Effect.sync(() => console.error("MCP layer dispose failed", error)),
+          ),
+        ),
+    );
 
-  try {
-    const body = Option.getOrUndefined(decodeMcpContext(await contextResponse.json()));
+    return withCors(response, request);
+  });
 
-    if (body === undefined) throw new Error("Unexpected context response");
-
-    context = body;
-  } catch (cause) {
-    console.error("MCP context response could not be read", cause);
-
-    return unavailable(request);
-  }
-
-  const layer = mcpLayer(authorization, context.me, context.methods).pipe(
-    Layer.provide(HttpServer.layerServices),
-  );
-
-  // SAFETY: `mcpLayer` provides the HTTP server services this layer needs; the
-  // concrete layer type is opaque to the router constructor, which only reads
-  // the router back out of the built layer.
-  const web = HttpRouter.toWebHandler(
-    layer as Layer.Layer<unknown, unknown, HttpRouter.HttpRouter>,
-  );
-
-  try {
-    return withCors(await web.handler(request), request);
-  } finally {
-    await web.dispose().catch((cause) => console.error("MCP layer dispose failed", cause));
-  }
-};
-
-export const handleMcpRequest = (event: { request: Request }) => handleMcp(event.request);
+export const handleMcpRequest = (event: { request: Request }) =>
+  runApiEffect(Effect.scoped(handleMcpRequestEffect(event.request)));

@@ -76,8 +76,83 @@ no `none` condition may match. An empty rule set matches nothing.
 | `assetTag`                 | `prefix`, `eq`                                                           |
 | `staleDays`                | `eq`, `lt`, `lte`, `gt`, `gte` (default `gte`)                           |
 | `health`                   | `eq` (`healthy`, `attention`, `missing`, `critical`, `unknown`, `stale`) |
+| `userEmail`                | `contains`, `eq`, `ne`, `prefix`                                         |
+| `userDomain`               | `contains`, `eq`, `ne`, `prefix` (the part after `@`)                    |
+| `userName`                 | `contains`, `eq`, `ne`, `prefix`                                         |
+| `userExternalId`           | `contains`, `eq`, `ne`, `prefix`                                         |
+| `userSource`               | `eq`, `ne` (`entra`, `scim`, `manual`)                                   |
+| `group`                    | `in`, `notIn` (one or more tenant group ids)                             |
 
 Missing device values never match.
+
+`group` was added additively to `version: 1`. A saved rule that does not use it
+decodes exactly as before, so there is no migration and no re-interpretation of
+existing rules.
+
+**Rollback note.** A build that predates `group` decodes the condition but has
+no evaluator case for it, so it never matches and a rule that depends on it can
+empty the group. Before rolling back to such a build, remove group criteria
+from dynamic rules (or gate the rollback).
+
+### Referencing other groups
+
+`group` matches another group's **materialised membership**: manual, dynamic,
+directory-derived and nested rows all count. It accepts one group id or a list.
+
+- `in` matches when the device is a member of **any** listed group.
+- `notIn` matches when it is a member of **none** of them.
+
+```json
+{
+  "version": 1,
+  "all": [
+    { "field": "group", "op": "in", "value": ["pilot_group_id"] },
+    { "field": "group", "op": "notIn", "value": ["exceptions_group_id"] }
+  ]
+}
+```
+
+This expresses ring-based rollout ("devices in the pilot group"), delegated
+sub-scopes and "everyone except the exception group" without duplicating the
+other group's rule, which would drift.
+
+Rules are evaluated in dependency order: a referenced group is materialised
+before the group that names it. A dynamic recompute refreshes every group that
+references the changed group, transitively, so membership changes do not wait
+for the daily pass.
+
+A group cannot reference itself, a group that contains it, or any longer cycle.
+Nesting counts as a dependency: a parent includes its children, so naming an
+ancestor in a rule would make the two groups depend on each other. The write
+path rejects such a reference, and a group whose stored rules do contain one
+(for example after a manual database edit) is **skipped**: its current members
+are left unchanged and the preview explains the circular path. The same applies
+when a referenced group was deleted; a skipped group is never silently treated
+as matching nothing.
+
+Exclusions keep their existing precedence. A device excluded from the
+referencing group never matches, even when it is a member of the referenced
+group. A device excluded from the referenced group is not in its materialised
+membership, so it does not match `in` either. Group references are
+tenant-scoped; cross-tenant ids are rejected.
+
+### Conditions on linked people
+
+`user*` conditions read the directory users linked to a device through
+`device_user` (not the person who happens to be logged in). They are available in the
+dynamic-group rule builder but not in device-table filters, which have no user data.
+
+- **Any linked user** satisfies a positive condition (`eq`, `contains`, `prefix`).
+  Two user conditions in `all` do not have to describe the same person.
+- `is not` (`ne`) means **no linked user** matches. A device with no linked users
+  therefore satisfies `is not`, and fails every positive condition.
+- `none` is the clearest way to say "no linked contractor": put the positive
+  condition in `none`.
+- Disabled (leaver) users are ignored. People excluded from the group are also ignored
+  for that group's evaluation, so a rule cannot pull a device in through a person the
+  group excludes.
+- `userSource` is the identity source recorded on the directory user: `entra`
+  (Microsoft Entra ID / Graph import), `scim` (generic SCIM directory) or `manual`.
 
 ### Recompute
 
@@ -85,7 +160,10 @@ Dynamic membership is recomputed:
 
 - When a group is created or updated.
 - When a device is created, updated or reports inventory.
-- During daily maintenance (full tenant pass).
+- When a group whose membership it uses as a `group` criterion changes, directly
+  or transitively. This includes manual adds/removes, exclusions, directory
+  syncs, nested-edge changes and another dynamic recompute.
+- During daily maintenance (full tenant pass, dependency order).
 - On demand with `POST /groups/sync`.
 
 Only `source = 'dynamic'` rows are replaced. Manual rows survive as explicit exceptions.
@@ -99,7 +177,69 @@ curl "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/groups/$GROUP_ID/preview" \
   -H "Authorization: Bearer $MATTRAX_TOKEN"
 ```
 
-Preview uses the saved rules. Save first, then preview.
+Preview uses the saved rules. Save first, then preview. It lists every
+referenced group with its current member count, and explains a skipped or
+circular reference instead of showing a misleading zero.
+
+## Nested groups
+
+A group can contain other device groups. Membership is the transitive union of the
+group's own members and every child group's members, including children of children.
+
+```bash
+curl -X PATCH "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/groups/$PARENT_ID/members" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{ "assign": { "childGroups": ["child_group_id"] } }'
+```
+
+Inherited devices are materialised into `group_device` with `source = 'nested'`, so
+policy, script and scope resolution keep reading one membership table. A device that is
+already a manual, dynamic or directory member of the parent stays with that stronger
+source; inheritance never overwrites it. A device inherited through two children is
+counted once, and a policy assigned to both parent and child still resolves once per
+device.
+
+Removing a child edge immediately drops the devices only that child contributed.
+Nesting is rejected when it would create a cycle (including a longer path) or a chain
+deeper than eight groups. Corrupt cyclic rows read back as a bounded traversal rather
+than a loop or a stack overflow.
+
+The group page lists child groups, shows each inherited device with the child group that
+brought it in, and lets an administrator add or remove children in edit mode.
+
+## Exclusions
+
+An operator can explicitly exclude a device or a directory person from a group.
+Exclusions always win over manual membership, rule matches, directory-derived membership
+and inherited membership.
+
+```bash
+curl -X PATCH "$MATTRAX_URL/api/v1/tenants/$TENANT_ID/groups/$GROUP_ID/members" \
+  -H "Authorization: Bearer $MATTRAX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exclude": { "devices": ["device_id"], "users": ["directory_user_id"] },
+    "unexclude": { "devices": [], "users": [] }
+  }'
+```
+
+**Device exclusions** remove every membership row for the device in that group and the
+device is skipped by later recomputes. Assigning an excluded device is rejected until
+the exclusion is removed. Other groups and direct device policy assignments are
+unaffected.
+
+**Person exclusions** are narrower, deliberately:
+
+- The person's Apple user channel stops receiving this group's user-scoped
+  configurations.
+- When the group follows a directory group, that person no longer contributes devices
+  through it.
+- That person is ignored when this group's `user*` rules are evaluated.
+- A device that is also a member through another person, a rule, a manual assignment or
+  a child group **stays in the group and keeps device-scoped policy**. Excluding a person
+  never silently pulls a shared device out of a device policy. Remove the device
+  explicitly to take it out of device-scoped delivery.
 
 ## Sync devices
 
@@ -132,9 +272,13 @@ Bulk delete returns `{ deleted, failed }`.
 
 - Dynamic evaluation is application-side, not indexed. Cost is proportional to the number
   of dynamic groups and devices.
-- The dashboard rule editor only edits `all` conditions. Use the API for `any`/`none`.
-- Tenant export/import does not carry dynamic rules; an imported dynamic group becomes
-  manual.
+- The dashboard rule editor edits `all` conditions and offers `any`/`none` only
+  through the API.
+- Boolean criteria cannot be nested (an `any` inside an `all`). Combine `group`
+  criteria with the top-level lists instead.
+- Tenant export/import carries dynamic rules. Restore regenerates every group id and
+  rewrites `group` criteria to the new ids; a criterion that names a group outside the
+  backup fails the restore instead of leaving a dangling reference.
 - Group names are not unique. Prefer ids in automation.
 
 ## API endpoints

@@ -11,7 +11,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { scimHandler } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -81,7 +81,6 @@ const makeContext = async (
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods these tests exercise.
@@ -1436,7 +1435,7 @@ describe("owner removal", () => {
       user: { id: "user-owner-2", name: "Second Owner", email: "owner2@example.com" },
     });
 
-    const secondOwnerMember = addMember(owner.db, tenant.id, secondOwner.user, "owner");
+    addMember(owner.db, tenant.id, secondOwner.user, "owner");
 
     const remaining = await makeContext({
       db: owner.db,
@@ -1451,10 +1450,6 @@ describe("owner removal", () => {
     );
 
     // ...but the last owner cannot remove themselves while other members remain.
-    const ownerMember = owner.db.store.member.find(
-      (row: any) => row.organizationId === tenant.id && row.accountId === owner.user.id,
-    );
-
     await expect(
       runEffect(
         owner.service.removeTenantAccount(request(owner.headers), tenant.id, owner.user.id),
@@ -1567,7 +1562,7 @@ describe("tenant member removal", () => {
     const owner = await makeContext();
     const tenant = await createTenant(owner, "acme");
 
-    const membership = owner.db.store.member.find(
+    owner.db.store.member.find(
       (row: any) => row.organizationId === tenant.id && row.accountId === owner.user.id,
     );
 

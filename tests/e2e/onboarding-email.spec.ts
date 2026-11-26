@@ -46,7 +46,7 @@ test.describe("onboarding email", () => {
             (item) => item.to === email && item.subject === "Your Mattrax verification code",
           );
 
-          code = message?.text.match(/code is (\d{6})/)?.[1] ?? "";
+          code = message?.text.match(/code is:?\s+(\d{6})/)?.[1] ?? "";
 
           return code;
         },
@@ -60,8 +60,8 @@ test.describe("onboarding email", () => {
         response.url().includes("/api/v1/completePasskeyRegistration"),
     );
 
+    // The completed code submits without a button press.
     await page.locator("#verification-code").fill(code);
-    await page.getByRole("button", { name: /verify and create passkey/i }).click();
     const registrationResponse = await registration;
     expect(
       registrationResponse.status(),
@@ -78,8 +78,8 @@ test.describe("onboarding email", () => {
 
     expect(welcome).toHaveLength(1);
     expect(welcome[0]).toMatchObject({ replyTo: "oscar@otbeaumont.me" });
-    expect(welcome[0]!.text).toContain("Hey Ada,");
-    expect(welcome[0]!.text).toContain("/dashboard");
+    expect(welcome[0].text).toContain("Hey Ada,");
+    expect(welcome[0].text).toContain("/dashboard");
 
     const verification = afterRegistration.find(
       (item) => item.to === email && item.subject === "Your Mattrax verification code",

@@ -1,0 +1,42 @@
+[package]
+name = "mattraxd"
+version = "1.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "The Mattrax on-device daemon"
+license = "AGPL-3.0-only"
+repository = "https://github.com/mattrax/Mattrax"
+publish = false
+
+[[bin]]
+name = "mattraxd"
+path = "src/main.rs"
+
+# Release-engineering helper: builds and signs the update manifest consumed by
+# `mattraxd update`. It is never installed on a device.
+[[bin]]
+name = "mattraxd-manifest"
+path = "src/bin/mattraxd-manifest.rs"
+
+[dependencies]
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap = { version = "4.5", features = ["derive"] }
+ed25519-dalek = "2"
+getrandom = "0.2"
+plist = "1"
+semver = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"

@@ -1,4 +1,5 @@
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Fiber, Schema } from "effect";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import { describe, expect, it, vi } from "vitest";
 import { schema } from "@mattrax/enterprise-core";
 import { sealSecret } from "@mattrax/crypto";
@@ -9,19 +10,21 @@ import {
 } from "@mattrax/enterprise-domain";
 import {
   dispatchWebhookEvent,
+  deliverQueuedWebhook,
+  enqueueWebhookEvent,
   retryFailedWebhookDeliveries,
   sendTestWebhook,
   signWebhookDelivery,
   verifyWebhookSignature,
-  type WebhookEndpointRow,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
+import type { WebhookEndpointRow } from "@mattrax/mdm-core";
 import { dbRows, makeDb, tableName } from "./fake-db.js";
 
 const authSecret = "webhook-test-secret";
 
 const now = new Date("2026-11-11T10:00:00.000Z");
 
-const run = <A>(effect: Effect.Effect<A, never, never>) => Effect.runPromise(effect);
+const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
 
 const endpoint = (overrides: Partial<WebhookEndpointRow> = {}): WebhookEndpointRow => ({
   id: "wh_1",
@@ -235,6 +238,49 @@ describe("webhook URL guard", () => {
 });
 
 describe("webhook delivery", () => {
+  it("durably enqueues before any network I/O and recovers queued rows", async () => {
+    const { db } = await setup();
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
+    const event = {
+      organizationId: "org-1",
+      type: "device.enrolled" as const,
+      id: "evt_durable",
+    };
+
+    const ids = await run(enqueueWebhookEvent(webhookDb(db), event, { authSecret, fetch, now }));
+
+    expect(ids).toHaveLength(1);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(deliveries(db)[0]).toMatchObject({ attempt: 0, eventId: "evt_durable" });
+
+    // Simulate a crash before the in-process worker runs: maintenance finds
+    // the persisted attempt-0 row and completes it.
+    const retried = await run(
+      retryFailedWebhookDeliveries(webhookDb(db), { authSecret, fetch, now }),
+    );
+
+    expect(retried).toMatchObject({ retried: 1, succeeded: 1, failed: 0 });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(deliveries(db)[0]).toMatchObject({ attempt: 1, status: "succeeded" });
+  });
+
+  it("completes a durable queue row without inserting a duplicate attempt", async () => {
+    const { db } = await setup();
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
+    const [id] = await run(
+      enqueueWebhookEvent(
+        webhookDb(db),
+        { organizationId: "org-1", type: "device.enrolled" },
+        { authSecret, fetch, now },
+      ),
+    );
+
+    await run(deliverQueuedWebhook(webhookDb(db), id!, { authSecret, fetch, now }));
+
+    expect(deliveries(db)).toHaveLength(1);
+    expect(deliveries(db)[0]).toMatchObject({ attempt: 1, status: "succeeded" });
+  });
+
   it("filters by event and records a successful delivery", async () => {
     const { db, secret } = await setup({ eventFilters: ["device.enrolled"] });
 
@@ -255,11 +301,15 @@ describe("webhook delivery", () => {
     );
 
     expect(fetch).toHaveBeenCalledTimes(1);
-    const [, request] = fetch.mock.calls[0]!;
+    const [, request] = fetch.mock.calls[0];
     const headers = new Headers(request?.headers);
     const timestamp = Number(headers.get(WEBHOOK_TIMESTAMP_HEADER));
     const header = headers.get(WEBHOOK_SIGNATURE_HEADER);
-    const body = Schema.decodeUnknownSync(Schema.String)(request?.body);
+    // The Effect HTTP client sends text bodies as bytes; decode them back.
+    const raw = Schema.decodeUnknownSync(Schema.Union([Schema.String, Schema.Uint8Array]))(
+      request?.body,
+    );
+    const body = typeof raw === "string" ? raw : new TextDecoder().decode(raw);
     expect(
       await verifyWebhookSignature({
         secret,
@@ -309,6 +359,59 @@ describe("webhook delivery", () => {
       ),
     );
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a shared Effect HttpClient Layer without an injected fetch", async () => {
+    const { db } = await setup();
+    const requests: string[] = [];
+    const client = HttpClient.make((request) => {
+      requests.push(request.url);
+
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })),
+      );
+    });
+
+    await run(
+      dispatchWebhookEvent(
+        webhookDb(db),
+        { organizationId: "org-1", type: "device.enrolled", id: "evt_shared_client" },
+        { authSecret, now },
+      ).pipe(Effect.provideService(HttpClient.HttpClient, client)),
+    );
+
+    expect(requests).toEqual(["https://hooks.example.com/mattrax"]);
+    expect(deliveries(db)[0]).toMatchObject({ status: "succeeded", responseStatus: 204 });
+  });
+
+  it("delivers durable queued rows through the shared HttpClient Layer", async () => {
+    const { db } = await setup();
+    const requests: string[] = [];
+    const client = HttpClient.make((request) => {
+      requests.push(request.url);
+
+      return Effect.succeed(
+        HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })),
+      );
+    });
+    const provideClient = <A>(effect: Effect.Effect<A, unknown, never>) =>
+      effect.pipe(Effect.provideService(HttpClient.HttpClient, client));
+    const [id] = await Effect.runPromise(
+      provideClient(
+        enqueueWebhookEvent(
+          webhookDb(db),
+          { organizationId: "org-1", type: "device.enrolled", id: "evt_queued_client" },
+          { authSecret, now },
+        ),
+      ),
+    );
+
+    expect(requests).toEqual([]);
+    await Effect.runPromise(
+      provideClient(deliverQueuedWebhook(webhookDb(db), id!, { authSecret, now })),
+    );
+    expect(requests).toEqual(["https://hooks.example.com/mattrax"]);
+    expect(deliveries(db)[0]).toMatchObject({ attempt: 1, status: "succeeded" });
   });
 
   it("never delivers to a different tenant's endpoint", async () => {
@@ -373,6 +476,41 @@ describe("webhook delivery", () => {
     });
   });
 
+  it("preserves interruption instead of turning it into a delivery failure", async () => {
+    const { db } = await setup();
+    let started!: () => void;
+    const startedPromise = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          started();
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.forkChild(
+          dispatchWebhookEvent(
+            webhookDb(db),
+            { organizationId: "org-1", type: "device.enrolled" },
+            { authSecret, fetch, now },
+          ),
+          { startImmediately: true },
+        );
+        yield* Effect.promise(() => startedPromise);
+        yield* Fiber.interrupt(fiber);
+        const exit = yield* Fiber.await(fiber);
+
+        expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true);
+      }),
+    );
+  });
+
   it("does not deliver when no signing secret is configured", async () => {
     const { db } = await setup();
     const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
@@ -390,7 +528,7 @@ describe("webhook delivery", () => {
     const { db } = await setup({ eventFilters: ["device.enrolled"] });
     const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("ok", { status: 200 }));
 
-    const stored = endpoints(db)[0]!;
+    const stored = endpoints(db)[0];
 
     const testEndpoint = endpoint({
       secret: Schema.decodeUnknownSync(Schema.String)(stored.secret),

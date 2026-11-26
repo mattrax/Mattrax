@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import {
+  bootstrapTenant,
   confirmStepUp,
   freshTotpCode,
   gotoHydrated,
@@ -13,6 +14,75 @@ import {
 test.describe.configure({ timeout: 150_000 });
 
 test.describe("authenticator MFA", () => {
+  test("keeps the method selector secondary to the single passkey action", async ({ page }) => {
+    await register(page);
+    await gotoHydrated(page, "/account");
+
+    const card = page.locator("section", { hasText: "Authenticator app" });
+    await card.getByRole("button", { name: /enable authenticator app/i }).click();
+
+    const dialog = page.getByRole("dialog", { name: /confirm it's you/i });
+    const selector = dialog.getByRole("button", { name: "Passkey", exact: true });
+    const action = dialog.getByRole("button", { name: "Use passkey", exact: true });
+
+    await expect(selector).toHaveAttribute("aria-pressed", "true");
+    await expect(selector).not.toHaveClass(/bg-brand-solid/);
+    await expect(action).toHaveClass(/bg-primary/);
+    await expect(dialog.locator("button.bg-primary")).toHaveCount(1);
+
+    const [selectorBackground, actionBackground] = await Promise.all([
+      selector.evaluate((element) => getComputedStyle(element).backgroundColor),
+      action.evaluate((element) => getComputedStyle(element).backgroundColor),
+    ]);
+
+    expect(selectorBackground).not.toBe(actionBackground);
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toBeHidden();
+  });
+
+  test("rolls back an optimistic backup Pin when passkey confirmation is cancelled", async ({
+    page,
+  }) => {
+    const tenant = await bootstrapTenant(page, "Backup Pin Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/settings/backups`);
+    await page.getByRole("button", { name: "Back up now" }).click();
+
+    const row = page.locator("tbody tr").first();
+    await expect(row.getByText("succeeded", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(row.getByRole("button", { name: "Pin", exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.evaluate(() => {
+      Object.defineProperty(navigator.credentials, "get", {
+        configurable: true,
+        value: async () => {
+          throw new DOMException("User cancelled", "NotAllowedError");
+        },
+      });
+    });
+
+    await row.getByRole("button", { name: "Pin", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: /confirm it's you/i });
+    await dialog.getByRole("button", { name: "Passkey", exact: true }).click();
+    await dialog.getByRole("button", { name: "Use passkey", exact: true }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(row.getByRole("button", { name: "Pin", exact: true })).toBeVisible();
+    await expect(row.getByRole("button", { name: "Unpin", exact: true })).toHaveCount(0);
+    await expect(row.getByText("pinned", { exact: true })).toHaveCount(0);
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Passkey confirmation cancelled." }),
+    ).toBeVisible();
+
+    const backups = await page.request.get(`/api/v1/tenants/${tenant.id}/backups`);
+    expect(backups.ok()).toBe(true);
+    const body = (await backups.json()) as {
+      backups: Array<{ retention: string }>;
+    };
+    expect(body.backups[0]?.retention).toBe("default");
+  });
+
   test("enrolls, requires a pending code, accepts a recovery code, and disables", async ({
     page,
   }) => {
@@ -67,12 +137,12 @@ test.describe("authenticator MFA", () => {
     await expect(page).toHaveURL(/\/login/);
     await signIn(page, email);
     await page.getByRole("button", { name: /recovery code/i }).click();
-    await page.locator("#mfa-code").fill(recoveryCodes[0]!);
+    await page.locator("#mfa-code").fill(recoveryCodes[0]);
     await page.getByRole("button", { name: /^continue$/i }).click();
     await page.waitForTimeout(600);
 
     if (page.url().includes("/login")) {
-      await page.locator("#mfa-code").fill(recoveryCodes[1]!);
+      await page.locator("#mfa-code").fill(recoveryCodes[1]);
       await page.getByRole("button", { name: /^continue$/i }).click();
     }
 

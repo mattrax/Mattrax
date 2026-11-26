@@ -14,7 +14,7 @@ const proofPoints = [
 
 type Deployment = "cloud" | "self";
 
-export function Trust() {
+export default function Trust() {
   return (
     <section id="security" class="lx-section lx-trust" aria-labelledby="security-title">
       <div class="lx-shell">
@@ -40,7 +40,6 @@ export function Trust() {
                 href="mailto:hello@mattrax.app?subject=Mattrax%20security%20review"
                 variant="outline"
                 size="lg"
-                class="h-9 px-4"
               >
                 Talk to us about your review
               </Button>
@@ -82,20 +81,24 @@ function DeploymentSwitch() {
         </div>
 
         <div class="lx-seg" role="group" aria-label="Deployment model">
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             aria-pressed={mode() === "cloud" ? "true" : "false"}
             onClick={() => setMode("cloud")}
           >
             Cloud
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             aria-pressed={mode() === "self" ? "true" : "false"}
             onClick={() => setMode("self")}
           >
             Self-host
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -103,7 +106,13 @@ function DeploymentSwitch() {
         <div class="lx-deploy__panel" data-on={mode() === "cloud" ? "" : undefined}>
           <p class="lx-deploy__panel-title">Cloud</p>
           <p class="lx-deploy__panel-body">Cloud runs on Cloudflare Workers.</p>
-          <p class="lx-deploy__note">Free during alpha.</p>
+          <p class="lx-deploy__note">
+            Free during alpha.{" "}
+            <a href="/docs/getting-started/alpha" target="_self">
+              What alpha means
+            </a>
+            .
+          </p>
         </div>
 
         <div class="lx-deploy__panel" data-on={mode() === "self" ? "" : undefined}>
@@ -112,9 +121,7 @@ function DeploymentSwitch() {
             Self-hosted runs as one Node container against MySQL, with object storage on a local
             volume.
           </p>
-          <p class="lx-deploy__note">
-            Self-hosted deployments are licensed per enrolled device.
-          </p>
+          <p class="lx-deploy__note">Self-hosted deployments are licensed per enrolled device.</p>
         </div>
       </div>
 

@@ -13,7 +13,7 @@ const origin = "https://e.mattrax.app";
 const docsRoutes = ["/docs/", "/docs/api/", "/docs/getting-started/quick-start"];
 
 const locs = (xml: string): string[] =>
-  [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]!);
+  [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
 
 describe("sitemap.xml", () => {
   const xml = renderSitemap(origin, docsRoutes);

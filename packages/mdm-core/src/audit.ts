@@ -1,7 +1,11 @@
-import { Effect, Option, Schema } from "effect";
-import { and, desc, eq, sql, type AnyColumn, type SQL } from "drizzle-orm";
-import { Db, schema as s } from "@mattrax/enterprise-core";
+import { Cause, Effect, Option, Schema } from "effect";
+import { and, desc, eq, sql } from "drizzle-orm";
+import type { AnyColumn, SQL } from "drizzle-orm";
+import type { Db } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import { publishRealtimeEvent } from "./realtime.ts";
 import { dispatchWebhookEvent, webhookEventForAuditAction } from "./webhooks.ts";
+import type { WebhookEventInput } from "./webhooks.ts";
 
 /**
  * Actor recorded on events that are not initiated by a signed-in user. The
@@ -29,6 +33,11 @@ export const SYSTEM_AUDIT_ACTIONS = {
   deviceReturnToServiceCompleted: "device.return_to_service_completed",
   commandFailed: "device.command_failed",
   commandNotNow: "device.command_not_now",
+  deviceNamePushQueued: "device.name_push_queued",
+  deviceNamePushSkipped: "device.name_push_skipped",
+  deviceLockScreenMessagePushed: "device.lock_screen_message_pushed",
+  /** A scheduled rotation of the managed local administrator password was queued. */
+  localAdminPasswordRotationQueued: "device.local_admin_password_rotation_queued",
   declarationInvalid: "device.declaration_invalid",
   pushInvalidToken: "device.push_invalid_token",
   complianceChanged: "device.compliance_changed",
@@ -120,6 +129,8 @@ export type SystemAuditEvent = {
 export type SystemAuditOptions = {
   readonly authSecret?: string;
   readonly webhookFetch?: typeof globalThis.fetch;
+  /** Enqueue instead of awaiting delivery (used by the scoped MDM worker). */
+  readonly webhookDispatch?: (event: WebhookEventInput) => Effect.Effect<void, unknown>;
   /** Disable delivery for a specific call site (tests). */
   readonly webhooks?: boolean;
   /**
@@ -143,11 +154,7 @@ export type SystemAuditOptions = {
  * `system`.
  */
 export const defaultAuditCategory = (action: string): AuditCategory => {
-  if (
-    action.startsWith("device.") ||
-    action.startsWith("mdm.") ||
-    action.startsWith("enrollment.")
-  )
+  if (action.startsWith("device.") || action.startsWith("mdm.") || action.startsWith("enrollment."))
     return "mdm";
 
   return "system";
@@ -291,8 +298,7 @@ export const writeSystemAudit = (
     const coalesceTargetId =
       event.coalesce === true && window > 0 && event.targetId ? event.targetId : null;
 
-    const bucketStart =
-      coalesceTargetId === null ? now : auditCoalesceBucketStart(now, window);
+    const bucketStart = coalesceTargetId === null ? now : auditCoalesceBucketStart(now, window);
 
     const ip = bound(event.ip, AUDIT_TEXT_LIMITS.ip);
 
@@ -328,9 +334,9 @@ export const writeSystemAudit = (
       createdAt: bucketStart,
     };
 
-    const previous = coalesceTargetId !== null
-      ? (
-          yield* db
+    const previous =
+      coalesceTargetId !== null
+        ? (yield* db
             .select()
             .from(s.auditLog)
             .where(
@@ -350,9 +356,8 @@ export const writeSystemAudit = (
               ),
             )
             .orderBy(desc(s.auditLog.id))
-            .limit(1)
-        )[0]
-      : undefined;
+            .limit(1))[0]
+        : undefined;
 
     if (previous) {
       const previousMetadata = Option.getOrUndefined(
@@ -377,11 +382,22 @@ export const writeSystemAudit = (
         id: id(),
         ...values,
         metadata:
-          coalesceTargetId === null
-            ? values.metadata
-            : initialCheckInMetadata(event.metadata, now),
+          coalesceTargetId === null ? values.metadata : initialCheckInMetadata(event.metadata, now),
       });
     }
+
+    // Tell open dashboards which cached queries became stale. Every protocol
+    // ingress already writes one of the mapped audit actions, so this is the
+    // single publish point for check-ins, enrollments, command results,
+    // declarations and status changes. Failed notification writes are
+    // swallowed: the audit row is the record, the event is only a hint.
+    yield* publishRealtimeEvent(db, {
+      organizationId: event.organizationId,
+      action: event.action,
+      deviceId: event.deviceId,
+      protocol: event.protocol,
+      now,
+    });
 
     // Device lifecycle transitions are mirrored to customer webhooks. Only
     // mapped actions are delivered; dispatch swallows every failure so audit
@@ -397,23 +413,28 @@ export const writeSystemAudit = (
         ? {}
         : { metadata: event.metadata };
 
-    yield* dispatchWebhookEvent(
-      db,
-      {
-        organizationId: event.organizationId,
-        type: webhookEvent,
-        data: Object.assign(
-          { targetType: event.targetType, targetId: event.targetId ?? null },
-          metadata,
-        ),
-      },
-      { authSecret: options.authSecret, fetch: options.webhookFetch },
-    );
+    const webhookEventInput: WebhookEventInput = {
+      organizationId: event.organizationId,
+      type: webhookEvent,
+      data: Object.assign(
+        { targetType: event.targetType, targetId: event.targetId ?? null },
+        metadata,
+      ),
+    };
+
+    yield* options.webhookDispatch
+      ? options.webhookDispatch(webhookEventInput)
+      : dispatchWebhookEvent(db, webhookEventInput, {
+          authSecret: options.authSecret,
+          fetch: options.webhookFetch,
+        });
   }).pipe(
-    Effect.catchCause((cause) =>
-      Effect.logWarning(`Failed to write system audit event ${event.action}: ${String(cause)}`),
+    Effect.catchCauseIf(
+      (cause) => !Cause.hasInterrupts(cause),
+      (cause) =>
+        Effect.logWarning(`Failed to write system audit event ${event.action}: ${String(cause)}`),
     ),
-  );
+  ) as Effect.Effect<void>;
 
 const normalizeEnum = (value: string | null | undefined) => (value ?? "").trim().toLowerCase();
 
@@ -460,8 +481,8 @@ export const commandFailureTransition = (
  */
 export const describeAuditFailure = (message: string, limit = 300): string =>
   message
-    .replace(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/g, "[redacted]")
-    .replace(/\b[A-Za-z0-9+/=_-]{64,}\b/g, "[redacted]")
-    .replace(/\s+/g, " ")
+    .replaceAll(/-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/g, "[redacted]")
+    .replaceAll(/\b[A-Za-z0-9+/=_-]{64,}\b/g, "[redacted]")
+    .replaceAll(/\s+/g, " ")
     .trim()
     .slice(0, limit);

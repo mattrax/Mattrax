@@ -1,3 +1,4 @@
+import { Checkbox } from "@mattrax/ui";
 import { useNavigate } from "~/lib/navigation";
 import { Option, Schema } from "effect";
 import type { JSX } from "@solidjs/web";
@@ -14,8 +15,10 @@ import {
 } from "solid-js";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { AdmxImportDialog } from "~/components/mdm/admx-import";
-import { DocumentationLink } from "~/components/mdm/documentation-link";
+import AdmxImportDialog from "~/components/mdm/admx-import";
+import CisTemplateDialog from "~/components/mdm/cis-template-dialog";
+import type { CisTemplateOutcome } from "~/components/mdm/cis-template-dialog";
+import DocumentationLink from "~/components/mdm/documentation-link";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +38,7 @@ import {
   Plus,
   RotateCcw,
   Search,
+  ShieldCheck,
   TriangleAlert,
   X,
 } from "~/components/ui/icons";
@@ -48,8 +52,10 @@ import {
   SheetTitle,
 } from "~/components/ui/sheet";
 import { authClient } from "~/lib/auth";
-import { chord, useCommands, type Command } from "~/lib/commands";
+import { chord, useCommands } from "~/lib/commands";
+import type { Command } from "~/lib/commands";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { disposeCatalogueRuntime } from "~/lib/catalogue-service";
 import {
   collectionProperties,
   loadAppleOsSupport,
@@ -57,19 +63,20 @@ import {
   loadManifest,
   loadPlatformIndex,
   loadSearchIndex,
-  resetPlatformCache,
   searchIndexProperties,
   appleCollectionManaged,
   appleOsRangeLabel,
-  type AppleOsSupportManifest,
-  type CatalogManifest,
-  type Collection,
-  type CollectionSummary,
-  type PlatformId,
-  type PlatformIndex,
-  type Property,
-  type SearchIndex,
   typeLabel,
+} from "~/lib/policy-designer/catalog";
+import type {
+  AppleOsSupportManifest,
+  CatalogManifest,
+  Collection,
+  CollectionSummary,
+  PlatformId,
+  PlatformIndex,
+  Property,
+  SearchIndex,
 } from "~/lib/policy-designer/catalog";
 import {
   collectionDocumentationUrl,
@@ -90,17 +97,23 @@ import {
   sameValue,
   validateDraft,
   valueKey,
-  type PolicyDraft,
-  type PolicyValue,
-  type Selection,
-  type SelectionTemplate,
-  type ValidationIssue,
+} from "~/lib/policy-designer/build";
+import type {
+  PolicyDraft,
+  PolicyValue,
+  Selection,
+  SelectionTemplate,
+  ValidationIssue,
 } from "~/lib/policy-designer/build";
 import {
-  admxCollectionFromSelection,
-  isAdmxCollectionId,
-  type AdmxSelection,
-} from "~/lib/policy-designer/admx";
+  applyCollectionIdRewrites,
+  isPolicyDraftDirty,
+  normaliseSelectionCollectionIds,
+  policyDraftSnapshot,
+  seedPolicyDraftBaseline,
+} from "~/lib/policy-designer/draft-state";
+import { admxCollectionFromSelection, isAdmxCollectionId } from "~/lib/policy-designer/admx";
+import type { AdmxSelection } from "~/lib/policy-designer/admx";
 import {
   isThirdPartyCollectionId,
   loadThirdPartyApps,
@@ -109,27 +122,17 @@ import {
   thirdPartyAppsForPlatform,
   thirdPartyCollectionPlatform,
   thirdPartySelectionTemplate,
-  type ThirdPartyApp,
-  type ThirdPartyCatalog,
 } from "~/lib/policy-designer/thirdPartyApps";
+import type { ThirdPartyApp, ThirdPartyCatalog } from "~/lib/policy-designer/thirdPartyApps";
 
 import { cn } from "~/lib/utils";
 
 const keyOf = (collection: { id: string; name: string }) => `${collection.id}#${collection.name}`;
 
-/**
- * Serialized drafts this tab has saved, by designer storage key. The persisted
- * configurations are a lossy projection of the draft, so comparing against
- * them alone reports a just-saved policy as dirty (and blocks the navigation
- * that follows a save). Keeping the saved serialization also survives the
- * remount an invalidation causes.
- */
-const savedDrafts = new Map<string, string>();
-
 /** Selections store `${collection.id}#${collection.name}`; loaders need just the id. */
 const collectionIdOf = (selectionId: string) => selectionId.split("#")[0] ?? selectionId;
 
-const safeId = (value: string) => value.replace(/[^A-Za-z0-9_-]+/g, "-");
+const safeId = (value: string) => value.replaceAll(/[^A-Za-z0-9_-]+/g, "-");
 
 /** DOM ids include platform, scope and the serialized value key, as requested. */
 const fieldId = (platform: PlatformId, property: Property) =>
@@ -235,18 +238,6 @@ const templateSets: Record<
   ],
 };
 
-const serializePolicy = (policy: PolicyDraft) => {
-  const platforms: Array<[PlatformId, Selection[]]> = PLATFORM_ORDER.map((platform) => [
-    platform,
-    policy.platforms[platform] ?? [],
-  ]);
-
-  return JSON.stringify({
-    name: policy.name,
-    platforms: platforms.filter(([, selections]) => selections.length > 0),
-  });
-};
-
 const SECTION_PAGE = 60;
 
 const SECTION_PAGE_INCREMENT = 40;
@@ -271,7 +262,7 @@ export type PolicyDesignerProps = {
   readonly onPlatformChange?: (platform: PlatformId) => void;
 };
 
-export function PolicyDesigner(props: PolicyDesignerProps) {
+export default function PolicyDesigner(props: PolicyDesignerProps) {
   const navigate = useNavigate();
   const session = authClient.useSession();
   // The initial draft is a one-shot snapshot from the route; it never changes
@@ -298,6 +289,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   const [thirdParty, setThirdParty] = createSignal<ThirdPartyCatalog | null>(null);
   const [thirdPartyError, setThirdPartyError] = createSignal<string | null>(null);
   const [admxOpen, setAdmxOpen] = createSignal(false);
+  const [cisOpen, setCisOpen] = createSignal(false);
 
   const [searchIndexes, setSearchIndexes] = createSignal<Partial<Record<PlatformId, SearchIndex>>>(
     {},
@@ -338,7 +330,6 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const [startOverOpen, setStartOverOpen] = createSignal(false);
   const [removeTarget, setRemoveTarget] = createSignal<Selection | null>(null);
-  const [justSaved, setJustSaved] = createSignal(false);
   let requestId = 0;
   const requestIds = new Map<PlatformId, number>();
   let errorRef: HTMLDivElement | undefined;
@@ -350,12 +341,30 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     },
   );
 
-  const initialSnapshot = untrack(() => {
+  const initialPolicy = untrack(() => {
     const policy = emptyPolicyDraft(name());
     policy.platforms = { ...selectionMap() };
 
-    return serializePolicy(policy);
+    return policy;
   });
+
+  const initialSnapshot = untrack(() => policyDraftSnapshot(initialPolicy));
+
+  /**
+   * The draft as of the last save, seeded from the server's persisted draft.
+   * A newer browser autosave therefore counts as dirty and prompts before it
+   * is discarded. The designer's persisted configurations can be a lossy
+   * projection, so saving resets this baseline explicitly.
+   */
+  const [savedDraft, setSavedDraft] = createSignal<PolicyDraft>(
+    untrack(() =>
+      seedPolicyDraftBaseline({
+        persistedDraft: props.persistedDraft,
+        initialDraft,
+        currentDraft: initialPolicy,
+      }),
+    ),
+  );
 
   const data = () => indexes()[platform()] ?? null;
   const catalogError = () => indexErrors()[platform()] ?? null;
@@ -444,7 +453,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       });
       void loadCollection(targetPlatform, collectionId)
         .then((collection) => setCollections((current) => ({ ...current, [cacheKey]: collection })))
-        .catch((error) =>
+        .catch((error: unknown) =>
           setCollectionErrors((current) => ({
             ...current,
             [cacheKey]: errorMessage(raisedFailure(error)),
@@ -469,7 +478,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     });
 
   const beginLoad = (target: PlatformId, force = false) => {
-    if (force) resetPlatformCache(target);
+    if (force) void disposeCatalogueRuntime();
     setIndexErrors((current) => {
       const next = { ...current };
       delete next[target];
@@ -491,7 +500,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         setIndexes((current) => ({ ...current, [target]: value }));
         ensureDraftCollections(target);
       })
-      .catch((error) => {
+      .catch((error: unknown) => {
         if (requestIds.get(target) !== id) return;
         setIndexErrors((current) => ({ ...current, [target]: errorMessage(raisedFailure(error)) }));
       });
@@ -503,7 +512,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     if (!manifest())
       void loadManifest()
         .then(setManifest)
-        .catch((error) => setManifestError(errorMessage(raisedFailure(error))));
+        .catch((error: unknown) => setManifestError(errorMessage(raisedFailure(error))));
     const target = platform();
     setIndexes((current) => {
       const next = { ...current };
@@ -562,7 +571,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   onSettled(() => {
     void loadManifest()
       .then(setManifest)
-      .catch((error) => setManifestError(errorMessage(raisedFailure(error))));
+      .catch((error: unknown) => setManifestError(errorMessage(raisedFailure(error))));
 
     // Optional: without it the designer falls back to the catalogue's earliest
     // minimum OS instead of a per-family range.
@@ -572,7 +581,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
     void loadThirdPartyApps()
       .then(setThirdParty)
-      .catch((error) => setThirdPartyError(errorMessage(raisedFailure(error))));
+      .catch((error: unknown) => setThirdPartyError(errorMessage(raisedFailure(error))));
 
     if (!initialDraft) {
       const stored = parsePolicyDraft(localStorage.getItem(storageKey));
@@ -601,7 +610,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
       // Do not rewrite the browser draft merely because the editor mounted.
       if (
-        serializePolicy({ ...emptyPolicyDraft(value.name), platforms: value.selections }) ===
+        policyDraftSnapshot({ ...emptyPolicyDraft(value.name), platforms: value.selections }) ===
         initialSnapshot
       )
         return;
@@ -625,33 +634,24 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
   // Restore the last active collection (or the first one) when the catalogue
   // arrives, instead of greeting a configured policy with an empty state.
   createEffect(
-    () => ({ data: data(), active: activeKey(), selections: selections() }),
+    () => ({ data: data(), platform: platform(), active: activeKey(), selections: selections() }),
     (value) => {
       if (!value.data) return;
 
       // Drafts written by older builds used `apple:<identifier>` instead of the
       // catalogue key (`apple/profiles/<identifier>#Name`). Resolve them against
-      // the loaded index rather than showing an empty editor.
-      const normalised = value.selections.map((selection) => {
-        if (
-          value.data!.collections.some((collection) => keyOf(collection) === selection.collectionId)
-        )
-          return selection;
+      // the loaded index rather than showing an empty editor, and apply the
+      // same rewrite to the saved baseline so a merely-opened legacy policy is
+      // not reported as dirty.
+      const { selections: normalised, rewrites } = normaliseSelectionCollectionIds(
+        value.selections,
+        value.data.collections,
+      );
 
-        const match =
-          value.data!.collections.find(
-            (collection) =>
-              collection.identifier === selection.identifier && collection.name === selection.name,
-          ) ??
-          value.data!.collections.find(
-            (collection) => collection.identifier === selection.identifier,
-          );
-
-        return match ? { ...selection, collectionId: keyOf(match) } : selection;
-      });
-
-      if (normalised.some((selection, index) => selection !== value.selections[index]))
+      if (rewrites.size > 0) {
         setSelections(() => normalised);
+        setSavedDraft((current) => applyCollectionIdRewrites(current, value.platform, rewrites));
+      }
 
       if (
         value.active &&
@@ -682,7 +682,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         if (searchIndexes()[value.platform] || searchIndexErrors()[value.platform]) return;
         void loadSearchIndex(value.platform)
           .then((index) => setSearchIndexes((current) => ({ ...current, [value.platform]: index })))
-          .catch((error) =>
+          .catch((error: unknown) =>
             setSearchIndexErrors((current) => ({
               ...current,
               [value.platform]: errorMessage(raisedFailure(error)),
@@ -1007,44 +1007,29 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       (issue) => issue.collectionId === collectionId && issue.propertyKey === propertyKey,
     );
 
-  const dirtySinceLoad = () => serializePolicy(policyDraft()) !== initialSnapshot;
+  const dirtySinceLoad = () => isPolicyDraftDirty(policyDraft(), initialSnapshot);
 
-  const dirtySincePolicy = () =>
-    props.persistedDraft === undefined ||
-    serializePolicy(policyDraft()) !== serializePolicy(props.persistedDraft);
+  const dirtySinceSaved = () =>
+    isPolicyDraftDirty(policyDraft(), policyDraftSnapshot(savedDraft()));
 
-  createEffect(
-    () => [props.error, name(), selectionMap()] as const,
-    ([error, , selections], previous) => {
-      if (error) setJustSaved(false);
-      else if (previous && JSON.stringify(selections) !== JSON.stringify(previous[2]))
-        setJustSaved(false);
-    },
-  );
+  const dirty = () => (props.mode === "dashboard" ? dirtySinceSaved() : dirtySinceLoad());
 
   const saveStatus = () => {
     if (props.saving) return "Saving…";
 
     if (props.mode === "dashboard")
-      return dirtySincePolicy() ? "Unsaved changes" : "Saved to policy";
+      return dirtySinceSaved() ? "Unsaved changes" : "Saved to policy";
 
     return dirtySinceLoad() ? "Unsaved draft" : "Draft saved";
   };
 
-  // In-app navigation and tab close both go through one discard prompt.
-  const unsaved = useUnsavedChanges(
-    () =>
-      props.mode === "dashboard" &&
-      props.persistedDraft !== undefined &&
-      !props.saving &&
-      !justSaved() &&
-      savedDrafts.get(storageKey) !== serializePolicy(policyDraft()) &&
-      dirtySincePolicy(),
-    {
-      title: "Discard policy changes?",
-      description: "This policy has edits that have not been saved.",
-    },
-  );
+  // In-app navigation and tab close both go through one discard prompt. The
+  // comparison is against the last saved snapshot, so opening or saving a
+  // policy without edits never asks.
+  const unsaved = useUnsavedChanges(() => props.mode === "dashboard" && !props.saving && dirty(), {
+    title: "Discard policy changes?",
+    description: "This policy has edits that have not been saved.",
+  });
 
   // The label must describe the range delivery enforces, so it comes from the
   // same Apple `supportedOS` metadata the backend filters with.
@@ -1174,7 +1159,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
     setCollections((current) => ({ ...current, ...cached }));
     setSelections((current) => [...current, ...additions]);
-    setActiveKey(additions[0]!.collectionId);
+    setActiveKey(additions[0].collectionId);
     setQuery("");
     setFilterQuery("");
     setFilterMode("all");
@@ -1321,6 +1306,41 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     })();
   };
 
+  const applyCisTemplate = (outcome: CisTemplateOutcome) => {
+    const target = outcome.template.platform;
+
+    setSelectionMap((current) => ({ ...current, [target]: outcome.selections }));
+    setCollections((current) => {
+      const next = { ...current };
+
+      for (const collection of outcome.collections)
+        next[collectionCacheKey(target, collection.id)] = collection;
+
+      return next;
+    });
+
+    if (target !== platform()) {
+      setPlatform(target);
+      setMobileView("editor");
+    }
+
+    const first = outcome.collections[0];
+
+    const selection = first
+      ? outcome.selections.find((candidate) => collectionIdOf(candidate.collectionId) === first.id)
+      : undefined;
+
+    setActiveKey(selection?.collectionId ?? outcome.selections[0]?.collectionId ?? null);
+    setQuery("");
+    setFilterQuery("");
+    setFilterMode("all");
+    setNotice(
+      `Applied ${outcome.appliedControls} CIS control${outcome.appliedControls === 1 ? "" : "s"} from ${outcome.template.benchmark.name} (${outcome.appliedSettings} setting${outcome.appliedSettings === 1 ? "" : "s"}).`,
+    );
+    setLiveMessage(`${outcome.appliedControls} CIS controls applied to the ${target} policy.`);
+    focusEditor();
+  };
+
   const download = () => {
     if (policySelectionCount(policyDraft()) === 0) return;
 
@@ -1376,6 +1396,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     Boolean(props.onSave) &&
     policySelectionCount(policyDraft()) > 0 &&
     !props.saveDisabled &&
+    !props.saving &&
     blockingIssues().length === 0;
 
   const disabledHint = () => {
@@ -1392,23 +1413,28 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     return null;
   };
 
-  // A failed save must not leave the draft looking persisted: clear the
-  // marker so navigating away still asks before discarding unsent edits.
+  // A failed save must not leave the draft looking persisted: restore the
+  // previous baseline so navigating away still asks before discarding.
+  let baselineBeforeSave: PolicyDraft | undefined;
   createEffect(
     () => Boolean(props.error),
     (failed) => {
-      if (!failed) return;
-      setJustSaved(false);
-      savedDrafts.delete(storageKey);
+      if (!failed || baselineBeforeSave === undefined) return;
+      setSavedDraft(baselineBeforeSave);
+      baselineBeforeSave = undefined;
+    },
+  );
+  createEffect(
+    () => props.saving,
+    (saving, previous) => {
+      if (previous && !saving && !props.error) baselineBeforeSave = undefined;
     },
   );
 
-  onCleanup(() => savedDrafts.delete(storageKey));
-
   const save = () => {
     if (!canSave()) return;
-    savedDrafts.set(storageKey, serializePolicy(policyDraft()));
-    setJustSaved(true);
+    baselineBeforeSave = savedDraft();
+    setSavedDraft(policyDraft());
     void props.onSave?.(policyDraft());
   };
 
@@ -1577,23 +1603,44 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     <div class="grid gap-2">
       <For each={templateSets[platform()]}>
         {(template) => (
-          <button
+          <Button
             type="button"
             disabled={loading() || !data()}
             onClick={() => applyTemplate(template.keys)}
-            class="pressable w-full rounded-xl border border-border bg-card p-3 text-left hover:border-foreground/20 hover:bg-muted/30 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            class="w-full text-left disabled:cursor-not-allowed"
           >
-            <strong class="block text-[13px] font-semibold text-foreground">
+            <strong class="block text-xs font-semibold text-foreground">
               {template.label}
             </strong>
             <span class="mt-0.5 block text-xs text-muted-foreground">{template.description}</span>
-            <span class="mt-2 inline-flex whitespace-nowrap rounded-full bg-brand-solid px-2 py-0.5 text-[10px] font-medium text-brand-foreground">
+            <span class="mt-2 inline-flex whitespace-nowrap rounded-full bg-brand-solid px-2 py-0.5 text-xs font-medium text-brand-foreground">
               Recommended
             </span>
-          </button>
+          </Button>
         )}
       </For>
     </div>
+  );
+
+  const cisTemplateButton = () => (
+    <Button
+      type="button"
+      onClick={() => setCisOpen(true)}
+      class="w-full text-left"
+    >
+      <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <ShieldCheck class="size-4" />
+        <strong class="text-xs font-semibold text-foreground">
+          Start from a CIS benchmark
+        </strong>
+        <Badge variant="outline" class="h-4">
+          Template
+        </Badge>
+      </span>
+      <span class="mt-0.5 block text-xs text-muted-foreground">
+        Review a benchmark's controls, see what each maps to, and apply only the ones you want.
+      </span>
+    </Button>
   );
 
   const platformPills = () => (
@@ -1604,23 +1651,23 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
     >
       <For each={platforms()}>
         {(item) => (
-          <button
+          <Button
             type="button"
             aria-pressed={platform() === item.id ? "true" : "false"}
             title={`Edit ${item.short} settings`}
             onClick={() => choosePlatform(item.id)}
             class={cn(
-              "rounded-full px-3 py-1 text-xs font-medium transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-[3px] focus-visible:ring-ring/30 focus-visible:outline-none",
+              "",
               platform() === item.id
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-card hover:text-foreground",
+                ? ""
+                : "",
             )}
           >
             {item.short}
             <Show when={(selectionMap()[item.id]?.length ?? 0) > 0}>
-              <span class="ml-1 tabular-nums opacity-60">{selectionMap()[item.id]!.length}</span>
+              <span class="ml-1 tabular-nums opacity-60">{selectionMap()[item.id].length}</span>
             </Show>
-          </button>
+          </Button>
         )}
       </For>
     </div>
@@ -1628,30 +1675,30 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
   const issuesButton = (compact = false) => (
     <Show when={issues().length > 0}>
-      <button
+      <Button
         type="button"
         onClick={() => setIssuesOpen(true)}
         class={cn(
-          "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors focus-visible:ring-[3px] focus-visible:outline-none",
+          "inline-flex items-center",
           errorCount() > 0
-            ? "border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:ring-destructive/30"
-            : "border-warning/30 bg-warning/10 text-warning-foreground hover:bg-warning/20 focus-visible:ring-warning/30",
-          compact && "border-0 bg-transparent px-0 py-0",
+            ? ""
+            : "",
+          compact && "",
         )}
       >
         <Show when={errorCount() > 0} fallback={<TriangleAlert class="size-3.5" />}>
           <CircleAlert class="size-3.5" />
         </Show>
         {issues().length} issue{issues().length === 1 ? "" : "s"}
-      </button>
+      </Button>
     </Show>
   );
 
   const summaryPanel = () => (
     <div class="flex min-h-0 flex-1 flex-col">
       <div class="shrink-0 border-b border-border px-4 py-3">
-        <h2 class="text-[13px] font-semibold text-foreground">Summary</h2>
-        <p class="mt-0.5 text-[11px] text-muted-foreground">
+        <h2 class="text-xs font-semibold text-foreground">Summary</h2>
+        <p class="mt-0.5 text-xs text-muted-foreground">
           {policyPlatforms(policyDraft()).length} platform
           {policyPlatforms(policyDraft()).length === 1 ? "" : "s"} ·{" "}
           {policySelectionCount(policyDraft())} collection
@@ -1660,7 +1707,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       </div>
       <div class="min-h-0 flex-1 space-y-5 overflow-y-auto p-4">
         <div class="space-y-1.5">
-          <p class="text-[11px] font-medium text-muted-foreground">
+          <p class="text-xs font-medium text-muted-foreground">
             {props.mode === "dashboard" ? "Profile name" : "Policy name"}
           </p>
           <Input
@@ -1668,9 +1715,9 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             onInput={(event) => setName(event.currentTarget.value)}
             placeholder={props.mode === "dashboard" ? "Profile name" : "Policy name"}
             aria-label={props.mode === "dashboard" ? "Profile name" : "Policy name"}
-            class="h-8 text-[13px]"
+            class="h-8"
           />
-          <p class="text-[11px] leading-relaxed text-muted-foreground">
+          <p class="text-xs leading-relaxed text-muted-foreground">
             {props.mode === "dashboard"
               ? "Shown on devices. The Mattrax policy name stays the same."
               : "Shown on devices and in the exported artifact."}
@@ -1679,7 +1726,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
         <dl class="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-border bg-border">
           <div class="bg-card px-2 py-2">
-            <dt class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <dt class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Sets
             </dt>
             <dd class="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
@@ -1687,7 +1734,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             </dd>
           </div>
           <div class="bg-card px-2 py-2">
-            <dt class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <dt class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Configured
             </dt>
             <dd class="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
@@ -1695,7 +1742,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
             </dd>
           </div>
           <div class="bg-card px-2 py-2">
-            <dt class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            <dt class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Changed
             </dt>
             <dd class="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
@@ -1706,11 +1753,11 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
         <div class="space-y-2">
           <div class="flex items-center justify-between gap-2">
-            <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Issues
             </h3>
             <Show when={issues().length > 0}>
-              <span class="text-[10px] text-muted-foreground">
+              <span class="text-xs text-muted-foreground">
                 {errorCount()} error{errorCount() === 1 ? "" : "s"} · {warningCount()} warning
                 {warningCount() === 1 ? "" : "s"}
               </span>
@@ -1719,7 +1766,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           <Show
             when={issues().length > 0}
             fallback={
-              <p class="rounded-lg border border-border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
+              <p class="rounded-lg border border-border bg-muted/30 px-2.5 py-2 text-xs text-muted-foreground">
                 No validation issues. Defaults are not counted as changes.
               </p>
             }
@@ -1728,14 +1775,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               <For each={issues().slice(0, 40)}>
                 {(issue) => (
                   <li>
-                    <button
+                    <Button
                       type="button"
                       onClick={() => focusIssue(issue)}
                       class={cn(
-                        "flex w-full items-start gap-2 rounded-lg border px-2 py-1.5 text-left text-[11px] transition-colors focus-visible:ring-[3px] focus-visible:outline-none",
+                        "flex w-full items-start text-left",
                         issue.severity === "error"
-                          ? "border-destructive/30 bg-destructive/[0.07] text-destructive hover:bg-destructive/10 focus-visible:ring-destructive/30"
-                          : "border-warning/30 bg-warning/[0.07] text-warning-foreground hover:bg-warning/10 focus-visible:ring-warning/30",
+                          ? ""
+                          : "",
                       )}
                     >
                       <Show
@@ -1750,25 +1797,25 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                           {issue.collectionName} · {issue.message}
                         </span>
                       </span>
-                    </button>
+                    </Button>
                   </li>
                 )}
               </For>
             </ul>
             <Show when={issues().length > 40}>
-              <p class="text-[10px] text-muted-foreground">And {issues().length - 40} more…</p>
+              <p class="text-xs text-muted-foreground">And {issues().length - 40} more…</p>
             </Show>
           </Show>
         </div>
 
         <div class="space-y-3">
-          <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Collections
           </h3>
           <Show
             when={policySelectionCount(policyDraft()) > 0}
             fallback={
-              <p class="text-[11px] text-muted-foreground">
+              <p class="text-xs text-muted-foreground">
                 Add a collection from the catalogue or start from a baseline.
               </p>
             }
@@ -1777,20 +1824,17 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               {(target) => (
                 <Show when={(selectionMap()[target]?.length ?? 0) > 0}>
                   <div class="space-y-1">
-                    <button
+                    <Button
                       type="button"
                       onClick={() => {
                         if (platform() !== target) choosePlatform(target);
                         setSummaryOpen(false);
                       }}
-                      class={cn(
-                        "flex w-full items-center justify-between gap-2 rounded px-1 text-left text-[10px] font-medium uppercase tracking-wide transition-colors hover:text-foreground",
-                        platform() === target ? "text-foreground" : "text-muted-foreground",
-                      )}
+                      class="flex w-full items-center justify-between text-left"
                     >
                       <span>{platformLabel(target)}</span>
-                      <span class="tabular-nums">{selectionMap()[target]!.length}</span>
-                    </button>
+                      <span class="tabular-nums">{selectionMap()[target].length}</span>
+                    </Button>
                     <ul class="space-y-0.5">
                       <For each={selectionMap()[target]}>
                         {(selection) => {
@@ -1798,7 +1842,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
                           return (
                             <li>
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => {
                                   if (platform() !== target) choosePlatform(target);
@@ -1806,8 +1850,8 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                   setSummaryOpen(false);
                                 }}
                                 class={cn(
-                                  "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-muted focus-visible:ring-[3px] focus-visible:outline-none",
-                                  activeKey() === selection.collectionId && "bg-muted",
+                                  "flex w-full items-center text-left",
+                                  activeKey() === selection.collectionId && "",
                                 )}
                               >
                                 <span class="min-w-0 flex-1 truncate text-foreground">
@@ -1816,7 +1860,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                 <span class="shrink-0 tabular-nums text-muted-foreground">
                                   {stats().changed}/{stats().total}
                                 </span>
-                              </button>
+                              </Button>
                             </li>
                           );
                         }}
@@ -1830,26 +1874,26 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         </div>
 
         <div class="space-y-2 rounded-lg border border-border bg-muted/30 p-2.5">
-          <p class="text-[11px] leading-relaxed text-muted-foreground">
+          <p class="text-xs leading-relaxed text-muted-foreground">
             {props.mode === "dashboard"
               ? "Saving replaces this policy's designer configuration. Policy editor settings need explicit confirmation."
               : "Export the artifact now, or deploy it into a Mattrax tenant."}
           </p>
-          <button
+          <Button
             type="button"
             onClick={() => setStartOverOpen(true)}
             disabled={selections().length === 0}
-            class="text-[11px] font-medium text-destructive underline underline-offset-2 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
+            class="disabled:cursor-not-allowed"
           >
             Clear {platformName()} settings
-          </button>
+          </Button>
         </div>
       </div>
     </div>
   );
 
   return (
-    <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-background">
+    <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-page">
       {unsaved.prompt}
       <a
         href="#designer-editor"
@@ -1858,16 +1902,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         Skip to settings
       </a>
 
-      <header class="sticky top-0 z-30 shrink-0 border-b border-border bg-background/85 backdrop-blur">
+      <header class="sticky top-0 z-30 shrink-0 border-b border-border bg-page/85 backdrop-blur">
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:px-4">
           <div class="shrink-0">{props.pageActions}</div>
           <span class="hidden h-4 w-px bg-border sm:block" aria-hidden="true" />
           <div class="flex min-w-0 items-center gap-2.5">
             <div class="min-w-0">
-              <h2 class="truncate text-[14px] font-semibold leading-5 tracking-[-0.01em] text-foreground">
+              <h2 class="truncate text-sm font-semibold leading-5 tracking-tight text-foreground">
                 {name() || "Untitled policy"}
               </h2>
-              <p class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-4 text-muted-foreground">
+              <p class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs leading-4 text-muted-foreground">
                 <span class="truncate">
                   {policyPlatforms(policyDraft()).length} platform
                   {policyPlatforms(policyDraft()).length === 1 ? "" : "s"}
@@ -1885,15 +1929,13 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                 <span
                   class={cn(
                     "inline-flex min-w-0 items-center gap-1.5",
-                    props.mode === "dashboard" && dirtySincePolicy() && "text-warning-foreground",
+                    props.mode === "dashboard" && dirty() && "text-warning-foreground",
                   )}
                 >
                   <span
                     class={cn(
                       "size-1.5 shrink-0 rounded-full",
-                      props.mode === "dashboard" && dirtySincePolicy()
-                        ? "bg-warning"
-                        : "bg-success",
+                      props.mode === "dashboard" && dirty() ? "bg-warning" : "bg-success",
                     )}
                     aria-hidden="true"
                   />
@@ -1907,6 +1949,11 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
           <div class="ml-auto flex flex-wrap items-center justify-end gap-1.5">
             <span class="hidden xl:inline-flex">{issuesButton()}</span>
+            <Button size="sm" variant="outline" onClick={() => setCisOpen(true)}>
+              <ShieldCheck class="mr-1 size-3.5" />
+              <span class="hidden sm:inline">Apply template</span>
+              <span class="sm:hidden">Template</span>
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -1972,7 +2019,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           <div class="space-y-1 px-3 pb-2 sm:px-4">
             <Show when={disabledHint()}>
               {(hint) => (
-                <p class="text-right text-[11px] leading-relaxed text-muted-foreground">{hint()}</p>
+                <p class="text-right text-xs leading-relaxed text-muted-foreground">{hint()}</p>
               )}
             </Show>
             <Show when={props.error}>
@@ -1982,7 +2029,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                     errorRef = element;
                   }}
                   role="alert"
-                  class="flex w-full items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-[11px] text-destructive"
+                  class="flex w-full items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-xs text-destructive"
                 >
                   <CircleAlert class="size-3.5 shrink-0" />
                   <span class="min-w-0 flex-1 break-words">
@@ -1995,18 +2042,19 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               {(message) => (
                 <p
                   role="status"
-                  class="flex w-full items-center gap-2 rounded-lg border border-border bg-muted/30 px-2.5 py-1.5 text-[11px] text-foreground/90"
+                  class="flex w-full items-center gap-2 rounded-lg border border-border bg-muted/30 px-2.5 py-1.5 text-xs text-foreground/90"
                 >
                   <Info class="size-3.5 shrink-0" />
                   <span class="min-w-0 flex-1">{message()}</span>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     aria-label="Dismiss message"
-                    class="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
                     onClick={() => setNotice(null)}
                   >
                     <X class="size-3" />
-                  </button>
+                  </Button>
                 </p>
               )}
             </Show>
@@ -2016,7 +2064,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
       <Show when={props.mode !== "dashboard"}>
         <div class="shrink-0 border-b border-border bg-card px-4 py-2.5 sm:px-6">
-          <h1 class="text-[17px] font-semibold tracking-tight text-foreground">
+          <h1 class="text-base font-semibold tracking-tight text-foreground">
             Build a policy in minutes
           </h1>
           <p class="mt-0.5 text-xs text-muted-foreground">
@@ -2029,34 +2077,34 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
       <div class="flex min-h-0 flex-1">
         <aside
           class={cn(
-            "min-h-0 w-full shrink-0 flex-col border-r border-border bg-card xl:flex xl:w-[288px]",
+            "min-h-0 w-full shrink-0 flex-col border-r border-border bg-card xl:flex xl:w-72",
             mobileView() === "editor" ? "hidden xl:flex" : "flex",
           )}
           aria-label="Settings catalogue"
         >
           <div class="shrink-0 border-b border-border p-2.5">
             <div class="relative">
-              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
               <Input
                 value={query()}
                 onInput={(event) => setQuery(event.currentTarget.value)}
                 placeholder="Search settings…"
                 aria-label="Search settings"
-                class="h-8 pl-8! pr-8! text-[13px]"
+                class="h-8"
               />
               <Show when={query()}>
-                <button
+                <Button
                   type="button"
                   aria-label="Clear search"
                   onClick={() => setQuery("")}
-                  class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
+                  class="absolute right-1.5 top-1/2 -translate-y-1/2"
                 >
                   <X class="size-3.5" />
-                </button>
+                </Button>
               </Show>
             </div>
             <div class="mt-1.5 flex items-center justify-between gap-2">
-              <p class="text-[11px] text-muted-foreground" aria-live="polite">
+              <p class="text-xs text-muted-foreground" aria-live="polite">
                 {!data()
                   ? loadingLabel()
                   : searchIndexLoading()
@@ -2064,21 +2112,20 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                     : resultLabel()}
               </p>
               <Show when={searchIndexErrors()[platform()]}>
-                <button
+                <Button
                   type="button"
                   onClick={retryCatalogue}
-                  class="shrink-0 text-[10px] text-destructive underline underline-offset-2"
+                  class="shrink-0"
                 >
                   Search unavailable · Retry
-                </button>
+                </Button>
               </Show>
               <Show when={deprecatedCount() > 0}>
-                <label class="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    class="size-3 accent-[var(--brand-solid)]"
+                <label class="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-muted-foreground">
+                  <Checkbox
+                    class="size-3"
                     checked={showDeprecated()}
-                    onChange={(event) => setShowDeprecated(event.currentTarget.checked)}
+                    onCheckedChange={(checked) => setShowDeprecated(checked === true)}
                   />
                   Show deprecated
                 </label>
@@ -2106,23 +2153,24 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
               >
                 <section class="border-b border-border">
                   <div class="flex items-center justify-between gap-2 px-3 pb-1 pt-2.5">
-                    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       In this policy ({selections().length})
                     </h3>
                     <Show when={selections().length > 0}>
-                      <button
+                      <Button
                         type="button"
+                        variant="link"
+                        size="xs"
                         onClick={() => setStartOverOpen(true)}
-                        class="text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
                       >
                         Clear
-                      </button>
+                      </Button>
                     </Show>
                   </div>
                   <Show
                     when={inPolicy().length > 0}
                     fallback={
-                      <p class="px-3 pb-2.5 text-[11px] leading-relaxed text-muted-foreground">
+                      <p class="px-3 pb-2.5 text-xs leading-relaxed text-muted-foreground">
                         {selections().length > 0
                           ? "No collections in this policy match the current search."
                           : "Nothing added yet. Pick a baseline or browse the catalogue."}
@@ -2143,10 +2191,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                   : "border-transparent hover:bg-muted/30",
                               )}
                             >
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => selectCollection(item.selection.collectionId)}
-                                class="min-w-0 flex-1 py-1.5 pl-2.5 text-left focus-visible:ring-2 focus-visible:outline-none"
+                                class="min-w-0 flex-1 text-left"
                               >
                                 <span class="flex items-center gap-1.5">
                                   <Show when={collectionIssues().length > 0}>
@@ -2162,26 +2210,27 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                       title={`${collectionIssues().length} validation issue${collectionIssues().length === 1 ? "" : "s"}`}
                                     />
                                   </Show>
-                                  <span class="truncate text-[13px] font-medium text-foreground">
+                                  <span class="truncate text-xs font-medium text-foreground">
                                     {item.selection.name}
                                   </span>
                                 </span>
-                                <span class="mt-0.5 block text-[11px] text-muted-foreground">
+                                <span class="mt-0.5 block text-xs text-muted-foreground">
                                   {item.stats.changed}/{item.stats.total} settings
                                   <Show when={item.matchCount > 0}>
                                     {" "}
                                     · {item.matchCount} matching
                                   </Show>
                                 </span>
-                              </button>
-                              <button
+                              </Button>
+                              <Button
                                 type="button"
+                                variant="ghost"
+                                size="icon-xs"
                                 aria-label={`Remove ${item.selection.name}`}
                                 onClick={() => setRemoveTarget(item.selection)}
-                                class="rounded p-1 text-muted-foreground opacity-60 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-none group-hover:opacity-100"
                               >
                                 <X class="size-3.5" />
-                              </button>
+                              </Button>
                             </li>
                           );
                         }}
@@ -2192,16 +2241,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
                 <section>
                   <div class="flex items-center justify-between px-3 pb-1 pt-2.5">
-                    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Third-party apps
                     </h3>
-                    <span class="text-[10px] tabular-nums text-muted-foreground">
+                    <span class="text-xs tabular-nums text-muted-foreground">
                       {thirdPartyApps().length}
                     </span>
                   </div>
                   <Show when={thirdPartyError()}>
                     {(message) => (
-                      <p class="px-3 pb-2 text-[11px] leading-relaxed text-destructive">
+                      <p class="px-3 pb-2 text-xs leading-relaxed text-destructive">
                         {message()}
                       </p>
                     )}
@@ -2209,7 +2258,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   <Show
                     when={thirdPartyApps().length > 0}
                     fallback={
-                      <p class="px-3 pb-2.5 text-[11px] text-muted-foreground">
+                      <p class="px-3 pb-2.5 text-xs text-muted-foreground">
                         {thirdPartyError()
                           ? "The third-party app catalogue could not be loaded."
                           : "No catalogued apps for this platform."}
@@ -2233,24 +2282,24 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                   : "border-transparent hover:bg-muted/30",
                               )}
                             >
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => addThirdPartyApp(app)}
-                                class="flex w-full items-start gap-2 py-1.5 pl-2.5 pr-2 text-left focus-visible:ring-2 focus-visible:outline-none"
+                                class="flex w-full items-start text-left"
                               >
                                 <span class="min-w-0 flex-1">
-                                  <span class="block truncate text-[13px] text-foreground">
+                                  <span class="block truncate text-xs text-foreground">
                                     {app.name}
                                   </span>
-                                  <span class="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                                  <span class="mt-0.5 block truncate text-xs text-muted-foreground">
                                     {app.vendor} · {settings} managed setting
                                     {settings === 1 ? "" : "s"}
                                   </span>
                                 </span>
                                 <Show when={selected().has(key())}>
-                                  <Check class="mt-0.5 size-3.5 shrink-0 text-brand" />
+                                  <Check class="mt-0.5 size-3.5 shrink-0" />
                                 </Show>
-                              </button>
+                              </Button>
                             </li>
                           );
                         }}
@@ -2262,14 +2311,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                 <Show when={platform() === "windows"}>
                   <section class="border-b border-border">
                     <div class="flex items-center justify-between gap-2 px-3 pb-1 pt-2.5">
-                      <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         ADMX templates
                       </h3>
                       <Button size="xs" variant="outline" onClick={() => setAdmxOpen(true)}>
                         Import
                       </Button>
                     </div>
-                    <p class="px-3 pb-2.5 text-[11px] leading-relaxed text-muted-foreground">
+                    <p class="px-3 pb-2.5 text-xs leading-relaxed text-muted-foreground">
                       Import a vendor .admx/.adml pair or a .zip. Microsoft in-box templates map to
                       the settings already in the catalogue.
                     </p>
@@ -2278,23 +2327,24 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
                 <section>
                   <div class="flex items-center justify-between px-3 pb-1 pt-2.5">
-                    <h3 class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       Browse
                     </h3>
                     <Show when={manifestError()}>
-                      <button
+                      <Button
                         type="button"
+                        variant="link"
+                        size="xs"
                         onClick={retryCatalogue}
-                        class="text-[10px] text-destructive underline underline-offset-2"
                       >
                         Retry
-                      </button>
+                      </Button>
                     </Show>
                   </div>
                   <Show
                     when={browseItems().length > 0}
                     fallback={
-                      <p class="px-3 pb-3 text-[11px] text-muted-foreground">
+                      <p class="px-3 pb-3 text-xs text-muted-foreground">
                         {searchIndexLoading()
                           ? "Searching settings…"
                           : "No settings match that search."}
@@ -2305,68 +2355,68 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                       {(group) => (
                         <div>
                           <div class="sticky top-0 z-10 flex items-center gap-1 bg-muted/80 px-2 py-1 backdrop-blur">
-                            <button
+                            <Button
                               type="button"
                               aria-expanded={group.collapsed ? "false" : "true"}
                               onClick={() => toggleGroup(group.label)}
-                              class="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted focus-visible:ring-2 focus-visible:outline-none"
+                              class="flex min-w-0 flex-1 items-center text-left"
                             >
                               <ChevronDown
                                 class={cn(
-                                  "size-3 shrink-0 text-muted-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
+                                  "size-3 shrink-0",
                                   group.collapsed && "-rotate-90",
                                 )}
                               />
-                              <span class="truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              <span class="truncate text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                                 {group.label}
                               </span>
-                              <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                              <span class="shrink-0 text-xs tabular-nums text-muted-foreground">
                                 {group.total}
                               </span>
-                            </button>
+                            </Button>
                           </div>
                           <ul>
                             <For each={group.items}>
                               {(item) => (
                                 <li>
-                                  <button
+                                  <Button
                                     type="button"
                                     onClick={() => selectCollection(keyOf(item.collection))}
                                     class={cn(
-                                      "flex w-full items-start gap-2 border-l-2 py-1.5 pl-2.5 pr-2 text-left focus-visible:ring-2 focus-visible:outline-none",
+                                      "flex w-full items-start text-left",
                                       activeKey() === keyOf(item.collection)
-                                        ? "border-brand bg-muted"
-                                        : "border-transparent hover:bg-muted/30",
+                                        ? ""
+                                        : "",
                                     )}
                                   >
                                     <span class="min-w-0 flex-1">
-                                      <span class="block truncate text-[13px] text-foreground">
+                                      <span class="block truncate text-xs text-foreground">
                                         {item.collection.name}
                                       </span>
-                                      <span class="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                                      <span class="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                                         <span class="truncate font-mono">
                                           {item.collection.group ?? item.collection.identifier}
                                         </span>
                                         <Show when={item.collection.deprecated}>
                                           <Badge
                                             variant="outline"
-                                            class="h-4 border-warning/30 bg-warning/10 px-1 text-[9px] text-warning-foreground"
+                                            class="h-4"
                                           >
                                             Deprecated
                                           </Badge>
                                         </Show>
                                       </span>
                                       <Show when={item.matchCount > 0}>
-                                        <span class="mt-0.5 block text-[10px] text-brand">
+                                        <span class="mt-0.5 block text-xs text-brand">
                                           {item.matchCount} matching setting
                                           {item.matchCount === 1 ? "" : "s"}
                                         </span>
                                       </Show>
                                     </span>
                                     <Show when={selected().has(keyOf(item.collection))}>
-                                      <Check class="mt-0.5 size-3.5 shrink-0 text-brand" />
+                                      <Check class="mt-0.5 size-3.5 shrink-0" />
                                     </Show>
-                                  </button>
+                                  </Button>
                                 </li>
                               )}
                             </For>
@@ -2378,13 +2428,13 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                       <Show
                         when={shownBrowseCount() < expandedBrowseTotal()}
                         fallback={
-                          <p class="text-[10px] text-muted-foreground">
+                          <p class="text-xs text-muted-foreground">
                             {expandedBrowseTotal()} collection
                             {expandedBrowseTotal() === 1 ? "" : "s"}
                           </p>
                         }
                       >
-                        <p class="text-[10px] text-muted-foreground" aria-live="polite">
+                        <p class="text-xs text-muted-foreground" aria-live="polite">
                           Showing {shownBrowseCount()} of {expandedBrowseTotal()}
                         </p>
                         <Button
@@ -2407,7 +2457,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         <section
           id="designer-editor"
           class={cn(
-            "min-h-0 min-w-0 flex-1 flex-col bg-background xl:flex",
+            "min-h-0 min-w-0 flex-1 flex-col bg-page xl:flex",
             mobileView() === "browse" ? "hidden xl:flex" : "flex",
           )}
           aria-label="Collection editor"
@@ -2419,12 +2469,13 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                 <h2 class="text-base font-semibold tracking-tight text-foreground">
                   Start a policy
                 </h2>
-                <p class="mt-1 text-[13px] text-muted-foreground">
+                <p class="mt-1 text-xs text-muted-foreground">
                   The fastest way to see a real policy. Add a baseline, then tune individual
                   settings.
                 </p>
+                <div class="mt-3">{cisTemplateButton()}</div>
                 <div class="mt-3">{templateButtons()}</div>
-                <div class="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-input px-4 py-3 text-[13px] text-muted-foreground">
+                <div class="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-input px-4 py-3 text-xs text-muted-foreground">
                   <span class="min-w-0 flex-1">
                     Or search the catalogue and add settings one at a time.
                   </span>
@@ -2441,13 +2492,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   {(error) => (
                     <p role="alert" class="mt-3 text-xs text-destructive">
                       {error()}{" "}
-                      <button
+                      <Button
                         type="button"
-                        class="underline underline-offset-2"
+                        variant="link"
+                        size="xs"
                         onClick={retryCatalogue}
                       >
                         Retry
-                      </button>
+                      </Button>
                     </p>
                   )}
                 </Show>
@@ -2456,35 +2508,32 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           >
             {(collection) => (
               <>
-                <div class="shrink-0 border-b border-border bg-background/90 px-3 py-2.5 backdrop-blur sm:px-5">
+                <div class="shrink-0 border-b border-border bg-page/90 px-3 py-2.5 backdrop-blur sm:px-5">
                   <div class="flex items-start gap-2">
-                    <button
+                    <Button
                       type="button"
                       onClick={() => setMobileView("browse")}
                       aria-label="Back to settings list"
-                      class="-ml-1 mt-0.5 rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:outline-none xl:hidden"
+                      class="-ml-1 mt-0.5 xl:hidden"
                     >
                       <ArrowLeft class="size-4" />
-                    </button>
+                    </Button>
                     <div class="min-w-0 flex-1">
                       <div class="flex flex-wrap items-center gap-2">
                         <h2
                           id="designer-editor-heading"
                           tabindex="-1"
-                          class="truncate text-[15px] font-semibold tracking-tight text-foreground focus:outline-none"
+                          class="truncate text-sm font-semibold tracking-tight text-foreground focus:outline-none"
                         >
                           {collection().name}
                         </h2>
                         <Show when={collection().deprecated}>
-                          <Badge
-                            variant="outline"
-                            class="border-warning/30 bg-warning/10 text-[10px] text-warning-foreground"
-                          >
+                          <Badge variant="warning">
                             Deprecated
                           </Badge>
                         </Show>
                         <Show when={activeSelection()}>
-                          <Badge variant="secondary" class="text-[10px]">
+                          <Badge variant="secondary" >
                             In policy
                           </Badge>
                         </Show>
@@ -2494,12 +2543,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                               href={href()}
                               source={platform() === "apple" ? "Apple" : "Microsoft"}
                               subject={collection().name}
-                              class="h-5 px-1 text-[10px]"
+                              class="h-5 px-1 text-xs"
                             />
                           )}
                         </Show>
                       </div>
-                      <p class="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">
+                      <p class="mt-0.5 truncate font-mono text-xs text-muted-foreground">
                         {collection().identifier}
                         <Show when={osRange()}>{(range) => <> · {range()}</>}</Show>
                         <Show when={activeCollectionLoading()}>
@@ -2538,7 +2587,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                   <Show when={activeSelection()}>
                     {(selection) => (
                       <div class="mt-2 flex flex-wrap items-center gap-2">
-                        <p class="text-[11px] text-muted-foreground">
+                        <p class="text-xs text-muted-foreground">
                           <span class="font-medium text-foreground">
                             {activeStats().changed}/{activeStats().total}
                           </span>{" "}
@@ -2546,12 +2595,12 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                         </p>
                         <Show when={activeMatchKeys()}>
                           {(keys) => (
-                            <span class="rounded-full bg-brand/10 px-2 py-0.5 text-[10px] text-brand">
+                            <span class="rounded-full bg-brand/10 px-2 py-0.5 text-xs text-brand">
                               {keys().size} matching setting{keys().size === 1 ? "" : "s"}
                             </span>
                           )}
                         </Show>
-                        <div class="relative ml-auto min-w-[9rem] flex-1 sm:max-w-[15rem]">
+                        <div class="relative ml-auto min-w-36 flex-1 sm:max-w-60">
                           <Input
                             value={filterQuery()}
                             onInput={(event) => setFilterQuery(event.currentTarget.value)}
@@ -2559,7 +2608,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                               settingCount(selection()) === 1 ? "setting" : "settings"
                             }`}
                             aria-label="Filter settings in this collection"
-                            class="h-7 text-xs"
+                            class="h-7"
                           />
                         </div>
                         <div
@@ -2577,19 +2626,19 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                             }
                           >
                             {(mode) => (
-                              <button
+                              <Button
                                 type="button"
                                 aria-pressed={filterMode() === mode.id ? "true" : "false"}
                                 onClick={() => setFilterMode(mode.id)}
                                 class={cn(
-                                  "rounded-md px-1.5 py-0.5 text-[10px] font-medium transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:outline-none",
+                                  "",
                                   filterMode() === mode.id
-                                    ? "bg-background text-foreground shadow-sm"
-                                    : "text-muted-foreground hover:text-foreground",
+                                    ? ""
+                                    : "",
                                 )}
                               >
                                 {mode.label}
-                              </button>
+                              </Button>
                             )}
                           </For>
                         </div>
@@ -2606,7 +2655,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                     when={activeSelection()}
                     fallback={
                       <div class="mx-auto w-full max-w-2xl px-5 py-6">
-                        <p class="text-[13px] leading-relaxed text-muted-foreground">
+                        <p class="text-xs leading-relaxed text-muted-foreground">
                           {activeCollection()?.description ||
                             (activeCollectionLoading()
                               ? "Loading this collection from the catalogue…"
@@ -2616,13 +2665,14 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                           {(error) => (
                             <p role="alert" class="mt-2 text-xs text-destructive">
                               {error()}{" "}
-                              <button
+                              <Button
                                 type="button"
-                                class="underline underline-offset-2"
+                                variant="link"
+                                size="xs"
                                 onClick={() => ensureCollection(collectionIdOf(activeKey() ?? ""))}
                               >
                                 Retry
-                              </button>
+                              </Button>
                             </p>
                           )}
                         </Show>
@@ -2634,7 +2684,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                               ).length;
 
                             return (
-                              <p class="mt-3 rounded-lg border border-dashed border-input px-3 py-2.5 text-[12px] text-muted-foreground">
+                              <p class="mt-3 rounded-lg border border-dashed border-input px-3 py-2.5 text-xs text-muted-foreground">
                                 Add it to the policy to configure {settings().toLocaleString()}{" "}
                                 {settings() === 1 ? "setting" : "settings"}.
                               </p>
@@ -2711,17 +2761,18 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                         <div>
                           <Show when={activeMatchKeys()}>
                             {(keys) => (
-                              <div class="flex flex-wrap items-center gap-2 border-b border-brand/20 bg-brand/[0.06] px-4 py-2 text-[11px] text-brand sm:px-5">
+                              <div class="flex flex-wrap items-center gap-2 border-b border-brand/20 bg-brand/[0.06] px-4 py-2 text-xs text-brand sm:px-5">
                                 <Info class="size-3.5 shrink-0" />
                                 Showing {keys().size} setting
                                 {keys().size === 1 ? "" : "s"} matching “{query().trim()}”.
-                                <button
+                                <Button
                                   type="button"
+                                  variant="link"
+                                  size="xs"
                                   onClick={() => setQuery("")}
-                                  class="font-medium underline underline-offset-2"
                                 >
                                   Clear search
-                                </button>
+                                </Button>
                               </div>
                             )}
                           </Show>
@@ -2729,7 +2780,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                             when={sections().length > 0}
                             fallback={
                               <div class="px-5 py-8 text-center">
-                                <p class="text-[13px] text-muted-foreground">
+                                <p class="text-xs text-muted-foreground">
                                   No settings match this filter.
                                 </p>
                                 <Button
@@ -2757,27 +2808,27 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                 return (
                                   <section aria-label={section.label}>
                                     <div class="sticky top-0 z-10 flex items-center gap-2 border-y border-border bg-muted/80 px-3 py-1.5 backdrop-blur sm:px-5">
-                                      <button
+                                      <Button
                                         type="button"
                                         aria-expanded={collapsed() ? "false" : "true"}
                                         onClick={() => toggleSection(sectionKey())}
-                                        class="flex min-w-0 flex-1 items-center gap-2 rounded text-left focus-visible:ring-2 focus-visible:outline-none"
+                                        class="flex min-w-0 flex-1 items-center text-left"
                                       >
                                         <ChevronDown
                                           class={cn(
-                                            "size-3.5 shrink-0 text-muted-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
+                                            "size-3.5 shrink-0",
                                             collapsed() && "-rotate-90",
                                           )}
                                         />
-                                        <span class="truncate text-[11px] font-semibold uppercase tracking-wide text-foreground/90">
+                                        <span class="truncate text-xs font-semibold uppercase tracking-wide text-foreground/90">
                                           {section.label}
                                         </span>
-                                        <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                                        <span class="shrink-0 text-xs tabular-nums text-muted-foreground">
                                           {section.changed}/{section.properties.length}
                                         </span>
-                                      </button>
+                                      </Button>
                                       <Show when={section.changed > 0}>
-                                        <button
+                                        <Button
                                           type="button"
                                           aria-label={`Reset ${section.label} section`}
                                           onClick={() =>
@@ -2787,10 +2838,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                                               section.label,
                                             )
                                           }
-                                          class="shrink-0 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
+                                          class="shrink-0"
                                         >
                                           Reset section
-                                        </button>
+                                        </Button>
                                       </Show>
                                     </div>
                                     <Show when={!collapsed()}>
@@ -2842,7 +2893,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                               }}
                             </For>
                             <Show when={selection().kind === "declaration"}>
-                              <p class="border-t border-border/60 px-4 py-3 text-[11px] text-muted-foreground sm:px-5">
+                              <p class="border-t border-border/60 px-4 py-3 text-xs text-muted-foreground sm:px-5">
                                 Type, identifier and server token are generated when you export or
                                 save.
                               </p>
@@ -2859,15 +2910,15 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         </section>
 
         <aside
-          class="hidden min-h-0 w-[312px] shrink-0 flex-col border-l border-border bg-card xl:flex"
+          class="hidden min-h-0 w-78 shrink-0 flex-col border-l border-border bg-card xl:flex"
           aria-label="Policy summary"
         >
           {summaryPanel()}
         </aside>
       </div>
 
-      <div class="fixed inset-x-0 bottom-0 z-40 flex items-center gap-2 border-t border-border bg-background/95 px-3 py-2 backdrop-blur xl:hidden">
-        <div class="min-w-0 flex-1 text-[11px] text-muted-foreground">
+      <div class="fixed inset-x-0 bottom-0 z-40 flex items-center gap-2 border-t border-border bg-page/95 px-3 py-2 backdrop-blur xl:hidden">
+        <div class="min-w-0 flex-1 text-xs text-muted-foreground">
           <p class="truncate">
             {selections().length} collection{selections().length === 1 ? "" : "s"} ·{" "}
             {policyStats().changed} changed
@@ -2902,7 +2953,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           </Button>
         </Show>
       </div>
-      <div class="h-[57px] shrink-0 xl:hidden" aria-hidden="true" />
+      <div class="h-14.25 shrink-0 xl:hidden" aria-hidden="true" />
 
       <p role="status" aria-live="polite" class="sr-only">
         {liveMessage()}
@@ -2915,10 +2966,10 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
           if (!open) setRemoveTarget(null);
         }}
       >
-        <DialogContent class="max-w-md rounded-xl p-5">
+        <DialogContent class="max-w-md">
           <DialogHeader>
-            <DialogTitle class="text-base">Remove {removeTarget()?.name}?</DialogTitle>
-            <DialogDescription class="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+            <DialogTitle>Remove {removeTarget()?.name}?</DialogTitle>
+            <DialogDescription>
               {removeTarget()
                 ? `This collection and its ${statsFor(removeTarget()!).configured} configured setting${
                     statsFor(removeTarget()!).configured === 1 ? "" : "s"
@@ -2926,7 +2977,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                 : ""}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter class="mt-4 flex-row justify-end gap-2 bg-transparent p-0">
+          <DialogFooter class="mt-4 flex-row justify-end">
             <Button variant="outline" onClick={() => setRemoveTarget(null)}>
               Cancel
             </Button>
@@ -2946,17 +2997,17 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
       {/* Start over */}
       <Dialog open={startOverOpen()} onOpenChange={setStartOverOpen}>
-        <DialogContent class="max-w-md rounded-xl p-5">
+        <DialogContent class="max-w-md">
           <DialogHeader>
-            <DialogTitle class="text-base">Start over?</DialogTitle>
-            <DialogDescription class="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+            <DialogTitle>Start over?</DialogTitle>
+            <DialogDescription>
               This clears every collection and setting in the current {platformName()} draft.
               {props.mode === "dashboard"
                 ? " Settings already saved to the policy are not changed until you save."
                 : ""}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter class="mt-4 flex-row justify-end gap-2 bg-transparent p-0">
+          <DialogFooter class="mt-4 flex-row justify-end">
             <Button variant="outline" onClick={() => setStartOverOpen(false)}>
               Cancel
             </Button>
@@ -2978,26 +3029,26 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 
       {/* Review issues */}
       <Dialog open={issuesOpen()} onOpenChange={setIssuesOpen}>
-        <DialogContent class="max-h-[80vh] max-w-2xl overflow-hidden rounded-xl p-5">
+        <DialogContent class="max-h-4/5 max-w-2xl overflow-hidden">
           <DialogHeader>
-            <DialogTitle class="text-base">Review issues</DialogTitle>
-            <DialogDescription class="mt-1 text-[13px] text-muted-foreground">
+            <DialogTitle>Review issues</DialogTitle>
+            <DialogDescription>
               {errorCount()} error{errorCount() === 1 ? "" : "s"} block saving and exporting.{" "}
               {warningCount()} warning{warningCount() === 1 ? "" : "s"} should be reviewed.
             </DialogDescription>
           </DialogHeader>
-          <ul class="mt-3 max-h-[52vh] space-y-1 overflow-y-auto">
+          <ul class="mt-3 max-h-1/2 space-y-1 overflow-y-auto">
             <For each={issues()}>
               {(issue) => (
                 <li>
-                  <button
+                  <Button
                     type="button"
                     onClick={() => focusIssue(issue)}
                     class={cn(
-                      "flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left text-[13px] transition-colors focus-visible:ring-[3px] focus-visible:outline-none",
+                      "flex w-full items-start text-left",
                       issue.severity === "error"
-                        ? "border-destructive/30 bg-destructive/[0.07] text-destructive hover:bg-destructive/10"
-                        : "border-warning/30 bg-warning/[0.07] text-warning-foreground hover:bg-warning/10",
+                        ? ""
+                        : "",
                     )}
                   >
                     <Show
@@ -3008,16 +3059,16 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
                     </Show>
                     <span class="min-w-0">
                       <span class="block font-medium">{issue.propertyName}</span>
-                      <span class="block text-[12px] opacity-80">
+                      <span class="block text-xs opacity-80">
                         {issue.collectionName} · {issue.message}
                       </span>
                     </span>
-                  </button>
+                  </Button>
                 </li>
               )}
             </For>
           </ul>
-          <DialogFooter class="mt-4 flex-row justify-end bg-transparent p-0">
+          <DialogFooter class="mt-4 flex-row justify-end">
             <Button variant="outline" onClick={() => setIssuesOpen(false)}>
               Close
             </Button>
@@ -3025,16 +3076,20 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
         </DialogContent>
       </Dialog>
 
-      <AdmxImportDialog
-        open={admxOpen()}
-        onOpenChange={setAdmxOpen}
-        onImport={addAdmxImport}
+      <AdmxImportDialog open={admxOpen()} onOpenChange={setAdmxOpen} onImport={addAdmxImport} />
+
+      <CisTemplateDialog
+        open={cisOpen()}
+        platform={platform()}
+        selections={selections()}
+        onOpenChange={setCisOpen}
+        onApply={applyCisTemplate}
       />
 
       {/* Summary sheet below xl */}
       <Sheet open={summaryOpen()} onOpenChange={setSummaryOpen}>
         <Show when={summaryOpen()}>
-          <SheetContent side="right" class="w-[min(92vw,360px)] bg-background p-0">
+          <SheetContent side="right" class="w-90 max-w-svw">
             <SheetHeader class="sr-only">
               <SheetTitle>Policy summary</SheetTitle>
               <SheetDescription>Review collections, issues and save this policy.</SheetDescription>
@@ -3050,7 +3105,7 @@ export function PolicyDesigner(props: PolicyDesignerProps) {
 function MakeIssuesSummary(props: { issues: number; errors: number }) {
   return (
     <Show when={props.issues === 0}>
-      <span class="text-[10px] text-muted-foreground">No issues</span>
+      <span class="text-xs text-muted-foreground">No issues</span>
     </Show>
   );
 }
@@ -3172,50 +3227,51 @@ function PropertyField(props: PropertyFieldProps) {
           <Show
             when={groupedControl()}
             fallback={
-              <label for={props.id} class="text-[13px] font-medium text-foreground">
+              <label for={props.id} class="text-xs font-medium text-foreground">
                 {props.property.name}
               </label>
             }
           >
-            <span class="text-[13px] font-medium text-foreground">{props.property.name}</span>
+            <span class="text-xs font-medium text-foreground">{props.property.name}</span>
           </Show>
           <Show when={props.property.required}>
-            <span class="text-[10px] font-medium uppercase tracking-wide text-destructive">
+            <span class="text-xs font-medium uppercase tracking-wide text-destructive">
               Required
             </span>
           </Show>
           <Show when={props.changed}>
-            <Badge variant="secondary" class="h-4 bg-brand/10 px-1 text-[9px] text-brand">
+            <Badge variant="secondary" class="h-4">
               Changed
             </Badge>
           </Show>
           <Show when={props.property.deprecated}>
             <Badge
               variant="outline"
-              class="h-4 border-warning/30 bg-warning/10 px-1 text-[9px] text-warning-foreground"
+              class="h-4"
             >
               Deprecated
             </Badge>
           </Show>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-xs"
             onClick={() => setShowDescription((value) => !value)}
             aria-expanded={showDescription() ? "true" : "false"}
             aria-controls={descId()}
             aria-label={`${showDescription() ? "Hide" : "Show"} description for ${props.property.name}`}
-            class="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
           >
             <Info class="size-3.5" />
-          </button>
+          </Button>
           <Show when={props.changed}>
-            <button
+            <Button
               type="button"
               onClick={props.onReset}
               aria-label={`Reset ${props.property.name} to its default`}
-              class="ml-auto inline-flex items-center gap-1 rounded px-1 py-0.5 text-[10px] text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
+              class="ml-auto inline-flex items-center"
             >
               <RotateCcw class="size-3" /> Reset
-            </button>
+            </Button>
           </Show>
         </div>
         <p
@@ -3229,9 +3285,9 @@ function PropertyField(props: PropertyFieldProps) {
         </p>
         <div
           id={hintId()}
-          class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground"
+          class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground"
         >
-          <span class="max-w-full truncate font-mono text-[10px] text-muted-foreground">
+          <span class="max-w-full truncate font-mono text-xs text-muted-foreground">
             {props.property.address ?? props.property.key}
           </span>
           <span aria-hidden="true">·</span>
@@ -3249,7 +3305,7 @@ function PropertyField(props: PropertyFieldProps) {
           </Show>
           <Show when={props.property.pattern}>
             {(pattern) => (
-              <span class="max-w-full truncate font-mono text-[10px]">Pattern: {pattern()}</span>
+              <span class="max-w-full truncate font-mono text-xs">Pattern: {pattern()}</span>
             )}
           </Show>
           <Show when={props.searchMatch}>
@@ -3261,7 +3317,7 @@ function PropertyField(props: PropertyFieldProps) {
                 href={href()}
                 source="Microsoft"
                 subject={props.property.name}
-                class="h-5 px-1 text-[10px]"
+                class="h-5 px-1 text-xs"
               />
             )}
           </Show>
@@ -3271,7 +3327,7 @@ function PropertyField(props: PropertyFieldProps) {
             <p
               id={errorId()}
               class={cn(
-                "mt-1 text-[11px]",
+                "mt-1 text-xs",
                 issue().severity === "error" ? "text-destructive" : "text-warning-foreground",
               )}
             >
@@ -3286,7 +3342,7 @@ function PropertyField(props: PropertyFieldProps) {
           {(values) => (
             <select
               id={props.id}
-              class="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-[13px] text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 aria-invalid:border-destructive/60"
+              class="h-8 w-full rounded-lg border border-input bg-transparent px-2 text-xs text-foreground outline-none transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 aria-invalid:border-destructive/60"
               value={props.value === undefined ? "" : String(props.value)}
               aria-required={props.property.required ? "true" : undefined}
               aria-invalid={invalid() ? "true" : undefined}
@@ -3315,26 +3371,28 @@ function PropertyField(props: PropertyFieldProps) {
                   onInput={(event) => setOptionQuery(event.currentTarget.value)}
                   placeholder="Filter options…"
                   aria-label={`Filter ${props.property.name} options`}
-                  class="h-7 text-xs"
+                  class="h-7"
                 />
               </Show>
-              <div class="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+              <div class="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>{arrayValue().length} selected</span>
                 <span class="flex gap-2">
-                  <button
+                  <Button
                     type="button"
+                    variant="link"
+                    size="xs"
                     onClick={selectAllOptions}
-                    class="underline underline-offset-2 hover:text-foreground"
                   >
                     Select all
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
+                    variant="link"
+                    size="xs"
                     onClick={() => props.onChange([])}
-                    class="underline underline-offset-2 hover:text-foreground"
                   >
                     None
-                  </button>
+                  </Button>
                 </span>
               </div>
               <div
@@ -3354,13 +3412,12 @@ function PropertyField(props: PropertyFieldProps) {
                   }
                 >
                   {(option) => (
-                    <label class="flex items-start gap-2 rounded px-1 py-0.5 text-[12px] leading-snug text-foreground/90 hover:bg-muted/30">
-                      <input
-                        type="checkbox"
-                        class="mt-0.5 size-3.5 accent-[var(--brand-solid)]"
+                    <label class="flex items-start gap-2 rounded px-1 py-0.5 text-xs leading-snug text-foreground/90 hover:bg-muted/30">
+                      <Checkbox
+                        class="mt-0.5 size-3.5"
                         checked={arrayValue().includes(option.value)}
-                        onChange={(event) =>
-                          toggleArrayValue(option.value, event.currentTarget.checked)
+                        onCheckedChange={(checked) =>
+                          toggleArrayValue(option.value, checked === true)
                         }
                       />
                       <span>{option.description ?? option.value}</span>
@@ -3394,19 +3451,19 @@ function PropertyField(props: PropertyFieldProps) {
                     : props.value === option.value;
 
                 return (
-                  <button
+                  <Button
                     type="button"
                     aria-pressed={pressed() ? "true" : "false"}
                     onClick={() => props.onChange(option.value)}
                     class={cn(
-                      "flex-1 rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors duration-[var(--duration-hover)] ease-swift focus-visible:ring-2 focus-visible:outline-none",
+                      "flex-1",
                       pressed()
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        ? ""
+                        : "",
                     )}
                   >
                     {option.label}
-                  </button>
+                  </Button>
                 );
               }}
             </For>
@@ -3617,7 +3674,7 @@ function StructuredField(props: {
             .join(" ") || undefined
         }
         class={cn(
-          "min-h-24 w-full rounded-lg border border-input bg-background p-2 font-mono text-[11px] leading-relaxed text-foreground outline-none transition-colors focus-visible:ring-[3px]",
+          "min-h-24 w-full rounded-lg border border-input bg-background p-2 font-mono text-xs leading-relaxed text-foreground outline-none transition-colors focus-visible:ring-2",
           props.invalid || error()
             ? "border-destructive/60 focus-visible:border-destructive focus-visible:ring-destructive/30"
             : "border-input focus-visible:border-ring focus-visible:ring-ring/30",
@@ -3625,12 +3682,12 @@ function StructuredField(props: {
       />
       <Show when={error()}>
         {(message) => (
-          <p id={`${props.id}-json-error`} class="text-[11px] text-destructive">
+          <p id={`${props.id}-json-error`} class="text-xs text-destructive">
             {message()}
           </p>
         )}
       </Show>
-      <p class="text-[10px] text-muted-foreground">
+      <p class="text-xs text-muted-foreground">
         {isData() ? "Base64 data — pasted text is stored as-is." : "Advanced JSON"}
       </p>
     </div>

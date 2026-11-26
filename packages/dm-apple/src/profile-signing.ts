@@ -11,18 +11,12 @@
  * RFC 5652. SHA-256 is used explicitly: PKIjs defaults to SHA-1.
  */
 import { Data, Schema } from "effect";
-import * as asn1js from "asn1js";
-import * as pkijs from "pkijs";
+import type * as pkijs from "pkijs";
+import { loadPkijs } from "@mattrax/mdm-pki";
+import type { Asn1jsModule, PkijsModule } from "@mattrax/mdm-pki";
 
-// ─── PKIjs Crypto Engine Setup ───────────────────────────────────
-
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
-  try {
-    pkijs.getEngine();
-  } catch {
-    pkijs.setEngine("WebCrypto", crypto, crypto.subtle);
-  }
-}
+// pkijs is loaded on first use (see `loadPkijs`) so signing a profile does not
+// put it in the Worker's startup closure.
 
 // ─── Constants ───────────────────────────────────────────────────
 
@@ -80,7 +74,7 @@ const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
 const decodeBase64 = (value: string, label: string): Uint8Array => {
-  const cleaned = value.replace(/\s/g, "");
+  const cleaned = value.replaceAll(/\s/g, "");
 
   if (cleaned.length === 0) {
     throw new AppleProfileSigningError({ message: `${label} is empty` });
@@ -101,7 +95,11 @@ const decodeBase64 = (value: string, label: string): Uint8Array => {
   }
 };
 
-const parsePemCertificates = (pem: string, label: string): pkijs.Certificate[] => {
+const parsePemCertificates = (
+  pkijs: PkijsModule,
+  pem: string,
+  label: string,
+): pkijs.Certificate[] => {
   const matches = Array.from(pem.matchAll(CERTIFICATE_PATTERN));
 
   if (matches.length === 0) {
@@ -115,10 +113,10 @@ const parsePemCertificates = (pem: string, label: string): pkijs.Certificate[] =
 
     try {
       certificates.push(pkijs.Certificate.fromBER(toArrayBuffer(der)));
-    } catch (cause) {
+    } catch (error) {
       throw new AppleProfileSigningError({
-        message: `${label} could not be parsed: ${errorMessage(cause)}`,
-        cause,
+        message: `${label} could not be parsed: ${errorMessage(error)}`,
+        cause: error,
       });
     }
   }
@@ -146,10 +144,10 @@ const importPrivateKeyPem = async (pem: string): Promise<CryptoKey> => {
       false,
       ["sign"],
     );
-  } catch (cause) {
+  } catch (error) {
     throw new AppleProfileSigningError({
-      message: `Profile signing key could not be imported as an RSA PKCS#8 key: ${errorMessage(cause)}`,
-      cause,
+      message: `Profile signing key could not be imported as an RSA PKCS#8 key: ${errorMessage(error)}`,
+      cause: error,
     });
   }
 };
@@ -175,6 +173,8 @@ const requirePrivateKeyPem = (value: string | undefined): string => {
 };
 
 const encodeSignedProfile = async (
+  pkijs: PkijsModule,
+  asn1js: Asn1jsModule,
   plist: string,
   signerCertificate: pkijs.Certificate,
   chain: readonly pkijs.Certificate[],
@@ -246,7 +246,10 @@ export async function signAppleProfilePlist(
   }
 
   try {
+    const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
+
     const signerCertificate = parsePemCertificates(
+      pkijs,
       material.certificatePem,
       "Profile signing certificate",
     )[0];
@@ -258,25 +261,27 @@ export async function signAppleProfilePlist(
     }
 
     const chain = material.chainPem?.trim()
-      ? parsePemCertificates(material.chainPem, "Profile signing certificate chain")
+      ? parsePemCertificates(pkijs, material.chainPem, "Profile signing certificate chain")
       : [];
 
     const privateKey = Schema.is(Schema.String)(material.privateKey)
       ? await importPrivateKeyPem(material.privateKey)
       : material.privateKey;
 
-    return await encodeSignedProfile(plist, signerCertificate, chain, privateKey);
-  } catch (cause) {
-    if (cause instanceof AppleProfileSigningError) throw cause;
+    return await encodeSignedProfile(pkijs, asn1js, plist, signerCertificate, chain, privateKey);
+  } catch (error) {
+    if (error instanceof AppleProfileSigningError) throw error;
 
     throw new AppleProfileSigningError({
-      message: `Apple profile signing failed: ${errorMessage(cause)}`,
-      cause,
+      message: `Apple profile signing failed: ${errorMessage(error)}`,
+      cause: error,
     });
   }
 }
 
 type LoadedAppleProfileSigner = {
+  readonly pkijs: PkijsModule;
+  readonly asn1js: Asn1jsModule;
   readonly signerCertificate: pkijs.Certificate;
   readonly chain: readonly pkijs.Certificate[];
   readonly privateKey: CryptoKey;
@@ -287,8 +292,13 @@ const loadAppleProfileSigner = async (
 ): Promise<LoadedAppleProfileSigner> => {
   const certificatePem = requireCertificatePem(config.certificatePem);
   const privateKeyPem = requirePrivateKeyPem(config.privateKeyPem);
+  const [pkijs, asn1js] = await Promise.all([loadPkijs(), import("asn1js")]);
 
-  const signerCertificate = parsePemCertificates(certificatePem, "Profile signing certificate")[0];
+  const signerCertificate = parsePemCertificates(
+    pkijs,
+    certificatePem,
+    "Profile signing certificate",
+  )[0];
 
   if (!signerCertificate) {
     throw new AppleProfileSigningError({
@@ -297,10 +307,12 @@ const loadAppleProfileSigner = async (
   }
 
   const chain = config.chainPem?.trim()
-    ? parsePemCertificates(config.chainPem, "Profile signing certificate chain")
+    ? parsePemCertificates(pkijs, config.chainPem, "Profile signing certificate chain")
     : [];
 
   return {
+    pkijs,
+    asn1js,
     signerCertificate,
     chain,
     privateKey: await importPrivateKeyPem(privateKeyPem),
@@ -327,6 +339,8 @@ export const createAppleProfileSigner = (config: AppleProfileSigningConfig): App
       const material = await load();
 
       return encodeSignedProfile(
+        material.pkijs,
+        material.asn1js,
         plist,
         material.signerCertificate,
         material.chain,

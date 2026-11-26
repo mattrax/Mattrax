@@ -1,13 +1,14 @@
 import { and, eq } from "drizzle-orm";
 import { Context, Effect } from "effect";
-import { type EnterpriseDb, schema } from "@mattrax/enterprise-core";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
   builtInRolePermissions,
   BUILT_IN_ROLE_LABELS,
   isBuiltInTenantRole,
   PERMISSION_SET,
-  type Permission,
 } from "@mattrax/enterprise-domain";
+import type { Permission } from "@mattrax/enterprise-domain";
 
 /** Ambient permission attached by the service proxy to one method invocation. */
 export class RequiredPermission extends Context.Service<
@@ -23,17 +24,27 @@ const DEVICE_READ = new Set([
   "listDeviceApplications",
   "listDeviceCommands",
   "listDeviceDeclarations",
+  "listDeviceViews",
   "getDeviceHealth",
   "getDeviceActivity",
   "getDeviceHealthSummary",
+  "getSoftwareUpdateSummary",
+  "getTenantOsPolicy",
+  "getOsFleet",
   "getDevicePushHealth",
   "getCredentialHealth",
   "getDeviceEffectivePolicy",
   "getDeviceUsers",
   "listDevicePreRegistrations",
+  "listFleetMigrations",
+  "getFleetMigration",
+  "exportFleetMigration",
   "listAttributes",
   "listEnrollmentQuestions",
   "getPolicyVariables",
+  "listDeviceAttributeCollection",
+  "listDeviceAppleUsers",
+  "listWindowsFailures",
 ]);
 
 const DEVICE_WRITE = new Set([
@@ -43,6 +54,12 @@ const DEVICE_WRITE = new Set([
   "deleteDevicePreRegistrations",
   "importDevicePreRegistrations",
   "deviceUnenroll",
+  "patchTenantOsPolicy",
+  "createFleetMigration",
+  "deleteFleetMigration",
+  "issueFleetMigrationUnenrol",
+  "markFleetMigrationUnenrolled",
+  "confirmFleetMigrationEntry",
   "revokeDeviceIdentity",
   "setDeviceUsers",
   "createAttribute",
@@ -50,9 +67,18 @@ const DEVICE_WRITE = new Set([
   "deleteAttribute",
   "setDeviceAttributes",
   "importDeviceAttributes",
+  "deviceAppleUserAction",
+  "bindAppleUserIdentity",
+  "unbindAppleUserIdentity",
 ]);
 
-const GROUP_READ = new Set(["listGroups", "getGroup", "getGroupScope", "previewGroup"]);
+const GROUP_READ = new Set([
+  "listGroups",
+  "searchGroups",
+  "getGroup",
+  "getGroupScope",
+  "previewGroup",
+]);
 
 const GROUP_WRITE = new Set([
   "createGroup",
@@ -65,9 +91,11 @@ const GROUP_WRITE = new Set([
 
 const POLICY_READ = new Set([
   "listPolicies",
+  "searchPolicies",
   "getPolicy",
   "getPolicyScope",
   "listPolicyDeployments",
+  "getPolicyDeploymentDevices",
   "getPolicyAssignments",
   "downloadPolicyApplication",
 ]);
@@ -85,9 +113,13 @@ const POLICY_WRITE = new Set([
 
 const APPLICATION_READ = new Set([
   "listApplications",
+  "searchApplications",
   "getApplication",
   "getApplicationInventory",
   "downloadApplication",
+  "downloadApplicationInstaller",
+  "searchSoftwareCatalogue",
+  "getSoftwareCatalogueTitle",
 ]);
 
 const APPLICATION_WRITE = new Set([
@@ -95,8 +127,14 @@ const APPLICATION_WRITE = new Set([
   "patchApplication",
   "deleteApplications",
   "patchApplicationAssignments",
+  "patchApplicationStorefronts",
+  "refreshApplicationStorefronts",
+  "unlinkApplicationAssignments",
   "installApplication",
+  "uninstallApplication",
   "uploadApplication",
+  "uploadApplicationInstaller",
+  "addSoftwareCatalogueTitle",
 ]);
 
 const SCRIPT_READ = new Set([
@@ -114,6 +152,23 @@ const SCRIPT_WRITE = new Set([
   "patchScriptSettings",
   "patchScriptAssignments",
   "runScript",
+  // "Collect now" queues a manual run, so it needs the same write permission
+  // as Run on assigned devices.
+  "collectDeviceAttribute",
+]);
+
+const RESTRICTED_SOFTWARE_READ = new Set([
+  "listRestrictedSoftware",
+  "getRestrictedSoftware",
+  "listRestrictedSoftwareViolations",
+  "getDeviceRestrictedSoftware",
+]);
+
+const RESTRICTED_SOFTWARE_WRITE = new Set([
+  "createRestrictedSoftware",
+  "patchRestrictedSoftware",
+  "deleteRestrictedSoftware",
+  "patchRestrictedSoftwareAssignments",
 ]);
 
 const DASHBOARD_READ = new Set([
@@ -121,6 +176,9 @@ const DASHBOARD_READ = new Set([
   "getDashboard",
   "queryDashboard",
   "queryDashboardBatch",
+  "listDashboardReports",
+  "listDashboardReportRuns",
+  "exportDashboardReport",
 ]);
 
 const DASHBOARD_WRITE = new Set([
@@ -131,6 +189,10 @@ const DASHBOARD_WRITE = new Set([
   "patchDashboardWidget",
   "deleteDashboardWidget",
   "patchDashboardLayout",
+  "createDashboardReport",
+  "patchDashboardReport",
+  "deleteDashboardReport",
+  "sendDashboardReport",
 ]);
 
 const ENROLLMENT_READ = new Set([
@@ -139,6 +201,7 @@ const ENROLLMENT_READ = new Set([
   "listEnrollmentAttempts",
   "getAppleEnrollmentProfile",
   "getAdeEnrollmentProfile",
+  "getAppleByodConfig",
 ]);
 
 const ENROLLMENT_WRITE = new Set([
@@ -147,11 +210,15 @@ const ENROLLMENT_WRITE = new Set([
   "rotateTenantScepCa",
   "importTenantScepCa",
   "patchEnrollmentQuestions",
+  "patchAppleByodConfig",
+  "testAppleByodConfig",
+  "confirmAppleByodHardware",
 ]);
 
 const IDENTITY_READ = new Set([
   "getSsoConfig",
   "getEntraDirectorySync",
+  "getGoogleDirectorySync",
   "listEntraDomains",
   "listScimTokens",
 ]);
@@ -160,6 +227,10 @@ const IDENTITY_WRITE = new Set([
   "patchSsoConfig",
   "patchEntraDirectorySync",
   "syncEntraDirectory",
+  "patchGoogleDirectorySync",
+  "putGoogleDirectoryCredentials",
+  "deleteGoogleDirectoryCredentials",
+  "syncGoogleDirectory",
   "linkDirectoryUserSso",
   "refreshEntraDomains",
   "createScimToken",
@@ -235,6 +306,8 @@ const MEMBER_WRITE = new Set([
   "patchTenantAccount",
   "patchTenantAccountRoles",
   "addUserGroupMembers",
+  // Merging directory people rewrites every edge that scopes policy to them.
+  "mergeDirectoryUsers",
   "removeTenantAccount",
   "requestTenantOwnershipTransfer",
 ]);
@@ -243,16 +316,57 @@ const ROLE_READ = new Set(["listTenantRoles"]);
 
 const ROLE_WRITE = new Set(["createTenantRole", "patchTenantRole", "deleteTenantRole"]);
 
+const SCOPE_TAG_READ = new Set(["listScopeTags", "listScopeTagAssignments"]);
+
+const SCOPE_TAG_WRITE = new Set([
+  "createScopeTag",
+  "patchScopeTag",
+  "deleteScopeTag",
+  "setScopeTagAssignments",
+]);
+
 const EXPLICIT = {
   getTenant: "tenant.read",
+  // The overview checklist is an aggregate read of data this role may already
+  // see. Dismissing it is a personal preference, not a tenant change, so a
+  // read-only member can still hide their own card.
+  getTenantOnboarding: "tenant.read",
+  patchTenantOnboarding: "tenant.read",
+  // Tenant security settings are tenant-wide, not a device or member surface.
+  getTenantSecurity: "tenant.read",
+  patchTenantSecurity: "tenant.write",
+  // Approving a break-glass recovery grants account access to this tenant, so
+  // it stays behind the tenant write permission and the handler's step-up.
+  approveAccountRecovery: "tenant.write",
+  // Assigning a member's scope tags changes what that member can reach. The
+  // handler also requires members.write; the method permission keeps a custom
+  // role from reaching the handler through the old tenant.write fallback.
+  setMemberScopeTags: "members.write",
+  // The FileVault escrow certificate is tenant configuration. Reading it is a
+  // tenant read; replacing the key pair is a tenant write.
+  getAppleFdeEscrowKey: "tenant.read",
+  generateAppleFdeEscrowKey: "tenant.write",
+  uploadAppleFdeEscrowKey: "tenant.write",
   // Directory lists expose member names and email addresses, so they need the
   // same permission as the member list rather than plain tenant read.
   listDirectory: "members.read",
+  listUsers: "members.read",
+  // The detail view is the same directory data plus (permission-filtered)
+  // device and policy sections, so the directory permission gates the read.
+  getUser: "members.read",
+  // Merge candidates and the dry run expose the same directory rows as the
+  // detail view. The merge itself folds people together, so it needs write.
+  listUserMergeCandidates: "members.read",
+  previewDirectoryUserMerge: "members.read",
   search: "tenant.read",
   patchTenant: "tenant.write",
   deleteTenant: "tenant.delete",
   exportTenant: "tenant.export",
   importTenant: "tenant.import",
+  exportTenantCutover: "tenant.export",
+  previewTenantCutover: "tenant.import",
+  importTenantCutover: "tenant.import",
+  getTenantCutoverPreflight: "tenant.export",
   runTenantBackup: "backups.write",
   listTenantBackups: "backups.read",
   downloadTenantBackup: "backups.read",
@@ -264,16 +378,55 @@ const EXPLICIT = {
   searchAuditLog: "audit.read",
   exportAuditLog: "audit.read",
   recordMcpActivity: "audit.read",
+  storageUsage: "tenant.read",
   billing: "billing.read",
   billingPortal: "billing.write",
   billingCheckout: "billing.write",
   billingInvoices: "billing.read",
   deviceAction: "devices.command",
+  // Members without manage-devices rights still curate their own private
+  // views. The handler enforces the extra `devices.write` gate when a view is
+  // published to the tenant or a tenant view is edited.
+  createDeviceView: "devices.read",
+  patchDeviceView: "devices.read",
+  deleteDeviceView: "devices.read",
+  setDefaultDeviceView: "devices.read",
   getDeviceRecoveryKey: "devices.recovery_key",
   // Managed-admin passwords and Activation Lock bypass codes are device
   // secrets: reading them is as sensitive as the recovery key.
   getDeviceLocalAdmin: "devices.recovery_key",
   getDeviceActivationLockBypassCode: "devices.recovery_key",
+  // Windows LAPS and BitLocker material use the same reveal permission and a
+  // mandatory reason; the handlers also require a fresh step-up.
+  getDeviceLapsPassword: "devices.recovery_key",
+  revealDeviceBitlockerKey: "devices.recovery_key",
+  // BitLocker and LAPS metadata contains no secret, but it is device security
+  // state rather than ordinary inventory.
+  getDeviceWindowsSecurity: "devices.read",
+  listDeviceDiagnostics: "devices.read",
+  downloadDeviceDiagnostics: "devices.command",
+  // A handover archive contains every escrowed secret a device has, so it has
+  // its own permission instead of riding on devices.write or recovery_key.
+  createDeviceHandover: "devices.handover",
+  downloadDeviceHandover: "devices.handover",
+  // The impact read returns presence metadata only, the same data the device
+  // detail page already exposes.
+  deviceHandoverImpact: "devices.read",
+  // Four-eyes approvals. Reading the queue exposes destructive intent and who
+  // is deciding it, so it is not part of the read-only member baseline. A
+  // requester also needs read access to see and cancel their own request.
+  listApprovalPolicies: "approvals.read",
+  createApprovalPolicy: "approvals.write",
+  patchApprovalPolicy: "approvals.write",
+  deleteApprovalPolicy: "approvals.write",
+  // A requester can always list their own requests and cancel one without
+  // holding the queue permission. The handlers enforce that restriction: the
+  // method falls back to tenant.read, which every member already needs.
+  listApprovalRequests: "tenant.read",
+  getApprovalRequest: "tenant.read",
+  approveApprovalRequest: "approvals.write",
+  rejectApprovalRequest: "approvals.write",
+  cancelApprovalRequest: "tenant.read",
 } satisfies Record<string, Permission>;
 
 const EXPLICIT_PERMISSIONS = new Map(Object.entries(EXPLICIT));
@@ -295,9 +448,90 @@ const ACCOUNT_METHODS = new Set([
   // rather than tenant-permission-gated ones.
   "extractMobileconfig",
   "previewMobileconfig",
+  // Account settings, sessions, credentials and step-up ceremonies. These
+  // resolve the caller's account, not a tenant membership, so a tenant role
+  // cannot grant or widen them. Superadmin checks remain in the handlers.
+  "me",
+  "updateMe",
+  "getAccountDeletion",
+  "deleteMe",
+  "listAccountSessions",
+  "listLoginAttempts",
+  "revokeAccountSession",
+  "revokeAllAccountSessions",
+  "searchAccountAuditLog",
+  "exportAccountAuditLog",
+  "requestAccountRecovery",
+  "verifyAccountRecovery",
+  "cancelEmailChange",
+  "listTenants",
+  "createTenant",
+  "listAdminAccounts",
+  "patchAdminAccountSuperadmin",
+  "requestEmailVerification",
+  "requestRegistrationCode",
+  "verifyRegistrationCode",
+  "verifyEmail",
+  "requestEmailChange",
+  "verifyEmailChange",
+  "listApiTokens",
+  "listMcpConnections",
+  "revokeMcpConnection",
+  "createApiToken",
+  "revokeApiToken",
+  "removeAccountPasskey",
+  "stepUpMethods",
+  "stepUpTotp",
+  "beginStepUpPasskey",
+  "completeStepUpPasskey",
 ]);
 
 export const isAccountMethod = (method: string): boolean => ACCOUNT_METHODS.has(method);
+
+/**
+ * Endpoints that resolve no tenant membership. They are either account-scoped
+ * or deliberately public/token-bound, so `requireTenant` must not apply a
+ * tenant permission. Keep this list explicit: a new tenant method that is not
+ * mapped below fails closed instead of inheriting the coarse tenant fallback.
+ */
+const PUBLIC_METHODS = new Set([
+  // Public invitations: accepting and previewing are token-bound and gated by
+  // the caller layer's rate limit instead of a tenant membership.
+  "acceptInvitation",
+  "previewInvitation",
+  "acceptTenantOwnershipTransfer",
+  "previewTenantOwnershipTransfer",
+  // A target may decline without member-management rights; the handler still
+  // enforces requester/target/owner before touching the row.
+  "cancelTenantOwnershipTransfer",
+  "getEnrollment",
+  "submitEnrollmentAnswers",
+  // Public BYOD discovery and the token-bound enrollment/ADE/agent surfaces.
+  // Each verifies its own credential, device signature or bearer token in the
+  // handler before touching tenant data.
+  "appleByodDiscovery",
+  "getAppleByodEnrollmentProfile",
+  "enrollAdeDevice",
+  "syncScriptAgent",
+  "reportScriptAgentResult",
+  "reportRestrictedSoftwareAgentResult",
+  "reportWindowsActivation",
+  "uploadWindowsDiagnostics",
+]);
+
+/**
+ * Methods that deliberately resolve no tenant membership. Kept separate from
+ * account methods so the exhaustive matrix can tell "public by design" apart
+ * from "forgot to classify".
+ */
+export const isPublicMethod = (method: string): boolean => PUBLIC_METHODS.has(method);
+
+/**
+ * Permission returned for a method with no resource mapping. It is not part of
+ * the catalogue, so neither a built-in role nor a custom role can hold it: an
+ * endpoint added without a mapping is denied until the mapping is added.
+ */
+export const UNMAPPED_METHOD_PERMISSION = "tenant.unmapped" as Permission;
 
 export const permissionForMethod = (method: string): Permission | undefined => {
   if (ACCOUNT_METHODS.has(method)) return undefined;
@@ -325,6 +559,10 @@ export const permissionForMethod = (method: string): Permission | undefined => {
   if (SCRIPT_READ.has(method)) return "scripts.read";
 
   if (SCRIPT_WRITE.has(method)) return "scripts.write";
+
+  if (RESTRICTED_SOFTWARE_READ.has(method)) return "restricted_software.read";
+
+  if (RESTRICTED_SOFTWARE_WRITE.has(method)) return "restricted_software.write";
 
   if (DASHBOARD_READ.has(method)) return "dashboards.read";
 
@@ -354,26 +592,16 @@ export const permissionForMethod = (method: string): Permission | undefined => {
 
   if (ROLE_WRITE.has(method)) return "roles.write";
 
-  // Public invitations: accepting and previewing are token-bound and gated by
-  // the caller layer's rate limit instead of a tenant membership.
-  if (
-    method === "acceptInvitation" ||
-    method === "previewInvitation" ||
-    method === "acceptTenantOwnershipTransfer" ||
-    method === "previewTenantOwnershipTransfer" ||
-    // A target may decline without member-management rights; the handler
-    // still enforces requester/target/owner before touching the row.
-    method === "cancelTenantOwnershipTransfer" ||
-    method === "getEnrollment" ||
-    method === "submitEnrollmentAnswers"
-  )
-    return undefined;
+  if (SCOPE_TAG_READ.has(method)) return "scope_tags.read";
 
-  // Unknown methods fail safe to tenant write for mutations and tenant read for
-  // obvious reads. This keeps future endpoints permission-checked by default.
-  if (/^(list|get|search|export|preview|download)/.test(method)) return "tenant.read";
+  if (SCOPE_TAG_WRITE.has(method)) return "scope_tags.write";
 
-  return "tenant.write";
+  if (PUBLIC_METHODS.has(method)) return undefined;
+
+  // Fail closed. The exhaustive permission-matrix test keeps every known
+  // service method mapped, so this is only reached by a method that was added
+  // without its resource permission.
+  return UNMAPPED_METHOD_PERMISSION;
 };
 
 const rolesOf = (role: string) =>
@@ -481,7 +709,22 @@ export type TenantAccess = {
   readonly member: typeof schema.member.$inferSelect;
   readonly organization: typeof schema.organization.$inferSelect;
   readonly role: ResolvedTenantRole;
+  /**
+   * Scope tags this membership may reach. Empty means unscoped (tenant-wide),
+   * which is the upgrade default and the effective state for every built-in
+   * owner regardless of rows.
+   */
+  readonly scopeTagIds: ReadonlyArray<string>;
 };
+
+/**
+ * True when the membership is not narrowed to specific tags. Owners are always
+ * unscoped so a tenant cannot lock itself out by tagging its owner.
+ */
+export const isUnscopedMember = (
+  member: OwnerCandidate,
+  scopeTagIds: ReadonlyArray<string>,
+): boolean => isBuiltInOwnerMember(member) || scopeTagIds.length === 0;
 
 /**
  * Load a caller's membership, organisation and effective role in one query.
@@ -498,7 +741,7 @@ export const loadTenantAccess = (
   organizationId: string,
 ): Effect.Effect<TenantAccess | undefined, unknown, never> =>
   Effect.gen(function* () {
-    const [row] = yield* db
+    const rows = yield* db
       .select({
         member: schema.member,
         organization: schema.organization,
@@ -507,6 +750,7 @@ export const loadTenantAccess = (
           name: schema.tenantRole.name,
           permissions: schema.tenantRole.permissions,
         },
+        scopeTagId: schema.memberScopeTag.tagId,
       })
       .from(schema.member)
       .innerJoin(schema.organization, eq(schema.organization.id, schema.member.organizationId))
@@ -517,20 +761,40 @@ export const loadTenantAccess = (
           eq(schema.tenantRole.organizationId, schema.member.organizationId),
         ),
       )
+      .leftJoin(
+        schema.memberScopeTag,
+        and(
+          eq(schema.memberScopeTag.memberId, schema.member.id),
+          eq(schema.memberScopeTag.organizationId, schema.member.organizationId),
+        ),
+      )
       .where(
         and(
           eq(schema.member.accountId, accountId),
           eq(schema.member.organizationId, organizationId),
         ),
-      )
-      .limit(1);
+      );
+
+    const row = rows[0];
 
     if (!row) return undefined;
+
+    // The scope-tag join duplicates the membership once per allowed tag, so
+    // collapse the rows here instead of issuing a second query. Keeping this to
+    // one round trip matters: it runs on every tenant request.
+    const scopeTagIds = [
+      ...new Set(
+        rows
+          .map((entry: { scopeTagId?: string | null }) => entry.scopeTagId)
+          .filter((tagId): tagId is string => typeof tagId === "string" && tagId.length > 0),
+      ),
+    ];
 
     return {
       member: row.member,
       organization: row.organization,
       role: resolveTenantRoleFrom(row.member, row.customRole?.id ? row.customRole : undefined),
+      scopeTagIds,
     };
   });
 

@@ -10,12 +10,25 @@
  */
 
 import { and, count, desc, eq, gte, isNull, lt } from "drizzle-orm";
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Schema } from "effect";
+import type { WindowsFailurePhase as CanonicalWindowsFailurePhase } from "@mattrax/management-backend";
 import type { EnterpriseDb } from "./db.ts";
 import { windowsFailure } from "./schema.ts";
 
 /** Where in the Windows protocol a request failed. */
-export type WindowsFailurePhase = "discovery" | "wstep" | "enrollment" | "policy" | "command";
+export type WindowsFailurePhase = CanonicalWindowsFailurePhase;
+
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+    ? true
+    : false;
+
+type Assert<Value extends true> = Value;
+
+/** Fails compilation if the canonical domain contract changes without review. */
+export type WindowsFailurePhaseMatchesContract = Assert<
+  Equal<WindowsFailurePhase, "discovery" | "wstep" | "enrollment" | "policy" | "command">
+>;
 
 /** Failure history older than this is deleted by daily maintenance. */
 export const WINDOWS_FAILURE_RETENTION_DAYS = 30;
@@ -73,10 +86,10 @@ const stringify = (cause: unknown): string => {
  */
 export const describeWindowsFailure = (cause: unknown): string =>
   stringify(cause)
-    .replace(PEM_BLOCK, "[certificate]")
-    .replace(EMAIL_ADDRESS, "[email]")
-    .replace(OPAQUE_VALUE, "[redacted]")
-    .replace(WHITESPACE, " ")
+    .replaceAll(PEM_BLOCK, "[certificate]")
+    .replaceAll(EMAIL_ADDRESS, "[email]")
+    .replaceAll(OPAQUE_VALUE, "[redacted]")
+    .replaceAll(WHITESPACE, " ")
     .trim();
 
 const bound = (value: string | null | undefined, limit: number): string | null => {
@@ -91,7 +104,7 @@ const bound = (value: string | null | undefined, limit: number): string | null =
 
 const boundCode = (value: string): string =>
   value
-    .replace(/[^A-Za-z0-9_.-]/g, "_")
+    .replaceAll(/[^A-Za-z0-9_.-]/g, "_")
     .slice(0, CODE_LIMIT)
     .trim() || "request_failed";
 
@@ -168,7 +181,9 @@ export const recordWindowsFailure = (
   }).pipe(
     Effect.timeout(WRITE_TIMEOUT),
     Effect.catchCause((cause) =>
-      Effect.logWarning(`Could not record Windows failure: ${String(cause)}`),
+      Cause.hasInterrupts(cause)
+        ? Effect.failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
+        : Effect.logWarning(`Could not record Windows failure: ${String(cause)}`),
     ),
   );
 
@@ -284,4 +299,10 @@ export const pruneWindowsFailures = (
     yield* db.delete(windowsFailure).where(lt(windowsFailure.createdAt, cutoff));
 
     return stale.length;
-  }).pipe(Effect.catchCause(() => Effect.succeed(0)));
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterrupts(cause)
+        ? Effect.failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
+        : Effect.succeed(0),
+    ),
+  );

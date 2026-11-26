@@ -59,7 +59,9 @@ export function DocsBreadcrumbJsonLd() {
     <script
       type="application/ld+json"
       // `<` is escaped so a title can never close the script element.
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }}
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify(structuredData).replaceAll("<", String.raw`\u003c`),
+      }}
     />
   );
 }

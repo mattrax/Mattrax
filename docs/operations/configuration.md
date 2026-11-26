@@ -39,6 +39,19 @@ web Worker's environment as restricted as the API Worker's while the key is shar
 Long term the plan is a dedicated `SSR_TOKEN_SECRET` minted by the API and verified by the
 edge, so the web Worker never holds `AUTH_SECRET`; this is not implemented yet.
 
+### Support and calendar link
+
+| Variable      | Default                                              | Purpose                              |
+| ------------- | ---------------------------------------------------- | ------------------------------------ |
+| `SUPPORT_URL` | `mailto:hello@mattrax.app?subject=Mattrax%20support` | Support form or calendar booking URL |
+
+Set `SUPPORT_URL` on the dashboard Worker (`mattrax`) or in the self-hosted
+container's environment. It is used by the account menu and the overview's "Get
+started" checklist. `https:`, `http:` and `mailto:` values are accepted; anything
+else falls back to the default mailto so a misconfiguration cannot render a dead
+or script link. The value is public: it is injected into the HTML shell like the
+PostHog configuration.
+
 ## Hyperdrive
 
 The API Worker reaches MySQL through Hyperdrive. Query caching must stay disabled:
@@ -59,17 +72,53 @@ with the write and avoids similar stale reads on policy and membership changes.
 | ----------------- | ------- | --------------------------------------- |
 | `TRUSTED_ORIGINS` | —       | Comma-separated extra same-site origins |
 
+## Platform superadmins
+
+| Variable              | Default | Purpose                                                     |
+| --------------------- | ------- | ----------------------------------------------------------- |
+| `MATTRAX_SUPERADMINS` | —       | Comma-separated verified emails that always hold superadmin |
+
+A superadmin is a platform operator, not a tenant role. It grants the
+cross-tenant account catalogue at **Account menu → Platform accounts**
+(`/admin/accounts`): listing every account, its tenant memberships and its
+platform-access flag, and promoting or demoting other accounts. It does not
+grant access to any tenant's devices, policies, members or audit log.
+
+`MATTRAX_SUPERADMINS` is the bootstrap path: a fresh deployment has no stored
+superadmin, so the deployer names one before the first sign-in. Entries are
+trimmed and compared case-insensitively; blank entries are ignored. The listed
+address must be verified on the account, and the allowlist is authoritative
+over the stored flag — an account named there cannot be demoted from the
+dashboard or the API. Removing the entry and redeploying is the only way to
+take that account's access away.
+
+Keep the list small and owned by the deployer. The first stored superadmin can
+then grant access to the others without a redeploy. The API refuses to demote
+the caller themselves or the last enabled superadmin, and refuses to promote a
+disabled account. Every grant and revocation is written to the account audit
+stream with the actor, target and before/after state.
+
 ## Billing
 
-| Variable                         | Purpose                                              |
-| -------------------------------- | ---------------------------------------------------- |
-| `STRIPE_SECRET_KEY`              | Stripe API key                                       |
-| `STRIPE_WEBHOOK_SECRET`          | Stripe webhook signature                             |
-| `STRIPE_DEVICE_MONTHLY_PRICE_ID` | Price mapped to the `device` plan                    |
-| `STRIPE_LICENSE_PRICE_ID`        | Per-device price for self-hosted deployment licences |
-| `MATTRAX_PLAN_LIMITS`            | JSON plan/seat catalogue                             |
+| Variable              | Purpose                                                    |
+| --------------------- | ---------------------------------------------------------- |
+| `SERVICES_TOKEN`      | Shared Cloud-to-services bearer and APNs relay HMAC key    |
+| `STRIPE_*`            | Configured on the services deployment, not the application |
+| `MATTRAX_PLAN_LIMITS` | JSON plan/seat catalogue                                   |
 
 All are optional. Without them billing reports `configured: false`.
+
+The hosted services origin is built into the application at
+`https://services.mattrax.app`; it is not deployment configuration. Cloud and
+self-hosted installs both use it, so the billing endpoints
+(`/v1/billing/hosted/*` and `/api/platform/billing/*`) and the APNs relay
+(`/v1/apns/push`) are derived from the same origin.
+
+`APNS_RELAY_URL` and `MATTRAX_BILLING_URL` are no longer read, and a custom
+relay is not supported: push and billing always use the built-in origin. Cloud
+authenticates the relay with `SERVICES_TOKEN`; a self-hosted install uses
+`MATTRAX_LICENSE_KEY`. The old separate relay secret is also ignored; remove
+all three from an upgraded deployment.
 
 ```json
 {
@@ -90,12 +139,13 @@ All are optional. Without them billing reports `configured: false`.
 | `APPLE_PROFILE_SIGNING_CERT`             | Leaf certificate used to CMS-sign Apple profiles                                                |
 | `APPLE_PROFILE_SIGNING_KEY`              | RSA PKCS#8 PEM private key for profile signing                                                  |
 | `APPLE_PROFILE_SIGNING_CHAIN`            | Optional intermediate/root PEM bundle                                                           |
-| `APNS_RELAY_URL`                         | Multi-tenant APNs relay base URL                                                                |
-| `APNS_RELAY_SECRET`                      | Relay HMAC secret (at least 32 characters)                                                      |
 | `MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS` | Lifetime of the bearer SCEP challenge in an enrollment profile, 60–86400 seconds (default 3600) |
 
-Without the vendor key, tenants upload a manually signed APNs certificate. Without the
-relay, hosted multi-tenant Cloud has no push transport and devices poll.
+Without the vendor key, tenants upload a manually signed APNs certificate. Pushes
+go through the hosted relay at `https://services.mattrax.app/v1/apns/push`.
+Cloud authenticates with `SERVICES_TOKEN`; a self-hosted install uses its
+`MATTRAX_LICENSE_KEY`. Without either there is no authorised push transport and
+devices poll.
 
 When the profile signing identity is absent, the owning tenant's SCEP CA signs profile
 downloads. The CA is created on first use, so there is no unsigned window. A configured
@@ -109,6 +159,19 @@ identity that cannot be loaded fails the download rather than serving an unsigne
 | `AZURE_CLIENT_SECRET`        | Entra app secret                                                   |
 | `WINDOWS_ORGANIZATION_ID`    | Legacy single-tenant fallback                                      |
 | `WINDOWS_FEDERATED_AUDIENCE` | Audience for federated WSTEP tokens; defaults to `AZURE_CLIENT_ID` |
+
+## Google Workspace directory sync
+
+| Variable                                | Purpose                                                      |
+| --------------------------------------- | ------------------------------------------------------------ |
+| `GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON` | Optional deployment-wide service-account JSON key            |
+| `GOOGLE_WORKSPACE_ADMIN_EMAIL`          | Workspace super-admin to impersonate (deployment mode)       |
+| `GOOGLE_WORKSPACE_CUSTOMER`             | `my_customer` or a primary domain; defaults to `my_customer` |
+| `MAINTENANCE_GOOGLE_SYNC_CONCURRENCY`   | Parallel tenants in the scheduled sweep; defaults to 2       |
+
+Tenants can instead save their own key under **Settings → Identity → Directory sync**;
+it is sealed with `AUTH_SECRET` and takes precedence over the deployment values. See
+[Identity](/admin/identity#google-workspace).
 
 ## Android
 
@@ -152,15 +215,49 @@ Device health uses fixed thresholds ahead of the auto-unenrol sweep: stale after
 stay above 14 for MIA to be observable; the default 30 retires the device after both
 states. If this is lowered below 14, maintenance unenrols devices before they can be MIA.
 
+## macOS update warnings (SOFA)
+
+The dashboard, device list and device page compare each Mac's reported `osVersion` with
+the [SOFA](https://github.com/macadmins/sofa) macOS feed. SOFA publishes the latest
+release and the security releases for each macOS major version, so a device on an older
+patch of a supported major gets "Security update required", and a device that is current
+for its major but has a newer major available gets "Update available".
+
+The feed is deployment-wide and cached in `software_update_feed`. Dashboard and device
+requests reuse the cached catalog for the cache window. Concurrent requests in one worker
+isolate share a single refresh, and a timeout, an HTTP error or a malformed feed is
+remembered as a short cooldown; the last good catalog (if any) is served as stale. If there
+is no cached catalog, macOS devices report `unknown` — they are never treated as up to
+date. Check-in and policy delivery do not depend on this feed.
+
+| Variable                     | Default                                                 | Purpose                                                        |
+| ---------------------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
+| `SOFA_FEED_URL`              | `https://sofafeed.macadmins.io/v1/macos_data_feed.json` | Feed or mirror URL                                             |
+| `SOFA_FEED_CACHE_SECONDS`    | `21600` (6 hours)                                       | Minimum age before a cached feed is refreshed                  |
+| `SOFA_FEED_RETRY_SECONDS`    | `900` (15 minutes)                                      | Failure cooldown before another refresh is attempted           |
+| `SOFA_FEED_TIMEOUT_MS`       | `5000`                                                  | Deadline for one feed request                                  |
+| `SOFA_FEED_SUPPORTED_MAJORS` | `3`                                                     | Current plus previous majors treated as supported (1–10)       |
+| `SOFA_FEED_DISABLED`         | unset                                                   | `true` disables the feed; every macOS status becomes `unknown` |
+
+Only macOS is covered. Windows and Android devices report no status (the UI shows "—")
+until a supported update source is added; they are not counted as up to date.
+
 ## Transactional email
 
 Invitations, verification codes, email-change notices and credential-expiry
-alerts are queued in the `email_outbox` table and delivered by the cron, not
-sent inline. A request writes one row per recipient with the rendered message;
-an outage delays mail instead of failing the request or losing the message.
+alerts are queued in the `email_outbox` table. A request writes one row per
+recipient with the rendered message; an outage delays mail instead of failing
+the request or losing the message.
 
-- The hourly trigger drains the outbox; the daily maintenance run drains and
-  prunes it as well, so a deployment with only one cron still delivers.
+- Verification codes and the email-change confirmation are the exception: the
+  request also attempts that one row immediately, because a code the person is
+  waiting on cannot sit until the next sweep. The row is still the durable
+  record — a failed attempt backs off and is retried like any other — and the
+  response reports `emailSent: false` so the page can say the mail did not go
+  out.
+- Every other message waits for the sweep. The hourly trigger drains the outbox;
+  the daily maintenance run drains and prunes it as well, so a deployment with
+  only one cron still delivers.
 - Attempts back off exponentially from 5 minutes, capped at 6 hours, and a row
   is permanently failed after `MAINTENANCE_EMAIL_OUTBOX_MAX_ATTEMPTS` (default
   5). The failure is written to the tenant audit log as
@@ -194,6 +291,14 @@ is unset; `smtp` sends through the operator's own mail server. `MAIL_FROM` defau
 only accepts the addresses listed in `apps/cloud/cloudflare.config.ts`
 (`hello@mattrax.cloud`); set `MAIL_TRANSPORT=smtp` to send from
 another verified domain.
+
+Cloudflare refuses recipients with `destination address is not a verified
+address` until the sender's domain is onboarded to Email Sending in that
+account. That failure is recorded on the outbox row (and audited once the
+attempts run out), and the sign-up page reports it as "we couldn't send that
+email", so a binding that deploys but never delivers is visible rather than
+silent. Onboard the domain, or switch to `MAIL_TRANSPORT=smtp`.
+
 `/api/ready` reports `mailer: ok`, `skipped` (explicitly disabled) or `error`
 (the transport is misconfigured or missing), so a typo cannot look healthy.
 
@@ -212,15 +317,18 @@ They never use a `no-reply` address; replies go to the configured mailbox.
   no enrolled device, no recently created enrolling device and no successful
   enrollment attempt.
 
-| Variable                                | Default               | Purpose                                                        |
-| --------------------------------------- | --------------------- | -------------------------------------------------------------- |
-| `MATTRAX_ONBOARDING_REPLY_TO`           | `oscar@otbeaumont.me` | Reply-To for both emails; use a monitored mailbox              |
-| `MATTRAX_ONBOARDING_SUPPORT_EMAIL`      | `hello@mattrax.cloud` | Footer support address                                         |
-| `MATTRAX_ONBOARDING_SINCE`              | —                     | ISO date; tenants created earlier are never follow-up eligible |
-| `MAINTENANCE_ONBOARDING_EMAILS`         | `true`                | Set `false`, `0` or `off` to disable the follow-up sweep       |
-| `MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS` | `7`                   | Days after tenant creation before the follow-up is eligible    |
-| `MAINTENANCE_ONBOARDING_WINDOW_DAYS`    | `7`                   | Extra days after the threshold that remain eligible            |
-| `MAINTENANCE_ONBOARDING_COOLDOWN_DAYS`  | `7`                   | Per-recipient cooldown across tenants; `0` disables it         |
+| Variable                                | Default               | Purpose                                                          |
+| --------------------------------------- | --------------------- | ---------------------------------------------------------------- |
+| `MATTRAX_ONBOARDING_REPLY_TO`           | `oscar@otbeaumont.me` | Reply-To for both emails; use a monitored mailbox                |
+| `MATTRAX_ONBOARDING_SUPPORT_EMAIL`      | `hello@mattrax.cloud` | Footer support address                                           |
+| `MATTRAX_BRAND_NAME`                    | `Mattrax`             | Deployment brand in account and welcome email                    |
+| `MATTRAX_BRAND_LOGO_URL`                | —                     | https logo for email; root-relative paths resolve against ORIGIN |
+| `MATTRAX_BRAND_COLOR`                   | `#6e56cf`             | Brand colour for the mark and primary action                     |
+| `MATTRAX_ONBOARDING_SINCE`              | —                     | ISO date; tenants created earlier are never follow-up eligible   |
+| `MAINTENANCE_ONBOARDING_EMAILS`         | `true`                | Set `false`, `0` or `off` to disable the follow-up sweep         |
+| `MAINTENANCE_ONBOARDING_FOLLOW_UP_DAYS` | `7`                   | Days after tenant creation before the follow-up is eligible      |
+| `MAINTENANCE_ONBOARDING_WINDOW_DAYS`    | `7`                   | Extra days after the threshold that remain eligible              |
+| `MAINTENANCE_ONBOARDING_COOLDOWN_DAYS`  | `7`                   | Per-recipient cooldown across tenants; `0` disables it           |
 
 An invalid `MATTRAX_ONBOARDING_REPLY_TO` or `MATTRAX_ONBOARDING_SUPPORT_EMAIL`
 is reported once per isolate and the built-in default is used instead, so a typo
@@ -231,6 +339,16 @@ an existing deployment. Without it, tenants created in the trailing
 `FOLLOW_UP_DAYS + WINDOW_DAYS` window are eligible, which may include customers
 who predate the feature. The welcome email is transactional and is not affected
 by `MAINTENANCE_ONBOARDING_EMAILS`.
+
+Account email sent before a tenant exists (welcome, verification and recovery)
+uses deployment branding from `MATTRAX_BRAND_NAME`, `MATTRAX_BRAND_LOGO_URL`
+and `MATTRAX_BRAND_COLOR` (Mattrax by default); invitation, ownership-transfer
+and follow-up mail use the tenant's display name, logo and brand colour. They
+share the dashboard's table-based email layout, include a plain-text
+alternative, and apply dark-mode overrides where the client supports them
+(Apple Mail and Outlook.com; Gmail follows its own theme). See
+[Administration → Onboarding email](/admin/#onboarding-email) for how to preview
+the messages with the development mailbox.
 
 The follow-up eligibility window is therefore 7–14 days after tenant creation
 with the defaults. The cooldown is derived from onboarding audit rows, so
@@ -246,14 +364,29 @@ Build-time namespace variables create Cloudflare Rate Limiting bindings:
 
 | Variable                                  | Binding                   | Bucket              |
 | ----------------------------------------- | ------------------------- | ------------------- |
-| `MATTRAX_RATE_LIMIT_AUTH_NAMESPACE`       | `RATE_LIMITER_AUTH`       | Auth POSTs, 120/min |
+| `MATTRAX_RATE_LIMIT_AUTH_NAMESPACE`       | `RATE_LIMITER_AUTH`       | Auth POSTs, 600/min |
 | `MATTRAX_RATE_LIMIT_ENROLLMENT_NAMESPACE` | `RATE_LIMITER_ENROLLMENT` | Enrollment, 600/min |
 | `MATTRAX_RATE_LIMIT_MDM_NAMESPACE`        | `RATE_LIMITER_MDM`        | `/mdm/*`, 600/min   |
 | `MATTRAX_RATE_LIMIT_SCIM_NAMESPACE`       | `RATE_LIMITER_SCIM`       | SCIM, 600/min       |
 | `MATTRAX_RATE_LIMIT_BILLING_NAMESPACE`    | `RATE_LIMITER_BILLING`    | Billing, 600/min    |
 | `MATTRAX_RATE_LIMIT_SCEP_NAMESPACE`       | `RATE_LIMITER_SCEP`       | SCEP, 300/min       |
 
-Without a binding, that bucket falls back to per-isolate counters.
+Without a binding, that bucket falls back to the process-local counter. Those
+counters live as long as the process does: exact for the single-container
+self-hosted deployment, but per isolate in a Worker, where isolates are created
+and retired continuously and the effective ceiling becomes `limit × live
+isolates` rather than `limit`.
+
+Cloudflare's counters are **per Cloudflare location** and approximate: a burst
+can exceed the configured limit before counts propagate, and each location
+enforces the limit independently. Treat these bindings as an abuse backstop for
+credential stuffing and hot loops, not as a global quota. A limit that has to
+hold globally — a per-tenant or per-token quota — needs a Durable Object keyed
+on that tenant or token.
+
+The API Worker logs a warning at build time when `MATTRAX_PRODUCTION=true` and
+any of these variables is unset, because that deployment then runs on
+per-isolate limits.
 
 ## Analytics and error tracking
 
@@ -273,6 +406,18 @@ and attaches its deployment id to every event. API payloads contain a redacted
 message, request id, path, method, status, release and deployment id. Bodies,
 cookies, query strings, emails and tokens are excluded; browser autocapture text is
 redacted the same way.
+
+## Telemetry and metrics
+
+| Variable                | Default | Purpose                                                                                  |
+| ----------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| `MATTRAX_TELEMETRY`     | on      | `off` installs Effect's no-op tracer: no spans, no metrics, no per-request work          |
+| `MATTRAX_METRICS`       | `off`   | `public` serves `/api/metrics`; `token` requires a bearer token; `on`/`true` mean public |
+| `MATTRAX_METRICS_TOKEN` | —       | Bearer token for `MATTRAX_METRICS=token`; a missing token fails closed (404)             |
+
+The endpoint is Prometheus text format with aggregate-only labels: no tenant, device, email
+or raw URL. See [Monitoring](/operations/monitoring#metrics) for the metric catalogue and
+the per-isolate caveat.
 
 ## Development only
 

@@ -1,7 +1,16 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  onCleanup,
+  onSettled,
+  Show,
+} from "solid-js";
 import { useNavigate } from "~/lib/navigation";
 import type { JSX } from "@solidjs/web";
-import { Button, buttonVariants } from "~/components/ui/button";
+import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -17,17 +26,37 @@ import {
   RefreshCw,
   Search as SearchIcon,
 } from "~/components/ui/icons";
-import { EmptyState, Kbd } from "@mattrax/ui";
+import { Checkbox, EmptyState, Kbd, LoadingState, Skeleton } from "@mattrax/ui";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { announce } from "~/components/toast";
 import { chord, sequence, useCommands } from "~/lib/commands";
-import { shouldOfferAllMatching } from "~/lib/table-selection";
+import { applyRangeSelection, shouldOfferAllMatching } from "~/lib/table-selection";
 import { cn } from "~/lib/utils";
 import { QueryError } from "./common";
+import { toggleVisibleColumnIds } from "./table-columns";
+import { readTableColumnVisibility } from "~/lib/table-column-visibility";
+import {
+  TABLE_COLUMN_OVERSCAN,
+  TABLE_COLUMN_WIDTH,
+  TABLE_HEADER_HEIGHT,
+  TABLE_INITIAL_VIEWPORT_HEIGHT,
+  TABLE_INITIAL_VIEWPORT_WIDTH,
+  TABLE_MAX_RENDERED_COLUMNS,
+  TABLE_MAX_VIEWPORT_HEIGHT,
+  TABLE_ROW_HEIGHT,
+  getTableRenderWindow,
+  getTableLeadingColumnCount,
+  shouldVirtualizeTableColumns,
+  shouldVirtualizeTableRows,
+} from "./table-render-window";
+
+export { readTableColumnVisibility } from "~/lib/table-column-visibility";
 
 export type MdmColumn<T> = {
   id: string;
   header: string;
+  /** Small glyph drawn before the header label. */
+  icon?: (props: { class?: string }) => JSX.Element;
   class?: string;
   cell: (row: T) => JSX.Element;
   sort?: (row: T) => string | number | undefined | null;
@@ -48,16 +77,6 @@ export type MdmBulkSelection = {
   total: number;
   setAllMatching: (value: boolean) => void;
 };
-
-function readVisibility(key: string | undefined): Record<string, boolean> {
-  if (!key || typeof localStorage === "undefined") return {};
-
-  try {
-    return JSON.parse(localStorage.getItem(`mattrax:table:${key}:columns`) ?? "{}");
-  } catch {
-    return {};
-  }
-}
 
 export function MdmTable<T extends { id: string; name?: string }>(props: {
   rows: readonly T[] | undefined;
@@ -88,6 +107,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   /** Persist column visibility under this key. */
   storageKey?: string;
   /**
+   * Exact visible column ids when the parent owns column state (a saved view).
+   * When omitted the table keeps its own selection, persisted under
+   * `storageKey`.
+   */
+  visibleColumnIds?: () => ReadonlyArray<string> | undefined;
+  /** Receives the next visible ids when a controlled table's picker changes. */
+  onVisibleColumnsChange?: (ids: string[]) => void;
+  /**
    * When set, the row becomes a pointer target for navigation. Keyboard users
    * follow the link rendered in the name cell, so the row itself is neither
    * focusable nor a second tab stop.
@@ -113,7 +140,13 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   onSearchChange?: (value: string) => void;
   sortValue?: MdmSortState;
   onSortChange?: (value: MdmSortState) => void;
-  /** Extra controls rendered below the search row (filters, export, …). */
+  /**
+   * Controls rendered on the search row itself: a split FilterBar (its applied
+   * chips wrap onto their own row) and the page's sort/view actions. Pages
+   * that only need a second row keep using `toolbar`.
+   */
+  inlineToolbar?: JSX.Element;
+  /** Extra controls rendered below the search row (warnings, export, …). */
   toolbar?: JSX.Element;
   /** Rendered below the table (pagination, range summary, …). */
   footer?: JSX.Element;
@@ -127,6 +160,13 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   selectionKey?: string;
   /** Accessible name for the table. */
   caption?: string;
+  /**
+   * Show the leading row-number column. Server tables paginated by offset pass
+   * their offset via {@link rowNumberStart} so numbering continues.
+   */
+  rowNumbers?: boolean;
+  /** Rows before the current page, used to number an offset-paginated table. */
+  rowNumberStart?: number;
 }) {
   const [selected, setSelected] = createSignal<Record<string, true>>({});
   const [allMatching, setAllMatching] = createSignal(false);
@@ -134,21 +174,49 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const [internalSort, setInternalSort] = createSignal<SortState>(null);
   const [activeRow, setActiveRow] = createSignal(-1);
   const [tableFocused, setTableFocused] = createSignal(false);
+  const [pendingRowFocus, setPendingRowFocus] = createSignal<number | null>(null);
+  // Shift-click / Shift+Space anchor. The anchor is a row id, not an index, so
+  // it survives sorting and filtering of the visible rows.
+  const [selectionAnchor, setSelectionAnchor] = createSignal<string | null>(null);
+  let rangeGesture = false;
   // The server cannot see the platform; keep the SSR hint stable ("CtrlF")
   // and switch to the Mac glyph after hydration so both trees match.
   const [modKey, setModKey] = createSignal("Ctrl");
+  const [rowNumbersVisible, setRowNumbersVisible] = createSignal(true);
 
   const [hidden, setHidden] = createSignal<Record<string, boolean>>(
-    readVisibility(props.storageKey),
+    readTableColumnVisibility(props.storageKey),
   );
 
   const navigate = useNavigate();
   let searchRef: HTMLDivElement | undefined;
   let tableRef: HTMLTableElement | undefined;
-  const rowRefs: Array<HTMLTableRowElement | undefined> = [];
+  let viewportRef: HTMLDivElement | undefined;
+  const rowRefs = new Map<string, HTMLTableRowElement>();
+  const captionId = createUniqueId();
+  const [viewportHeight, setViewportHeight] = createSignal(TABLE_INITIAL_VIEWPORT_HEIGHT);
+  const [viewportWidth, setViewportWidth] = createSignal(TABLE_INITIAL_VIEWPORT_WIDTH);
+  const [scrollTop, setScrollTop] = createSignal(0);
+  const [scrollLeft, setScrollLeft] = createSignal(0);
+  const [rowHeights, setRowHeights] = createSignal<Record<string, number>>({});
+  let viewportResizeObserver: ResizeObserver | undefined;
+  let rowResizeObserver: ResizeObserver | undefined;
+  let scrollFrame: number | undefined;
+  let latestScrollTop = 0;
+  let latestScrollLeft = 0;
 
   const serverMode = () => props.mode === "server";
   const selectable = () => props.selectable ?? true;
+  const rowNumberColumn = () => (props.rowNumbers ?? true) && rowNumbersVisible();
+
+  onSettled(() => {
+    const media = window.matchMedia("(min-width: 640px)");
+    const update = () => setRowNumbersVisible(media.matches);
+
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  });
 
   /** Client tables can still hand search to the parent (to reuse its filter). */
   const parentSearch = () =>
@@ -174,8 +242,13 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     else setInternalSort(value);
   };
 
-  const isColumnVisible = (column: MdmColumn<T>) =>
-    hidden()[column.id] === false || (!hidden()[column.id] && !column.defaultHidden);
+  const isColumnVisible = (column: MdmColumn<T>) => {
+    const external = props.visibleColumnIds?.();
+
+    if (external !== undefined) return external.includes(column.id);
+
+    return hidden()[column.id] === false || (!hidden()[column.id] && !column.defaultHidden);
+  };
 
   /** Visibility for a candidate map, used before the map is committed. */
   const visibleIn = (state: Record<string, boolean>, column: MdmColumn<T>) =>
@@ -212,6 +285,196 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     return result;
   });
 
+  const virtualized = () => shouldVirtualizeTableRows(rows().length);
+  const hasTable = () => !props.error && !props.loading && rows().length > 0;
+
+  createEffect(
+    () => hasTable(),
+    (visible) => {
+      if (visible) return;
+
+      viewportResizeObserver?.disconnect();
+      viewportResizeObserver = undefined;
+      viewportRef = undefined;
+    },
+  );
+
+  /** Prefix sums turn binary search into a row range without per-scroll layout reads. */
+  const rowOffsets = createMemo(() => {
+    const allRows = rows();
+    const offsets = new Array<number>(allRows.length + 1);
+    const heights = rowHeights();
+    offsets[0] = 0;
+
+    for (let index = 0; index < allRows.length; index++) {
+      offsets[index + 1] = offsets[index] + (heights[allRows[index]!.id] ?? TABLE_ROW_HEIGHT);
+    }
+
+    return offsets;
+  });
+
+  const renderWindow = createMemo(() =>
+    virtualized()
+      ? getTableRenderWindow({
+          rowCount: rows().length,
+          offsets: rowOffsets(),
+          scrollTop: scrollTop(),
+          viewportHeight: Math.max(1, viewportHeight() - TABLE_HEADER_HEIGHT),
+          focusIndex: activeRow(),
+        })
+      : { start: 0, end: rows().length, top: 0, bottom: 0 },
+  );
+
+  const renderedRows = createMemo(() => rows().slice(renderWindow().start, renderWindow().end));
+  const tabRowIndex = createMemo(() => {
+    const active = activeRow();
+    const window = renderWindow();
+
+    return active >= window.start && active < window.end ? active : window.start;
+  });
+  /**
+   * Every virtualised column uses the same nominal width.
+   *
+   * Measuring the rendered columns makes the offset model depend on the table
+   * width, and the spacer cells derived from those offsets change that width:
+   * the loop never settles and rows are recreated continuously. A fixed width
+   * also lets the matching `table-layout: fixed` keep the rendered cells in
+   * step with the model instead of sizing to whatever content happens to be
+   * mounted.
+   */
+  const columnOffsets = createMemo(() => {
+    const count = visibleColumns().length;
+    const offsets = new Array<number>(count + 1);
+    offsets[0] = 0;
+
+    for (let index = 0; index < count; index++)
+      offsets[index + 1] = offsets[index] + TABLE_COLUMN_WIDTH;
+
+    return offsets;
+  });
+  const columnMode = createMemo<"off" | "fit" | "window">(() => {
+    if (!shouldVirtualizeTableColumns(visibleColumns().length)) return "off";
+
+    return (columnOffsets().at(-1) ?? 0) > viewportWidth() ? "window" : "fit";
+  });
+  const columnsVirtualized = () => columnMode() === "window";
+  const columnWindow = createMemo(() =>
+    columnsVirtualized()
+      ? getTableRenderWindow({
+          rowCount: visibleColumns().length,
+          offsets: columnOffsets(),
+          scrollTop: scrollLeft(),
+          viewportHeight: viewportWidth(),
+          overscan: TABLE_COLUMN_OVERSCAN,
+          maxRows: TABLE_MAX_RENDERED_COLUMNS,
+        })
+      : { start: 0, end: visibleColumns().length, top: 0, bottom: 0 },
+  );
+  const renderedColumns = createMemo(() =>
+    visibleColumns().slice(columnWindow().start, columnWindow().end),
+  );
+  const leadingColumnCount = () =>
+    getTableLeadingColumnCount({
+      selectable: selectable(),
+      rowNumbers: props.rowNumbers ?? true,
+      rowNumbersVisible: rowNumbersVisible(),
+    });
+  const columnCount = () => leadingColumnCount() + visibleColumns().length;
+  const renderedColumnCount = () =>
+    leadingColumnCount() +
+    renderedColumns().length +
+    (columnWindow().top > 0 ? 1 : 0) +
+    (columnWindow().bottom > 0 ? 1 : 0);
+
+  const observeRow = (element: HTMLTableRowElement) => {
+    if (!virtualized() || typeof ResizeObserver === "undefined") return;
+
+    rowResizeObserver ??= new ResizeObserver((entries) => {
+      if (!virtualized()) return;
+
+      const updates: Record<string, number> = {};
+
+      for (const entry of entries) {
+        const id = (entry.target as HTMLElement).dataset.rowId;
+        const height = Math.max(TABLE_ROW_HEIGHT, Math.ceil(entry.contentRect.height));
+
+        if (id && height > 0) updates[id] = height;
+      }
+
+      setRowHeights((previous) => {
+        let changed = false;
+        const next = { ...previous };
+
+        for (const [id, height] of Object.entries(updates)) {
+          if (next[id] === height) continue;
+          next[id] = height;
+          changed = true;
+        }
+
+        return changed ? next : previous;
+      });
+    });
+    rowResizeObserver.observe(element);
+  };
+
+  const createRowRef = (id: string) => {
+    let element: HTMLTableRowElement | undefined;
+
+    onCleanup(() => {
+      if (!element) return;
+
+      rowResizeObserver?.unobserve(element);
+      if (rowRefs.get(id) === element) rowRefs.delete(id);
+    });
+
+    return (next: HTMLTableRowElement) => {
+      element = next;
+      rowRefs.set(id, next);
+      observeRow(next);
+    };
+  };
+
+  createEffect(
+    () => virtualized(),
+    (isVirtualized) => {
+      if (isVirtualized) {
+        if (typeof ResizeObserver !== "undefined") {
+          for (const element of rowRefs.values()) observeRow(element);
+        }
+
+        return;
+      }
+
+      rowResizeObserver?.disconnect();
+      setRowHeights({});
+    },
+  );
+
+  createEffect(
+    () =>
+      rows()
+        .map((row) => row.id)
+        .join("\u0000"),
+    (order, previous) => {
+      if (order === previous) return;
+      setPendingRowFocus(null);
+      if (viewportRef) viewportRef.scrollTop = 0;
+      setScrollTop(0);
+    },
+  );
+
+  createEffect(
+    () =>
+      visibleColumns()
+        .map((column) => column.id)
+        .join("\u0000"),
+    (order, previous) => {
+      if (order === previous) return;
+      if (viewportRef) viewportRef.scrollLeft = 0;
+      setScrollLeft(0);
+    },
+  );
+
   /**
    * Selection is scoped to the visible row set. When a filter, page or search
    * changes the visible ids, ids that are no longer on screen must not linger
@@ -237,6 +500,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       if (previous === undefined || key === previous || controlled()) return;
       setSelected({});
       setAllMatching(false);
+      setSelectionAnchor(null);
     },
   );
 
@@ -258,7 +522,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   const animateRowMoves = () => {
     const table = tableRef;
 
-    if (!table) {
+    if (!table || virtualized()) {
       // The table is showing the loading skeleton or no rows; a later render
       // starts from a fresh capture instead of animating in from stale offsets.
       rowTops = new Map();
@@ -338,6 +602,11 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
   onCleanup(() => {
     if (rowMoveFrame !== undefined) cancelAnimationFrame(rowMoveFrame);
+    if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame);
+    viewportResizeObserver?.disconnect();
+    rowResizeObserver?.disconnect();
+    viewportRef = undefined;
+    rowRefs.clear();
   });
 
   const selectedRows = createMemo(() => rows().filter((row) => isSelected(row.id)));
@@ -353,6 +622,26 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     },
   );
 
+  createEffect(
+    () => {
+      const index = pendingRowFocus();
+      const window = renderWindow();
+
+      if (index === null || index < window.start || index >= window.end) return null;
+      const row = rows()[index];
+
+      return row ? { index, id: row.id } : null;
+    },
+    (target) => {
+      if (!target) return;
+      const element = rowRefs.get(target.id);
+
+      if (!element) return;
+      element.focus({ preventScroll: virtualized() });
+      setPendingRowFocus(null);
+    },
+  );
+
   // Turning bulk actions off must also drop any selection made before the
   // permission changed (for example after switching roles in another tab).
   createEffect(
@@ -364,18 +653,11 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       }
     },
   );
-  let selectAllRef: HTMLInputElement | undefined;
-  createEffect(
-    () => [selectedRows().length, allSelected(), allMatching()] as const,
-    ([count, all]) => {
-      if (selectAllRef) selectAllRef.indeterminate = count > 0 && !all;
-    },
-  );
-
   const setControlled = (ids: ReadonlySet<string>) => props.onSelectedChange?.(ids);
 
   const clear = () => {
     setAllMatching(false);
+    setSelectionAnchor(null);
 
     if (controlled()) setControlled(new Set());
     else setSelected({});
@@ -410,6 +692,78 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   // Keyboard focus stays on a single row so the table is one tab stop, the
   // roving-tabindex pattern.
 
+  const rowWindowAt = (top: number, focusIndex = activeRow()) =>
+    virtualized()
+      ? getTableRenderWindow({
+          rowCount: rows().length,
+          offsets: rowOffsets(),
+          scrollTop: top,
+          viewportHeight: Math.max(1, viewportHeight() - TABLE_HEADER_HEIGHT),
+          focusIndex,
+        })
+      : { start: 0, end: rows().length, top: 0, bottom: 0 };
+
+  const preserveFocusForScroll = (top: number) => {
+    if (typeof document === "undefined" || !viewportRef) return;
+
+    const focused = document.activeElement;
+    let focusedRowId: string | undefined;
+
+    for (const [id, element] of rowRefs) {
+      if (!element.contains(focused)) continue;
+      focusedRowId = id;
+      break;
+    }
+
+    if (!focusedRowId) return;
+    const focusedIndex = rows().findIndex((row) => row.id === focusedRowId);
+    // Judge visibility against the rows the viewport actually shows. The
+    // render window also reserves spare rows for a focused row beyond the
+    // viewport; treating those as visible leaves focus on a row that is off
+    // screen, and browsers scroll a moved focused node back into view, which
+    // undoes the user's scroll (or a programmatic one). Move focus to the
+    // viewport instead, keeping the row as the active roving index so
+    // ArrowDown still resumes from it.
+    const window = rowWindowAt(top, -1);
+
+    if (focusedIndex >= 0 && (focusedIndex < window.start || focusedIndex >= window.end)) {
+      setActiveRow(focusedIndex);
+      viewportRef.focus({ preventScroll: true });
+    }
+  };
+
+  const revealRow = (index: number) => {
+    if (!virtualized() || !viewportRef) return;
+
+    const offsets = rowOffsets();
+    const currentTop = scrollTop();
+    const visibleTop = currentTop + TABLE_HEADER_HEIGHT;
+    const visibleBottom = currentTop + viewportHeight();
+    const rowTop = TABLE_HEADER_HEIGHT + (offsets[index] ?? 0);
+    const rowBottom = TABLE_HEADER_HEIGHT + (offsets[index + 1] ?? 0);
+    let nextTop = currentTop;
+
+    if (rowTop < visibleTop) nextTop = rowTop - TABLE_HEADER_HEIGHT;
+    else if (rowBottom > visibleBottom) nextTop = rowBottom - viewportHeight();
+
+    nextTop = Math.max(
+      0,
+      Math.min(nextTop, TABLE_HEADER_HEIGHT + (offsets.at(-1) ?? 0) - viewportHeight()),
+    );
+
+    if (nextTop === currentTop) return;
+    viewportRef.scrollTop = nextTop;
+    setScrollTop(nextTop);
+  };
+
+  const activateRow = (index: number) => {
+    if (!rows()[index]) return;
+
+    setActiveRow(index);
+    setPendingRowFocus(index);
+    revealRow(index);
+  };
+
   const moveRow = (event: KeyboardEvent, index: number, row: T) => {
     if (!props.rowHref || event.defaultPrevented || event.isComposing) return;
 
@@ -421,8 +775,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         Math.min(rows().length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
       );
 
-      setActiveRow(next);
-      rowRefs[next]?.focus();
+      activateRow(next);
 
       return;
     }
@@ -431,6 +784,32 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       event.preventDefault();
       navigate(props.rowHref(row));
     }
+  };
+
+  const onViewportKeyDown = (event: KeyboardEvent) => {
+    if (
+      event.target !== event.currentTarget ||
+      event.defaultPrevented ||
+      event.isComposing ||
+      !props.rowHref ||
+      rows().length === 0
+    )
+      return;
+
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+
+    const window = renderWindow();
+    const active = activeRow();
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const next =
+      active >= window.start && active < window.end
+        ? Math.max(0, Math.min(rows().length - 1, active + direction))
+        : direction > 0
+          ? window.start
+          : window.end - 1;
+
+    activateRow(next);
   };
 
   const onTableKeyDown = (event: KeyboardEvent) => {
@@ -445,6 +824,17 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     }
   };
 
+  const onTableFocusIn = (event: FocusEvent) => {
+    setTableFocused(true);
+    const target =
+      event.target instanceof Element
+        ? event.target.closest<HTMLTableRowElement>("tr[data-row-id]")
+        : null;
+    const index = Number(target?.dataset.rowIndex);
+
+    if (Number.isInteger(index) && index >= 0 && index < rows().length) setActiveRow(index);
+  };
+
   /**
    * Escape is captured at the window so a primitive's dismissable layer cannot
    * swallow it first. Inside the search it clears the query; elsewhere in the
@@ -457,7 +847,12 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       const target = event.target;
       const inSearch = target instanceof Node && Boolean(searchRef?.contains(target));
 
-      if (!inSearch && !(target instanceof Node && tableRef?.contains(target))) return;
+      if (
+        !inSearch &&
+        !(target instanceof Node && tableRef?.contains(target)) &&
+        !(target instanceof Node && viewportRef?.contains(target))
+      )
+        return;
 
       if (!search() && selectedCount() === 0) return;
 
@@ -547,12 +942,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       if (allSelected()) for (const id of ids) next.delete(id);
       else for (const id of ids) next.add(id);
       setControlled(next);
+      setSelectionAnchor(null);
 
       return;
     }
 
     if (allSelected()) {
       setSelected({});
+      setSelectionAnchor(null);
 
       return;
     }
@@ -562,6 +959,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     for (const row of rows()) next[row.id] = true;
 
     setSelected(next);
+    setSelectionAnchor(null);
   };
 
   const toggleSort = (id: string) => {
@@ -578,11 +976,18 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
   const toggleRow = (row: T, checked: boolean) => {
     if (controlled()) {
-      const next = new Set(props.selectedIds?.() ?? []);
+      const result = applyRangeSelection({
+        rows: rows(),
+        selected: props.selectedIds?.() ?? new Set<string>(),
+        anchorId: selectionAnchor(),
+        targetId: row.id,
+        checked,
+        range: rangeGesture,
+      });
 
-      if (checked) next.add(row.id);
-      else next.delete(row.id);
-      setControlled(next);
+      setControlled(result.ids);
+      setSelectionAnchor(result.anchorId);
+      rangeGesture = false;
 
       return;
     }
@@ -590,28 +995,70 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     // Narrowing an all-matching selection starts a new, explicit selection
     // from the rows on screen so the count always describes what is ticked.
     if (allMatching()) {
+      const visibleSelection = new Set<string>();
+
+      for (const visible of rows()) if (isSelected(visible.id)) visibleSelection.add(visible.id);
+
+      const result = applyRangeSelection({
+        rows: rows(),
+        selected: visibleSelection,
+        anchorId: selectionAnchor(),
+        targetId: row.id,
+        checked,
+        range: rangeGesture,
+      });
+
       const next: Record<string, true> = {};
 
-      for (const visible of rows()) if (isSelected(visible.id)) next[visible.id] = true;
-
-      if (checked) next[row.id] = true;
-      else delete next[row.id];
+      for (const id of result.ids) next[id] = true;
       setAllMatching(false);
       setSelected(next);
+      setSelectionAnchor(result.anchorId);
+      rangeGesture = false;
 
       return;
     }
 
-    const next = { ...selected() };
+    const result = applyRangeSelection({
+      rows: rows(),
+      selected: new Set(Object.keys(selected())),
+      anchorId: selectionAnchor(),
+      targetId: row.id,
+      checked,
+      range: rangeGesture,
+    });
 
-    if (checked) next[row.id] = true;
-    else delete next[row.id];
+    const next: Record<string, true> = {};
 
+    for (const id of result.ids) next[id] = true;
     setSelected(next);
+    setSelectionAnchor(result.anchorId);
+    rangeGesture = false;
+  };
+
+  /** Commit an externally owned column set and drop an ordering it hides. */
+  const commitVisibleColumns = (ids: ReadonlyArray<string>) => {
+    props.onVisibleColumnsChange?.([...ids]);
+
+    const current = sort();
+
+    if (!current) return;
+    const column = props.columns.find((item) => sortColumnId(item) === current.id);
+
+    // An ordering whose column is hidden has no visible cause, so clear it.
+    if (!column || !ids.includes(column.id)) setSort(null);
   };
 
   /** Persist a visibility map and drop any sort whose column just disappeared. */
   const applyVisibility = (next: Record<string, boolean>) => {
+    if (props.visibleColumnIds?.() !== undefined) {
+      commitVisibleColumns(
+        props.columns.filter((column) => visibleIn(next, column)).map((column) => column.id),
+      );
+
+      return;
+    }
+
     setHidden(next);
 
     if (props.storageKey && typeof localStorage !== "undefined")
@@ -637,6 +1084,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
     // activation and a stale picker after another tab changed the storage.
     if (!visible && visibleColumns().length === 1 && isColumnVisible(column)) {
       announce("Keep at least one column visible.");
+
+      return;
+    }
+
+    const external = props.visibleColumnIds?.();
+
+    if (external !== undefined) {
+      commitVisibleColumns(toggleVisibleColumnIds(props.columns, external, column.id, visible));
 
       return;
     }
@@ -701,33 +1156,33 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
   return (
     <div class="space-y-2.5">
       <div class="flex flex-wrap items-center gap-2">
-        <div class="flex min-w-0 flex-1 items-center gap-1.5 sm:max-w-[420px]">
+        <div class="flex min-w-0 flex-1 items-center gap-1.5 sm:max-w-105">
           <div
             ref={(element) => {
               searchRef = element;
             }}
             class="relative min-w-0 flex-1"
           >
-            <SearchIcon class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <SearchIcon class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" />
             <Input
               placeholder={props.searchPlaceholder ?? "Search…"}
               aria-label="Search table"
               value={search()}
               onInput={(e) => setSearch(e.currentTarget.value)}
-              class="h-7 w-full pl-7.5! pr-12 text-[12.5px]"
+              class="h-7 w-full"
             />
             <Tooltip>
               <TooltipTrigger
                 as="span"
                 tabindex={0}
                 aria-label="Search shortcuts"
-                class="absolute right-1.5 top-1/2 hidden -translate-y-1/2 cursor-default outline-none focus-visible:ring-2 focus-visible:ring-ring/50 sm:inline-flex"
+                class="absolute right-1.5 top-1/2 hidden -translate-y-1/2 cursor-default sm:inline-flex"
               >
                 <Kbd>{modKey()}F</Kbd>
               </TooltipTrigger>
               <TooltipContent>
-                <p class="text-[11px] font-medium">Search this list</p>
-                <p class="mt-0.5 text-[11px]">
+                <p class="text-xs font-medium">Search this list</p>
+                <p class="mt-0.5 text-xs">
                   / or {modKey()}F focuses the field. Escape clears it.
                 </p>
               </TooltipContent>
@@ -739,17 +1194,12 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
             </Button>
           </Show>
         </div>
+        {props.inlineToolbar}
         <div class="ml-auto flex items-center gap-1.5">
           <Show when={props.isFetching && !props.loading}>
-            <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-              <RefreshCw
-                class="size-3 animate-spin motion-reduce:animate-none"
-                aria-hidden="true"
-              />
-              Refreshing…
-            </span>
+            <LoadingState label="Refreshing…" size={12} />
           </Show>
-          <span class="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">
+          <span class="hidden text-xs tabular-nums text-muted-foreground sm:inline">
             {props.total !== undefined
               ? `${props.rows?.length ?? 0} of ${props.total}`
               : rows().length === (props.rows?.length ?? 0)
@@ -766,18 +1216,14 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                   disabled={props.loading || props.isFetching}
                   onClick={() => props.onRefresh?.()}
                 >
-                  <RefreshCw
-                    class={cn(
-                      "size-3.5",
-                      props.isFetching && "animate-spin motion-reduce:animate-none",
-                    )}
-                    aria-hidden="true"
-                  />
+                  <span class={props.isFetching ? "inline-flex animate-spin motion-reduce:animate-none" : "inline-flex"}>
+                    <RefreshCw class="size-3.5" aria-hidden="true" />
+                  </span>
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p class="text-[11px] font-medium">Refresh list</p>
-                <p class="mt-0.5 text-[11px]">
+                <p class="text-xs font-medium">Refresh list</p>
+                <p class="mt-0.5 text-xs">
                   Also <Kbd>R</Kbd>.
                 </p>
               </TooltipContent>
@@ -786,14 +1232,13 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
           <Tooltip>
             <TooltipTrigger as="span" class="inline-flex">
               <DropdownMenu>
-                <DropdownMenuTrigger
-                  class={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1.5")}
-                  aria-label="Choose visible columns"
-                >
-                  <ChevronsUpDown class="size-3.5" />
-                  <span class="hidden sm:inline">Columns</span>
+                <DropdownMenuTrigger aria-label="Choose visible columns">
+                  <span class="inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-hover hover:text-foreground">
+                    <ChevronsUpDown class="size-3.5" />
+                    <span class="hidden sm:inline">Columns</span>
+                  </span>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent class="w-52 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-[var(--shadow-popover)]">
+                <DropdownMenuContent class="w-52">
                   <For each={props.columns}>
                     {(column) => {
                       const lastVisible = () =>
@@ -801,7 +1246,7 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
 
                       return (
                         <DropdownMenuCheckboxItem
-                          class="flex h-7 cursor-pointer items-center gap-2 rounded-md pl-7 pr-2 text-[12.5px] data-highlighted:bg-hover"
+                          class="flex h-7 cursor-pointer items-center"
                           checked={isColumnVisible(column)}
                           closeOnSelect={false}
                           disabled={lastVisible()}
@@ -815,15 +1260,15 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
                       );
                     }}
                   </For>
-                  <DropdownMenuSeparator class="mx-1 my-1 h-px bg-border" />
+                  <DropdownMenuSeparator class="mx-1 my-1 h-px" />
                   <DropdownMenuItem
-                    class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-hover"
+                    class="flex h-7 cursor-pointer items-center"
                     onSelect={resetColumns}
                   >
                     Reset columns
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    class="flex h-7 cursor-pointer items-center rounded-md px-2 text-[12.5px] outline-none data-highlighted:bg-hover"
+                    class="flex h-7 cursor-pointer items-center"
                     onSelect={showAllColumns}
                   >
                     Show all
@@ -832,8 +1277,8 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
               </DropdownMenu>
             </TooltipTrigger>
             <TooltipContent>
-              <p class="text-[11px] font-medium">Columns and keyboard</p>
-              <p class="mt-0.5 text-[11px]">
+              <p class="text-xs font-medium">Columns and keyboard</p>
+              <p class="mt-0.5 text-xs">
                 Choose visible columns. In the table, ↑/↓ move between rows, Enter opens one and{" "}
                 {modKey()}A selects the page.
               </p>
@@ -854,14 +1299,12 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
       <Show when={!props.error && props.loading}>
         <div class="overflow-hidden rounded-xl border border-border bg-card">
           <div class="space-y-px p-0">
-            <For each={[0, 1, 2, 3, 4, 5]}>
-              {() => <div class="h-9 animate-pulse bg-surface/60" />}
-            </For>
+            <For each={[0, 1, 2, 3, 4, 5]}>{() => <Skeleton class="h-9" />}</For>
           </div>
         </div>
       </Show>
       <Show
-        when={!props.error && !props.loading && rows().length > 0}
+        when={hasTable()}
         fallback={
           !props.error && !props.loading ? (
             search().trim() ? (
@@ -882,151 +1325,342 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         }
       >
         <div class="relative" aria-busy={props.loading || props.isFetching ? "true" : undefined}>
-          <div class="page-enter overflow-x-auto rounded-xl border border-border bg-card shadow-card">
-            <p class="border-b border-border px-3 py-1.5 text-[11px] text-muted-foreground sm:hidden">
+          <div class="page-enter overflow-hidden rounded-xl border border-border bg-card shadow-card">
+            <p class="border-b border-border px-3 py-1.5 text-xs text-muted-foreground sm:hidden">
               Swipe the table sideways to see more columns.
             </p>
-            {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Rows carry the roving tabindex; the table delegates their arrow/Enter keys. */}
-            <table
+            {/* oxlint-disable jsx-a11y/no-noninteractive-tabindex -- Overflow regions need keyboard scrolling access. */}
+            {/* oxlint-disable jsx-a11y/no-noninteractive-element-interactions -- The scroll region resumes row navigation after wheel scrolling unmounts the focused row. */}
+            <div
               ref={(element) => {
-                tableRef = element;
+                viewportRef = element;
+                setViewportHeight(element.clientHeight);
+                setViewportWidth(element.clientWidth);
+                setScrollTop(0);
+                setScrollLeft(0);
+                latestScrollTop = 0;
+                latestScrollLeft = 0;
+                viewportResizeObserver?.disconnect();
+
+                if (typeof ResizeObserver !== "undefined") {
+                  viewportResizeObserver = new ResizeObserver((entries) => {
+                    const size = entries[0]?.contentRect;
+
+                    if (size?.height) setViewportHeight(size.height);
+                    if (size?.width) setViewportWidth(size.width);
+                  });
+                  viewportResizeObserver.observe(element);
+                }
               }}
-              class="w-full caption-bottom border-collapse text-[12.5px]"
-              onKeyDown={onTableKeyDown}
-              onFocusIn={() => {
-                setTableFocused(true);
-              }}
-              onFocusOut={(event) => {
-                if (
-                  !tableRef?.contains(
-                    event.relatedTarget instanceof Node ? event.relatedTarget : null,
-                  )
-                )
-                  setTableFocused(false);
+              role="region"
+              aria-labelledby={captionId}
+              tabindex={0}
+              data-virtualized={virtualized() ? "true" : undefined}
+              data-columns-virtualized={columnsVirtualized() ? "true" : undefined}
+              style={
+                virtualized()
+                  ? ({ "--table-max-block": `min(65vh, ${TABLE_MAX_VIEWPORT_HEIGHT}px)` } as JSX.CSSProperties)
+                  : undefined
+              }
+              class={cn(
+                "max-h-(--table-max-block) overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                virtualized() && "overflow-y-auto",
+              )}
+              onKeyDown={onViewportKeyDown}
+              onScroll={(event) => {
+                latestScrollTop = event.currentTarget.scrollTop;
+                latestScrollLeft = event.currentTarget.scrollLeft;
+
+                if (scrollFrame !== undefined || typeof requestAnimationFrame === "undefined")
+                  return;
+                scrollFrame = requestAnimationFrame(() => {
+                  scrollFrame = undefined;
+                  preserveFocusForScroll(latestScrollTop);
+                  setScrollTop(latestScrollTop);
+                  setScrollLeft(latestScrollLeft);
+                });
               }}
             >
-              <caption class="sr-only">{props.caption ?? "Data table"}</caption>
-              <thead class="border-b border-border bg-surface text-left">
-                <tr>
-                  <Show when={selectable()}>
-                    <th scope="col" class="h-8 w-10 pl-4 pr-0">
-                      <input
-                        ref={(el) => (selectAllRef = el)}
-                        type="checkbox"
-                        class="size-3.5 accent-[var(--primary)]"
-                        checked={allSelected()}
-                        onChange={toggleAll}
-                        aria-label={
-                          allMatching()
-                            ? `Deselect all ${props.total ?? 0} matching rows`
-                            : `Select all ${rows().length} rows on this page`
-                        }
-                      />
-                    </th>
-                  </Show>
-                  <For each={visibleColumns()}>
-                    {(col) => (
+              {/* The spacer cells carry the virtual width. A `w-full` table
+                  stretches to its container and stops the scroll range at the
+                  rendered columns, so a virtualised table sizes to its content
+                  instead. Stretching it back to the pane would make the
+                  measured column widths depend on the table width, and the
+                  spacer/model feedback never settles. */}
+              <table
+                ref={(element) => {
+                  tableRef = element;
+                }}
+                class={cn(
+                  "caption-bottom border-separate border-spacing-0 text-xs",
+                  columnsVirtualized() ? "w-max table-fixed" : "w-full",
+                )}
+                aria-rowcount={rows().length + 1}
+                aria-colcount={columnCount()}
+                onKeyDown={onTableKeyDown}
+                onFocusIn={onTableFocusIn}
+                onFocusOut={(event) => {
+                  if (
+                    !tableRef?.contains(
+                      event.relatedTarget instanceof Node ? event.relatedTarget : null,
+                    )
+                  )
+                    setTableFocused(false);
+                }}
+              >
+                <caption id={captionId} class="sr-only">
+                  {props.caption ?? "Data table"}
+                </caption>
+                <thead class="sticky top-0 z-20 bg-surface text-left">
+                  <tr>
+                    <Show when={selectable()}>
                       <th
                         scope="col"
-                        aria-sort={
-                          sort()?.id === sortColumnId(col)
-                            ? sort()!.dir === "asc"
-                              ? "ascending"
-                              : "descending"
-                            : undefined
-                        }
-                        class={cn(
-                          "label-caps h-8 whitespace-nowrap px-3 text-left align-middle",
-                          col.class,
-                        )}
+                        aria-colindex={1}
+                        class="h-8 w-10 border-b border-border pl-4 pr-0"
                       >
-                        <Show when={col.sort} fallback={col.header}>
-                          {(() => {
-                            const sorted = () => sort()?.id === sortColumnId(col);
-                            const ascending = () => sort()?.dir === "asc";
-
-                            return (
-                              <button
-                                type="button"
-                                class="inline-flex items-center gap-1 whitespace-nowrap uppercase tracking-[0.085em] outline-none transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
-                                onClick={() => toggleSort(sortColumnId(col))}
-                              >
-                                {col.header}
-                                <Show
-                                  when={sorted()}
-                                  fallback={
-                                    <ChevronsUpDown
-                                      class="size-3 text-subtle-foreground/70"
-                                      aria-hidden="true"
-                                    />
-                                  }
-                                >
-                                  <ChevronDown
-                                    class={cn(
-                                      "size-3 text-foreground transition-transform duration-[var(--duration-hover)] ease-swift",
-                                      ascending() && "rotate-180",
-                                    )}
-                                    aria-hidden="true"
-                                  />
-                                </Show>
-                              </button>
-                            );
-                          })()}
-                        </Show>
+                        <Checkbox
+                          class="size-3.5"
+                          checked={
+                            allSelected()
+                              ? true
+                              : selectedRows().length > 0
+                                ? "indeterminate"
+                                : false
+                          }
+                          onCheckedChange={toggleAll}
+                          aria-label={
+                            allMatching()
+                              ? `Deselect all ${props.total ?? 0} matching rows`
+                              : `Select all ${rows().length} rows on this page`
+                          }
+                        />
                       </th>
-                    )}
-                  </For>
-                </tr>
-              </thead>
-              <tbody
-                class={cn(
-                  "divide-y divide-border transition-opacity duration-150 ease-swift",
-                  props.isFetching && "opacity-60",
-                )}
-              >
-                <For each={rows()}>
-                  {(row, index) => {
-                    const rowIndex = () => index();
-
-                    return (
-                      <tr
-                        ref={(element) => {
-                          rowRefs[rowIndex()] = element;
-                        }}
-                        data-row-id={row.id}
-                        tabindex={props.rowHref ? (activeRow() === rowIndex() ? 0 : -1) : undefined}
-                        onFocus={() => setActiveRow(rowIndex())}
-                        onKeyDown={(event) => moveRow(event, rowIndex(), row)}
-                        class={cn(
-                          "relative h-9 outline-none transition-colors duration-100 ease-swift hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
-                          props.rowHref && "cursor-pointer active:bg-active",
-                          isSelected(row.id) && "bg-surface",
-                        )}
+                    </Show>
+                    <Show when={rowNumberColumn()}>
+                      <th
+                        scope="col"
+                        aria-colindex={selectable() ? 2 : 1}
+                        class="label-caps h-8 w-8 border-b border-border pl-2 pr-1 text-right align-middle"
                       >
-                        <Show when={selectable()}>
-                          <td class="relative z-10 h-9 w-10 pl-4 pr-0 align-middle">
-                            <input
-                              type="checkbox"
-                              class="size-3.5 accent-[var(--primary)]"
-                              checked={isSelected(row.id)}
-                              onChange={(e) => toggleRow(row, e.currentTarget.checked)}
-                              aria-label={`Select ${row.name ?? row.id}`}
-                            />
-                          </td>
-                        </Show>
-                        <For each={visibleColumns()}>
-                          {(col) => (
-                            <td class={cn("h-9 whitespace-nowrap px-3 align-middle", col.class)}>
-                              {col.cell(row)}
-                            </td>
+                        <span class="sr-only">Row</span>
+                        <span aria-hidden="true">#</span>
+                      </th>
+                    </Show>
+                    <Show when={columnWindow().top > 0}>
+                      <th
+                        aria-hidden="true"
+                        data-column-spacer="left"
+                        style={{ "--col-width": `${columnWindow().top}px` }} class="w-(--col-width) border-0 p-0"
+                      />
+                    </Show>
+                    <For each={renderedColumns()}>
+                      {(col, index) => {
+                        const columnIndex = () => columnWindow().start + index();
+                        const label = () => (
+                          <span class="inline-flex items-center gap-1.5 whitespace-nowrap">
+                            <Show when={col.icon}>
+                              {(icon) => icon()({ class: "size-3 text-subtle-foreground" })}
+                            </Show>
+                            {col.header}
+                          </span>
+                        );
+
+                        return (
+                          <th
+                            data-column-id={col.id}
+                            scope="col"
+                            aria-colindex={leadingColumnCount() + columnIndex() + 1}
+                            aria-sort={
+                              sort()?.id === sortColumnId(col)
+                                ? sort()!.dir === "asc"
+                                  ? "ascending"
+                                  : "descending"
+                                : undefined
+                            }
+                            style={
+                              columnsVirtualized()
+                                ? { "--col-width": `${TABLE_COLUMN_WIDTH}px` }
+                                : undefined
+                            }
+                            class={cn(
+                              "label-caps h-8 whitespace-nowrap border-b border-border px-3 text-left align-middle",
+                              columnsVirtualized() && "w-(--col-width) overflow-hidden text-ellipsis",
+                              col.class,
+                            )}
+                          >
+                            <Show when={col.sort} fallback={label()}>
+                              {(() => {
+                                const sorted = () => sort()?.id === sortColumnId(col);
+                                const ascending = () => sort()?.dir === "asc";
+
+                                return (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    onClick={() => toggleSort(sortColumnId(col))}
+                                  >
+                                    {label()}
+                                    <Show
+                                      when={sorted()}
+                                      fallback={
+                                        <ChevronsUpDown
+                                          class="size-3"
+                                          aria-hidden="true"
+                                        />
+                                      }
+                                    >
+                                      <ChevronDown
+                                        class={cn("size-3", ascending() && "rotate-180")}
+                                        aria-hidden="true"
+                                      />
+                                    </Show>
+                                  </Button>
+                                );
+                              })()}
+                            </Show>
+                          </th>
+                        );
+                      }}
+                    </For>
+                    <Show when={columnWindow().bottom > 0}>
+                      <th
+                        aria-hidden="true"
+                        data-column-spacer="right"
+                        style={{ "--col-width": `${columnWindow().bottom}px` }} class="w-(--col-width) border-0 p-0"
+                      />
+                    </Show>
+                  </tr>
+                </thead>
+                <tbody
+                  class={cn(
+                    "transition-opacity duration-150 ease-swift",
+                    props.isFetching && "opacity-60",
+                  )}
+                >
+                  <Show when={renderWindow().top > 0}>
+                    <tr
+                      aria-hidden="true"
+                      data-table-spacer="top"
+                      style={{ "--row-height": `${renderWindow().top}px` }} class="h-(--row-height) border-0 p-0"
+                    >
+                      <td colspan={renderedColumnCount()} class="border-0 p-0" />
+                    </tr>
+                  </Show>
+                  <For each={renderedRows()}>
+                    {(row, index) => {
+                      const rowIndex = () => renderWindow().start + index();
+                      const rowSeparator = () => (rowIndex() > 0 ? "border-t border-border" : "");
+
+                      return (
+                        <tr
+                          ref={createRowRef(row.id)}
+                          data-row-id={row.id}
+                          data-row-index={rowIndex()}
+                          aria-rowindex={rowIndex() + 2}
+                          tabindex={
+                            props.rowHref ? (tabRowIndex() === rowIndex() ? 0 : -1) : undefined
+                          }
+                          onFocus={() => setActiveRow(rowIndex())}
+                          onKeyDown={(event) => moveRow(event, rowIndex(), row)}
+                          class={cn(
+                            "relative h-9 outline-none transition-colors duration-100 ease-swift hover:bg-hover focus-visible:bg-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40",
+                            props.rowHref && "cursor-pointer active:bg-active",
+                            isSelected(row.id) && "bg-surface",
                           )}
-                        </For>
-                      </tr>
-                    );
-                  }}
-                </For>
-              </tbody>
-            </table>
+                        >
+                          <Show when={selectable()}>
+                            <td
+                              aria-colindex={1}
+                              class={cn(
+                                "relative z-10 h-9 w-10 pl-4 pr-0 align-middle",
+                                rowSeparator(),
+                              )}
+                            >
+                              <Checkbox
+                                class="size-3.5"
+                                checked={isSelected(row.id)}
+                                // The click/keydown capture the modifier because a
+                                // `change` event carries no shiftKey. Click fires
+                                // before change, and a Shift+Space activation produces
+                                // the same click.
+                                onClick={(event) => {
+                                  rangeGesture = event.shiftKey;
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === " " || event.key === "Enter")
+                                    rangeGesture = event.shiftKey;
+                                }}
+                                onCheckedChange={(checked) => toggleRow(row, checked === true)}
+                                aria-label={`Select ${row.name ?? row.id} (Shift-click to select a range)`}
+                              />
+                            </td>
+                          </Show>
+                          <Show when={rowNumberColumn()}>
+                            <td
+                              aria-colindex={selectable() ? 2 : 1}
+                              class={cn(
+                                "h-9 w-8 select-none pl-2 pr-1 text-right align-middle text-xs tabular-nums text-subtle-foreground",
+                                rowSeparator(),
+                              )}
+                            >
+                              {(props.rowNumberStart ?? 0) + rowIndex() + 1}
+                            </td>
+                          </Show>
+                          <Show when={columnWindow().top > 0}>
+                            <td
+                              aria-hidden="true"
+                              data-column-spacer="left"
+                              style={{ "--col-width": `${columnWindow().top}px` }} class="w-(--col-width) border-0 p-0"
+                            />
+                          </Show>
+                          <For each={renderedColumns()}>
+                            {(col, index) => (
+                              <td
+                                aria-colindex={
+                                  leadingColumnCount() + columnWindow().start + index() + 1
+                                }
+                                style={
+                                  columnsVirtualized()
+                                    ? { "--col-width": `${TABLE_COLUMN_WIDTH}px` }
+                                    : undefined
+                                }
+                                class={cn(
+                                  "h-9 whitespace-nowrap px-3 align-middle",
+                                  columnsVirtualized() && "w-(--col-width) overflow-hidden text-ellipsis",
+                                  rowSeparator(),
+                                  col.class,
+                                )}
+                              >
+                                {col.cell(row)}
+                              </td>
+                            )}
+                          </For>
+                          <Show when={columnWindow().bottom > 0}>
+                            <td
+                              aria-hidden="true"
+                              data-column-spacer="right"
+                              style={{ "--col-width": `${columnWindow().bottom}px` }} class="w-(--col-width) border-0 p-0"
+                            />
+                          </Show>
+                        </tr>
+                      );
+                    }}
+                  </For>
+                  <Show when={renderWindow().bottom > 0}>
+                    <tr
+                      aria-hidden="true"
+                      data-table-spacer="bottom"
+                      style={{ "--row-height": `${renderWindow().bottom}px` }} class="h-(--row-height) border-0 p-0"
+                    >
+                      <td colspan={renderedColumnCount()} class="border-0 p-0" />
+                    </tr>
+                  </Show>
+                </tbody>
+              </table>
+            </div>
+            {/* oxlint-enable jsx-a11y/no-noninteractive-tabindex */}
+            {/* oxlint-enable jsx-a11y/no-noninteractive-element-interactions */}
           </div>
           <span
             class="pointer-events-none absolute inset-y-0 right-0 w-10 rounded-r-xl bg-gradient-to-l from-card to-transparent sm:hidden"
@@ -1041,9 +1675,9 @@ export function MdmTable<T extends { id: string; name?: string }>(props: {
         <div
           role="group"
           aria-label="Bulk actions"
-          class="fixed bottom-5 left-1/2 z-40 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-popover"
+          class="fixed bottom-5 left-1/2 z-40 flex max-w-svw -translate-x-1/2 flex-wrap items-center justify-center gap-3 rounded-xl border border-border bg-card px-3.5 py-2 shadow-popover"
         >
-          <span class="flex items-center gap-2 text-[12px] font-[550] tabular-nums">
+          <span class="flex items-center gap-2 text-xs font-semibold tabular-nums">
             <span class="size-1.5 rounded-full bg-primary" aria-hidden="true" />
             {allMatching()
               ? `${props.total ?? selectedCount()} matching rows`

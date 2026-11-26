@@ -9,10 +9,13 @@ test.describe("identity directory pages", () => {
 
     await page.getByRole("link", { name: "Directory sync" }).click();
     await expect(page.getByText("Microsoft Entra directory sync")).toBeVisible();
-    await expect(page.getByText(/Graph (not )?configured/)).toBeVisible();
-    await expect(page.getByLabel("Automatic sync")).toBeVisible();
-    await expect(page.getByLabel("Automatic sync")).toHaveValue("0");
-    await expect(page.getByRole("button", { name: "Sync now" })).toBeVisible();
+    await expect(page.getByText("Connect Microsoft Graph")).toBeVisible();
+    await expect(page.getByText("Connect Google Workspace")).toBeVisible();
+    // This deployment has no Graph app or Google credentials, so the schedule
+    // and manual sync controls stay hidden until setup is complete.
+    await expect(page.getByLabel("Automatic sync")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Configure credentials" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Google Admin" })).toBeVisible();
 
     await page.getByRole("link", { name: "Domains" }).click();
     await expect(page.getByText("Verified domains", { exact: true })).toBeVisible();

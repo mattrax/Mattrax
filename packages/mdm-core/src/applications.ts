@@ -7,13 +7,8 @@
  * installed, which is a legitimate result that must clear stale rows.
  */
 
-import {
-  isPlistArray,
-  isPlistObject,
-  plistBoolean,
-  plistText,
-  type PlistInput,
-} from "./internal/plistValue.js";
+import { isPlistArray, isPlistObject, plistBoolean, plistText } from "./internal/plistValue.js";
+import type { PlistInput } from "./internal/plistValue.js";
 
 /**
  * The installed-application query used at enrolment and by the daily sweep.

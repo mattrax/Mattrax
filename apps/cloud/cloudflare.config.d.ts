@@ -1,13 +1,11 @@
 import type { InferEnv, UnwrapConfig } from "cf/config";
-
 /**
  * Shared with the web Worker's Vite config so that both Workers are built
  * together and can talk to each other over the service binding during dev.
  *
- * The API Worker stays internal: no `domains` and no zone routes. The web
- * Worker owns the public hostname and proxies /api, /mdm and /scim to this
- * Worker over the `API` service binding. A route or custom domain here would
- * bypass that proxy and expose the API (and its OpenAPI document) directly.
+ * The API Worker owns only the request paths listed in `publicApiRoutes`; it
+ * has no Custom Domain of its own and previews stay private (`previewUrls`).
+ * Everything else reaches it over the website Worker's `API` service binding.
  */
 export declare const apiWorker: {
     name: string;
@@ -31,13 +29,22 @@ export declare const apiWorker: {
         ORIGIN: import("cf/config").TextBinding<string>;
         TRUSTED_ORIGINS: import("cf/config").SecretBinding;
         AUTH_SECRET: import("cf/config").SecretBinding;
-        STRIPE_SECRET_KEY: import("cf/config").SecretBinding;
-        STRIPE_WEBHOOK_SECRET: import("cf/config").SecretBinding;
-        STRIPE_DEVICE_MONTHLY_PRICE_ID: import("cf/config").SecretBinding;
-        /** Optional: enables self-hosted deployment licences on this deployment. */
-        STRIPE_LICENSE_PRICE_ID: import("cf/config").TextBinding<string>;
+        /**
+         * Hosted services deployment for APNs, billing and entitlements. Empty
+         * selects the built-in `https://services.mattrax.app`; only tests and
+         * previews set it.
+         */
+        MATTRAX_SERVICES_URL: import("cf/config").TextBinding<string>;
+        /** Shared services token: hosted billing bearer and APNs relay HMAC key. */
+        SERVICES_TOKEN: import("cf/config").SecretBinding;
         /** Optional JSON plan catalogue; absent means unlimited plans. */
         MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
+        /**
+         * Comma-separated verified emails that always hold platform superadmin.
+         * Not a secret: this is an operator allowlist, and an unset value simply
+         * means no environment-granted superadmin exists yet.
+         */
+        MATTRAX_SUPERADMINS: import("cf/config").TextBinding<string>;
         /**
          * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
          * One hour by default; deployments can raise it up to one day.
@@ -45,10 +52,11 @@ export declare const apiWorker: {
         MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: import("cf/config").TextBinding<"3600">;
         CLOUD_APPLE_VENDOR_CERT: import("cf/config").SecretBinding;
         CLOUD_APPLE_VENDOR_KEY: import("cf/config").SecretBinding;
-        APNS_RELAY_URL: import("cf/config").SecretBinding;
-        APNS_RELAY_SECRET: import("cf/config").SecretBinding;
         AZURE_CLIENT_ID: import("cf/config").SecretBinding;
         AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
+        GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON?: import("cf/config").SecretBinding | undefined;
+        GOOGLE_WORKSPACE_ADMIN_EMAIL?: import("cf/config").SecretBinding | undefined;
+        GOOGLE_WORKSPACE_CUSTOMER?: import("cf/config").SecretBinding | undefined;
         /** Google Android Management API service account and Pub/Sub delivery. */
         ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
         ANDROID_MANAGEMENT_PROJECT_ID: import("cf/config").SecretBinding;
@@ -56,9 +64,8 @@ export declare const apiWorker: {
         ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: import("cf/config").SecretBinding;
         ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: import("cf/config").SecretBinding;
         ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: import("cf/config").SecretBinding;
-        /** Local-only mailbox flag. Never set in production. */
-        DEV_MAILBOX: import("cf/config").TextBinding<string>;
-        DEV_MAILBOX_ALLOW_REMOTE: import("cf/config").TextBinding<string>;
+        DEV_MAILBOX?: import("cf/config").TextBinding<string> | undefined;
+        DEV_MAILBOX_ALLOW_REMOTE?: import("cf/config").TextBinding<string> | undefined;
         DEV_MAILBOX_SECRET: import("cf/config").SecretBinding;
         /** Days without a check-in before the maintenance job marks a device unenrolled. */
         MAINTENANCE_STALE_DEVICE_DAYS: import("cf/config").TextBinding<"30">;
@@ -70,6 +77,7 @@ export declare const apiWorker: {
         MAINTENANCE_BACKUP_CONCURRENCY: import("cf/config").TextBinding<"4">;
         /** Tenants synced concurrently by the scheduled Entra directory sync. */
         MAINTENANCE_ENTRA_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
+        MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
         /** Disable the scheduled one-week onboarding follow-up with `false`. */
         MAINTENANCE_ONBOARDING_EMAILS: import("cf/config").TextBinding<"true">;
         /** Days after tenant creation before the onboarding follow-up is eligible. */
@@ -84,6 +92,10 @@ export declare const apiWorker: {
         MATTRAX_ONBOARDING_REPLY_TO: import("cf/config").SecretBinding;
         /** Support address in the onboarding footer; defaults to the sender. */
         MATTRAX_ONBOARDING_SUPPORT_EMAIL: import("cf/config").SecretBinding;
+        /** Deployment brand used before an account has a tenant. */
+        MATTRAX_BRAND_NAME: import("cf/config").TextBinding<string>;
+        MATTRAX_BRAND_LOGO_URL: import("cf/config").TextBinding<string>;
+        MATTRAX_BRAND_COLOR: import("cf/config").TextBinding<string>;
         /**
          * Set to `true` only on a deployment that intentionally has no outbound
          * email. Readiness then reports `mailer: skipped` (degraded) instead of
@@ -103,8 +115,13 @@ export declare const apiWorker: {
         /** Legacy Windows tenant pin and federated WSTEP app registration. */
         WINDOWS_ORGANIZATION_ID: import("cf/config").TextBinding<"">;
         WINDOWS_FEDERATED_AUDIENCE: import("cf/config").TextBinding<"">;
-        /** Set to `1` only behind a proxy that terminates device mTLS. */
-        TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<string>;
+        /**
+         * Hosted Cloudflare reads identity from the verified `request.cf` mTLS
+         * handshake. Proxy-header trust and its peer allowlist are Node-only and
+         * stay disabled here regardless of the deploy process environment.
+         */
+        TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<"">;
+        TRUSTED_DEVICE_IDENTITY_PEERS: import("cf/config").TextBinding<"">;
         /** SMTP server used by self-hosted deployments. */
         MAIL_SMTP_HOST: import("cf/config").TextBinding<"">;
         MAIL_SMTP_PORT: import("cf/config").TextBinding<"">;
@@ -128,11 +145,8 @@ export declare const apiWorker: {
         EMAIL: import("cf/config").SendEmailBinding;
     };
 };
-
 export type ApiConfig = UnwrapConfig<typeof apiWorker>;
-
 export type ApiEnv = InferEnv<ApiConfig>;
-
 declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
     worker: {
         name: string;
@@ -151,18 +165,27 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             region: string;
         };
         previewUrls: boolean;
-        triggers: import("cf/config").ScheduledTrigger[];
+        triggers: (import("cf/config").FetchTrigger | import("cf/config").ScheduledTrigger)[];
         env: {
             ORIGIN: import("cf/config").TextBinding<string>;
             TRUSTED_ORIGINS: import("cf/config").SecretBinding;
             AUTH_SECRET: import("cf/config").SecretBinding;
-            STRIPE_SECRET_KEY: import("cf/config").SecretBinding;
-            STRIPE_WEBHOOK_SECRET: import("cf/config").SecretBinding;
-            STRIPE_DEVICE_MONTHLY_PRICE_ID: import("cf/config").SecretBinding;
-            /** Optional: enables self-hosted deployment licences on this deployment. */
-            STRIPE_LICENSE_PRICE_ID: import("cf/config").TextBinding<string>;
+            /**
+             * Hosted services deployment for APNs, billing and entitlements. Empty
+             * selects the built-in `https://services.mattrax.app`; only tests and
+             * previews set it.
+             */
+            MATTRAX_SERVICES_URL: import("cf/config").TextBinding<string>;
+            /** Shared services token: hosted billing bearer and APNs relay HMAC key. */
+            SERVICES_TOKEN: import("cf/config").SecretBinding;
             /** Optional JSON plan catalogue; absent means unlimited plans. */
             MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
+            /**
+             * Comma-separated verified emails that always hold platform superadmin.
+             * Not a secret: this is an operator allowlist, and an unset value simply
+             * means no environment-granted superadmin exists yet.
+             */
+            MATTRAX_SUPERADMINS: import("cf/config").TextBinding<string>;
             /**
              * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
              * One hour by default; deployments can raise it up to one day.
@@ -170,10 +193,11 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: import("cf/config").TextBinding<"3600">;
             CLOUD_APPLE_VENDOR_CERT: import("cf/config").SecretBinding;
             CLOUD_APPLE_VENDOR_KEY: import("cf/config").SecretBinding;
-            APNS_RELAY_URL: import("cf/config").SecretBinding;
-            APNS_RELAY_SECRET: import("cf/config").SecretBinding;
             AZURE_CLIENT_ID: import("cf/config").SecretBinding;
             AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
+            GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON?: import("cf/config").SecretBinding | undefined;
+            GOOGLE_WORKSPACE_ADMIN_EMAIL?: import("cf/config").SecretBinding | undefined;
+            GOOGLE_WORKSPACE_CUSTOMER?: import("cf/config").SecretBinding | undefined;
             /** Google Android Management API service account and Pub/Sub delivery. */
             ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PROJECT_ID: import("cf/config").SecretBinding;
@@ -181,9 +205,8 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: import("cf/config").SecretBinding;
-            /** Local-only mailbox flag. Never set in production. */
-            DEV_MAILBOX: import("cf/config").TextBinding<string>;
-            DEV_MAILBOX_ALLOW_REMOTE: import("cf/config").TextBinding<string>;
+            DEV_MAILBOX?: import("cf/config").TextBinding<string> | undefined;
+            DEV_MAILBOX_ALLOW_REMOTE?: import("cf/config").TextBinding<string> | undefined;
             DEV_MAILBOX_SECRET: import("cf/config").SecretBinding;
             /** Days without a check-in before the maintenance job marks a device unenrolled. */
             MAINTENANCE_STALE_DEVICE_DAYS: import("cf/config").TextBinding<"30">;
@@ -195,6 +218,7 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             MAINTENANCE_BACKUP_CONCURRENCY: import("cf/config").TextBinding<"4">;
             /** Tenants synced concurrently by the scheduled Entra directory sync. */
             MAINTENANCE_ENTRA_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
+            MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
             /** Disable the scheduled one-week onboarding follow-up with `false`. */
             MAINTENANCE_ONBOARDING_EMAILS: import("cf/config").TextBinding<"true">;
             /** Days after tenant creation before the onboarding follow-up is eligible. */
@@ -209,6 +233,10 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             MATTRAX_ONBOARDING_REPLY_TO: import("cf/config").SecretBinding;
             /** Support address in the onboarding footer; defaults to the sender. */
             MATTRAX_ONBOARDING_SUPPORT_EMAIL: import("cf/config").SecretBinding;
+            /** Deployment brand used before an account has a tenant. */
+            MATTRAX_BRAND_NAME: import("cf/config").TextBinding<string>;
+            MATTRAX_BRAND_LOGO_URL: import("cf/config").TextBinding<string>;
+            MATTRAX_BRAND_COLOR: import("cf/config").TextBinding<string>;
             /**
              * Set to `true` only on a deployment that intentionally has no outbound
              * email. Readiness then reports `mailer: skipped` (degraded) instead of
@@ -228,8 +256,13 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             /** Legacy Windows tenant pin and federated WSTEP app registration. */
             WINDOWS_ORGANIZATION_ID: import("cf/config").TextBinding<"">;
             WINDOWS_FEDERATED_AUDIENCE: import("cf/config").TextBinding<"">;
-            /** Set to `1` only behind a proxy that terminates device mTLS. */
-            TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<string>;
+            /**
+             * Hosted Cloudflare reads identity from the verified `request.cf` mTLS
+             * handshake. Proxy-header trust and its peer allowlist are Node-only and
+             * stay disabled here regardless of the deploy process environment.
+             */
+            TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<"">;
+            TRUSTED_DEVICE_IDENTITY_PEERS: import("cf/config").TextBinding<"">;
             /** SMTP server used by self-hosted deployments. */
             MAIL_SMTP_HOST: import("cf/config").TextBinding<"">;
             MAIL_SMTP_PORT: import("cf/config").TextBinding<"">;
@@ -271,18 +304,27 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             region: string;
         };
         previewUrls: boolean;
-        triggers: import("cf/config").ScheduledTrigger[];
+        triggers: (import("cf/config").FetchTrigger | import("cf/config").ScheduledTrigger)[];
         env: {
             ORIGIN: import("cf/config").TextBinding<string>;
             TRUSTED_ORIGINS: import("cf/config").SecretBinding;
             AUTH_SECRET: import("cf/config").SecretBinding;
-            STRIPE_SECRET_KEY: import("cf/config").SecretBinding;
-            STRIPE_WEBHOOK_SECRET: import("cf/config").SecretBinding;
-            STRIPE_DEVICE_MONTHLY_PRICE_ID: import("cf/config").SecretBinding;
-            /** Optional: enables self-hosted deployment licences on this deployment. */
-            STRIPE_LICENSE_PRICE_ID: import("cf/config").TextBinding<string>;
+            /**
+             * Hosted services deployment for APNs, billing and entitlements. Empty
+             * selects the built-in `https://services.mattrax.app`; only tests and
+             * previews set it.
+             */
+            MATTRAX_SERVICES_URL: import("cf/config").TextBinding<string>;
+            /** Shared services token: hosted billing bearer and APNs relay HMAC key. */
+            SERVICES_TOKEN: import("cf/config").SecretBinding;
             /** Optional JSON plan catalogue; absent means unlimited plans. */
             MATTRAX_PLAN_LIMITS: import("cf/config").SecretBinding;
+            /**
+             * Comma-separated verified emails that always hold platform superadmin.
+             * Not a secret: this is an operator allowlist, and an unset value simply
+             * means no environment-granted superadmin exists yet.
+             */
+            MATTRAX_SUPERADMINS: import("cf/config").TextBinding<string>;
             /**
              * Lifetime of the bearer SCEP challenge in an Apple enrollment profile.
              * One hour by default; deployments can raise it up to one day.
@@ -290,10 +332,11 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             MATTRAX_ENROLLMENT_PROFILE_TTL_SECONDS: import("cf/config").TextBinding<"3600">;
             CLOUD_APPLE_VENDOR_CERT: import("cf/config").SecretBinding;
             CLOUD_APPLE_VENDOR_KEY: import("cf/config").SecretBinding;
-            APNS_RELAY_URL: import("cf/config").SecretBinding;
-            APNS_RELAY_SECRET: import("cf/config").SecretBinding;
             AZURE_CLIENT_ID: import("cf/config").SecretBinding;
             AZURE_CLIENT_SECRET: import("cf/config").SecretBinding;
+            GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON?: import("cf/config").SecretBinding | undefined;
+            GOOGLE_WORKSPACE_ADMIN_EMAIL?: import("cf/config").SecretBinding | undefined;
+            GOOGLE_WORKSPACE_CUSTOMER?: import("cf/config").SecretBinding | undefined;
             /** Google Android Management API service account and Pub/Sub delivery. */
             ANDROID_MANAGEMENT_SERVICE_ACCOUNT_JSON: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PROJECT_ID: import("cf/config").SecretBinding;
@@ -301,9 +344,8 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             ANDROID_MANAGEMENT_PUBSUB_SUBSCRIPTION: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PUBSUB_AUDIENCE: import("cf/config").SecretBinding;
             ANDROID_MANAGEMENT_PUBSUB_JWKS_URI: import("cf/config").SecretBinding;
-            /** Local-only mailbox flag. Never set in production. */
-            DEV_MAILBOX: import("cf/config").TextBinding<string>;
-            DEV_MAILBOX_ALLOW_REMOTE: import("cf/config").TextBinding<string>;
+            DEV_MAILBOX?: import("cf/config").TextBinding<string> | undefined;
+            DEV_MAILBOX_ALLOW_REMOTE?: import("cf/config").TextBinding<string> | undefined;
             DEV_MAILBOX_SECRET: import("cf/config").SecretBinding;
             /** Days without a check-in before the maintenance job marks a device unenrolled. */
             MAINTENANCE_STALE_DEVICE_DAYS: import("cf/config").TextBinding<"30">;
@@ -315,6 +357,7 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             MAINTENANCE_BACKUP_CONCURRENCY: import("cf/config").TextBinding<"4">;
             /** Tenants synced concurrently by the scheduled Entra directory sync. */
             MAINTENANCE_ENTRA_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
+            MAINTENANCE_GOOGLE_SYNC_CONCURRENCY: import("cf/config").TextBinding<"2">;
             /** Disable the scheduled one-week onboarding follow-up with `false`. */
             MAINTENANCE_ONBOARDING_EMAILS: import("cf/config").TextBinding<"true">;
             /** Days after tenant creation before the onboarding follow-up is eligible. */
@@ -329,6 +372,10 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             MATTRAX_ONBOARDING_REPLY_TO: import("cf/config").SecretBinding;
             /** Support address in the onboarding footer; defaults to the sender. */
             MATTRAX_ONBOARDING_SUPPORT_EMAIL: import("cf/config").SecretBinding;
+            /** Deployment brand used before an account has a tenant. */
+            MATTRAX_BRAND_NAME: import("cf/config").TextBinding<string>;
+            MATTRAX_BRAND_LOGO_URL: import("cf/config").TextBinding<string>;
+            MATTRAX_BRAND_COLOR: import("cf/config").TextBinding<string>;
             /**
              * Set to `true` only on a deployment that intentionally has no outbound
              * email. Readiness then reports `mailer: skipped` (degraded) instead of
@@ -348,8 +395,13 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
             /** Legacy Windows tenant pin and federated WSTEP app registration. */
             WINDOWS_ORGANIZATION_ID: import("cf/config").TextBinding<"">;
             WINDOWS_FEDERATED_AUDIENCE: import("cf/config").TextBinding<"">;
-            /** Set to `1` only behind a proxy that terminates device mTLS. */
-            TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<string>;
+            /**
+             * Hosted Cloudflare reads identity from the verified `request.cf` mTLS
+             * handshake. Proxy-header trust and its peer allowlist are Node-only and
+             * stay disabled here regardless of the deploy process environment.
+             */
+            TRUST_DEVICE_IDENTITY_HEADERS: import("cf/config").TextBinding<"">;
+            TRUSTED_DEVICE_IDENTITY_PEERS: import("cf/config").TextBinding<"">;
             /** SMTP server used by self-hosted deployments. */
             MAIL_SMTP_HOST: import("cf/config").TextBinding<"">;
             MAIL_SMTP_PORT: import("cf/config").TextBinding<"">;
@@ -377,5 +429,4 @@ declare const _default: ({ isPreview }: import("cf/config").ConfigContext) => {
         };
     };
 };
-
 export default _default;

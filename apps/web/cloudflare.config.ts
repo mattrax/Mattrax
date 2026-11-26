@@ -37,6 +37,11 @@ export const webWorker = {
     /** Public PostHog project key and ingestion host, injected into the HTML shell. */
     POSTHOG_KEY: bindings.secret(),
     POSTHOG_HOST: bindings.text("https://us.i.posthog.com"),
+    /**
+     * Optional support form or calendar booking URL. Empty means the app uses
+     * a mailto fallback, so there is never a dead support link.
+     */
+    SUPPORT_URL: bindings.text(process.env.SUPPORT_URL ?? ""),
   },
 };
 

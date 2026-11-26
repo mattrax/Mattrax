@@ -7,9 +7,10 @@ import {
   GroupRouteParams,
   PolicyRouteParams,
   TenantRouteParams,
+  UserRouteParams,
   decodeDeviceSearchParams,
-  type DeviceSearchParams,
 } from "./routes";
+import type { DeviceSearchParams } from "./routes";
 
 /**
  * The tenant segment of the current URL, read from the committed location.
@@ -48,6 +49,9 @@ export const useTenantRouteParams = (): Partial<TenantRouteParams> =>
 
 export const useDeviceRouteParams = (): Partial<DeviceRouteParams> =>
   Option.getOrUndefined(Schema.decodeUnknownOption(DeviceRouteParams)(useParams())) ?? {};
+
+export const useUserRouteParams = (): Partial<UserRouteParams> =>
+  Option.getOrUndefined(Schema.decodeUnknownOption(UserRouteParams)(useParams())) ?? {};
 
 export const usePolicyRouteParams = (): Partial<PolicyRouteParams> =>
   Option.getOrUndefined(Schema.decodeUnknownOption(PolicyRouteParams)(useParams())) ?? {};

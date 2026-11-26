@@ -1,4 +1,5 @@
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
   EnterpriseBadRequest,
@@ -104,10 +105,12 @@ const makeContext = (options: { role?: string; fetch?: typeof globalThis.fetch }
   return { db, service, headers: { cookie: "mattrax_session=test" } };
 };
 
-const create = (service: any, payload: Schema.JsonObject, tenantId = "org-1") =>
+type Service = ReturnType<typeof createEnterpriseService>;
+
+const create = (service: Service, payload: Schema.JsonObject, tenantId = "org-1") =>
   runEffect(service.createWebhookEndpoint(request({ cookie: "1" }), tenantId, payload));
 
-const list = (service: any, tenantId = "org-1") =>
+const list = (service: Service, tenantId = "org-1") =>
   runEffect(service.listWebhookEndpoints(request({ cookie: "1" }), tenantId));
 
 describe("webhook endpoint CRUD", () => {
@@ -130,7 +133,7 @@ describe("webhook endpoint CRUD", () => {
       consecutiveFailures: 0,
       secretPrefix: created.secret.slice(-4),
     });
-    expect(created.endpoint.secret).toBeUndefined();
+    expect("secret" in created.endpoint).toBe(false);
 
     const stored = db.store.webhook_endpoint[0]!;
     expect(stored.secret).not.toBe(created.secret);
@@ -138,7 +141,7 @@ describe("webhook endpoint CRUD", () => {
 
     const listed = await list(service);
     expect(listed.endpoints).toHaveLength(1);
-    expect(listed.endpoints[0].secret).toBeUndefined();
+    expect("secret" in listed.endpoints[0]).toBe(false);
     expect(db.store.audit_log.map((row) => row.action)).toContain("webhook.created");
   });
 

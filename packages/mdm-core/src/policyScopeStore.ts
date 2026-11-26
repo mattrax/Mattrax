@@ -1,8 +1,10 @@
 import { Effect, Option, Schema } from "effect";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import type { PolicyResolutionConfiguration } from "./policyResolution.ts";
-import { MAX_SCOPE_DEVICES, type PolicyScopeResolutionInput } from "./policyScope.ts";
+import { MAX_SCOPE_DEVICES } from "./policyScope.ts";
+import type { PolicyScopeResolutionInput } from "./policyScope.ts";
 
 /**
  * Load the tenant-wide assignment graph one scope question needs.
@@ -128,10 +130,30 @@ export const loadPolicyScopeResolutionInput = (
     // Candidate devices are exactly the ones an assignment edge can reach. An
     // exclusion is a candidate too: the page has to explain the device it
     // loses on, not silently omit it.
-    let candidateDeviceIds: Array<string> = [];
+    // A device excluded from the target group is not one of its members, even
+    // when a materialised row survived. The same filter is applied to policy
+    // candidates below through the membership rows.
+    const targetGroupDeviceExclusions =
+      targetGroupId !== ""
+        ? yield* db
+            .select({ targetId: s.groupExclusion.targetId })
+            .from(s.groupExclusion)
+            .where(
+              and(
+                eq(s.groupExclusion.groupId, targetGroupId),
+                eq(s.groupExclusion.target, "device"),
+              ),
+            )
+        : [];
+
+    const excludedFromTargetGroup = new Set(targetGroupDeviceExclusions.map((row) => row.targetId));
+
+    let candidateDeviceIds: Array<string>;
 
     if (targetGroupId !== "") {
-      candidateDeviceIds = unique(targetGroupMembers.map((row) => row.deviceId));
+      candidateDeviceIds = unique(targetGroupMembers.map((row) => row.deviceId)).filter(
+        (deviceId) => !excludedFromTargetGroup.has(deviceId),
+      );
     } else {
       const policyGroupIds = unique(
         groupAssignments
@@ -225,49 +247,75 @@ export const loadPolicyScopeResolutionInput = (
 
     const loadedDeviceIds = devices.map((device) => device.id);
 
-    const [deviceUserRows, deviceGroupLinks, deviceAssignmentRows, appleUserChannelRows] =
-      yield* Effect.all(
-        [
-          maybe(loadedDeviceIds.length > 0, () =>
-            db
-              .select()
-              .from(s.deviceUser)
-              .where(
-                and(
-                  eq(s.deviceUser.organizationId, organizationId),
-                  inArray(s.deviceUser.deviceId, loadedDeviceIds),
-                ),
+    const [
+      deviceUserRows,
+      rawDeviceGroupLinks,
+      deviceAssignmentRows,
+      appleUserChannelRows,
+      deviceExclusionRows,
+    ] = yield* Effect.all(
+      [
+        maybe(loadedDeviceIds.length > 0, () =>
+          db
+            .select()
+            .from(s.deviceUser)
+            .where(
+              and(
+                eq(s.deviceUser.organizationId, organizationId),
+                inArray(s.deviceUser.deviceId, loadedDeviceIds),
               ),
-          ),
-          maybe(loadedDeviceIds.length > 0, () =>
-            db.select().from(s.groupDevice).where(inArray(s.groupDevice.deviceId, loadedDeviceIds)),
-          ),
-          maybe(loadedDeviceIds.length > 0, () =>
-            db
-              .select()
-              .from(s.devicePolicy)
-              .where(inArray(s.devicePolicy.deviceId, loadedDeviceIds)),
-          ),
-          maybe(loadedDeviceIds.length > 0, () =>
-            db
-              .select({
-                deviceId: s.deviceAppleUser.deviceId,
-                directoryUserId: s.deviceAppleUser.directoryUserId,
-                userLongName: s.deviceAppleUser.userLongName,
-                userShortName: s.deviceAppleUser.userShortName,
-              })
-              .from(s.deviceAppleUser)
-              .where(
-                and(
-                  inArray(s.deviceAppleUser.deviceId, loadedDeviceIds),
-                  isNotNull(s.deviceAppleUser.directoryUserId),
-                  isNotNull(s.deviceAppleUser.identityVerifiedAt),
-                ),
+            ),
+        ),
+        maybe(loadedDeviceIds.length > 0, () =>
+          db.select().from(s.groupDevice).where(inArray(s.groupDevice.deviceId, loadedDeviceIds)),
+        ),
+        maybe(loadedDeviceIds.length > 0, () =>
+          db.select().from(s.devicePolicy).where(inArray(s.devicePolicy.deviceId, loadedDeviceIds)),
+        ),
+        maybe(loadedDeviceIds.length > 0, () =>
+          db
+            .select({
+              deviceId: s.deviceAppleUser.deviceId,
+              directoryUserId: s.deviceAppleUser.directoryUserId,
+              userLongName: s.deviceAppleUser.userLongName,
+              userShortName: s.deviceAppleUser.userShortName,
+            })
+            .from(s.deviceAppleUser)
+            .where(
+              and(
+                inArray(s.deviceAppleUser.deviceId, loadedDeviceIds),
+                isNotNull(s.deviceAppleUser.directoryUserId),
+                isNotNull(s.deviceAppleUser.identityVerifiedAt),
               ),
-          ),
-        ],
-        { concurrency: "unbounded" },
-      );
+            ),
+        ),
+        maybe(loadedDeviceIds.length > 0, () =>
+          db
+            .select({
+              groupId: s.groupExclusion.groupId,
+              targetId: s.groupExclusion.targetId,
+            })
+            .from(s.groupExclusion)
+            .where(
+              and(
+                eq(s.groupExclusion.target, "device"),
+                inArray(s.groupExclusion.targetId, loadedDeviceIds),
+              ),
+            ),
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    // A device exclusion removes the device from that group. Filter at read
+    // time too so a row that outlived a membership write cannot grant policy.
+    const excludedDeviceGroups = new Set(
+      deviceExclusionRows.map((row) => `${row.groupId}:${row.targetId}`),
+    );
+
+    const deviceGroupLinks = rawDeviceGroupLinks.filter(
+      (link) => !excludedDeviceGroups.has(`${link.groupId}:${link.deviceId}`),
+    );
 
     const deviceById = new Map(devices.map((device) => [device.id, device]));
     const deviceUserIdsByDevice = new Map<string, Array<string>>();
@@ -426,6 +474,21 @@ export const loadPolicyScopeResolutionInput = (
 
     if (targetGroupId !== "") relevantGroupIds.add(targetGroupId);
 
+    const userExclusionRows = relevantGroupIds.size
+      ? yield* db
+          .select({
+            groupId: s.groupExclusion.groupId,
+            userId: s.groupExclusion.targetId,
+          })
+          .from(s.groupExclusion)
+          .where(
+            and(
+              eq(s.groupExclusion.target, "user"),
+              inArray(s.groupExclusion.groupId, [...relevantGroupIds]),
+            ),
+          )
+      : [];
+
     return {
       policies: policyRows,
       configurations,
@@ -440,6 +503,10 @@ export const loadPolicyScopeResolutionInput = (
       groupMembers: deviceGroupLinks
         .filter((link) => groupIds.has(link.groupId))
         .map((link) => ({ groupId: link.groupId, deviceId: link.deviceId })),
+      groupUserExclusions: userExclusionRows.map((row) => ({
+        groupId: row.groupId,
+        userId: row.userId,
+      })),
       deviceAssignments: deviceAssignmentRows
         .filter((row) => knownPolicyIds.has(row.policyId))
         .map((row) => ({

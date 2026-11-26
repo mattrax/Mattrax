@@ -1,21 +1,25 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { Effect, Layer, ManagedRuntime } from "effect";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import { describe, expect, it } from "vitest";
+import { CatalogueService } from "~/lib/catalogue-service";
 import {
   appleCollectionManaged,
   appleOsRangeLabel,
   collectionFileKey,
-  loadCollection,
-  loadManifest,
-  loadPlatform,
-  loadPlatformIndex,
-  loadSearchIndex,
-  resetPlatformCache,
+  loadCollectionEffect,
+  loadManifestEffect,
+  loadPlatformEffect,
+  loadPlatformIndexEffect,
+  loadSearchIndexEffect,
   searchCollections,
   searchIndexProperties,
-  type CatalogManifest,
-  type Collection,
-  type PlatformData,
-  type PlatformIndex,
-  type SearchIndex,
+} from "./catalog";
+import type {
+  CatalogManifest,
+  Collection,
+  PlatformData,
+  PlatformIndex,
+  SearchIndex,
 } from "./catalog";
 
 const windowsCollection = (id: string, name: string): Collection => ({
@@ -174,40 +178,46 @@ const responses = new Map<
 
 const installFetch = (overrides: Record<string, () => Response | Promise<Response>> = {}) => {
   const calls: string[] = [];
+  const client = HttpClient.mapRequest((request) =>
+    HttpClientRequest.prependUrl("https://mattrax.test")(request),
+  )(
+    HttpClient.make((request) =>
+      Effect.promise(async () => {
+        const url = new URL(request.url).pathname;
+        calls.push(url);
+        const override = overrides[url];
 
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    calls.push(url);
-    const override = overrides[url];
+        if (override) return HttpClientResponse.fromWeb(request, await override());
+        const body = responses.get(url);
 
-    if (override) return override();
-    const body = responses.get(url);
+        return HttpClientResponse.fromWeb(
+          request,
+          body === undefined
+            ? new Response("not found", { status: 404 })
+            : new Response(JSON.stringify(body), {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              }),
+        );
+      }),
+    ),
+  );
+  const layer = CatalogueService.layerHttp.pipe(
+    Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
+  );
 
-    if (body === undefined) return new Response("not found", { status: 404 });
-
-    return new Response(JSON.stringify(body), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
-  });
-
-  vi.stubGlobal("fetch", fetchMock);
-
-  return calls;
+  return Object.assign(calls, { layer, runtime: ManagedRuntime.make(layer) });
 };
 
+const run = <A, E>(
+  effect: Effect.Effect<A, E, CatalogueService>,
+  transport: { runtime: ManagedRuntime.ManagedRuntime<CatalogueService, never> },
+) => transport.runtime.runPromise(effect);
+
 describe("policy catalogue loaders", () => {
-  beforeEach(() => {
-    for (const platform of ["apple", "android", "windows"] as const) resetPlatformCache(platform);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("loads the Windows index without any collection payload", async () => {
-    const calls = installFetch();
-    const index = await loadPlatformIndex("windows");
+    const transport = installFetch();
+    const index = await run(loadPlatformIndexEffect("windows"), transport);
 
     expect(index.platform).toBe("windows");
     expect(index.stats).toEqual({ collections: 2, properties: 4 });
@@ -215,26 +225,31 @@ describe("policy catalogue loaders", () => {
       "Above Lock",
       "Defender",
     ]);
-    // Summaries are tagged with the platform so browse can filter uniformly.
     expect(index.collections.every((collection) => collection.platform === "windows")).toBe(true);
     expect(index.collections[1]?.key).toBe("windows--settings--defender");
-    expect(calls).toEqual(["/catalog/windows/index.json"]);
+    expect([...transport]).toEqual(["/catalog/windows/index.json"]);
   });
 
   it("loads a single collection by its stable file key and caches it", async () => {
-    const calls = installFetch();
-    const collection = await loadCollection("windows", "windows/settings/above-lock");
-    const again = await loadCollection("windows", "windows/settings/above-lock");
+    const transport = installFetch();
+    const collection = await run(
+      loadCollectionEffect("windows", "windows/settings/above-lock"),
+      transport,
+    );
+    const again = await run(
+      loadCollectionEffect("windows", "windows/settings/above-lock"),
+      transport,
+    );
 
     expect(collection.name).toBe("Above Lock");
     expect(collection.properties).toHaveLength(2);
-    expect(again).toBe(collection);
-    expect(calls).toEqual(["/catalog/windows/windows--settings--above-lock.json"]);
+    expect(again).toEqual(collection);
+    expect([...transport]).toEqual(["/catalog/windows/windows--settings--above-lock.json"]);
   });
 
   it("searches property text from the lazy search index", async () => {
-    installFetch();
-    const index = await loadSearchIndex("windows");
+    const transport = installFetch();
+    const index = await run(loadSearchIndexEffect("windows"), transport);
 
     expect([...searchIndexProperties(index, "cortana").keys()]).toEqual([
       "windows/settings/above-lock",
@@ -247,39 +262,42 @@ describe("policy catalogue loaders", () => {
   });
 
   it("derives index, collections and search from Apple's single file", async () => {
-    const calls = installFetch();
-    const index = await loadPlatformIndex("apple");
+    const transport = installFetch();
+    const index = await run(loadPlatformIndexEffect("apple"), transport);
     expect(index.collections[0]?.name).toBe("Restrictions");
     expect(index.collections[0]?.propertyCount).toBe(1);
 
-    const collection = await loadCollection("apple", "apple/profiles/com.apple.applicationaccess");
+    const collection = await run(
+      loadCollectionEffect("apple", "apple/profiles/com.apple.applicationaccess"),
+      transport,
+    );
     expect(collection.properties[0]?.key).toBe("allowCamera");
 
-    const search = await loadSearchIndex("apple");
+    const search = await run(loadSearchIndexEffect("apple"), transport);
     expect([...searchIndexProperties(search, "camera").keys()]).toEqual([
       "apple/profiles/com.apple.applicationaccess",
     ]);
-    // One file answers index, collection and search lookups.
-    expect(calls).toEqual(["/catalog/apple.json"]);
+    expect([...transport]).toEqual(["/catalog/apple.json"]);
   });
 
   it("keys Android search matches by property key, not address", async () => {
-    installFetch();
-    const search = await loadSearchIndex("android");
+    const transport = installFetch();
+    const search = await run(loadSearchIndexEffect("android"), transport);
     const matches = searchIndexProperties(search, "camera");
     expect([...matches.keys()]).toEqual(["android/policy/Policy"]);
-    // Selections store `property.key` on Android, so the index must too.
     expect([...matches.get("android/policy/Policy")!]).toEqual(["cameraDisabled"]);
   });
 
   it("rejects loadPlatform for Windows and points at the split loaders", async () => {
-    installFetch();
-    await expect(loadPlatform("windows")).rejects.toThrow(/loadPlatformIndex/);
+    const transport = installFetch();
+    await expect(run(loadPlatformEffect("windows"), transport)).rejects.toThrow(
+      /loadPlatformIndex/,
+    );
   });
 
   it("surfaces HTTP failures and retries after a transient error", async () => {
     let attempts = 0;
-    installFetch({
+    const transport = installFetch({
       "/catalog/windows/index.json": () => {
         attempts += 1;
 
@@ -291,17 +309,17 @@ describe("policy catalogue loaders", () => {
       },
     });
 
-    await expect(loadPlatformIndex("windows")).rejects.toThrow(
-      "Could not load the Windows settings index (503)",
+    await expect(run(loadPlatformIndexEffect("windows"), transport)).rejects.toThrow(
+      /Could not load catalogue asset/,
     );
-    const index = await loadPlatformIndex("windows");
+    const index = await run(loadPlatformIndexEffect("windows"), transport);
     expect(index.collections).toHaveLength(2);
     expect(attempts).toBe(2);
   });
 
   it("reports a missing collection and does not cache the failure", async () => {
     let attempts = 0;
-    installFetch({
+    const transport = installFetch({
       "/catalog/windows/windows--settings--missing.json": () => {
         attempts += 1;
 
@@ -314,17 +332,38 @@ describe("policy catalogue loaders", () => {
       },
     });
 
-    await expect(loadCollection("windows", "windows/settings/missing")).rejects.toThrow(
-      "Could not load windows/settings/missing settings (500)",
-    );
-    await expect(loadCollection("windows", "windows/settings/missing")).resolves.toMatchObject({
-      name: "Missing",
+    await expect(
+      run(loadCollectionEffect("windows", "windows/settings/missing"), transport),
+    ).rejects.toThrow(/Could not load catalogue asset/);
+    await expect(
+      run(loadCollectionEffect("windows", "windows/settings/missing"), transport),
+    ).resolves.toMatchObject({ name: "Missing" });
+  });
+
+  it("rejects malformed assets and retries them on the next call", async () => {
+    let attempts = 0;
+    const transport = installFetch({
+      "/catalog/manifest.json": () => {
+        attempts += 1;
+
+        return new Response(attempts === 1 ? "{}" : JSON.stringify(manifest), {
+          headers: { "content-type": "application/json" },
+        });
+      },
     });
+
+    await expect(run(loadManifestEffect(), transport)).rejects.toThrow(/malformed/);
+    await expect(run(loadManifestEffect(), transport)).resolves.toMatchObject({
+      platforms: manifest.platforms,
+    });
+    expect(attempts).toBe(2);
   });
 
   it("loads the manifest", async () => {
-    installFetch();
-    await expect(loadManifest()).resolves.toMatchObject({ platforms: manifest.platforms });
+    const transport = installFetch();
+    await expect(run(loadManifestEffect(), transport)).resolves.toMatchObject({
+      platforms: manifest.platforms,
+    });
   });
 
   it("rejects collection ids that cannot be used as file names", () => {

@@ -117,6 +117,12 @@ describe("sitemap entries", () => {
     }
   });
 
+  it("treats the bare /t landing route as dashboard, not public", () => {
+    expect(isSitemapExcluded("/t")).toBe(true);
+    expect(requiresJavaScript("/t")).toBe(true);
+    expect(() => sitemapEntries(["/t"])).toThrow(/non-public/);
+  });
+
   it("refuses to publish an excluded path", () => {
     expect(() => sitemapEntries(["/dashboard"])).toThrow(/non-public/);
     expect(() => sitemapEntries(["/t/acme/devices"])).toThrow(/non-public/);
@@ -141,6 +147,7 @@ describe("requiresJavaScript", () => {
     for (const path of [
       "/dashboard",
       "/account",
+      "/t",
       "/t/acme/devices",
       "/tenants/new",
       "/login",

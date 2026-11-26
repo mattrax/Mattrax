@@ -149,6 +149,69 @@ describe("email outbox enqueue", () => {
     expect(db.store.email_outbox).toHaveLength(0);
   });
 
+  it("delivers a verification code inside the request when it cannot wait", async () => {
+    const db = makeDb();
+    const sent: OutboundEmailMessage[] = [];
+
+    const outcome = await runEffect(
+      sendTransactionalEmail({
+        db,
+        email: makeEmailTransport(async (item) => void sent.push(item)),
+        recipient: "invitee@example.com",
+        template: "registration_verification",
+        message: { ...message, subject: "Your Mattrax verification code" },
+        deliverNow: true,
+        now,
+      }),
+    );
+
+    expect(outcome).toBe("delivered");
+    expect(sent).toHaveLength(1);
+    // The row stays as the record of the send, so the sweep does not repeat it.
+    expect(db.store.email_outbox[0]).toMatchObject({ status: "sent", attempts: 1 });
+
+    expect(
+      await runEffect(
+        drainEmailOutbox({
+          db,
+          email: makeEmailTransport(async () => {
+            throw new Error("a sent row must not be delivered again");
+          }),
+          now,
+        }),
+      ),
+    ).toMatchObject({ due: 0 });
+  });
+
+  it("keeps an immediate attempt's failure on the row for the sweep", async () => {
+    const db = makeDb();
+
+    const outcome = await runEffect(
+      sendTransactionalEmail({
+        db,
+        email: makeEmailTransport(async () => {
+          throw new Error("destination address is not a verified address");
+        }),
+        recipient: "invitee@example.com",
+        template: "registration_verification",
+        message,
+        deliverNow: true,
+        now,
+      }),
+    );
+
+    // The page is told the mail did not go out; the row is still there to retry.
+    expect(outcome).toBe("failed");
+    expect(db.store.email_outbox[0]).toMatchObject({
+      status: "pending",
+      attempts: 1,
+      lastError: "destination address is not a verified address",
+    });
+    expect(db.store.email_outbox[0]!.nextAttemptAt).toEqual(
+      new Date(now.getTime() + EMAIL_OUTBOX_BACKOFF_BASE_MS),
+    );
+  });
+
   it("reports skipped when the deployment has no transport", async () => {
     const db = makeDb();
 
@@ -184,6 +247,24 @@ describe("email outbox drain", () => {
     expect(sent[0]).toMatchObject({ to: "invitee@example.com", subject: "Join Acme on Mattrax" });
     expect(db.store.email_outbox[0]).toMatchObject({ status: "sent", attempts: 1 });
     expect(db.store.email_outbox[0]!.sentAt).toEqual(new Date(now.getTime() + 1000));
+  });
+
+  it("keeps verification headers when a queued row is retried", async () => {
+    const db = makeDb({
+      email_outbox: [record({ payload: { ...message, headers: { "OTP-Token": "123456" } } })],
+    });
+    const sent: OutboundEmailMessage[] = [];
+
+    await runEffect(
+      drainEmailOutbox({
+        db,
+        email: makeEmailTransport(async (item) => void sent.push(item)),
+        now: new Date(now.getTime() + 1000),
+      }),
+    );
+
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.headers).toEqual({ "OTP-Token": "123456" });
   });
 
   it("reschedules a failed delivery with backoff and purges delivered rows later", async () => {
@@ -321,7 +402,9 @@ describe("email outbox drain", () => {
         email: makeEmailTransport(async () => {
           inFlight += 1;
           peak = Math.max(peak, inFlight);
-          await new Promise((resolve) => setTimeout(resolve, 5));
+          await new Promise((resolve) => {
+            setTimeout(resolve, 5);
+          });
           inFlight -= 1;
         }),
       }),

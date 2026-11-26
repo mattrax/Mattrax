@@ -1,7 +1,10 @@
-import { Effect, Option, Schema } from "effect";
-import { and, desc, eq, gte, like, lt, lte, or, type SQL } from "drizzle-orm";
+import { Effect, Option, Result, Schema } from "effect";
+import { NetAddress } from "effect/net";
+import { and, desc, eq, gte, like, lt, lte, or } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
-import { type AuditExportEntry, type AuditSearchFilters, escapeLike } from "./auditLog.ts";
+import { escapeLike } from "./auditLog.ts";
+import type { AuditExportEntry, AuditSearchFilters } from "./auditLog.ts";
 import type { EnterpriseSchema } from "../schema.ts";
 import { schema } from "../schema.ts";
 
@@ -27,8 +30,14 @@ export const ACCOUNT_AUDIT = {
   emailChangeCancelled: "account.email_change_cancelled",
   apiTokenCreated: "account.api_token_created",
   apiTokenRevoked: "account.api_token_revoked",
+  mcpOAuthGranted: "account.mcp_oauth_granted",
+  mcpOAuthScopesChanged: "account.mcp_oauth_scopes_changed",
+  mcpOAuthRevoked: "account.mcp_oauth_revoked",
   sessionRevoked: "account.session_revoked",
   sessionsRevoked: "account.sessions_revoked",
+  /** A platform operator granted or revoked the target's superadmin flag. */
+  superadminGranted: "account.superadmin_granted",
+  superadminRevoked: "account.superadmin_revoked",
   deleted: "account.deleted",
   recoveryRequested: "account.recovery_requested",
   recoveryApproved: "account.recovery_approved",
@@ -57,6 +66,13 @@ export type AccountAuditInput = {
 const accountAuditId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 /**
+ * The audit writer only needs `insert`, not the whole database handle. Narrowing
+ * the parameter lets a transaction (which lacks `$client`) append an entry in
+ * the same unit of work as the change it records.
+ */
+export type AccountAuditWriter = Pick<EnterpriseDb, "insert">;
+
+/**
  * Append one account-scoped audit entry.
  *
  * Callers that must not fail a user action because the trail is unavailable
@@ -65,7 +81,7 @@ const accountAuditId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24
  * performed without its record.
  */
 export const recordAccountAudit = (
-  db: EnterpriseDb,
+  db: AccountAuditWriter,
   input: AccountAuditInput,
 ): Effect.Effect<void, unknown> =>
   Effect.gen(function* () {
@@ -114,24 +130,17 @@ const headerValue = (
 };
 
 /**
- * First hop of the client address. Cloudflare's header wins because it is set
- * by the edge and cannot be spoofed by the browser; `x-forwarded-for` and
- * `x-real-ip` cover self-hosted reverse proxies.
+ * The deployment boundary strips every caller-supplied address header and
+ * rebuilds this one only after applying its trusted-proxy policy. Audit code
+ * must never fall back to raw forwarding headers or the socket peer: either
+ * can identify a proxy rather than the caller.
  */
 export const clientAddress = (
   headers: Headers | Readonly<Record<string, string | string[] | undefined>>,
 ): string | null => {
-  const direct = headerValue(headers, "cf-connecting-ip")?.trim();
+  const value = headerValue(headers, "x-mattrax-client-address")?.trim();
 
-  if (direct) return direct;
-
-  const forwarded = headerValue(headers, "x-forwarded-for")?.split(",")[0]?.trim();
-
-  if (forwarded) return forwarded;
-
-  const real = headerValue(headers, "x-real-ip")?.trim();
-
-  return real || null;
+  return value && Result.isSuccess(NetAddress.ipFromString(value)) ? value.slice(0, 64) : null;
 };
 
 const sha256Hex = (value: string) =>

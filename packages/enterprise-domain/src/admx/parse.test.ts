@@ -89,13 +89,13 @@ describe("parseAdmxFile", () => {
     expect(file.fileName).toBe("contoso.admx");
     expect(file.policies).toHaveLength(2);
 
-    const policy = file.policies[0]!;
+    const policy = file.policies[0];
 
     expect(policy.name).toBe("EnableFeature");
     expect(policy.className).toBe("machine");
     expect(policy.displayName).toBe("Enable the feature");
     expect(policy.description).toBe("Turns the company app feature on.");
-    expect(policy.key).toBe("Software\\Policies\\Contoso");
+    expect(policy.key).toBe(String.raw`Software\Policies\Contoso`);
     expect(policy.valueName).toBe("EnableFeature");
     expect(policy.categoryPath).toEqual(["Root", "Child"]);
     expect(policy.categoryDisplayPath).toEqual(["Contoso", "Company app"]);
@@ -106,7 +106,7 @@ describe("parseAdmxFile", () => {
   });
 
   it("reads presentation elements and uses them to label the elements", () => {
-    const policy = parse().policies[0]!;
+    const policy = parse().policies[0];
     const [choice, mode, threshold, server, hosts] = policy.elements;
 
     expect(policy.presentations).toHaveLength(6);
@@ -141,13 +141,18 @@ describe("parseAdmxFile", () => {
       maxValue: "100",
       defaultValue: "10",
     });
-    expect(server).toMatchObject({ id: "Server", kind: "text", label: "Server name", required: true });
+    expect(server).toMatchObject({
+      id: "Server",
+      kind: "text",
+      label: "Server name",
+      required: true,
+    });
     expect(hosts).toMatchObject({ id: "Hosts", kind: "list", label: "Hosts" });
     expect(hosts?.items?.[0]?.value).toEqual({ kind: "string", value: "a.example" });
   });
 
   it("reads enabledList/disabledList semantics", () => {
-    const policy = parse().policies[1]!;
+    const policy = parse().policies[1];
 
     expect(policy.className).toBe("user");
     expect(policy.enabledList).toEqual([
@@ -159,7 +164,7 @@ describe("parseAdmxFile", () => {
 
   it("falls back to string ids when no ADML is supplied", () => {
     const file = parseAdmxFile(ADMX, undefined, { fileName: "contoso.admx" });
-    const policy = file.policies[0]!;
+    const policy = file.policies[0];
 
     expect(policy.displayName).toBe("EnableFeature");
     expect(policy.categoryDisplayPath).toEqual(["Root", "Child"]);
@@ -170,7 +175,7 @@ describe("parseAdmxFile", () => {
 
   it("records a missing string without rejecting the file", () => {
     const file = parseAdmxFile(ADMX, ADML.replace('id="ModeOn"', 'id="NotUsed"'));
-    const policy = file.policies[0]!;
+    const policy = file.policies[0];
 
     expect(policy.elements[1]?.items?.[1]?.displayName).toBe("ModeOn");
     expect(file.unresolvedStrings).toContain("ModeOn");
@@ -183,7 +188,7 @@ describe("parseAdmxFile", () => {
     );
 
     const file = parseAdmxFile(admx, ADML);
-    const policy = file.policies[0]!;
+    const policy = file.policies[0];
 
     expect(policy.unsupported.join(" ")).toMatch(/trueList/);
     expect(policy.unsupported.join(" ")).toMatch(/Unknown element <frobnicate>/);
@@ -195,7 +200,7 @@ describe("parseAdmxFile", () => {
       '<text id="Server" valueName="Server" required="true" /><text id="Server" valueName="Other" />',
     );
 
-    const policy = parseAdmxFile(admx, ADML).policies[0]!;
+    const policy = parseAdmxFile(admx, ADML).policies[0];
 
     expect(policy.unsupported.join(" ")).toMatch(/defined more than once/);
   });
@@ -207,7 +212,7 @@ describe("parseAdmxFile", () => {
     );
 
     const file = parseAdmxFile(admx, ADML);
-    const policy = file.policies[0]!;
+    const policy = file.policies[0];
 
     expect(policy.categoryPath).toEqual(["Root", "Child"]);
     expect(file.warnings.join(" ")).toMatch(/own ancestor/);
@@ -260,7 +265,8 @@ describe("parseAdmxFile", () => {
   });
 
   it("rejects an oversized document", () => {
-    const deep = "<policyDefinitions>" + "<a>".repeat(80) + "</a>".repeat(80) + "</policyDefinitions>";
+    const deep =
+      "<policyDefinitions>" + "<a>".repeat(80) + "</a>".repeat(80) + "</policyDefinitions>";
 
     expect(() => parseAdmxFile(deep)).toThrow(/nested more than/);
   });

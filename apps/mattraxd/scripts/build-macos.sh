@@ -1,6 +1,6 @@
 #!/bin/sh
-# Build the Mattrax macOS agent and (when signing credentials are present)
-# sign and notarize the installer.
+# Build the Mattrax macOS agent from the Rust sources and (when signing
+# credentials are present) sign and notarize the installer.
 #
 # Artifact: apps/mattraxd/build/mattraxd-<version>.pkg
 #
@@ -9,24 +9,62 @@
 #   DEVELOPER_ID_INSTALLER    "Developer ID Installer: ..."
 #   NOTARY_PROFILE            notarytool keychain profile
 #
-# Without them the script still produces an unsigned pkg for local testing;
-# Gatekeeper will refuse to install it on another Mac.
+# Optional:
+#   MATTRAX_MATTRAXD_VERSION  override the embedded version (default: Cargo.toml)
+#   MATTRAX_MATTRAXD_TARGETS  space-separated rust targets to build, for example
+#                             "aarch64-apple-darwin x86_64-apple-darwin". More
+#                             than one is lipo'd into a universal binary.
+#
+# Without credentials the script still produces an unsigned pkg for local
+# testing; Gatekeeper will refuse to install it on another Mac.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${MATTRAX_MATTRAXD_VERSION:-1.0.0}"
+cd "$ROOT"
+
+VERSION="${MATTRAX_MATTRAXD_VERSION:-}"
+if [ -z "$VERSION" ]; then
+  VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+fi
+# pkgbuild requires a CFBundleVersion-shaped version; a nightly's
+# "1.1.0-nightly.20261120" is packaged as "1.1.0" while the binary keeps the
+# full version for the updater.
+PKG_VERSION="$(printf '%s' "$VERSION" | sed 's/[^0-9.].*$//')"
+
+# Do not embed resource-fork AppleDouble files in the package payload.
+export COPYFILE_DISABLE=1
+
 BUILD="$ROOT/build"
 STAGE="$BUILD/stage"
 PAYLOAD="$STAGE/root"
 SCRIPTS="$STAGE/scripts"
 
-rm -rf "$STAGE" "$BUILD/mattraxd-$VERSION.pkg"
+rm -rf "$STAGE" "$BUILD/mattraxd-$VERSION.pkg" "$BUILD/mattraxd"
 mkdir -p "$PAYLOAD/usr/local/libexec" "$PAYLOAD/Library/LaunchDaemons" "$SCRIPTS"
 
 echo "Building mattraxd $VERSION"
-swiftc -O -whole-module-optimization \
-  -o "$BUILD/mattraxd" \
-  "$ROOT/macos/Sources/mattraxd/main.swift"
+export MATTRAXD_VERSION="$VERSION"
+
+if [ -n "${MATTRAX_MATTRAXD_TARGETS:-}" ]; then
+  for target in $MATTRAX_MATTRAXD_TARGETS; do
+    echo "  cargo build --release --target $target"
+    cargo build --release --locked --target "$target"
+    set -- "$@" "$ROOT/target/$target/release/mattraxd"
+  done
+
+  if [ "$#" -gt 1 ]; then
+    echo "Creating a universal binary"
+    lipo -create -output "$BUILD/mattraxd" "$@"
+    lipo -archs "$BUILD/mattraxd"
+  else
+    cp "$1" "$BUILD/mattraxd"
+  fi
+else
+  cargo build --release --locked
+  cp "$ROOT/target/release/mattraxd" "$BUILD/mattraxd"
+fi
+
+chmod 0755 "$BUILD/mattraxd"
 
 if [ -n "${DEVELOPER_ID_APPLICATION:-}" ]; then
   echo "Signing the agent binary"
@@ -37,6 +75,12 @@ fi
 install -m 0755 "$BUILD/mattraxd" "$PAYLOAD/usr/local/libexec/mattraxd"
 install -m 0644 "$ROOT/macos/Resources/com.mattrax.mattraxd.plist" \
   "$PAYLOAD/Library/LaunchDaemons/com.mattrax.mattraxd.plist"
+
+# Best effort: strip quarantine/finder metadata before packaging. macOS can
+# still record com.apple.provenance in AppleDouble entries; that is expected.
+if command -v xattr >/dev/null 2>&1; then
+  xattr -cr "$PAYLOAD" 2>/dev/null || true
+fi
 
 cat > "$SCRIPTS/postinstall" <<'POSTINSTALL'
 #!/bin/sh
@@ -52,7 +96,7 @@ POSTINSTALL
 chmod 0755 "$SCRIPTS/postinstall"
 
 pkgbuild --root "$PAYLOAD" --scripts "$SCRIPTS" \
-  --identifier com.mattrax.mattraxd --version "$VERSION" \
+  --identifier com.mattrax.mattraxd --version "$PKG_VERSION" \
   --install-location / "$BUILD/mattraxd-$VERSION.pkg"
 
 if [ -n "${DEVELOPER_ID_INSTALLER:-}" ]; then
@@ -71,3 +115,4 @@ if [ -n "${DEVELOPER_ID_INSTALLER:-}" ]; then
 fi
 
 echo "Built $BUILD/mattraxd-$VERSION.pkg"
+echo "Bare binary for the updater: $BUILD/mattraxd"

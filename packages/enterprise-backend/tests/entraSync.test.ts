@@ -16,7 +16,7 @@ const group = (id: string, displayName: string, members: string[] = []) => ({
   members,
 });
 
-const page = <T>(items: T[], next?: string, delta?: string) => ({
+const page = <T>(items: ReadonlyArray<T>, next?: string, delta?: string) => ({
   items,
   nextLink: next,
   deltaLink: delta,
@@ -83,11 +83,11 @@ describe("syncEntraDirectory pagination", () => {
 
     let transactions = 0;
     const transaction = db.transaction;
-    db.transaction = <Result>(work: (tx: any) => Result): Result => {
+    db.transaction = ((work: any) => {
       transactions++;
 
       return transaction(work);
-    };
+    }) as typeof db.transaction;
 
     const result = await Effect.runPromise(
       syncEntraDirectory({
@@ -107,8 +107,9 @@ describe("syncEntraDirectory pagination", () => {
     expect(result).toMatchObject({ users: 2, groups: 1, domains: 1 });
     expect(result.usersDelta).toBe("users-delta");
     expect(result.groupsDelta).toBe("groups-delta");
-    // Two user pages + one group page, each in its own transaction.
-    expect(transactions).toBe(3);
+    // Two user pages + one group page, plus one reconciliation/checkpoint
+    // transaction for each resource class.
+    expect(transactions).toBe(5);
     expect(progress).toHaveLength(2);
     expect(progress[0]).toMatchObject({ users: 2, usersDelta: "users-delta" });
     expect(progress[1]).toMatchObject({ groups: 1, groupsDelta: "groups-delta" });
@@ -380,7 +381,9 @@ describe("syncEntraDirectory directory users", () => {
         ...baseOptions,
         db,
         graph: singlePageGraph({
-          users: [{ id: "graph-1", mail: "ada@acme.com", displayName: "Ada", accountEnabled: true }],
+          users: [
+            { id: "graph-1", mail: "ada@acme.com", displayName: "Ada", accountEnabled: true },
+          ],
           groups: [
             {
               id: "graph-group-1",
@@ -397,9 +400,7 @@ describe("syncEntraDirectory directory users", () => {
       }),
     );
 
-    const engineers = db.store.user_group.find(
-      (row: any) => row.externalId === "graph-group-2",
-    );
+    const engineers = db.store.user_group.find((row: any) => row.externalId === "graph-group-2");
 
     expect(engineers).toMatchObject({ organizationId: "org-1", source: "graph" });
     // The member was added to the new group and removed from the old one, and

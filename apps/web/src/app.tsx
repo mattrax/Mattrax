@@ -1,11 +1,20 @@
 import { Head, Link, Meta, Title } from "@solidjs/meta";
-import { createRouter, intentPreload, pendingLinks, tapPreload, useLocation, viewportPreload } from "@solidjs/router";
+import {
+  createRouter,
+  intentPreload,
+  pendingLinks,
+  tapPreload,
+  useLocation,
+  viewportPreload,
+} from "@solidjs/router";
 import { fileRoutes } from "@solidjs/router/fs";
 import { getRequestEvent, isServer } from "@solidjs/web";
-import { createEffect, Errored, Loading, onSettled, Show, type ParentProps } from "solid-js";
+import { createEffect, Errored, Loading, onSettled, Show } from "solid-js";
+import type { ParentProps } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
+import { LoadingState } from "@mattrax/ui";
 import { PageErrorFallback } from "~/components/error-boundary";
-import { GlobalErrorBanner } from "~/components/global-error-banner";
+import GlobalErrorBanner from "~/components/global-error-banner";
 import { NewVersionNotice } from "~/components/new-version-notice";
 import { installSkewProtection } from "~/lib/skew-protection";
 import { installTheme } from "~/lib/theme";
@@ -55,12 +64,7 @@ function siteOrigin() {
 function BootSplash() {
   return (
     <div class="flex min-h-screen items-center justify-center bg-background text-foreground">
-      <div class="flex items-center gap-2.5">
-        <span class="flex size-7 animate-pulse items-center justify-center rounded-[7px] bg-primary text-[13px] font-bold text-primary-foreground">
-          M
-        </span>
-        <span class="text-[13px] font-medium text-muted-foreground">Loading Mattrax…</span>
-      </div>
+      <LoadingState label="Loading Mattrax…" size={28} pattern="wave" />
     </div>
   );
 }

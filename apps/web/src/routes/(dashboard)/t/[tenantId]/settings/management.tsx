@@ -1,16 +1,18 @@
-import { type RoutePreloadFuncArgs, useParams } from "@solidjs/router";
+import { useParams } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
-import type { JSX } from "@solidjs/web";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import { LoadingState } from "~/components/ui";
+import SetupNotice from "~/components/settings/setup-notice";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { Button } from "~/components/ui/button";
+import { Checkbox } from "@mattrax/ui";
 import { Input } from "~/components/ui/input";
 import {
   Boxes,
-  CircleAlert,
   CheckCircle2,
   Download,
   MonitorSmartphone,
@@ -18,15 +20,13 @@ import {
   ShieldCheck,
   Smartphone,
 } from "~/components/ui/icons";
-import {
-  enterprise,
-  enterpriseKeys,
-  enterpriseQueries,
-  type AndroidEnterpriseInfo,
-  type AppleBusinessManagerInfo,
-  type AutopilotDeviceInfo,
-  type AutopilotProfileInfo,
-  type VppInfo,
+import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
+import type {
+  AndroidEnterpriseInfo,
+  AppleBusinessManagerInfo,
+  AutopilotDeviceInfo,
+  AutopilotProfileInfo,
+  VppInfo,
 } from "~/lib/enterprise";
 import { optimisticallyUpdateCollection, optimisticUpdate } from "~/lib/optimistic";
 import { preloadPage } from "~/lib/page-data";
@@ -34,14 +34,14 @@ import { queryClient } from "~/lib/query-client";
 import { useCan } from "~/lib/permissions";
 import { arrayBufferToBase64, selectFile } from "~/lib/upload-file";
 import { cn } from "~/lib/utils";
+import Chip from "~/components/settings/status-chip";
 import { downloadBlob } from "~/lib/download";
-import { resolveTenantId } from "~/lib/tenant";
 
 const selectClass =
-  "h-8 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors focus-visible:border-ring sm:text-[13px] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60";
+  "h-8 w-full rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none transition-colors focus-visible:border-ring sm:text-xs focus-visible:ring-2 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-60";
 
 const textareaClass =
-  "min-h-28 w-full rounded-lg border border-input bg-surface p-3 font-mono text-base text-foreground outline-none sm:text-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  "min-h-28 w-full rounded-lg border border-input bg-surface p-3 font-mono text-base text-foreground outline-none sm:text-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50";
 
 export const route = {
   preload: ({ params, intent }: RoutePreloadFuncArgs) => {
@@ -441,25 +441,7 @@ export default function ManagementSettingsPage() {
     setCsrError(undefined);
 
     try {
-      const response = await fetch(`/api/v1/tenants/${resolveTenantId(params.tenantId)}/apns/csr`, {
-        credentials: "include",
-        headers: { "x-effect-auth-csrf": "1" },
-      });
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => undefined);
-        throw new Error(
-          errorMessage(raisedFailure(body), `CSR request failed (${response.status})`),
-        );
-      }
-
-      const data = Option.getOrUndefined(
-        Schema.decodeUnknownOption(Schema.Struct({ plist: Schema.optional(Schema.String) }))(
-          await response.json(),
-        ),
-      );
-
-      if (data?.plist === undefined) throw new Error("The server did not return a CSR");
+      const data = await enterprise.getApnsCsr(params.tenantId);
       const bytes = Uint8Array.from(atob(data.plist), (char) => char.charCodeAt(0));
       downloadBlob(new Blob([bytes], { type: "application/x-plist" }), "mattrax-push-csr.plist");
       setStep(2);
@@ -507,22 +489,25 @@ export default function ManagementSettingsPage() {
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Show when={apns.data}>
             {(data) => (
-              <Chip tone={data().configured ? "success" : "warning"}>
-                {data().configured ? "Configured" : "Not configured"}
-              </Chip>
+              <Show when={data().configured}>
+                <span class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
+                  <span class="size-1.5 rounded-full bg-success" />
+                  Configured
+                </span>
+              </Show>
             )}
           </Show>
           <Show when={apns.data?.topic}>
-            <span class="break-all font-mono text-[11px] text-muted-foreground">
-              {apns.data!.topic}
+            <span class="break-all font-mono text-xs text-muted-foreground">
+              {apns.data.topic}
             </span>
           </Show>
           <Show when={apns.data?.email}>
-            <span class="text-xs text-muted-foreground">· {apns.data!.email}</span>
+            <span class="text-xs text-muted-foreground">· {apns.data.email}</span>
           </Show>
           <Show when={apns.data?.expiresAt}>
             <span class="text-xs text-muted-foreground">
-              · expires {new Date(apns.data!.expiresAt!).toLocaleDateString()}
+              · expires {new Date(apns.data.expiresAt!).toLocaleDateString()}
             </span>
           </Show>
         </div>
@@ -531,8 +516,8 @@ export default function ManagementSettingsPage() {
           when={apns.data && !apns.data.configured}
           fallback={
             <Show when={apns.data}>
-              <div class="mt-4 flex items-start gap-3 rounded-lg border border-success/25 bg-success/[0.06] p-4 text-[13px]">
-                <CheckCircle2 class="mt-0.5 size-4 shrink-0 text-success-foreground" />
+              <div class="mt-4 flex items-start gap-3 rounded-lg border border-success/25 bg-success/[0.06] p-4 text-xs">
+                <span class="mt-0.5 inline-flex shrink-0 text-success"><CheckCircle2 class="size-4" /></span>
                 <div>
                   <p class="font-medium text-foreground">
                     Apple devices can receive push notifications
@@ -545,15 +530,11 @@ export default function ManagementSettingsPage() {
             </Show>
           }
         >
-          <div class="mt-4 flex items-start gap-3 rounded-lg border border-warning/25 bg-warning/[0.06] p-4 text-[13px]">
-            <CircleAlert class="mt-0.5 size-4 shrink-0 text-warning-foreground" />
-            <div>
-              <p class="font-medium text-foreground">APNs setup required</p>
-              <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Without APNs, enrolled Apple devices only apply changes when they next poll.
-              </p>
-            </div>
-          </div>
+          <SetupNotice
+            class="mt-4"
+            title="APNs setup required"
+            description="Without APNs, enrolled Apple devices only apply changes when they next poll."
+          />
         </Show>
 
         <ol class="mt-5 grid gap-3 md:grid-cols-3">
@@ -580,7 +561,7 @@ export default function ManagementSettingsPage() {
         <Show
           when={writable()}
           fallback={
-            <p class="mt-4 text-[13px] text-muted-foreground">
+            <p class="mt-4 text-xs text-muted-foreground">
               Your role cannot manage push certificates. Ask an administrator to download the CSR
               and upload the signed certificate.
             </p>
@@ -597,7 +578,7 @@ export default function ManagementSettingsPage() {
           </div>
         </Show>
         <Show when={csrError()}>
-          <p class="mt-3 text-[13px] text-destructive">{csrError()}</p>
+          <p class="mt-3 text-xs text-destructive">{csrError()}</p>
         </Show>
 
         <Show when={step() >= 3 || apns.data?.configured}>
@@ -628,7 +609,7 @@ export default function ManagementSettingsPage() {
               </div>
             </Field>
             <Show when={cert()}>
-              <pre class="max-h-32 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-[11px] text-muted-foreground">
+              <pre class="max-h-32 overflow-auto rounded-lg border border-border bg-muted p-3 font-mono text-xs text-muted-foreground">
                 {cert().slice(0, 600)}
                 {cert().length > 600 ? "\n…" : ""}
               </pre>
@@ -642,7 +623,7 @@ export default function ManagementSettingsPage() {
       </Panel>
 
       <Panel title="Windows">
-        <div class="flex items-start gap-3 text-[13px]">
+        <div class="flex items-start gap-3 text-xs">
           <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
             <MonitorSmartphone class="size-4" />
           </span>
@@ -652,7 +633,7 @@ export default function ManagementSettingsPage() {
               Discovery, WSTEP enrollment and certificate issuance are implemented. Policy
               management is next.
             </p>
-            <Chip tone="success" class="mt-3">
+            <Chip capitalize tone="success" class="mt-3">
               Enrollment available
             </Chip>
           </div>
@@ -660,7 +641,7 @@ export default function ManagementSettingsPage() {
       </Panel>
 
       <Panel title="Android">
-        <div class="flex items-start gap-3 text-[13px]">
+        <div class="flex items-start gap-3 text-xs">
           <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
             <Smartphone class="size-4" />
           </span>
@@ -670,6 +651,7 @@ export default function ManagementSettingsPage() {
               <Show when={android.data}>
                 {(data) => (
                   <Chip
+                    capitalize
                     tone={
                       data().status === "active"
                         ? "success"
@@ -687,7 +669,7 @@ export default function ManagementSettingsPage() {
               when={android.data}
               fallback={
                 <Show when={!android.error}>
-                  <p class="text-muted-foreground">Loading…</p>
+                  <LoadingState label="Loading Android Enterprise…" size={16} />
                 </Show>
               }
             >
@@ -715,13 +697,13 @@ export default function ManagementSettingsPage() {
                   </Show>
                   <Show when={data().configured && data().enterpriseName}>
                     <div class="space-y-1 text-xs leading-relaxed text-muted-foreground">
-                      <p class="break-all font-mono text-[11px] text-foreground">
+                      <p class="break-all font-mono text-xs text-foreground">
                         {data().enterpriseName}
                       </p>
                       <label class="flex flex-wrap items-center gap-2">
                         <span class="font-medium text-foreground">New devices enroll as</span>
                         <select
-                          class="h-8 rounded-md border border-input bg-card px-2 text-[12px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:opacity-50"
+                          class="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:opacity-50"
                           aria-label="Android provisioning mode"
                           value={data().provisioningMode}
                           disabled={!writable() || setAndroidProvisioning.isPending}
@@ -743,7 +725,7 @@ export default function ManagementSettingsPage() {
                           <option value="dedicated">Dedicated device (no user)</option>
                         </select>
                       </label>
-                      <p class="text-[11px] leading-relaxed text-subtle-foreground">
+                      <p class="text-xs leading-relaxed text-subtle-foreground">
                         Applies to enrollment tokens issued from now on. Each device page shows the
                         mode Google actually provisioned.
                       </p>
@@ -789,17 +771,16 @@ export default function ManagementSettingsPage() {
                         </Button>
                         <Button
                           variant="ghost"
-                          class="text-destructive hover:bg-destructive/10"
                           onClick={() => setConfirmAndroidDisconnect(true)}
                           disabled={!writable() || disconnectAndroid.isPending}
                         >
-                          Disconnect
+                          <span class="text-destructive">Disconnect</span>
                         </Button>
                       </Show>
                     </div>
                   </Show>
                   <Show when={androidSyncMessage()}>
-                    <p class="rounded-lg border border-success/25 bg-success/[0.06] p-3 text-xs leading-relaxed text-success-foreground">
+                    <p class="rounded-lg border border-success/25 bg-success/[0.06] p-3 text-xs leading-relaxed text-success">
                       {androidSyncMessage()}
                     </p>
                   </Show>
@@ -835,7 +816,7 @@ export default function ManagementSettingsPage() {
       </Panel>
 
       <Panel title="Apple Business Manager">
-        <div class="flex items-start gap-3 text-[13px]">
+        <div class="flex items-start gap-3 text-xs">
           <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
             <ShieldCheck class="size-4" />
           </span>
@@ -846,6 +827,7 @@ export default function ManagementSettingsPage() {
               <Show when={abm.data}>
                 {(data) => (
                   <Chip
+                    capitalize
                     tone={
                       data().status === "active"
                         ? "success"
@@ -863,7 +845,7 @@ export default function ManagementSettingsPage() {
               when={abm.data}
               fallback={
                 <Show when={!abm.error}>
-                  <p class="text-muted-foreground">Loading…</p>
+                  <LoadingState label="Loading Apple Business Manager…" size={16} />
                 </Show>
               }
             >
@@ -882,7 +864,7 @@ export default function ManagementSettingsPage() {
                         <p>{data().appleOrgName}</p>
                       </Show>
                       <Show when={data().appleOrgId}>
-                        <p class="break-all font-mono text-[11px] text-foreground">
+                        <p class="break-all font-mono text-xs text-foreground">
                           {data().appleOrgId}
                         </p>
                       </Show>
@@ -996,7 +978,7 @@ export default function ManagementSettingsPage() {
       </Panel>
 
       <Panel title="Apps and Books (VPP)">
-        <div class="flex items-start gap-3 text-[13px]">
+        <div class="flex items-start gap-3 text-xs">
           <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
             <Boxes class="size-4" />
           </span>
@@ -1007,6 +989,7 @@ export default function ManagementSettingsPage() {
               <Show when={vpp.data}>
                 {(data) => (
                   <Chip
+                    capitalize
                     tone={
                       data().status === "active"
                         ? "success"
@@ -1024,7 +1007,7 @@ export default function ManagementSettingsPage() {
               when={vpp.data}
               fallback={
                 <Show when={!vpp.error}>
-                  <p class="text-muted-foreground">Loading…</p>
+                  <LoadingState label="Loading Apps and Books…" size={16} />
                 </Show>
               }
             >
@@ -1039,7 +1022,7 @@ export default function ManagementSettingsPage() {
                   <Show when={data().configured}>
                     <div class="space-y-1 text-xs leading-relaxed text-muted-foreground">
                       <Show when={data().appleOrgId}>
-                        <p class="break-all font-mono text-[11px] text-foreground">
+                        <p class="break-all font-mono text-xs text-foreground">
                           {data().appleOrgId}
                         </p>
                       </Show>
@@ -1126,21 +1109,23 @@ export default function ManagementSettingsPage() {
       >
         <QueryError error={autopilot.error} onRetry={() => void autopilot.refetch()} />
         <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <MonitorSmartphone class="size-4 text-muted-foreground" />
+          <span class="inline-flex text-muted-foreground"><MonitorSmartphone class="size-4" /></span>
           <Show when={autopilot.data}>
             {(data) => (
-              <Chip tone={data().configured ? "success" : "warning"}>
+              <Chip capitalize tone={data().configured ? "success" : "warning"}>
                 {data().configured ? "Connected to Microsoft Graph" : "Not configured"}
               </Chip>
             )}
           </Show>
           <Show when={autopilot.data?.azureTenantId}>
-            <span class="break-all font-mono text-[11px] text-muted-foreground">
-              {autopilot.data!.azureTenantId}
+            <span class="break-all font-mono text-xs text-muted-foreground">
+              {autopilot.data.azureTenantId}
             </span>
           </Show>
           <Show when={autopilot.data?.federatedEnrollment.enabled}>
-            <Chip tone="neutral">Federated Entra enrollment</Chip>
+            <Chip capitalize tone="neutral">
+              Federated Entra enrollment
+            </Chip>
           </Show>
         </div>
 
@@ -1148,7 +1133,7 @@ export default function ManagementSettingsPage() {
           when={autopilot.data}
           fallback={
             <Show when={!autopilot.error}>
-              <p class="mt-3 text-[13px] text-muted-foreground">Loading…</p>
+              <LoadingState class="mt-3" label="Loading Windows Autopilot…" size={16} />
             </Show>
           }
         >
@@ -1206,7 +1191,7 @@ export default function ManagementSettingsPage() {
               <div class="mt-5 grid gap-6 lg:grid-cols-2">
                 <div class="space-y-3 border-t border-border pt-4">
                   <div>
-                    <p class="text-[13px] font-medium text-foreground">Import hardware hashes</p>
+                    <p class="text-xs font-medium text-foreground">Import hardware hashes</p>
                     <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                       Paste the Intune Autopilot CSV (`Device Serial Number`, `Hardware Hash`,
                       optional `Group Tag`) or one `serial,hash` pair per line. At most 500 rows.
@@ -1282,7 +1267,7 @@ export default function ManagementSettingsPage() {
 
                 <div class="space-y-3 border-t border-border pt-4">
                   <div class="flex items-center justify-between gap-2">
-                    <p class="text-[13px] font-medium text-foreground">
+                    <p class="text-xs font-medium text-foreground">
                       {editingProfileId() ? "Edit deployment profile" : "Create deployment profile"}
                     </p>
                     <Show when={editingProfileId()}>
@@ -1390,12 +1375,10 @@ export default function ManagementSettingsPage() {
                       </Field>
                     </div>
                     <label class="flex items-center gap-2 text-xs text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        class="size-3.5 accent-brand"
+                      <Checkbox
                         checked={profileDevicePreparation()}
-                        onChange={(event) =>
-                          setProfileDevicePreparation(event.currentTarget.checked)
+                        onCheckedChange={(checked) =>
+                          setProfileDevicePreparation(checked === true)
                         }
                       />
                       Enable device preparation (pre-provisioning)
@@ -1418,7 +1401,7 @@ export default function ManagementSettingsPage() {
               </div>
 
               <div class="mt-5 border-t border-border pt-4">
-                <p class="text-[13px] font-medium text-foreground">Autopilot devices</p>
+                <p class="text-xs font-medium text-foreground">Autopilot devices</p>
                 <QueryError
                   class="mt-3"
                   error={autopilotDevices.error}
@@ -1435,8 +1418,8 @@ export default function ManagementSettingsPage() {
                   }
                 >
                   <div class="mt-3 overflow-x-auto rounded-lg border border-border">
-                    <table class="w-full min-w-[42rem] text-left text-xs">
-                      <thead class="border-b border-border bg-surface text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                    <table class="w-full min-w-168 text-left text-xs">
+                      <thead class="border-b border-border bg-surface text-xs uppercase tracking-widest text-muted-foreground">
                         <tr>
                           <th class="px-3 py-2 font-medium">Serial</th>
                           <th class="px-3 py-2 font-medium">Group tag</th>
@@ -1450,7 +1433,7 @@ export default function ManagementSettingsPage() {
                         <For each={autopilotDevices.data?.devices ?? []}>
                           {(device) => (
                             <tr class="transition-colors hover:bg-hover">
-                              <td class="px-3 py-2 font-mono text-[11px]">{device.serial}</td>
+                              <td class="px-3 py-2 font-mono text-xs">{device.serial}</td>
                               <td class="px-3 py-2 text-muted-foreground">
                                 {device.groupTag ?? "—"}
                               </td>
@@ -1492,7 +1475,7 @@ export default function ManagementSettingsPage() {
               </div>
 
               <div class="mt-5 border-t border-border pt-4">
-                <p class="text-[13px] font-medium text-foreground">Deployment profiles</p>
+                <p class="text-xs font-medium text-foreground">Deployment profiles</p>
                 <QueryError
                   class="mt-3"
                   error={autopilotProfiles.error}
@@ -1556,8 +1539,8 @@ function AutopilotProfileRow(props: {
   return (
     <div class="rounded-lg border border-border bg-surface p-3">
       <div class="flex flex-wrap items-center gap-2">
-        <p class="text-[13px] font-medium text-foreground">{props.profile.name}</p>
-        <Chip tone={props.profile.status === "active" ? "success" : "neutral"}>
+        <p class="text-xs font-medium text-foreground">{props.profile.name}</p>
+        <Chip capitalize tone={props.profile.status === "active" ? "success" : "neutral"}>
           {props.profile.status}
         </Chip>
         <span class="text-xs text-muted-foreground">
@@ -1592,7 +1575,7 @@ function AutopilotProfileRow(props: {
           Assign to group
         </Button>
         <Show when={props.profile.assignedGroupId}>
-          <span class="break-all font-mono text-[11px] text-muted-foreground">
+          <span class="break-all font-mono text-xs text-muted-foreground">
             {props.profile.assignedGroupId}
           </span>
         </Show>
@@ -1606,36 +1589,14 @@ function Step(props: { index: number; active: boolean; title: string; body: stri
     <li class="rounded-lg border border-border bg-surface p-3.5">
       <span
         class={cn(
-          "flex size-6 items-center justify-center rounded-full text-[11px] font-semibold",
+          "flex size-6 items-center justify-center rounded-full text-xs font-semibold",
           props.active ? "bg-primary text-primary-foreground" : "bg-hover text-muted-foreground",
         )}
       >
         {props.index}
       </span>
-      <p class="mt-3 text-[13px] font-medium text-foreground">{props.title}</p>
+      <p class="mt-3 text-xs font-medium text-foreground">{props.title}</p>
       <p class="mt-1 text-xs leading-relaxed text-muted-foreground">{props.body}</p>
     </li>
-  );
-}
-
-const chipTones = {
-  neutral: "border-border bg-surface text-muted-foreground",
-  success: "border-success/25 bg-success/10 text-success-foreground",
-  warning: "border-warning/25 bg-warning/10 text-warning-foreground",
-  danger: "border-destructive/25 bg-destructive/10 text-destructive",
-} as const;
-
-function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element; class?: string }) {
-  return (
-    <span
-      class={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium capitalize",
-        chipTones[props.tone],
-        props.class,
-      )}
-    >
-      <span class="size-1.5 rounded-full bg-current" aria-hidden="true" />
-      {props.children}
-    </span>
   );
 }

@@ -1,14 +1,15 @@
 import { createSignal, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
-import { QrCode } from "~/components/mdm/qr-code";
+import QrCode from "~/components/mdm/qr-code";
 import { Button } from "~/components/ui/button";
 import { CircleAlert, ShieldCheck } from "~/components/ui/icons";
 import { authClient } from "~/lib/auth";
 import { errorMessage } from "~/lib/errors";
 import { cn } from "~/lib/utils";
+import { Input } from "~/components/ui/input";
 
 const inputClass =
-  "h-9 w-full min-w-0 rounded-lg border border-input bg-surface px-2.5 text-base text-foreground outline-none sm:text-[13px] transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
+  "h-9 w-full min-w-0";
 
 type PasskeySummary = {
   credentialId: string;
@@ -26,7 +27,7 @@ const formatDate = (millis: number | undefined) =>
  * Both factors satisfy multi-factor sign-in; passkeys are phishing-resistant and
  * can be used on their own.
  */
-export function AccountSecurity(props: {
+export default function AccountSecurity(props: {
   totpEnabled: boolean;
   passkeyEnabled: boolean;
   mfaRequired: boolean;
@@ -69,7 +70,7 @@ export function AccountSecurity(props: {
       return;
     }
 
-    setPasskeys(result.data.credentials);
+    setPasskeys([...result.data.credentials]);
   };
 
   onSettled(() => {
@@ -207,13 +208,13 @@ export function AccountSecurity(props: {
   };
 
   return (
-    <section class="rounded-xl border border-border bg-card p-4 shadow-[var(--shadow-card)] sm:p-5">
+    <section class="rounded-xl border border-border bg-card p-4 shadow-card sm:p-5">
       <div class="flex items-start gap-3">
         <span class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface text-muted-foreground">
           <ShieldCheck class="size-4" />
         </span>
         <div class="min-w-0">
-          <h2 class="mb-1 text-[13px] font-semibold text-foreground">
+          <h2 class="mb-1 text-xs font-semibold text-foreground">
             Passkeys and two-factor authentication
           </h2>
           <p class="text-xs leading-relaxed text-muted-foreground">
@@ -240,7 +241,7 @@ export function AccountSecurity(props: {
       </Show>
 
       <Show when={signedOut()}>
-        <div class="mt-4 rounded-lg border border-success/25 bg-success/[0.06] px-3 py-2.5 text-[13px]">
+        <div class="mt-4 rounded-lg border border-success/25 bg-success/[0.06] px-3 py-2.5 text-xs">
           <p class="font-medium text-foreground">Security settings updated.</p>
           <p class="mt-1 text-xs text-muted-foreground">
             For your security, sign in again with your new factor.
@@ -253,7 +254,7 @@ export function AccountSecurity(props: {
 
       <Show when={recoveryCodes()}>
         {(codes) => (
-          <div class="mt-4 rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-[13px]">
+          <div class="mt-4 rounded-lg border border-warning/25 bg-warning/[0.06] p-3 text-xs">
             <p class="font-medium text-foreground">Save these one-time recovery codes now.</p>
             <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
               Each code can be used once if you lose access to your authenticator. They are not
@@ -276,7 +277,7 @@ export function AccountSecurity(props: {
       <div class="mt-5 border-t border-border pt-4">
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div class="min-w-0">
-            <p class="text-[13px] font-medium text-foreground">Passkeys</p>
+            <p class="text-xs font-medium text-foreground">Passkeys</p>
             <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               Sign in with Face ID, Touch ID, Windows Hello or a security key. Add more than one
               passkey so a lost device cannot lock you out.
@@ -298,7 +299,7 @@ export function AccountSecurity(props: {
               {(item) => (
                 <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
                   <div class="min-w-0">
-                    <p class="truncate text-[13px] font-medium text-foreground">{item.name}</p>
+                    <p class="truncate text-xs font-medium text-foreground">{item.name}</p>
                     <p class="text-xs text-muted-foreground">
                       Added {formatDate(item.createdAtMillis)} · Last used{" "}
                       {formatDate(item.lastUsedAtMillis)}
@@ -320,7 +321,7 @@ export function AccountSecurity(props: {
         </Show>
 
         <form onSubmit={addPasskey} class="mt-3 flex flex-col gap-2 sm:flex-row">
-          <input
+          <Input
             class={inputClass}
             aria-label="Passkey name"
             placeholder="Name this passkey (for example, MacBook)"
@@ -337,7 +338,7 @@ export function AccountSecurity(props: {
         </p>
         <Show when={passkeyError()}>
           {(message) => (
-            <p role="alert" class="mt-2 text-[13px] text-destructive">
+            <p role="alert" class="mt-2 text-xs text-destructive">
               {message()}
             </p>
           )}
@@ -348,7 +349,7 @@ export function AccountSecurity(props: {
       <div class="mt-5 border-t border-border pt-4">
         <div class="flex flex-wrap items-start justify-between gap-2">
           <div class="min-w-0">
-            <p class="text-[13px] font-medium text-foreground">Authenticator app</p>
+            <p class="text-xs font-medium text-foreground">Authenticator app</p>
             <p class="mt-0.5 text-xs leading-relaxed text-muted-foreground">
               A time-based code from an app such as 1Password or Google Authenticator.
             </p>
@@ -378,7 +379,7 @@ export function AccountSecurity(props: {
                 </Show>
                 <Show when={enrollError()}>
                   {(message) => (
-                    <p role="alert" class="mt-2 text-[13px] text-destructive">
+                    <p role="alert" class="mt-2 text-xs text-destructive">
                       {message()}
                     </p>
                   )}
@@ -391,7 +392,7 @@ export function AccountSecurity(props: {
                 <div class="flex flex-col gap-4 rounded-lg border border-border bg-surface p-3 sm:flex-row sm:items-start">
                   <QrCode value={current().uri} label="Authenticator setup QR code" size={144} />
                   <div class="min-w-0 flex-1 space-y-2">
-                    <p class="text-[13px] font-medium text-foreground">Scan this QR code</p>
+                    <p class="text-xs font-medium text-foreground">Scan this QR code</p>
                     <p class="text-xs leading-relaxed text-muted-foreground">
                       Use your authenticator app, or enter this setup key manually:
                     </p>
@@ -408,7 +409,7 @@ export function AccountSecurity(props: {
                     >
                       Enter the 6-digit code from your app
                     </label>
-                    <input
+                    <Input
                       id="totp-confirm-code"
                       required
                       autocomplete="one-time-code"
@@ -423,7 +424,7 @@ export function AccountSecurity(props: {
                   </div>
                   <Show when={enrollError()}>
                     {(message) => (
-                      <p id="totp-confirm-error" role="alert" class="text-[13px] text-destructive">
+                      <p id="totp-confirm-error" role="alert" class="text-xs text-destructive">
                         {message()}
                       </p>
                     )}
@@ -453,14 +454,14 @@ export function AccountSecurity(props: {
         <Show when={props.totpEnabled && !signedOut()}>
           <div class="mt-3 space-y-5">
             <form onSubmit={regenerate} class="space-y-2">
-              <p class="text-[13px] font-medium text-foreground">Regenerate recovery codes</p>
+              <p class="text-xs font-medium text-foreground">Regenerate recovery codes</p>
               <p class="text-xs leading-relaxed text-muted-foreground">
                 This replaces every existing recovery code. Confirm with your passkey and a current
                 authenticator code.
               </p>
               <div class="space-y-2">
                 <div class="flex flex-col gap-2 sm:flex-row">
-                  <input
+                  <Input
                     id="regenerate-code"
                     required
                     autocomplete="one-time-code"
@@ -485,7 +486,7 @@ export function AccountSecurity(props: {
               </div>
               <Show when={regenerateError()}>
                 {(message) => (
-                  <p id="regenerate-error" role="alert" class="text-[13px] text-destructive">
+                  <p id="regenerate-error" role="alert" class="text-xs text-destructive">
                     {message()}
                   </p>
                 )}
@@ -493,14 +494,14 @@ export function AccountSecurity(props: {
             </form>
 
             <form onSubmit={disable} class="space-y-2 border-t border-border pt-4">
-              <p class="text-[13px] font-medium text-destructive">Disable authenticator app</p>
+              <p class="text-xs font-medium text-destructive">Disable authenticator app</p>
               <p class="text-xs leading-relaxed text-muted-foreground">
                 This removes the second factor and invalidates your sessions. Confirm with your
                 passkey and a current authenticator code.
               </p>
               <div class="space-y-2">
                 <div class="flex flex-col gap-2 sm:flex-row">
-                  <input
+                  <Input
                     id="disable-code"
                     required
                     autocomplete="one-time-code"
@@ -525,7 +526,7 @@ export function AccountSecurity(props: {
               </div>
               <Show when={disableError()}>
                 {(message) => (
-                  <p id="disable-error" role="alert" class="text-[13px] text-destructive">
+                  <p id="disable-error" role="alert" class="text-xs text-destructive">
                     {message()}
                   </p>
                 )}
@@ -540,7 +541,7 @@ export function AccountSecurity(props: {
 
 const chipTones = {
   neutral: "border-border bg-surface text-muted-foreground",
-  success: "border-success/25 bg-success/10 text-success-foreground",
+  success: "border-success/25 bg-success/10 text-success",
   warning: "border-warning/25 bg-warning/10 text-warning-foreground",
   danger: "border-destructive/25 bg-destructive/10 text-destructive",
 } as const;
@@ -549,7 +550,7 @@ function Chip(props: { tone: keyof typeof chipTones; children: JSX.Element }) {
   return (
     <span
       class={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
         chipTones[props.tone],
       )}
     >

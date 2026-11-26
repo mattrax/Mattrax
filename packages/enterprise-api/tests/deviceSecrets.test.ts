@@ -8,7 +8,7 @@ import {
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -72,7 +72,6 @@ const makeContext = async () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: this test never reaches R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake only implements the auth methods these tests exercise.
@@ -294,8 +293,11 @@ describe("installed application inventory", () => {
     );
 
     const now = new Date();
-    db.store.device.push(deviceRow("device-1", first.id), deviceRow("device-2", first.id));
-    db.store.device.push(deviceRow("device-3", second.id));
+    db.store.device.push(
+      deviceRow("device-1", first.id),
+      deviceRow("device-2", first.id),
+      deviceRow("device-3", second.id),
+    );
 
     const app = (deviceId: string, organizationId: string, bundleId: string) => ({
       deviceId,

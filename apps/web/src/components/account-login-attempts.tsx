@@ -1,12 +1,12 @@
 import { isServer } from "@solidjs/web";
 import { useQuery } from "@tanstack/solid-query";
-import {
-  LOGIN_ATTEMPT_FAILURES,
-  type LoginAttemptFactor,
-  type LoginAttemptFailure,
-  type LoginAttemptInfo,
-  type LoginAttemptMethod,
-  type LoginAttemptsResponse,
+import { LOGIN_ATTEMPT_FAILURES } from "@mattrax/enterprise-domain/client";
+import type {
+  LoginAttemptFactor,
+  LoginAttemptFailure,
+  LoginAttemptInfo,
+  LoginAttemptMethod,
+  LoginAttemptsResponse,
 } from "@mattrax/enterprise-domain/client";
 import { For, Show } from "solid-js";
 import { ErrorText, Panel } from "~/components/mdm/common";
@@ -99,7 +99,7 @@ const failureLabel = (reason: string | null | undefined) =>
  * is attributed to this account; unattributable failures are never written, so
  * the list is complete for the rows it can show.
  */
-export function AccountLoginAttempts(props: { userId: string | undefined }) {
+export default function AccountLoginAttempts(props: { userId: string | undefined }) {
   const attempts = useQuery<LoginAttemptsResponse>(() => ({
     queryKey: enterpriseKeys.loginAttempts(props.userId),
     queryFn: () => enterprise.listLoginAttempts(),
@@ -115,7 +115,7 @@ export function AccountLoginAttempts(props: { userId: string | undefined }) {
       description="Successful and rejected sign-ins for your account, newest first. Only you can see this history; networks are shown as approximate prefixes. Rejections with no identified account are not stored."
     >
       <Show when={attempts.isPending}>
-        <p class="text-[13px] text-muted-foreground">Loading sign-in history…</p>
+        <p class="text-xs text-muted-foreground">Loading sign-in history…</p>
       </Show>
 
       <Show when={attempts.error}>{(error) => <ErrorText error={error()} />}</Show>
@@ -124,7 +124,7 @@ export function AccountLoginAttempts(props: { userId: string | undefined }) {
         <Show
           when={rows().length > 0}
           fallback={
-            <p class="text-[13px] text-muted-foreground">
+            <p class="text-xs text-muted-foreground">
               No sign-in attempts recorded yet. The next time you sign in, it will appear here.
             </p>
           }
@@ -134,29 +134,26 @@ export function AccountLoginAttempts(props: { userId: string | undefined }) {
               {(attempt) => (
                 <li class="px-3 py-2.5">
                   <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                    <p class="flex flex-wrap items-center gap-2 text-[13px] font-medium text-foreground">
+                    <p class="flex flex-wrap items-center gap-2 text-xs font-medium text-foreground">
                       <span>{methodLabel(attempt)}</span>
                       <Show
                         when={attempt.success}
                         fallback={<Badge variant="destructive">Failed</Badge>}
                       >
-                        <Badge
-                          variant="outline"
-                          class="border-success/25 bg-success/10 text-success-foreground"
-                        >
+                        <Badge variant="success">
                           Signed in
                         </Badge>
                       </Show>
                     </p>
                     <time
-                      class="text-[11px] text-muted-foreground"
+                      class="text-xs text-muted-foreground"
                       datetime={attempt.createdAt}
                       title={new Date(attempt.createdAt).toISOString()}
                     >
                       {formatDate(attempt.createdAt)}
                     </time>
                   </div>
-                  <p class="mt-0.5 break-words text-[11px] leading-relaxed text-muted-foreground">
+                  <p class="mt-0.5 break-words text-xs leading-relaxed text-muted-foreground">
                     {deviceLabel(attempt)}
                     <Show when={attempt.ip}>
                       {(ip) => (

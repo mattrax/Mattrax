@@ -1,22 +1,22 @@
 import { Effect, Layer, Schema } from "effect";
 import { HttpRouter } from "effect/http";
+import { FetchHttpClient } from "effect/http";
 import {
   AndroidManagement,
   base64UrlEncode,
-  clearJwksCache,
-  verifyPubSubOidcToken,
-  type AndroidManagementService,
-  type CreateEnterpriseInput,
-  type PubSubOidcClaims,
-  type PubSubOidcVerifierConfig,
+  PubSubOidcVerifier,
+  PubSubOidcVerifierLive,
 } from "@mattrax/dm-android";
-import { Db, schema, type EnterpriseDb } from "@mattrax/enterprise-core";
-import {
-  createAndroidSignup,
-  handleAndroidPubSub,
-  type AndroidDeliveryConfig,
-  type AndroidPubSubResult,
-} from "@mattrax/enterprise-backend";
+import type {
+  AndroidManagementService,
+  CreateEnterpriseInput,
+  PubSubOidcClaims,
+  PubSubOidcVerifierConfig,
+} from "@mattrax/dm-android";
+import { Db, schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
+import { createAndroidSignup, handleAndroidPubSub } from "@mattrax/enterprise-backend";
+import type { AndroidDeliveryConfig, AndroidPubSubResult } from "@mattrax/enterprise-backend";
 import { androidRoutes } from "@mattrax/enterprise-api";
 
 type RowValue = string | number | boolean | Date | null | undefined | RowValue[] | Row;
@@ -95,7 +95,7 @@ class FakeInsert implements Iterable<Effect.Effect<Row[]>> {
   values(value: Row | Row[]): this {
     this.rows.push(...(Array.isArray(value) ? value : [value]));
 
-    for (const row of this.rows) this.store[this.table]!.push({ ...row });
+    for (const row of this.rows) this.store[this.table].push({ ...row });
 
     return this;
   }
@@ -125,7 +125,7 @@ class FakeUpdate implements Iterable<Effect.Effect<Row[]>> {
     return this;
   }
   where(): this {
-    for (const row of this.store[this.table]!) Object.assign(row, this.patch);
+    for (const row of this.store[this.table]) Object.assign(row, this.patch);
 
     return this;
   }
@@ -191,9 +191,9 @@ export const createFakeDb = (seed: Record<string, Row[]> = {}): FakeDb => {
 
     query[key] = {
       findFirst: ({ where }: { where?: Schema.JsonObject } = {}) =>
-        Effect.succeed(store[table]!.find((row) => matches(row, where))),
+        Effect.succeed(store[table].find((row) => matches(row, where))),
       findMany: ({ where }: { where?: Schema.JsonObject } = {}) =>
-        Effect.succeed(store[table]!.filter((row) => matches(row, where))),
+        Effect.succeed(store[table].filter((row) => matches(row, where))),
     };
   }
 
@@ -245,6 +245,7 @@ export type AndroidHarness = {
     policies: Array<{ enterpriseName: string; policyId: string; policy: Schema.JsonObject }>;
     devices: Array<{ deviceName: string; policyName: string }>;
     commands: Array<{ deviceName: string; type: string }>;
+    jwksRequests: number;
   };
 };
 
@@ -303,8 +304,6 @@ const base64Json = (value: Schema.Json): string => {
 };
 
 export const createAndroidHarness = async (): Promise<AndroidHarness> => {
-  clearJwksCache();
-
   const algorithm: RsaHashedKeyGenParams = {
     name: "RSASSA-PKCS1-v1_5",
     hash: "SHA-256",
@@ -321,11 +320,24 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     use: "sig",
   };
 
-  const jwksFetch: typeof globalThis.fetch = async () =>
-    new Response(JSON.stringify({ keys: [publicJwk] }), {
+  const jwksFetch: typeof globalThis.fetch = async () => {
+    calls.jwksRequests++;
+
+    return new Response(JSON.stringify({ keys: [publicJwk] }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
+  };
+
+  const jwksClient = FetchHttpClient.layer.pipe(
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, jwksFetch)),
+    Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })),
+  );
+  const verifierLayer = PubSubOidcVerifierLive({
+    audience,
+    serviceAccountEmail,
+    jwksUri,
+  }).pipe(Layer.provide(jwksClient));
 
   const config: AndroidDeliveryConfig = {
     serviceAccount: {
@@ -345,6 +357,7 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     policies: [],
     devices: [],
     commands: [],
+    jwksRequests: 0,
   };
 
   const androidService = AndroidManagement.of({
@@ -461,9 +474,10 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
         origin: "https://mdm.example.test",
         authorization: options.authorization,
         body: options.body,
-        fetch: jwksFetch,
-        now: () => Date.now(),
-      }).pipe(Effect.provideService(AndroidManagement, androidService)),
+      }).pipe(
+        Effect.provideService(AndroidManagement, androidService),
+        Effect.provide(verifierLayer),
+      ),
     );
 
   const createSignup = async (organization: { id: string; name: string }) =>
@@ -481,6 +495,7 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     origin: "https://mdm.example.test",
     authSecret: "compliance-auth-secret",
     config,
+    jwksFetch,
   }).pipe(
     Layer.provideMerge(Layer.succeed(Db, enterpriseDb(db))),
     Layer.provideMerge(Layer.succeed(AndroidManagement, androidService)),
@@ -497,13 +512,20 @@ export const createAndroidHarness = async (): Promise<AndroidHarness> => {
     signToken: (overrides = {}) => signJwt(keyPair.privateKey, overrides),
     verifyOidc: (token: string, overrides: Partial<PubSubOidcVerifierConfig> = {}) =>
       Effect.runPromise(
-        verifyPubSubOidcToken(token, {
-          audience,
-          serviceAccountEmail,
-          jwksUri,
-          fetch: jwksFetch,
-          ...overrides,
-        }),
+        Effect.gen(function* () {
+          const verifier = yield* PubSubOidcVerifier;
+
+          return yield* verifier.verify(token);
+        }).pipe(
+          Effect.provide(
+            PubSubOidcVerifierLive({
+              audience,
+              serviceAccountEmail,
+              jwksUri,
+              ...overrides,
+            }).pipe(Layer.provide(jwksClient)),
+          ),
+        ),
       ),
     pushBody: (data, notificationType, messageId = "compliance-message-1") => ({
       message: {

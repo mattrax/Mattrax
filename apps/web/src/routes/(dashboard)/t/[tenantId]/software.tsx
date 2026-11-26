@@ -4,7 +4,8 @@ import { onSettled } from "solid-js";
 
 /**
  * Software moved into the application catalogue and per-device inventory.
- * Keep the old URL working for bookmarks by forwarding to the catalogue.
+ * Keep the old URL working for bookmarks by forwarding to the applications
+ * list; the curated catalogue is one tab away.
  */
 export default function SoftwareRedirectPage() {
   const params = useParams();
@@ -15,7 +16,7 @@ export default function SoftwareRedirectPage() {
 
   return (
     <div class="flex flex-1 items-center justify-center py-24">
-      <p class="text-[12px] text-muted-foreground">Opening applications…</p>
+      <p class="text-xs text-muted-foreground">Opening applications…</p>
     </div>
   );
 }

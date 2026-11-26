@@ -1,13 +1,9 @@
 import { For, Show } from "solid-js";
 import { cn } from "~/lib/utils";
-import {
-  resolvedTheme,
-  setThemePreference,
-  themePreference,
-  THEME_PREFERENCES,
-  type ThemePreference,
-} from "~/lib/theme";
+import { resolvedTheme, setThemePreference, themePreference, THEME_PREFERENCES } from "~/lib/theme";
+import type { ThemePreference } from "~/lib/theme";
 import { Monitor, Moon, Sun } from "~/components/ui/icons";
+import { Input } from "~/components/ui/input";
 
 const LABELS: Record<ThemePreference, string> = {
   system: "System",
@@ -25,13 +21,13 @@ function ThemeIcon(props: { preference: ThemePreference; class?: string }) {
   return (
     <Show
       when={props.preference !== "system"}
-      fallback={<Monitor class={props.class} aria-hidden="true" />}
+      fallback={<Monitor class="size-3.5" aria-hidden="true" />}
     >
       <Show
         when={props.preference === "dark"}
-        fallback={<Sun class={props.class} aria-hidden="true" />}
+        fallback={<Sun class="size-3.5" aria-hidden="true" />}
       >
-        <Moon class={props.class} aria-hidden="true" />
+        <Moon class="size-3.5" aria-hidden="true" />
       </Show>
     </Show>
   );
@@ -46,7 +42,7 @@ function ThemeIcon(props: { preference: ThemePreference; class?: string }) {
  * applied immediately; the resolved theme (what `system` currently means) is
  * spelled out so the control explains itself.
  */
-export function ThemeSwitcher(props: { userId?: string; class?: string }) {
+export default function ThemeSwitcher(props: { userId?: string; class?: string }) {
   return (
     <div class={cn("space-y-3", props.class)}>
       <div
@@ -61,14 +57,14 @@ export function ThemeSwitcher(props: { userId?: string; class?: string }) {
             return (
               <label
                 class={cn(
-                  "flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[12.5px] font-medium transition-colors",
+                  "flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md text-xs font-medium transition-colors",
                   "has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/50",
                   selected()
-                    ? "bg-card text-foreground shadow-[var(--card-highlight)]"
+                    ? "bg-card text-foreground shadow-card"
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                <input
+                <Input
                   type="radio"
                   name="mattrax-theme"
                   value={preference}
@@ -83,7 +79,7 @@ export function ThemeSwitcher(props: { userId?: string; class?: string }) {
           }}
         </For>
       </div>
-      <p class="text-[12px] leading-relaxed text-muted-foreground">
+      <p class="text-xs leading-relaxed text-muted-foreground">
         {DESCRIPTIONS[themePreference()]}
         <Show when={themePreference() === "system"}>
           {" "}

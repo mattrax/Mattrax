@@ -49,10 +49,10 @@ export default function CompleteRecoveryPage() {
         }
 
         navigate("/account", { replace: true });
-      } catch (cause) {
+      } catch (error_) {
         setError(
           errorMessage(
-            raisedFailure(cause),
+            raisedFailure(error_),
             "That recovery link is invalid, expired or has already been used.",
           ),
         );
@@ -70,7 +70,7 @@ export default function CompleteRecoveryPage() {
           fallback={
             <p
               role="status"
-              class="mt-3 flex items-center justify-center gap-2 text-[13px] text-muted-foreground"
+              class="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground"
             >
               <span aria-hidden="true">
                 <Spinner class="size-3.5" />
@@ -83,13 +83,13 @@ export default function CompleteRecoveryPage() {
             <>
               <p
                 role="alert"
-                class="mt-3 text-[13px] text-destructive motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]"
+                class="mt-3 text-xs text-destructive page-enter"
               >
                 {message()}
               </p>
               <a
                 href="/recover"
-                class="mt-4 inline-flex text-[13px] font-medium text-brand underline underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:text-brand/80"
+                class="mt-4 inline-flex text-xs font-medium text-brand underline underline-offset-2 transition-colors duration-(--duration-hover) ease-swift hover:text-brand/80"
               >
                 Start recovery again
               </a>

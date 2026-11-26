@@ -100,6 +100,8 @@ export const SsrTokenAccount = Schema.Struct({
   mfaRequired: Schema.Boolean,
   /** Account-level landing tenant; mirrors the `me` payload. */
   defaultTenantId: Schema.optional(NullableString),
+  /** Effective platform-operator flag; mirrors the `me` payload. */
+  superadmin: Schema.optional(Schema.Boolean),
 });
 
 export type SsrTokenAccount = typeof SsrTokenAccount.Type;

@@ -92,7 +92,7 @@ const scan = (
   let index = 0;
 
   while (index < input.length) {
-    const character = input[index]!;
+    const character = input[index];
 
     // `$${...}` is an escape: copy the literal `${...}` span verbatim.
     if (character === "$" && input[index + 1] === "$" && input[index + 2] === "{") {

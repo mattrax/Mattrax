@@ -14,11 +14,14 @@ function Table(props: ComponentProps<"table"> & { containerClass?: string }) {
   return (
     <div
       data-slot="table-container"
-      class={cn("relative w-full overflow-x-auto rounded-xl border border-border bg-card", local.containerClass)}
+      class={cn(
+        "relative w-full overflow-x-auto rounded-xl border border-border bg-card",
+        local.containerClass,
+      )}
     >
       <table
         data-slot="table"
-        class={cn("w-full caption-bottom border-collapse text-[12.5px]", local.class)}
+        class={cn("w-full caption-bottom border-collapse text-xs", local.class)}
         {...others}
       />
     </div>
@@ -43,7 +46,7 @@ function TableRow(props: ComponentProps<"tr">) {
   return (
     <tr
       class={cn(
-        "border-b border-border transition-colors duration-[var(--duration-hover)] hover:bg-surface data-selected:bg-surface",
+        "border-b border-border transition-colors duration-150 hover:bg-surface data-selected:bg-surface",
         local.class,
       )}
       {...others}
@@ -57,7 +60,7 @@ function TableHead(props: ComponentProps<"th">) {
   return (
     <th
       class={cn(
-        "label-caps h-8 whitespace-nowrap px-3 text-left align-middle first:pl-4 last:pr-4",
+        "text-xs font-semibold uppercase tracking-wider text-muted-foreground h-8 whitespace-nowrap px-3 text-left align-middle first:pl-4 last:pr-4",
         local.class,
       )}
       {...others}
@@ -79,7 +82,9 @@ function TableCell(props: ComponentProps<"td">) {
 function TableCaption(props: ComponentProps<"caption">) {
   const [local, others] = splitProps(props, ["class"]);
 
-  return <caption class={cn("mt-3 text-[11.5px] text-muted-foreground", local.class)} {...others} />;
+  return (
+    <caption class={cn("mt-3 text-xs text-muted-foreground", local.class)} {...others} />
+  );
 }
 
 export { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow };

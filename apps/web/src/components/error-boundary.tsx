@@ -2,8 +2,10 @@ import { Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { Button } from "~/components/ui/button";
 import { CircleAlert } from "~/components/ui/icons";
-import { newErrorReference, type ErrorReference } from "~/lib/error-reference";
-import { errorPresentation, raisedFailure, type RaisedFailure } from "~/lib/errors";
+import { newErrorReference } from "~/lib/error-reference";
+import type { ErrorReference } from "~/lib/error-reference";
+import { errorPresentation, raisedFailure } from "~/lib/errors";
+import type { RaisedFailure } from "~/lib/errors";
 import { capturePostHogException } from "~/lib/posthog";
 import { cn } from "~/lib/utils";
 import type { Schema } from "effect";
@@ -70,7 +72,7 @@ export function ErrorPanel(props: ErrorPanelProps) {
     >
       <div
         class={cn(
-          "w-full rounded-xl border border-border bg-card p-5 text-left shadow-[var(--shadow-dialog)]",
+          "w-full rounded-xl border border-border bg-card p-5 text-left shadow-panel",
           variant() === "page" ? "max-w-md" : "max-w-xl",
         )}
       >
@@ -84,13 +86,13 @@ export function ErrorPanel(props: ErrorPanelProps) {
           <div class="min-w-0 flex-1">
             <Show when={props.label}>
               {(label) => (
-                <p class="text-[10.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                <p class="text-xs font-medium uppercase tracking-widest text-muted-foreground">
                   {label()}
                 </p>
               )}
             </Show>
-            <h2 class="text-[14px] font-semibold text-foreground">{presentation.title}</h2>
-            <p class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+            <h2 class="text-sm font-semibold text-foreground">{presentation.title}</h2>
+            <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
               {presentation.message}
             </p>
             {props.children}
@@ -109,8 +111,8 @@ export function ErrorPanel(props: ErrorPanelProps) {
               >
                 Reload page
               </Button>
-              <span class="ml-auto text-[11px] tabular-nums text-muted-foreground">
-                Error ID <code class="font-mono text-[11px] text-foreground">{reference}</code>
+              <span class="ml-auto text-xs tabular-nums text-muted-foreground">
+                Error ID <code class="font-mono text-xs text-foreground">{reference}</code>
               </span>
             </div>
           </div>
@@ -134,11 +136,11 @@ export function PageErrorFallback(props: {
       <div class="flex items-center gap-2.5">
         <span
           aria-hidden="true"
-          class="flex size-6 items-center justify-center rounded-[6px] bg-primary text-[11px] font-bold text-primary-foreground"
+          class="flex size-6 items-center justify-center rounded-sm bg-primary text-xs font-bold text-primary-foreground"
         >
           M
         </span>
-        <span class="text-[12.5px] font-medium text-muted-foreground">Mattrax</span>
+        <span class="text-xs font-medium text-muted-foreground">Mattrax</span>
       </div>
       <ErrorPanel
         boundary={props.boundary}

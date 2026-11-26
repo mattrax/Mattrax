@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, like, lt } from "drizzle-orm";
-import { Data, Effect, Option, Schema } from "effect";
+import { Data, Effect, Option, Result, Schema } from "effect";
+import { Digest } from "effect/crypto";
 import {
   AndroidManagement,
   androidPolicyHash,
@@ -11,18 +12,24 @@ import {
   GoogleApiError,
   isAndroidPackageName,
   mergeAssignedAndroidApplications,
-  verifyPubSubOidcToken,
-  type AndroidPolicyConfiguration,
-  type IssueCommandParams,
+  PubSubOidcVerifier,
 } from "@mattrax/dm-android";
+import type { AndroidPolicyConfiguration, IssueCommandParams } from "@mattrax/dm-android";
 import {
   deviceLimitForOrganization,
+  markAndroidRestrictedSoftwarePolicyDelivered,
   replaceDeviceApplications,
+  resolveRestrictedSoftwareForDevice,
   schema,
-  type EnterpriseDb,
-  type PlanLimitsConfig,
 } from "@mattrax/enterprise-core";
-import { selectInstaller, shouldApplyReportedName } from "@mattrax/enterprise-domain";
+import type { EnterpriseDb, PlanLimitsConfig } from "@mattrax/enterprise-core";
+import {
+  ANDROID_OS_UPDATE_CONFIGURATION_KIND,
+  androidSystemUpdatePolicy,
+  osPolicyRuleFromRow,
+  selectInstaller,
+  shouldApplyReportedName,
+} from "@mattrax/enterprise-domain";
 
 /** Command notification statuses mapped to the device command lifecycle. */
 const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed" | "sent">([
@@ -35,7 +42,7 @@ const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed
 import {
   ACTIVE_COMMAND_STATUSES,
   assignedApplicationIdsForDevice,
-  commandDedupeKey,
+  commandDedupeKeyEffect,
   commandIsExpired,
   deviceCommandExpiresAt,
   RECONCILED_RESULT_STATUS,
@@ -43,7 +50,7 @@ import {
   syncDynamicGroupsForDevice,
   writeSystemAudit,
   SYSTEM_AUDIT_ACTIONS,
-} from "@mattrax/mdm-apple";
+} from "@mattrax/mdm-core";
 import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
 
 /**
@@ -56,6 +63,15 @@ import { signToken, verifyToken } from "@mattrax/enterprise-tokens";
  */
 
 export const DEFAULT_ANDROID_POLICY_ID = "mattrax-default";
+
+/**
+ * Synthetic configuration kind carrying `installType: BLOCKED` entries from
+ * restricted software rules. It is appended after the tenant's own policies and
+ * the OS-update fragment, so a deny rule wins over an install fragment for the
+ * same package.
+ */
+export const ANDROID_RESTRICTED_SOFTWARE_CONFIGURATION_KIND =
+  "mttx.android.policy.restricted-software";
 
 /**
  * Status reporting Mattrax always requests. Google only reports
@@ -190,8 +206,8 @@ export const describeAndroidError = (cause: unknown): string => {
           })();
 
   return text
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\s+/g, " ")
+    .replaceAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replaceAll(/\s+/g, " ")
     .slice(0, 500);
 };
 
@@ -1507,7 +1523,19 @@ const compileEffectiveAndroidPolicy = (input: {
   readonly db: EnterpriseDb;
   readonly organizationId: string;
   readonly deviceId: string;
-}): Effect.Effect<{ readonly policy: Schema.JsonObject; readonly hash: string }, unknown> =>
+  readonly device?: typeof schema.device.$inferSelect;
+  readonly groupIds?: ReadonlySet<string>;
+  readonly restrictedSoftware?: NonNullable<
+    Parameters<typeof resolveRestrictedSoftwareForDevice>[2]
+  >;
+}): Effect.Effect<
+  {
+    readonly policy: Schema.JsonObject;
+    readonly hash: string;
+    readonly hasRestrictedSoftwarePolicy: boolean;
+  },
+  AndroidDeliveryError
+> =>
   Effect.gen(function* () {
     const effective = yield* resolveEffectivePolicyForDevice(input.db, {
       id: input.deviceId,
@@ -1524,8 +1552,52 @@ const compileEffectiveAndroidPolicy = (input: {
     );
 
     const configurations: Array<AndroidPolicyConfiguration> = effective.configurations.map(
-      (configuration) => ({ kind: configuration.kind, data: configuration.data }),
+      (configuration) => ({
+        kind: configuration.kind,
+        data: configuration.data,
+        policyId: configuration.policyId,
+      }),
     );
+
+    // The tenant OS policy is rendered as a systemUpdate fragment rather than
+    // a stored policy, so it applies without the operator authoring one. It is
+    // appended last: the tenant-wide rule wins over a conflicting fragment,
+    // matching how the Windows check-in merges its generated nodes.
+    const osPolicyRows = yield* input.db
+      .select({
+        platform: schema.tenantOsPolicy.platform,
+        minimumVersion: schema.tenantOsPolicy.minimumVersion,
+        enforcement: schema.tenantOsPolicy.enforcement,
+        deferralDays: schema.tenantOsPolicy.deferralDays,
+        updatedAt: schema.tenantOsPolicy.updatedAt,
+      })
+      .from(schema.tenantOsPolicy)
+      .where(
+        and(
+          eq(schema.tenantOsPolicy.organizationId, input.organizationId),
+          eq(schema.tenantOsPolicy.platform, "android"),
+        ),
+      )
+      .limit(1)
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new AndroidDeliveryError({
+              kind: "upstream",
+              message: `Could not load the Android OS policy: ${describeAndroidError(cause)}`,
+              cause,
+            }),
+        ),
+      );
+
+    const osPolicyRule = osPolicyRows[0] ? osPolicyRuleFromRow(osPolicyRows[0]) : null;
+    const systemUpdate = androidSystemUpdatePolicy(osPolicyRule);
+
+    if (systemUpdate)
+      configurations.push({
+        kind: ANDROID_OS_UPDATE_CONFIGURATION_KIND,
+        data: { systemUpdate },
+      });
 
     // Managed Google Play delivery is the policy's `applications` array. Assigned
     // catalogue apps are merged underneath the tenant's own policy fragments, so
@@ -1533,7 +1605,16 @@ const compileEffectiveAndroidPolicy = (input: {
     const assignedApplications = yield* assignedAndroidApplications(input.db, {
       organizationId: input.organizationId,
       deviceId: input.deviceId,
-    });
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new AndroidDeliveryError({
+            kind: "upstream",
+            message: `Could not load assigned Android applications: ${describeAndroidError(cause)}`,
+            cause,
+          }),
+      ),
+    );
 
     for (const application of assignedApplications) {
       if (!isAndroidPackageName(application.packageName))
@@ -1542,26 +1623,93 @@ const compileEffectiveAndroidPolicy = (input: {
         );
     }
 
-    return yield* Effect.tryPromise({
-      try: async () => {
-        // Mattrax needs software and application status to inventory a
-        // device, and Google disables both by default. The baseline sits
-        // underneath the tenant's own reporting settings, so an operator can
-        // still turn either off (at the cost of that inventory).
-        const policy = mergeAssignedAndroidApplications(
-          withStatusReporting(compileAndroidPolicy(configurations)),
-          assignedApplications,
-        );
+    // Restricted software is compiled last so a BLOCKED entry wins over a
+    // FORCE_INSTALLED entry for the same package. It is scoped per device, so
+    // only rules whose include/exclude scope resolves here are added. Only
+    // Block installation is expressible: Google has no process-kill or
+    // app-removal command, and those actions stay detection-only.
+    const restricted =
+      input.restrictedSoftware?.rules.length === 0
+        ? { rules: [] }
+        : yield* resolveRestrictedSoftwareForDevice(
+            input.db,
+            {
+              organizationId: input.organizationId,
+              deviceId: input.deviceId,
+              device: input.device,
+              groupIds: input.groupIds,
+            },
+            input.restrictedSoftware,
+          ).pipe(
+            Effect.mapError(
+              (cause) =>
+                new AndroidDeliveryError({
+                  kind: "upstream",
+                  message: `Could not resolve restricted software for the Android policy: ${describeAndroidError(cause)}`,
+                  cause,
+                }),
+            ),
+          );
 
-        return { policy, hash: await androidPolicyHash(policy) };
-      },
-      catch: (cause) =>
+    const blockedPackages = [
+      ...new Set(
+        restricted.rules
+          .filter(
+            ({ rule, capability }) =>
+              capability.mode === "policy" &&
+              rule.action === "block-install" &&
+              rule.matchType === "android-package" &&
+              isAndroidPackageName(rule.matchValue),
+          )
+          .map(({ rule }) => rule.matchValue.trim()),
+      ),
+    ].sort();
+
+    if (blockedPackages.length > 0)
+      configurations.push({
+        kind: ANDROID_RESTRICTED_SOFTWARE_CONFIGURATION_KIND,
+        data: {
+          applications: blockedPackages.map((packageName) => ({
+            packageName,
+            installType: "BLOCKED",
+          })),
+        },
+      });
+
+    const compiled = compileAndroidPolicy(configurations);
+
+    if (Result.isFailure(compiled)) {
+      return yield* Effect.fail(
         new AndroidDeliveryError({
           kind: "invalid_payload",
-          message: `Could not compile the Android policy: ${describeAndroidError(cause)}`,
-          cause,
+          message: `Could not compile the Android policy: ${describeAndroidError(compiled.failure)}`,
+          cause: compiled.failure,
         }),
-    });
+      );
+    }
+
+    // Mattrax needs software and application status to inventory a device,
+    // and Google disables both by default. The baseline sits underneath the
+    // tenant's own reporting settings, so an operator can still turn either
+    // off (at the cost of that inventory).
+    const policy = mergeAssignedAndroidApplications(
+      withStatusReporting(compiled.success),
+      assignedApplications,
+    );
+
+    const hash = yield* androidPolicyHash(policy).pipe(
+      Effect.mapError(
+        (cause) =>
+          new AndroidDeliveryError({
+            kind: "invalid_payload",
+            message: `Could not hash the Android policy: ${describeAndroidError(cause)}`,
+            cause,
+          }),
+      ),
+      Effect.provide(Digest.layerWebCrypto),
+    );
+
+    return { policy, hash, hasRestrictedSoftwarePolicy: blockedPackages.length > 0 };
   });
 
 const syncAndroidPolicyForDevice = (input: {
@@ -1569,9 +1717,13 @@ const syncAndroidPolicyForDevice = (input: {
   readonly config: AndroidDeliveryConfig;
   readonly organizationId: string;
   readonly enterpriseName: string;
-  readonly device: { readonly id: string; readonly dmIdentifier: string | null };
+  readonly device: typeof schema.device.$inferSelect;
+  readonly groupIds: ReadonlySet<string>;
+  readonly restrictedSoftware: NonNullable<
+    Parameters<typeof resolveRestrictedSoftwareForDevice>[2]
+  >;
 }): Effect.Effect<
-  { readonly status: "updated" | "skipped" },
+  { readonly status: "updated" | "skipped"; readonly hasRestrictedSoftwarePolicy: boolean },
   AndroidDeliveryError,
   AndroidManagement
 > =>
@@ -1592,6 +1744,9 @@ const syncAndroidPolicyForDevice = (input: {
       db: input.db,
       organizationId: input.organizationId,
       deviceId: input.device.id,
+      device: input.device,
+      groupIds: input.groupIds,
+      restrictedSoftware: input.restrictedSoftware,
     });
 
     const policyId = androidPolicyIdForHash(compiled.hash);
@@ -1601,7 +1756,10 @@ const syncAndroidPolicyForDevice = (input: {
     });
 
     if (mapping && mapping.policyHash === compiled.hash && mapping.policyId === policyId) {
-      return { status: "skipped" as const };
+      return {
+        status: "skipped" as const,
+        hasRestrictedSoftwarePolicy: compiled.hasRestrictedSoftwarePolicy,
+      };
     }
 
     yield* android
@@ -1661,7 +1819,10 @@ const syncAndroidPolicyForDevice = (input: {
       });
     }
 
-    return { status: "updated" as const };
+    return {
+      status: "updated" as const,
+      hasRestrictedSoftwarePolicy: compiled.hasRestrictedSoftwarePolicy,
+    };
   }).pipe(mapAndroidError);
 
 export type AndroidSyncResult = {
@@ -1717,10 +1878,76 @@ export const syncAndroidPoliciesForTenant = (input: {
             ),
       );
 
+    if (devices.length === 0) return { devices: 0, updated: 0, skipped: 0, failed: 0 };
+
+    // Restricted-software rules and assignments are tenant state, not device
+    // state. Load them once before the bounded fan-out; with no enabled Android
+    // rules the feature costs one query for the entire sync.
+    const restrictedSoftware = yield* Effect.gen(function* () {
+      const rules = yield* input.db
+        .select()
+        .from(schema.restrictedSoftware)
+        .where(
+          and(
+            eq(schema.restrictedSoftware.organizationId, input.organizationId),
+            eq(schema.restrictedSoftware.platform, "android"),
+            eq(schema.restrictedSoftware.enabled, true),
+          ),
+        );
+
+      if (rules.length === 0)
+        return { rules, assignments: [], groupIdsByDevice: new Map<string, ReadonlySet<string>>() };
+
+      const assignments = yield* input.db
+        .select()
+        .from(schema.restrictedSoftwareAssignment)
+        .where(
+          and(
+            eq(schema.restrictedSoftwareAssignment.organizationId, input.organizationId),
+            inArray(
+              schema.restrictedSoftwareAssignment.restrictedSoftwareId,
+              rules.map((rule) => rule.id),
+            ),
+          ),
+        );
+      const groupIdsByDevice = new Map<string, Set<string>>();
+
+      if (assignments.some((assignment) => assignment.targetType === "group")) {
+        const memberships = yield* input.db
+          .select({ deviceId: schema.groupDevice.deviceId, groupId: schema.groupDevice.groupId })
+          .from(schema.groupDevice)
+          .where(
+            inArray(
+              schema.groupDevice.deviceId,
+              devices.map((device) => device.id),
+            ),
+          );
+
+        for (const membership of memberships) {
+          const groupIds = groupIdsByDevice.get(membership.deviceId) ?? new Set<string>();
+          groupIds.add(membership.groupId);
+          groupIdsByDevice.set(membership.deviceId, groupIds);
+        }
+      }
+
+      return { rules, assignments, groupIdsByDevice };
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new AndroidDeliveryError({
+            kind: "upstream",
+            message: `Could not resolve restricted software for the Android policy: ${describeAndroidError(cause)}`,
+            cause,
+          }),
+      ),
+    );
+
     let updated = 0;
     let skipped = 0;
     let failed = 0;
     let lastError: string | null = null;
+
+    const noGroupIds: ReadonlySet<string> = new Set();
 
     // AMAPI policy pushes are two network calls per device. Keep the fan-out
     // bounded so a large group save cannot exhaust the Worker request budget.
@@ -1732,7 +1959,9 @@ export const syncAndroidPoliciesForTenant = (input: {
           config,
           organizationId: input.organizationId,
           enterpriseName,
-          device: { id: device.id, dmIdentifier: device.dmIdentifier },
+          device,
+          groupIds: restrictedSoftware.groupIdsByDevice.get(device.id) ?? noGroupIds,
+          restrictedSoftware,
         }).pipe(
           Effect.match({
             onFailure: (error) => ({ device, status: "failed" as const, error }),
@@ -1741,6 +1970,28 @@ export const syncAndroidPoliciesForTenant = (input: {
         ),
       { concurrency: 4 },
     );
+
+    const deliveredDeviceIds = outcomes.flatMap((outcome) =>
+      (outcome.status === "updated" || outcome.status === "skipped") &&
+      outcome.hasRestrictedSoftwarePolicy
+        ? [outcome.device.id]
+        : [],
+    );
+
+    // One batched read replaces the per-device violation query. Skip it when
+    // no delivered policy contains a restricted-software block.
+    if (deliveredDeviceIds.length > 0)
+      yield* markAndroidRestrictedSoftwarePolicyDelivered(input.db, {
+        organizationId: input.organizationId,
+        deviceIds: deliveredDeviceIds,
+        at: now(),
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(
+            `Could not mark restricted software enforced for ${input.organizationId}: ${String(error)}`,
+          ),
+        ),
+      );
 
     for (const outcome of outcomes) {
       if (outcome.status === "updated") {
@@ -2327,13 +2578,15 @@ export const reconcileAndroidEnterprise = (input: {
     let policyPages = 0;
 
     do {
-      const page = yield* android.listPolicies({ enterpriseName, pageToken: policyPageToken }).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning(
-            `Could not list Android policies for ${enterpriseName}: ${describeAndroidError(error)}`,
-          ).pipe(Effect.as({ policies: [], nextPageToken: undefined })),
-        ),
-      );
+      const page = yield* android
+        .listPolicies({ enterpriseName, pageToken: policyPageToken })
+        .pipe(
+          Effect.catch((error) =>
+            Effect.logWarning(
+              `Could not list Android policies for ${enterpriseName}: ${describeAndroidError(error)}`,
+            ).pipe(Effect.as({ policies: [], nextPageToken: undefined })),
+          ),
+        );
 
       for (const policy of page.policies) {
         const name = Option.getOrUndefined(
@@ -2669,10 +2922,12 @@ export const handleAndroidPubSub = (input: {
   readonly origin: string;
   readonly authorization?: string;
   readonly body: Schema.Json;
-  readonly fetch?: typeof globalThis.fetch;
-  readonly now?: () => number;
   readonly planLimits?: PlanLimitsConfig;
-}): Effect.Effect<AndroidPubSubResult, AndroidDeliveryError, AndroidManagement> =>
+}): Effect.Effect<
+  AndroidPubSubResult,
+  AndroidDeliveryError,
+  AndroidManagement | PubSubOidcVerifier
+> =>
   Effect.gen(function* () {
     const config = input.config;
 
@@ -2686,14 +2941,9 @@ export const handleAndroidPubSub = (input: {
           message: "Missing Pub/Sub OIDC bearer token.",
         }),
       );
-    yield* verifyPubSubOidcToken(token, {
-      audience:
-        config.pubsubAudience ?? `${input.origin.replace(/\/+$/, "")}/api/v1/android/pubsub`,
-      serviceAccountEmail: config.serviceAccount.clientEmail,
-      jwksUri: config.jwksUri,
-      fetch: input.fetch,
-      now: input.now,
-    }).pipe(
+    const verifier = yield* PubSubOidcVerifier;
+
+    yield* verifier.verify(token).pipe(
       Effect.mapError(
         (cause) =>
           new AndroidDeliveryError({
@@ -2835,7 +3085,7 @@ const PASSWORD_ALPHABET = `${PASSWORD_UPPER}${PASSWORD_LOWER}${PASSWORD_DIGITS}`
 const randomCharacter = (alphabet: string): string => {
   const [value] = crypto.getRandomValues(new Uint32Array(1));
 
-  return alphabet[value! % alphabet.length]!;
+  return alphabet[value % alphabet.length];
 };
 
 /**
@@ -2857,8 +3107,8 @@ const generateAndroidPassword = (length = 16): string => {
   while (characters.length < length) characters.push(randomCharacter(PASSWORD_ALPHABET));
 
   for (let index = characters.length - 1; index > 0; index--) {
-    const swap = Number(crypto.getRandomValues(new Uint32Array(1))[0]! % (index + 1));
-    [characters[index], characters[swap]] = [characters[swap]!, characters[index]!];
+    const swap = Number(crypto.getRandomValues(new Uint32Array(1))[0] % (index + 1));
+    [characters[index], characters[swap]] = [characters[swap], characters[index]];
   }
 
   return characters.join("");
@@ -2922,9 +3172,7 @@ export const issueAndroidCommand = (input: {
     const timestamp = now();
     const dedupePayload = { type: command.type };
 
-    const dedupeKey = yield* Effect.promise(() =>
-      commandDedupeKey(command.requestType, dedupePayload),
-    );
+    const dedupeKey = yield* commandDedupeKeyEffect(command.requestType, dedupePayload);
 
     // Android issues commands directly, so de-duplicate before the network
     // call: a double-clicked erase must not reach Google twice. Rows queued

@@ -1,17 +1,34 @@
-import { Effect } from "effect";
+import type { Effect } from "effect";
 import { HttpApi } from "effect/http-api";
 import { HttpApiClient } from "effect/http-api";
 import type { HttpClient } from "effect/http";
 
 import { enterpriseAccountApi } from "./AccountApi.js";
+import { enterpriseAdminApi } from "./AdminApi.js";
 import { enterpriseAdeApi } from "./AdeApi.js";
 import { enterpriseAttributeApi } from "./AttributeApi.js";
 import { enterpriseApi } from "./EnterpriseApi.js";
+
+import { enterpriseApplicationApi } from "./ApplicationApi.js";
+import { enterpriseCutoverApi } from "./CutoverApi.js";
 import { enterpriseDashboardApi } from "./DashboardApi.js";
+import { enterpriseDeviceViewApi } from "./DeviceViewApi.js";
+import { enterpriseDeviceHandoverApi } from "./DeviceHandoverApi.js";
+import { enterpriseGroupApi } from "./GroupApi.js";
 import { enterpriseIdentityApi } from "./IdentityApi.js";
+import { enterpriseOnboardingApi } from "./OnboardingApi.js";
+import { enterpriseUserApi } from "./UserApi.js";
+import { enterpriseSoftwareUpdateApi } from "./SoftwareUpdateApi.js";
+import { enterpriseOsPolicyApi } from "./OsPolicyApi.js";
+import { enterpriseListApi } from "./ListApi.js";
+import { enterpriseSoftwareCatalogueApi } from "./SoftwareCatalogueApi.js";
+import { enterpriseApprovalApi } from "./ApprovalApi.js";
 import { enterpriseWindowsApi } from "./WindowsApi.js";
+import { enterpriseScopeTagApi } from "./ScopeTagApi.js";
 
 export * from "./AccountApi.js";
+
+export * from "./AdminApi.js";
 
 export * from "./AdeApi.js";
 
@@ -19,9 +36,31 @@ export * from "./AttributeApi.js";
 
 export * from "./EnterpriseApi.js";
 
+export * from "./ApplicationApi.js";
+
+export * from "./CutoverApi.js";
+
 export * from "./DashboardApi.js";
 
+export * from "./DeviceViewApi.js";
+
+export * from "./DeviceHandoverApi.js";
+
+export * from "./GroupApi.js";
+
 export * from "./IdentityApi.js";
+
+export * from "./OnboardingApi.js";
+
+export * from "./UserApi.js";
+
+export * from "./SoftwareUpdateApi.js";
+
+export * from "./OsPolicyApi.js";
+
+export * from "./ListApi.js";
+
+export * from "./SoftwareCatalogueApi.js";
 
 export * from "./WindowsApi.js";
 
@@ -29,32 +68,82 @@ export * from "./Params.js";
 
 export * from "./ScriptApi.js";
 
+export * from "./RestrictedSoftwareApi.js";
+
+export * from "./MigrationApi.js";
+
+export * from "./ApprovalApi.js";
+
+export * from "./ScopeTagApi.js";
+
 export const enterpriseHttpApi: HttpApi.HttpApi<
   "MattraxEnterprise",
   | typeof enterpriseAccountApi
+  | typeof enterpriseAdminApi
   | typeof enterpriseApi
+  | typeof enterpriseApplicationApi
+  | typeof enterpriseCutoverApi
+  | typeof enterpriseGroupApi
   | typeof enterpriseAdeApi
   | typeof enterpriseAttributeApi
   | typeof enterpriseDashboardApi
+  | typeof enterpriseDeviceViewApi
+  | typeof enterpriseDeviceHandoverApi
   | typeof enterpriseIdentityApi
+  | typeof enterpriseOnboardingApi
+  | typeof enterpriseUserApi
+  | typeof enterpriseSoftwareUpdateApi
+  | typeof enterpriseOsPolicyApi
+  | typeof enterpriseListApi
+  | typeof enterpriseSoftwareCatalogueApi
   | typeof enterpriseWindowsApi
+  | typeof enterpriseApprovalApi
+  | typeof enterpriseScopeTagApi
 > = HttpApi.make("MattraxEnterprise")
   .add(enterpriseAccountApi)
+  .add(enterpriseAdminApi)
   .add(enterpriseApi)
+  .add(enterpriseApplicationApi)
+  .add(enterpriseCutoverApi)
+  .add(enterpriseGroupApi)
   .add(enterpriseAdeApi)
   .add(enterpriseAttributeApi)
   .add(enterpriseDashboardApi)
+  .add(enterpriseDeviceViewApi)
+  .add(enterpriseDeviceHandoverApi)
   .add(enterpriseIdentityApi)
-  .add(enterpriseWindowsApi);
+  .add(enterpriseOnboardingApi)
+  .add(enterpriseUserApi)
+  .add(enterpriseSoftwareUpdateApi)
+  .add(enterpriseOsPolicyApi)
+  .add(enterpriseListApi)
+  .add(enterpriseSoftwareCatalogueApi)
+  .add(enterpriseWindowsApi)
+  .add(enterpriseApprovalApi)
+  .add(enterpriseScopeTagApi);
 
 /** The flattened client groups the dashboard can call. */
 export type EnterpriseClient = HttpApiClient.Client<typeof enterpriseAccountApi> &
+  HttpApiClient.Client<typeof enterpriseAdminApi> &
   HttpApiClient.Client<typeof enterpriseApi> &
+  HttpApiClient.Client<typeof enterpriseApplicationApi> &
+  HttpApiClient.Client<typeof enterpriseCutoverApi> &
+  HttpApiClient.Client<typeof enterpriseGroupApi> &
   HttpApiClient.Client<typeof enterpriseAdeApi> &
   HttpApiClient.Client<typeof enterpriseAttributeApi> &
   HttpApiClient.Client<typeof enterpriseDashboardApi> &
+  HttpApiClient.Client<typeof enterpriseDeviceViewApi> &
+  HttpApiClient.Client<typeof enterpriseDeviceHandoverApi> &
   HttpApiClient.Client<typeof enterpriseIdentityApi> &
-  HttpApiClient.Client<typeof enterpriseWindowsApi>;
+  HttpApiClient.Client<typeof enterpriseOnboardingApi> &
+  HttpApiClient.Client<typeof enterpriseUserApi> &
+  HttpApiClient.Client<typeof enterpriseSoftwareUpdateApi> &
+  HttpApiClient.Client<typeof enterpriseOsPolicyApi> &
+  HttpApiClient.Client<typeof enterpriseListApi> &
+  HttpApiClient.Client<typeof enterpriseSoftwareCatalogueApi> &
+  HttpApiClient.Client<typeof enterpriseWindowsApi> &
+  HttpApiClient.Client<typeof enterpriseApprovalApi> &
+  HttpApiClient.Client<typeof enterpriseScopeTagApi>;
 
 export type EnterpriseClientOptions = NonNullable<Parameters<typeof HttpApiClient.make>[1]>;
 

@@ -112,7 +112,7 @@ const signingClient = <Client extends { ManagementWebhook: Record<string, unknow
           );
       },
     }),
-  }) as Client;
+  });
 
 export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptions) =>
   Layer.effect(
@@ -160,6 +160,13 @@ export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptio
             }),
           ),
 
+        getAppleManifest: (identityCertificate, identifier, token) =>
+          normalize(
+            client.ManagementWebhook.getAppleManifest({
+              payload: { identityCertificate, identifier, token },
+            }),
+          ),
+
         getAppleProfile: (policyId, kind, deviceId) =>
           normalize(
             client.ManagementWebhook.getAppleProfile({ payload: { policyId, kind, deviceId } }),
@@ -171,7 +178,15 @@ export const ManagementBackendHttp = (input: string | ManagementBackendHttpOptio
         getWindowsEnrollmentPolicy: (authToken, context) =>
           normalize(
             client.ManagementWebhook.getWindowsEnrollmentPolicy({
-              payload: { authToken, tenantToken: context?.tenantToken },
+              // The caller derives this audit context from verified request
+              // metadata. This adapter forwards it unchanged and never reads
+              // caller-controlled proxy headers itself.
+              payload: {
+                authToken,
+                tenantToken: context?.tenantToken,
+                clientIp: context?.clientIp,
+                userAgent: context?.userAgent,
+              },
             }),
           ),
 

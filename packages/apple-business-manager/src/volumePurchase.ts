@@ -1,10 +1,13 @@
 import { and, eq } from "drizzle-orm";
-import { Data, Effect, Option, Predicate, Schema } from "effect";
-import { fetchWithTimeout } from "@mattrax/net";
+import { Effect, Layer, Option, Predicate, Schema } from "effect";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { openSecret, sealSecret } from "@mattrax/crypto";
-import { parsePlist } from "@mattrax/plist";
-import { schema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { parsePlist, PlistValue } from "@mattrax/plist";
+import { schema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import { describeAppleError, parseAppleDate } from "./appleBusinessManager.ts";
+import { VppError } from "./errors.js";
+import type { VppErrorKind } from "./errors.js";
 
 /**
  * Apple Volume Purchase Program (VPP / Apps and Books) integration.
@@ -19,23 +22,8 @@ import { describeAppleError, parseAppleDate } from "./appleBusinessManager.ts";
  * it does not claim the device installed the app until the device reports it.
  */
 
-export type VppErrorKind =
-  | "not_configured"
-  | "invalid_token"
-  | "expired"
-  | "unauthorized"
-  | "forbidden"
-  | "not_found"
-  | "conflict"
-  | "no_license"
-  | "invalid_response"
-  | "upstream";
-
-export class VppError extends Data.TaggedError("VppError")<{
-  message: string;
-  kind: VppErrorKind;
-  cause?: unknown;
-}> {}
+export { VppError };
+export type { VppErrorKind };
 
 const fail = (kind: VppErrorKind, message: string, cause?: unknown) =>
   new VppError({ kind, message, cause });
@@ -54,12 +42,18 @@ const now = () => new Date();
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
-const JsonObject = Schema.Record(Schema.String, Schema.Json);
+type CredentialValue = Schema.Json | PlistValue | undefined;
+
+type CredentialRecord = Record<string, CredentialValue>;
+
+const CredentialValueSchema = Schema.Union([Schema.Json, PlistValue]);
+
+const CredentialRecordSchema = Schema.Record(Schema.String, CredentialValueSchema);
 
 const iso = (value: Date | null | undefined) =>
   value == null ? null : (value instanceof Date ? value : new Date(value)).toISOString();
 
-const text = (value: Schema.Json | undefined): string | undefined => {
+const text = (value: CredentialValue): string | undefined => {
   const string = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.String)(value))?.trim();
 
   if (string) return string;
@@ -69,11 +63,11 @@ const text = (value: Schema.Json | undefined): string | undefined => {
   return number !== undefined && Number.isFinite(number) ? String(number) : undefined;
 };
 
-const record = (value: Schema.Json | undefined): Record<string, Schema.Json> | undefined =>
-  Schema.is(JsonObject)(value) ? value : undefined;
+const record = (value: CredentialValue): CredentialRecord | undefined =>
+  Schema.is(CredentialRecordSchema)(value) ? value : undefined;
 
 const base64ToBytes = (value: string): Uint8Array => {
-  const cleaned = value.replace(/\s/g, "");
+  const cleaned = value.replaceAll(/\s/g, "");
   const binary = atob(cleaned);
 
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
@@ -136,18 +130,19 @@ export const parseVppTokenUpload = async (input: {
 
   candidates.push(raw);
 
-  let decoded: Record<string, Schema.Json> | undefined;
+  let decoded: CredentialRecord | undefined;
   let contentToken: string | undefined;
+  let fromPlist = false;
 
   for (const candidate of candidates) {
     const json = tryJson(candidate);
     const value = record(json);
 
-    if (value) {
+    if (value && json) {
       decoded = value;
       // Raw JSON is not itself the base64 sToken Apple expects. Re-encode it
       // so the stored credential is always a valid bearer value.
-      contentToken = jsonToBase64(value);
+      contentToken = jsonToBase64(json);
       break;
     }
 
@@ -157,7 +152,7 @@ export const parseVppTokenUpload = async (input: {
 
       if (value) {
         decoded = value;
-        contentToken = candidate.replace(/\s/g, "");
+        contentToken = candidate.replaceAll(/\s/g, "");
         break;
       }
     } catch {
@@ -168,15 +163,15 @@ export const parseVppTokenUpload = async (input: {
   if (!decoded && (raw.startsWith("<?xml") || raw.startsWith("<plist"))) {
     const parsed = await Effect.runPromise(parsePlist(raw)).catch(() => undefined);
 
-    const value = record(Option.getOrUndefined(Schema.decodeUnknownOption(Schema.Json)(parsed)));
+    const value = record(parsed);
 
     if (value) {
       decoded = value;
-      contentToken = jsonToBase64(value);
+      fromPlist = true;
     }
   }
 
-  if (!decoded || !contentToken)
+  if (!decoded)
     throw fail(
       "invalid_token",
       "Unrecognised Apps and Books token. Upload the .vpptoken content token downloaded from Apple Business Manager.",
@@ -203,6 +198,19 @@ export const parseVppTokenUpload = async (input: {
       "The Apps and Books token has expired. Download a new token from Apple Business Manager.",
     );
 
+  if (fromPlist)
+    contentToken = jsonToBase64({
+      token: tokenId,
+      expDate: expiresAt.toISOString(),
+      orgName,
+    });
+
+  if (!contentToken)
+    throw fail(
+      "invalid_token",
+      "Unrecognised Apps and Books token. Upload the .vpptoken content token downloaded from Apple Business Manager.",
+    );
+
   return { contentToken, tokenId, expiresAt, orgName };
 };
 
@@ -217,11 +225,11 @@ export const openVppToken = async (
 
   try {
     parsed = JSON.parse(await openSecret(authSecret, sealed));
-  } catch (cause) {
+  } catch (error) {
     throw fail(
       "invalid_token",
       "The stored Apps and Books token could not be decrypted. Re-upload the token.",
-      cause,
+      error,
     );
   }
 
@@ -240,6 +248,9 @@ export const openVppToken = async (
 // ─── VPP v2 client ───────────────────────────────────────────────
 
 export const VPP_BASE_URL = "https://vpp.itunes.apple.com/mdm";
+
+/** Apple answers fast or the token is dead; never hold a sync open. */
+export const VPP_REQUEST_TIMEOUT_MS = 15_000;
 
 export type VppAsset = {
   readonly adamId: string;
@@ -264,8 +275,8 @@ export type VppAssignment = {
 };
 
 export type VppClient = {
-  readonly listAssets: (contentToken: string) => Promise<VppAsset[]>;
-  readonly listAssignments: (contentToken: string) => Promise<VppAssignment[]>;
+  readonly listAssets: (contentToken: string) => Effect.Effect<VppAsset[], VppError>;
+  readonly listAssignments: (contentToken: string) => Effect.Effect<VppAssignment[], VppError>;
   readonly associateAssets: (
     contentToken: string,
     input: {
@@ -273,7 +284,7 @@ export type VppClient = {
       readonly pricingParam?: string;
       readonly serialNumbers: ReadonlyArray<string>;
     },
-  ) => Promise<{ readonly eventId?: string }>;
+  ) => Effect.Effect<{ readonly eventId?: string }, VppError>;
   readonly disassociateAssets: (
     contentToken: string,
     input: {
@@ -281,15 +292,15 @@ export type VppClient = {
       readonly pricingParam?: string;
       readonly serialNumbers: ReadonlyArray<string>;
     },
-  ) => Promise<{ readonly eventId?: string }>;
+  ) => Effect.Effect<{ readonly eventId?: string }, VppError>;
   readonly revokeAssets: (
     contentToken: string,
     input: { readonly serialNumbers: ReadonlyArray<string> },
-  ) => Promise<{ readonly eventId?: string }>;
+  ) => Effect.Effect<{ readonly eventId?: string }, VppError>;
   readonly getEventStatus: (
     contentToken: string,
     eventId: string,
-  ) => Promise<{ readonly eventStatus?: string; readonly eventType?: string }>;
+  ) => Effect.Effect<{ readonly eventStatus?: string; readonly eventType?: string }, VppError>;
 };
 
 export type VppApiConfig = {
@@ -312,105 +323,215 @@ const vppErrorKind = (status: number): VppErrorKind => {
   return "upstream";
 };
 
+const VppAssetSchema = Schema.Struct({
+  adamId: Schema.NonEmptyString,
+  name: Schema.optional(Schema.String),
+  bundleId: Schema.optional(Schema.String),
+  totalCount: Schema.optional(Schema.Number),
+  availableCount: Schema.optional(Schema.Number),
+  assignedCount: Schema.optional(Schema.Number),
+  retiredCount: Schema.optional(Schema.Number),
+  pricingParam: Schema.optional(Schema.String),
+  deviceAssignable: Schema.optional(Schema.Boolean),
+  revocable: Schema.optional(Schema.Boolean),
+  productType: Schema.optional(Schema.String),
+  supportedPlatforms: Schema.optional(Schema.Array(Schema.String)),
+});
+
+const VppAssignmentSchema = Schema.Struct({
+  adamId: Schema.NonEmptyString,
+  serialNumber: Schema.optional(Schema.String),
+  clientUserId: Schema.optional(Schema.String),
+  pricingParam: Schema.optional(Schema.String),
+});
+
+const VppEventResponseSchema = Schema.Struct({
+  eventId: Schema.optional(Schema.NonEmptyString),
+});
+
+const VppEventStatusSchema = Schema.Struct({
+  eventStatus: Schema.optional(Schema.String),
+  eventType: Schema.optional(Schema.String),
+});
+
+const VppErrorResponseSchema = Schema.Struct({
+  errorMessage: Schema.optional(Schema.String),
+  errorNumber: Schema.optional(Schema.Number),
+});
+
+const VppPageSchema = Schema.Record(Schema.String, Schema.Json);
+
+const VppTotalPagesSchema = Schema.Int;
+
+/** Parse JSON without trusting its shape; callers validate it with a Schema. */
+export const parseAppleJson = (text: string): Schema.Json | undefined => {
+  try {
+    return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text));
+  } catch {
+    return undefined;
+  }
+};
+
 export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
   const doFetch = config.fetch ?? globalThis.fetch;
-  const timeoutMs = config.timeoutMs ?? 15_000;
+  const timeoutMs = config.timeoutMs ?? VPP_REQUEST_TIMEOUT_MS;
   const baseUrl = (config.baseUrl ?? VPP_BASE_URL).replace(/\/+$/, "");
 
-  const request = async <T>(
+  // Every method owns its client, so callers never thread a layer.
+  const clientLayer = FetchHttpClient.layer.pipe(
+    Layer.provide(Layer.succeed(FetchHttpClient.Fetch, doFetch)),
+  );
+
+  /**
+   * One Apple Apps and Books request. The deadline covers the response body as
+   * well as the headers, so a stalled page fails like a hung connect.
+   */
+  const request = <T>(
+    schema: Schema.Decoder<T>,
     path: string,
     contentToken: string,
-    init: RequestInit = {},
-  ): Promise<T | undefined> => {
-    let response: Response;
-    const headers = new Headers(init.headers);
-    headers.set("accept", "application/json");
-    headers.set("authorization", `Bearer ${contentToken}`);
+    init: { readonly method?: "POST"; readonly body?: string } = {},
+  ): Effect.Effect<T | undefined, VppError, HttpClient.HttpClient> =>
+    Effect.gen(function* () {
+      const client = yield* HttpClient.HttpClient;
 
-    if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
+      const base =
+        init.method === "POST"
+          ? HttpClientRequest.post(`${baseUrl}${path}`).pipe(
+              HttpClientRequest.bodyText(init.body ?? "", "application/json"),
+            )
+          : HttpClientRequest.get(`${baseUrl}${path}`);
 
-    try {
-      response = await fetchWithTimeout(
-        `${baseUrl}${path}`,
-        { ...init, headers },
-        { fetch: doFetch, timeoutMs },
+      const sent = yield* Effect.gen(function* () {
+        const response = yield* client.execute(
+          base.pipe(
+            HttpClientRequest.setHeaders({
+              accept: "application/json",
+              authorization: `Bearer ${contentToken}`,
+            }),
+          ),
+        );
+
+        return {
+          status: response.status,
+          text: yield* response.text.pipe(Effect.orElseSucceed(() => "")),
+        };
+      }).pipe(
+        Effect.mapError((cause) =>
+          fail("upstream", `Apple VPP request failed: ${describeAppleError(cause)}`, cause),
+        ),
+        Effect.timeoutOrElse({
+          duration: timeoutMs,
+          orElse: () =>
+            Effect.fail(fail("upstream", `Apple VPP request timed out after ${timeoutMs}ms`)),
+        }),
       );
-    } catch (cause) {
-      throw fail("upstream", `Apple VPP request failed: ${describeAppleError(cause)}`, cause);
-    }
 
-    if (!response.ok) {
-      const body: { errorMessage?: string; errorNumber?: number } | undefined = await response
-        .json()
-        .catch(() => undefined);
+      if (sent.status < 200 || sent.status > 299) {
+        const body = Option.getOrUndefined(
+          Schema.decodeUnknownOption(VppErrorResponseSchema)(parseAppleJson(sent.text)),
+        );
 
-      throw fail(
-        vppErrorKind(response.status),
-        body?.errorMessage
-          ? `Apple Apps and Books rejected the request: ${body.errorMessage}`
-          : `Apple Apps and Books returned HTTP ${response.status}.`,
-      );
-    }
+        return yield* Effect.fail(
+          fail(
+            vppErrorKind(sent.status),
+            body?.errorMessage
+              ? `Apple Apps and Books rejected the request: ${body.errorMessage}`
+              : `Apple Apps and Books returned HTTP ${sent.status}.`,
+          ),
+        );
+      }
 
-    if (response.status === 204) return undefined;
+      if (sent.status === 204) return undefined;
 
-    try {
-      return await response.json();
-    } catch (cause) {
-      throw fail("invalid_response", "Apple Apps and Books returned invalid JSON.", cause);
-    }
-  };
+      const json = parseAppleJson(sent.text);
 
-  const paged = async <T extends Schema.Json>(
+      if (json === undefined)
+        return yield* Effect.fail(
+          fail("invalid_response", "Apple Apps and Books returned invalid JSON."),
+        );
+
+      const decoded = Option.getOrUndefined(Schema.decodeUnknownOption(schema)(json));
+
+      if (decoded === undefined)
+        return yield* Effect.fail(
+          fail("invalid_response", "Apple Apps and Books returned an invalid response shape."),
+        );
+
+      return decoded;
+    });
+
+  const paged = <T>(
     path: string,
     contentToken: string,
     key: string,
     valueSchema: Schema.Decoder<T>,
-  ): Promise<T[]> => {
-    const items: T[] = [];
-    let pageIndex = 0;
-    let totalPages = 1;
+  ): Effect.Effect<T[], VppError, HttpClient.HttpClient> =>
+    Effect.gen(function* () {
+      const items: T[] = [];
+      let pageIndex = 0;
 
-    do {
-      const page = await request<Record<string, Schema.Json>>(
-        `${path}${path.includes("?") ? "&" : "?"}pageIndex=${pageIndex}`,
-        contentToken,
-      );
+      while (true) {
+        if (pageIndex >= 100)
+          return yield* Effect.fail(
+            fail("invalid_response", "Apple Apps and Books pagination exceeded 100 pages."),
+          );
 
-      const values = Option.getOrUndefined(
-        Schema.decodeUnknownOption(Schema.Array(valueSchema))(page?.[key]),
-      );
+        const page = yield* request(
+          VppPageSchema,
+          `${path}${path.includes("?") ? "&" : "?"}pageIndex=${pageIndex}`,
+          contentToken,
+        );
 
-      if (values) items.push(...values);
+        const values = Option.getOrUndefined(
+          Schema.decodeUnknownOption(Schema.Array(valueSchema))(page?.[key]),
+        );
 
-      const total = Number(page?.totalPages);
-      totalPages = Number.isFinite(total) && total > 0 ? total : 1;
-      pageIndex++;
+        if (!values)
+          return yield* Effect.fail(
+            fail(
+              "invalid_response",
+              `Apple Apps and Books page did not include a valid ${key} array.`,
+            ),
+          );
 
-      if (pageIndex > 100)
-        throw fail("invalid_response", "Apple Apps and Books pagination exceeded 100 pages.");
-    } while (pageIndex < totalPages);
+        const totalPages = Option.getOrUndefined(
+          Schema.decodeUnknownOption(VppTotalPagesSchema)(page?.totalPages),
+        );
 
-    return items;
-  };
+        if (!totalPages || totalPages < 1)
+          return yield* Effect.fail(
+            fail("invalid_response", "Apple Apps and Books returned an invalid totalPages value."),
+          );
 
-  return {
-    listAssets: async (contentToken) => {
-      const assets = await paged("/v2/assets", contentToken, "assets", JsonObject);
+        if (totalPages > 100)
+          return yield* Effect.fail(
+            fail("invalid_response", "Apple Apps and Books pagination exceeded 100 pages."),
+          );
+
+        items.push(...values);
+        pageIndex++;
+
+        if (pageIndex >= totalPages) break;
+      }
+
+      return items;
+    });
+
+  const listAssets = (contentToken: string): Effect.Effect<VppAsset[], VppError> =>
+    Effect.gen(function* () {
+      const assets = yield* paged("/v2/assets", contentToken, "assets", VppAssetSchema);
 
       return assets.map((asset) => {
         const result: Mutable<VppAsset> = {
-          adamId: text(asset.adamId) ?? "",
-          totalCount: Number(asset.totalCount) || 0,
-          availableCount: Number(asset.availableCount) || 0,
-          assignedCount: Number(asset.assignedCount) || 0,
-          retiredCount: Number(asset.retiredCount) || 0,
-          deviceAssignable: asset.deviceAssignable === true,
-          revocable: asset.revocable === true,
-          supportedPlatforms:
-            Option.getOrUndefined(
-              Schema.decodeUnknownOption(Schema.Array(Schema.String))(asset.supportedPlatforms),
-            ) ?? [],
+          adamId: asset.adamId,
+          totalCount: asset.totalCount ?? 0,
+          availableCount: asset.availableCount ?? 0,
+          assignedCount: asset.assignedCount ?? 0,
+          retiredCount: asset.retiredCount ?? 0,
+          deviceAssignable: asset.deviceAssignable ?? false,
+          revocable: asset.revocable ?? false,
+          supportedPlatforms: asset.supportedPlatforms ?? [],
         };
 
         const name = text(asset.name);
@@ -419,85 +540,107 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
         const productType = text(asset.productType);
 
         if (name) result.name = name;
-
         if (bundleId) result.bundleId = bundleId;
-
         if (pricingParam) result.pricingParam = pricingParam;
-
         if (productType) result.productType = productType;
 
         return result;
       });
-    },
+    }).pipe(Effect.provide(clientLayer));
 
-    listAssignments: async (contentToken) => {
-      const assignments = await paged("/v2/assignments", contentToken, "assignments", JsonObject);
+  const listAssignments = (contentToken: string): Effect.Effect<VppAssignment[], VppError> =>
+    Effect.gen(function* () {
+      const assignments = yield* paged(
+        "/v2/assignments",
+        contentToken,
+        "assignments",
+        VppAssignmentSchema,
+      );
 
       return assignments.map((assignment) => {
-        const result: Mutable<VppAssignment> = { adamId: text(assignment.adamId) ?? "" };
-        const serialNumber = text(assignment.serialNumber);
-        const clientUserId = text(assignment.clientUserId);
-        const pricingParam = text(assignment.pricingParam);
+        const result: Mutable<VppAssignment> = { adamId: assignment.adamId };
+        const serialNumber = assignment.serialNumber;
+        const clientUserId = assignment.clientUserId;
+        const pricingParam = assignment.pricingParam;
 
         if (serialNumber) result.serialNumber = serialNumber;
-
         if (clientUserId) result.clientUserId = clientUserId;
-
         if (pricingParam) result.pricingParam = pricingParam;
 
         return result;
       });
+    }).pipe(Effect.provide(clientLayer));
+
+  const associateAssets = (
+    contentToken: string,
+    input: {
+      readonly adamId: string;
+      readonly pricingParam?: string;
+      readonly serialNumbers: ReadonlyArray<string>;
     },
-
-    associateAssets: async (contentToken, input) => {
-      const response = await request<{ eventId?: string }>("/v2/assets/associate", contentToken, {
-        method: "POST",
-        body: JSON.stringify({
-          assets: [
-            {
-              adamId: input.adamId,
-              pricingParam: input.pricingParam,
-            },
-          ],
-          serialNumbers: [...input.serialNumbers],
-        }),
-      });
-
-      return response?.eventId ? { eventId: response.eventId } : {};
-    },
-
-    disassociateAssets: async (contentToken, input) => {
-      const response = await request<{ eventId?: string }>(
-        "/v2/assets/disassociate",
+  ): Effect.Effect<{ readonly eventId?: string }, VppError> =>
+    Effect.gen(function* () {
+      const response = yield* request(
+        VppEventResponseSchema,
+        "/v2/assets/associate",
         contentToken,
         {
           method: "POST",
           body: JSON.stringify({
-            assets: [
-              {
-                adamId: input.adamId,
-                pricingParam: input.pricingParam,
-              },
-            ],
+            assets: [{ adamId: input.adamId, pricingParam: input.pricingParam }],
             serialNumbers: [...input.serialNumbers],
           }),
         },
       );
 
       return response?.eventId ? { eventId: response.eventId } : {};
-    },
+    }).pipe(Effect.provide(clientLayer));
 
-    revokeAssets: async (contentToken, input) => {
-      const response = await request<{ eventId?: string }>("/v2/assets/revoke", contentToken, {
+  const disassociateAssets = (
+    contentToken: string,
+    input: {
+      readonly adamId: string;
+      readonly pricingParam?: string;
+      readonly serialNumbers: ReadonlyArray<string>;
+    },
+  ): Effect.Effect<{ readonly eventId?: string }, VppError> =>
+    Effect.gen(function* () {
+      const response = yield* request(
+        VppEventResponseSchema,
+        "/v2/assets/disassociate",
+        contentToken,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            assets: [{ adamId: input.adamId, pricingParam: input.pricingParam }],
+            serialNumbers: [...input.serialNumbers],
+          }),
+        },
+      );
+
+      return response?.eventId ? { eventId: response.eventId } : {};
+    }).pipe(Effect.provide(clientLayer));
+
+  const revokeAssets = (
+    contentToken: string,
+    input: { readonly serialNumbers: ReadonlyArray<string> },
+  ): Effect.Effect<{ readonly eventId?: string }, VppError> =>
+    Effect.gen(function* () {
+      const response = yield* request(VppEventResponseSchema, "/v2/assets/revoke", contentToken, {
         method: "POST",
         body: JSON.stringify({ serialNumbers: [...input.serialNumbers] }),
       });
 
       return response?.eventId ? { eventId: response.eventId } : {};
-    },
+    }).pipe(Effect.provide(clientLayer));
 
-    getEventStatus: async (contentToken, eventId) => {
-      const response = await request<{ eventStatus?: string; eventType?: string }>(
+  const getEventStatus = (
+    contentToken: string,
+    eventId: string,
+  ): Effect.Effect<{ readonly eventStatus?: string; readonly eventType?: string }, VppError> =>
+    Effect.gen(function* () {
+      const response = yield* request(
+        VppEventStatusSchema,
         `/v2/status?eventId=${encodeURIComponent(eventId)}`,
         contentToken,
       );
@@ -506,11 +649,17 @@ export const makeVppClient = (config: VppApiConfig = {}): VppClient => {
         eventStatus: response?.eventStatus,
         eventType: response?.eventType,
       };
-    },
-  };
-};
+    }).pipe(Effect.provide(clientLayer));
 
-// ─── Persistence and service operations ──────────────────────────
+  return {
+    listAssets,
+    listAssignments,
+    associateAssets,
+    disassociateAssets,
+    revokeAssets,
+    getEventStatus,
+  };
+}; // ─── Persistence and service operations ──────────────────────────
 
 export type VppTokenRow = typeof schema.vppToken.$inferSelect;
 
@@ -629,11 +778,7 @@ export const saveVppToken = (input: {
     // reported instead of silently accepted.
     const client = makeVppClient(input.config);
 
-    const validation = yield* Effect.tryPromise({
-      try: () => client.listAssets(token.contentToken),
-      catch: (cause) =>
-        cause instanceof VppError ? cause : fail("upstream", describeAppleError(cause), cause),
-    }).pipe(Effect.result);
+    const validation = yield* client.listAssets(token.contentToken).pipe(Effect.result);
 
     if (Predicate.isTagged(validation, "Failure")) {
       yield* upsertVppRow(
@@ -705,11 +850,7 @@ export const syncVppAssets = (input: {
 
     const client = makeVppClient(input.config);
 
-    const remote = yield* Effect.tryPromise({
-      try: () => client.listAssets(token.contentToken),
-      catch: (cause) =>
-        cause instanceof VppError ? cause : fail("upstream", describeAppleError(cause), cause),
-    });
+    const remote = yield* client.listAssets(token.contentToken);
 
     const catalogue = yield* input.db
       .select()
@@ -1011,15 +1152,10 @@ export const assignVppLicence = (input: {
 
     const client = makeVppClient(input.config);
 
-    const associated = yield* Effect.tryPromise({
-      try: () =>
-        client.associateAssets(token.contentToken, {
-          adamId: assetId,
-          pricingParam: asset.pricingParam ?? undefined,
-          serialNumbers: [device.serial!],
-        }),
-      catch: (cause) =>
-        cause instanceof VppError ? cause : fail("upstream", describeAppleError(cause), cause),
+    const associated = yield* client.associateAssets(token.contentToken, {
+      adamId: assetId,
+      pricingParam: asset.pricingParam ?? undefined,
+      serialNumbers: [device.serial!],
     });
 
     const timestamp = now();
@@ -1173,15 +1309,10 @@ export const releaseVppLicence = (input: {
 
     const client = makeVppClient(input.config);
 
-    const result = yield* Effect.tryPromise({
-      try: () =>
-        client.disassociateAssets(token.contentToken, {
-          adamId: input.adamId,
-          pricingParam: asset.pricingParam ?? undefined,
-          serialNumbers: [device.serial!],
-        }),
-      catch: (cause) =>
-        cause instanceof VppError ? cause : fail("upstream", describeAppleError(cause), cause),
+    const result = yield* client.disassociateAssets(token.contentToken, {
+      adamId: input.adamId,
+      pricingParam: asset.pricingParam ?? undefined,
+      serialNumbers: [device.serial!],
     });
 
     yield* input.db

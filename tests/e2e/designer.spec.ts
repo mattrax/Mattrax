@@ -18,7 +18,10 @@ test.describe("policy designer", () => {
 
     // A selection gives the editor a live subtree; switching platforms then
     // changes the active selection identity, which used to desync hydration.
-    await page.getByRole("button", { name: /BitLocker/ }).first().click();
+    await page
+      .getByRole("button", { name: /BitLocker/ })
+      .first()
+      .click();
     await page.getByRole("button", { name: /^Add to policy$/ }).click();
     await expect(
       page.getByRole("button", { name: "Remove BitLocker from policy", exact: true }),
@@ -40,6 +43,31 @@ test.describe("policy designer", () => {
     expect(errors).toEqual([]);
   });
 
+  test("disables Clear Apple settings in empty public and dashboard designers", async ({
+    page,
+  }) => {
+    await gotoHydrated(page, "/designer");
+    await expect(page.getByText(/0 platforms\s*·\s*0 collections/).first()).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Clear Apple settings", exact: true }),
+    ).toBeDisabled();
+
+    const tenant = await bootstrapTenant(page, "Empty Designer Tenant");
+    await gotoHydrated(page, `/t/${tenant.id}/policies/new`);
+    const policyName = page.getByRole("textbox", { name: /^Name/ });
+    await policyName.fill("Empty designed policy");
+    await expect(policyName).toHaveValue("Empty designed policy");
+    await page.getByRole("button", { name: /^create policy$/i }).click();
+    await expect(page).toHaveURL(/\/editor$/);
+    const policyUrl = page.url().replace(/\/editor$/, "");
+
+    await gotoHydrated(page, `${policyUrl}/design`);
+    await expect(page.getByText(/0 platforms\s*·\s*0 collections/).first()).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Clear Apple settings", exact: true }),
+    ).toBeDisabled();
+  });
+
   test("browses the catalogue, applies a template and exports a SyncML artifact", async ({
     page,
   }) => {
@@ -56,7 +84,7 @@ test.describe("policy designer", () => {
     await page.getByRole("button", { name: /^Export$/ }).click();
     const file = await download;
     expect(file.suggestedFilename()).toContain("Windows-baseline.syncml.xml");
-    const contents = await readFile((await file.path())!, "utf8");
+    const contents = await readFile(await file.path(), "utf8");
     // Numeric and boolean settings keep their SyncML type instead of being
     // stringified by the catalogue's enum values.
     expect(contents).toContain('<Format xmlns="syncml:metinf">int</Format>');
@@ -169,7 +197,7 @@ test.describe("policy designer", () => {
     const download = page.waitForEvent("download");
     await page.getByRole("button", { name: /^Export$/ }).click();
     const file = await download;
-    const policy = JSON.parse(await readFile((await file.path())!, "utf8"));
+    const policy = JSON.parse(await readFile(await file.path(), "utf8"));
     expect(policy.keyguardDisabledFeatures).toContain("CAMERA");
   });
 

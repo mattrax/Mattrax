@@ -1,5 +1,13 @@
-import { Schema } from "effect";
-import type { Check, CheckResult, CheckStatus, Platform, RunOptions, RunReport, RunSummary } from "./types.ts";
+import { Cause, Clock, Effect, Logger, Predicate, Schema } from "effect";
+import type {
+  Check,
+  CheckResult,
+  CheckStatus,
+  Platform,
+  RunOptions,
+  RunReport,
+  RunSummary,
+} from "./types.ts";
 import { PLATFORMS } from "./types.ts";
 
 export const SUITE_VERSION = "1.0.0";
@@ -13,10 +21,10 @@ const emptyByPlatform = (): RunSummary["byPlatform"] => ({
   scep: emptyCounts(),
 });
 
-export const filterChecks = (
-  checks: ReadonlyArray<Check>,
+export const filterChecks = <Services>(
+  checks: ReadonlyArray<Check<Services>>,
   options: RunOptions = {},
-): ReadonlyArray<Check> => {
+): ReadonlyArray<Check<Services>> => {
   const platforms =
     options.platforms && options.platforms.length > 0 ? new Set(options.platforms) : undefined;
 
@@ -55,40 +63,16 @@ const errorMessage = (error: Error | Schema.Json): string => {
   }
 };
 
-function isPrimitiveThrown(value: unknown): value is bigint | symbol {
-  return typeof value === "bigint" || typeof value === "symbol";
-}
-
 const describeFailure = (cause: unknown): string => {
   if (cause instanceof Error || Schema.is(Schema.Json)(cause)) return errorMessage(cause);
 
-  if (isPrimitiveThrown(cause)) return String(cause);
+  if (Predicate.isBigInt(cause) || Predicate.isSymbol(cause)) return String(cause);
 
   return "Unserializable failure";
 };
 
-const withTimeout = async <A>(
-  work: Promise<A>,
-  timeoutMs: number | undefined,
-  name: string,
-): Promise<A> => {
-  if (!timeoutMs || timeoutMs <= 0) return work;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`Check timed out after ${timeoutMs}ms: ${name}`)),
-          timeoutMs,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-};
+const isTimeoutCause = (cause: Cause.Cause<unknown>): boolean =>
+  cause.reasons.some((reason) => Cause.isFailReason(reason) && Cause.isTimeoutError(reason.error));
 
 const PLATFORM_NAMES = new Map<Platform, string>([
   ["scep", "SCEP"],
@@ -99,35 +83,45 @@ const PLATFORM_NAMES = new Map<Platform, string>([
 
 const platformName = (platform: Platform): string => PLATFORM_NAMES.get(platform) ?? platform;
 
-export async function runChecks(
-  checks: ReadonlyArray<Check>,
+export const runChecks = Effect.fnUntraced(function* <Services>(
+  checks: ReadonlyArray<Check<Services>>,
   options: RunOptions = {},
   onResult?: (result: CheckResult) => void,
-): Promise<RunReport> {
-  const startedAt = new Date();
+): Effect.fn.Return<RunReport, never, Services> {
+  const startedAt = yield* Clock.currentTimeMillis;
   const results: Array<CheckResult> = [];
   const byPlatform = emptyByPlatform();
 
   for (const check of checks) {
     byPlatform[check.platform].total++;
-    const before = performance.now();
-    let status: CheckResult["status"] = "passed";
-    let error: string | undefined;
-    // Protocol routes log expected malformed-request failures to console.error.
-    // The report carries the useful failure, so keep CLI output deterministic.
-    const originalConsoleError = console.error;
-    console.error = () => {};
+    const before = yield* Clock.currentTimeMillis;
+    const outcome = yield* check.run().pipe(
+      // Protocol routes log expected malformed-request failures. Keep those
+      // logs scoped to the check without mutating process-global console state.
+      Effect.provide(Logger.layer([], { mergeWithExisting: false })),
+      Effect.as({ status: "passed" as const }),
+      options.timeoutMs && options.timeoutMs > 0
+        ? Effect.timeout(options.timeoutMs)
+        : (effect) => effect,
+      Effect.catchCause((cause) =>
+        isTimeoutCause(cause)
+          ? Effect.succeed({
+              status: "failed" as const,
+              error: `Check timed out after ${options.timeoutMs}ms: ${check.id}`,
+            })
+          : Cause.hasInterrupts(cause)
+            ? Effect.interrupt
+            : Effect.succeed({
+                status: "failed" as const,
+                error: describeFailure(Cause.squash(cause)),
+              }),
+      ),
+    );
 
-    try {
-      await withTimeout(check.run(), options.timeoutMs, check.id);
-    } catch (cause) {
-      status = "failed";
-      error = describeFailure(cause);
-    } finally {
-      console.error = originalConsoleError;
-    }
-
-    const durationMs = Math.round((performance.now() - before) * 100) / 100;
+    const after = yield* Clock.currentTimeMillis;
+    const durationMs = after - before;
+    const status = outcome.status;
+    const error = "error" in outcome ? outcome.error : undefined;
 
     if (status === "passed") byPlatform[check.platform].passed++;
     else byPlatform[check.platform].failed++;
@@ -146,12 +140,12 @@ export async function runChecks(
     const result: CheckResult = error === undefined ? base : { ...base, error };
 
     results.push(result);
-    onResult?.(result);
+    yield* Effect.sync(() => onResult?.(result));
 
     if (status === "failed" && options.failFast) break;
   }
 
-  const finishedAt = new Date();
+  const finishedAt = yield* Clock.currentTimeMillis;
   const passed = results.filter((result) => result.status === "passed").length;
   const failed = results.filter((result) => result.status === "failed").length;
   const skipped = results.filter((result) => result.status === "skipped").length;
@@ -159,19 +153,19 @@ export async function runChecks(
   return {
     suite: "mdm-compliance",
     version: SUITE_VERSION,
-    startedAt: startedAt.toISOString(),
-    finishedAt: finishedAt.toISOString(),
+    startedAt: new Date(startedAt).toISOString(),
+    finishedAt: new Date(finishedAt).toISOString(),
     summary: {
       total: results.length,
       passed,
       failed,
       skipped,
-      durationMs: Math.round((finishedAt.getTime() - startedAt.getTime()) * 100) / 100,
+      durationMs: finishedAt - startedAt,
       byPlatform,
     },
     checks: results,
   };
-}
+});
 
 const STATUS_BADGES = new Map<CheckStatus, string>([
   ["passed", "PASS"],

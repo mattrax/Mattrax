@@ -1,3 +1,5 @@
+import type { Effect } from "effect";
+
 export const PLATFORMS = ["apple", "windows", "android", "scep"] as const;
 
 export type Platform = (typeof PLATFORMS)[number];
@@ -15,14 +17,14 @@ export type CheckCategory =
   | "day-n"
   | "errors";
 
-export type Check = {
+export type Check<Services = never> = {
   readonly id: string;
   readonly platform: Platform;
   readonly category: CheckCategory;
   readonly name: string;
   readonly description: string;
   readonly dayN?: boolean;
-  readonly run: () => Promise<void>;
+  readonly run: () => Effect.Effect<void, unknown, Services>;
 };
 
 export type CheckStatus = "passed" | "failed" | "skipped";

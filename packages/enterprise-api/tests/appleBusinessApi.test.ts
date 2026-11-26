@@ -1,4 +1,5 @@
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   EnterpriseBadRequest,
@@ -6,7 +7,11 @@ import {
   EnterpriseNotFound,
   EnterpriseUnauthorized,
 } from "@mattrax/enterprise-domain";
-import { createEnterpriseService } from "@mattrax/enterprise-api";
+import {
+  APPLICATION_UPLOAD_MAX_BYTES,
+  applicationUploadLimitProblem,
+  createEnterpriseService,
+} from "@mattrax/enterprise-api";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const authSecret = "abm-api-test-secret";
@@ -163,22 +168,24 @@ const makeContext = async (
     });
   }
 
-  db.store.member.push({
-    id: "member-1",
-    organizationId,
-    accountId: user.id,
-    role: "owner",
-    createdAt: now,
-    updatedAt: now,
-  });
-  db.store.member.push({
-    id: "member-2",
-    organizationId: otherOrganizationId,
-    accountId: user.id,
-    role: "owner",
-    createdAt: now,
-    updatedAt: now,
-  });
+  db.store.member.push(
+    {
+      id: "member-1",
+      organizationId,
+      accountId: user.id,
+      role: "owner",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: "member-2",
+      organizationId: otherOrganizationId,
+      accountId: user.id,
+      role: "owner",
+      createdAt: now,
+      updatedAt: now,
+    },
+  );
   db.store.apple_push_certificate.push({
     organizationId,
     email: "owner@example.com",
@@ -246,6 +253,14 @@ const makeContext = async (
   return { db, service, headers: { cookie: "mattrax_session=test" } };
 };
 
+describe("application upload limits", () => {
+  it("rejects an oversized base64 body before decoding it", () => {
+    expect(applicationUploadLimitProblem(64)).toBeUndefined();
+    expect(applicationUploadLimitProblem(APPLICATION_UPLOAD_MAX_BYTES)).toBeUndefined();
+    expect(applicationUploadLimitProblem(APPLICATION_UPLOAD_MAX_BYTES * 2)).toContain("too large");
+  });
+});
+
 describe("Apple Business Manager API flow", () => {
   it("uploads, syncs, assigns and serves a tenant-scoped ADE profile", async () => {
     const { db, service, headers } = await makeContext();
@@ -279,7 +294,7 @@ describe("Apple Business Manager API flow", () => {
       service.getAbmDeviceProfileUrl(request(headers), organizationId, "SERIAL-1"),
     );
 
-    const token = decodeURIComponent(link.url.split("/api/v1/abm/ade/")[1]!);
+    const token = decodeURIComponent(link.url.split("/api/v1/abm/ade/")[1]);
     const profile = await runEffect(service.getAdeEnrollmentProfile(token));
     const plist = new TextDecoder().decode(profile.profile);
 
@@ -327,7 +342,7 @@ describe("Apple Business Manager API flow", () => {
       service.patchApplication(request(headers), organizationId, created.id, {
         installers: [
           {
-            id: first.installers[1]!.id,
+            id: first.installers[1].id,
             platform: "apple",
             source: "manifest",
             bundleId: "com.example.multi",
@@ -348,6 +363,65 @@ describe("Apple Business Manager API flow", () => {
       manifestUrl: "https://example.com/2.1.plist",
     });
     expect(db.store.application_installer).toHaveLength(1);
+  });
+
+  it("clears a stale provisioning expiry when an installer stops being an upload", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+
+    db.store.application.push({
+      id: "app-switch",
+      organizationId,
+      name: "Switch",
+      platform: "apple",
+      bundleId: "com.example.switch",
+      version: "1.0",
+      source: "upload",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_installer.push({
+      id: "installer-switch",
+      organizationId,
+      applicationId: "app-switch",
+      platform: "apple",
+      source: "upload",
+      bundleId: "com.example.switch",
+      version: "1.0",
+      manifestUrl: null,
+      storeId: null,
+      fileName: "Switch.ipa",
+      contentType: "application/octet-stream",
+      size: 3,
+      sha256: "e".repeat(64),
+      r2Key: "a/org-1/installer-switch/sha",
+      minOsVersion: null,
+      requiredCapability: null,
+      priority: 0,
+      provisioningExpiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await runEffect(
+      service.patchApplication(request(headers), organizationId, "app-switch", {
+        installers: [
+          {
+            id: "installer-switch",
+            platform: "apple",
+            source: "manifest",
+            bundleId: "com.example.switch",
+            version: "2.0",
+            manifestUrl: "https://example.test/switch.plist",
+          },
+        ],
+      }),
+    );
+
+    expect(db.store.application_installer[0]).toMatchObject({
+      source: "manifest",
+      provisioningExpiresAt: null,
+    });
   });
 
   it("scopes ABM reads and writes to the tenant", async () => {
@@ -451,7 +525,7 @@ describe("Apple Business Manager API flow", () => {
 
     // SAFETY: the queued payload is produced by this test's install path and
     // the assertions verify the manifest keys it wrote.
-    const payload = db.store.device_command[0]!.payload as any;
+    const payload = db.store.device_command[0]!.payload;
     expect(payload.Manifest.items[0].metadata["bundle-identifier"]).toBe("com.microsoft.Office");
     expect(payload.Manifest.items[0].assets[0].sha256).toBe("a".repeat(64));
     expect(payload.Manifest.items[0].assets[0].url).toContain(
@@ -552,10 +626,22 @@ describe("Apple Business Manager API flow", () => {
     );
   });
 
-  it("reports an uploaded .ipa instead of queueing an install it cannot perform", async () => {
+  it("queues an InstallApplication with a generated OTA manifest for an uploaded .ipa", async () => {
     const { db, service, headers } = await makeContext();
     const now = new Date();
 
+    db.store.device.push({
+      id: "iphone-1",
+      organizationId,
+      proto: "apple",
+      status: "enrolled",
+      name: "iPhone",
+      serial: "IPHONE-1",
+      osEdition: "iOS",
+      osVersion: "17.0",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
     db.store.application.push({
       id: "app-ipa",
       organizationId,
@@ -571,14 +657,96 @@ describe("Apple Business Manager API flow", () => {
       createdAt: now,
       updatedAt: now,
     });
-    db.store.application_device.push({ deviceId: "device-1", applicationId: "app-ipa" });
+    db.store.application_device.push({ deviceId: "iphone-1", applicationId: "app-ipa" });
 
     const result = await runEffect(
       service.installApplication(request(headers), organizationId, "app-ipa"),
     );
 
-    expect(result).toMatchObject({ queued: 0 });
-    expect(result.message).toContain("OTA manifest");
+    expect(result).toMatchObject({ queued: 1, skipped: 0 });
+    expect(db.store.device_command[0]).toMatchObject({
+      requestType: "InstallApplication",
+      deviceId: "iphone-1",
+    });
+
+    // SAFETY: the .ipa install path builds this exact payload shape.
+    const payload = db.store.device_command[0]!.payload;
+    expect(payload.InstallAsManaged).toBe(true);
+    expect(payload.ManagementFlags).toBe(1);
+    expect(payload.ManifestURL).toContain("/mdm/apple/manifests/app.app-ipa?token=");
+    expect(payload.ManifestURL).not.toContain("/mdm/apple/assets/");
+  });
+
+  it("refuses an uploaded .ipa on an Apple User Enrollment device", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+
+    db.store.device.push({
+      id: "byod-1",
+      organizationId,
+      proto: "apple",
+      status: "enrolled",
+      name: "BYOD iPhone",
+      serial: "BYOD-1",
+      osEdition: "iOS",
+      osVersion: "17.0",
+      enrolledAt: now,
+      lastSeenAt: now,
+    });
+    db.store.device_apple.push({ deviceId: "byod-1", enrollmentMode: "user" });
+    db.store.application.push({
+      id: "app-ipa-byod",
+      organizationId,
+      name: "Internal iOS",
+      platform: "apple",
+      bundleId: "com.example.internal",
+      version: "1.0",
+      source: "upload",
+      fileName: "Internal.ipa",
+      contentType: "application/octet-stream",
+      sha256: "f".repeat(64),
+      r2Key: "a/org-1/app-ipa-byod/sha",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_device.push({ deviceId: "byod-1", applicationId: "app-ipa-byod" });
+
+    const result = await runEffect(
+      service.installApplication(request(headers), organizationId, "app-ipa-byod"),
+    );
+
+    expect(result).toMatchObject({ queued: 0, skipped: 1 });
+    expect(result.message).toContain("User Enrollment");
+    expect(db.store.device_command).toHaveLength(0);
+  });
+
+  it("does not send an uploaded .ipa to a Mac", async () => {
+    const { db, service, headers } = await makeContext();
+    const now = new Date();
+
+    db.store.application.push({
+      id: "app-ipa-mac",
+      organizationId,
+      name: "Internal iOS",
+      platform: "apple",
+      bundleId: "com.example.internal",
+      version: "1.0",
+      source: "upload",
+      fileName: "Internal.ipa",
+      contentType: "application/octet-stream",
+      sha256: "d".repeat(64),
+      r2Key: "a/org-1/app-ipa-mac/sha",
+      createdAt: now,
+      updatedAt: now,
+    });
+    db.store.application_device.push({ deviceId: "device-1", applicationId: "app-ipa-mac" });
+
+    const result = await runEffect(
+      service.installApplication(request(headers), organizationId, "app-ipa-mac"),
+    );
+
+    expect(result).toMatchObject({ queued: 0, skipped: 1 });
+    expect(result.message).toContain("iOS and iPadOS only");
     expect(db.store.device_command).toHaveLength(0);
   });
 
@@ -664,7 +832,7 @@ describe("Apple Business Manager API flow", () => {
 
     // SAFETY: the InstallApplication payload for a Windows MSI is constructed
     // by windowsMsiInstallPayload, which always returns these fields.
-    const payload = command.payload as any;
+    const payload = command.payload;
     expect(payload.kind).toBe("Exec");
     expect(payload.format).toBe("xml");
     expect(payload.locURI).toContain(encodeURIComponent("{8A69D345-D564-463C-AFF1-A69D9E530F96}"));

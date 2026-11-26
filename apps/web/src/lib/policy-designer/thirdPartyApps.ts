@@ -1,5 +1,6 @@
-import { Match, Schema } from "effect";
-import { type Collection, type PlatformId, type Property, type PropertyType } from "./catalog";
+import { Effect, Match, Schema } from "effect";
+import { CatalogueService, runCatalogue } from "~/lib/catalogue-service";
+import type { Collection, PlatformId, Property, PropertyType } from "./catalog";
 
 /**
  * Third-party application templates.
@@ -94,23 +95,13 @@ export const ThirdPartyCatalog = Schema.Struct({
 
 export type ThirdPartyCatalog = typeof ThirdPartyCatalog.Type;
 
-let catalogPromise: Promise<ThirdPartyCatalog> | undefined;
-
-/** Load the catalogue once per page session. */
-export const loadThirdPartyApps = () => {
-  catalogPromise ??= (async () => {
-    const response = await fetch("/catalog/third-party-apps.json");
-
-    if (!response.ok) throw new Error(`Could not load third-party apps (${response.status})`);
-
-    return Schema.decodeUnknownSync(ThirdPartyCatalog)(await response.json());
-  })().catch((error) => {
-    catalogPromise = undefined;
-    throw error;
-  });
-
-  return catalogPromise;
-};
+/** Load the catalogue through the Layer-owned, request-coalescing cache. */
+export const loadThirdPartyApps = () =>
+  runCatalogue(
+    CatalogueService.pipe(
+      Effect.flatMap((service) => service.get("/catalog/third-party-apps.json", ThirdPartyCatalog)),
+    ),
+  );
 
 const settingType = (setting: ThirdPartySetting): PropertyType => {
   switch (setting.type) {

@@ -1,6 +1,8 @@
-import { Passkey, Sessions } from "@yielded/auth";
-import { Context, Schema, type Effect } from "effect";
-import { StepUpMethods, StepUpUnavailable } from "./stepUp.ts";
+import type { Sessions } from "@yielded/auth";
+import { Passkey } from "@yielded/auth";
+import { Context, Schema } from "effect";
+import type { Effect } from "effect";
+import type { StepUpMethods, StepUpUnavailable } from "./stepUp.ts";
 
 /**
  * Server-side result of starting a step-up ceremony. The runtime keeps the
@@ -25,8 +27,11 @@ export type StepUpPasskeyChallenge = typeof StepUpPasskeyChallenge.Type;
 export class StepUpService extends Context.Service<
   StepUpService,
   {
-    readonly methods: (subjectId: string) => Effect.Effect<StepUpMethods, never>;
-    readonly verifyTotp: (subjectId: string, code: string) => Effect.Effect<boolean, never>;
+    readonly methods: (subjectId: string) => Effect.Effect<StepUpMethods, StepUpUnavailable>;
+    readonly verifyTotp: (
+      subjectId: string,
+      code: string,
+    ) => Effect.Effect<boolean, StepUpUnavailable>;
     readonly beginPasskey: (
       subjectId: string,
     ) => Effect.Effect<StepUpPasskeyChallenge, StepUpUnavailable>;
@@ -36,7 +41,7 @@ export class StepUpService extends Context.Service<
       readonly requestBindingVerifier: string;
       readonly requestBindingExpiresAtMillis: number;
       readonly response: string;
-    }) => Effect.Effect<string | undefined, never>;
+    }) => Effect.Effect<string | undefined, StepUpUnavailable>;
   }
 >()("@mattrax/enterprise-domain/StepUpService") {}
 

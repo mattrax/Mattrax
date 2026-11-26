@@ -11,6 +11,10 @@
 **/.turbo
 **/*.tsbuildinfo
 **/.dev.vars
+# Local environment files never belong in a build context, even though the
+# runtime stage only copies the staged bundles.
+**/.env
+**/.env.*
 **/.certs
 **/playwright-report
 **/test-results

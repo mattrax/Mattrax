@@ -1,5 +1,7 @@
 import { Option, Schema } from "effect";
 import type { QueryClient } from "@tanstack/solid-query";
+import { clearMeCache } from "~/lib/me-cache";
+import { resetMePreload } from "~/lib/me-preload";
 
 /**
  * Cross-tab query synchronisation.
@@ -64,7 +66,6 @@ export type CrossTabMessage = typeof CrossTabMessage.Type;
 const decode = Schema.decodeUnknownOption(CrossTabMessage);
 
 /** Decode an untrusted payload from a channel or `storage` event. */
-// oxlint-disable-next-line anti-slop/no-unknown-parameters -- this is the decode boundary for channel/storage payloads.
 export const decodeCrossTabMessage = (value: unknown): CrossTabMessage | undefined =>
   Option.getOrUndefined(decode(value));
 
@@ -87,10 +88,8 @@ const currentTabId = (): string => {
 export const crossTabTabId = (): string => currentTabId();
 
 /** A tab never applies its own message; the local cache already changed. */
-export const isOwnMessage = (
-  message: CrossTabMessage,
-  self: string = currentTabId(),
-): boolean => message.tabId === self;
+export const isOwnMessage = (message: CrossTabMessage, self: string = currentTabId()): boolean =>
+  message.tabId === self;
 
 /** Stable key identity for dedupe inside a flush window. */
 export const queryKeyId = (key: readonly unknown[]): string => JSON.stringify(key);
@@ -120,6 +119,26 @@ export const mergeInvalidationKeys = (
   }
 
   return merged;
+};
+
+/**
+ * The message shape for a pending batch.
+ *
+ * An empty key list is not "invalidate nothing": it is the caller's way of
+ * asking for the active tenant once (`query-client` uses it after a mutation).
+ * Treat it as tenant scope, just like a list above the cap.
+ */
+export const invalidationScope = (
+  keys: readonly (readonly unknown[])[],
+  tenantScope = false,
+):
+  | { readonly scope: "tenant" }
+  | { readonly scope: "keys"; readonly keys: readonly (readonly unknown[])[] } => {
+  if (tenantScope || keys.length === 0) return { scope: "tenant" };
+
+  const merged = mergeInvalidationKeys([], keys);
+
+  return merged === undefined ? { scope: "tenant" } : { scope: "keys", keys: merged };
 };
 
 /** True when a query key belongs to `tenantId` (the id is a key element). */
@@ -159,14 +178,14 @@ const flush = () => {
   for (const [id, batch] of pending) {
     pending.delete(id);
 
-    const keys = batch.tenantScope ? undefined : mergeInvalidationKeys([], batch.keys);
+    const shape = invalidationScope(batch.keys, batch.tenantScope);
 
     deliver({
       ...envelope(),
       type: "invalidate",
       tenantId: batch.tenantId,
-      scope: keys === undefined ? "tenant" : "keys",
-      keys: keys ?? [],
+      scope: shape.scope,
+      keys: shape.scope === "keys" ? [...shape.keys] : [],
     });
   }
 };
@@ -262,11 +281,18 @@ export const applyCrossTabMessage = (target: CrossTabCache, message: CrossTabMes
     }
 
     case "reset": {
-      if (message.tenantId === null) target.clear();
-      else
+      if (message.tenantId === null) {
+        // A full reset is a sign-out (or cache drop) in another tab. Drop the
+        // persisted shell and this tab's document preload too so re-signing in
+        // does not seed stale initial data.
+        clearMeCache();
+        resetMePreload();
+        target.clear();
+      } else {
         target.removeQueries({
           predicate: (query) => keyTouchesTenant(query.queryKey, message.tenantId),
         });
+      }
     }
   }
 };
@@ -280,7 +306,6 @@ export const installCrossTabSync = (target: QueryClient): void => {
 
   installed = true;
 
-  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- channel/storage payloads are decoded here.
   const receive = (value: unknown) => {
     const message = decodeCrossTabMessage(value);
 

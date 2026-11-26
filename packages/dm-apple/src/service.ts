@@ -1,34 +1,37 @@
-import { Context, Effect, Layer, Option, Predicate, Schema } from "effect";
-import {
-  type AuthenticatePlist,
-  type CheckOutPlist,
-  type CommandResultPlist,
-  type DDMStatusReport,
-  type TokenUpdatePlist,
-  type UserAuthenticatePlist,
-  DeviceUnenrolled,
-  MdmError,
-  resolveCheckinChannel,
+import { Cause, Context, Effect, Layer, Option, Predicate, Schema } from "effect";
+import { Crypto } from "@mattrax/crypto";
+import { DeviceUnenrolled, MdmError, resolveCheckinChannel } from "./schema.js";
+import type {
+  AuthenticatePlist,
+  CheckOutPlist,
+  CommandResultPlist,
+  DDMStatusReport,
+  TokenUpdatePlist,
+  UserAuthenticatePlist,
 } from "./schema.js";
 import {
   AppleDeviceEvent,
   CheckinScope,
   ManagementBackend,
   MdmOrigin,
-  type AppleDeviceEventResult,
-  type AppleFailureReport,
-  type AppleReturnToServiceConfiguration,
+} from "@mattrax/management-backend";
+import type {
+  AppleDeviceEventResult,
+  AppleFailureReport,
+  AppleReturnToServiceConfiguration,
 } from "@mattrax/management-backend";
 import { extractTopicFromCertPem } from "./cert.js";
 import { AppleMdmConfig } from "./config.js";
 import { buildAppleEnrollmentProfile } from "./enrollment.js";
 import { PlistValue, serializePlist } from "@mattrax/plist";
-import { verifyAppleProfileToken } from "./tokens.js";
-import { verifyMdmSignature, type VerifiedMdmSignature } from "./signature.js";
-import { AppleMdmTrust, type AppleMdmTrustService } from "./trust.js";
+import { verifyAppleProfileTokenEffect } from "./tokens.js";
+import { verifyMdmSignature } from "./signature.js";
+import type { VerifiedMdmSignature } from "./signature.js";
+import { AppleMdmTrust } from "./trust.js";
+import type { AppleMdmTrustService } from "./trust.js";
 
 function base64ToHex(base64: string): string {
-  const cleaned = base64.replace(/\s/g, "");
+  const cleaned = base64.replaceAll(/\s/g, "");
   const padded = cleaned.padEnd(cleaned.length + ((4 - (cleaned.length % 4)) % 4), "=");
   const binary = atob(padded);
 
@@ -38,9 +41,8 @@ function base64ToHex(base64: string): string {
 }
 
 function deterministicUuid(input: string): Effect.Effect<string, MdmError> {
-  return Effect.tryPromise({
-    try: async () => {
-      const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Crypto.sha256(new TextEncoder().encode(input).buffer).pipe(
+    Effect.map((hash) => {
       const bytes = new Uint8Array(hash).slice(0, 16);
       bytes[6] = (bytes[6] & 0x0f) | 0x50;
       bytes[8] = (bytes[8] & 0x3f) | 0x80;
@@ -50,9 +52,11 @@ function deterministicUuid(input: string): Effect.Effect<string, MdmError> {
         .join("");
 
       return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-    },
-    catch: (cause) => new MdmError({ message: "Failed to create deterministic UUID", cause }),
-  });
+    }),
+    Effect.mapError(
+      (cause) => new MdmError({ message: "Failed to create deterministic UUID", cause }),
+    ),
+  );
 }
 
 const declarationsTimestamp = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -206,6 +210,11 @@ export declare namespace AppleMdmService {
       identifier: string,
       token?: string,
     ) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
+    readonly handleManifest: (
+      identityCertificate: string | undefined,
+      identifier: string,
+      token?: string,
+    ) => Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError>;
     readonly handleProfile: (
       deviceToken: string,
       policyId: string,
@@ -290,16 +299,28 @@ export class AppleMdmTopic extends Context.Service<AppleMdmTopic, AppleMdmTopic.
   "AppleMdmTopic",
 ) {
   static readonly make = (config: AppleMdmConfig.Service): AppleMdmTopic.Service => {
-    let cached: string | undefined;
+    let pending: Promise<string | null> | undefined;
+    let warned = false;
+
+    const get = Effect.gen(function* () {
+      if (!config.cloudAppleVendorCert) return placeholderTopic;
+
+      pending ??= extractTopicFromCertPem(config.cloudAppleVendorCert);
+      const parsed = pending;
+      const topic = yield* Effect.promise(() => parsed);
+
+      if (!topic && !warned) {
+        warned = true;
+        yield* Effect.logWarning(
+          "Configured Apple MDM vendor certificate could not supply an APNs topic; using the placeholder topic",
+        );
+      }
+
+      return topic ?? placeholderTopic;
+    });
 
     return AppleMdmTopic.of({
-      get: Effect.sync(() => {
-        cached ??= config.cloudAppleVendorCert
-          ? (extractTopicFromCertPem(config.cloudAppleVendorCert) ?? placeholderTopic)
-          : placeholderTopic;
-
-        return cached;
-      }),
+      get,
     });
   };
 
@@ -427,6 +448,9 @@ const makeAppleMdmService = (
         }),
       )
       .pipe(
+        // `Authenticate` is the first transaction of enrollment, so this span is
+        // the enrollment's backend time.
+        Effect.withSpan("mdm.apple.backend.enroll", { kind: "client" }),
         Effect.catchTag("ManagementNotSupported", () => Effect.void),
         Effect.mapError(toMdmError("Failed to send Authenticate event")),
       );
@@ -564,6 +588,21 @@ const makeAppleMdmService = (
       );
   };
 
+  /** Result keys defined by the command-result envelope, not a command answer. */
+  const COMMAND_RESULT_ENVELOPE_KEYS = new Set([
+    "UDID",
+    "EnrollmentID",
+    "UserID",
+    "EnrollmentUserID",
+    "UserShortName",
+    "UserLongName",
+    "Status",
+    "CommandUUID",
+    "Command",
+    "QueryResponses",
+    "ErrorChain",
+  ]);
+
   const handleCommandResult = (
     result: CommandResultPlist,
     identityCertificate?: string,
@@ -592,6 +631,17 @@ const makeAppleMdmService = (
 
     if (!result.CommandUUID) return Effect.void;
 
+    // `UserList` and `DeviceLocation` put their payload at the top level, while
+    // most commands use `QueryResponses`. Keep both available to the parser.
+    const topLevelResponses = Object.fromEntries(
+      Object.entries(result).filter(([key]) => !COMMAND_RESULT_ENVELOPE_KEYS.has(key)),
+    );
+
+    const queryResponses =
+      result.QueryResponses || Object.keys(topLevelResponses).length > 0
+        ? { ...result.QueryResponses, ...topLevelResponses }
+        : undefined;
+
     return backend
       .appleDeviceEvent(
         scope,
@@ -599,7 +649,7 @@ const makeAppleMdmService = (
           commandUUID: result.CommandUUID,
           status: result.Status,
           errorDetail: detail,
-          queryResponses: result.QueryResponses,
+          queryResponses,
         }),
       )
       .pipe(
@@ -618,6 +668,8 @@ const makeAppleMdmService = (
     ["RotateFileVaultKey", ["ReplyEncryptionCertificate"]],
     // A managed local admin's password hash is a binary plist `<data>` value.
     ["AccountConfiguration", ["AutoSetupAdminAccounts.0.passwordHash"]],
+    // Rotating the managed local admin uses the same binary hash shape.
+    ["SetAutoAdminPassword", ["passwordHash"]],
     // Return to Service carries the Wi-Fi/MDM profile and bootstrap token as
     // data values. A JSON payload has no byte type, so they are base64 in the
     // queue and decoded when the command plist is built.
@@ -652,7 +704,7 @@ const makeAppleMdmService = (
       // copying it into a mutable record cannot change the value's shape.
       const copy = Object.assign({} as Record<string, PlistValue>, value);
 
-      copy[head] = setDataAt(value[head]!, rest);
+      copy[head] = setDataAt(value[head], rest);
 
       return copy;
     }
@@ -663,7 +715,7 @@ const makeAppleMdmService = (
       if (!Number.isInteger(index) || index < 0 || index >= value.length) return value;
       const copy = [...value];
 
-      copy[index] = setDataAt(copy[index]!, rest);
+      copy[index] = setDataAt(copy[index], rest);
 
       return copy;
     }
@@ -682,6 +734,9 @@ const makeAppleMdmService = (
   > =>
     Effect.gen(function* () {
       const manifest = yield* backend.appleManagementCheckin(scope).pipe(
+        // The management backend call gets its own span so a slow check-in can
+        // be split into protocol, backend and SQL time without guessing.
+        Effect.withSpan("mdm.apple.backend.checkin", { kind: "client" }),
         // Unknown devices must receive Apple's 410 Gone so they stop checking
         // in and remove the (now meaningless) management profile. An Idle 200
         // would leave a deleted or unenrolled device polling forever.
@@ -800,6 +855,21 @@ const makeAppleMdmService = (
       Effect.mapError(toMdmError("Failed to fetch asset")),
     );
 
+  const handleManifest = (
+    identityCertificate: string | undefined,
+    identifier: string,
+    token?: string,
+  ): Effect.Effect<{ content: Uint8Array; contentType: string } | null, MdmError> =>
+    Effect.gen(function* () {
+      if (!backend.getAppleManifest) return null;
+
+      return yield* backend.getAppleManifest(identityCertificate, identifier, token).pipe(
+        Effect.catchTag("ManagementNotSupported", () => Effect.succeed(null)),
+        Effect.catchTag("UnknownDevice", () => Effect.succeed(null)),
+        Effect.mapError(toMdmError("Failed to fetch manifest")),
+      );
+    });
+
   const profileSecret = (): string | undefined => config.authSecret;
 
   const handleProfile = (
@@ -823,14 +893,16 @@ const makeAppleMdmService = (
 
       // The device id and expiry are in the signed message, not trusted from
       // the URL alone. A leaked link stops working and cannot be re-pointed.
-      const valid = yield* Effect.promise(() =>
-        verifyAppleProfileToken(secret, token, {
-          policyId,
-          kind,
-          deviceToken,
-          deviceId,
-          expiresAt,
-        }),
+      const valid = yield* verifyAppleProfileTokenEffect(secret, token, {
+        policyId,
+        kind,
+        deviceToken,
+        deviceId,
+        expiresAt,
+      }).pipe(
+        Effect.mapError(
+          (cause) => new MdmError({ message: "Failed to verify profile token", cause }),
+        ),
       );
 
       if (!valid) return null;
@@ -975,11 +1047,13 @@ const makeAppleMdmService = (
    */
   const recordFailure = (report: AppleFailureReport): Effect.Effect<void> =>
     backend.appleRecordFailure
-      ? backend.appleRecordFailure(report).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning(`Failed to record the Apple check-in failure: ${String(cause)}`),
+      ? (backend.appleRecordFailure(report).pipe(
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterrupts(cause),
+            (cause) =>
+              Effect.logWarning(`Failed to record the Apple check-in failure: ${String(cause)}`),
           ),
-        )
+        ) as Effect.Effect<void>)
       : Effect.void;
 
   return AppleMdmService.of({
@@ -999,6 +1073,7 @@ const makeAppleMdmService = (
     handleDeclarationItems,
     handleDeclaration,
     handleAsset,
+    handleManifest,
     handleProfile,
     generateEnrollmentProfile,
     recordFailure,

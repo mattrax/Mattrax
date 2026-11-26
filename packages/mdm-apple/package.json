@@ -16,7 +16,6 @@
     "@mattrax/management-backend": "workspace:*",
     "@mattrax/mdm-core": "workspace:*",
     "@mattrax/mdm-windows": "workspace:*",
-    "@mattrax/net": "workspace:*",
     "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "drizzle-orm": "catalog:",

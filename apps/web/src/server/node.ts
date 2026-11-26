@@ -1,10 +1,11 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 /**
  * Node entry for the self-host target: `dist/server/node.js`.
@@ -25,7 +26,7 @@ type ServerModule = { default: ServerEntry };
 
 type NodeReadableStream = Parameters<typeof Readable.fromWeb>[0];
 
-const here = path.dirname(fileURLToPath(import.meta.url));
+const here = import.meta.dirname;
 
 const clientRoot = path.resolve(here, "../client");
 
@@ -151,6 +152,47 @@ const MIME = new Map([
   [".xml", "application/xml; charset=utf-8"],
 ]);
 
+/**
+ * Routes rendered by the server bundle rather than the static asset layer.
+ * Match whole path segments so /login-theme.css and other static files keep
+ * their existing behavior. /docs is deliberately absent: Rspress emits it.
+ */
+const DYNAMIC_PAGE_PREFIXES = [
+  "/account",
+  "/admin",
+  "/api",
+  "/accept-invitation",
+  "/accept-ownership",
+  "/dashboard",
+  "/designer",
+  "/enroll",
+  "/login",
+  "/mcp",
+  "/mdm",
+  "/recover",
+  "/register",
+  "/scim",
+  "/settings",
+  "/sso",
+  "/t",
+  "/tenants",
+  "/verify-email",
+  "/version",
+] as const;
+
+const DYNAMIC_PAGES = new Set(["/", "/privacy", "/terms"]);
+
+const isDynamicPage = (pathname: string): boolean => {
+  const normalised = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+
+  return (
+    DYNAMIC_PAGES.has(normalised) ||
+    DYNAMIC_PAGE_PREFIXES.some(
+      (prefix) => normalised === prefix || normalised.startsWith(`${prefix}/`),
+    )
+  );
+};
+
 const isFile = async (file: string) => {
   try {
     const stats = await stat(file);
@@ -175,14 +217,12 @@ const staticFiles = (pathname: string): string[] => {
     return [];
   }
 
+  if (isDynamicPage(decoded)) return [];
+
   // Dotfiles are never assets (and keep `..` out of the join below). The
   // `.well-known` directory is the exception: ARD and security.txt are public
   // discovery documents.
-  if (
-    decoded
-      .split("/")
-      .some((segment) => segment.startsWith(".") && segment !== ".well-known")
-  )
+  if (decoded.split("/").some((segment) => segment.startsWith(".") && segment !== ".well-known"))
     return [];
 
   // Drop trailing slashes so `/docs/` and `/docs` produce the same candidates;
@@ -244,17 +284,32 @@ const sendStatic = async (
 ): Promise<boolean> => {
   if (request.method !== "GET" && request.method !== "HEAD") return false;
 
-  for (const candidate of staticFiles(pathname)) {
-    const stats = await isFile(candidate);
+  const file = await findStaticFile(pathname);
 
-    if (stats) {
-      await sendFile(request, response, candidate, stats.size);
+  if (file) {
+    await sendFile(request, response, file.path, file.size);
 
-      return true;
-    }
+    return true;
   }
 
   return false;
+};
+
+/**
+ * Probe all candidates at once, then select in the original asset-layer order:
+ * directory index, exact file, then .html sibling. Dynamic pages return no
+ * candidates and therefore perform no filesystem work before SSR.
+ */
+export const findStaticFile = async (
+  pathname: string,
+): Promise<{ path: string; size: number } | undefined> => {
+  const candidates = staticFiles(pathname);
+  const probed = await Promise.all(
+    candidates.map(async (candidate) => ({ candidate, stats: await isFile(candidate) })),
+  );
+  const match = probed.find(({ stats }) => stats !== undefined);
+
+  return match?.stats ? { path: match.candidate, size: match.stats.size } : undefined;
 };
 
 /** An `http.createServer` request handler; `apps/docker` calls it directly. */
@@ -270,8 +325,8 @@ export const listener = async (
     const server = await loadEntry();
 
     await writeResponse(response, await server.default.fetch(toRequest(request, url, response)));
-  } catch (cause) {
-    console.error("[selfhost] dashboard request failed", cause);
+  } catch (error) {
+    console.error("[selfhost] dashboard request failed", error);
 
     if (response.headersSent) {
       response.destroy();

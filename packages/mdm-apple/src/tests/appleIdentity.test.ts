@@ -3,7 +3,8 @@ import { Effect } from "effect";
 import { parsePlanLimits, schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { dbRows, makeDb, tableName, type Row, type Store } from "./fake-db.js";
+import { dbRows, makeDb, tableName } from "./fake-db.js";
+import type { Row, Store } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -21,7 +22,8 @@ const organization = (id: string, slug: string) => ({
   slug,
   logo: null,
   metadata: null,
-  stripeCustomerId: null,
+  billingPlan: "free",
+  billingStatus: "active",
   createdAt: now,
   updatedAt: now,
 });
@@ -41,7 +43,6 @@ const setup = (
   certificates: Array<ReturnType<typeof issuedCertificate>> = [],
   options: {
     planLimits?: ReturnType<typeof parsePlanLimits>;
-    subscription?: Row;
     devices?: Array<Row>;
   } = {},
 ) => {
@@ -52,8 +53,6 @@ const setup = (
     ],
     [tableName(schema.scepIssuedCertificate)]: certificates,
   };
-
-  if (options.subscription) initial[tableName(schema.subscription)] = [options.subscription];
 
   if (options.devices) initial[tableName(schema.device)] = options.devices;
 
@@ -73,15 +72,6 @@ const setup = (
 const planLimits = (devices: number | null) =>
   parsePlanLimits(JSON.stringify({ free: { devices } }));
 
-const subscription = {
-  id: "sub-1",
-  plan: "free",
-  referenceId: "org-1",
-  status: "active",
-  createdAt: now,
-  updatedAt: now,
-};
-
 const deviceRow = (id: string, udid: string) => ({
   id,
   organizationId: "org-1",
@@ -89,6 +79,7 @@ const deviceRow = (id: string, udid: string) => ({
   status: "enrolled",
   name: id,
   dmIdentifier: udid,
+  dmIdentityFingerprint: "fingerprint-1",
   enrolledAt: now,
   lastSeenAt: now,
 });
@@ -122,7 +113,7 @@ describe("Apple per-device SCEP identity binding", () => {
 
     const [device] = dbRows(db, tableName(schema.device));
     expect(device).toMatchObject({ organizationId: "org-1", dmIdentifier: "udid-1" });
-    expect(certificateRows(db)[0]).toMatchObject({ deviceId: device!.id });
+    expect(certificateRows(db)[0]).toMatchObject({ deviceId: device.id });
   });
 
   it("binds on TokenUpdate when Authenticate had no serial", async () => {
@@ -143,10 +134,10 @@ describe("Apple per-device SCEP identity binding", () => {
       }),
     );
 
-    expect(certificateRows(db)[0]).toMatchObject({ deviceId: device!.id });
-    expect(dbRows(db, tableName(schema.device)).find((row) => row.id === device!.id)).toMatchObject(
-      { status: "enrolled" },
-    );
+    expect(certificateRows(db)[0]).toMatchObject({ deviceId: device.id });
+    expect(dbRows(db, tableName(schema.device)).find((row) => row.id === device.id)).toMatchObject({
+      status: "enrolled",
+    });
   });
 
   it("revokes the bound Apple certificate on check-out", async () => {
@@ -154,7 +145,7 @@ describe("Apple per-device SCEP identity binding", () => {
     await run(backend.appleDeviceEvent(scope(), authenticate()));
 
     const [device] = dbRows(db, tableName(schema.device));
-    expect(certificateRows(db)[0]).toMatchObject({ deviceId: device!.id, revokedAt: null });
+    expect(certificateRows(db)[0]).toMatchObject({ deviceId: device.id, revokedAt: null });
 
     await run(
       backend.appleDeviceEvent(scope(), {
@@ -162,10 +153,10 @@ describe("Apple per-device SCEP identity binding", () => {
       }),
     );
 
-    expect(dbRows(db, tableName(schema.device)).find((row) => row.id === device!.id)).toMatchObject(
-      { status: "unenrolled" },
-    );
-    expect(certificateRows(db)[0]!.revokedAt).toBeInstanceOf(Date);
+    expect(dbRows(db, tableName(schema.device)).find((row) => row.id === device.id)).toMatchObject({
+      status: "unenrolled",
+    });
+    expect(certificateRows(db)[0].revokedAt).toBeInstanceOf(Date);
   });
 
   it("does not bind a certificate issued to another tenant", async () => {
@@ -201,7 +192,6 @@ describe("Apple per-device SCEP identity binding", () => {
   it("rejects a new device when the plan device limit is reached", async () => {
     const { db, backend } = setup([issuedCertificate()], {
       planLimits: planLimits(1),
-      subscription,
       devices: [deviceRow("existing", "udid-existing")],
     });
 
@@ -214,7 +204,6 @@ describe("Apple per-device SCEP identity binding", () => {
   it("allows re-authentication of an existing device above the plan limit", async () => {
     const { db, backend } = setup([issuedCertificate()], {
       planLimits: planLimits(1),
-      subscription,
       devices: [deviceRow("existing", "udid-1")],
     });
 

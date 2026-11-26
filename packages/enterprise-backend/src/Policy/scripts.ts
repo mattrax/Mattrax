@@ -20,17 +20,22 @@ import {
   scriptExecutionIsExpired,
   scriptProblem,
   scriptSecretValues,
-  type CreateScriptRequest,
-  type PatchScriptAssignmentsRequest,
-  type PatchScriptRequest,
-  type RunScriptTarget,
-  type ScriptAgentResultRequest,
-  type ScriptAgentScript,
-  type ScriptExecutionInfo,
-  type ScriptInfo,
-  type ScriptSettings,
+  updatedAtSatisfiesPrecondition,
+} from "@mattrax/enterprise-domain";
+import type {
+  UpdatedAtPrecondition,
+  CreateScriptRequest,
+  PatchScriptAssignmentsRequest,
+  PatchScriptRequest,
+  RunScriptTarget,
+  ScriptAgentResultRequest,
+  ScriptAgentScript,
+  ScriptExecutionInfo,
+  ScriptInfo,
+  ScriptSettings,
 } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "../schema.ts";
+import { collectScriptAttributeValues } from "./attributes.ts";
 
 /**
  * Script persistence and execution queue.
@@ -183,6 +188,62 @@ export const scriptAssignedDeviceIds = (
       .where(and(eq(s.device.organizationId, organizationId), inArray(s.device.id, ids)));
   });
 
+/**
+ * Whether one device currently resolves to a script through an assignment.
+ *
+ * Result ingestion uses this to keep a device token from inventing a run for a
+ * script the device was never given. Group membership is read per device (a
+ * group assignment matches when the device is a member), so the check does not
+ * scan the fleet.
+ */
+export const scriptAssignedToDevice = (
+  db: EnterpriseDb,
+  organizationId: string,
+  deviceId: string,
+  scriptId: string,
+) =>
+  Effect.gen(function* () {
+    const [direct] = yield* db
+      .select({ scriptId: s.scriptAssignment.scriptId })
+      .from(s.scriptAssignment)
+      .where(
+        and(
+          eq(s.scriptAssignment.organizationId, organizationId),
+          eq(s.scriptAssignment.scriptId, scriptId),
+          eq(s.scriptAssignment.targetType, "device"),
+          eq(s.scriptAssignment.targetId, deviceId),
+        ),
+      )
+      .limit(1);
+
+    if (direct) return true;
+
+    const groups = yield* db
+      .select({ groupId: s.groupDevice.groupId })
+      .from(s.groupDevice)
+      .where(eq(s.groupDevice.deviceId, deviceId));
+
+    if (groups.length === 0) return false;
+
+    const [grouped] = yield* db
+      .select({ scriptId: s.scriptAssignment.scriptId })
+      .from(s.scriptAssignment)
+      .where(
+        and(
+          eq(s.scriptAssignment.organizationId, organizationId),
+          eq(s.scriptAssignment.scriptId, scriptId),
+          eq(s.scriptAssignment.targetType, "group"),
+          inArray(
+            s.scriptAssignment.targetId,
+            groups.map((group) => group.groupId),
+          ),
+        ),
+      )
+      .limit(1);
+
+    return Boolean(grouped);
+  });
+
 /** Counts and last-run summary for a page of scripts without N+1 queries. */
 const scriptSummaries = (
   db: EnterpriseDb,
@@ -311,7 +372,7 @@ export const getScriptDetail = (db: EnterpriseDb, organizationId: string, script
 
     const [info] = yield* scriptSummaries(db, organizationId, [row]);
 
-    return { script: info!, body: row.body };
+    return { script: info, body: row.body };
   });
 
 type ScriptDraftInput = {
@@ -400,6 +461,7 @@ export const updateScript = (
   scriptId: string,
   input: PatchScriptRequest,
   now: Date,
+  precondition: UpdatedAtPrecondition = { _tag: "Missing" },
 ) =>
   Effect.gen(function* () {
     const existing = yield* scriptById(db, organizationId, scriptId);
@@ -420,12 +482,34 @@ export const updateScript = (
 
     if ("problem" in built) return built;
 
-    yield* db
-      .update(s.script)
-      .set({ ...built.values, updatedAt: now })
-      .where(and(eq(s.script.id, scriptId), eq(s.script.organizationId, organizationId)));
+    // Lock the row, compare the version, then write. The lock makes the
+    // check and the write atomic, and the comparison understands the
+    // second-precision `If-Unmodified-Since` fallback without losing it in a
+    // SQL equality predicate.
+    const outcome = yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const [current] = yield* tx
+          .select()
+          .from(s.script)
+          .where(and(eq(s.script.id, scriptId), eq(s.script.organizationId, organizationId)))
+          .limit(1)
+          .for("update");
 
-    return { status: "ok" as const };
+        if (!current) return { notFound: true as const };
+
+        if (!updatedAtSatisfiesPrecondition(current.updatedAt, precondition))
+          return { stale: true as const, current };
+
+        yield* tx
+          .update(s.script)
+          .set({ ...built.values, updatedAt: now })
+          .where(and(eq(s.script.id, scriptId), eq(s.script.organizationId, organizationId)));
+
+        return { status: "ok" as const };
+      }),
+    );
+
+    return outcome;
   });
 
 export const deleteScript = (db: EnterpriseDb, organizationId: string, scriptId: string) =>
@@ -684,7 +768,7 @@ export const queueScriptRun = (
       return {
         queued: true as const,
         target: {
-          executionId: existing[0]!.id,
+          executionId: existing[0].id,
           deviceId: device.id,
           deviceName: device.name,
           skippedReason: null,
@@ -1047,14 +1131,34 @@ export const recordScriptAgentResult = (
 
     if (existing.length > 0)
       return {
-        executionId: existing[0]!.id,
+        executionId: existing[0].id,
         duplicate: true,
         status:
-          existing[0]!.status === "succeeded" || existing[0]!.status === "failed"
-            ? existing[0]!.status
+          existing[0].status === "succeeded" || existing[0].status === "failed"
+            ? existing[0].status
             : status,
         scriptId: script.id,
       };
+
+    // A device token must not fabricate a run for a script that was never
+    // delivered to it. Assignment is the delivery path; an existing execution
+    // row covers a run queued before the assignment was removed.
+    if (!(yield* scriptAssignedToDevice(db, device.organizationId, device.id, script.id))) {
+      const [known] = yield* db
+        .select({ id: s.scriptExecution.id })
+        .from(s.scriptExecution)
+        .where(
+          and(
+            eq(s.scriptExecution.organizationId, device.organizationId),
+            eq(s.scriptExecution.scriptId, script.id),
+            eq(s.scriptExecution.deviceId, device.id),
+            eq(s.scriptExecution.id, input.runId),
+          ),
+        )
+        .limit(1);
+
+      if (!known) return { problem: "Script is not assigned to this device" };
+    }
 
     // A manual run carries the server execution id as its run id. Claim the
     // row, write the result and the device timeline entry in one transaction,
@@ -1150,6 +1254,25 @@ export const recordScriptAgentResult = (
         return executionId;
       }),
     );
+
+    // Scripts can own attribute values: a successful run's stdout is mapped
+    // through the declared bindings, and a failed run records why the value
+    // could not refresh. This is the only write path for script attributes,
+    // and "Collect now" reaches it by queueing a normal manual run.
+    yield* collectScriptAttributeValues(db, {
+      organizationId: device.organizationId,
+      deviceId: device.id,
+      script: { id: script.id, name: script.name },
+      executionId,
+      stdout: stdout.text,
+      failure:
+        status === "failed"
+          ? input.timedOut === true
+            ? "The script exceeded its timeout, so no attribute values were collected."
+            : `The script exited with code ${input.exitCode ?? "unknown"}, so no attribute values were collected.`
+          : null,
+      now,
+    });
 
     return { executionId, duplicate: false, status, scriptId: script.id };
   });

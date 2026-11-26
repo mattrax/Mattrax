@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
+  appleDeviceNameFromSettingsPayload,
+  appleDeviceNameSettingsPayload,
+  appleLostModePayload,
+  appleLostModeProblem,
   appleUserAvailableActions,
   appleUserSupportsAction,
   deviceActionUnavailableReason,
   deviceAvailableActions,
   deviceSupportsAction,
+  isAppleLockScreenMessageDevice,
+  isAppleLostModeDevice,
+  parseAppleLockScreenMessageConfiguration,
+  resolveAppleLockScreenMessage,
 } from "./deviceActions.ts";
+import type { DeviceActionInput } from "./deviceActions.ts";
+import { APPLE_DEVICE_NAME_MAX_LENGTH, normalizeAppleDeviceName } from "./deviceInventory.ts";
 
 describe("deviceAvailableActions", () => {
   it("offers Windows actions without a sync action", () => {
@@ -189,6 +199,127 @@ describe("deviceAvailableActions", () => {
       ),
     ).toContain("not support it on macOS");
   });
+
+  it("offers set-device-name on enrolled Apple devices", () => {
+    const actions = deviceAvailableActions({ proto: "apple", status: "enrolled" });
+
+    expect(actions).toContain("set-device-name");
+    expect(deviceSupportsAction({ proto: "apple", status: "enrolled" }, "set-device-name")).toBe(
+      true,
+    );
+  });
+
+  it("does not offer set-device-name on Apple User Enrollment or other platforms", () => {
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        enrollmentMode: "user",
+      }),
+    ).not.toContain("set-device-name");
+
+    expect(deviceAvailableActions({ proto: "win", status: "enrolled" })).not.toContain(
+      "set-device-name",
+    );
+    expect(deviceAvailableActions({ proto: "android", status: "enrolled" })).not.toContain(
+      "set-device-name",
+    );
+    expect(deviceAvailableActions({ proto: "apple", status: "unenrolled" })).not.toContain(
+      "set-device-name",
+    );
+  });
+
+  it("explains why set-device-name is unavailable", () => {
+    expect(
+      deviceActionUnavailableReason({ proto: "win", status: "enrolled" }, "set-device-name"),
+    ).toContain("only available for Apple devices");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", enrollmentMode: "user" },
+        "set-device-name",
+      ),
+    ).toContain("User Enrollment");
+  });
+
+  it("offers ScheduleOSUpdate only where the DDM declaration is unavailable", () => {
+    const fallback = { proto: "apple" as const, status: "enrolled", osEdition: "iOS" };
+
+    expect(deviceAvailableActions({ ...fallback, osVersion: "16.7" })).toContain(
+      "schedule-os-update",
+    );
+    expect(deviceAvailableActions({ ...fallback, osVersion: "18.1" })).not.toContain(
+      "schedule-os-update",
+    );
+    expect(
+      deviceAvailableActions({ ...fallback, osVersion: "18.1", declarationMode: "legacy" }),
+    ).toContain("schedule-os-update");
+    expect(
+      deviceAvailableActions({
+        ...fallback,
+        osVersion: "18.1",
+        declarationMode: "legacy",
+        enrollmentMode: "user",
+      }),
+    ).not.toContain("schedule-os-update");
+    expect(deviceAvailableActions({ ...fallback, osVersion: "27.0" })).not.toContain(
+      "schedule-os-update",
+    );
+    expect(
+      deviceAvailableActions({ proto: "apple", status: "enrolled", osEdition: "macOS 15.1" }),
+    ).toContain("schedule-os-update");
+  });
+
+  it("explains the OS 27 command removal", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "iPadOS", osVersion: "27.0" },
+        "schedule-os-update",
+      ),
+    ).toContain("removed the ScheduleOSUpdate command in iOS/iPadOS 27");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "macOS", osVersion: "27.0" },
+        "schedule-os-update",
+      ),
+    ).toContain("macOS 27");
+  });
+
+  it("explains why ScheduleOSUpdate is not offered on a DDM phone", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "iPadOS", osVersion: "18.1" },
+        "schedule-os-update",
+      ),
+    ).toContain("DDM declaration");
+  });
+});
+
+describe("Apple device name payload", () => {
+  it("builds the documented Settings/DeviceName item", () => {
+    expect(appleDeviceNameSettingsPayload("Reception Mac")).toEqual({
+      Settings: [{ Item: "DeviceName", DeviceName: "Reception Mac" }],
+    });
+  });
+
+  it("reads the name back from a queued payload", () => {
+    expect(
+      appleDeviceNameFromSettingsPayload(appleDeviceNameSettingsPayload("Reception Mac")),
+    ).toBe("Reception Mac");
+    expect(
+      appleDeviceNameFromSettingsPayload({
+        Settings: [{ Item: "MDMOptions", MDMOptions: {} }],
+      }),
+    ).toBeUndefined();
+    expect(appleDeviceNameFromSettingsPayload(null)).toBeUndefined();
+  });
+
+  it("trims names and documents Apple's 63-character limit", () => {
+    expect(normalizeAppleDeviceName("  Reception Mac  ")).toBe("Reception Mac");
+    expect(normalizeAppleDeviceName("   ")).toBeUndefined();
+    expect(APPLE_DEVICE_NAME_MAX_LENGTH).toBe(63);
+  });
 });
 
 describe("appleUserAvailableActions", () => {
@@ -200,5 +331,253 @@ describe("appleUserAvailableActions", () => {
     expect(appleUserAvailableActions({ configured: true })).toEqual(["sync", "refresh-profiles"]);
     expect(appleUserSupportsAction({ configured: true }, "sync")).toBe(true);
     expect(appleUserSupportsAction({ configured: false }, "sync")).toBe(false);
+  });
+});
+
+describe("set-lock-screen-message", () => {
+  it("is offered on iPhone and iPad, including before the OS is known", () => {
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        osEdition: "iOS",
+        osVersion: "18.1",
+      }),
+    ).toContain("set-lock-screen-message");
+    expect(
+      deviceAvailableActions({
+        proto: "apple",
+        status: "enrolled",
+        osEdition: "iPadOS",
+        osVersion: "18.1",
+      }),
+    ).toContain("set-lock-screen-message");
+    expect(deviceAvailableActions({ proto: "apple", status: "enrolled" })).toContain(
+      "set-lock-screen-message",
+    );
+  });
+
+  it("is not offered on macOS, tvOS, visionOS, Android, Windows or BYOD devices", () => {
+    const unavailable: DeviceActionInput[] = [
+      { proto: "apple", status: "enrolled", osEdition: "macOS", osVersion: "15.1" },
+      { proto: "apple", status: "enrolled", osEdition: "tvOS", osVersion: "18" },
+      { proto: "apple", status: "enrolled", osEdition: "visionOS", osVersion: "2.0" },
+      { proto: "apple", status: "enrolled", enrollmentMode: "user" },
+      { proto: "android", status: "enrolled" },
+      { proto: "win", status: "enrolled" },
+      { proto: "apple", status: "unenrolled", osEdition: "iOS" },
+    ];
+
+    for (const input of unavailable)
+      expect(deviceAvailableActions(input)).not.toContain("set-lock-screen-message");
+  });
+
+  it("explains why the command is unavailable", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "macOS" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("not available on macOS");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "tvOS" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("not available on tvOS");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", enrollmentMode: "user" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("User Enrollment");
+
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "android", status: "enrolled" },
+        "set-lock-screen-message",
+      ),
+    ).toContain("only available on supervised iPhone and iPad");
+  });
+
+  it("recognises supported Apple families", () => {
+    expect(isAppleLockScreenMessageDevice({ proto: "apple" })).toBe(true);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", osEdition: "iOS" })).toBe(true);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", model: "iPhone16,1" })).toBe(true);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", osEdition: "macOS" })).toBe(false);
+    expect(isAppleLockScreenMessageDevice({ proto: "apple", model: "Apple TV 4K" })).toBe(false);
+  });
+});
+
+describe("resolveAppleLockScreenMessage", () => {
+  const policy = {
+    message: "Return to the IT desk",
+    includeAssetTag: true,
+    policyName: "Shared iPads",
+  };
+
+  it("prefers a per-device message and can override the asset-tag choice", () => {
+    expect(
+      resolveAppleLockScreenMessage({
+        deviceMessage: "Call Oscar",
+        deviceIncludeAssetTag: false,
+        policy,
+        assetTag: "AST-1042",
+      }),
+    ).toEqual({ message: "Call Oscar", includeAssetTag: false, source: "device" });
+
+    expect(
+      resolveAppleLockScreenMessage({ deviceIncludeAssetTag: true, policy, assetTag: "AST-1042" }),
+    ).toMatchObject({
+      message: policy.message,
+      includeAssetTag: true,
+      source: "policy",
+      policyName: "Shared iPads",
+    });
+  });
+
+  it("reports why a resolved default cannot be delivered", () => {
+    expect(resolveAppleLockScreenMessage({ policy, assetTag: null })).toMatchObject({
+      message: policy.message,
+      includeAssetTag: true,
+      source: "policy",
+      problem: expect.stringContaining("no asset tag"),
+    });
+  });
+
+  it("decodes a stored policy configuration", () => {
+    expect(
+      parseAppleLockScreenMessageConfiguration({
+        message: " Return to IT ",
+        includeAssetTag: true,
+      }),
+    ).toEqual({ message: "Return to IT", includeAssetTag: true });
+    expect(parseAppleLockScreenMessageConfiguration({ message: "" })).toBeUndefined();
+    expect(parseAppleLockScreenMessageConfiguration(null)).toBeUndefined();
+  });
+});
+
+describe("Apple Lost Mode", () => {
+  const iphone: DeviceActionInput = { proto: "apple", status: "enrolled", osEdition: "iOS" };
+
+  it("offers enable and disable on supervised iPhone and iPadOS", () => {
+    expect(deviceAvailableActions(iphone)).toEqual(
+      expect.arrayContaining(["start-lost-mode", "stop-lost-mode"]),
+    );
+    expect(deviceAvailableActions({ ...iphone, osEdition: "iPadOS", osVersion: "18.1" })).toContain(
+      "start-lost-mode",
+    );
+    expect(isAppleLostModeDevice(iphone)).toBe(true);
+  });
+
+  it("rejects macOS, tvOS, visionOS, watchOS and BYOD", () => {
+    for (const input of [
+      { proto: "apple", status: "enrolled", osEdition: "macOS", osVersion: "15.1" },
+      { proto: "apple", status: "enrolled", osEdition: "tvOS", osVersion: "18" },
+      { proto: "apple", status: "enrolled", osEdition: "visionOS", osVersion: "2.0" },
+      { proto: "apple", status: "enrolled", osEdition: "watchOS", osVersion: "11" },
+      { proto: "apple", status: "enrolled", enrollmentMode: "user" as const },
+    ] satisfies DeviceActionInput[]) {
+      expect(deviceAvailableActions(input)).not.toContain("start-lost-mode");
+      expect(deviceAvailableActions(input)).not.toContain("stop-lost-mode");
+    }
+  });
+
+  it("offers the sound only while Lost Mode is active", () => {
+    expect(deviceAvailableActions(iphone)).not.toContain("play-lost-mode-sound");
+    expect(deviceAvailableActions({ ...iphone, lostModeEnabled: false })).not.toContain(
+      "play-lost-mode-sound",
+    );
+    expect(deviceAvailableActions({ ...iphone, lostModeEnabled: true })).toContain(
+      "play-lost-mode-sound",
+    );
+    expect(deviceActionUnavailableReason(iphone, "play-lost-mode-sound")).toContain(
+      "only available while the device is in Lost Mode",
+    );
+  });
+
+  it("explains the platform limits", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "macOS" },
+        "start-lost-mode",
+      ),
+    ).toContain("not available on macOS");
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", enrollmentMode: "user" },
+        "start-lost-mode",
+      ),
+    ).toContain("User Enrollment");
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "visionOS" },
+        "stop-lost-mode",
+      ),
+    ).toContain("visionOS");
+  });
+
+  it("builds the documented payload and validates the required message", () => {
+    expect(
+      appleLostModePayload({
+        message: "  Return to the IT desk  ",
+        phone: " +61 400 000 000 ",
+        footnote: " AST-1042 ",
+      }),
+    ).toEqual({
+      Message: "Return to the IT desk",
+      PhoneNumber: "+61 400 000 000",
+      Footnote: "AST-1042",
+    });
+    expect(appleLostModePayload({ message: "   " })).toEqual({});
+
+    expect(appleLostModeProblem({})).toContain("at least one");
+    expect(appleLostModeProblem({ phone: "123" })).toBeUndefined();
+    expect(appleLostModeProblem({ message: "x".repeat(501) })).toContain("at most");
+    expect(appleLostModeProblem({ message: "Hi", phone: "1".repeat(65) })).toContain("at most");
+  });
+});
+
+describe("macOS local account and rotation actions", () => {
+  const mac: DeviceActionInput = {
+    proto: "apple",
+    status: "enrolled",
+    osEdition: "macOS",
+    osVersion: "15.1",
+  };
+
+  it("offers the local-account refresh and rotation only on a Mac", () => {
+    expect(deviceAvailableActions({ ...mac, localAdminGuid: "GUID-1" })).toEqual(
+      expect.arrayContaining(["refresh-local-accounts", "rotate-local-admin-password"]),
+    );
+    // Rotation waits for the managed account's GUID from UserList.
+    expect(deviceAvailableActions(mac)).not.toContain("rotate-local-admin-password");
+    expect(deviceAvailableActions(mac)).toContain("refresh-local-accounts");
+    expect(
+      deviceAvailableActions({ proto: "apple", status: "enrolled", osEdition: "iOS" }),
+    ).not.toContain("refresh-local-accounts");
+    expect(deviceAvailableActions({ proto: "win", status: "enrolled" })).not.toContain(
+      "refresh-local-accounts",
+    );
+  });
+
+  it("explains why local accounts and rotation are unavailable", () => {
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "iPadOS" },
+        "refresh-local-accounts",
+      ),
+    ).toContain("only reported by macOS");
+    expect(
+      deviceActionUnavailableReason(
+        { proto: "apple", status: "enrolled", osEdition: "iOS" },
+        "rotate-local-admin-password",
+      ),
+    ).toContain("managed local administrator");
+    expect(deviceActionUnavailableReason(mac, "rotate-local-admin-password")).toContain(
+      "has not reported the GUID",
+    );
   });
 });

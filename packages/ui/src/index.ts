@@ -94,7 +94,7 @@ export {
   Stat,
 } from "./page";
 
-export { PasswordInput, type PasswordInputProps } from "./password-input";
+export { default as PasswordInput, type PasswordInputProps } from "./password-input";
 
 export { Avatar, Kbd, Separator, Skeleton } from "./primitives";
 
@@ -123,7 +123,28 @@ export {
   SheetTrigger,
 } from "./sheet";
 
-export { Spinner } from "./spinner";
+export { default as Spinner } from "./spinner";
+
+export {
+  default as DotMatrix,
+  type DotMatrixPattern,
+  type DotMatrixProps,
+  type DotMatrixSize,
+  type DotMatrixState,
+} from "./dot-matrix";
+
+export { default as LoadingState, type LoadingStateProps } from "./loading-state";
+
+export {
+  IndeterminateBar,
+  Progress,
+  SegmentedProgress,
+  type IndeterminateBarProps,
+  type ProgressProps,
+  type ProgressSegment,
+  type ProgressTone,
+  type SegmentedProgressProps,
+} from "./progress";
 
 export {
   Table,

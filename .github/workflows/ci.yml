@@ -9,6 +9,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A manual full-suite run for a branch, used as the escape hatch when the
+  # changed-only policy is enabled for pull requests.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -20,16 +23,15 @@ permissions:
   contents: read
 
 jobs:
-  # The browser and Lighthouse suites are the two expensive jobs (the browser
-  # suite was ~85% of a run's wall clock). They cannot be affected by a
-  # Markdown, docs-site, workflow or licence-only change, so this job decides
-  # whether they are worth starting. It always runs (a skipped workflow would
-  # leave required checks pending); the suites themselves are skipped, which
-  # GitHub reports as success.
+  # The expensive jobs cannot be affected by a Markdown, docs-site, workflow or
+  # licence-only change, so this job decides which of them are worth starting.
+  # It always runs (a skipped workflow would leave required checks pending);
+  # the jobs themselves are skipped, which GitHub reports as success.
   #
-  # The filter is deliberately fail-safe: `**` matches everything and only
-  # paths that cannot affect the suites are subtracted, so a path added to the
-  # repository later runs the suites instead of silently skipping them.
+  # Every filter is deliberately fail-safe: `**` matches everything and only
+  # paths that provably cannot affect that job are subtracted, so a path added
+  # to the repository later runs the job instead of silently skipping it. The
+  # step below turns a failed filter into `true` for the same reason.
   changes:
     name: Changed paths
     runs-on: ubuntu-latest
@@ -39,21 +41,112 @@ jobs:
       # dorny/paths-filter lists a pull request's files through the API.
       pull-requests: read
     outputs:
-      suites: ${{ steps.suites.outputs.suites }}
+      # `true` only when the changed-only policy is enabled and this pull
+      # request has not opted back into the full suite with `e2e:full`.
+      e2e_changed: ${{ steps.mode.outputs.changed }}
+      docs: ${{ steps.outputs.outputs.docs }}
+      schema: ${{ steps.outputs.outputs.schema }}
+      cloud: ${{ steps.outputs.outputs.cloud }}
+      web: ${{ steps.outputs.outputs.web }}
+      perf: ${{ steps.outputs.outputs.perf }}
+      suites: ${{ steps.outputs.outputs.suites }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         id: filter
-        # A filter that cannot run must not silently skip the suites; the step
-        # below turns a missing answer into `true` (run them).
+        # A filter that cannot run must not silently skip a job; the step
+        # below turns a missing answer into `true` (run it).
         continue-on-error: true
         with:
           # `some` (the default) treats `!pattern` as just another alternative,
           # which would match almost everything; `some-with-excludes` is the
-          # "include `**`, then subtract these paths" semantics this filter
-          # needs.
+          # "include `**`, then subtract these paths" semantics these filters
+          # need.
           predicate-quantifier: some-with-excludes
           filters: |
+            # The Rspress site, its theme, and the typedoc runner that reads the
+            # management-backend contract. It cannot see the dashboard, the API
+            # Worker or the other apps.
+            docs:
+              - '**'
+              - '!tests/**'
+              - '!bench/**'
+              - '!apps/web/**'
+              - '!apps/cloud/**'
+              - '!apps/cli/**'
+              - '!apps/docker/**'
+              - '!apps/services/**'
+              - '!apps/mdm-compliance/**'
+              - '!apps/apns-relay/**'
+              - '!apps/mattraxd/**'
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.dockerignore'
+              - '!.zed/**'
+            # Paths that can change the migrated schema. This only schedules the
+            # `migrations` job and its cache warm-up; the shards fall back to
+            # running the real migrations on a cache miss, so a path missed
+            # here cannot hide drift.
+            schema:
+              - 'apps/cloud/migrations/**'
+              - 'apps/cloud/src/db/**'
+              - 'apps/cloud/drizzle.config.ts'
+              - 'pnpm-lock.yaml'
+            # The API Worker bundles apps/cloud and the packages it imports.
+            cloud:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!tests/**'
+              - '!bench/**'
+              - '!apps/web/**'
+              - '!apps/cli/**'
+              - '!apps/docker/**'
+              - '!apps/services/**'
+              - '!apps/mdm-compliance/**'
+              - '!apps/apns-relay/**'
+              - '!apps/mattraxd/**'
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.dockerignore'
+              - '!.zed/**'
+            # The dashboard bundle: apps/web plus every package it imports.
+            web:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!tests/**'
+              - '!bench/**'
+              - '!apps/cloud/**'
+              - '!apps/cli/**'
+              - '!apps/docker/**'
+              - '!apps/services/**'
+              - '!apps/mdm-compliance/**'
+              - '!apps/apns-relay/**'
+              - '!apps/mattraxd/**'
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.dockerignore'
+              - '!.zed/**'
+            # Lighthouse serves the self-host build of apps/web, so it is only
+            # worth scheduling when something that build bundles can have moved.
+            # Not `docs/`: the web build derives public routes from it, so a
+            # docs change can move the pages Lighthouse measures.
+            perf:
+              - '**'
+              - '!**/*.md'
+              - '!.github/**'
+              - '!LICENSE'
+              - '!.gitignore'
+              - '!.dockerignore'
+              - '!.zed/**'
+              - '!apps/mattraxd/**'
+              - '!tests/**'
+              - '!bench/**'
+            # The browser suite drives the dashboard over CDP.
             suites:
               - '**'
               - '!**/*.md'
@@ -63,23 +156,148 @@ jobs:
               - '!.gitignore'
               - '!.dockerignore'
               - '!.zed/**'
-      - id: suites
+      # One output per filter. Only a filter that actually ran may say "nothing
+      # to run"; a failed, cancelled or skipped filter falls back to running
+      # the job, as does an empty answer.
+      - id: outputs
         if: always()
         env:
           FILTER_OUTCOME: ${{ steps.filter.outcome }}
-          MATCHED: ${{ steps.filter.outputs.suites }}
+          DOCS: ${{ steps.filter.outputs.docs }}
+          SCHEMA: ${{ steps.filter.outputs.schema }}
+          CLOUD: ${{ steps.filter.outputs.cloud }}
+          WEB: ${{ steps.filter.outputs.web }}
+          PERF: ${{ steps.filter.outputs.perf }}
+          SUITES: ${{ steps.filter.outputs.suites }}
         run: |
-          # Only a filter that actually ran may say "nothing to run". A failed,
-          # cancelled or skipped filter falls back to running the suites, as
-          # does an empty answer.
-          if [ "$FILTER_OUTCOME" = "success" ] && [ -n "$MATCHED" ]; then
-            echo "suites=$MATCHED" >> "$GITHUB_OUTPUT"
+          if [ "$FILTER_OUTCOME" = "success" ]; then
+            {
+              echo "docs=${DOCS:-true}"
+              echo "schema=${SCHEMA:-true}"
+              echo "cloud=${CLOUD:-true}"
+              echo "web=${WEB:-true}"
+              echo "perf=${PERF:-true}"
+              echo "suites=${SUITES:-true}"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "suites=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "docs=true"
+              echo "schema=true"
+              echo "cloud=true"
+              echo "web=true"
+              echo "perf=true"
+              echo "suites=true"
+            } >> "$GITHUB_OUTPUT"
           fi
 
-  check:
-    name: Unit tests, typecheck and docs
+      # Policy switch, off by default. Setting the repository variable
+      # `E2E_CHANGED_ONLY=true` makes pull requests run only the spec files
+      # changed by the PR; `e2e:full` on a pull request restores the full suite
+      # there, and main is always full. The label is read by the next run (the
+      # workflow deliberately does not listen for label events, which would
+      # cancel a running full suite whenever an unrelated label is added).
+      - id: mode
+        if: always()
+        env:
+          EVENT: ${{ github.event_name }}
+          POLICY: ${{ vars.E2E_CHANGED_ONLY }}
+          FULL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'e2e:full') }}
+        run: |
+          if [ "$EVENT" = "pull_request" ] && [ "$POLICY" = "true" ] && [ "$FULL_LABEL" != "true" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The unit job used to run every check in series: lint 1m01s, vitest 4m26s,
+  # typecheck 1m29s and the builds 42s, for 7-8 minutes in a single job. None of
+  # those steps needs another's output, so the wall clock is now the slowest
+  # parallel branch (the vitest shards and typecheck, ~1m50s) instead of their
+  # sum. Install is 4 seconds from the pnpm store cache, so each job installs
+  # itself rather than waiting on an install job.
+  #
+  # Lint, vitest and typecheck always run. They are not gated on the changed
+  # paths because they genuinely read them: `public-routes.test.ts` enumerates
+  # the `docs/` tree, and lint covers the docs theme's components. Only the
+  # builds and the two browser suites can be proven independent of a path.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 12.21.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `prelint` generates the two Workers' `cf` types first.
+      - run: pnpm lint
+
+  test:
+    name: Unit tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # Every shard's failure report is useful; do not cancel the rest.
+      fail-fast: false
+      # 5,364 tests in 476 files took 4m26s as one process. Vitest's `--shard`
+      # splits the test files across processes, so three shards cost roughly a
+      # third of the run each; the fourth would save ~20s and add a runner, so
+      # the matrix stops at three.
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 12.21.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Vitest
+        # The denominator comes from the matrix, so changing the shard count
+        # cannot leave a shard running a stale slice of the suite. Vitest
+        # applies the shard across every configured project.
+        run: pnpm test --shard="${{ matrix.shard }}/${{ strategy.job-total }}"
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: mattrax
+      DATABASE_PASSWORD: mattrax
+      DATABASE_NAME: mattraxe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
+        with:
+          version: 12.21.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `pnpm typecheck` generates the two Workers' `cf` types, builds the root
+      # project references once, then checks the dedicated test, tooling and
+      # portable-entrypoint projects.
+      - run: pnpm typecheck
+
+  build:
+    name: Build and migrations
+    needs: changes
+    # The build steps are gated on their own paths; the migration steps only
+    # run on main and schema-changing PRs. Folding migrations in here keeps the
+    # job count at twenty now that Lighthouse is a four-job matrix.
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -98,38 +316,121 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm test
-      # One `tsc -b` over the root project references. `pnpm typecheck` first
-      # generates the two Workers' `cf` types (cloud and web, ~0.5s total) and
-      # then builds once; the per-app `typecheck` scripts it does not call would
-      # each start `tsc` again over the same projects.
-      - run: pnpm typecheck
-      - run: pnpm doc:build
+      # The Workers' builds read the generated `cf` types.
+      - run: pnpm -r --if-present run cf:types
+      - name: Build the documentation
+        if: >-
+          needs.changes.result != 'success' || needs.changes.outputs.docs == 'true'
+        run: pnpm doc:build
       # Production Workers must actually build. Typechecking alone did not
       # catch a layer-wiring bug that made every /mdm route return 500.
-      - run: pnpm cloud build
-      - run: pnpm web build
+      - name: Build the API Worker
+        if: >-
+          needs.changes.result != 'success' || needs.changes.outputs.cloud == 'true'
+        run: pnpm cloud build
+      - name: Build the dashboard
+        if: >-
+          needs.changes.result != 'success' || needs.changes.outputs.web == 'true'
+        run: pnpm web build
       # Fail when the schema changes without a committed migration snapshot.
-      - run: pnpm cloud db:generate
-      - run: test -z "$(git status --porcelain -- apps/cloud/migrations)"
+      - name: Generate migrations
+        if: >-
+          needs.changes.result != 'success' || needs.changes.outputs.cloud == 'true'
+        run: pnpm cloud db:generate
+      - name: Fail on an uncommitted migration snapshot
+        if: >-
+          needs.changes.result != 'success' || needs.changes.outputs.cloud == 'true'
+        run: test -z "$(git status --porcelain -- apps/cloud/migrations)"
+
+      - name: Start MySQL
+        if: >-
+          github.event_name == 'push' ||
+          needs.changes.result != 'success' ||
+          needs.changes.outputs.schema == 'true'
+        run: |
+          printf '[mysqld]\nmysql_native_password=ON\n' |
+            sudo tee /etc/mysql/mysql.conf.d/zz-ci-native.cnf >/dev/null
+          sudo systemctl start mysql.service
+          ready=""
+          for attempt in $(seq 1 30); do
+            if mysqladmin -h127.0.0.1 -uroot -proot ping >/dev/null 2>&1; then
+              ready="true"
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "true" ]; then
+            echo "::error::MySQL did not answer after ${attempt} attempts"
+            exit 1
+          fi
+          mysql -uroot -proot <<'SQL'
+          CREATE DATABASE IF NOT EXISTS mattraxe;
+          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
+          ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
+          GRANT ALL ON mattraxe.* TO 'mattrax'@'%';
+          SQL
+      - name: Apply every migration from scratch
+        if: >-
+          github.event_name == 'push' ||
+          needs.changes.result != 'success' ||
+          needs.changes.outputs.schema == 'true'
+        run: pnpm cloud db:migrate
+      # The shards load this instead of replaying 104 migrations. It is produced
+      # by the real migration path above, keyed on the migration SQL, so it
+      # cannot describe a schema the migrations do not produce.
+      - name: Dump the migrated schema
+        if: >-
+          github.event_name == 'push' ||
+          needs.changes.result != 'success' ||
+          needs.changes.outputs.schema == 'true'
+        run: |
+          mkdir -p .ci
+          mysqldump -h127.0.0.1 -umattrax -pmattrax \
+            --no-data --skip-comments --no-tablespaces --triggers \
+            --set-gtid-purged=OFF mattraxe > .ci/mysql-schema.sql
+      # `save` rather than the combined action: the cache must be written even
+      # when it already exists, and a concurrent shard may win the race with an
+      # identical dump.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: >-
+          github.event_name == 'push' ||
+          needs.changes.result != 'success' ||
+          needs.changes.outputs.schema == 'true'
+        continue-on-error: true
+        with:
+          path: .ci/mysql-schema.sql
+          key: mysql-schema-v1-${{ runner.os }}-${{ hashFiles('apps/cloud/migrations/*/migration.sql') }}
 
   lighthouse:
-    name: Lighthouse budgets
+    name: Lighthouse budgets (${{ matrix.url }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Lighthouse needs no output from `check`: it installs, builds the
-    # self-host bundle and serves it itself. Waiting for `check` serialised
-    # ~3 minutes in front of a ~3 minute job for no benefit; a broken PR still
-    # fails `check` and this job on its own.
+    strategy:
+      # One URL per runner: each job still takes three samples, so the median
+      # and the budget confidence match the single-job `main` run, while the
+      # wall clock is the slowest URL instead of all four in series.
+      fail-fast: false
+      matrix:
+        url: ["/", "/login", "/register", "/designer"]
+    # Lighthouse needs no output from another job: it installs, builds the
+    # self-host bundle and serves it itself. The budgets are a smoke test for
+    # the public pages, not a gate on every commit. Measured over a week of
+    # `main` runs, `/designer` - a client rendered canvas editor - scores
+    # 0.83-0.84 against the shared 0.85 budget with 608-657 ms of total
+    # blocking time against 500 ms, so the job failed about half of the pull
+    # requests that could not have moved it. It now runs where its answer is
+    # actionable: on every push to `main`, and on pull requests that touch
+    # something the self-host build bundles (`perf` above).
     #
-    # `needs:` alone would skip this job when `changes` fails or times out, and
-    # a skipped job reports success, so run unless the gate positively decided
-    # the change cannot affect the suite.
+    # `needs:` alone would skip this job when `changes` fails or times out,
+    # and a skipped job reports success, so run unless the gate positively
+    # decided the change cannot affect the suite.
     needs: changes
     if: >-
       always() &&
-      (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
+      (needs.changes.result != 'success' || needs.changes.outputs.perf == 'true')
+    env:
+      LHCI_URL: http://localhost:9050${{ matrix.url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
@@ -145,9 +446,7 @@ jobs:
           cat > apps/cloud/.dev.vars <<'VARS'
           ORIGIN=http://localhost:9050
           AUTH_SECRET=ci-auth-secret-0123456789abcdef0123456789abcdef
-          STRIPE_SECRET_KEY=sk_test_ci
           STRIPE_WEBHOOK_SECRET=whsec_ci
-          STRIPE_DEVICE_MONTHLY_PRICE_ID=price_ci
           DEV_MAILBOX=true
           VARS
           cp apps/cloud/.dev.vars apps/web/.dev.vars
@@ -156,64 +455,71 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:
-          name: lighthouse-report
+          name: lighthouse-report-${{ strategy.job-index }}
           path: .lighthouseci/
+          include-hidden-files: true
           retention-days: 7
 
-  # One runner per shard. Playwright's `--shard` splits the spec files by test
-  # count, and each shard gets its own MySQL service and dev server on the same
-  # port. The suite runs with a single Playwright worker because its tests share
-  # dev-mailbox state and rate-limit buckets through one server; sharding keeps
-  # that isolation intact while the suite as a whole runs in parallel. The suite
-  # took 18-22 minutes serially; four shards bring it to roughly a quarter plus
-  # the per-runner setup (checkout, install, browser, migrations, dev server).
+  # One runner per shard. The suite runs with a single Playwright worker because
+  # its tests share dev-mailbox state and rate-limit buckets through one server;
+  # sharding keeps that isolation intact while the suite as a whole runs in
+  # parallel.
+  #
+  # `packages/config/scripts/e2e-shard.ts` assigns the spec files instead of
+  # Playwright's `--shard`: files are assigned largest-first to the emptiest
+  # shard, and the assignment is recomputed on every run so a growing spec moves
+  # shard instead of inflating one.
+  #
+  # The database is the runner image's MySQL 8.4 (production is 8.4; see
+  # docs/operations/backups.md) started in place. The old Docker service spent
+  # ~34s initialising a fresh data directory and another 29s applying 104
+  # migrations per shard. The shared schema cache keeps the 29s migration off
+  # the path once main has published it; the build job above is the real path.
+  #
+  # Nine shards. The per-URL Lighthouse matrix adds three jobs, and the build
+  # and migrations now share one, so this is exactly the account's 20-job
+  # limit: changes + lint + 3 vitest + typecheck + build/migrations + 4
+  # Lighthouse + 9 shards. A tenth shard would queue one e2e job, which costs
+  # more than the ~10s it saves.
+  #
+  # The floor is not the file list any more: `mfa.spec.ts` is one 81-86s test
+  # (enroll, pending code, recovery code, regenerate, disable, several page
+  # loads), so its shard is 48s fixed + ~86s no matter how many shards exist.
+  # The other eight shards model at ~93s of tests each. The remaining lever is
+  # a faster runner or changing that test, not more shards.
+  #
+  # Measured per-shard cost is ~25s setup, ~1s schema restore, ~2s browser
+  # cache, ~22s build-and-serve (MySQL and the schema load run underneath it)
+  # and the duration-weighted test slice.
   e2e:
     # The denominator comes from the matrix itself, so adding or removing a
-    # shard cannot leave a shard running a stale slice of the suite.
-    name: Browser tests (CDP, shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    # shard cannot leave a shard running a stale share of the suite.
+    name: Browser tests (CDP, ${{ needs.changes.outputs.e2e_changed == 'true' && 'changed files only' || format('shard {0}/{1}', matrix.shard, strategy.job-total) }})
     needs: changes
     # A failed or timed-out gate must not turn into a skipped (successful)
-    # browser suite; see the `suites` step in the `changes` job.
+    # browser suite; see the `outputs` step in the `changes` job.
     if: >-
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
     runs-on: ubuntu-latest
+    # A retried failure costs two 60s timeouts on its own; keep headroom above
+    # the ~2 minute expectation for a balanced shard.
     timeout-minutes: 30
     strategy:
       # Every shard's failure report is useful; do not cancel the rest.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
-    services:
-      mysql:
-        # MySQL 8.0, the version the Worker's mysql2 client is exercised
-        # against over plain TCP.
-        #
-        # `services.options` only accepts `docker create` flags, so a server
-        # argument such as `--default-authentication-plugin` cannot go there
-        # (docker rejects it as an unknown flag). GitHub does support
-        # `services.mysql.command`, but the released actionlint (v1.7.12)
-        # predates that key, so the application user's auth plugin is pinned
-        # explicitly with SQL below instead.
-        #
-        # 8.0 defaults to caching_sha2_password. The Worker connects without TLS
-        # and does not set `allowPublicKeyRetrieval`, so the suite's user must
-        # use mysql_native_password. MySQL 8.4 removes the old server flag and
-        # needs `--mysql-native-password=ON`; revisit this on an image bump.
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: mattraxe
-          MYSQL_USER: mattrax
-          MYSQL_PASSWORD: mattrax
-        ports: ["3306:3306"]
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -umattrax -pmattrax"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=20
+        # When the policy is enabled, one job runs `playwright test
+        # --only-changed` for the PR. It is a single job because the selected
+        # set is usually a handful of specs; the full suite keeps its nine
+        # shards.
+        shard: ${{ needs.changes.outputs.e2e_changed == 'true' && fromJSON('[1]') || fromJSON('[1, 2, 3, 4, 5, 6, 7, 8, 9]') }}
     env:
       E2E_CHANNEL: bundled
+      # Serve the production build rather than the dev server: a dashboard page
+      # hydrates in ~70ms from built bundles against ~650ms in dev mode, and
+      # every test loads several documents.
+      E2E_SERVER: built
       E2E_SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
       DATABASE_HOST: 127.0.0.1
       DATABASE_PORT: 3306
@@ -222,6 +528,10 @@ jobs:
       DATABASE_NAME: mattraxe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # `--only-changed` needs the base branch's history; the sharded path
+          # does not.
+          fetch-depth: ${{ needs.changes.outputs.e2e_changed == 'true' && 0 || 1 }}
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6
         with:
           version: 12.21.0
@@ -230,32 +540,168 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # `pnpm exec` uses the version the lockfile installed; `npx` resolves it
-      # through npm first.
-      - run: pnpm exec playwright install --with-deps chromium
+      - name: Fetch the base branch
+        if: needs.changes.outputs.e2e_changed == 'true'
+        run: git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+      # The migrated schema is identical for every shard. `hashFiles` reads the
+      # 104 migration SQL files (not the 33MB of snapshots), so a migration
+      # change misses the cache and the shard replays the real migrations.
+      - name: Restore the migrated schema
+        id: schema
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .ci/mysql-schema.sql
+          key: mysql-schema-v1-${{ runner.os }}-${{ hashFiles('apps/cloud/migrations/*/migration.sql') }}
+      # The browser download is ~7 seconds cold and cached after that. The key
+      # is the installed `@playwright/test` version (pinned in the lockfile)
+      # rather than the lockfile hash, so an unrelated dependency bump does not
+      # re-download it.
+      - name: Resolve the Playwright version
+        id: playwright
+        run: |
+          version=$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/@playwright/test/package.json', 'utf8')).version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      # No `--with-deps`: measured on this runner image, Chromium launches and
+      # runs the suite without the apt packages. Dropping it removes a ~10s
+      # apt-get from every shard; the browsers themselves are still the pinned
+      # Playwright build, not the runner's Chrome.
+      - run: pnpm exec playwright install chromium
       - name: Write local dev environment
         run: |
           cat > apps/cloud/.dev.vars <<'VARS'
           ORIGIN=http://localhost:9050
           AUTH_SECRET=ci-auth-secret-0123456789abcdef0123456789abcdef
-          STRIPE_SECRET_KEY=sk_test_ci
           STRIPE_WEBHOOK_SECRET=whsec_ci
-          STRIPE_DEVICE_MONTHLY_PRICE_ID=price_ci
           DEV_MAILBOX=true
           VARS
           cp apps/cloud/.dev.vars apps/web/.dev.vars
           cp apps/cloud/.dev.vars .dev.vars
-      # See the note on the MySQL service: the container cannot be started with
-      # the old `--default-authentication-plugin` flag, so pin the application
-      # user's plugin before anything (migrations included) connects.
-      - name: Pin the application user to mysql_native_password
+      # MySQL takes 8-19s to start on this image and the schema adds ~1s on a
+      # cache hit (or a full migration on a miss). The dashboard build touches
+      # neither, so both run in the background while the build does its 17-21s
+      # of work; the ready marker carries the result across steps because each
+      # step gets a new shell.
+      - name: Start MySQL and load the schema in the background
         env:
-          MYSQL_CONTAINER_ID: ${{ job.services.mysql.id }}
+          SCHEMA_CACHE_HIT: ${{ steps.schema.outputs.cache-hit }}
         run: |
-          docker exec "$MYSQL_CONTAINER_ID" mysql -uroot -proot \
-            -e "ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';"
-      - run: pnpm cloud db:migrate
-      - run: pnpm test:e2e --shard="$E2E_SHARD"
+          cat > /tmp/start-mysql.sh <<'SCRIPT'
+          set -euo pipefail
+          printf '[mysqld]\nmysql_native_password=ON\n' |
+            sudo tee /etc/mysql/mysql.conf.d/zz-ci-native.cnf >/dev/null
+          sudo systemctl start mysql.service
+          ready=""
+          for attempt in $(seq 1 30); do
+            if mysqladmin -h127.0.0.1 -uroot -proot ping >/dev/null 2>&1; then
+              ready="true"
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "true" ]; then
+            echo "MySQL did not answer after ${attempt} attempts"
+            exit 1
+          fi
+          mysql -uroot -proot <<'SQL'
+          CREATE DATABASE IF NOT EXISTS mattraxe;
+          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
+          ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
+          GRANT ALL ON mattraxe.* TO 'mattrax'@'%';
+          SQL
+          if [ "${SCHEMA_CACHE_HIT:-false}" = "true" ]; then
+            mysql -h127.0.0.1 -umattrax -pmattrax mattraxe < .ci/mysql-schema.sql
+          else
+            # The schema cache is cold: this is the real migration path. The
+            # post-job cache save carries the dump to the next run.
+            pnpm cloud db:migrate
+            mkdir -p .ci
+            mysqldump -h127.0.0.1 -umattrax -pmattrax \
+              --no-data --skip-comments --no-tablespaces --triggers \
+              --set-gtid-purged=OFF mattraxe > .ci/mysql-schema.sql
+          fi
+          SCRIPT
+          rm -f /tmp/mysql-ready /tmp/mysql-failed
+          nohup bash -c 'trap "touch /tmp/mysql-failed" ERR; bash /tmp/start-mysql.sh && touch /tmp/mysql-ready' \
+            > /tmp/mysql-setup.log 2>&1 &
+
+      # Build and start the server outside Playwright so its teardown cannot
+      # wait on a Vite process that `setsid` reparented. Playwright then only
+      # runs tests. `e2e-server.ts` builds the production bundles, starts
+      # `vite preview` on 9050, and returns once the server answers.
+      #
+      # The build stays per-shard. Building it once and downloading a 97MB
+      # artifact (22MB compressed, 4s upload) requires a producer the shards
+      # `needs`, which puts its 59s in front of every shard while each shard's
+      # own build is 14-21s in parallel.
+      - name: Build and serve the production bundle
+        run: |
+          pnpm exec tsx apps/web/scripts/e2e-server.ts > /tmp/e2e-server.log 2>&1 &
+          for attempt in $(seq 1 240); do
+            if curl -fsS http://localhost:9050/api/health >/dev/null &&
+               curl -fsS http://localhost:9050/login >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::e2e server did not start after ${attempt} attempts"
+          tail -100 /tmp/e2e-server.log
+          exit 1
+      - name: Wait for MySQL and the schema
+        run: |
+          for attempt in $(seq 1 120); do
+            if [ -f /tmp/mysql-ready ]; then exit 0; fi
+            if [ -f /tmp/mysql-failed ]; then break; fi
+            sleep 1
+          done
+          echo "::error::MySQL/schema setup did not finish after ${attempt} seconds"
+          cat /tmp/mysql-setup.log
+          exit 1
+      - name: Browser tests
+        env:
+          E2E_BASE_URL: http://localhost:9050
+          E2E_ONLY_CHANGED: ${{ needs.changes.outputs.e2e_changed }}
+          # The JSON report is how the duration weights are refreshed; the
+          # github reporter keeps the inline failure annotations.
+          PLAYWRIGHT_JSON_OUTPUT_FILE: test-results/playwright-report.json
+          E2E_BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$E2E_ONLY_CHANGED" = "true" ]; then
+            # Policy opt-in (repository variable `E2E_CHANGED_ONLY`): Playwright
+            # selects only the spec files changed in this pull request. It is
+            # not "affected" specs - a product change with no spec change
+            # selects nothing, and `--pass-with-no-tests` makes that an explicit
+            # success. Main is always full, and `e2e:full` restores the full
+            # suite on a pull request.
+            echo "changed-only policy: running spec files changed since origin/$E2E_BASE_REF"
+            pnpm test:e2e --reporter=github,json --only-changed="origin/$E2E_BASE_REF" --pass-with-no-tests
+            exit 0
+          fi
+          # `E2E_SHARD` is still the shard's name; the script turns it into the
+          # spec files that shard owns. It exits non-zero rather than printing
+          # nothing, because Playwright with no argument runs the whole suite.
+          specs=$(pnpm exec tsx packages/config/scripts/e2e-shard.ts "$E2E_SHARD")
+          # One CLI filter per spec file: the split is the point, so the
+          # variable is intentionally unquoted.
+          # shellcheck disable=SC2086
+          pnpm test:e2e --reporter=github,json $specs
+      - name: Stop the server
+        if: always()
+        run: |
+          pkill -9 -f 'vite.js dev' || true
+          pkill -9 -f 'vite.js preview' || true
+          pkill -9 -f 'apps/web/scripts/e2e-server.ts' || true
+      # Kept on success too: this is the shard's contribution to the duration
+      # map that `pnpm e2e:durations` merges (`main` is the authoritative run).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: playwright-durations-shard-${{ matrix.shard }}
+          path: test-results/playwright-report.json
+          retention-days: 1
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: failure()
         with:

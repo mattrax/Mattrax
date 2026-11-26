@@ -3,7 +3,8 @@ import { Effect } from "effect";
 import { schema } from "@mattrax/enterprise-core";
 import { MdmOrigin } from "@mattrax/management-backend";
 import { ManagementBackendEnterpriseLive } from "@mattrax/mdm-apple";
-import { dbRows, makeDb, tableName, type Row } from "./fake-db.js";
+import { dbRows, makeDb, tableName } from "./fake-db.js";
+import type { Row } from "./fake-db.js";
 
 const origin = "https://enterprise.test";
 
@@ -144,6 +145,30 @@ describe("Apple device re-enrollment", () => {
     });
   });
 
+  it("reclaims an unenrolled legacy row with no identity fingerprint", async () => {
+    const { db, backend } = setup({
+      [tableName(schema.device)]: [
+        device({
+          id: "existing-device",
+          status: "unenrolled",
+          serial: "C02A",
+          dmIdentifier: "old-udid",
+          dmIdentityFingerprint: null,
+        }),
+      ],
+    });
+
+    await run(backend.appleDeviceEvent(scope("new-udid"), authenticate()));
+
+    expect(dbRows(db, tableName(schema.device))).toHaveLength(1);
+    expect(dbRows(db, tableName(schema.device))[0]).toMatchObject({
+      id: "existing-device",
+      status: "enrolling",
+      dmIdentifier: "new-udid",
+      dmIdentityFingerprint: "fingerprint-new-udid",
+    });
+  });
+
   it("preserves same-tenant relations when reclaiming a pre-registered serial", async () => {
     const { db, backend } = setup({
       [tableName(schema.device)]: [
@@ -278,8 +303,10 @@ describe("Apple device re-enrollment", () => {
       targetId: "old-tenant-device",
       metadata: expect.objectContaining({
         previousTenantId: "org-2",
+        destroyedSecretKinds: ["bootstrap_token"],
       }),
     });
+    expect(JSON.stringify(audit?.metadata)).not.toContain("sealed");
     expect(JSON.stringify(audit?.metadata)).not.toContain("newTenantId");
     expect(JSON.stringify(audit?.metadata)).not.toContain("org-1");
   });

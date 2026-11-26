@@ -1,9 +1,10 @@
-import { type RoutePreloadFuncArgs } from "@solidjs/router";
+import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { queryOptions, useQuery } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { Option, Schema } from "effect";
-import { ErrorText, Field, PageHeader, Panel } from "~/components/mdm/common";
+import { ErrorText, Field, Panel } from "~/components/mdm/common";
+import { LoadingState } from "~/components/ui";
 import { ChevronDown } from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { preloadPage } from "~/lib/page-data";
@@ -109,11 +110,6 @@ export default function LegalSettingsPage() {
 
   return (
     <div class="space-y-5">
-      <PageHeader
-        title="Legal"
-        description="Open-source software included in this deployment, with the licence notices those projects require."
-      />
-
       <Show when={licences.error}>
         <ErrorText error={licences.error} />
       </Show>
@@ -124,15 +120,11 @@ export default function LegalSettingsPage() {
       >
         <Show
           when={licences.data}
-          fallback={
-            <p class="text-[12px] text-muted-foreground" role="status">
-              Loading licence inventory…
-            </p>
-          }
+          fallback={<LoadingState label="Loading licence inventory…" size={16} />}
         >
           {(bundle) => (
             <div class="space-y-4">
-              <p class="text-[12px] text-muted-foreground">
+              <p class="text-xs text-muted-foreground">
                 {bundle().packages.length} packages · {Object.keys(bundle().texts).length} licence
                 texts · {licenceSummary(bundle().packages)}
               </p>
@@ -156,23 +148,25 @@ export default function LegalSettingsPage() {
                     return (
                       <li>
                         <details class="group py-2">
-                          <summary class="flex cursor-pointer list-none items-center gap-2 rounded-[4px] text-[12px] outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                          <summary class="flex cursor-pointer list-none items-center gap-2 rounded-xs text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
                             <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1">
                               <span class="font-medium text-foreground">{entry.name}</span>
-                              <span class="text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift group-hover:text-foreground">
+                              <span class="text-muted-foreground transition-colors duration-150 ease-swift group-hover:text-foreground">
                                 {entry.version}
                               </span>
-                              <span class="rounded-full border border-border px-2 py-px text-[10px] uppercase tracking-wide text-muted-foreground">
+                              <span class="rounded-full border border-border px-2 py-px text-xs uppercase tracking-wide text-muted-foreground">
                                 {entry.license}
                               </span>
                             </span>
-                            <ChevronDown class="disclosure-chevron size-3.5 shrink-0 text-muted-foreground" />
+                            <span class="disclosure-chevron inline-flex text-muted-foreground">
+                              <ChevronDown class="size-3.5 shrink-0" />
+                            </span>
                           </summary>
                           <div class="mt-2 space-y-2 pb-2 pl-1">
                             <Show when={entry.repository}>
                               {(repository) => (
                                 <a
-                                  class="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                                  class="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
                                   href={repository()}
                                   rel="noreferrer"
                                   target="_blank"
@@ -184,14 +178,14 @@ export default function LegalSettingsPage() {
                             <Show
                               when={text()}
                               fallback={
-                                <p class="text-[11px] text-muted-foreground">
+                                <p class="text-xs text-muted-foreground">
                                   No licence file was bundled with this package. Its declared
                                   licence is {entry.license}.
                                 </p>
                               }
                             >
                               {(content) => (
-                                <pre class="max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-hover/40 p-3 text-[11px] leading-relaxed text-muted-foreground">
+                                <pre class="max-h-80 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-hover/40 p-3 text-xs leading-relaxed text-muted-foreground">
                                   {content()}
                                 </pre>
                               )}
@@ -205,7 +199,7 @@ export default function LegalSettingsPage() {
               </ul>
 
               <Show when={filtered().length === 0}>
-                <p class="text-[12px] text-muted-foreground">No package matches that filter.</p>
+                <p class="text-xs text-muted-foreground">No package matches that filter.</p>
               </Show>
             </div>
           )}

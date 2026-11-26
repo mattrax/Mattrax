@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { Effect, Schema } from "effect";
+import { describe, expect, it, vi } from "vitest";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
 import { serializePlist } from "@mattrax/plist";
@@ -71,6 +72,7 @@ const makeFetch = (
     next?: string;
     tokenStatus?: number;
     devicesStatus?: number;
+    devicesPage?: Schema.Json;
   } = {},
 ) => {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
@@ -94,6 +96,8 @@ const makeFetch = (
     if (url.includes("/orgDevices")) {
       if (options.devicesStatus && options.devicesStatus !== 200)
         return jsonResponse({ errors: [{ detail: "Not authorized" }] }, options.devicesStatus);
+
+      if (options.devicesPage !== undefined) return jsonResponse(options.devicesPage);
 
       const links = options.next ? { links: { next: options.next } } : undefined;
 
@@ -133,20 +137,22 @@ const makeFetch = (
 const makeDbWithTenant = () => {
   const db = makeDb();
   const now = new Date();
-  db.store.organization.push({
-    id: organizationId,
-    name: "Acme",
-    slug: "acme",
-    createdAt: now,
-    updatedAt: now,
-  });
-  db.store.organization.push({
-    id: otherOrganizationId,
-    name: "Other",
-    slug: "other",
-    createdAt: now,
-    updatedAt: now,
-  });
+  db.store.organization.push(
+    {
+      id: organizationId,
+      name: "Acme",
+      slug: "acme",
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      id: otherOrganizationId,
+      name: "Other",
+      slug: "other",
+      createdAt: now,
+      updatedAt: now,
+    },
+  );
 
   return db;
 };
@@ -214,6 +220,33 @@ describe("Apple Business Manager credentials", () => {
         }),
       }),
     ).rejects.toMatchObject({ kind: "expired" });
+  });
+
+  it("accepts plist date values in legacy and API credentials", async () => {
+    const expiresAt = new Date("2030-01-01T00:00:00.000Z");
+    const legacyPlist = await Effect.runPromise(
+      serializePlist({
+        consumer_key: "consumer-key",
+        consumer_secret: "consumer-secret",
+        org_id: "dep-org",
+        org_name: "Legacy Org",
+        token_expiration_date: expiresAt,
+      }),
+    );
+
+    await expect(parseAbmTokenUpload({ content: legacyPlist })).resolves.toMatchObject({
+      kind: "legacy_dep",
+      expiresAt,
+    });
+
+    const apiPlist = await Effect.runPromise(
+      serializePlist({ ...(await credentialJson()), expiresAt }),
+    );
+
+    await expect(parseAbmTokenUpload({ content: apiPlist })).resolves.toMatchObject({
+      kind: "abm_api",
+      expiresAt,
+    });
   });
 
   it("extracts a legacy DEP plist from a PKCS#7 .p7m token", async () => {
@@ -295,22 +328,24 @@ describe("Apple Business Manager sync", () => {
       enrolledAt: now,
       lastSeenAt: now,
     });
-    db.store.abm_device.push({
-      organizationId: otherOrganizationId,
-      serial: "OTHER-SERIAL",
-      enrollmentState: "UNASSIGNED",
-      profileStatus: "unassigned",
-      createdAt: now,
-      updatedAt: now,
-    });
-    db.store.abm_device.push({
-      organizationId,
-      serial: "SERIAL-REMOVED",
-      enrollmentState: "UNASSIGNED",
-      profileStatus: "unassigned",
-      createdAt: now,
-      updatedAt: now,
-    });
+    db.store.abm_device.push(
+      {
+        organizationId: otherOrganizationId,
+        serial: "OTHER-SERIAL",
+        enrollmentState: "UNASSIGNED",
+        profileStatus: "unassigned",
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        organizationId,
+        serial: "SERIAL-REMOVED",
+        enrollmentState: "UNASSIGNED",
+        profileStatus: "unassigned",
+        createdAt: now,
+        updatedAt: now,
+      },
+    );
 
     const { fetchImpl, calls } = makeFetch({
       devices: [
@@ -392,6 +427,48 @@ describe("Apple Business Manager sync", () => {
     const refreshed = await runEffect(appleBusinessManagerInfo(db, organizationId));
     expect(refreshed).toMatchObject({ configured: true, deviceCount: 3, assignedCount: 1 });
     expect(calls.some((call) => call.url.includes("/orgDevices"))).toBe(true);
+  });
+
+  it("does not remove local devices when Apple returns a malformed page", async () => {
+    const db = makeDbWithTenant();
+    const now = new Date();
+    db.store.abm_device.push({
+      organizationId,
+      serial: "SERIAL-REMOVED",
+      enrollmentState: "UNASSIGNED",
+      profileStatus: "unassigned",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const valid = makeFetch();
+    await runEffect(
+      saveAppleBusinessManagerToken({
+        db,
+        organizationId,
+        authSecret,
+        upload: { content: JSON.stringify(await credentialJson()) },
+        config: { fetch: valid.fetchImpl },
+      }),
+    );
+
+    const malformed = makeFetch({ devicesPage: { links: {} } });
+
+    await expect(
+      runEffect(
+        syncAppleBusinessManagerDevices({
+          db,
+          organizationId,
+          authSecret,
+          config: { fetch: malformed.fetchImpl },
+        }),
+      ),
+    ).rejects.toMatchObject({ kind: "invalid_response" });
+    expect(db.store.abm_device[0]).toMatchObject({
+      serial: "SERIAL-REMOVED",
+      enrollmentState: "UNASSIGNED",
+      profileStatus: "unassigned",
+    });
   });
 
   it("rejects a legacy DEP token at sync time with a migration message", async () => {
@@ -498,6 +575,29 @@ describe("ADE profile links", () => {
     );
 
     expect(info.enrollmentUrl).toBe("https://mdm.example.com/api/v1/abm/ade/enroll");
+  });
+
+  it("reports token verification outages as upstream failures", async () => {
+    const signed = await runEffect(
+      createAdeProfileToken({
+        authSecret,
+        organizationId,
+        serial: "SERIAL-1",
+        profileUuid: "profile-1",
+        ttlSeconds: 60,
+      }),
+    );
+    const verify = vi
+      .spyOn(crypto.subtle, "verify")
+      .mockRejectedValueOnce(new Error("crypto unavailable"));
+
+    try {
+      await expect(
+        runEffect(readAdeProfileToken({ authSecret, token: signed.token })),
+      ).rejects.toMatchObject({ kind: "upstream" });
+    } finally {
+      verify.mockRestore();
+    }
   });
 
   it("signs a tenant/serial/profile-bound link and rejects tampering", async () => {

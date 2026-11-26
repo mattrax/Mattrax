@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Logger } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import * as asn1js from "asn1js";
 import * as pkijs from "pkijs";
@@ -15,10 +15,11 @@ import {
   parseCertificateNotAfter,
   summarizeDeviceCertificates,
 } from "../src/Device/credentialHealth.ts";
-import { runMaintenance, type CredentialExpiryNotifier } from "../src/Tenant/maintenance.ts";
+import { runMaintenance } from "../src/Tenant/maintenance.ts";
+import type { CredentialExpiryNotifier } from "../src/Tenant/maintenance.ts";
 import { makeDb, runEffect } from "./helpers.js";
 
-if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
+if (typeof crypto !== "undefined" && crypto.subtle !== undefined) {
   try {
     pkijs.getEngine();
   } catch {
@@ -84,16 +85,18 @@ describe("credentialLevel", () => {
 describe("parseCertificateNotAfter", () => {
   it("reads notAfter from a PEM certificate", async () => {
     const notAfter = new Date("2027-04-01T00:00:00.000Z");
-    const parsed = parseCertificateNotAfter(await makeCertificate(notAfter));
+    const parsed = await parseCertificateNotAfter(await makeCertificate(notAfter));
     expect(parsed?.toISOString()).toBe(notAfter.toISOString());
   });
 
-  it("returns null instead of throwing for unparseable input", () => {
-    expect(parseCertificateNotAfter(undefined)).toBeNull();
-    expect(parseCertificateNotAfter("")).toBeNull();
-    expect(parseCertificateNotAfter("not a pem")).toBeNull();
+  it("returns null instead of throwing for unparseable input", async () => {
+    expect(await parseCertificateNotAfter(undefined)).toBeNull();
+    expect(await parseCertificateNotAfter("")).toBeNull();
+    expect(await parseCertificateNotAfter("not a pem")).toBeNull();
     expect(
-      parseCertificateNotAfter("-----BEGIN CERTIFICATE-----\nZm9v\n-----END CERTIFICATE-----"),
+      await parseCertificateNotAfter(
+        "-----BEGIN CERTIFICATE-----\nZm9v\n-----END CERTIFICATE-----",
+      ),
     ).toBeNull();
   });
 });
@@ -164,20 +167,22 @@ describe("summarizeDeviceCertificates", () => {
 const build = async () => {
   const db = makeDb();
   db.store.organization.push({ id: "org-a", name: "Acme A" }, { id: "org-b", name: "Acme B" });
-  db.store.apple_push_certificate.push({
-    organizationId: "org-a",
-    email: "a@example.com",
-    topic: "com.apple.mgmt.External.a",
-    certPem: await makeCertificate(daysFromNow(10)),
-    updatedAt: now,
-  });
-  db.store.apple_push_certificate.push({
-    organizationId: "org-b",
-    email: "b@example.com",
-    topic: "com.apple.mgmt.External.b",
-    certPem: await makeCertificate(daysFromNow(90)),
-    updatedAt: now,
-  });
+  db.store.apple_push_certificate.push(
+    {
+      organizationId: "org-a",
+      email: "a@example.com",
+      topic: "com.apple.mgmt.External.a",
+      certPem: await makeCertificate(daysFromNow(10)),
+      updatedAt: now,
+    },
+    {
+      organizationId: "org-b",
+      email: "b@example.com",
+      topic: "com.apple.mgmt.External.b",
+      certPem: await makeCertificate(daysFromNow(90)),
+      updatedAt: now,
+    },
+  );
   db.store.scep_ca.push(
     {
       id: 1,
@@ -391,28 +396,37 @@ describe("credential expiry notifications", () => {
     expect(notify).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps maintenance running when the notifier fails or throws", async () => {
+  it("keeps maintenance running and logs when the notifier fails or throws", async () => {
     const db = await withRecipients();
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-
-    try {
-      const failed = await run(db, () => Effect.fail(new Error("smtp unavailable")));
-      expect(failed.credentialAlerts).toBe(2);
-
-      // Next day, a synchronously throwing notifier must be isolated too.
-      const thrown = await run(
-        db,
-        () => {
-          throw new Error("transport crashed");
-        },
-        new Date(now.getTime() + DAY),
+    const messages: Array<unknown> = [];
+    const logger = Logger.make((options) => messages.push(options.message));
+    const runWithLogger = (notifyCredentialExpiry: CredentialExpiryNotifier, at: Date = now) =>
+      runEffect(
+        runMaintenance({
+          now: at,
+          auditRetentionDays: 0,
+          notifyCredentialExpiry,
+        }).pipe(Effect.provideService(Db, db), Effect.provide(Logger.layer([logger]))),
       );
 
-      expect(thrown.credentialAlerts).toBe(2);
-      expect(error).toHaveBeenCalled();
-    } finally {
-      error.mockRestore();
-    }
+    const failed = await runWithLogger(() => Effect.fail(new Error("smtp unavailable")));
+    expect(failed.credentialAlerts).toBe(2);
+
+    // Next day, a synchronously throwing notifier must be isolated too.
+    const thrown = await runWithLogger(
+      () => {
+        throw new Error("transport crashed");
+      },
+      new Date(now.getTime() + DAY),
+    );
+
+    expect(thrown.credentialAlerts).toBe(2);
+    expect(
+      messages.some(
+        (message) =>
+          Array.isArray(message) && message.includes("Credential expiry notification failed"),
+      ),
+    ).toBe(true);
   });
 });
 

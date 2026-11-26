@@ -1,13 +1,16 @@
-import { Context, Effect, Layer } from "effect";
+import type { Effect } from "effect";
+import { Context, Layer } from "effect";
 import {
   MtlsPushTransport,
   NoopPushTransport,
   NodePushTransport,
   RelayPushTransport,
-  type ApnsError,
-  type ApnsPushRequest,
-  type ApnsPushTransport,
-  type RelayPushTransportOptions,
+} from "./transport.js";
+import type {
+  ApnsError,
+  ApnsPushRequest,
+  ApnsPushTransport,
+  RelayPushTransportOptions,
 } from "./transport.js";
 
 export declare namespace ApnsService {

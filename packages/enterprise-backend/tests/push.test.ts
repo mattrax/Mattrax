@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Effect } from "effect";
 import { exportPrivateKeyJwk, generateCaKeyPair, sealSecret } from "@mattrax/crypto";
 import { schema } from "@mattrax/enterprise-core";
 import { makeApplePush } from "../src/Device/push.ts";
@@ -160,9 +161,11 @@ describe("makeApplePush outbound backstop", () => {
           }),
       },
     },
-    insert: () => ({
+    insert: (table: typeof schema.auditLog | typeof schema.realtimeEvent) => ({
       values: (row: PushAuditRow) => {
-        captured.audit?.push(row);
+        // The push path also appends a realtime notification; only the audit
+        // row is what this assertion is about.
+        if (table === schema.auditLog) captured.audit?.push(row);
 
         return Effect.void;
       },
@@ -195,7 +198,7 @@ describe("makeApplePush outbound backstop", () => {
       db: db as never,
       // SAFETY: the core schema and the backend's generated schema are distinct
       // nominal objects over the same tables.
-      schema: schema as never,
+      schema,
       apns: makeApns(push),
       authSecret,
       pushTimeoutMs,

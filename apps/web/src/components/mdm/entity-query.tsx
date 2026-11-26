@@ -1,12 +1,7 @@
-import { FilterBar, type FilterCondition, type FilterField } from "@mattrax/ui";
-import {
-  defaultFor,
-  joinEntityValues,
-  opsFor,
-  splitEntityValues,
-  type EntityCondition,
-  type EntityField,
-} from "./entity-query-engine";
+import { FilterBar } from "@mattrax/ui";
+import type { FilterCondition, FilterField } from "@mattrax/ui";
+import { defaultFor, joinEntityValues, opsFor, splitEntityValues } from "./entity-query-engine";
+import type { EntityCondition, EntityField } from "./entity-query-engine";
 
 export {
   formatEntityQuery,
@@ -63,6 +58,8 @@ export function EntityQueryBar<T>(props: {
   onChange: (conditions: EntityCondition[]) => void;
   label?: string;
   disabled?: boolean;
+  /** Share the table header row as one scrollable filter strip. */
+  inline?: boolean;
 }) {
   return (
     <FilterBar
@@ -71,6 +68,7 @@ export function EntityQueryBar<T>(props: {
       onChange={(conditions) => props.onChange(fromFilterConditions(conditions))}
       label={props.label}
       disabled={props.disabled}
+      inline={props.inline}
     />
   );
 }

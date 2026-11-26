@@ -1,6 +1,8 @@
-import { Data, Effect, Schema } from "effect";
+import type { Schema } from "effect";
+import { Data, Effect } from "effect";
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
-import { R2_PRIVATE_CACHE_CONTROL, schema, type R2Bucket } from "@mattrax/enterprise-core";
+import { R2_PRIVATE_CACHE_CONTROL, schema } from "@mattrax/enterprise-core";
+import type { R2Bucket } from "@mattrax/enterprise-core";
 import { buildTenantExport } from "./tenantExport.ts";
 import type { EnterpriseDb } from "../schema.ts";
 
@@ -112,7 +114,7 @@ export type RunTenantBackupOptions = {
  * which are valid in R2 keys but awkward in tooling, so they are normalised.
  */
 export const backupObjectKey = (organizationId: string, startedAt: Date, runId?: string): string =>
-  `backups/${organizationId}/${startedAt.toISOString().replace(/[:.]/g, "-")}${
+  `backups/${organizationId}/${startedAt.toISOString().replaceAll(/[:.]/g, "-")}${
     runId ? `-${runId}` : ""
   }.json`;
 
@@ -126,8 +128,8 @@ export const describeBackupError = (cause: unknown): string => {
   const text = error ? `${error.name}: ${error.message}` : String(cause);
 
   return text
-    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
-    .replace(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
+    .replaceAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
+    .replaceAll(/\b[A-Za-z0-9+/=_-]{32,}\b/g, "[redacted]")
     .slice(0, BACKUP_ERROR_MAX_LENGTH);
 };
 
@@ -156,8 +158,8 @@ const recordAudit = (
   }).pipe(
     // Audit is secondary to the backup: a transient write failure must not
     // turn a successful upload into a failed run.
-    Effect.catch((cause) =>
-      Effect.sync(() => console.error("Backup audit write failed", organizationId, cause)),
+    Effect.catch((error) =>
+      Effect.logError("Backup audit write failed", { organizationId, error }),
     ),
     Effect.asVoid,
   );
@@ -240,8 +242,8 @@ export const runTenantBackup = (
 
     const built = yield* buildTenantExport(db, organization, { now: startedAt }).pipe(
       Effect.map((bundle) => ({ ok: true as const, bundle })),
-      Effect.catch((cause) =>
-        Effect.succeed({ ok: false as const, error: describeBackupError(cause) }),
+      Effect.catch((error) =>
+        Effect.succeed({ ok: false as const, error: describeBackupError(error) }),
       ),
     );
 
@@ -287,8 +289,8 @@ export const runTenantBackup = (
       catch: (cause) => cause,
     }).pipe(
       Effect.map(() => ({ ok: true as const })),
-      Effect.catch((cause) =>
-        Effect.succeed({ ok: false as const, error: describeBackupError(cause) }),
+      Effect.catch((error) =>
+        Effect.succeed({ ok: false as const, error: describeBackupError(error) }),
       ),
     );
 
@@ -383,13 +385,15 @@ export const pruneBackups = (
       }).pipe(
         // Keep the rows when the object cannot be removed so a later sweep can
         // retry instead of silently losing track of the bytes.
-        Effect.catch((cause) =>
-          Effect.sync(() => {
-            console.error("Backup object retention failed", cause);
-            objectDeleteFailed = true;
-
-            return 0;
-          }),
+        Effect.catch((error) =>
+          Effect.logError("Backup object retention failed", { error }).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                objectDeleteFailed = true;
+              }),
+            ),
+            Effect.as(0),
+          ),
         ),
       );
 
@@ -456,12 +460,11 @@ export const runScheduledBackups = (
       (organization) =>
         runTenantBackup(db, storage, organization.id, "scheduled", { now }).pipe(
           Effect.map((result) => ({ ok: result.status === "succeeded" })),
-          Effect.catch((cause) =>
-            Effect.sync(() => {
-              console.error("Scheduled tenant backup failed", organization.id, cause);
-
-              return { ok: false };
-            }),
+          Effect.catch((error) =>
+            Effect.logError("Scheduled tenant backup failed", {
+              organizationId: organization.id,
+              error,
+            }).pipe(Effect.as({ ok: false })),
           ),
         ),
       { concurrency: options.concurrency ?? BACKUP_CONCURRENCY },

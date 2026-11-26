@@ -1,8 +1,19 @@
+import {
+  emailButton,
+  emailDocument,
+  emailFooter,
+  emailFootnote,
+  emailHeading,
+  emailIsolate,
+  emailParagraph,
+  emailSignature,
+  emailSteps,
+  emailTextLink,
+  resolveEmailBrand,
+} from "../Mail/emailLayout.ts";
+import { escapeHtml, headerValue, trimOrNull } from "../Mail/emailTemplate.ts";
+
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const BUTTON_BACKGROUND = "#18181b";
-
-const FONT_STACK = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 export type OnboardingEmail = {
   readonly subject: string;
@@ -10,17 +21,34 @@ export type OnboardingEmail = {
   readonly html: string;
 };
 
-export type WelcomeEmailInput = {
+/** Optional deployment or tenant branding. Everything falls back to Mattrax. */
+export type OnboardingEmailBranding = {
+  readonly brandName?: string | null;
+  readonly logoUrl?: string | null;
+  readonly brandColor?: string | null;
+};
+
+export type WelcomeEmailInput = OnboardingEmailBranding & {
   readonly firstName?: string | null;
   readonly dashboardUrl: string;
-  /** When absent the dashboard is used so the CTA always has somewhere to go. */
+  /** Defaults to `/tenants/new` on the dashboard origin. */
+  readonly createTenantUrl?: string | null;
+  /**
+   * @deprecated A tenantless welcome has no enrollment page. Callers that do
+   * know a tenant may still pass one; it becomes an additional link on the
+   * device step. Production intentionally omits it.
+   */
   readonly enrollUrl?: string | null;
+  /** Defaults to the quick-start guide on the dashboard origin. */
+  readonly docsUrl?: string | null;
   readonly replyTo: string;
   readonly supportEmail?: string | null;
   readonly unsubscribeUrl?: string | null;
+  /** Account context in the footer; no tenant exists yet at sign-up. */
+  readonly accountEmail?: string | null;
 };
 
-export type OnboardingFollowUpEmailInput = {
+export type OnboardingFollowUpEmailInput = OnboardingEmailBranding & {
   readonly firstName?: string | null;
   readonly tenantName: string;
   readonly dashboardUrl: string;
@@ -30,23 +58,6 @@ export type OnboardingFollowUpEmailInput = {
   readonly supportEmail?: string | null;
   readonly daysSinceCreation?: number | null;
   readonly unsubscribeUrl?: string | null;
-};
-
-const escapeHtml = (value: string): string =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-
-/** Collapse whitespace so tenant-controlled text cannot inject mail headers. */
-const headerValue = (value: string): string => value.replaceAll(/\s+/g, " ").trim();
-
-const trimOrNull = (value: string | null | undefined): string | null => {
-  const trimmed = value?.trim();
-
-  return trimmed ? trimmed : null;
 };
 
 /** Required links must be absolute http(s); relative or script URLs are a bug. */
@@ -102,6 +113,27 @@ const enrolTarget = (enrollUrl: string | null | undefined, dashboardUrl: string)
   return trimmed ? absoluteHttpUrl(trimmed, "enrollUrl") : dashboardUrl;
 };
 
+const originOf = (url: string): string => new URL(url).origin;
+
+const createTenantTarget = (
+  createTenantUrl: string | null | undefined,
+  dashboardUrl: string,
+): string => {
+  const trimmed = trimOrNull(createTenantUrl);
+
+  return trimmed
+    ? absoluteHttpUrl(trimmed, "createTenantUrl")
+    : `${originOf(dashboardUrl)}/tenants/new`;
+};
+
+const docsTarget = (docsUrl: string | null | undefined, dashboardUrl: string): string => {
+  const trimmed = trimOrNull(docsUrl);
+
+  return trimmed
+    ? absoluteHttpUrl(trimmed, "docsUrl")
+    : `${originOf(dashboardUrl)}/docs/getting-started/quick-start`;
+};
+
 const followUpDays = (value: number | null | undefined): number | null => {
   if (value === null || value === undefined || !Number.isFinite(value)) return null;
 
@@ -120,155 +152,145 @@ const footerText = (input: FooterInput): string[] => [
   ...(input.unsubscribeUrl ? [`Unsubscribe: ${input.unsubscribeUrl}`] : []),
 ];
 
-const footerHtml = (input: FooterInput): string[] => [
-  `<p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#78716c;">${escapeHtml(
-    input.reason,
-  )}</p>`,
-  ...(input.supportEmail
-    ? [
-        `<p style="margin:0 0 8px;font-size:12px;line-height:1.5;color:#78716c;">Need help? Contact <a href="mailto:${escapeHtml(
-          input.supportEmail,
-        )}" style="color:#57534e;">${escapeHtml(input.supportEmail)}</a>.</p>`,
-      ]
-    : []),
-  ...(input.unsubscribeUrl
-    ? [
-        `<p style="margin:0;font-size:12px;line-height:1.5;color:#78716c;"><a href="${escapeHtml(
-          input.unsubscribeUrl,
-        )}" style="color:#57534e;">Unsubscribe</a></p>`,
-      ]
-    : []),
-];
-
-const htmlShell = (subject: string, preheader: string, content: string[]): string =>
-  [
-    "<!doctype html>",
-    '<html lang="en">',
-    "<head>",
-    '<meta charset="utf-8" />',
-    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
-    `<title>${escapeHtml(subject)}</title>`,
-    "</head>",
-    `<body style="margin:0;padding:0;background:#f5f5f4;font-family:${FONT_STACK};color:#1c1917;">`,
-    `<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preheader)}</div>`,
-    '<div style="max-width:520px;margin:0 auto;padding:32px 20px;">',
-    '<div style="background:#ffffff;border:1px solid #e7e5e4;border-radius:12px;padding:32px;">',
-    '<div style="font-size:14px;font-weight:700;letter-spacing:0.02em;color:#1c1917;margin:0 0 24px;">Mattrax</div>',
-    ...content,
-    "</div>",
-    "</div>",
-    "</body>",
-    "</html>",
-  ].join("\n");
-
-const paragraph = (value: string, muted = false): string =>
-  `<p style="margin:0 0 16px;font-size:16px;line-height:1.6;color:${
-    muted ? "#57534e" : "#1c1917"
-  };">${value}</p>`;
-
-const primaryButton = (href: string, label: string): string =>
-  `<p style="margin:0 0 12px;"><a data-cta="primary" href="${escapeHtml(
-    href,
-  )}" style="display:inline-block;background:${BUTTON_BACKGROUND};color:#ffffff;padding:12px 22px;border-radius:8px;font-size:16px;font-weight:600;text-decoration:none;">${escapeHtml(
-    label,
-  )}</a></p>`;
-
-const fallbackUrl = (href: string): string =>
-  `<p style="margin:0 0 24px;font-size:13px;line-height:1.5;color:#57534e;">Or paste this link into your browser:<br /><span style="word-break:break-all;">${escapeHtml(
-    href,
-  )}</span></p>`;
-
-const signatureHtml = (replyTo: string): string =>
-  `<p style="margin:24px 0 0;font-size:16px;line-height:1.6;">Oscar<br />Founder, Mattrax<br /><span style="font-size:14px;color:#57534e;">Replies go to ${escapeHtml(
-    replyTo,
-  )}.</span></p>`;
+const brandFor = (
+  input: OnboardingEmailBranding,
+  fallbackName = "Mattrax",
+  origin: string | null = null,
+) =>
+  resolveEmailBrand({
+    name: input.brandName,
+    logoUrl: input.logoUrl,
+    brandColor: input.brandColor,
+    origin,
+    fallbackName,
+  });
 
 /**
  * The welcome email. Pure: no sender, transport, database or environment is
  * involved, so the copy and markup can be tested directly.
+ *
+ * A verified account has no tenant yet, so the first step creates one; it never
+ * links to an enrolment page that does not exist for a tenantless account.
+ * The copy is written once and rendered into both the HTML and plain-text
+ * bodies, so the two alternatives cannot drift.
  */
 export const welcomeEmail = (input: WelcomeEmailInput): OnboardingEmail => {
   const name = firstName(input.firstName);
   const dashboardUrl = absoluteHttpUrl(input.dashboardUrl, "dashboardUrl");
-  const enrollUrl = enrolTarget(input.enrollUrl, dashboardUrl);
+  const createTenantUrl = createTenantTarget(input.createTenantUrl, dashboardUrl);
+  const enrollUrl = optionalHttpUrl(input.enrollUrl, "enrollUrl");
+  const docsUrl = docsTarget(input.docsUrl, dashboardUrl);
   const replyTo = requireReplyTo(input.replyTo);
   const support = supportAddress(input.supportEmail);
   const unsubscribeUrl = optionalHttpUrl(input.unsubscribeUrl, "unsubscribeUrl");
+  const accountEmail = trimOrNull(input.accountEmail);
+  const brand = brandFor(input, "Mattrax", originOf(dashboardUrl));
 
-  const subject = "Welcome to Mattrax";
-  const preheader = "Thanks for signing up — here's the one thing to do first.";
+  const footerReason = accountEmail
+    ? `You're receiving this because the ${brand.name} account ${accountEmail} was created.`
+    : `You're receiving this because you created a ${brand.name} account.`;
+
+  const footerReasonHtml = accountEmail
+    ? `You're receiving this because the ${emailIsolate(
+        brand.name,
+      )} account ${emailIsolate(accountEmail)} was created.`
+    : `You're receiving this because you created a ${emailIsolate(brand.name)} account.`;
+
+  const founder = brand.name.toLowerCase() === "mattrax";
+
+  const copy = {
+    subject: `Welcome to ${brand.name}`,
+    preheader: "Your account is ready. Create a tenant, set a policy and enrol your first device.",
+    heading: `Welcome to ${brand.name}`,
+    greeting: greeting(name),
+    intro:
+      "Mattrax is device management for Mac, Windows and Android in one place: policies, compliance, inventory and software, without the GPOs, spreadsheets and browser tabs.",
+    lead: "Your account is ready. This is the order that gets you from signing up to a managed fleet: create a tenant, set a policy, then enrol a device.",
+    steps: [
+      {
+        title: "Create your tenant",
+        body: "Name your team and choose a slug. You'll land in the tenant dashboard straight after, and everything else lives inside it.",
+        link: { href: createTenantUrl, label: "Create your tenant" },
+      },
+      {
+        title: "Set a baseline policy",
+        body: "Open Policies and apply a policy so settings, compliance and software updates are managed from one place.",
+      },
+      {
+        title: "Enrol your first device",
+        body: "In that tenant, open Devices → Enrollment and follow the steps for Mac, Windows or Android. Enrolment usually takes about ten minutes.",
+        ...(enrollUrl ? { link: { href: enrollUrl, label: "Open enrolment" } } : {}),
+      },
+    ],
+    cta: "Open your dashboard",
+    secondary: "Read the quick start",
+    founderNote: "Questions? Reply to this email and it comes straight to me. I read every reply.",
+    signoff: "Oscar",
+    signoffRole: founder ? "Founder, Mattrax" : "The Mattrax team",
+    replyLine: `Replies go to ${replyTo}.`,
+    footerReason,
+    footerReasonHtml,
+  };
 
   const text = [
-    preheader,
+    copy.preheader,
     "",
-    greeting(name),
+    copy.greeting,
     "",
-    "Welcome to Mattrax. You signed up to manage your fleet, not to spend your week in GPOs, spreadsheets and a dozen browser tabs. Mattrax exists to put Macs, Windows and Android under one roof, with policies, compliance and inventory in one place.",
+    copy.intro,
     "",
-    "The one thing to do first is enrol your first device. Everything else — policies, apps, compliance — starts working once a single device checks in.",
+    copy.lead,
     "",
-    `Enrol your first device: ${enrollUrl}`,
-    `Your dashboard: ${dashboardUrl}`,
+    ...copy.steps.flatMap((step, index) => [
+      `${index + 1}. ${step.title}`,
+      `   ${step.body}`,
+      ...(step.link ? [`   ${step.link.label}: ${step.link.href}`] : []),
+      "",
+    ]),
+    `${copy.cta}: ${dashboardUrl}`,
+    `${copy.secondary}: ${docsUrl}`,
     "",
-    "Enrolment takes about ten minutes. When the device checks in you'll see it in the dashboard with its compliance state and the policies that applied.",
+    copy.founderNote,
     "",
-    "You don't need to get everything right today. One device is enough to see how it feels, and you can add the rest whenever you're ready.",
+    copy.signoff,
+    copy.signoffRole,
+    copy.replyLine,
     "",
-    "Reply to this email and it comes straight to me. I read every reply, and what you expected versus what actually happened is the most useful thing you can tell me.",
-    "",
-    "Oscar",
-    "Founder, Mattrax",
-    `Replies go to ${replyTo}.`,
-    "",
-    "P.S. If a walkthrough would help, reply and we'll find a time.",
-    "",
-    ...footerText({
-      reason: "You're getting this because you signed up for Mattrax.",
+    ...footerText({ reason: copy.footerReason, supportEmail: support, unsubscribeUrl }),
+  ].join("\n");
+
+  const content = [
+    emailHeading(`Welcome to ${emailIsolate(brand.name)}`),
+    emailParagraph(emailIsolate(copy.greeting)),
+    emailParagraph(escapeHtml(copy.intro)),
+    emailParagraph(escapeHtml(copy.lead), { bottom: 10 }),
+    emailSteps(copy.steps),
+    emailButton(dashboardUrl, copy.cta, brand),
+    emailFootnote(
+      `Or paste this link into your browser:<br /><span style="word-break:break-all;">${escapeHtml(
+        dashboardUrl,
+      )}</span>`,
+      16,
+    ),
+    emailParagraph(emailTextLink(docsUrl, copy.secondary), { muted: true, bottom: 18 }),
+    emailParagraph(escapeHtml(copy.founderNote), { bottom: 0 }),
+    emailSignature(replyTo, copy.signoff, copy.signoffRole),
+  ].join("\n");
+
+  const html = emailDocument({
+    subject: copy.subject,
+    preheader: copy.preheader,
+    brand,
+    content,
+    footer: emailFooter({
+      reason: copy.footerReason,
+      reasonHtml: copy.footerReasonHtml,
       supportEmail: support,
       unsubscribeUrl,
     }),
-  ].join("\n");
+  });
 
-  const html = htmlShell(
-    subject,
-    preheader,
-    [
-      '<h1 style="margin:0 0 20px;font-size:22px;line-height:1.3;">Welcome to Mattrax</h1>',
-      paragraph(escapeHtml(greeting(name))),
-      paragraph(
-        "Welcome to Mattrax. You signed up to manage your fleet, not to spend your week in GPOs, spreadsheets and a dozen browser tabs. Mattrax exists to put Macs, Windows and Android under one roof, with policies, compliance and inventory in one place.",
-      ),
-      paragraph(
-        "The one thing to do first is enrol your first device. Everything else — policies, apps, compliance — starts working once a single device checks in.",
-      ),
-      primaryButton(enrollUrl, "Enrol your first device"),
-      fallbackUrl(enrollUrl),
-      paragraph(
-        `Or open <a href="${escapeHtml(
-          dashboardUrl,
-        )}" style="color:#1c1917;">your dashboard</a> and enrol from there.`,
-      ),
-      paragraph(
-        "Enrolment takes about ten minutes. When the device checks in you'll see it in the dashboard with its compliance state and the policies that applied.",
-      ),
-      paragraph(
-        "You don't need to get everything right today. One device is enough to see how it feels, and you can add the rest whenever you're ready.",
-      ),
-      paragraph(
-        "Reply to this email and it comes straight to me. I read every reply, and what you expected versus what actually happened is the most useful thing you can tell me.",
-      ),
-      signatureHtml(replyTo),
-      paragraph("P.S. If a walkthrough would help, reply and we'll find a time.", true),
-    ].concat(
-      footerHtml({
-        reason: "You're getting this because you signed up for Mattrax.",
-        supportEmail: support,
-        unsubscribeUrl,
-      }),
-    ),
-  );
-
-  return { subject, text, html };
+  return { subject: copy.subject, text, html };
 };
 
 /**
@@ -285,6 +307,7 @@ export const onboardingFollowUpEmail = (input: OnboardingFollowUpEmailInput): On
   const support = supportAddress(input.supportEmail);
   const unsubscribeUrl = optionalHttpUrl(input.unsubscribeUrl, "unsubscribeUrl");
   const days = followUpDays(input.daysSinceCreation);
+  const brand = brandFor(input, tenant, originOf(dashboardUrl));
 
   const subject = "Did you get a chance to try Mattrax?";
   const preheader = "A quick check-in on your first device.";
@@ -292,6 +315,19 @@ export const onboardingFollowUpEmail = (input: OnboardingFollowUpEmailInput): On
   const since = days
     ? `It's been ${days} ${days === 1 ? "day" : "days"} since you set up ${tenant} on Mattrax, and no device has enrolled yet.`
     : `It's been about a week since you set up ${tenant} on Mattrax, and no device has enrolled yet.`;
+
+  const sinceHtml = days
+    ? `It's been ${days} ${days === 1 ? "day" : "days"} since you set up ${emailIsolate(
+        tenant,
+      )} on Mattrax, and no device has enrolled yet.`
+    : `It's been about a week since you set up ${emailIsolate(
+        tenant,
+      )} on Mattrax, and no device has enrolled yet.`;
+
+  const footerReason = `You're getting this because ${tenant} was created on Mattrax.`;
+  const footerReasonHtml = `You're getting this because ${emailIsolate(
+    tenant,
+  )} was created on Mattrax.`;
 
   const text = [
     preheader,
@@ -315,43 +351,49 @@ export const onboardingFollowUpEmail = (input: OnboardingFollowUpEmailInput): On
     "Founder, Mattrax",
     `Replies go to ${replyTo}.`,
     "",
-    ...footerText({
-      reason: `You're getting this because ${tenant} was created on Mattrax.`,
+    ...footerText({ reason: footerReason, supportEmail: support, unsubscribeUrl }),
+  ].join("\n");
+
+  const content = [
+    emailHeading("Did you get a chance to try Mattrax?"),
+    emailParagraph(emailIsolate(greeting(name))),
+    emailParagraph(sinceHtml),
+    emailParagraph(
+      "No pressure — I just wanted to check in. Did something get in the way? Enrolment is usually the fiddliest part of getting started, and it's often one small thing: a certificate, a network rule, an Apple or Google account setting. If that's where you stopped, I can save you the guesswork.",
+    ),
+    emailParagraph("Two ways forward:", { bottom: 8 }),
+    emailButton(enrollUrl, "Finish enrolling a device", brand),
+    emailFootnote(
+      `Or paste this link into your browser:<br /><span style="word-break:break-all;">${escapeHtml(
+        enrollUrl,
+      )}</span>`,
+      16,
+    ),
+    emailParagraph(
+      `${emailTextLink(
+        `mailto:${replyTo}`,
+        "Reply and tell me where you got stuck",
+      )} — replies come straight to me. I read every one.`,
+      { muted: true, bottom: 20 },
+    ),
+    emailParagraph(
+      "A working device is the quickest way to see whether Mattrax fits how your team works. If it's easier, I'm happy to do a short walkthrough and get the first device enrolled with you.",
+    ),
+    emailSignature(replyTo),
+  ].join("\n");
+
+  const html = emailDocument({
+    subject,
+    preheader,
+    brand,
+    content,
+    footer: emailFooter({
+      reason: footerReason,
+      reasonHtml: footerReasonHtml,
       supportEmail: support,
       unsubscribeUrl,
     }),
-  ].join("\n");
-
-  const html = htmlShell(
-    subject,
-    preheader,
-    [
-      '<h1 style="margin:0 0 20px;font-size:22px;line-height:1.3;">Did you get a chance to try Mattrax?</h1>',
-      paragraph(escapeHtml(greeting(name))),
-      paragraph(escapeHtml(since)),
-      paragraph(
-        "No pressure — I just wanted to check in. Did something get in the way? Enrolment is usually the fiddliest part of getting started, and it's often one small thing: a certificate, a network rule, an Apple or Google account setting. If that's where you stopped, I can save you the guesswork.",
-      ),
-      paragraph("Two ways forward:"),
-      primaryButton(enrollUrl, "Finish enrolling a device"),
-      fallbackUrl(enrollUrl),
-      paragraph(
-        `<a href="mailto:${escapeHtml(
-          replyTo,
-        )}" style="color:#1c1917;">Reply and tell me where you got stuck</a> — replies come straight to me. I read every one.`,
-      ),
-      paragraph(
-        "A working device is the quickest way to see whether Mattrax fits how your team works. If it's easier, I'm happy to do a short walkthrough and get the first device enrolled with you.",
-      ),
-      signatureHtml(replyTo),
-    ].concat(
-      footerHtml({
-        reason: `You're getting this because ${tenant} was created on Mattrax.`,
-        supportEmail: support,
-        unsubscribeUrl,
-      }),
-    ),
-  );
+  });
 
   return { subject, text, html };
 };

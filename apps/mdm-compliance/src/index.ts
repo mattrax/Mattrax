@@ -1,22 +1,27 @@
-import { Effect, Logger } from "effect";
+import { Effect, PlatformError, Predicate, Stdio, Stream } from "effect";
 import { Command, Flag } from "effect/cli";
 import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { allChecks } from "./checks/index.ts";
+import { ScepCaCache } from "./harness/scep.ts";
 import { SUITE_VERSION, filterChecks, formatReport, runChecks } from "./runner.ts";
-import {
-  PLATFORMS,
-  isCheckCategory,
-  isPlatform,
-  type CheckCategory,
-  type Platform,
-} from "./types.ts";
+import { PLATFORMS, isCheckCategory, isPlatform } from "./types.ts";
+import type { CheckCategory, Platform } from "./types.ts";
 
-const write = (stream: "stdout" | "stderr", text: string) =>
-  Effect.sync(() => {
-    (stream === "stdout" ? process.stdout : process.stderr).write(
-      text.endsWith("\n") ? text : `${text}\n`,
-    );
+const write = (
+  stream: "stdout" | "stderr",
+  text: string,
+): Effect.Effect<void, PlatformError.PlatformError, Stdio.Stdio> =>
+  Effect.gen(function* () {
+    const stdio = yield* Stdio.Stdio;
+    const sink = stream === "stdout" ? stdio.stdout() : stdio.stderr();
+
+    yield* Stream.run(Stream.make(text.endsWith("\n") ? text : `${text}\n`), sink);
   });
+
+const isEpipe = (error: PlatformError.PlatformError): boolean =>
+  Predicate.hasProperty(error.reason, "cause") &&
+  Predicate.hasProperty(error.reason.cause, "code") &&
+  error.reason.cause.code === "EPIPE";
 
 const categories = (value: string): ReadonlyArray<CheckCategory> => {
   if (value === "all") return [];
@@ -126,15 +131,13 @@ const command = Command.make(
         `Running ${checks.length} compliance checks (${selectedPlatforms.length > 0 ? selectedPlatforms.join(", ") : "apple, windows, android, scep"})...\n`,
       );
 
-    const report = yield* Effect.promise(() =>
-      runChecks(checks, {
-        platforms: selectedPlatforms,
-        categories: selectedCategories,
-        search: config.check,
-        timeoutMs: config.timeout,
-        failFast: config.failFast,
-      }),
-    );
+    const report = yield* runChecks(checks, {
+      platforms: selectedPlatforms,
+      categories: selectedCategories,
+      search: config.check,
+      timeoutMs: config.timeout,
+      failFast: config.failFast,
+    });
 
     if (config.json) {
       yield* write("stdout", JSON.stringify(report, null, 2));
@@ -173,9 +176,19 @@ const command = Command.make(
 );
 
 command.pipe(
-  // Protocol routes log spans through Effect's default console logger. Keep
-  // stdout clean for --json and let the report carry all diagnostics.
-  Effect.provide(Logger.layer([], { mergeWithExisting: false })),
+  Effect.catchTag("PlatformError", (error) =>
+    isEpipe(error)
+      ? Effect.void
+      : write("stderr", `I/O error: ${error.message}`).pipe(
+          Effect.catch(() => Effect.void),
+          Effect.andThen(
+            Effect.sync(() => {
+              process.exitCode = 1;
+            }),
+          ),
+        ),
+  ),
+  Effect.provide(ScepCaCache.layer()),
   Effect.provide(NodeServices.layer),
   NodeRuntime.runMain,
 );

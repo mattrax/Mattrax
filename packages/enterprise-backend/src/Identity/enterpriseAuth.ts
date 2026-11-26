@@ -1,10 +1,13 @@
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
-import { Effect, Layer, Option, Redacted, Schema } from "effect";
+import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
+import { Cause, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect";
 import {
   EnterpriseAuth,
   EnterpriseBadRequest,
   EnterpriseConflict,
   EnterpriseForbidden,
+  EnterpriseInternal,
+  EnterpriseErrorDiagnostics,
+  makeEnterpriseErrorDiagnostics,
   EnterpriseNotConfigured,
   EnterpriseNotFound,
   EnterpriseUnauthorized,
@@ -15,23 +18,42 @@ import {
   credentialPermissions,
   hasAnyWritePermission,
   hasUnrestrictedCredential,
+  normalisePath,
   normalizeCredentialPermissions,
-  diagnoseError,
-  type Permission,
-  type StepUpAction,
-  type StepUpMethod,
+  permissionLabel,
+} from "@mattrax/enterprise-domain";
+import type {
+  EnterpriseAuthFailure,
+  Permission,
+  StepUpAction,
+  StepUpMethod,
 } from "@mattrax/enterprise-domain";
 import { Db, authIdentifiers, schema } from "@mattrax/enterprise-core";
 import { ACCOUNT_AUDIT, clientDescriptor, recordAccountAudit } from "../Account/accountAudit.ts";
-import { sessionCookie, type AppAuthService } from "../Account/auth.ts";
+import { sessionCookie } from "../Account/auth.ts";
+import type { AppAuthService } from "../Account/auth.ts";
 import {
   DEFAULT_ONBOARDING_REPLY_TO,
   ONBOARDING_SUPPORT_EMAIL,
+  OnboardingEmailWarnings,
   sendWelcomeEmailOnce,
 } from "../Tenant/onboardingEmails.ts";
+import type { OnboardingEmailBranding } from "../Tenant/onboardingEmail.ts";
 import type { EmailAddress, EmailReplyTo, EmailTransport } from "@mattrax/email";
 import { DEFAULT_EMAIL_FROM } from "@mattrax/email";
 import { sendTransactionalEmail } from "../Mail/emailOutbox.ts";
+import {
+  emailButton,
+  emailCode,
+  emailDocument,
+  emailFootnote,
+  emailHeading,
+  emailIsolate,
+  emailParagraph,
+  emailTextLink,
+  resolveEmailBrand,
+} from "../Mail/emailLayout.ts";
+import { escapeHtml } from "../Mail/emailTemplate.ts";
 import {
   signStepUpFlow,
   signStepUpGrant,
@@ -246,13 +268,33 @@ const emailChangeCancelLinkFor = (origin: string, token: string) =>
 export const generateEmailCode = () => {
   const bytes = crypto.getRandomValues(new Uint32Array(1));
 
-  return String(bytes[0]! % 1_000_000).padStart(6, "0");
+  return String(bytes[0] % 1_000_000).padStart(6, "0");
 };
 
 export const emailCodeHash = (authSecret: string, subjectId: string, code: string) =>
   sha256(`${authSecret}:email-code:${subjectId}:${code}`);
 
 const verified = Effect.succeed({ status: "ok" as const });
+
+const authFailure = (cause: Cause.Cause<unknown>): EnterpriseAuthFailure => {
+  const error = Cause.squash(cause);
+
+  return error instanceof Error || Schema.is(Schema.Json)(error)
+    ? error
+    : new EnterpriseInternal({ message: "Authentication failed unexpectedly." });
+};
+
+/** Keep upstream auth/Drizzle failures inside the bounded backend contract. */
+const bindAuthFailure = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, EnterpriseAuthFailure> =>
+  effect.pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? (Effect.failCause(cause) as Effect.Effect<never, EnterpriseAuthFailure>)
+        : Effect.fail(authFailure(cause)),
+    ),
+  ) as Effect.Effect<A, EnterpriseAuthFailure>;
 
 export type EnterpriseAuthOptions = {
   readonly appAuth: AppAuthService;
@@ -265,6 +307,11 @@ export type EnterpriseAuthOptions = {
   readonly onboardingReplyTo?: EmailReplyTo;
   /** Support address in the welcome footer. Defaults to the sender address. */
   readonly onboardingSupportEmail?: string | null;
+  /**
+   * Deployment-level branding for the welcome email. A new account has no
+   * tenant yet, so this is the only branding available at verification time.
+   */
+  readonly onboardingBranding?: OnboardingEmailBranding | null;
   /** Extra origins allowed to make cookie-authenticated writes. */
   readonly trustedOrigins?: ReadonlyArray<string>;
 };
@@ -274,11 +321,18 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
     EnterpriseAuth,
     Effect.gen(function* () {
       const db = yield* Db;
+      const diagnostics =
+        Option.getOrUndefined(yield* Effect.serviceOption(EnterpriseErrorDiagnostics)) ??
+        makeEnterpriseErrorDiagnostics();
+      const diagnoseError = diagnostics.diagnose;
       const auth = yield* options.appAuth;
       // The real auth runtime always provides step-up. A stub that omits it
       // (tests, or an embedding that only uses bearer tokens) fails closed for
       // every interactive factor instead of skipping the check.
       const stepUpOption = yield* Effect.serviceOption(StepUpService);
+      const onboardingWarnings = Option.getOrUndefined(
+        yield* Effect.serviceOption(OnboardingEmailWarnings),
+      );
 
       const stepUp: StepUpService["Service"] = Option.isSome(stepUpOption)
         ? stepUpOption.value
@@ -309,16 +363,27 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
       const emailFrom = options.emailFrom ?? DEFAULT_EMAIL_FROM;
 
+      const accountBrand = resolveEmailBrand({
+        name: options.onboardingBranding?.brandName,
+        logoUrl: options.onboardingBranding?.logoUrl,
+        brandColor: options.onboardingBranding?.brandColor,
+        origin,
+      });
+
       /** Queue one account email, or deliver it through the local mailbox. */
       const deliver = (
         input: {
           readonly template: "email_verification" | "email_change_confirm" | "email_change_notice";
           readonly dedupeKey?: string;
+          /** Send within the request; used for codes, which cannot wait. */
+          readonly deliverNow?: boolean;
           readonly message: {
             readonly to: string;
             readonly subject: string;
             readonly text: string;
             readonly html: string;
+            /** Extra MIME headers (for example `OTP-Token`). */
+            readonly headers?: Readonly<Record<string, string>>;
           };
         },
         recipient: string,
@@ -331,6 +396,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           recipient,
           subjectAccountId: accountId,
           dedupeKey: input.dedupeKey,
+          deliverNow: input.deliverNow,
           message: { from: emailFrom, ...input.message },
         });
 
@@ -359,7 +425,9 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           origin,
           replyTo: options.onboardingReplyTo ?? DEFAULT_ONBOARDING_REPLY_TO,
           supportEmail: options.onboardingSupportEmail ?? ONBOARDING_SUPPORT_EMAIL,
+          branding: options.onboardingBranding,
           from: onboardingFrom,
+          warnings: onboardingWarnings,
         }).pipe(Effect.catchCause(() => Effect.void));
 
       /**
@@ -439,20 +507,21 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const match = authorization.match(/^Bearer\s+(.+)$/i);
 
           if (!match) return undefined;
+          const now = DateTime.toDate(yield* DateTime.now);
           const tokenHash = yield* sha256(match[1]);
 
           const item = yield* db.query.accountApiToken.findFirst({
             where: { tokenHash, revokedAt: { isNull: true } },
           });
 
-          if (!item || (item.expiresAt && item.expiresAt <= new Date())) return undefined;
+          if (!item || (item.expiresAt && item.expiresAt <= now)) return undefined;
 
           // `last_used_at` is operator metadata, not an authorization input.
           // Refreshing it on every request costs a write round trip on every
           // bearer-authenticated call (SSR and MCP traffic), so it follows the
           // same five-minute floor as the session context.
           const usedAt = item.lastUsedAt;
-          const at = new Date();
+          const at = now;
 
           if (!usedAt || at.getTime() - usedAt.getTime() >= API_TOKEN_USED_REFRESH_MILLIS)
             yield* db
@@ -478,6 +547,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const match = authorization.match(/^Bearer\s+(.+)$/i);
 
           if (!match) return undefined;
+          const now = DateTime.toDate(yield* DateTime.now);
           const tokenHash = yield* sha256Base64Url(match[1]);
 
           const [row] = yield* db
@@ -503,14 +573,13 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 eq(schema.mcpOAuthToken.tokenHash, tokenHash),
                 eq(schema.mcpOAuthToken.kind, "access"),
                 isNull(schema.mcpOAuthToken.revokedAt),
-                gt(schema.mcpOAuthToken.expiresAt, new Date()),
+                gt(schema.mcpOAuthToken.expiresAt, now),
                 isNull(schema.mcpOAuthConnection.revokedAt),
               ),
             )
             .limit(1);
 
           if (!row) return undefined;
-          const now = new Date();
           yield* db
             .update(schema.mcpOAuthToken)
             .set({ lastUsedAt: now })
@@ -536,11 +605,22 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const apiToken = session ? undefined : yield* resolveApiToken(request);
           const oauth = session || apiToken ? undefined : yield* resolveOAuthToken(request);
 
+          // The OAuth consent page submits a plain HTML form, which cannot
+          // attach the custom CSRF header, and its handler performs the same
+          // Origin check itself before it resolves the session (it rejects a
+          // cross-origin `Origin` and treats a missing one as a non-browser
+          // client). Exempting exactly this route keeps the consent button
+          // working without weakening the guard anywhere else.
+          const originCheckedConsent =
+            request.method.toUpperCase() === "POST" &&
+            normalisePath(new URL(request.url).pathname) === "/api/oauth/authorize";
+
           // Cookie-authenticated mutations need the same Origin + CSRF guard
           // the library applies to its own routes. Bearer tokens are exempt:
           // they are not attached automatically by a browser.
           if (
             session &&
+            !originCheckedConsent &&
             request.method.toUpperCase() !== "GET" &&
             request.method.toUpperCase() !== "HEAD"
           ) {
@@ -559,11 +639,15 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               );
           }
 
-          const path = new URL(request.url).pathname;
+          // Authorize the same canonical path the router matched, not the raw
+          // URL spelling. Static-segment escapes, case, duplicate slashes,
+          // trailing slashes and matrix parameters are router-equivalent.
+          const path = normalisePath(new URL(request.url).pathname);
           const method = request.method.toUpperCase();
 
           const accountPath =
-            path.startsWith("/api/v1/account") ||
+            path === "/api/v1/account" ||
+            path.startsWith("/api/v1/account/") ||
             (path === "/api/v1/me" && method !== "GET") ||
             path.includes("email-change") ||
             path.includes("email-verification") ||
@@ -679,19 +763,62 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 code: "mcp_connection_revoked",
               }),
             );
-          const revokedAt = new Date();
-          yield* db
-            .update(schema.mcpOAuthConnection)
-            .set({ revokedAt })
-            .where(eq(schema.mcpOAuthConnection.id, connection.id));
-          yield* db
-            .update(schema.mcpOAuthToken)
-            .set({ revokedAt })
-            .where(eq(schema.mcpOAuthToken.connectionId, connection.id));
-          yield* db
-            .update(schema.mcpOAuthCode)
-            .set({ consumedAt: revokedAt })
-            .where(eq(schema.mcpOAuthCode.connectionId, connection.id));
+          const revokedAt = DateTime.toDate(yield* DateTime.now);
+
+          yield* db.transaction((tx) =>
+            Effect.gen(function* () {
+              const revoked = yield* tx
+                .update(schema.mcpOAuthConnection)
+                .set({ revokedAt })
+                .where(
+                  and(
+                    eq(schema.mcpOAuthConnection.id, connection.id),
+                    eq(schema.mcpOAuthConnection.accountId, user.id),
+                    isNull(schema.mcpOAuthConnection.revokedAt),
+                  ),
+                );
+
+              if (!revoked || revoked.affectedRows === 0) return;
+
+              yield* tx
+                .update(schema.mcpOAuthToken)
+                .set({ revokedAt })
+                .where(eq(schema.mcpOAuthToken.connectionId, connection.id));
+              yield* tx
+                .update(schema.mcpOAuthCode)
+                .set({ consumedAt: revokedAt })
+                .where(eq(schema.mcpOAuthCode.connectionId, connection.id));
+
+              const client = yield* tx.query.mcpOAuthClient.findFirst({
+                where: { id: connection.clientId },
+              });
+              const scopes = (parseStoredCredentialScopes(connection.scopes) ?? ["mcp"]).slice(
+                0,
+                64,
+              );
+
+              yield* recordAccountAudit(tx, {
+                subjectAccountId: user.id,
+                subjectEmail: user.email,
+                action: ACCOUNT_AUDIT.mcpOAuthRevoked,
+                targetType: "mcp_oauth_connection",
+                targetId: connection.id,
+                metadata: {
+                  clientId: connection.clientId,
+                  clientName: client?.name.slice(0, 160) ?? connection.clientId,
+                  connectionId: connection.id,
+                  scopes: [...scopes],
+                  // Legacy `mcp` is an unrestricted grant; expanding it into
+                  // every permission label would bloat the audit row without
+                  // making the grant clearer.
+                  permissions: scopes.includes("mcp")
+                    ? ["mcp"]
+                    : [...credentialPermissions(scopes)].map(permissionLabel),
+                },
+                at: revokedAt,
+              });
+            }),
+          );
 
           return { status: "ok" as const };
         });
@@ -755,7 +882,8 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         credentialId?: string,
       ) =>
         Effect.gen(function* () {
-          const expiresAtMillis = Date.now() + STEP_UP_WINDOW_MILLIS;
+          const expiresAtMillis =
+            DateTime.toEpochMillis(yield* DateTime.now) + STEP_UP_WINDOW_MILLIS;
 
           const token = yield* signStepUpGrant(authSecret, {
             subjectId: user.id,
@@ -909,7 +1037,20 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         },
       ) =>
         Effect.gen(function* () {
-          const { user, apiToken } = yield* requireStepUp(request, "api-token-create");
+          const { user, apiToken, oauth } = yield* requireStepUp(request, "api-token-create");
+
+          // This invariant does not depend on request spelling or on a caller
+          // remembering the account-path guard: MCP OAuth can never mint an
+          // independently revocable account API token.
+          if (oauth)
+            return yield* Effect.fail(
+              diagnoseError(
+                new EnterpriseForbidden({
+                  message: "MCP tokens cannot manage account settings.",
+                }),
+                { code: "mcp_account_scope", reason: "api_token_create" },
+              ),
+            );
 
           if (!user.emailVerified)
             return yield* Effect.fail(
@@ -971,6 +1112,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               );
           }
 
+          const now = DateTime.toDate(yield* DateTime.now);
           let expiresAt: Date | null = null;
 
           if (body.expiresAt) {
@@ -981,7 +1123,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 new EnterpriseBadRequest({ message: "Choose a valid expiry date" }),
               );
 
-            if (parsed <= new Date())
+            if (parsed <= now)
               return yield* Effect.fail(
                 new EnterpriseBadRequest({ message: "The expiry date must be in the future" }),
               );
@@ -989,7 +1131,6 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           }
 
           const raw = randomToken("mtx_");
-          const now = new Date();
           const tokenHash = yield* sha256(raw);
 
           const item = {
@@ -1033,10 +1174,11 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
       const revokeApiToken = (request: Request, tokenId: string) =>
         Effect.gen(function* () {
           const { user } = yield* requireStepUp(request, "api-token-revoke");
+          const now = DateTime.toDate(yield* DateTime.now);
 
           const revoked = yield* db
             .update(schema.accountApiToken)
-            .set({ revokedAt: new Date(), updatedAt: new Date() })
+            .set({ revokedAt: now, updatedAt: now })
             .where(
               and(
                 eq(schema.accountApiToken.id, tokenId),
@@ -1105,7 +1247,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               }),
             );
 
-          const now = new Date();
+          const now = DateTime.toDate(yield* DateTime.now);
           const confirmToken = randomToken();
           const cancelToken = randomToken();
           const changeId = newId();
@@ -1142,9 +1284,10 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           /** Abort the ceremony and drop every live link for this account. */
           const abort = (message: string) =>
             Effect.gen(function* () {
+              const now = DateTime.toDate(yield* DateTime.now);
               yield* db
                 .update(schema.accountEmailChange)
-                .set({ cancelledAt: new Date(), updatedAt: new Date() })
+                .set({ cancelledAt: now, updatedAt: now })
                 .where(
                   and(
                     eq(schema.accountEmailChange.accountId, user.id),
@@ -1155,15 +1298,38 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               return yield* Effect.fail(new EnterpriseBadRequest({ message }));
             });
 
+          const confirmationHtml = emailDocument({
+            subject: "Confirm your new Mattrax email address",
+            preheader: "Confirm the new address for your Mattrax account.",
+            brand: accountBrand,
+            content: [
+              emailHeading("Confirm your new email address"),
+              emailParagraph(
+                "Confirm the new address for your Mattrax account by opening this link:",
+              ),
+              emailButton(confirmLink, "Confirm email address", accountBrand),
+              emailFootnote(
+                `Or paste this link into your browser:<br /><span style="word-break:break-all;">${escapeHtml(
+                  confirmLink,
+                )}</span>`,
+                16,
+              ),
+              emailParagraph("The link works once and expires in one hour.", { muted: true }),
+            ].join("\n"),
+            footer: emailFootnote("If you weren't expecting this, ignore this email."),
+          });
+
           const confirmation = yield* deliver(
             {
               template: "email_change_confirm",
+              // The address cannot be confirmed until this link arrives.
+              deliverNow: true,
               dedupeKey: `email_change_confirm:${changeId}`,
               message: {
                 to: newEmail,
                 subject: "Confirm your new Mattrax email address",
                 text: `Confirm your new Mattrax email address by opening this link:\n\n${confirmLink}\n\nThe link works once and expires in one hour.`,
-                html: `<p>Confirm your new Mattrax email address by opening this link:</p><p><a href="${confirmLink}">${confirmLink}</a></p><p>The link works once and expires in one hour.</p>`,
+                html: confirmationHtml,
               },
             },
             newEmail,
@@ -1177,6 +1343,32 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           // about the attempt and can stop it without signing in.
           const cancelLink = emailChangeCancelLinkFor(origin, cancelToken);
 
+          const noticeHtml = emailDocument({
+            subject: "Your Mattrax email address is being changed",
+            preheader: "A change to your Mattrax email address was requested.",
+            brand: accountBrand,
+            content: [
+              emailHeading("Your email address is being changed"),
+              emailParagraph(
+                `Someone signed in to your Mattrax account and asked to change its email address to <strong>${emailIsolate(
+                  newEmail,
+                )}</strong>.`,
+              ),
+              emailParagraph(
+                "If this was you, no action is needed: the change completes only after the new address confirms it.",
+              ),
+              emailParagraph(
+                `If this was not you, ${emailTextLink(
+                  cancelLink,
+                  "cancel the change",
+                )}. The link works once and expires in one hour. Then review your active sessions in Account settings.`,
+              ),
+            ].join("\n"),
+            footer: emailFootnote(
+              "If you did not request this change, cancel it and review your active sessions.",
+            ),
+          });
+
           const notice = yield* deliver(
             {
               template: "email_change_notice",
@@ -1185,7 +1377,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                 to: user.email,
                 subject: "Your Mattrax email address is being changed",
                 text: `Someone signed in to your Mattrax account and asked to change its email address to ${newEmail}.\n\nIf this was you, no action is needed: the change completes only after the new address confirms it.\n\nIf this was not you, cancel the change here:\n\n${cancelLink}\n\nThe link works once and expires in one hour. Then review your active sessions in Account settings.`,
-                html: `<p>Someone signed in to your Mattrax account and asked to change its email address to <strong>${newEmail}</strong>.</p><p>If this was you, no action is needed: the change completes only after the new address confirms it.</p><p>If this was not you, <a href="${cancelLink}">cancel the change</a>. The link works once and expires in one hour. Then review your active sessions in Account settings.</p>`,
+                html: noticeHtml,
               },
             },
             user.email,
@@ -1222,11 +1414,12 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           }
 
           const code = generateEmailCode();
+          const now = DateTime.toEpochMillis(yield* DateTime.now);
 
           const challenge = yield* signToken(authSecret, {
             sub: user.id,
             email: user.email,
-            exp: Date.now() + EMAIL_CODE_TTL_MS,
+            exp: now + EMAIL_CODE_TTL_MS,
             purpose: "email-verify-code",
             codeHash: yield* emailCodeHash(authSecret, user.id, code),
           });
@@ -1234,7 +1427,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const token = yield* signToken(authSecret, {
             sub: user.id,
             email: user.email,
-            exp: Date.now() + 24 * 60 * 60 * 1000,
+            exp: now + 24 * 60 * 60 * 1000,
             purpose: "email-verify",
           });
 
@@ -1250,21 +1443,50 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               }),
             );
 
-          yield* deliver(
+          const verificationHtml = emailDocument({
+            subject: "Your Mattrax verification code",
+            preheader: "Use this code to verify your email address.",
+            brand: accountBrand,
+            content: [
+              emailHeading("Verify your email address"),
+              emailParagraph("Enter this code on the verification page:"),
+              emailCode(code),
+              emailParagraph("It expires in 15 minutes.", { muted: true }),
+              emailParagraph(
+                `You can also verify by opening ${emailTextLink(
+                  link,
+                  "this link",
+                )}. The link expires in 24 hours.`,
+              ),
+            ].join("\n"),
+            footer: emailFootnote("If you weren't expecting this, ignore this email."),
+          });
+
+          const delivered = yield* deliver(
             {
               template: "email_verification",
+              // A code the person is staring at a form for must not wait for the
+              // outbox sweep.
+              deliverNow: true,
               message: {
                 to: user.email,
                 subject: "Your Mattrax verification code",
-                text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
-                html: `<p>Your Mattrax verification code is:</p><p style="font-size:24px;letter-spacing:6px;font-weight:600">${code}</p><p>It expires in 15 minutes.</p><p>You can also verify by opening <a href="${link}">this link</a>. The link expires in 24 hours.</p>`,
+                // Keep the digits alone on a line for "Copy code" heuristics.
+                text: `Your Mattrax verification code is:\n\n${code}\n\nIt expires in 15 minutes. You can also verify by opening this link:\n\n${link}\n\nThe link expires in 24 hours.`,
+                html: verificationHtml,
+                headers: { "OTP-Token": code },
               },
             },
             user.email,
             user.id,
           );
 
-          return { status: "ok" as const, challenge };
+          return {
+            status: "ok" as const,
+            challenge,
+            emailSent:
+              delivered === "queued" || delivered === "duplicate" || delivered === "delivered",
+          };
         });
 
       const verifyEmail = (
@@ -1285,6 +1507,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             }
 
             const code = body.code.trim();
+            const now = DateTime.toEpochMillis(yield* DateTime.now);
 
             if (!/^\d{6}$/.test(code))
               return yield* Effect.fail(
@@ -1304,7 +1527,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             const codeHash = challenge.codeHash;
 
             if (
-              challenge.exp <= Date.now() ||
+              challenge.exp <= now ||
               challenge.purpose !== "email-verify-code" ||
               codeHash === undefined ||
               challenge.sub !== user.id ||
@@ -1325,11 +1548,11 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               );
             yield* db
               .update(schema.account)
-              .set({ emailVerified: true, updatedAt: new Date() })
+              .set({ emailVerified: true, updatedAt: new Date(now) })
               .where(eq(schema.account.id, user.id));
             yield* db
               .update(authIdentifiers)
-              .set({ verifiedAt: Date.now() })
+              .set({ verifiedAt: now })
               .where(
                 and(eq(authIdentifiers.subjectId, user.id), eq(authIdentifiers.namespace, "email")),
               );
@@ -1338,13 +1561,14 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             return { status: "ok" as const };
           }
 
+          const now = DateTime.toEpochMillis(yield* DateTime.now);
           const payload = yield* verifyToken(authSecret, body.token ?? "").pipe(
             Effect.catch(() =>
               Effect.fail(new EnterpriseBadRequest({ message: "Invalid or expired token" })),
             ),
           );
 
-          if (payload.exp <= Date.now() || payload.purpose !== "email-verify")
+          if (payload.exp <= now || payload.purpose !== "email-verify")
             return yield* Effect.fail(
               new EnterpriseBadRequest({ message: "Invalid or expired token" }),
             );
@@ -1356,11 +1580,11 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
             );
           yield* db
             .update(schema.account)
-            .set({ emailVerified: true, updatedAt: new Date() })
+            .set({ emailVerified: true, updatedAt: new Date(now) })
             .where(eq(schema.account.id, user.id));
           yield* db
             .update(authIdentifiers)
-            .set({ verifiedAt: Date.now() })
+            .set({ verifiedAt: now })
             .where(
               and(eq(authIdentifiers.subjectId, user.id), eq(authIdentifiers.namespace, "email")),
             );
@@ -1385,7 +1609,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
           if (!body.token) return yield* Effect.fail(invalid);
 
-          const now = new Date();
+          const now = DateTime.toDate(yield* DateTime.now);
           const tokenHash = yield* sha256(body.token);
 
           const pending = yield* db.query.accountEmailChange.findFirst({
@@ -1440,6 +1664,23 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
                     }),
                   );
 
+                // Recovery proves control of the address stored at issuance.
+                // Rotating the recovery channel invalidates every live
+                // ceremony atomically with the account update.
+                yield* tx
+                  .update(schema.accountRecovery)
+                  .set({ status: "cancelled", cancelledAt: now, updatedAt: now })
+                  .where(
+                    and(
+                      eq(schema.accountRecovery.accountId, user.id),
+                      inArray(schema.accountRecovery.status, [
+                        "pending_proof",
+                        "pending_approval",
+                        "ready",
+                      ]),
+                    ),
+                  );
+
                 yield* tx
                   .update(schema.account)
                   .set({
@@ -1454,7 +1695,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
 
                 yield* tx
                   .update(authIdentifiers)
-                  .set({ value: pending.newEmail, verifiedAt: Date.now() })
+                  .set({ value: pending.newEmail, verifiedAt: now.getTime() })
                   .where(
                     and(
                       eq(authIdentifiers.subjectId, user.id),
@@ -1471,22 +1712,25 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
               // if it is now taken the request is a conflict, otherwise the
               // original cause (a database fault) is re-raised unchanged.
               Effect.catchCause((cause) =>
-                Effect.gen(function* () {
-                  const taken = yield* db
-                    .select({ id: schema.account.id })
-                    .from(schema.account)
-                    .where(eq(schema.account.email, pending.newEmail))
-                    .limit(1);
+                Cause.hasInterrupts(cause)
+                  ? Effect.failCause(cause)
+                  : Effect.gen(function* () {
+                      const taken = yield* db
+                        .select({ id: schema.account.id })
+                        .from(schema.account)
+                        .where(eq(schema.account.email, pending.newEmail))
+                        .limit(1);
 
-                  if (taken.some((row) => row.id !== user.id))
-                    return yield* Effect.fail(
-                      new EnterpriseConflict({
-                        message: "That email address was registered by someone else. Try another.",
-                      }),
-                    );
+                      if (taken.some((row) => row.id !== user.id))
+                        return yield* Effect.fail(
+                          new EnterpriseConflict({
+                            message:
+                              "That email address was registered by someone else. Try another.",
+                          }),
+                        );
 
-                  return yield* Effect.failCause(cause);
-                }),
+                      return yield* Effect.failCause(cause);
+                    }),
               ),
             );
 
@@ -1509,7 +1753,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
        */
       const cancelEmailChange = (body: { token: string }) =>
         Effect.gen(function* () {
-          const now = new Date();
+          const now = DateTime.toDate(yield* DateTime.now);
           const tokenHash = yield* sha256(body.token ?? "");
 
           const pending = yield* db.query.accountEmailChange.findFirst({
@@ -1554,22 +1798,38 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
         });
 
       return EnterpriseAuth.of({
-        requireUser,
-        requireStepUp,
-        stepUpMethods,
-        stepUpTotp,
-        beginStepUpPasskey,
-        completeStepUpPasskey,
-        listMcpConnections,
-        revokeMcpConnection,
-        listApiTokens,
-        createApiToken,
-        revokeApiToken,
-        requestEmailChange,
-        cancelEmailChange,
-        requestEmailVerification,
-        verifyEmail,
-        verifyEmailChange,
+        requireUser: (...args: Parameters<typeof requireUser>) =>
+          bindAuthFailure(requireUser(...args)),
+        requireStepUp: (...args: Parameters<typeof requireStepUp>) =>
+          bindAuthFailure(requireStepUp(...args)),
+        stepUpMethods: (...args: Parameters<typeof stepUpMethods>) =>
+          bindAuthFailure(stepUpMethods(...args)),
+        stepUpTotp: (...args: Parameters<typeof stepUpTotp>) =>
+          bindAuthFailure(stepUpTotp(...args)),
+        beginStepUpPasskey: (...args: Parameters<typeof beginStepUpPasskey>) =>
+          bindAuthFailure(beginStepUpPasskey(...args)),
+        completeStepUpPasskey: (...args: Parameters<typeof completeStepUpPasskey>) =>
+          bindAuthFailure(completeStepUpPasskey(...args)),
+        listMcpConnections: (...args: Parameters<typeof listMcpConnections>) =>
+          bindAuthFailure(listMcpConnections(...args)),
+        revokeMcpConnection: (...args: Parameters<typeof revokeMcpConnection>) =>
+          bindAuthFailure(revokeMcpConnection(...args)),
+        listApiTokens: (...args: Parameters<typeof listApiTokens>) =>
+          bindAuthFailure(listApiTokens(...args)),
+        createApiToken: (...args: Parameters<typeof createApiToken>) =>
+          bindAuthFailure(createApiToken(...args)),
+        revokeApiToken: (...args: Parameters<typeof revokeApiToken>) =>
+          bindAuthFailure(revokeApiToken(...args)),
+        requestEmailChange: (...args: Parameters<typeof requestEmailChange>) =>
+          bindAuthFailure(requestEmailChange(...args)),
+        cancelEmailChange: (...args: Parameters<typeof cancelEmailChange>) =>
+          bindAuthFailure(cancelEmailChange(...args)),
+        requestEmailVerification: (...args: Parameters<typeof requestEmailVerification>) =>
+          bindAuthFailure(requestEmailVerification(...args)),
+        verifyEmail: (...args: Parameters<typeof verifyEmail>) =>
+          bindAuthFailure(verifyEmail(...args)),
+        verifyEmailChange: (...args: Parameters<typeof verifyEmailChange>) =>
+          bindAuthFailure(verifyEmailChange(...args)),
       });
     }),
   );

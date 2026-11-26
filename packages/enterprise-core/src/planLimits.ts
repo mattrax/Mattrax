@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import { count, eq } from "drizzle-orm";
 import type { EnterpriseDb } from "./db.ts";
-import { device, subscription } from "./schema.ts";
+import { device, organization } from "./schema.ts";
 
 /**
  * A single plan limit. `null` means unlimited. `0` means the plan allows none.
@@ -197,16 +197,16 @@ export type PlanResolutionInput = {
 };
 
 /**
- * Effective plan for a tenant. The `subscription` row is authoritative; a
- * tenant without one (or with a lapsed subscription) uses the configured
- * default plan.
+ * Effective plan for a tenant. The organisation row carries the entitlement
+ * cached from the services billing deployment; a tenant without one (or with
+ * a lapsed subscription) uses the configured default plan.
  */
 export const planForOrganization = (input: PlanResolutionInput) =>
   Effect.gen(function* () {
     const [row] = yield* input.db
-      .select({ plan: subscription.plan, status: subscription.status })
-      .from(subscription)
-      .where(eq(subscription.referenceId, input.organizationId))
+      .select({ plan: organization.billingPlan, status: organization.billingStatus })
+      .from(organization)
+      .where(eq(organization.id, input.organizationId))
       .limit(1);
 
     return planNameForSubscription(row, input.config);
@@ -323,9 +323,9 @@ export const tenantLimitForAccount = (input: {
 
     for (const organizationId of owned) {
       const [row] = yield* input.db
-        .select({ plan: subscription.plan, status: subscription.status })
-        .from(subscription)
-        .where(eq(subscription.referenceId, organizationId))
+        .select({ plan: organization.billingPlan, status: organization.billingStatus })
+        .from(organization)
+        .where(eq(organization.id, organizationId))
         .limit(1);
 
       const candidatePlan = planNameForSubscription(row, input.config);

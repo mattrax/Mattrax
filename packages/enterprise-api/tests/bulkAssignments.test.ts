@@ -7,7 +7,7 @@ import {
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { permissionForMethod } from "@mattrax/enterprise-identity";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -58,7 +58,6 @@ const makeContext = () => {
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake only implements the auth methods these tests exercise.
@@ -176,9 +175,9 @@ describe("bulk member role changes", () => {
         { id: "missing", reason: "notFound" },
       ],
     });
-    expect(
-      context.db.store.member.find((member: any) => member.accountId === "user-3")?.role,
-    ).toBe("member");
+    expect(context.db.store.member.find((member: any) => member.accountId === "user-3")?.role).toBe(
+      "member",
+    );
   });
 
   it("refuses owner changes for non-owners and the last owner demotion", async () => {
@@ -379,9 +378,7 @@ describe("bulk member role changes", () => {
     });
     const metadata = entry?.metadata;
 
-    const recorded = Schema.is(Schema.Struct({ accountIds: Schema.Array(Schema.String) }))(
-      metadata,
-    )
+    const recorded = Schema.is(Schema.Struct({ accountIds: Schema.Array(Schema.String) }))(metadata)
       ? metadata.accountIds
       : [];
 
@@ -425,12 +422,12 @@ describe("bulk directory group membership", () => {
       updated: ["user-2", "user-3"],
       failed: [{ id: "user-4", reason: "notFound" }],
     });
-    expect(
-      context.db.store.user_group_member.map((row: any) => [row.groupId, row.userId]),
-    ).toEqual([
-      ["group-1", "user-2"],
-      ["group-1", "user-3"],
-    ]);
+    expect(context.db.store.user_group_member.map((row: any) => [row.groupId, row.userId])).toEqual(
+      [
+        ["group-1", "user-2"],
+        ["group-1", "user-3"],
+      ],
+    );
 
     const second = await runEffect(
       context.service.addUserGroupMembers(request(headers), tenant.id, "group-1", {

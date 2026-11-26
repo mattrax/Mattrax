@@ -56,12 +56,12 @@ function HoverCardContent(props: HoverCardContentProps) {
       sideOffset={8}
       collisionPadding={12}
       class={cn(
-        "z-[80] w-[22rem] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-panel outline-none",
+        "z-50 w-88 max-w-full overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-panel outline-none",
         // Opens from the trigger and settles in place. The global
         // reduced-motion rule keeps the fade and drops the movement.
-        "origin-[var(--ui-popup-transform-origin,top)] transition-[opacity,transform] duration-[var(--duration-popover)] ease-swift",
-        "data-[starting-style]:-translate-y-1 data-[starting-style]:scale-[0.98] data-[starting-style]:opacity-0",
-        "data-[ending-style]:-translate-y-1 data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0",
+        "origin-(--ui-popup-transform-origin,top) transition duration-150 ease-out",
+        "data-[starting-style]:-translate-y-1 data-[starting-style]:scale-95 data-[starting-style]:opacity-0",
+        "data-[ending-style]:-translate-y-1 data-[ending-style]:scale-95 data-[ending-style]:opacity-0",
         local.class,
       )}
       {...others}

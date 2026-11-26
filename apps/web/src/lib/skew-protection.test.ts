@@ -6,7 +6,6 @@ import {
   chunkReloadAllowed,
   chunkReloadTarget,
   clearDeploymentAnnouncement,
-  type DeploymentStorage,
   isChunkAssetUrl,
   isChunkLoadFailure,
   markDeploymentAnnounced,
@@ -14,6 +13,7 @@ import {
   shouldAnnounceDeployment,
   stripChunkReloadMarker,
 } from "./skew-protection";
+import type { DeploymentStorage } from "./skew-protection";
 
 const memoryStorage = (): DeploymentStorage => {
   const values = new Map<string, string>();

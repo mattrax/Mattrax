@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { Effect } from "effect";
 import { substitutePolicyVariables } from "@mattrax/enterprise-domain";
-import { buildConfigurationDeclaration, policyDataHash, windowsPolicyNodes } from "@mattrax/mdm-core";
+import { policyDataHashEffect, windowsPolicyNodes } from "@mattrax/mdm-core";
+import { buildConfigurationDeclaration } from "../policy.js";
 
 /**
  * Variables are resolved before the platform compilers see a payload, so these
@@ -47,7 +49,7 @@ describe("per-platform compilation of policy variables", () => {
     });
   });
 
-  it("resolves Windows SyncML node values", () => {
+  it("resolves Windows SyncML node values", async () => {
     const data = substitutePolicyVariables(
       {
         omaUri: "./Vendor/MSFT/Policy/Config/DeviceLock/DeviceName",
@@ -57,14 +59,14 @@ describe("per-platform compilation of policy variables", () => {
       context,
     );
 
-    expect(
+    await expect(
       windowsPolicyNodes({
         policyId: "policy-1",
         kind: "mttx.windows.custom.devicename",
         data,
         hash: "hash-1",
       }),
-    ).toEqual([
+    ).resolves.toEqual([
       {
         omaUri: "./Vendor/MSFT/Policy/Config/DeviceLock/DeviceName",
         value: "Alice's MacBook (Acme Ltd)",
@@ -73,7 +75,7 @@ describe("per-platform compilation of policy variables", () => {
     ]);
   });
 
-  it("leaves a missing attribute value empty instead of shipping literal text", () => {
+  it("leaves a missing attribute value empty instead of shipping literal text", async () => {
     expect(
       substitutePolicyVariables(
         {
@@ -100,6 +102,8 @@ describe("resolution changes the declaration token", () => {
       attributes: { cost_centre: "AMER" },
     });
 
-    expect(await policyDataHash(first)).not.toBe(await policyDataHash(second));
+    expect(await Effect.runPromise(policyDataHashEffect(first))).not.toBe(
+      await Effect.runPromise(policyDataHashEffect(second)),
+    );
   });
 });

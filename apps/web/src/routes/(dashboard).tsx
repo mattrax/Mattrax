@@ -2,38 +2,35 @@ import { useLocation } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { QueryClientProvider, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
-import {
-  createEffect,
-  createSignal,
-  Errored,
-  lazy,
-  type ParentProps,
-  onSettled,
-  Show,
-} from "solid-js";
+import { createEffect, createSignal, Errored, lazy, onSettled, Show } from "solid-js";
+import type { ParentProps } from "solid-js";
+import { LoadingState } from "@mattrax/ui";
 import { AppShell } from "~/components/app-shell";
 import { PageErrorFallback } from "~/components/error-boundary";
 import { QueryError } from "~/components/mdm/common";
-import { StepUpDialog } from "~/components/step-up-dialog";
+import StepUpDialog from "~/components/step-up-dialog";
 import { authClient } from "~/lib/auth";
 import { queryClient } from "~/lib/query-client";
 import { broadcastCacheReset, setCrossTabTenant } from "~/lib/cross-tab-sync";
 import { meQueryOptions } from "~/lib/enterprise";
+import { emailVerificationGate } from "~/lib/me-query";
 import { errorTag, raisedFailure } from "~/lib/errors";
 import { clearMeCache } from "~/lib/me-cache";
+import { resetMePreload } from "~/lib/me-preload";
 import { reportGlobalError } from "~/lib/global-errors";
 import { syncPostHogTenant, syncPostHogUser } from "~/lib/posthog";
 import { clearSessionPresence, readSessionPresence } from "~/lib/session-presence";
 
+/** Read account data only after success so a held /me cannot suspend the shell. */
+const settledQueryData = <T,>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined => (query.isSuccess ? query.data : undefined);
+
 function DashboardBootScreen() {
   return (
     <div class="flex min-h-svh items-center justify-center bg-background text-foreground">
-      <div class="flex flex-col items-center gap-3">
-        <span class="flex size-9 animate-pulse items-center justify-center rounded-xl bg-primary text-[14px] font-bold text-primary-foreground">
-          M
-        </span>
-        <p class="text-[12px] text-muted-foreground">Loading your tenant…</p>
-      </div>
+      <LoadingState label="Loading your tenant…" size={34} pattern="wave" />
     </div>
   );
 }
@@ -45,7 +42,7 @@ function DashboardBootScreen() {
  * leaving it unmounted until the first keypress would break keyboard users.
  */
 const LazyCommandPalette = lazy(() =>
-  import("~/components/command-palette").then((module) => ({ default: module.CommandPalette })),
+  import("~/components/command-palette"),
 );
 
 const loadCommandPalette = () => import("~/components/command-palette");
@@ -129,21 +126,27 @@ function DashboardLayout(props: ParentProps) {
     me.isError && errorTag(raisedFailure(me.error)) === "EnterpriseUnauthorized";
 
   const shellUser = () =>
-    session().data?.user ?? (session().isPending && presenceActive() ? me.data?.account : undefined);
+    session().data?.user ??
+    (session().isPending && presenceActive() ? settledQueryData(me)?.account : undefined);
 
   createEffect(
     () => ({
       pending: session().isPending,
       user: session().data?.user,
-      verified: me.data?.account.emailVerified,
+      verification: emailVerificationGate({
+        meVerified: settledQueryData(me)?.account.emailVerified,
+        sessionVerified: session().data?.user?.emailVerified,
+        meFetching: me.isFetching,
+      }),
       unauthorized: unauthorized(),
       presence: presenceState(),
       path: `${location.pathname}${location.search}`,
     }),
-    ({ pending, user, verified, unauthorized, presence, path }) => {
+    ({ pending, user, verification, unauthorized, presence, path }) => {
       const login = () => {
         clearSessionPresence();
         clearMeCache();
+        resetMePreload();
         queryClient.clear();
         // Every tab shares the session cookie, so a sign-out must drop the
         // other tabs' caches too rather than leaving stale device data on screen.
@@ -180,11 +183,12 @@ function DashboardLayout(props: ParentProps) {
         return;
       }
 
-      if (verified === undefined) return;
+      // A fresh session claim wins over a stale `/me` row, and an in-flight
+      // refresh may still turn the row verified. This prevents a just-verified
+      // account from being bounced back until the 60s cache window expires.
+      if (verification !== "verify") return;
 
-      if (!verified) {
-        navigate(`/verify-email?returnTo=${encodeURIComponent(path)}`, { replace: true });
-      }
+      navigate(`/verify-email?returnTo=${encodeURIComponent(path)}`, { replace: true });
     },
   );
 
@@ -193,7 +197,7 @@ function DashboardLayout(props: ParentProps) {
       const key = /^\/t\/([^/]+)/.exec(location.pathname)?.[1];
 
       const tenant = key
-        ? me.data?.tenants.find((entry) => entry.id === key || entry.slug === key)
+        ? settledQueryData(me)?.tenants.find((entry) => entry.id === key || entry.slug === key)
         : undefined;
 
       return {
@@ -238,7 +242,7 @@ function DashboardLayout(props: ParentProps) {
     >
       {(user) => (
         <Show
-          when={!me.isError || me.data}
+          when={!me.isError || settledQueryData(me)}
           fallback={
             <div class="flex min-h-svh items-center justify-center bg-background p-6 text-foreground">
               <QueryError
@@ -249,11 +253,25 @@ function DashboardLayout(props: ParentProps) {
             </div>
           }
         >
-          <AppShell user={user()} onSignOut={handleSignOut}>
-            {props.children}
-            <CommandPaletteLauncher />
-            <StepUpDialog />
-          </AppShell>
+          <>
+            <AppShell user={user()} onSignOut={handleSignOut}>
+              {props.children}
+            </AppShell>
+            {/* Global interaction surfaces stay outside the shell's content
+                loading boundary, but own their errors: a palette or dialog
+                failure must not replace the whole dashboard. */}
+            <Errored
+              fallback={() => (
+                <p role="alert" class="sr-only">
+                  The command palette or step-up dialog is unavailable. Reload the page to try
+                  again.
+                </p>
+              )}
+            >
+              <CommandPaletteLauncher />
+              <StepUpDialog />
+            </Errored>
+          </>
         </Show>
       )}
     </Show>

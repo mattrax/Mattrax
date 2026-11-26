@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { api, bootstrapTenant, gotoHydrated } from "./helpers";
 
 /**
@@ -22,7 +23,7 @@ type Allow = (target: string, rule: string) => boolean;
  * it is allowlisted until that file is reworked.
  */
 const widgetContrast: Allow = (target, rule) =>
-  rule === "color-contrast" && target.includes("text-muted-foreground\\/70");
+  rule === "color-contrast" && target.includes(String.raw`text-muted-foreground\/70`);
 
 /**
  * The entity query bar's hint label is `text-muted-foreground/70` at 10.5px.
@@ -30,7 +31,7 @@ const widgetContrast: Allow = (target, rule) =>
  * so its contrast fix is tracked separately and allowlisted here.
  */
 const entityQueryContrast: Allow = (target, rule) =>
-  rule === "color-contrast" && target.includes("text-\\[10\\.5px\\]");
+  rule === "color-contrast" && target.includes(String.raw`text-\[10\.5px\]`);
 
 /**
  * The settings page's support mailto link renders muted text on the card
@@ -82,6 +83,7 @@ const expectNoViolations = async (
   } catch (error) {
     throw new Error(
       `${context}: axe could not scan ${options.include ?? "the page"}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 
@@ -147,7 +149,10 @@ test.describe("dashboard accessibility", () => {
       [`${base}/policies`, "policies"],
       [`${base}/dashboards`, "dashboards"],
       [`${base}/settings`, "settings"],
+      [`${base}/settings/attributes`, "attribute settings"],
+      [`${base}/settings/approvals`, "approval settings"],
       [`${base}/settings/audit`, "audit log"],
+      [`${base}/settings/storage`, "storage"],
     ] as const) {
       await gotoHydrated(page, path);
       await settle(page);
@@ -160,7 +165,7 @@ test.describe("dashboard accessibility", () => {
     );
 
     if (devices.devices.length > 0) {
-      await gotoHydrated(page, `${base}/devices/${devices.devices[0]!.id}`);
+      await gotoHydrated(page, `${base}/devices/${devices.devices[0].id}`);
       await settle(page);
       await expectNoViolations(page, "device detail");
     } else {
@@ -318,6 +323,13 @@ test.describe("dashboard accessibility", () => {
     });
     await gotoHydrated(page, `/t/${tenant.id}/groups`);
 
+    // The skip link changes only the hash, so it focuses its target directly.
+    const skip = page.getByRole("link", { name: "Skip to content" });
+    await skip.focus();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/#main$/);
+    await expect(page.locator("#main")).toBeFocused();
+
     // Client-side navigation lands on the main landmark.
     await page
       .getByRole("navigation", { name: "Primary" })
@@ -333,6 +345,41 @@ test.describe("dashboard accessibility", () => {
 
     // The document title names the page and the tenant.
     await expect(page).toHaveTitle(/Groups · .+ · Mattrax/);
+  });
+
+  test("palette navigation focuses main without stealing focus for query-only changes", async ({
+    page,
+  }) => {
+    const tenant = await bootstrapTenant(page, "Axe Palette Navigation");
+    await gotoHydrated(page, `/t/${tenant.id}/devices`);
+    await page.waitForTimeout(900);
+
+    const input = await openPalette(page);
+    await input.fill("Applications");
+    await expect(page.getByRole("option", { name: /^Applications/ }).first()).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await input.press("Enter");
+    await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/applications$`));
+    await expect(page.locator("#main")).toBeFocused();
+
+    await gotoHydrated(page, `/t/${tenant.id}/devices`);
+    await page.waitForTimeout(900);
+
+    const search = page.getByRole("button", { name: "Search", exact: true });
+    await search.click();
+    const queryInput = page.locator('[data-slot="command-palette"] input[role="combobox"]');
+    await expect(queryInput).toBeFocused();
+    await queryInput.fill("devices critical");
+    await expect(page.getByRole("option", { name: /^Show devices: critical/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    await queryInput.press("Enter");
+    await expect(page).toHaveURL(/\/devices\?health=critical$/);
+    await expect(search).toBeFocused();
+    await expect(page.locator("#main")).not.toBeFocused();
   });
 
   test("palette announcements describe result changes", async ({ page }) => {

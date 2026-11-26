@@ -118,6 +118,57 @@ export function graphGroupFromWire(group: typeof GraphGroupWire.Type): GraphGrou
   };
 }
 
+/**
+ * Windows LAPS credential backed up to Microsoft Entra ID.
+ *
+ * `passwordBase64` decodes to UTF-16LE, which is what Windows returns for the
+ * local administrator password. The field is never logged.
+ */
+export const GraphDeviceLocalCredentialSchema = Schema.Struct({
+  accountName: Schema.optional(Schema.NullOr(Schema.String)),
+  accountSid: Schema.optional(Schema.NullOr(Schema.String)),
+  backupDateTime: Schema.optional(Schema.NullOr(Schema.String)),
+  passwordBase64: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export type GraphDeviceLocalCredential = typeof GraphDeviceLocalCredentialSchema.Type;
+
+export const GraphDeviceLocalCredentialInfoSchema = Schema.Struct({
+  id: Schema.String,
+  deviceName: Schema.optional(Schema.NullOr(Schema.String)),
+  lastBackupDateTime: Schema.optional(Schema.NullOr(Schema.String)),
+  refreshDateTime: Schema.optional(Schema.NullOr(Schema.String)),
+  credentials: Schema.optional(Schema.Array(GraphDeviceLocalCredentialSchema)),
+});
+
+export type GraphDeviceLocalCredentialInfo =
+  typeof GraphDeviceLocalCredentialInfoSchema.Type;
+
+/**
+ * A BitLocker recovery key backed up to Microsoft Entra ID. The list endpoint
+ * omits `key`; it is only returned by a `$select=key` get, which also writes
+ * an Entra audit record.
+ */
+export const GraphBitlockerRecoveryKeySchema = Schema.Struct({
+  id: Schema.String,
+  deviceId: Schema.optional(Schema.NullOr(Schema.String)),
+  createdDateTime: Schema.optional(Schema.NullOr(Schema.String)),
+  volumeType: Schema.optional(
+    Schema.NullOr(Schema.Union([Schema.String, Schema.Number])),
+  ),
+  key: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export type GraphBitlockerRecoveryKey = typeof GraphBitlockerRecoveryKeySchema.Type;
+
+export const GraphBitlockerRecoveryKeyListResponse = Schema.Struct({
+  value: Schema.optional(Schema.Array(GraphBitlockerRecoveryKeySchema)),
+  "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+export type GraphBitlockerRecoveryKeyListResponse =
+  typeof GraphBitlockerRecoveryKeyListResponse.Type;
+
 /** A domain owned by the Entra tenant. */
 export const GraphDomainSchema = Schema.Struct({
   id: Schema.String,
@@ -129,7 +180,7 @@ export const GraphDomainSchema = Schema.Struct({
 export type GraphDomain = typeof GraphDomainSchema.Type;
 
 export const GraphUserDeltaResponse = Schema.Struct({
-  value: Schema.optional(Schema.Array(GraphUserWire)),
+  value: Schema.Array(GraphUserWire),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
   "@odata.deltaLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
@@ -137,7 +188,7 @@ export const GraphUserDeltaResponse = Schema.Struct({
 export type GraphUserDeltaResponse = typeof GraphUserDeltaResponse.Type;
 
 export const GraphGroupDeltaResponse = Schema.Struct({
-  value: Schema.optional(Schema.Array(GraphGroupWire)),
+  value: Schema.Array(GraphGroupWire),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
   "@odata.deltaLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
@@ -204,7 +255,7 @@ export type GraphAutopilotEnrollmentState =
   | "blocked";
 
 const AutopilotDeviceWire = Schema.Struct({
-  id: Schema.optional(Schema.NullOr(Schema.String)),
+  id: Schema.NonEmptyString,
   serialNumber: optionalString,
   hardwareIdentifier: optionalString,
   groupTag: optionalString,
@@ -293,7 +344,7 @@ export function graphAutopilotDeviceFromWire(
   device: typeof AutopilotDeviceWire.Type,
 ): GraphAutopilotDevice {
   return {
-    id: device.id ?? "",
+    id: device.id,
     serialNumber: device.serialNumber ?? undefined,
     hardwareHash: device.hardwareIdentifier ?? undefined,
     groupTag: device.groupTag ?? undefined,
@@ -315,7 +366,7 @@ export function graphAutopilotDeviceFromWire(
 }
 
 const AutopilotProfileWire = Schema.Struct({
-  id: Schema.optional(Schema.NullOr(Schema.String)),
+  id: Schema.NonEmptyString,
   displayName: optionalString,
   description: optionalString,
   deploymentMode: optionalString,
@@ -348,7 +399,7 @@ export function graphAutopilotProfileFromWire(
   profile: typeof AutopilotProfileWire.Type,
 ): GraphAutopilotProfile {
   return {
-    id: profile.id ?? "",
+    id: profile.id,
     displayName: profile.displayName ?? "",
     description: profile.description ?? undefined,
     deploymentMode: profile.deploymentMode ?? undefined,
@@ -362,7 +413,7 @@ export function graphAutopilotProfileFromWire(
 }
 
 export const GraphAutopilotDevicesResponse = Schema.Struct({
-  value: Schema.optional(Schema.Array(AutopilotDeviceWire)),
+  value: Schema.Array(AutopilotDeviceWire),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
 
@@ -371,7 +422,7 @@ export type GraphAutopilotDevicesResponse = typeof GraphAutopilotDevicesResponse
 export const GraphAutopilotDeviceResponse = AutopilotDeviceWire;
 
 export const GraphAutopilotProfilesResponse = Schema.Struct({
-  value: Schema.optional(Schema.Array(AutopilotProfileWire)),
+  value: Schema.Array(AutopilotProfileWire),
   "@odata.nextLink": Schema.optional(Schema.NullOr(Schema.String)),
 });
 

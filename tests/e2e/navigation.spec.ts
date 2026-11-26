@@ -23,13 +23,26 @@ test.describe("top navigation", () => {
       ["Groups", `${base}/groups`, "Groups"],
       ["Policies", `${base}/policies`, "Policies"],
       ["Applications", `${base}/applications`, "Applications"],
-      ["Settings", `${base}/settings`, "General"],
     ] as const) {
       await primaryNav(page).getByRole("link", { name: label, exact: true }).click();
-      await expect(page).toHaveURL(new RegExp(path.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&")));
+      await expect(page).toHaveURL(
+        new RegExp(path.replaceAll(/[/\\^$*+?.()|[\]{}]/g, String.raw`\$&`)),
+      );
 
       await expect(page.getByRole("heading", { name: heading, exact: true }).first()).toBeVisible();
     }
+
+    // Settings sits in the sidebar footer above the account row, not among the
+    // daily sections.
+    await expect(primaryNav(page).getByRole("link", { name: "Settings", exact: true })).toHaveCount(
+      0,
+    );
+    await page
+      .getByRole("navigation", { name: "Tenant settings", exact: true })
+      .getByRole("link", { name: "Settings", exact: true })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`${base}/settings$`));
+    await expect(page.getByRole("heading", { name: "General", exact: true }).first()).toBeVisible();
   });
 
   test("mounts exactly one application shell", async ({ page }) => {
@@ -44,6 +57,28 @@ test.describe("top navigation", () => {
 
     await page.reload();
     await expect(page.locator("header")).toHaveCount(1);
+  });
+
+  test("collapses the sidebar to icons and remembers the choice", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Collapsed Nav Tenant");
+    await gotoHydrated(page, `/t/${tenant.slug}/devices`);
+
+    const aside = page.locator("aside");
+    await expect(aside).toHaveCSS("width", "244px");
+
+    await page.getByRole("button", { name: "Collapse sidebar" }).click();
+    await expect(aside).toHaveCSS("width", "64px");
+    await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+    await expect(
+      primaryNav(page).getByRole("link", { name: "Devices", exact: true }),
+    ).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+    await expect(aside).toHaveCSS("width", "64px");
+
+    await page.getByRole("button", { name: "Expand sidebar" }).click();
+    await expect(aside).toHaveCSS("width", "244px");
   });
 
   test("sends an unknown tenant back to the dashboard", async ({ page }) => {
@@ -98,8 +133,8 @@ test.describe("top navigation", () => {
         response.url().includes("/api/v1/completePasskeyRegistration"),
     );
 
+    // The completed code submits without a button press.
     await page.locator("#verification-code").fill(code);
-    await page.getByRole("button", { name: /verify and create passkey/i }).click();
     expect((await registration).ok()).toBe(true);
     await page.waitForURL(/\/dashboard|\/t\/|\/tenants\/new/, { timeout: 45_000 });
 
@@ -122,6 +157,7 @@ test.describe("top navigation", () => {
     await expect(item).toBeVisible();
     await item.click();
     await expect(page).toHaveURL(new RegExp(`/t/${second.slug}`));
+    await expect(page.locator("#main")).toBeFocused();
 
     // The URL is the source of truth after a reload.
     await page.reload();
@@ -153,5 +189,49 @@ test.describe("mobile navigation", () => {
     await primaryNav(page).getByRole("link", { name: "Groups", exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/t/${tenant.slug}/groups`));
     await expect(page.getByRole("heading", { name: "Groups", exact: true })).toBeVisible();
+    await expect(page.locator("#main")).toBeFocused();
+  });
+
+  test("keeps the mobile tenant menu in the viewport and scrolls to lower tenants", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await bootstrapTenant(page, "Menu Tenant");
+
+    const tenants = [];
+
+    for (let index = 0; index < 24; index++) {
+      tenants.push(await createTenant(page, `Tenant ${String(index).padStart(2, "0")}`));
+    }
+
+    // `createTenant` calls the API directly rather than going through the
+    // dashboard's mutation, so the already-fetched account cache still knows
+    // only the first tenant. Reload to read the switcher from a fresh cache.
+    await gotoHydrated(page, "/dashboard");
+
+    await page.getByRole("button", { name: "Open navigation" }).click();
+    await page.getByRole("button", { name: /Switch tenant/ }).click();
+
+    const menu = page.locator('[data-slot="menu-content"]');
+    await expect(menu).toBeVisible();
+
+    const box = await menu.boundingBox();
+
+    expect(box).not.toBeNull();
+    if (!box) throw new Error("Tenant menu did not render");
+
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(844);
+    await expect
+      .poll(() => menu.evaluate((element) => element.scrollHeight > element.clientHeight))
+      .toBe(true);
+
+    const target = menu.getByRole("menuitemradio", { name: /Tenant 23/ });
+    await target.scrollIntoViewIfNeeded();
+    await expect(target).toBeInViewport();
+    await target.click();
+
+    await expect(page).toHaveURL(new RegExp(`/t/${tenants[23].slug}`));
+    await expect(page.locator("#main")).toBeFocused();
   });
 });

@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { hostname } from "node:os";
-import { connect as connectNet } from "node:net";
+import { connect as connectNet, isIP } from "node:net";
 import type { Socket } from "node:net";
 import { connect as connectTls } from "node:tls";
 
-import type { OutboundEmailMessage } from "./email.ts";
+import type { EmailTransport, OutboundEmailMessage } from "./email.ts";
+import { describeEmailFailure, EmailFailure } from "./failure.ts";
 
 /**
  * Minimal SMTP client for the self-hosted mailer.
@@ -32,6 +33,10 @@ export interface SmtpTransportOptions {
   user?: string;
   password?: string;
   rejectUnauthorized?: boolean;
+  /** Trust these certificate authorities when verifying TLS. */
+  ca?: string | ReadonlyArray<string>;
+  /** Explicit development-only escape hatch for servers without STARTTLS. */
+  allowInsecureAuth?: "development-only";
   helo?: string;
   timeoutMs?: number;
 }
@@ -45,6 +50,12 @@ interface PendingResponse {
   resolve: (response: SmtpResponse) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
+  cleanup: () => void;
+}
+
+interface SmtpConnection {
+  socket: Socket;
+  channel: Channel;
 }
 
 /** SMTP line-oriented reader. One response may span several lines. */
@@ -60,12 +71,14 @@ class Channel {
 
   constructor(socket: Socket, timeoutMs: number) {
     this.timeoutMs = timeoutMs;
-
     this.attach(socket);
   }
 
   attach(socket: Socket): void {
+    this.detach();
     this.socket = socket;
+    this.buffer = "";
+    this.failure = null;
     socket.setEncoding("utf8");
     socket.setTimeout(this.timeoutMs, () => {
       this.fail(new Error("SMTP connection timed out"));
@@ -93,6 +106,16 @@ class Channel {
     socket.off("data", this.onData);
     socket.off("error", this.onError);
     socket.off("close", this.onClose);
+    socket.setTimeout(0);
+
+    const pending = this.pending;
+
+    if (!pending) return;
+
+    this.pending = null;
+    clearTimeout(pending.timer);
+    pending.cleanup();
+    pending.reject(new Error("SMTP connection detached"));
   }
 
   fail(error: Error): void {
@@ -104,6 +127,7 @@ class Channel {
 
     this.pending = null;
     clearTimeout(pending.timer);
+    pending.cleanup();
     pending.reject(error);
   }
 
@@ -131,6 +155,7 @@ class Channel {
       this.buffer = this.buffer.slice(offset);
       this.pending = null;
       clearTimeout(pending.timer);
+      pending.cleanup();
       pending.resolve({
         code: Number(line.slice(0, 3)),
         text: lines.map((item) => item.slice(4)).join("\n"),
@@ -140,33 +165,71 @@ class Channel {
     }
   }
 
-  read(): Promise<SmtpResponse> {
+  read(signal: AbortSignal): Promise<SmtpResponse> {
+    if (signal.aborted) return Promise.reject(abortError());
     if (this.failure) return Promise.reject(this.failure);
-
     if (this.pending) return Promise.reject(new Error("SMTP command already in flight"));
 
     return new Promise<SmtpResponse>((resolve, reject) => {
+      let settled = false;
       const timer = setTimeout(
         () => this.fail(new Error("SMTP server did not respond")),
         this.timeoutMs,
       );
+      const onAbort = () => {
+        this.fail(abortError());
+        this.socket.destroy();
+      };
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+      };
+      const finish = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        this.pending = null;
+        callback();
+      };
 
       timer.unref();
-      this.pending = { resolve, reject, timer };
+      signal.addEventListener("abort", onAbort, { once: true });
+      this.pending = {
+        resolve: (response) => finish(() => resolve(response)),
+        reject: (error) => finish(() => reject(error)),
+        timer,
+        cleanup,
+      };
       this.pump();
     });
   }
 
-  write(line: string): Promise<void> {
+  write(line: string, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return Promise.reject(abortError());
+
     return new Promise<void>((resolve, reject) => {
-      this.socket.write(line + CRLF, (error) => (error ? reject(error) : resolve()));
+      let settled = false;
+      const onAbort = () => {
+        this.socket.destroy();
+        finish(() => reject(abortError()));
+      };
+      const cleanup = () => signal.removeEventListener("abort", onAbort);
+      const finish = (callback: () => void) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        callback();
+      };
+
+      signal.addEventListener("abort", onAbort, { once: true });
+      this.socket.write(line + CRLF, (error) => finish(() => (error ? reject(error) : resolve())));
     });
   }
 
-  async command(line: string, expected: number[]): Promise<SmtpResponse> {
-    await this.write(line);
+  async command(line: string, expected: number[], signal: AbortSignal): Promise<SmtpResponse> {
+    await this.write(line, signal);
 
-    const response = await this.read();
+    const response = await this.read(signal);
 
     if (!expected.includes(response.code))
       throw new Error(`SMTP ${line.split(" ")[0]} failed with status ${response.code}`);
@@ -175,32 +238,136 @@ class Channel {
   }
 }
 
-const connect = (options: SmtpTransportOptions): Socket => {
+const abortError = (): Error => {
+  const error = new Error("SMTP connection aborted");
+  error.name = "AbortError";
+  return error;
+};
+
+const toEmailFailure = (cause: unknown): EmailFailure =>
+  cause instanceof EmailFailure
+    ? cause
+    : new EmailFailure({ provider: "SMTP", message: describeEmailFailure(cause) });
+
+const connectSocket = (options: SmtpTransportOptions, socket?: Socket): Socket => {
   const port = options.port ?? (options.secure ? 465 : 587);
   const rejectUnauthorized = options.rejectUnauthorized !== false;
+  const ca =
+    typeof options.ca === "string"
+      ? options.ca
+      : options.ca === undefined
+        ? undefined
+        : [...options.ca];
 
-  if (options.secure)
+  if (options.secure || socket)
     return connectTls({
+      ...(socket === undefined ? {} : { socket }),
       host: options.host,
       port,
-      servername: options.host,
+      servername: isIP(options.host) ? undefined : options.host,
       rejectUnauthorized,
+      ...(ca === undefined ? {} : { ca }),
     });
 
   return connectNet({ host: options.host, port });
 };
 
-const greeting = async (channel: Channel, options: SmtpTransportOptions): Promise<SmtpResponse> => {
-  const response = await channel.read();
+const waitForSocket = (
+  socket: Socket,
+  event: "connect" | "secureConnect",
+  signal: AbortSignal,
+  timeoutMs: number,
+): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      socket.destroy();
+      finish(new Error("SMTP connection timed out"));
+    }, timeoutMs);
+    const onReady = () => finish();
+    const onError = (error: Error) => finish(error);
+    const onClose = () => finish(new Error("SMTP connection closed"));
+    const onAbort = () => {
+      socket.destroy();
+      finish(abortError());
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      socket.off(event, onReady);
+      socket.off("error", onError);
+      socket.off("close", onClose);
+      signal.removeEventListener("abort", onAbort);
+    };
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+
+      if (error) reject(error);
+      else resolve();
+    };
+
+    timer.unref();
+    socket.once(event, onReady);
+    socket.once("error", onError);
+    socket.once("close", onClose);
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    if (signal.aborted) onAbort();
+  });
+
+const connectConnection = (
+  options: SmtpTransportOptions,
+  timeoutMs: number,
+): Effect.Effect<SmtpConnection, EmailFailure> =>
+  Effect.callback<SmtpConnection, EmailFailure>((resume, signal) => {
+    let socket: Socket;
+
+    try {
+      socket = connectSocket(options);
+    } catch (error) {
+      resume(Effect.fail(toEmailFailure(error)));
+      return;
+    }
+
+    void waitForSocket(
+      socket,
+      options.secure ? "secureConnect" : "connect",
+      signal,
+      timeoutMs,
+    ).then(
+      () => {
+        try {
+          resume(Effect.succeed({ socket, channel: new Channel(socket, timeoutMs) }));
+        } catch (error) {
+          socket.destroy();
+          resume(Effect.fail(toEmailFailure(error)));
+        }
+      },
+      (error: unknown) => {
+        socket.destroy();
+        resume(Effect.fail(toEmailFailure(error)));
+      },
+    );
+
+    return Effect.sync(() => socket.destroy());
+  });
+
+const greeting = async (
+  channel: Channel,
+  options: SmtpTransportOptions,
+  signal: AbortSignal,
+): Promise<SmtpResponse> => {
+  const response = await channel.read(signal);
 
   if (response.code !== 220) throw new Error(`SMTP greeting failed with status ${response.code}`);
 
   const name = options.helo ?? hostname();
-  const ehlo = await channel.command(`EHLO ${name}`, [250, 502, 500]);
+  const ehlo = await channel.command(`EHLO ${name}`, [250, 502, 500], signal);
 
   if (ehlo.code === 250) return ehlo;
 
-  const helo = await channel.command(`HELO ${name}`, [250]);
+  const helo = await channel.command(`HELO ${name}`, [250], signal);
 
   return helo;
 };
@@ -209,6 +376,7 @@ const authenticate = async (
   channel: Channel,
   options: SmtpTransportOptions,
   capabilities: SmtpResponse,
+  signal: AbortSignal,
 ): Promise<void> => {
   if (!options.user) return;
 
@@ -225,15 +393,15 @@ const authenticate = async (
   if (mechanisms.includes("PLAIN")) {
     const token = Buffer.from(`\u0000${options.user}\u0000${password}`, "utf8").toString("base64");
 
-    await channel.command(`AUTH PLAIN ${token}`, [235]);
+    await channel.command(`AUTH PLAIN ${token}`, [235], signal);
 
     return;
   }
 
   if (mechanisms.includes("LOGIN")) {
-    await channel.command("AUTH LOGIN", [334]);
-    await channel.command(Buffer.from(options.user, "utf8").toString("base64"), [334]);
-    await channel.command(Buffer.from(password, "utf8").toString("base64"), [235]);
+    await channel.command("AUTH LOGIN", [334], signal);
+    await channel.command(Buffer.from(options.user, "utf8").toString("base64"), [334], signal);
+    await channel.command(Buffer.from(password, "utf8").toString("base64"), [235], signal);
 
     return;
   }
@@ -246,6 +414,35 @@ const sanitizeHeader = (value: string | null | undefined): string =>
     .replaceAll(/[\r\n]+/g, " ")
     .trim();
 
+/**
+ * Headers the MIME builder owns. A caller-supplied header may never replace
+ * them: a second `Subject` or an injected `Bcc` would change how the message
+ * is routed or displayed.
+ */
+const RESERVED_HEADERS = new Set([
+  "date",
+  "from",
+  "to",
+  "cc",
+  "bcc",
+  "subject",
+  "message-id",
+  "mime-version",
+  "reply-to",
+  "content-type",
+  "content-transfer-encoding",
+  "content-disposition",
+]);
+
+/** One extra header line. Names are restricted to RFC 5322 field characters. */
+const customHeader = (name: string, value: string): string | null => {
+  const field = sanitizeHeader(name);
+
+  if (!/^[!-9;-~]+$/.test(field) || RESERVED_HEADERS.has(field.toLowerCase())) return null;
+
+  return `${field}: ${sanitizeHeader(value)}`;
+};
+
 const formatAddress = (
   address: { readonly name?: string | undefined; readonly email: string } | null | undefined,
 ): string => {
@@ -256,19 +453,18 @@ const formatAddress = (
 
   if (!name) return `<${email}>`;
 
-  return `"${name.replaceAll(/(["\\])/g, "\\$1")}" <${email}>`;
+  return `"${name.replaceAll(/(["\\])/g, String.raw`\$1`)}" <${email}>`;
 };
 
 const encodeSubject = (value: string | undefined): string => {
   const subject = sanitizeHeader(value);
 
-  if (/^[\x20-\x7e]*$/.test(subject)) return subject;
+  if (/^[\u0020-\u007e]*$/.test(subject)) return subject;
 
   return `=?UTF-8?B?${Buffer.from(subject, "utf8").toString("base64")}?=`;
 };
 
-const base64Body = (value: string): string => {
-  const encoded = Buffer.from(String(value), "utf8").toString("base64");
+const wrapBase64 = (encoded: string): string => {
   const lines: string[] = [];
 
   for (let index = 0; index < encoded.length; index += 76)
@@ -276,6 +472,13 @@ const base64Body = (value: string): string => {
 
   return lines.join(CRLF);
 };
+
+const base64Body = (value: string): string =>
+  wrapBase64(Buffer.from(String(value), "utf8").toString("base64"));
+
+/** A filename that cannot break out of the Content-Disposition header. */
+const attachmentFilename = (value: string): string =>
+  sanitizeHeader(value).replaceAll(/["\\]/g, "_").slice(0, 180) || "attachment";
 
 /**
  * Render the RFC 5322 message. Pure so the relay's wire format is unit-tested
@@ -312,105 +515,183 @@ export const buildMimeMessage = (message: OutboundEmailMessage, now: Date = new 
     headers.push(`Reply-To: ${replyTo}`);
   }
 
+  // Extra headers (for example `OTP-Token`) come from the caller, so both the
+  // name and the value are flattened before they reach the wire.
+  for (const [name, value] of Object.entries(message.headers ?? {})) {
+    const header = customHeader(name, value);
+
+    if (header) headers.push(header);
+  }
+
   const text = message.text?.trim() ? message.text : null;
   const html = message.html?.trim() ? message.html : null;
 
   if (!text && !html) throw new Error("a text or html body is required");
 
-  if (text && html) {
-    const boundary = `mattrax-${randomUUID()}`;
+  /** The message body as one MIME entity, without the enclosing headers. */
+  const bodyEntity = (): string => {
+    if (text && html) {
+      const boundary = `mattrax-${randomUUID()}`;
 
-    headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+      return [
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        "",
+        `--${boundary}`,
+        'Content-Type: text/plain; charset="utf-8"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        base64Body(text),
+        `--${boundary}`,
+        'Content-Type: text/html; charset="utf-8"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        base64Body(html),
+        `--${boundary}--`,
+      ].join(CRLF);
+    }
 
     return [
-      ...headers,
-      "",
-      `--${boundary}`,
-      'Content-Type: text/plain; charset="utf-8"',
+      html
+        ? 'Content-Type: text/html; charset="utf-8"'
+        : 'Content-Type: text/plain; charset="utf-8"',
       "Content-Transfer-Encoding: base64",
       "",
-      base64Body(text),
-      `--${boundary}`,
-      'Content-Type: text/html; charset="utf-8"',
-      "Content-Transfer-Encoding: base64",
-      "",
-      base64Body(html),
-      `--${boundary}--`,
+      // The check above guarantees one of the two bodies is present; `?? ""`
+      // only satisfies the type of the nullable pair.
+      base64Body(html ?? text ?? ""),
     ].join(CRLF);
+  };
+
+  const attachments = message.attachments ?? [];
+
+  if (attachments.length === 0) return [...headers, "", bodyEntity()].join(CRLF);
+
+  // A report is body + one attachment, so the MIME tree is mixed(alternative,
+  // attachment...). Anything that does not understand the attachment still
+  // renders the summary body.
+  const mixed = `mattrax-${randomUUID()}`;
+  headers.push(`Content-Type: multipart/mixed; boundary="${mixed}"`);
+  const parts: string[] = [...headers, "", `--${mixed}`, bodyEntity()];
+
+  for (const attachment of attachments) {
+    parts.push(
+      `--${mixed}`,
+      `Content-Type: ${sanitizeHeader(attachment.contentType) || "application/octet-stream"}; name="${attachmentFilename(attachment.filename)}"`,
+      "Content-Transfer-Encoding: base64",
+      `Content-Disposition: attachment; filename="${attachmentFilename(attachment.filename)}"`,
+      "",
+      wrapBase64(attachment.contentBase64.replaceAll(/\s+/g, "")),
+    );
   }
 
-  headers.push(
-    html ? 'Content-Type: text/html; charset="utf-8"' : 'Content-Type: text/plain; charset="utf-8"',
-    "Content-Transfer-Encoding: base64",
-  );
+  parts.push(`--${mixed}--`);
 
-  // The check above guarantees one of the two bodies is present; `?? ""` only
-  // satisfies the type of the nullable pair.
-  return [...headers, "", base64Body(html ?? text ?? "")].join(CRLF);
+  return parts.join(CRLF);
 };
 
 /** RFC 5321 transparency: a body line beginning with `.` is sent with two. */
 export const dotStuff = (body: string): string => body.replaceAll(/(^|\r\n)\./g, "$1..");
 
-const sendBody = async (channel: Channel, message: string): Promise<void> => {
-  await channel.write(dotStuff(message) + CRLF + ".");
+const sendBody = async (channel: Channel, message: string, signal: AbortSignal): Promise<void> => {
+  await channel.write(dotStuff(message) + CRLF + ".", signal);
 
-  const response = await channel.read();
+  const response = await channel.read(signal);
 
   if (response.code !== 250) throw new Error(`SMTP DATA failed with status ${response.code}`);
 };
 
-/**
- * Deliver one message. Throws on any protocol or transport failure; the caller
- * turns that into a 502 without echoing the recipient.
- */
-export const sendSmtpMail = async (
+const runSmtp = async (
+  connection: SmtpConnection,
   options: SmtpTransportOptions,
   message: OutboundEmailMessage,
-): Promise<{ recipients: number }> => {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  // Validate the envelope and render the body before opening a connection, so a
-  // malformed request cannot leave SMTP in the middle of a transaction.
-  const payload = buildMimeMessage(message);
-  const socket = connect(options);
-  const channel = new Channel(socket, timeoutMs);
+  payload: string,
+  timeoutMs: number,
+  signal: AbortSignal,
+): Promise<void> => {
+  const channel = connection.channel;
+  let capabilities = await greeting(channel, options, signal);
+  let encrypted = options.secure === true;
 
-  let current: Socket = socket;
+  if (!encrypted && /STARTTLS/i.test(capabilities.text)) {
+    await channel.command("STARTTLS", [220], signal);
+    channel.detach();
 
-  try {
-    let capabilities = await greeting(channel, options);
+    const secure = connectSocket(options, connection.socket);
+    connection.socket = secure;
+    await waitForSocket(secure, "secureConnect", signal, timeoutMs);
+    channel.attach(secure);
+    encrypted = true;
+    capabilities = await channel.command(`EHLO ${options.helo ?? hostname()}`, [250], signal);
+  }
 
-    if (!options.secure && /STARTTLS/i.test(capabilities.text)) {
-      await channel.command("STARTTLS", [220]);
+  if (options.user && !encrypted && options.allowInsecureAuth !== "development-only")
+    throw new EmailFailure({
+      provider: "SMTP",
+      message: "SMTP authentication requires TLS and the server did not advertise STARTTLS",
+    });
 
-      channel.detach();
+  await authenticate(channel, options, capabilities, signal);
+  await channel.command(`MAIL FROM:<${sanitizeHeader(message.from?.email)}>`, [250], signal);
 
-      const secure = connectTls({
-        socket: current,
-        servername: options.host,
-        rejectUnauthorized: options.rejectUnauthorized !== false,
+  for (const recipient of recipientsOf(message.to))
+    await channel.command(`RCPT TO:<${sanitizeHeader(recipient)}>`, [250, 251], signal);
+
+  await channel.command("DATA", [354], signal);
+  await sendBody(channel, payload, signal);
+
+  // QUIT failing must not turn a delivered message into a failure.
+  await channel.command("QUIT", [221], signal).catch(() => undefined);
+};
+
+/**
+ * Deliver one message. The socket and every protocol timer belong to this
+ * Effect's scope, so interruption closes the connection before AUTH or DATA
+ * can continue in the background.
+ */
+export const sendSmtpMail = (
+  options: SmtpTransportOptions,
+  message: OutboundEmailMessage,
+): Effect.Effect<{ recipients: number }, EmailFailure> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      // Validate the envelope and render the body before opening a connection,
+      // so a malformed request cannot leave SMTP in a transaction.
+      const payload = yield* Effect.try({
+        try: () => buildMimeMessage(message),
+        catch: toEmailFailure,
       });
 
-      current = secure;
-      channel.attach(secure);
-      capabilities = await channel.command(`EHLO ${options.helo ?? hostname()}`, [250]);
-    }
+      if (options.user && !options.secure && options.allowInsecureAuth === "development-only")
+        yield* Effect.logWarning(
+          "Insecure SMTP AUTH development override enabled; credentials will be sent without TLS if STARTTLS is unavailable",
+        );
 
-    await authenticate(channel, options, capabilities);
-    await channel.command(`MAIL FROM:<${sanitizeHeader(message.from?.email)}>`, [250]);
+      const connection = yield* Effect.acquireRelease(
+        connectConnection(options, timeoutMs),
+        (connection) =>
+          Effect.sync(() => {
+            connection.channel.detach();
+            connection.socket.destroy();
+          }),
+        { interruptible: true },
+      );
 
-    for (const recipient of recipientsOf(message.to))
-      await channel.command(`RCPT TO:<${sanitizeHeader(recipient)}>`, [250, 251]);
+      yield* Effect.tryPromise({
+        try: (signal) => runSmtp(connection, options, message, payload, timeoutMs, signal),
+        catch: toEmailFailure,
+      });
 
-    await channel.command("DATA", [354]);
-    await sendBody(channel, payload);
+      return { recipients: recipientsOf(message.to).length };
+    }),
+  );
 
-    // QUIT failing must not turn a delivered message into a failure.
-    await channel.command("QUIT", [221]).catch(() => undefined);
-
-    return { recipients: recipientsOf(message.to).length };
-  } finally {
-    channel.detach();
-    current.destroy();
-  }
-};
+/**
+ * SMTP delivery. `node:net`/`node:tls` run in Node and in Workers with
+ * `nodejs_compat`, so hosted and self-hosted deployments use one client.
+ * Import this adapter from `@mattrax/email/smtp`; the package root stays
+ * portable.
+ */
+export const smtpEmailTransport = (options: SmtpTransportOptions): EmailTransport => ({
+  send: (message) => sendSmtpMail(options, message).pipe(Effect.asVoid),
+});

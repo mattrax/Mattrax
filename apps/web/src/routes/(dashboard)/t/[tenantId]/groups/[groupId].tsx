@@ -14,7 +14,8 @@ import {
   formatDate,
   formatDeviceDate,
 } from "~/components/mdm/common";
-import { GroupRuleBuilder } from "~/components/mdm/group-rules";
+import GroupRuleBuilder from "~/components/mdm/group-rules";
+import StaleWriteBanner from "~/components/stale-write-banner";
 import { MdmTable } from "~/components/mdm/table";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -28,16 +29,17 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { toast } from "~/components/toast";
-import {
-  enterprise,
-  enterpriseKeys,
-  type DeviceRow,
-  type DeviceSearchQuery,
-  type DynamicGroupKind,
-  type DynamicGroupRules,
-  type PolicyRow,
+import { enterprise, enterpriseKeys } from "~/lib/enterprise";
+import type {
+  DeviceRow,
+  DeviceSearchQuery,
+  DynamicGroupKind,
+  DynamicGroupRules,
+  PolicyRow,
 } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";
+import { createStaleWriteGuard } from "~/lib/stale-write";
+import { handleStaleWriteWithToast } from "~/lib/stale-write-toast";
 import {
   optimisticallyPatchItem,
   optimisticallyRemoveRows,
@@ -53,6 +55,7 @@ import {
   policyScopeStatusTone,
 } from "~/lib/policy-scope";
 import { useCan } from "~/lib/permissions";
+import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";
@@ -89,6 +92,14 @@ export const route = {
     ]);
   },
 };
+
+/** Read secondary query data only after success so pending async values never throw in component scope. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
 
 export default function GroupDetailPage() {
   const params = useParams();
@@ -158,6 +169,13 @@ export default function GroupDetailPage() {
     queryFn: () => enterprise.list(params.tenantId, "policy"),
   }));
 
+  // Only needed while editing, to offer child groups that are not already
+  // nested here. The list is tenant-scoped by the API.
+  const allGroups = useQuery(() => ({
+    queryKey: enterpriseKeys.list(params.tenantId, "group"),
+    queryFn: () => enterprise.list(params.tenantId, "group"),
+  }));
+
   const directory = useQuery(() => enterpriseQueries.directory(params.tenantId));
 
   const preview = useQuery(() => ({
@@ -167,7 +185,21 @@ export default function GroupDetailPage() {
 
   const scope = useQuery(() => enterpriseQueries.groupScope(params.tenantId, params.groupId));
 
-  const row = () => Option.getOrUndefined(decodeGroupNode(group.data));
+  const row = () => Option.getOrUndefined(decodeGroupNode(settledQueryData(group)));
+  const guard = createStaleWriteGuard(() => row()?.updatedAt);
+
+  /** Begin editing against the version currently shown. */
+  const startEdit = () => {
+    guard.acceptLatest();
+    setEdit(true);
+  };
+
+  /** Discard the draft for the version the server has now. */
+  const reloadLatest = async () => {
+    await group.refetch();
+    guard.acceptLatest();
+    setEdit(false);
+  };
 
   // A read-only role never enters the edit state, even if it was opened before
   // a role change landed.
@@ -180,8 +212,8 @@ export default function GroupDetailPage() {
 
   // The full tenant list is only needed while editing, because the picker must
   // offer unassigned devices too.
-  const deviceRows = () => groupDevices.data?.devices ?? [];
-  const deviceTotal = () => groupDevices.data?.total ?? 0;
+  const deviceRows = () => settledQueryData(groupDevices)?.devices ?? [];
+  const deviceTotal = () => settledQueryData(groupDevices)?.total ?? 0;
   const devicePageCount = () => Math.max(1, Math.ceil(deviceTotal() / GROUP_DEVICE_PAGE_SIZE));
 
   // A deletion (or a concurrent enrollment) can leave the pager past the end.
@@ -206,6 +238,13 @@ export default function GroupDetailPage() {
   const [policyModes, setPolicyModes] = createSignal<Map<string, "include" | "exclude">>(new Map());
   const [policySearch, setPolicySearch] = createSignal("");
   const [seeded, setSeeded] = createSignal(false);
+  // Nested groups and exclusions are saved through the same members endpoint.
+  const [childGroupIds, setChildGroupIds] = createSignal<Set<string>>(new Set());
+  const [excludedDeviceIds, setExcludedDeviceIds] = createSignal<Set<string>>(new Set());
+  const [excludedUserIds, setExcludedUserIds] = createSignal<Set<string>>(new Set());
+  const [childGroupChoice, setChildGroupChoice] = createSignal("");
+  const [excludeDeviceChoice, setExcludeDeviceChoice] = createSignal("");
+  const [excludeUserChoice, setExcludeUserChoice] = createSignal("");
 
   /** Only explicit manual rows are the editable selection; derived rows are not. */
   const savedManualDeviceIds = () =>
@@ -213,6 +252,18 @@ export default function GroupDetailPage() {
       (row()?.devices ?? [])
         .filter((device) => (device.source ?? "manual") === "manual")
         .map((device) => device.id),
+    );
+
+  const savedChildGroupIds = () => new Set((row()?.childGroups ?? []).map((group) => group.id));
+
+  const savedExcludedDeviceIds = () =>
+    new Set(
+      (row()?.exclusions ?? []).filter((item) => item.kind === "device").map((item) => item.id),
+    );
+
+  const savedExcludedUserIds = () =>
+    new Set(
+      (row()?.exclusions ?? []).filter((item) => item.kind === "user").map((item) => item.id),
     );
 
   createEffect(
@@ -225,6 +276,9 @@ export default function GroupDetailPage() {
         setDirectoryGroupId(row.directoryGroupId ?? null);
         setRules(row.rules ?? { version: 1 });
         setDeviceIds(savedManualDeviceIds());
+        setChildGroupIds(savedChildGroupIds());
+        setExcludedDeviceIds(savedExcludedDeviceIds());
+        setExcludedUserIds(savedExcludedUserIds());
         setPolicyModes(
           new Map(
             (row.policies ?? []).map((policy) => [policy.id, policy.mode ?? ("include" as const)]),
@@ -264,6 +318,9 @@ export default function GroupDetailPage() {
   const rulesChanged = () =>
     JSON.stringify(rules()) !== JSON.stringify(row()?.rules ?? { version: 1 });
 
+  const sameIds = (left: Iterable<string>, right: Iterable<string>) =>
+    [...left].sort().join("\u0000") === [...right].sort().join("\u0000");
+
   const dirty = createMemo(
     () =>
       seeded() &&
@@ -273,12 +330,10 @@ export default function GroupDetailPage() {
         kindChanged() ||
         directoryChanged() ||
         rulesChanged() ||
-        (membershipMode() === "manual" &&
-          [...deviceIds()].sort().join(",") !==
-            (row()!
-              .devices?.map((d) => d.id)
-              .sort()
-              .join(",") ?? "")) ||
+        (membershipMode() === "manual" && !sameIds(deviceIds(), savedManualDeviceIds())) ||
+        !sameIds(childGroupIds(), savedChildGroupIds()) ||
+        !sameIds(excludedDeviceIds(), savedExcludedDeviceIds()) ||
+        !sameIds(excludedUserIds(), savedExcludedUserIds()) ||
         currentPolicySignature() !== policySignature(row()!.policies ?? [])),
   );
 
@@ -315,15 +370,25 @@ export default function GroupDetailPage() {
   };
 
   const save = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: async () => {
-      const oldDevices = row()?.devices?.map((d) => d.id) ?? [];
+      // Derived rows (dynamic, directory, nested) are not manual membership and
+      // must never be sent as an unassign.
+      const oldDevices = [...savedManualDeviceIds()];
 
       const oldPolicies = new Map(
         (row()?.policies ?? []).map((policy) => [policy.id, policy.mode ?? "include"]),
       );
 
+      const oldChildGroups = [...savedChildGroupIds()];
+      const oldExcludedDevices = [...savedExcludedDeviceIds()];
+      const oldExcludedUsers = [...savedExcludedUserIds()];
+
       const nextDevices = membershipMode() === "manual" ? [...deviceIds()] : oldDevices;
       const nextPolicies = policyModes();
+      const nextChildGroups = [...childGroupIds()];
+      const nextExcludedDevices = [...excludedDeviceIds()];
+      const nextExcludedUsers = [...excludedUserIds()];
 
       if (
         name() !== row()?.name ||
@@ -338,6 +403,7 @@ export default function GroupDetailPage() {
           kind: kind(),
           rules: kind() === "dynamic" ? rules() : null,
           directoryGroupId: directoryGroupId(),
+          expectedUpdatedAt: guard.expectedUpdatedAt(),
         });
       await enterprise.patchGroupMembers(params.tenantId, params.groupId, {
         assign: {
@@ -345,10 +411,20 @@ export default function GroupDetailPage() {
           policies: [...nextPolicies].flatMap(([id, mode]) =>
             oldPolicies.get(id) === mode ? [] : [{ id, mode }],
           ),
+          childGroups: nextChildGroups.filter((id) => !oldChildGroups.includes(id)),
         },
         unassign: {
           devices: oldDevices.filter((id) => !nextDevices.includes(id)),
           policies: [...oldPolicies.keys()].filter((id) => !nextPolicies.has(id)),
+          childGroups: oldChildGroups.filter((id) => !nextChildGroups.includes(id)),
+        },
+        exclude: {
+          devices: nextExcludedDevices.filter((id) => !oldExcludedDevices.includes(id)),
+          users: nextExcludedUsers.filter((id) => !oldExcludedUsers.includes(id)),
+        },
+        unexclude: {
+          devices: oldExcludedDevices.filter((id) => !nextExcludedDevices.includes(id)),
+          users: oldExcludedUsers.filter((id) => !nextExcludedUsers.includes(id)),
         },
       });
     },
@@ -358,7 +434,8 @@ export default function GroupDetailPage() {
       const nextPolicies = policyModes();
 
       const linkedDirectory = directoryGroupId()
-        ? (directory.data?.groups.find((group) => group.id === directoryGroupId()) ?? null)
+        ? (settledQueryData(directory)?.groups.find((group) => group.id === directoryGroupId()) ??
+          null)
         : null;
 
       const restore = await patchGroup({
@@ -378,18 +455,28 @@ export default function GroupDetailPage() {
           : { policiesCount: nextPolicies.size }),
       });
 
-      // Leave edit mode on submit; the membership table reconciles from the
-      // background refetch.
-      setEdit(false);
-
+      // Stay in edit mode until the save succeeds: leaving it on submit lets
+      // a refetch reseed the form and discard membership edits on failure.
       return { restore };
     },
     onSuccess: () => {
+      guard.markSaved();
+      setEdit(false);
       toast.success("Group saved");
       void invalidate();
     },
     onError: (error, _payload, context) => {
       context?.restore();
+
+      if (handleStaleWriteWithToast(error, { reload: invalidate })) {
+        // Stay in edit mode with every draft value intact. The banner offers
+        // a reload or an explicit overwrite.
+        guard.markConflict();
+        setEdit(true);
+
+        return;
+      }
+
       toast.error("Could not save the group", {
         description: errorMessage(raisedFailure(error), "Try again in a moment."),
       });
@@ -454,7 +541,9 @@ export default function GroupDetailPage() {
   /** MdmTable's checkbox column mirrors the include set, not a bulk selection. */
   const setDeviceSelection = (ids: ReadonlySet<string>) => {
     if (!edit()) return;
-    setDeviceIds(new Set(ids));
+    // Exclusions win over manual membership, so an excluded device cannot be
+    // ticked as a member; the server would reject the write.
+    setDeviceIds(new Set([...ids].filter((id) => !excludedDeviceIds().has(id))));
   };
 
   const setPolicySelection = (ids: ReadonlySet<string>) => {
@@ -471,16 +560,16 @@ export default function GroupDetailPage() {
     if (!edit()) return;
     const next = new Set(deviceIds());
 
-    for (const device of deviceRows()) next.add(device.id);
+    for (const device of deviceRows()) if (!excludedDeviceIds().has(device.id)) next.add(device.id);
     setDeviceIds(next);
   };
 
   const shownPolicies = () => {
     const term = policySearch().trim().toLowerCase();
 
-    if (!term) return policies.data?.rows ?? [];
+    if (!term) return settledQueryData(policies)?.rows ?? [];
 
-    return (policies.data?.rows ?? []).filter(
+    return (settledQueryData(policies)?.rows ?? []).filter(
       (policy) =>
         policy.name.toLowerCase().includes(term) ||
         (policy.notes ?? "").toLowerCase().includes(term),
@@ -495,13 +584,102 @@ export default function GroupDetailPage() {
     setPolicyModes(next);
   };
 
+  /** Child groups that are not this group and not already nested here. */
+  const childGroupChoices = () =>
+    (settledQueryData(allGroups)?.rows ?? []).filter(
+      (group) => group.id !== params.groupId && !childGroupIds().has(group.id),
+    );
+
+  const addChildGroup = () => {
+    if (!edit()) return;
+    const value = childGroupChoice();
+
+    if (!value) return;
+    setChildGroupIds(new Set([...childGroupIds(), value]));
+    setChildGroupChoice("");
+  };
+
+  const removeChildGroup = (id: string) => {
+    if (!edit()) return;
+    const next = new Set(childGroupIds());
+
+    next.delete(id);
+    setChildGroupIds(next);
+  };
+
+  /**
+   * Any device on the current page that is not already excluded. Members are
+   * included: excluding a current member is the common case, and choosing it
+   * clears the pending membership tick.
+   */
+  const excludeDeviceChoices = () =>
+    deviceRows().filter((device) => !excludedDeviceIds().has(device.id));
+
+  const excludeUserChoices = () =>
+    (settledQueryData(directory)?.users ?? []).filter((user) => !excludedUserIds().has(user.id));
+
+  const addExcludedDevice = () => {
+    if (!edit()) return;
+    const value = excludeDeviceChoice();
+
+    if (!value) return;
+    // An exclusion always wins: drop it from the pending membership as well.
+    const members = new Set(deviceIds());
+
+    members.delete(value);
+    setDeviceIds(members);
+    setExcludedDeviceIds(new Set([...excludedDeviceIds(), value]));
+    setExcludeDeviceChoice("");
+  };
+
+  const addExcludedUser = () => {
+    if (!edit()) return;
+    const value = excludeUserChoice();
+
+    if (!value) return;
+    setExcludedUserIds(new Set([...excludedUserIds(), value]));
+    setExcludeUserChoice("");
+  };
+
+  const removeExcludedDevice = (id: string) => {
+    if (!edit()) return;
+    const next = new Set(excludedDeviceIds());
+
+    next.delete(id);
+    setExcludedDeviceIds(next);
+  };
+
+  const removeExcludedUser = (id: string) => {
+    if (!edit()) return;
+    const next = new Set(excludedUserIds());
+
+    next.delete(id);
+    setExcludedUserIds(next);
+  };
+
+  /** Membership source per device for the table's Source column. */
+  const membershipByDevice = () =>
+    new Map((row()?.devices ?? []).map((device) => [device.id, device]));
+
+  // The materialised membership is authoritative: it includes inherited
+  // devices, which the live rule preview deliberately does not.
   const memberCount = () =>
-    row()?.kind === "dynamic" ? (preview.data?.count ?? "…") : (row()?.devices?.length ?? 0);
+    row()?.devices?.length ??
+    (row()?.kind === "dynamic" ? (settledQueryData(preview)?.count ?? "…") : 0);
+  const policyCount = () => row()?.policies?.length ?? 0;
 
   return (
     <Page wide>
       {unsaved.prompt}
       <QueryError error={group.error} onRetry={() => void group.refetch()} />
+
+      <Show when={guard.conflict()}>
+        <StaleWriteBanner
+          reloading={group.isFetching}
+          onReload={() => void reloadLatest()}
+          onKeepMine={() => guard.acceptLatest()}
+        />
+      </Show>
 
       <PageHeader
         title={row()?.name ?? "Group"}
@@ -513,9 +691,8 @@ export default function GroupDetailPage() {
             <>
               <Button
                 variant="outline"
-                onClick={() =>
-                  edit() ? (dirty() ? save.mutate() : setEdit(false)) : setEdit(true)
-                }
+                disabled={save.isPending}
+                onClick={() => (edit() ? (dirty() ? save.mutate() : setEdit(false)) : startEdit())}
               >
                 {!edit() ? "Edit" : dirty() ? "Save" : "Done"}
               </Button>
@@ -543,7 +720,9 @@ export default function GroupDetailPage() {
 
       <div class="flex flex-col gap-2.5 rounded-lg border border-border bg-surface px-3.5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
         <Show when={row()}>
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {/* The summary is the badge/count strip only; the view switch beside it
+              is navigation, so keep it out of the summary's test contract. */}
+          <div data-testid="group-summary" class="flex flex-wrap items-center gap-x-4 gap-y-2">
             <Show when={row()!.kind === "dynamic"}>
               <Badge>Dynamic</Badge>
             </Show>
@@ -553,36 +732,47 @@ export default function GroupDetailPage() {
             <Show when={row()!.kind === "manual" && !row()!.directoryGroupId}>
               <Badge variant="secondary">Manual</Badge>
             </Show>
+            <Show when={(row()!.childGroups?.length ?? 0) > 0}>
+              <Badge variant="outline">
+                {row()!.childGroups!.length} nested group
+                {row()!.childGroups!.length === 1 ? "" : "s"}
+              </Badge>
+            </Show>
+            <Show when={(row()!.exclusions?.length ?? 0) > 0}>
+              <Badge variant="subtle">
+                {row()!.exclusions!.length} exclusion
+                {row()!.exclusions!.length === 1 ? "" : "s"}
+              </Badge>
+            </Show>
             <span class="flex items-baseline gap-1.5">
-              <span class="text-[15px] font-semibold tabular-nums leading-none text-foreground">
+              <span class="text-sm font-semibold tabular-nums leading-none text-foreground">
                 {memberCount()}
               </span>
-              <span class="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                devices
+              <span class="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                {memberCount() === 1 ? "device" : "devices"}
               </span>
             </span>
             <span class="flex items-baseline gap-1.5">
-              <span class="text-[15px] font-semibold tabular-nums leading-none text-foreground">
-                {row()!.policies?.length ?? 0}
+              <span class="text-sm font-semibold tabular-nums leading-none text-foreground">
+                {policyCount()}
               </span>
-              <span class="text-[10px] font-medium uppercase tracking-[0.1em] text-muted-foreground">
-                policies
+              <span class="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                {policyCount() === 1 ? "policy" : "policies"}
               </span>
             </span>
             <Show when={row()!.kind === "dynamic" && row()!.lastEvaluatedAt}>
-              <span class="text-[11px] text-muted-foreground">
-                Evaluated {formatDate(row()!.lastEvaluatedAt!)}
+              <span class="text-xs text-muted-foreground">
+                Evaluated {formatDate(row()!.lastEvaluatedAt)}
               </span>
             </Show>
           </div>
         </Show>
-        <div class="inline-flex w-fit items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5">
+        <div class="inline-flex w-fit items-center gap-0.5 rounded-lg border border-border bg-surface p-0.5 capitalize">
           <For each={["overview", "devices", "policies"] as const}>
             {(item) => (
               <Button
                 size="sm"
                 variant={tab() === item ? "secondary" : "ghost"}
-                class="h-7 rounded-md px-2.5 text-[12px] capitalize"
                 onClick={() => setTab(item)}
               >
                 {item}
@@ -593,8 +783,9 @@ export default function GroupDetailPage() {
       </div>
 
       <Show when={tab() === "overview"}>
-        <div class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div class="grid items-start gap-5 xl:grid-cols-12">
           <Panel
+            class="xl:col-span-8"
             title="Group details"
             description="Name, notes and the membership source for this target."
           >
@@ -636,9 +827,10 @@ export default function GroupDetailPage() {
                         resetDeviceSelection("directory");
 
                         setDirectoryGroupId(
-                          directoryGroupId() ?? (directory.data?.groups ?? [])[0]?.id ?? "",
+                          directoryGroupId() ??
+                            (settledQueryData(directory)?.groups ?? [])[0]?.id ??
+                            "",
                         );
-
                       } else if (value === "manual") {
                         setDirectoryGroupId(null);
                         resetDeviceSelection("manual");
@@ -648,7 +840,9 @@ export default function GroupDetailPage() {
                   >
                     <option value="manual">Manual — choose devices</option>
                     <option value="dynamic">Dynamic — match device rules</option>
-                    <option value="directory">Linked directory group — follow IdP membership</option>
+                    <option value="directory">
+                      Linked directory group — follow IdP membership
+                    </option>
                   </select>
                 </Field>
               </div>
@@ -664,7 +858,7 @@ export default function GroupDetailPage() {
                     onChange={(e) => setDirectoryGroupId(e.currentTarget.value || null)}
                   >
                     <option value="">Choose a directory group</option>
-                    <For each={directory.data?.groups ?? []}>
+                    <For each={settledQueryData(directory)?.groups ?? []}>
                       {(group) => (
                         <option value={group.id}>
                           {group.name} ({group.memberCount} member
@@ -674,7 +868,7 @@ export default function GroupDetailPage() {
                     </For>
                   </select>
                 </Field>
-                <p class="rounded-lg border border-border bg-surface px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+                <p class="rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                   Device membership is read-only: each active member contributes the devices linked
                   to them. Recomputes run after directory sync, a device-user change, or an explicit
                   group sync. Policies and applications assigned to this group apply as usual.
@@ -684,7 +878,7 @@ export default function GroupDetailPage() {
               <Field label="Notes">
                 <textarea
                   disabled={!edit()}
-                  class="min-h-24 rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30 disabled:opacity-70"
+                  class="min-h-24 rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-70"
                   value={notes()}
                   onInput={(e) => setNotes(e.currentTarget.value)}
                 />
@@ -693,15 +887,32 @@ export default function GroupDetailPage() {
                 <div
                   class={`rounded-lg border border-border bg-surface p-3 ${
                     revealRules()
-                      ? "animate-in motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift"
+                      ? "animate-in motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-150 ease-swift"
                       : ""
                   }`}
                 >
-                  <GroupRuleBuilder rules={rules()} onChange={setRules} disabled={!edit()} />
+                  <GroupRuleBuilder
+                    rules={rules()}
+                    onChange={setRules}
+                    disabled={!edit()}
+                    groups={settledQueryData(allGroups)?.rows ?? []}
+                    groupId={params.groupId}
+                  />
                 </div>
               </Show>
               <ErrorText error={save.error || dup.error || del.error} />
             </form>
+          </Panel>
+          <Panel
+            class="xl:col-span-4"
+            title="Scope tags"
+            description="Limit which delegated administrators can see and change this group."
+          >
+            <ScopeTagAssignmentEditor
+              tenantId={params.tenantId!}
+              resourceType="group"
+              resourceIds={[params.groupId!]}
+            />
           </Panel>
           <Show
             when={kind() === "dynamic"}
@@ -710,11 +921,11 @@ export default function GroupDetailPage() {
                 title="Assignments"
                 description="Where this group's membership and policy scope live."
               >
-                <div class="divide-y divide-border text-[13px]">
+                <div class="divide-y divide-border text-xs">
                   <div class="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                     <div class="min-w-0">
                       <p class="font-medium text-foreground">Devices</p>
-                      <p class="mt-0.5 text-[12px] text-muted-foreground">
+                      <p class="mt-0.5 text-xs text-muted-foreground">
                         {membershipMode() === "directory"
                           ? `${row()?.devices?.length ?? 0} derived from directory membership`
                           : `${row()?.devices?.length ?? 0} assigned manually`}
@@ -727,7 +938,7 @@ export default function GroupDetailPage() {
                   <div class="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                     <div class="min-w-0">
                       <p class="font-medium text-foreground">Policies</p>
-                      <p class="mt-0.5 text-[12px] text-muted-foreground">
+                      <p class="mt-0.5 text-xs text-muted-foreground">
                         {row()?.policies?.length ?? 0} included or excluded
                       </p>
                     </div>
@@ -744,19 +955,64 @@ export default function GroupDetailPage() {
               description="Devices matching the saved rules. Manual members are not included unless they also match."
             >
               <div class="space-y-3">
-                <p class="text-[26px] font-semibold leading-none tracking-[-0.03em] text-foreground">
-                  {preview.data?.count ?? "…"}
+                <p class="text-2xl font-semibold leading-none tracking-tight text-foreground">
+                  {settledQueryData(preview)?.count ?? "…"}
                 </p>
-                <Show when={preview.data && preview.data.count === 0}>
-                  <p class="text-[12px] text-muted-foreground">No devices match these rules yet.</p>
+                <Show when={settledQueryData(preview)?.problem}>
+                  {(problem) => (
+                    <div class="rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                      <p class="font-medium text-foreground">This group is not being evaluated</p>
+                      <p class="mt-0.5">{problem()}</p>
+                      <p class="mt-1">
+                        Existing members are kept unchanged. Break the reference loop, or remove the
+                        missing group, then save.
+                      </p>
+                    </div>
+                  )}
+                </Show>
+                <Show when={(settledQueryData(preview)?.references?.length ?? 0) > 0}>
+                  <div class="space-y-1">
+                    <p class="text-xs font-medium text-muted-foreground">Referenced groups</p>
+                    <For each={settledQueryData(preview)?.references ?? []}>
+                      {(reference) => (
+                        <div class="flex items-start justify-between gap-3 rounded-md border border-border bg-surface px-2.5 py-1.5">
+                          <div class="min-w-0">
+                            <a
+                              class="block truncate text-xs text-foreground hover:underline"
+                              href={`/t/${params.tenantId}/groups/${reference.id}`}
+                            >
+                              {reference.name}
+                            </a>
+                            <Show when={reference.problem}>
+                              {(problem) => (
+                                <p class="mt-0.5 text-xs leading-snug text-muted-foreground">
+                                  {problem()}
+                                </p>
+                              )}
+                            </Show>
+                          </div>
+                          <span class="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {reference.count} {reference.count === 1 ? "device" : "devices"}
+                          </span>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </Show>
+                <Show
+                  when={
+                    settledQueryData(preview)?.count === 0 && !settledQueryData(preview)?.problem
+                  }
+                >
+                  <p class="text-xs text-muted-foreground">No devices match these rules yet.</p>
                 </Show>
                 <QueryError error={preview.error} onRetry={() => void preview.refetch()} />
-                <Show when={(preview.data?.devices.length ?? 0) > 0}>
+                <Show when={(settledQueryData(preview)?.devices.length ?? 0) > 0}>
                   <div class="max-h-64 space-y-0.5 overflow-auto">
-                    <For each={preview.data?.devices.slice(0, 25) ?? []}>
+                    <For each={settledQueryData(preview)?.devices.slice(0, 25) ?? []}>
                       {(device) => (
                         <a
-                          class="block truncate rounded-md px-2 py-1.5 text-[12.5px] text-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover"
+                          class="block truncate rounded-md px-2 py-1.5 text-xs text-foreground transition-colors duration-150 ease-swift hover:bg-hover"
                           href={`/t/${params.tenantId}/devices/${device.id}`}
                         >
                           {device.name}
@@ -765,8 +1021,8 @@ export default function GroupDetailPage() {
                     </For>
                   </div>
                 </Show>
-                <Show when={(preview.data?.devices.length ?? 0) > 25}>
-                  <p class="text-[11px] text-muted-foreground">
+                <Show when={(settledQueryData(preview)?.devices.length ?? 0) > 25}>
+                  <p class="text-xs text-muted-foreground">
                     Showing the first 25 matches. Refresh after saving to recompute membership.
                   </p>
                 </Show>
@@ -775,13 +1031,96 @@ export default function GroupDetailPage() {
           </Show>
 
           <Panel
+            title="Nested groups"
+            description="Every device in a child group is also a member here. Membership is a transitive union; a device is never counted twice."
+            actions={
+              <Show when={(row()?.childGroups?.length ?? 0) > 0}>
+                <Badge variant="outline" data-numeric>
+                  {row()!.childGroups!.length}
+                </Badge>
+              </Show>
+            }
+          >
+            <div class="space-y-3">
+              <Show
+                when={(row()?.childGroups?.length ?? 0) > 0}
+                fallback={
+                  <p class="text-xs text-muted-foreground">
+                    This group has no child groups. Nesting a group includes all of its members,
+                    including members it inherits from its own children.
+                  </p>
+                }
+              >
+                <div class="divide-y divide-border/60">
+                  <For each={row()?.childGroups ?? []}>
+                    {(child) => (
+                      <div class="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                        <span class="flex min-w-0 items-center gap-2">
+                          <a
+                            class="truncate text-xs font-medium text-foreground hover:underline"
+                            href={`/t/${params.tenantId}/groups/${child.id}`}
+                          >
+                            {child.name}
+                          </a>
+                          <Badge variant="subtle">{child.kind ?? "manual"}</Badge>
+                        </span>
+                        <span class="flex shrink-0 items-center gap-2 text-xs tabular-nums text-muted-foreground">
+                          {child.devicesCount ?? 0} device
+                          {(child.devicesCount ?? 0) === 1 ? "" : "s"}
+                          <Show when={edit()}>
+                            <Button
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => removeChildGroup(child.id)}
+                            >
+                              Remove
+                            </Button>
+                          </Show>
+                        </span>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={edit()}>
+                <div class="flex flex-wrap items-center gap-2">
+                  <select
+                    class="h-8 min-w-0 flex-1 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+                    value={childGroupChoice()}
+                    aria-label="Add a child group"
+                    onChange={(event) => setChildGroupChoice(event.currentTarget.value)}
+                  >
+                    <option value="">Choose a group to nest…</option>
+                    <For each={childGroupChoices()}>
+                      {(group) => <option value={group.id}>{group.name}</option>}
+                    </For>
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!childGroupChoice()}
+                    onClick={addChildGroup}
+                  >
+                    Add child group
+                  </Button>
+                </div>
+                <p class="text-xs text-muted-foreground">
+                  A group cannot contain itself, directly or through another group, and chains are
+                  limited to eight levels. Removing a child immediately removes the devices only it
+                  contributed.
+                </p>
+              </Show>
+            </div>
+          </Panel>
+
+          <Panel
             class="xl:col-span-2"
             title="Computed scope"
             description="Policies this group carries and the member devices each one actually wins on."
             actions={
-              <Show when={scope.data}>
+              <Show when={settledQueryData(scope)}>
                 {(data) => (
-                  <Badge variant="outline" class="tabular-nums text-muted-foreground">
+                  <Badge variant="outline" data-numeric>
                     {data().memberCount} member device{data().memberCount === 1 ? "" : "s"}
                   </Badge>
                 )}
@@ -789,11 +1128,11 @@ export default function GroupDetailPage() {
             }
           >
             <Show
-              when={scope.data}
+              when={settledQueryData(scope)}
               fallback={
                 <Show
                   when={scope.isError}
-                  fallback={<p class="text-[12px] text-muted-foreground">Loading scope…</p>}
+                  fallback={<p class="text-xs text-muted-foreground">Loading scope…</p>}
                 >
                   <QueryError error={scope.error} onRetry={() => void scope.refetch()} />
                 </Show>
@@ -804,7 +1143,7 @@ export default function GroupDetailPage() {
                   <Show
                     when={data().policies.length > 0}
                     fallback={
-                      <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+                      <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-xs text-muted-foreground">
                         This group carries no policies. Assign one from the Policies tab to see what
                         its membership receives.
                       </p>
@@ -820,7 +1159,7 @@ export default function GroupDetailPage() {
                             <div class="overflow-hidden rounded-lg border border-border">
                               <div class="flex flex-wrap items-center justify-between gap-2 bg-muted/20 px-3 py-2.5">
                                 <a
-                                  class="min-w-0 truncate text-[13px] font-medium text-foreground hover:underline"
+                                  class="min-w-0 truncate text-xs font-medium text-foreground hover:underline"
                                   href={`/t/${params.tenantId}/policies/${policy.policyId}`}
                                 >
                                   {policy.policyName}
@@ -834,7 +1173,7 @@ export default function GroupDetailPage() {
                                   <Show
                                     when={policy.mode !== "exclude"}
                                     fallback={
-                                      <Badge variant="subtle" class="tabular-nums">
+                                      <Badge variant="subtle" data-numeric>
                                         Blocks {blocked().length} of {data().memberCount}
                                       </Badge>
                                     }
@@ -843,7 +1182,7 @@ export default function GroupDetailPage() {
                                       variant={
                                         groupScopePolicyIsInert(policy) ? "warning" : "success"
                                       }
-                                      class="tabular-nums"
+                                      data-numeric
                                     >
                                       Wins on {winning().length} of {data().memberCount}
                                     </Badge>
@@ -853,7 +1192,7 @@ export default function GroupDetailPage() {
                               <Show
                                 when={policy.devices.length > 0}
                                 fallback={
-                                  <p class="px-3 py-2.5 text-[12px] text-muted-foreground">
+                                  <p class="px-3 py-2.5 text-xs text-muted-foreground">
                                     No member device is in this policy's assignment graph.
                                   </p>
                                 }
@@ -861,7 +1200,7 @@ export default function GroupDetailPage() {
                                 <div class="divide-y divide-border/60">
                                   <For each={policy.devices.slice(0, 8)}>
                                     {(entry) => (
-                                      <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[12px]">
+                                      <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
                                         <span class="flex min-w-0 items-center gap-2">
                                           <a
                                             class="truncate font-medium text-foreground hover:underline"
@@ -870,13 +1209,13 @@ export default function GroupDetailPage() {
                                             {entry.deviceName}
                                           </a>
                                           <Show when={entry.channel === "user"}>
-                                            <span class="truncate text-[11px] text-muted-foreground">
+                                            <span class="truncate text-xs text-muted-foreground">
                                               ({entry.userName})
                                             </span>
                                           </Show>
                                         </span>
                                         <span class="flex min-w-0 flex-wrap items-center justify-end gap-2">
-                                          <span class="truncate text-[11px] text-muted-foreground">
+                                          <span class="truncate text-xs text-muted-foreground">
                                             {policyScopeReasonLabel(entry)}
                                           </span>
                                           <Badge variant={policyScopeStatusTone(entry)}>
@@ -888,7 +1227,7 @@ export default function GroupDetailPage() {
                                   </For>
                                 </div>
                                 <Show when={policy.devices.length > 8}>
-                                  <p class="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
+                                  <p class="border-t border-border px-3 py-2 text-xs text-muted-foreground">
                                     +{policy.devices.length - 8} more entries. Open the policy's
                                     Scope panel for the full list.
                                   </p>
@@ -901,7 +1240,7 @@ export default function GroupDetailPage() {
                     </div>
                   </Show>
                   <Show when={data().truncated}>
-                    <p class="text-[11px] text-muted-foreground">
+                    <p class="text-xs text-muted-foreground">
                       The member list is capped. Open a policy's Scope panel for its bounded device
                       list.
                     </p>
@@ -918,8 +1257,8 @@ export default function GroupDetailPage() {
           when={kind() !== "dynamic"}
           fallback={
             <div class="space-y-5">
-              <div class="flex items-start gap-2.5 rounded-lg border border-border bg-surface p-3.5 text-[12.5px] text-foreground">
-                <Info class="mt-px size-4 shrink-0 text-muted-foreground" />
+              <div class="flex items-start gap-2.5 rounded-lg border border-border bg-surface p-3.5 text-xs text-foreground">
+                <Info class="mt-px size-4 shrink-0" />
                 <div class="min-w-0">
                   <p class="font-medium text-foreground">Dynamic membership</p>
                   <p class="mt-1 leading-relaxed text-muted-foreground">
@@ -933,30 +1272,30 @@ export default function GroupDetailPage() {
               <QueryError error={preview.error} onRetry={() => void preview.refetch()} />
               <Panel flush title="Matched devices" description="Current rule evaluation result.">
                 <Show
-                  when={(preview.data?.devices.length ?? 0) > 0}
+                  when={(settledQueryData(preview)?.devices.length ?? 0) > 0}
                   fallback={
                     <div class="px-4 py-10 text-center sm:px-5">
-                      <p class="text-[13px] font-medium text-foreground">
+                      <p class="text-xs font-medium text-foreground">
                         No devices match the current rules
                       </p>
-                      <p class="mx-auto mt-1 max-w-sm text-[12px] text-muted-foreground">
+                      <p class="mx-auto mt-1 max-w-sm text-xs text-muted-foreground">
                         Adjust the rule conditions in Overview, then save to re-evaluate membership.
                       </p>
                     </div>
                   }
                 >
                   <div class="overflow-x-auto">
-                    <table class="w-full text-[13px]">
-                      <thead class="border-b border-border bg-surface text-left text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                    <table class="w-full text-xs">
+                      <thead class="border-b border-border bg-surface text-left text-xs font-medium uppercase tracking-widest text-muted-foreground">
                         <tr>
                           <th class="px-4 py-2.5">Matched device</th>
                           <th class="px-4 py-2.5">Source</th>
                         </tr>
                       </thead>
                       <tbody class="divide-y divide-border">
-                        <For each={preview.data?.devices ?? []}>
+                        <For each={settledQueryData(preview)?.devices ?? []}>
                           {(device) => (
-                            <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover">
+                            <tr class="transition-colors duration-150 ease-swift hover:bg-hover">
                               <td class="px-4 py-2.5">
                                 <a
                                   class="font-medium text-foreground hover:underline"
@@ -965,7 +1304,7 @@ export default function GroupDetailPage() {
                                   {device.name}
                                 </a>
                               </td>
-                              <td class="px-4 py-2.5 text-[12px] text-muted-foreground">
+                              <td class="px-4 py-2.5 text-xs text-muted-foreground">
                                 Rule match
                               </td>
                             </tr>
@@ -976,6 +1315,43 @@ export default function GroupDetailPage() {
                   </div>
                 </Show>
               </Panel>
+              <Show when={(row()?.childGroups?.length ?? 0) > 0}>
+                <Panel
+                  flush
+                  title="Inherited devices"
+                  description="Members inherited from child groups. They receive this group's policies but stay in the child group."
+                >
+                  <Show
+                    when={(row()?.devices ?? []).some((device) => device.source === "nested")}
+                    fallback={
+                      <p class="px-4 py-6 text-xs text-muted-foreground">
+                        The child groups have no members yet.
+                      </p>
+                    }
+                  >
+                    <div class="divide-y divide-border">
+                      <For
+                        each={(row()?.devices ?? []).filter((device) => device.source === "nested")}
+                      >
+                        {(device) => (
+                          <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                            <a
+                              class="font-medium text-foreground hover:underline"
+                              href={`/t/${params.tenantId}/devices/${device.id}`}
+                            >
+                              {device.name}
+                            </a>
+                            <span class="text-xs text-muted-foreground">
+                              via{" "}
+                              {(device.inheritedFrom ?? []).map((group) => group.name).join(", ")}
+                            </span>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                </Panel>
+              </Show>
             </div>
           }
         >
@@ -1012,7 +1388,7 @@ export default function GroupDetailPage() {
                   toolbar={
                     <Show when={membershipMode() === "manual" && edit()}>
                       <div class="flex flex-wrap items-center justify-between gap-2">
-                        <p class="text-[11.5px] text-muted-foreground">
+                        <p class="text-xs text-muted-foreground">
                           {deviceIds().size} device{deviceIds().size === 1 ? "" : "s"} selected in
                           this group.
                         </p>
@@ -1029,7 +1405,7 @@ export default function GroupDetailPage() {
                   }
                   footer={
                     <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface px-3.5 py-2.5">
-                      <span class="text-[12px] tabular-nums text-muted-foreground">
+                      <span class="text-xs tabular-nums text-muted-foreground">
                         Page {devicePage() + 1} of {devicePageCount()}
                         <Show when={deviceTotal() > 0}>
                           {" "}
@@ -1060,14 +1436,14 @@ export default function GroupDetailPage() {
                   }
                   empty={
                     <div class="flex min-h-40 flex-col items-center justify-center px-4 py-8 text-center">
-                      <p class="text-[13px] font-medium text-foreground">
+                      <p class="text-xs font-medium text-foreground">
                         {deviceTerm()
                           ? `No devices match “${deviceTerm()}”`
                           : edit()
                             ? "No devices enrolled yet"
                             : "No devices assigned"}
                       </p>
-                      <p class="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-muted-foreground">
+                      <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                         {deviceTerm()
                           ? "Search matches the device name, serial number and asset tag."
                           : edit()
@@ -1103,6 +1479,30 @@ export default function GroupDetailPage() {
                       cell: (device) => device.assetTag ?? "—",
                     },
                     {
+                      id: "source",
+                      header: "Membership",
+                      cell: (device) => {
+                        const membership = membershipByDevice().get(device.id);
+                        const source = membership?.source ?? "manual";
+
+                        if (source === "nested")
+                          return (
+                            <span class="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                              <Badge variant="subtle">Inherited</Badge>
+                              <span class="truncate">
+                                {(membership?.inheritedFrom ?? [])
+                                  .map((group) => group.name)
+                                  .join(", ") || "child group"}
+                              </span>
+                            </span>
+                          );
+
+                        return (
+                          <span class="text-xs capitalize text-muted-foreground">{source}</span>
+                        );
+                      },
+                    },
+                    {
                       id: "lastSeen",
                       header: "Last seen",
                       cell: (device) => formatDeviceDate(device.lastSeenAt),
@@ -1113,12 +1513,153 @@ export default function GroupDetailPage() {
             </Panel>
           </div>
         </Show>
+
+        <Panel
+          class="mt-5"
+          title="Exclusions"
+          description="Explicit exclusions always win over manual membership, rule matches and inherited membership."
+        >
+          <div class="space-y-4">
+            <div>
+              <p class="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Excluded devices
+              </p>
+              <Show
+                when={(row()?.exclusions ?? []).some((item) => item.kind === "device")}
+                fallback={<p class="text-xs text-muted-foreground">No devices are excluded.</p>}
+              >
+                <div class="divide-y divide-border/60">
+                  <For each={(row()?.exclusions ?? []).filter((item) => item.kind === "device")}>
+                    {(exclusion) => (
+                      <div class="flex items-center justify-between gap-3 py-2 first:pt-0">
+                        <a
+                          class="min-w-0 truncate text-xs font-medium text-foreground hover:underline"
+                          href={`/t/${params.tenantId}/devices/${exclusion.id}`}
+                        >
+                          {exclusion.name}
+                        </a>
+                        <Show when={edit()}>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => removeExcludedDevice(exclusion.id)}
+                          >
+                            Remove
+                          </Button>
+                        </Show>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={edit()}>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <select
+                    class="h-8 min-w-0 flex-1 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+                    value={excludeDeviceChoice()}
+                    aria-label="Exclude a device"
+                    onChange={(event) => setExcludeDeviceChoice(event.currentTarget.value)}
+                  >
+                    <option value="">Choose a device on this page to exclude…</option>
+                    <For each={excludeDeviceChoices()}>
+                      {(device) => <option value={device.id}>{device.name}</option>}
+                    </For>
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!excludeDeviceChoice()}
+                    onClick={addExcludedDevice}
+                  >
+                    Exclude device
+                  </Button>
+                </div>
+              </Show>
+              <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                Excluding a device removes every way it is a member of this group, including
+                inherited membership. Its other groups and direct policy assignments still apply.
+              </p>
+            </div>
+
+            <div class="border-t border-border pt-4">
+              <p class="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+                Excluded people
+              </p>
+              <Show
+                when={(row()?.exclusions ?? []).some((item) => item.kind === "user")}
+                fallback={<p class="text-xs text-muted-foreground">No people are excluded.</p>}
+              >
+                <div class="divide-y divide-border/60">
+                  <For each={(row()?.exclusions ?? []).filter((item) => item.kind === "user")}>
+                    {(exclusion) => (
+                      <div class="flex items-center justify-between gap-3 py-2 first:pt-0">
+                        <span class="min-w-0">
+                          <span class="block truncate text-xs font-medium text-foreground">
+                            {exclusion.name}
+                          </span>
+                          <Show when={exclusion.email}>
+                            <span class="block truncate text-xs text-muted-foreground">
+                              {exclusion.email}
+                            </span>
+                          </Show>
+                        </span>
+                        <Show when={edit()}>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            onClick={() => removeExcludedUser(exclusion.id)}
+                          >
+                            Remove
+                          </Button>
+                        </Show>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={edit()}>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <select
+                    class="h-8 min-w-0 flex-1 rounded-lg px-2.5 pr-8 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/30"
+                    value={excludeUserChoice()}
+                    aria-label="Exclude a directory user"
+                    onChange={(event) => setExcludeUserChoice(event.currentTarget.value)}
+                  >
+                    <option value="">Choose a directory person to exclude…</option>
+                    <For each={excludeUserChoices()}>
+                      {(user) => (
+                        <option value={user.id}>
+                          {user.name} ({user.email})
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!excludeUserChoice()}
+                    onClick={addExcludedUser}
+                  >
+                    Exclude person
+                  </Button>
+                </div>
+              </Show>
+              <p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                Excluding a person stops this group's user-scoped settings from reaching their Apple
+                user channel and, when this group follows a directory group, stops their devices
+                being added through that membership. A device that is also a member through another
+                person, a rule, a manual assignment or a child group stays in the group and keeps
+                device-scoped policy — remove the device explicitly to take it out entirely.
+              </p>
+            </div>
+          </div>
+        </Panel>
       </Show>
 
       <Show when={tab() === "policies"}>
         <div class="space-y-5">
-          <div class="flex items-start gap-2.5 rounded-lg border border-border bg-surface p-3.5 text-[12.5px] text-foreground">
-            <Info class="mt-px size-4 shrink-0 text-muted-foreground" />
+          <div class="flex items-start gap-2.5 rounded-lg border border-border bg-surface p-3.5 text-xs text-foreground">
+            <Info class="mt-px size-4 shrink-0" />
             <div class="min-w-0">
               <p class="font-medium text-foreground">Policy precedence</p>
               <p class="mt-1 leading-relaxed text-muted-foreground">
@@ -1135,7 +1676,7 @@ export default function GroupDetailPage() {
           >
             <div class="p-3">
               <MdmTable<PolicyRow>
-                rows={policies.data?.rows ?? []}
+                rows={settledQueryData(policies)?.rows ?? []}
                 selectable={editable() && edit()}
                 selectedIds={() => new Set(policyModes().keys())}
                 onSelectedChange={setPolicySelection}
@@ -1152,7 +1693,7 @@ export default function GroupDetailPage() {
                 toolbar={
                   <Show when={edit()}>
                     <div class="flex flex-wrap items-center justify-between gap-2">
-                      <p class="text-[11.5px] text-muted-foreground">
+                      <p class="text-xs text-muted-foreground">
                         {policyModes().size} polic{policyModes().size === 1 ? "y" : "ies"} assigned.
                       </p>
                       <Button
@@ -1168,8 +1709,8 @@ export default function GroupDetailPage() {
                 }
                 empty={
                   <div class="flex min-h-40 flex-col items-center justify-center px-4 py-8 text-center">
-                    <p class="text-[13px] font-medium text-foreground">No policies yet</p>
-                    <p class="mx-auto mt-1 max-w-sm text-[12px] leading-relaxed text-muted-foreground">
+                    <p class="text-xs font-medium text-foreground">No policies yet</p>
+                    <p class="mx-auto mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                       Create a policy first, then return here to include or exclude it for this
                       group's members.
                     </p>
@@ -1205,7 +1746,7 @@ export default function GroupDetailPage() {
                     header: "Mode",
                     cell: (policy) => (
                       <select
-                        class="h-7 rounded-md px-2 pr-7 text-[11.5px] disabled:opacity-50"
+                        class="h-7 rounded-md px-2 pr-7 text-xs disabled:opacity-50"
                         aria-label={`Assignment mode for ${policy.name}`}
                         disabled={!edit() || !editable()}
                         value={policyModes().get(policy.id) ?? ""}
@@ -1240,7 +1781,7 @@ export default function GroupDetailPage() {
                     id: "priority",
                     header: "Priority",
                     cell: (policy) => (
-                      <span class="text-[12px] tabular-nums text-muted-foreground">
+                      <span class="text-xs tabular-nums text-muted-foreground">
                         {policy.priority ?? 0}
                       </span>
                     ),
@@ -1249,7 +1790,7 @@ export default function GroupDetailPage() {
                     id: "updated",
                     header: "Updated",
                     cell: (policy) => (
-                      <span class="whitespace-nowrap text-[12px] text-muted-foreground">
+                      <span class="whitespace-nowrap text-xs text-muted-foreground">
                         {new Date(policy.updatedAt).toLocaleString()}
                       </span>
                     ),

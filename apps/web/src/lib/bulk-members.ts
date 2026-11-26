@@ -86,7 +86,7 @@ const failureLabels = new Map<string, string>([
 ]);
 
 export const bulkFailureReason = (reason: string) =>
-  failureLabels.get(reason) ?? capitalise(reason.replace(/[_-]+/g, " "));
+  failureLabels.get(reason) ?? capitalise(reason.replaceAll(/[_-]+/g, " "));
 
 /**
  * The single-member endpoint and the bulk one share a role picker value shape.

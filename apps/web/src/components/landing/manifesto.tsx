@@ -11,7 +11,7 @@ const annotations = [
   "Who changed it — and what they changed.",
 ];
 
-export function Manifesto() {
+export default function Manifesto() {
   return (
     <section
       class="lx-section lx-section--ruled lx-manifesto"
@@ -27,7 +27,7 @@ export function Manifesto() {
               <For each={claimWords}>
                 {(word, index) => (
                   <>
-                    <span class="lx-w" style={`--i:${Math.min(index(), 8)}`}>
+                    <span class="lx-w" style={{ "--i": Math.min(index(), 8) }}>
                       {word}
                     </span>{" "}
                   </>
@@ -37,10 +37,7 @@ export function Manifesto() {
                 <For each={qualifierWords}>
                   {(word, index) => (
                     <>
-                      <span
-                        class="lx-w"
-                        style={`--i:${Math.min(claimWords.length + index(), 8)}`}
-                      >
+                      <span class="lx-w" style={{ "--i": Math.min(claimWords.length + index(), 8) }}>
                         {word}
                       </span>{" "}
                     </>
@@ -61,7 +58,7 @@ export function Manifesto() {
             <ol class="lx-notes">
               <For each={annotations}>
                 {(annotation, index) => (
-                  <li style={`--i:${index()}`}>
+                  <li style={{ "--i": index() }}>
                     <span class="lx-notes__rule" aria-hidden="true" />
                     {annotation}
                   </li>

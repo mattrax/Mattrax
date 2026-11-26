@@ -1,15 +1,17 @@
 import { Effect, Option, Schema } from "effect";
-import { and, desc, eq, gte, lt, or } from "drizzle-orm";
+import { and, desc, eq, gt, gte, lt, or } from "drizzle-orm";
 import {
   EnterpriseBadRequest,
   EnterpriseNotFound,
   WEBHOOK_EVENT_TYPES,
   WEBHOOK_TEST_EVENT,
-  type WebhookDeliveryDetail,
-  type WebhookDeliveryInfo,
-  type WebhookDeliveryQuery,
 } from "@mattrax/enterprise-domain";
-import { WEBHOOK_DELIVERY_RETENTION_DAYS } from "@mattrax/mdm-apple";
+import type {
+  WebhookDeliveryDetail,
+  WebhookDeliveryInfo,
+  WebhookDeliveryQuery,
+} from "@mattrax/enterprise-domain";
+import { WEBHOOK_DELIVERY_RETENTION_DAYS } from "@mattrax/mdm-core";
 // The audit log and delivery history share the same `(createdAt, id)` keyset
 // cursor encoding, so there is one implementation to keep correct.
 import { decodeAuditCursor, encodeAuditCursor } from "../Account/auditLog.ts";
@@ -71,6 +73,19 @@ export const normalizeWebhookDeliveryQuery = (
 
 const iso = (value: Date | string): string =>
   (value instanceof Date ? value : new Date(value)).toISOString();
+
+/** Only the columns the history response renders; payloads stay on detail/replay. */
+export const webhookDeliverySummaryColumns = {
+  id: schema.webhookDelivery.id,
+  endpointId: schema.webhookDelivery.endpointId,
+  event: schema.webhookDelivery.event,
+  eventId: schema.webhookDelivery.eventId,
+  status: schema.webhookDelivery.status,
+  attempt: schema.webhookDelivery.attempt,
+  responseStatus: schema.webhookDelivery.responseStatus,
+  error: schema.webhookDelivery.error,
+  createdAt: schema.webhookDelivery.createdAt,
+};
 
 export const webhookDeliveryInfo = (
   row: Pick<
@@ -139,13 +154,14 @@ export const listWebhookDeliveries = (input: ListWebhookDeliveriesInput) =>
       : undefined;
 
     const rows = yield* input.db
-      .select()
+      .select(webhookDeliverySummaryColumns)
       .from(schema.webhookDelivery)
       .where(
         and(
           eq(schema.webhookDelivery.organizationId, input.organizationId),
           eq(schema.webhookDelivery.endpointId, input.endpointId),
           gte(schema.webhookDelivery.createdAt, filters.since),
+          gt(schema.webhookDelivery.attempt, 0),
           filters.event ? eq(schema.webhookDelivery.event, filters.event) : undefined,
           filters.status ? eq(schema.webhookDelivery.status, filters.status) : undefined,
           before,
@@ -156,7 +172,7 @@ export const listWebhookDeliveries = (input: ListWebhookDeliveriesInput) =>
 
     const hasMore = rows.length > filters.limit;
     const page = hasMore ? rows.slice(0, filters.limit) : rows;
-    const last = page[page.length - 1];
+    const last = page.at(-1);
 
     return {
       deliveries: page.map(webhookDeliveryInfo),
@@ -182,6 +198,7 @@ export const loadWebhookDelivery = (input: LoadWebhookDeliveryInput) =>
           eq(schema.webhookDelivery.id, input.deliveryId),
           eq(schema.webhookDelivery.organizationId, input.organizationId),
           eq(schema.webhookDelivery.endpointId, input.endpointId),
+          gt(schema.webhookDelivery.attempt, 0),
         ),
       )
       .limit(1);

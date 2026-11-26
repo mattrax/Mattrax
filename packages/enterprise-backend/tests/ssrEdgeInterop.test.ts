@@ -71,7 +71,7 @@ describe("SSR signer/edge interop", () => {
     });
     expect(payload?.tenants?.map((tenant) => tenant.id)).toEqual(["tenant-1"]);
     expect(payload?.tenants?.[0]?.permissions).toBeUndefined();
-    expect([...ssrTenantPermissions(payload!.tenants![0]!)]).toEqual([
+    expect([...ssrTenantPermissions(payload!.tenants![0])]).toEqual([
       ...BUILT_IN_ROLE_PERMISSIONS.owner,
     ]);
   });

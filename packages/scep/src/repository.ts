@@ -1,16 +1,20 @@
-import { Context, Effect } from "effect";
-import * as pkijs from "pkijs";
-import { ScepError } from "./schema.js";
+import type { Effect } from "effect";
+import { Context } from "effect";
+import type { ScepError } from "./schema.js";
 
-export interface ScepPkcsReq {
-  readonly csr: pkijs.CertificationRequest;
+/** Domain view of a PKCSReq passed to repository authentication hooks. */
+export interface ScepAuthenticationRequest {
   readonly transactionId: string;
-  readonly senderNonce: ArrayBuffer;
-  readonly signerCerts: pkijs.Certificate[];
   /** PKCS#9 challengePassword attribute from the CSR, if present. */
   readonly challengePassword?: string;
   /** True for a SCEP RenewalReq carrying an already-issued identity cert. */
   readonly renewal: boolean;
+  readonly subject: ReadonlyArray<{ readonly type: string; readonly value: string }>;
+  readonly signerCertificates: ReadonlyArray<{
+    readonly serial: string;
+    readonly notAfter: Date;
+    readonly organizationalUnit?: string;
+  }>;
 }
 
 /**
@@ -37,6 +41,8 @@ export interface ScepStoredCa {
 export interface ScepAuthentication {
   readonly organizationalUnit?: string;
   readonly enrollmentId?: string;
+  /** BYOD request the challenge was minted for, carried to the issued row. */
+  readonly referenceId?: string;
 }
 
 export type ScepIssuedCertificate = {
@@ -44,6 +50,8 @@ export type ScepIssuedCertificate = {
   readonly organizationId: string;
   readonly enrollmentId?: string;
   readonly deviceId?: string;
+  /** BYOD request this identity was issued for, when the challenge named one. */
+  readonly referenceId?: string;
   /** SHA-256 of the issuing CA certificate. Absent on legacy rows. */
   readonly caFingerprintSha256?: string;
   readonly notAfter: Date;
@@ -110,7 +118,7 @@ export class ScepRepository extends Context.Service<
     /** Hook for authenticating incoming SCEP PKCSReq messages. Throw/return a failed Effect to reject. */
     readonly authenticatePkcsReq: (
       scope: ScepCaScope,
-      req: ScepPkcsReq,
+      req: ScepAuthenticationRequest,
     ) => Effect.Effect<ScepAuthentication | void, ScepError>;
     /** Optional persistence for renewal authentication. */
     readonly recordIssuedCertificate?: (

@@ -1,4 +1,52 @@
-import { DOMParser, onErrorStopParsing, type Element } from "@xmldom/xmldom";
+import type { Element } from "@xmldom/xmldom";
+
+/**
+ * The platform XML parser.
+ *
+ * `@xmldom/xmldom` is CommonJS and has no ESM entry. Importing it into a route
+ * module crashes Solid's SSR runner ("require is not defined") before the page
+ * can render. The browser has a native `DOMParser`; tests install xmldom's as
+ * a polyfill in `test-dom.ts`. The package is type-only at runtime here.
+ */
+type DomParserConstructor = new (options?: {
+  onError?: (level: string, message: string) => void;
+}) => {
+  parseFromString(
+    input: string,
+    type: string,
+  ): {
+    readonly documentElement: Element | null;
+    getElementsByTagName?(name: string): { readonly length: number };
+  };
+};
+
+/** Structural check for the platform parser; Node has no DOMParser. */
+const isDomParser = (value: unknown): value is DomParserConstructor => {
+  if (typeof value !== "function") return false;
+
+  const prototype: unknown = value.prototype;
+
+  return (
+    typeof prototype === "object" &&
+    prototype !== null &&
+    "parseFromString" in prototype &&
+    typeof prototype.parseFromString === "function"
+  );
+};
+
+const domParser = (): DomParserConstructor => {
+  const Parser: unknown = globalThis.DOMParser;
+
+  if (!isDomParser(Parser))
+    throw new AdmxImportError("malformed-xml", "No XML parser is available in this environment.");
+
+  return Parser;
+};
+
+/** Stop on a real xmldom parse error; ignore its warnings. */
+const onError = (level: string, message: string): void => {
+  if (level !== "warning") throw new Error(message);
+};
 
 /**
  * A deliberately small, read-only XML tree.
@@ -121,12 +169,19 @@ export const parseXml = (xml: string, options: ParseXmlOptions = {}): XmlElement
       "Document type declarations and entity definitions are not allowed in ADMX or ADML files.",
     );
 
-  let document;
+  let document: ReturnType<InstanceType<DomParserConstructor>["parseFromString"]>;
 
   try {
-    document = new DOMParser({ onError: onErrorStopParsing }).parseFromString(xml, "application/xml");
+    document = new (domParser())({ onError }).parseFromString(xml, "application/xml");
+
+    // Browsers report a malformed document as a <parsererror> element rather
+    // than by throwing during parseFromString.
+    if ((document.getElementsByTagName?.("parsererror")?.length ?? 0) > 0) {
+      throw new Error("The document contains a parser error.");
+    }
   } catch (error) {
-    const detail = error instanceof Error ? error.message.replace(/\s+/g, " ").slice(0, 200) : "";
+    const detail =
+      error instanceof Error ? error.message.replaceAll(/\s+/g, " ").slice(0, 200) : "";
 
     throw new AdmxImportError(
       "malformed-xml",

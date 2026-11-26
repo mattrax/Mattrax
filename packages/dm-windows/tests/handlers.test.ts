@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { InternalServerError, UnknownDevice } from "@mattrax/management-backend";
+import { deserializeSoapElementNode, parseSoapEnvelope } from "@mattrax/soap";
+import { RequestSecurityTokenResponseCollection } from "../src/messages.js";
 import type {
   WindowsFailureReport,
   WindowsManagementRequest,
@@ -12,6 +14,19 @@ import { windowsMdmRoutes } from "../src/handlers.js";
 import { mockManagementBackend, soapEnvelope } from "./helpers.js";
 
 const config = { origin: "https://test.mattrax.app", providerId: "Mattrax" };
+
+async function provisioningDocument(response: string): Promise<string> {
+  const parsed = await Effect.runPromise(parseSoapEnvelope(response));
+  const decoded = await Effect.runPromise(
+    deserializeSoapElementNode(parsed.body, RequestSecurityTokenResponseCollection),
+  );
+  const encoded =
+    decoded.requestSecurityTokenResponse.requestedSecurityToken.binarySecurityToken.content;
+
+  return new TextDecoder().decode(
+    Uint8Array.from(atob(encoded.replaceAll(/\s/g, "")), (char) => char.charCodeAt(0)),
+  );
+}
 
 async function handler(overrides?: Parameters<typeof mockManagementBackend>[0]) {
   const layer = windowsMdmRoutes.pipe(
@@ -158,13 +173,7 @@ describe("Windows MDM handlers", () => {
 
     const text = await res.text();
 
-    const encoded = text.match(
-      /<[^>]*BinarySecurityToken\b[^>]*>([\s\S]*?)<\/[^>]*BinarySecurityToken>/i,
-    )?.[1];
-
-    const provisioning = new TextDecoder().decode(
-      Uint8Array.from(atob(encoded!.replace(/\s/g, "")), (char) => char.charCodeAt(0)),
-    );
+    const provisioning = await provisioningDocument(text);
 
     expect(provisioning).toContain(`${config.origin}/mdm/windows/management?tenant=mttxw1.abc`);
   });
@@ -195,15 +204,7 @@ describe("Windows MDM handlers", () => {
     expect(text).toContain("RequestSecurityTokenResponseCollection");
     expect(text).toContain("DeviceEnrollmentProvisionDoc");
 
-    const encoded = text.match(
-      /<[^>]*BinarySecurityToken\b[^>]*>([\s\S]*?)<\/[^>]*BinarySecurityToken>/i,
-    )?.[1];
-
-    expect(encoded).toBeTruthy();
-
-    const provisioning = new TextDecoder().decode(
-      Uint8Array.from(atob(encoded!.replace(/\s/g, "")), (char) => char.charCodeAt(0)),
-    );
+    const provisioning = await provisioningDocument(text);
 
     expect(provisioning).toContain("wap-provisioningdoc");
     expect(provisioning).toContain("PROVIDER-ID");
@@ -224,6 +225,38 @@ describe("Windows MDM handlers", () => {
 
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("./DevInfo/DevId");
+  });
+
+  it("forwards the verified DER identity header to Windows check-in", async () => {
+    let received: WindowsManagementScope | undefined;
+    const h = await handler({
+      windowsManagementCheckin: (scope: WindowsManagementScope) => {
+        received = scope;
+
+        return Effect.succeed({ commands: [] });
+      },
+    });
+    const body = `<SyncML xmlns="SYNCML:SYNCML1.2"><SyncHdr><VerDTD>1.2</VerDTD><VerProto>DM/1.2</VerProto><SessionID>1</SessionID><MsgID>1</MsgID><Target><LocURI>server</LocURI></Target><Source><LocURI>device-1</LocURI></Source></SyncHdr><SyncBody><Final/></SyncBody></SyncML>`;
+
+    const res = await h(
+      new Request("http://localhost/mdm/windows/management", {
+        method: "POST",
+        body,
+        headers: {
+          "x-device-identity-certificate": "CN=device-1,OU=org-1",
+          "x-device-identity-certificate-serial": "abcd",
+          "x-device-identity-certificate-der-base64": "ZGVy",
+        },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(received).toMatchObject({
+      deviceId: "device-1",
+      identityCertificate: "CN=device-1,OU=org-1",
+      identityCertificateSerial: "abcd",
+      identityCertificateDerBase64: "ZGVy",
+    });
   });
 
   it("forwards SyncML Results to the backend", async () => {

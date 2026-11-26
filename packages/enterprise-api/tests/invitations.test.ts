@@ -9,7 +9,8 @@ import {
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeEmailTransport } from "@mattrax/enterprise-backend";
 import { sendTransactionalEmail } from "@mattrax/enterprise-backend";
-import { makeDb, makeStripeClient, request, runEffect, schema } from "./helpers.js";
+import type { OutboundEmailMessage } from "@mattrax/email";
+import { makeDb, request, runEffect, schema } from "./helpers.js";
 
 const origin = "https://enterprise.test";
 
@@ -25,15 +26,6 @@ type TestUser = {
   updatedAt: Date;
   totpEnabled?: boolean;
   passkeyEnabled?: boolean;
-};
-
-type SentEmail = {
-  to: string;
-  from: { name: string; email: string };
-  replyTo?: { name: string; email: string };
-  subject: string;
-  text?: string;
-  html?: string;
 };
 
 const userRow = (overrides: Partial<TestUser> = {}): TestUser => {
@@ -55,16 +47,16 @@ const makeContext = (
   options: {
     db?: any;
     user?: Partial<TestUser>;
-    send?: (message: SentEmail) => Promise<void>;
+    send?: (message: OutboundEmailMessage) => Promise<void>;
   } = {},
 ) => {
   const db = options.db ?? makeDb();
   const user = userRow(options.user);
-  const sent: SentEmail[] = [];
+  const sent: OutboundEmailMessage[] = [];
 
   if (!db.store.account.some((row: any) => row.id === user.id)) db.store.account.push(user);
 
-  const email = makeEmailTransport(async (message: SentEmail) => {
+  const email = makeEmailTransport(async (message: OutboundEmailMessage) => {
     if (options.send) await options.send(message);
     sent.push(message);
   });
@@ -87,7 +79,6 @@ const makeContext = (
     db,
     schema,
     origin,
-    stripeClient: makeStripeClient(),
     // SAFETY: these tests never reach R2; the service only stores the binding.
     storage: {} as any,
     // SAFETY: the fake implements only the auth methods these tests exercise.
@@ -623,7 +614,7 @@ describe("tenant invitations", () => {
 
     const spies = (["log", "warn", "error"] as const).map((method) =>
       vi.spyOn(console, method).mockImplementation((...args: unknown[]) => {
-        logged.push(args.map((arg) => String(arg)).join(" "));
+        logged.push(args.map(String).join(" "));
       }),
     );
 

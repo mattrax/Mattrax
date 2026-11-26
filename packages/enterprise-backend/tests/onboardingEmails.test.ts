@@ -1,8 +1,10 @@
+import { Effect, Ref } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_ONBOARDING_REPLY_TO,
   ONBOARDING_EMAIL_FROM,
   ONBOARDING_FOLLOW_UP_AUDIT_ACTION,
+  OnboardingEmailWarnings,
   runOnboardingEmails,
   runWelcomeEmailSweep,
   sendWelcomeEmailOnce,
@@ -42,7 +44,7 @@ const makeTransport = (
 
 /** The single address a message was addressed to, without hiding a leak. */
 const recipientsOf = (message: OutboundEmailMessage): string[] =>
-  Array.isArray(message.to) ? [...message.to] : [message.to];
+  typeof message.to === "string" ? [message.to] : [...message.to];
 
 type AccountSeed = {
   readonly id: string;
@@ -61,7 +63,9 @@ type OrganizationSeed = {
   readonly name: string;
   readonly slug: string;
   readonly displayName: string | null;
+  readonly logo: string | null;
   readonly supportEmail: string | null;
+  readonly brandColor: string | null;
   readonly onboardingFollowUpSentAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -101,14 +105,19 @@ const seedTenant = (
   id: string,
   createdAt: Date,
   options: Partial<
-    Pick<OrganizationSeed, "name" | "displayName" | "supportEmail" | "onboardingFollowUpSentAt">
+    Pick<
+      OrganizationSeed,
+      "name" | "displayName" | "logo" | "supportEmail" | "brandColor" | "onboardingFollowUpSentAt"
+    >
   > = {},
 ): OrganizationSeed => ({
   id,
   name: options.name ?? `Tenant ${id}`,
   slug: id,
   displayName: options.displayName ?? null,
+  logo: options.logo ?? null,
   supportEmail: options.supportEmail ?? null,
+  brandColor: options.brandColor ?? null,
   onboardingFollowUpSentAt: options.onboardingFollowUpSentAt ?? null,
   createdAt,
   updatedAt: createdAt,
@@ -155,6 +164,32 @@ const runFollowUp = (
   );
 
 describe("welcome email", () => {
+  it("keeps invalid-address warning suppression in the provided Layer", async () => {
+    const db = makeDb();
+    const transport = makeTransport();
+
+    const reported = await runEffect(
+      Effect.gen(function* () {
+        yield* runWelcomeEmailSweep({
+          db,
+          email: transport,
+          origin,
+          replyTo: "not-an-address",
+        });
+        yield* runWelcomeEmailSweep({
+          db,
+          email: transport,
+          origin,
+          replyTo: "still-not-an-address",
+        });
+
+        return yield* Ref.get(yield* OnboardingEmailWarnings);
+      }).pipe(Effect.provide(OnboardingEmailWarnings.layer)),
+    );
+
+    expect([...reported]).toEqual(["MATTRAX_ONBOARDING_REPLY_TO"]);
+  });
+
   it("claims and sends exactly once", async () => {
     const db = makeDb({ account: [seedAccount()] });
     const transport = makeTransport();
@@ -177,8 +212,8 @@ describe("welcome email", () => {
       replyTo: DEFAULT_ONBOARDING_REPLY_TO,
       subject: "Welcome to Mattrax",
     });
-    expect(transport.sent[0]!.text).toContain("Hey Ada,");
-    expect(transport.sent[0]!.text).toContain(`${origin}/dashboard`);
+    expect(transport.sent[0].text).toContain("Hey Ada,");
+    expect(transport.sent[0].text).toContain(`${origin}/dashboard`);
     expect(db.store.account[0]!.welcomeEmailSentAt).toEqual(now);
 
     const second = await runEffect(
@@ -193,6 +228,62 @@ describe("welcome email", () => {
 
     expect(second).toBe("skipped");
     expect(transport.sent).toHaveLength(1);
+  });
+
+  it("threads deployment branding and the account context into the message", async () => {
+    const db = makeDb({ account: [seedAccount()] });
+    const transport = makeTransport();
+
+    const outcome = await runEffect(
+      sendWelcomeEmailOnce({
+        db,
+        user: seedAccount(),
+        email: transport,
+        origin,
+        now,
+        branding: {
+          brandName: "Acme Device Management",
+          brandColor: "#2563eb",
+          logoUrl: "https://cdn.acme.test/logo.png",
+        },
+      }),
+    );
+
+    expect(outcome).toBe("sent");
+    expect(transport.sent[0].subject).toBe("Welcome to Acme Device Management");
+    expect(transport.sent[0].text).toContain("Acme Device Management");
+    expect(transport.sent[0].text).toContain("ada@example.com");
+    expect(transport.sent[0].html).toContain("background:#2563eb;");
+    expect(transport.sent[0].html).toContain('aria-hidden="true" class="email-mark"');
+    expect(transport.sent[0].html).toContain("Acme Device Management</td>");
+    expect(transport.sent[0].html).toContain("ada@example.com");
+  });
+
+  it("sends a tenantless account to tenant creation and the quick start", async () => {
+    const db = makeDb({ account: [seedAccount()] });
+    const transport = makeTransport();
+
+    const outcome = await runEffect(
+      sendWelcomeEmailOnce({
+        db,
+        user: seedAccount(),
+        email: transport,
+        origin,
+        now,
+      }),
+    );
+
+    expect(outcome).toBe("sent");
+    const [message] = transport.sent;
+
+    expect(message.text).toContain(`Create your tenant: ${origin}/tenants/new`);
+    expect(message.html).toContain(`href="${origin}/tenants/new"`);
+    expect(message.text).toContain(
+      `Read the quick start: ${origin}/docs/getting-started/quick-start`,
+    );
+    expect(message.html).toContain(`href="${origin}/docs/getting-started/quick-start"`);
+    expect(message.text).not.toContain("/enrollment");
+    expect(message.html).not.toContain("/enrollment");
   });
 
   it("lets exactly one concurrent claim win", async () => {
@@ -296,8 +387,8 @@ describe("welcome email", () => {
     );
 
     expect(outcome).toBe("sent");
-    expect(transport.sent[0]!.replyTo).toBe(DEFAULT_ONBOARDING_REPLY_TO);
-    expect(transport.sent[0]!.text).not.toContain("not-an-address");
+    expect(transport.sent[0].replyTo).toBe(DEFAULT_ONBOARDING_REPLY_TO);
+    expect(transport.sent[0].text).not.toContain("not-an-address");
   });
 
   it("sweeps recent verified manual accounts with no marker", async () => {
@@ -316,6 +407,30 @@ describe("welcome email", () => {
 
     expect(result).toMatchObject({ candidates: 1, sent: 1, failed: 0, skipped: 0 });
     expect(transport.sent.map((message) => message.to)).toEqual(["recent@example.com"]);
+  });
+
+  it("uses the same deployment branding in the delayed sweep", async () => {
+    const db = makeDb({ account: [seedAccount()] });
+    const transport = makeTransport();
+
+    const result = await runEffect(
+      runWelcomeEmailSweep({
+        db,
+        now,
+        email: transport,
+        origin,
+        branding: {
+          brandName: "Acme Device Management",
+          brandColor: "#16a34a",
+          logoUrl: "/assets/acme.png",
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({ candidates: 1, sent: 1 });
+    expect(transport.sent[0].subject).toBe("Welcome to Acme Device Management");
+    expect(transport.sent[0].html).toContain('src="https://mattrax.test/assets/acme.png"');
+    expect(transport.sent[0].html).toContain("background:#16a34a;");
   });
 });
 
@@ -349,10 +464,47 @@ describe("one-week onboarding follow-up", () => {
       from: ONBOARDING_EMAIL_FROM,
       replyTo: DEFAULT_ONBOARDING_REPLY_TO,
     });
-    expect(transport.sent[0]!.text).toContain("It's been 8 days");
-    expect(transport.sent[0]!.text).toContain("Acme Devices");
-    expect(transport.sent[0]!.text).toContain(`${origin}/t/tenant-1/enrollment`);
+    expect(transport.sent[0].text).toContain("It's been 8 days");
+    expect(transport.sent[0].text).toContain("Acme Devices");
+    expect(transport.sent[0].text).toContain(`${origin}/t/tenant-1/enrollment`);
     expect(db.store.organization[0]!.onboardingFollowUpSentAt).toEqual(now);
+  });
+
+  it("uses the tenant brand name, logo and colour in the follow-up", async () => {
+    const organization = seedTenant("tenant-1", daysAgo(8), {
+      name: "Acme",
+      displayName: "Acme Devices",
+      logo: "https://cdn.acme.test/logo.png",
+      brandColor: "#16a34a",
+      supportEmail: "help@acme.test",
+    });
+
+    const db = tenantContext(organization);
+    const transport = makeTransport();
+
+    const result = await runFollowUp(db, transport);
+
+    expect(result).toMatchObject({ candidates: 1, sent: 1 });
+    expect(transport.sent[0].html).toContain("Acme Devices</td>");
+    expect(transport.sent[0].html).toContain("background:#16a34a;");
+    expect(transport.sent[0].html).toContain("color:#1c1917;");
+    expect(transport.sent[0].html).toContain('href="mailto:help@acme.test"');
+    expect(transport.sent[0].text).toContain("help@acme.test");
+  });
+
+  it("uses the dashboard default colour for a tenant with no brand colour", async () => {
+    const organization = seedTenant("tenant-1", daysAgo(8), {
+      name: "Acme",
+      displayName: "Acme Devices",
+    });
+
+    const db = tenantContext(organization);
+    const transport = makeTransport();
+
+    await runFollowUp(db, transport);
+
+    expect(transport.sent[0].html).toContain("background:#1c1917;");
+    expect(transport.sent[0].html).not.toContain("background:#6e56cf;");
   });
 
   it("skips a tenant with an enrolled device", async () => {
@@ -539,7 +691,7 @@ describe("one-week onboarding follow-up", () => {
 
     expect(result).toMatchObject({ candidates: 2, sent: 1, noRecipients: 1 });
     expect(transport.sent).toHaveLength(1);
-    expect(transport.sent[0]!.text).toContain("Tenant tenant-1");
+    expect(transport.sent[0].text).toContain("Tenant tenant-1");
     expect(
       db.store.audit_log.filter((row) => row.action === ONBOARDING_FOLLOW_UP_AUDIT_ACTION),
     ).toHaveLength(1);
@@ -619,9 +771,7 @@ describe("one-week onboarding follow-up", () => {
     expect(result).toMatchObject({ candidates: 1, sent: 1 });
     expect(transport.sent).toHaveLength(2);
 
-    const byAddress = new Map(
-      transport.sent.map((message) => [recipientsOf(message)[0]!, message]),
-    );
+    const byAddress = new Map(transport.sent.map((message) => [recipientsOf(message)[0], message]));
 
     expect([...byAddress.keys()].sort()).toEqual(["ada@example.com", "grace@example.com"]);
 
@@ -657,7 +807,7 @@ describe("one-week onboarding follow-up", () => {
     expect(result).toMatchObject({ sent: 1, failed: 0 });
     expect(transport.attempts).toHaveLength(2);
     expect(transport.sent).toHaveLength(1);
-    expect(recipientsOf(transport.sent[0]!)).toEqual(["ada@example.com"]);
+    expect(recipientsOf(transport.sent[0])).toEqual(["ada@example.com"]);
     expect(db.store.organization[0]!.onboardingFollowUpSentAt).toEqual(now);
     expect(
       db.store.audit_log.filter((row) => row.action === ONBOARDING_FOLLOW_UP_AUDIT_ACTION),
@@ -720,6 +870,6 @@ describe("one-week onboarding follow-up", () => {
 
     expect(result).toMatchObject({ sent: 1 });
     expect(transport.sent).toHaveLength(1);
-    expect(recipientsOf(transport.sent[0]!)).toEqual(["ada@example.com"]);
+    expect(recipientsOf(transport.sent[0])).toEqual(["ada@example.com"]);
   });
 });

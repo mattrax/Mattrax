@@ -16,6 +16,8 @@ export * from "./enterprise.ts";
 
 export * from "./Errors.ts";
 
+export * from "./Preconditions.ts";
+
 export * from "./rbac.ts";
 
 export * from "./branding.ts";
@@ -24,9 +26,24 @@ export * from "./webhooks.ts";
 
 export * from "./deviceHealth.ts";
 
+export * from "./devicePresence.ts";
+
+export * from "./realtime.ts";
+
+export * from "./softwareUpdates.ts";
+
+export * from "./osPolicy.ts";
+
+export * from "./certificates.ts";
+
 export * from "./deviceActions.ts";
+export * from "./windowsSecurity.ts";
 
 export * from "./scripts.ts";
+
+export * from "./restrictedSoftware.ts";
+
+export * from "./fleetMigration.ts";
 
 export * from "./deviceInventory.ts";
 
@@ -34,20 +51,34 @@ export * from "./dynamicGroups.ts";
 
 export * from "./deviceQuery.ts";
 
+export * from "./storageUsage.ts";
+
 export * from "./dashboard.ts";
+
+export * from "./onboarding.ts";
 
 export * from "./sso.ts";
 
 export {
   applicationKey,
   applicationPrefix,
+  isTenantApplicationObjectKey,
   policyApplicationKey,
   policyApplicationPrefix,
+  tenantApplicationObjectPrefix,
 } from "./storage.ts";
 
-export { EnterpriseAuth, EnterpriseService } from "./service.ts";
+export { ApplicationStorefrontService, EnterpriseAuth, EnterpriseService } from "./service.ts";
 
-export type { EnterpriseAuthResolved, EnterpriseAuthUser } from "./service.ts";
+export type {
+  EnterpriseAuthApiToken,
+  EnterpriseAuthFailure,
+  EnterpriseAuthOAuthToken,
+  EnterpriseAuthResolved,
+  EnterpriseAuthSession,
+  EnterpriseAuthUser,
+  EnterpriseStepUpMethods,
+} from "./service.ts";
 
 export * from "./auth.ts";
 
@@ -58,6 +89,8 @@ export * from "./policyVariables.ts";
 export * from "./csv.ts";
 
 export * from "./stepUp.ts";
+
+export * from "./approvals.ts";
 
 export * from "./stepUpServer.ts";
 
@@ -73,6 +106,28 @@ export {
 } from "./applicationInstallers.js";
 
 export type { DeviceCapabilities, InstallerCandidate } from "./applicationInstallers.js";
+
+export * from "./applicationUninstall.js";
+
+export {
+  ApplicationAvailability,
+  ApplicationStoreService,
+  DEFAULT_STOREFRONT_REGION,
+  normaliseStorefrontRegion,
+  parseAppleStoreLookup,
+  resolveApplicationStoreId,
+  storefrontUnavailableReason,
+  summariseApplicationAvailability,
+} from "./appleStorefront.js";
+
+export type {
+  AppleStoreLookup,
+  ApplicationStoreLookupInput,
+  ApplicationStoreLookupOutcome,
+  ApplicationAvailabilitySummary,
+  ResolvedStoreId,
+  StorefrontAvailability,
+} from "./appleStorefront.js";
 
 // Entity modules, grouped the way Cap's web-domain exposes them. Consumers can
 // use either the flat named exports above or the namespace form.
@@ -96,9 +151,15 @@ export * as Common from "./Common.ts";
 
 export * as Credential from "./Credential.ts";
 
+export * from "./Cutover.ts";
+
+export * as Cutover from "./Cutover.ts";
+
 export * as Device from "./Device.ts";
 
 export * as Directory from "./Directory.ts";
+
+export * as User from "./User.ts";
 
 export * as Enrollment from "./Enrollment.ts";
 

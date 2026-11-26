@@ -1,18 +1,43 @@
 import { Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
-import { schema as s, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as s } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 import {
   deriveDeviceHealth,
+  dynamicGroupDependentsOf,
+  dynamicGroupRuleGroupIds,
   dynamicGroupRulesProblem,
   evaluateDynamicGroupRules,
   hasDynamicGroupConditions,
+  planDynamicGroupDependencies,
 } from "@mattrax/enterprise-domain";
+import type {
+  DeviceQueryGroupMembership,
+  DeviceQueryUser,
+  DynamicGroupDependencyPlan,
+  DynamicGroupSkipReason,
+} from "@mattrax/enterprise-domain";
+import {
+  groupIdsWithAncestors,
+  loadGroupHierarchyEdges,
+  syncGroupInheritance,
+} from "./groupInheritance.ts";
+
+/** The query surface these passes use; a transaction exposes the same methods. */
+export type DynamicGroupDb = Pick<EnterpriseDb, "select" | "insert" | "delete" | "update">;
 
 export type DynamicGroupSyncOptions = {
   /** Injectable clock. Defaults to `new Date()`. */
   readonly now?: Date;
   /** Stale threshold used when deriving health for `health` conditions. */
   readonly staleAfterDays?: number;
+  /**
+   * Recompute groups whose rules reference this one. Defaults to true; a
+   * caller that already drives a dependency-ordered pass disables it.
+   */
+  readonly propagate?: boolean;
+  /** Precomputed dependency plan. Internal to a multi-group pass. */
+  readonly plan?: DynamicGroupDependencyPlan;
 };
 
 export type DynamicGroupSyncResult = {
@@ -21,6 +46,13 @@ export type DynamicGroupSyncResult = {
   readonly added: number;
   readonly removed: number;
   readonly evaluatedAt: Date;
+  /**
+   * Set when the group was not evaluated at all: a circular reference, a
+   * reference to a deleted group, or unreadable rules. Its materialised
+   * membership is deliberately left untouched.
+   */
+  readonly skipped?: DynamicGroupSkipReason;
+  readonly problem?: string;
 };
 
 type DeviceRow = typeof s.device.$inferSelect;
@@ -68,6 +100,7 @@ const deviceSnapshot = (
   device: DeviceRow,
   health: ReturnType<typeof deriveDeviceHealth>,
   applications: ReadonlyArray<{ bundleId: string; name: string | null }> = [],
+  users: ReadonlyArray<DeviceQueryUser> = [],
 ) => ({
   name: device.name,
   proto: device.proto,
@@ -83,6 +116,10 @@ const deviceSnapshot = (
   fileVaultEnabled: device.fileVaultEnabled,
   windowsActivationStatus: device.windowsActivationStatus,
   applications,
+  // An empty array is a real answer ("no linked users") and makes positive user
+  // conditions fail while `ne` ones hold. Passing `undefined` would mean the
+  // data was never loaded.
+  users,
   health: { level: health.level, stale: health.stale },
 });
 
@@ -103,7 +140,7 @@ const declarationsByDevice = (rows: ReadonlyArray<DeclarationRow>) => {
  * health in application code, so this is intentionally a tenant-scoped bulk
  * read rather than a query per device.
  */
-const loadDeclarations = (db: EnterpriseDb, deviceIds: ReadonlyArray<string>) =>
+const loadDeclarations = (db: DynamicGroupDb, deviceIds: ReadonlyArray<string>) =>
   deviceIds.length === 0
     ? Effect.succeed([])
     : db
@@ -111,11 +148,11 @@ const loadDeclarations = (db: EnterpriseDb, deviceIds: ReadonlyArray<string>) =>
         .from(s.deviceDeclaration)
         .where(inArray(s.deviceDeclaration.deviceId, [...deviceIds]));
 
-const loadTenantDevices = (db: EnterpriseDb, organizationId: string) =>
+const loadTenantDevices = (db: DynamicGroupDb, organizationId: string) =>
   db.select().from(s.device).where(eq(s.device.organizationId, organizationId));
 
 const loadApplications = (
-  db: EnterpriseDb,
+  db: DynamicGroupDb,
   organizationId: string,
   deviceIds: ReadonlyArray<string>,
 ) =>
@@ -150,7 +187,198 @@ const applicationsByDevice = (
 };
 
 /**
- * Recompute a single dynamic group.
+ * Directory users linked to devices, for `user*` conditions.
+ *
+ * Disabled users are omitted: a leaver keeps their row (directory sync marks
+ * them disabled), but no longer represents the person using the device, and the
+ * policy resolver already ignores them. Tenant filters on both sides keep a
+ * stale cross-tenant link inert.
+ */
+const loadDeviceUsers = (
+  db: DynamicGroupDb,
+  organizationId: string,
+  deviceIds: ReadonlyArray<string>,
+) =>
+  deviceIds.length === 0
+    ? Effect.succeed([])
+    : db
+        .select({
+          deviceId: s.deviceUser.deviceId,
+          userId: s.user.id,
+          email: s.user.email,
+          name: s.user.name,
+          externalId: s.user.externalId,
+          source: s.user.source,
+        })
+        .from(s.deviceUser)
+        .innerJoin(s.user, eq(s.user.id, s.deviceUser.userId))
+        .where(
+          and(
+            eq(s.deviceUser.organizationId, organizationId),
+            eq(s.user.organizationId, organizationId),
+            eq(s.user.disabled, false),
+            inArray(s.deviceUser.deviceId, [...deviceIds]),
+          ),
+        );
+
+const usersByDevice = (
+  rows: ReadonlyArray<{
+    deviceId: string;
+    userId: string;
+    email: string;
+    name: string;
+    externalId: string | null;
+    source: string;
+  }>,
+) => {
+  const map = new Map<string, Array<DeviceQueryUser>>();
+
+  for (const row of rows) {
+    const list = map.get(row.deviceId) ?? [];
+    list.push({
+      id: row.userId,
+      email: row.email,
+      name: row.name,
+      externalId: row.externalId,
+      source: row.source,
+    });
+    map.set(row.deviceId, list);
+  }
+
+  return map;
+};
+
+/** Devices an operator explicitly excluded from a group. */
+const loadDeviceExclusions = (db: DynamicGroupDb, groupId: string) =>
+  Effect.gen(function* () {
+    const rows = yield* db
+      .select({ targetId: s.groupExclusion.targetId })
+      .from(s.groupExclusion)
+      .where(and(eq(s.groupExclusion.groupId, groupId), eq(s.groupExclusion.target, "device")));
+
+    return new Set(rows.map((row) => row.targetId));
+  });
+
+/**
+ * People an operator explicitly excluded from a group. Their `device_user`
+ * links are ignored when this group's rules are evaluated, so a device is not
+ * pulled in by a person the group excludes. If another, non-excluded person
+ * links the same device, the device can still match.
+ */
+const loadUserExclusions = (db: DynamicGroupDb, groupId: string) =>
+  Effect.gen(function* () {
+    const rows = yield* db
+      .select({ targetId: s.groupExclusion.targetId })
+      .from(s.groupExclusion)
+      .where(and(eq(s.groupExclusion.groupId, groupId), eq(s.groupExclusion.target, "user")));
+
+    return new Set(rows.map((row) => row.targetId));
+  });
+
+/** Drop people whose link this group ignores. */
+const withoutExcludedUsers = (
+  users: ReadonlyArray<DeviceQueryUser>,
+  excluded: ReadonlySet<string>,
+): Array<DeviceQueryUser> =>
+  excluded.size === 0 ? [...users] : users.filter((user) => !user.id || !excluded.has(user.id));
+
+/**
+ * Tenant-scoped group nodes for the reference graph. Manual groups are
+ * included because a rule may reference one, but they contribute no edges.
+ */
+const loadTenantGroupNodes = (db: DynamicGroupDb, organizationId: string) =>
+  db
+    .select({
+      id: s.enterpriseGroup.id,
+      kind: s.enterpriseGroup.kind,
+      rules: s.enterpriseGroup.rules,
+    })
+    .from(s.enterpriseGroup)
+    .where(eq(s.enterpriseGroup.organizationId, organizationId));
+
+/**
+ * Plan the tenant's dynamic groups from both rule references and nesting.
+ *
+ * Inheritance edges matter twice: a parent's membership includes its children
+ * (so a child must be computed first), and a rule naming an ancestor closes a
+ * loop across the two edge kinds.
+ */
+const loadDependencyPlan = (db: DynamicGroupDb, organizationId: string) =>
+  Effect.gen(function* () {
+    const nodes = yield* loadTenantGroupNodes(db, organizationId);
+    const edges = yield* loadGroupHierarchyEdges(db, organizationId);
+
+    return planDynamicGroupDependencies(
+      nodes.map((node) => ({ id: node.id, rules: node.kind === "dynamic" ? node.rules : null })),
+      edges,
+    );
+  });
+
+/**
+ * Materialised membership of the referenced groups, keyed by id.
+ *
+ * The group ids are re-checked against the tenant before the membership read,
+ * so a rule that names another tenant's group resolves to a missing reference
+ * (a skip) instead of leaking that group's devices. A referenced group that
+ * exists with no members gets an empty set, which is a real answer.
+ */
+const loadGroupMemberships = (
+  db: DynamicGroupDb,
+  organizationId: string,
+  groupIds: ReadonlyArray<string>,
+) =>
+  Effect.gen(function* () {
+    const unique = [...new Set(groupIds)];
+
+    if (unique.length === 0) return new Map<string, DeviceQueryGroupMembership>();
+
+    const groups = yield* db
+      .select({ id: s.enterpriseGroup.id })
+      .from(s.enterpriseGroup)
+      .where(
+        and(
+          eq(s.enterpriseGroup.organizationId, organizationId),
+          inArray(s.enterpriseGroup.id, unique),
+        ),
+      );
+
+    if (groups.length === 0) return new Map<string, DeviceQueryGroupMembership>();
+
+    const ids = groups.map((group) => group.id);
+
+    const rows = yield* db
+      .select({ groupId: s.groupDevice.groupId, deviceId: s.groupDevice.deviceId })
+      .from(s.groupDevice)
+      .where(inArray(s.groupDevice.groupId, ids));
+
+    const members = new Map<string, Set<string>>(ids.map((id) => [id, new Set<string>()]));
+
+    for (const row of rows) members.get(row.groupId)?.add(row.deviceId);
+
+    return new Map<string, DeviceQueryGroupMembership>(
+      [...members].map(([id, deviceIds]) => [id, { members: deviceIds }]),
+    );
+  });
+
+/**
+ * Membership a single-device pass needs: only whether that device is in each
+ * relevant group. Keeping this to a per-device answer avoids loading every
+ * member of every group on a check-in.
+ */
+const deviceGroupMemberships = (
+  groupIds: ReadonlyArray<string>,
+  deviceId: string,
+  memberGroupIds: ReadonlySet<string>,
+): Map<string, { members: Set<string> }> =>
+  new Map(
+    [...new Set(groupIds)].map((id) => [
+      id,
+      { members: memberGroupIds.has(id) ? new Set([deviceId]) : new Set<string>() },
+    ]),
+  );
+
+/**
+ * Recompute one dynamic group without touching groups that reference it.
  *
  * Only rows with `group_device.source = 'dynamic'` are replaced. A manually
  * added device stays in the group even when the rules no longer match it, which
@@ -158,9 +386,14 @@ const applicationsByDevice = (
  *
  * Callers must pass the tenant id; the group lookup and every write is scoped by
  * it so a crafted group id cannot cross tenants.
+ *
+ * A group whose rule graph contains a cycle or a missing reference is skipped:
+ * its current membership is left untouched and the reason is returned. That is
+ * deliberate — evaluating it against an unresolved dependency would silently
+ * remove members.
  */
-export const syncDynamicGroup = (
-  db: EnterpriseDb,
+const syncDynamicGroupOnly = (
+  db: DynamicGroupDb,
   organizationId: string,
   groupId: string,
   options: DynamicGroupSyncOptions = {},
@@ -199,6 +432,24 @@ export const syncDynamicGroup = (
 
     const rules = group.rules;
 
+    const plan = options.plan ?? (yield* loadDependencyPlan(db, organizationId));
+
+    // A circular or unresolved reference must skip the group, not clear it: an
+    // empty referenced membership makes `notIn` match and would silently
+    // change who is in the group.
+    const referenceProblem = plan.problems.get(groupId);
+
+    if (referenceProblem)
+      return {
+        groupId,
+        matched: 0,
+        added: 0,
+        removed: 0,
+        evaluatedAt: now,
+        skipped: referenceProblem.reason,
+        problem: referenceProblem.message,
+      };
+
     // Invalid rules should have been rejected on write. Leave the existing
     // membership untouched rather than silently removing baselines. A
     // version-valid rule set with no conditions is well defined: it matches
@@ -209,6 +460,15 @@ export const syncDynamicGroup = (
     if (hasDynamicGroupConditions(rules) && dynamicGroupRulesProblem(rules) !== null)
       return { groupId, matched: 0, added: 0, removed: 0, evaluatedAt: now };
 
+    // Referenced memberships are read after the dependency-ordered pass (or
+    // the previous materialisation for a single-group sync), so a referencing
+    // group always evaluates the referenced group's current members.
+    const groupMembership = yield* loadGroupMemberships(
+      db,
+      organizationId,
+      dynamicGroupRuleGroupIds(rules),
+    );
+
     const devices = yield* loadTenantDevices(db, organizationId);
 
     const declarations = yield* loadDeclarations(
@@ -218,17 +478,30 @@ export const syncDynamicGroup = (
 
     const declarationsFor = declarationsByDevice(declarations);
 
-    const applications = applicationsByDevice(
-      yield* loadApplications(
-        db,
-        organizationId,
-        devices.map((device) => device.id),
-      ),
+    const applicationRows = yield* loadApplications(
+      db,
+      organizationId,
+      devices.map((device) => device.id),
     );
+
+    const userRows = yield* loadDeviceUsers(
+      db,
+      organizationId,
+      devices.map((device) => device.id),
+    );
+
+    const excluded = yield* loadDeviceExclusions(db, groupId);
+    const excludedUsers = yield* loadUserExclusions(db, groupId);
+
+    const applications = applicationsByDevice(applicationRows);
+    const users = usersByDevice(userRows);
 
     const matching = new Set<string>();
 
     for (const device of devices) {
+      // An explicit exclusion wins over rule matches and manual membership.
+      if (excluded.has(device.id)) continue;
+
       const health = healthForDevice(
         device,
         declarationsFor.get(device.id) ?? [],
@@ -239,8 +512,13 @@ export const syncDynamicGroup = (
       if (
         evaluateDynamicGroupRules(
           rules,
-          deviceSnapshot(device, health, applications.get(device.id) ?? []),
-          { now },
+          deviceSnapshot(
+            device,
+            health,
+            applications.get(device.id) ?? [],
+            withoutExcludedUsers(users.get(device.id) ?? [], excludedUsers),
+          ),
+          { now, deviceId: device.id, groupMembership },
         )
       )
         matching.add(device.id);
@@ -261,6 +539,17 @@ export const syncDynamicGroup = (
     const toAdd = [...desired].filter((deviceId) => !existingDynamic.has(deviceId));
     const toRemove = [...existingDynamic].filter((deviceId) => !desired.has(deviceId));
 
+    // A device that is currently only inherited from a child group may also be
+    // a rule match. Promote the row to `dynamic` so removing the child edge
+    // later does not drop a device the rules still select. Nested rows would
+    // otherwise block the insert through the membership primary key.
+    const nested = new Set(
+      links.filter((link) => link.source === "nested").map((link) => link.deviceId),
+    );
+
+    const toPromote = toAdd.filter((deviceId) => nested.has(deviceId));
+    const toInsert = toAdd.filter((deviceId) => !nested.has(deviceId));
+
     if (toRemove.length > 0)
       yield* db
         .delete(s.groupDevice)
@@ -272,11 +561,23 @@ export const syncDynamicGroup = (
           ),
         );
 
-    if (toAdd.length > 0)
+    if (toPromote.length > 0)
+      yield* db
+        .update(s.groupDevice)
+        .set({ source: "dynamic" })
+        .where(
+          and(
+            eq(s.groupDevice.groupId, groupId),
+            eq(s.groupDevice.source, "nested"),
+            inArray(s.groupDevice.deviceId, toPromote),
+          ),
+        );
+
+    if (toInsert.length > 0)
       yield* db
         .insert(s.groupDevice)
         .ignore()
-        .values(toAdd.map((deviceId) => ({ groupId, deviceId, source: "dynamic" as const })));
+        .values(toInsert.map((deviceId) => ({ groupId, deviceId, source: "dynamic" as const })));
 
     yield* db
       .update(s.enterpriseGroup)
@@ -288,6 +589,10 @@ export const syncDynamicGroup = (
         ),
       );
 
+    // A parent group includes this group's members, so a change here changes
+    // every enclosing group too.
+    yield* syncGroupInheritance(db, organizationId, groupId);
+
     return {
       groupId,
       matched: desired.size,
@@ -298,29 +603,148 @@ export const syncDynamicGroup = (
   });
 
 /**
- * Recompute only the dynamic groups of one tenant. Used by group create/update
- * and daily maintenance.
+ * Recompute a group that rules reference, in dependency order.
+ *
+ * Called after any membership change that a `group` criterion can observe:
+ * a manual add/remove or exclusion, a directory sync, a dynamic recompute, a
+ * group delete, or a nested-edge change. Only the transitive dependents are
+ * recomputed, so an ordinary group edit does not rescan unrelated dynamics.
+ *
+ * The shared plan makes the order correct in one pass: a group is evaluated
+ * only after every group it names. Groups in a cycle (or depending on one) are
+ * skipped by `syncDynamicGroupOnly`.
+ */
+export const syncDynamicGroupDependents = (
+  db: DynamicGroupDb,
+  organizationId: string,
+  changedGroupId: string,
+  options: DynamicGroupSyncOptions = {},
+) =>
+  Effect.gen(function* () {
+    const plan = options.plan ?? (yield* loadDependencyPlan(db, organizationId));
+
+    // A parent's membership changes when one of its children does, even though
+    // the parent's own rows were not written directly. Treat the whole ancestor
+    // chain as changed so a rule referencing a parent follows too.
+    const changed = yield* groupIdsWithAncestors(db, organizationId, changedGroupId);
+    const dependents = new Set<string>();
+
+    for (const groupId of changed)
+      for (const dependent of dynamicGroupDependentsOf(plan, groupId)) dependents.add(dependent);
+
+    const results: DynamicGroupSyncResult[] = [];
+    const scheduled = new Set(plan.order);
+    const now = options.now ?? new Date();
+
+    for (const groupId of plan.order)
+      if (dependents.has(groupId))
+        results.push(
+          yield* syncDynamicGroupOnly(db, organizationId, groupId, {
+            ...options,
+            plan,
+            propagate: false,
+          }),
+        );
+
+    // A dependent that cannot run (a legacy cycle, or a deleted reference) is
+    // still reported. Dropping it from the result would hide the skip.
+    for (const groupId of dependents) {
+      if (scheduled.has(groupId)) continue;
+      const problem = plan.problems.get(groupId);
+
+      if (!problem) continue;
+
+      results.push({
+        groupId,
+        matched: 0,
+        added: 0,
+        removed: 0,
+        evaluatedAt: now,
+        skipped: problem.reason,
+        problem: problem.message,
+      });
+    }
+
+    return results;
+  });
+
+/**
+ * Recompute a single dynamic group and every group that references it.
+ *
+ * The returned result describes `groupId` only; dependents are refreshed so a
+ * group criterion sees the change immediately rather than on the next daily
+ * pass.
+ */
+export const syncDynamicGroup = (
+  db: DynamicGroupDb,
+  organizationId: string,
+  groupId: string,
+  options: DynamicGroupSyncOptions = {},
+) =>
+  Effect.gen(function* () {
+    const plan = options.plan ?? (yield* loadDependencyPlan(db, organizationId));
+
+    const result = yield* syncDynamicGroupOnly(db, organizationId, groupId, {
+      ...options,
+      plan,
+    });
+
+    if (options.propagate !== false)
+      yield* syncDynamicGroupDependents(db, organizationId, groupId, {
+        ...options,
+        plan,
+      });
+
+    return result;
+  });
+
+/**
+ * Recompute every dynamic group of one tenant in dependency order. Used by
+ * group create/update and daily maintenance.
  */
 export const syncDynamicGroupsForTenant = (
-  db: EnterpriseDb,
+  db: DynamicGroupDb,
   organizationId: string,
   options: DynamicGroupSyncOptions = {},
 ) =>
   Effect.gen(function* () {
-    const groups = yield* db
-      .select()
-      .from(s.enterpriseGroup)
-      .where(
-        and(
-          eq(s.enterpriseGroup.organizationId, organizationId),
-          eq(s.enterpriseGroup.kind, "dynamic"),
-        ),
-      );
+    const nodes = yield* loadTenantGroupNodes(db, organizationId);
+    const edges = yield* loadGroupHierarchyEdges(db, organizationId);
+    const plan = planDynamicGroupDependencies(
+      nodes.map((node) => ({ id: node.id, rules: node.kind === "dynamic" ? node.rules : null })),
+      edges,
+    );
 
     const results: DynamicGroupSyncResult[] = [];
+    const now = options.now ?? new Date();
 
-    for (const group of groups)
-      results.push(yield* syncDynamicGroup(db, organizationId, group.id, options));
+    for (const groupId of plan.order)
+      results.push(
+        yield* syncDynamicGroupOnly(db, organizationId, groupId, {
+          ...options,
+          plan,
+          propagate: false,
+        }),
+      );
+
+    // Report skipped groups instead of dropping them from the count, so a
+    // circular reference is visible in maintenance telemetry.
+    for (const node of nodes) {
+      if (node.kind !== "dynamic") continue;
+      const problem = plan.problems.get(node.id);
+
+      if (!problem) continue;
+
+      results.push({
+        groupId: node.id,
+        matched: 0,
+        added: 0,
+        removed: 0,
+        evaluatedAt: now,
+        skipped: problem.reason,
+        problem: problem.message,
+      });
+    }
 
     return results;
   });
@@ -331,7 +755,7 @@ export const syncDynamicGroupsForTenant = (
  * the number of dynamic groups in the tenant, not by the number of devices.
  */
 export const syncDynamicGroupsForDevice = (
-  db: EnterpriseDb,
+  db: DynamicGroupDb,
   organizationId: string,
   deviceId: string,
   options: DynamicGroupSyncOptions = {},
@@ -359,11 +783,72 @@ export const syncDynamicGroupsForDevice = (
 
     if (groups.length === 0) return [];
 
+    const nodes = yield* loadTenantGroupNodes(db, organizationId);
+    const edges = yield* loadGroupHierarchyEdges(db, organizationId);
+    const plan = planDynamicGroupDependencies(
+      nodes.map((node) => ({ id: node.id, rules: node.kind === "dynamic" ? node.rules : null })),
+      edges,
+    );
+    const groupsById = new Map(groups.map((group) => [group.id, group]));
+
+    // Skipped groups (a cycle or a missing reference) are deliberately absent:
+    // a device check-in must not clear their membership.
+    const scheduled = plan.order.flatMap((groupId) => {
+      const group = groupsById.get(groupId);
+
+      return group ? [group] : [];
+    });
+
+    if (scheduled.length === 0) return [];
+
     const declarations = yield* loadDeclarations(db, [device.id]);
 
-    const applications = applicationsByDevice(
-      yield* loadApplications(db, organizationId, [device.id]),
-    );
+    const applicationRows = yield* loadApplications(db, organizationId, [device.id]);
+
+    const userRows = yield* loadDeviceUsers(db, organizationId, [device.id]);
+
+    const exclusionRows = yield* db
+      .select({ groupId: s.groupExclusion.groupId })
+      .from(s.groupExclusion)
+      .innerJoin(s.enterpriseGroup, eq(s.enterpriseGroup.id, s.groupExclusion.groupId))
+      .where(
+        and(
+          eq(s.enterpriseGroup.organizationId, organizationId),
+          eq(s.groupExclusion.target, "device"),
+          eq(s.groupExclusion.targetId, device.id),
+        ),
+      );
+
+    const userExclusionRows = groups.length
+      ? yield* db
+          .select({
+            groupId: s.groupExclusion.groupId,
+            targetId: s.groupExclusion.targetId,
+          })
+          .from(s.groupExclusion)
+          .where(
+            and(
+              eq(s.groupExclusion.target, "user"),
+              inArray(
+                s.groupExclusion.groupId,
+                groups.map((group) => group.id),
+              ),
+            ),
+          )
+      : [];
+
+    const exclusionsByGroup = new Map<string, Set<string>>();
+
+    for (const row of userExclusionRows) {
+      const set = exclusionsByGroup.get(row.groupId) ?? new Set<string>();
+
+      set.add(row.targetId);
+      exclusionsByGroup.set(row.groupId, set);
+    }
+
+    const applications = applicationsByDevice(applicationRows);
+    const users = usersByDevice(userRows);
+    const excludedGroups = new Set(exclusionRows.map((row) => row.groupId));
 
     const health = healthForDevice(device, declarations, now, options.staleAfterDays);
 
@@ -372,8 +857,17 @@ export const syncDynamicGroupsForDevice = (
       .from(s.groupDevice)
       .where(eq(s.groupDevice.deviceId, deviceId));
 
+    // Manual (and stale directory) rows are explicit exceptions that a rule
+    // recompute must not override. A nested row is not: the device is inherited
+    // and may also match the rules, in which case the row is promoted below.
     const manualGroups = new Set(
-      links.filter((link) => link.source !== "dynamic").map((link) => link.groupId),
+      links
+        .filter((link) => link.source === "manual" || link.source === "directory")
+        .map((link) => link.groupId),
+    );
+
+    const nestedGroups = new Set(
+      links.filter((link) => link.source === "nested").map((link) => link.groupId),
     );
 
     const dynamicGroups = new Set(
@@ -382,10 +876,71 @@ export const syncDynamicGroupsForDevice = (
 
     const results: DynamicGroupSyncResult[] = [];
     const toAdd: string[] = [];
+    const toPromote: string[] = [];
     const toRemove: string[] = [];
     const evaluated: string[] = [];
 
-    for (const group of groups) {
+    // Only "is this device a member" matters for this pass, so the map holds a
+    // single id per group instead of the whole membership. Every tenant group
+    // is included because a referenced group may be a manual parent whose
+    // membership is derived from a dynamic child.
+    const groupMembership = deviceGroupMemberships(
+      nodes.map((node) => node.id),
+      device.id,
+      new Set(links.map((link) => link.groupId)),
+    );
+
+    // Nesting is materialised after the loop, but a group that watches a parent
+    // must see the parent's new union now. These maps let each decided row
+    // update its ancestors in memory.
+    const parents = new Map<string, Array<string>>();
+    const children = new Map<string, Array<string>>();
+
+    for (const edge of edges) {
+      const parentList = parents.get(edge.childId) ?? [];
+
+      parentList.push(edge.parentId);
+      parents.set(edge.childId, parentList);
+
+      const childList = children.get(edge.parentId) ?? [];
+
+      childList.push(edge.childId);
+      children.set(edge.parentId, childList);
+    }
+
+    // A non-nested row is the group's own membership; a nested row is derived
+    // from a child and is recomputed here.
+    const ownGroups = new Set(
+      links.filter((link) => link.source !== "nested").map((link) => link.groupId),
+    );
+
+    const setMembership = (groupId: string, member: boolean) => {
+      const membership = groupMembership.get(groupId);
+
+      if (!membership) return;
+
+      if (member) membership.members.add(device.id);
+      else membership.members.delete(device.id);
+    };
+
+    const refreshAncestors = (groupId: string, seen = new Set<string>()) => {
+      for (const parent of parents.get(groupId) ?? []) {
+        if (seen.has(parent)) continue;
+
+        seen.add(parent);
+
+        const member =
+          ownGroups.has(parent) ||
+          (children.get(parent) ?? []).some((child) =>
+            groupMembership.get(child)?.members.has(device.id),
+          );
+
+        setMembership(parent, member);
+        refreshAncestors(parent, seen);
+      }
+    };
+
+    for (const group of scheduled) {
       const rules = group.rules;
 
       if (!rules || rules.version !== 1) continue;
@@ -395,15 +950,30 @@ export const syncDynamicGroupsForDevice = (
 
       const matches =
         !manualGroups.has(group.id) &&
+        !excludedGroups.has(group.id) &&
         evaluateDynamicGroupRules(
           rules,
-          deviceSnapshot(device, health, applications.get(device.id) ?? []),
-          { now },
+          deviceSnapshot(
+            device,
+            health,
+            applications.get(device.id) ?? [],
+            withoutExcludedUsers(
+              users.get(device.id) ?? [],
+              exclusionsByGroup.get(group.id) ?? new Set<string>(),
+            ),
+          ),
+          { now, deviceId: device.id, groupMembership },
         );
 
       const isDynamicMember = dynamicGroups.has(group.id);
+      const isNestedMember = nestedGroups.has(group.id);
+      const remainsMember =
+        manualGroups.has(group.id) || isNestedMember || (matches && !excludedGroups.has(group.id));
 
-      if (matches && !isDynamicMember) toAdd.push(group.id);
+      setMembership(group.id, remainsMember);
+      refreshAncestors(group.id);
+
+      if (matches && !isDynamicMember) (isNestedMember ? toPromote : toAdd).push(group.id);
 
       if (!matches && isDynamicMember) toRemove.push(group.id);
       results.push({
@@ -426,6 +996,18 @@ export const syncDynamicGroupsForDevice = (
           ),
         );
 
+    if (toPromote.length > 0)
+      yield* db
+        .update(s.groupDevice)
+        .set({ source: "dynamic" })
+        .where(
+          and(
+            eq(s.groupDevice.deviceId, deviceId),
+            eq(s.groupDevice.source, "nested"),
+            inArray(s.groupDevice.groupId, toPromote),
+          ),
+        );
+
     if (toAdd.length > 0)
       yield* db
         .insert(s.groupDevice)
@@ -443,8 +1025,22 @@ export const syncDynamicGroupsForDevice = (
           ),
         );
 
+    // Only the groups whose rows changed can move a parent's union. Refreshing
+    // the ancestors of each keeps nested membership correct without a full
+    // tenant recompute on every device check-in.
+    for (const groupId of new Set([...toAdd, ...toPromote, ...toRemove]))
+      yield* syncGroupInheritance(db, organizationId, groupId);
+
     return results;
   });
+
+export type DynamicGroupPreviewReference = {
+  readonly id: string;
+  readonly name: string;
+  /** Current materialised member count of the referenced group. */
+  readonly count: number;
+  readonly problem: string | null;
+};
 
 export type DynamicGroupPreview = {
   readonly groupId: string;
@@ -452,6 +1048,10 @@ export type DynamicGroupPreview = {
   readonly count: number;
   readonly devices: ReadonlyArray<{ id: string; name: string }>;
   readonly evaluatedAt: Date;
+  /** Why this group was skipped (cycle or missing reference), or null. */
+  readonly problem?: string | null;
+  /** Groups named by the rules, with their current membership. */
+  readonly references?: ReadonlyArray<DynamicGroupPreviewReference>;
 };
 
 /**
@@ -460,7 +1060,7 @@ export type DynamicGroupPreview = {
  * currently linked to them.
  */
 export const previewDynamicGroup = (
-  db: EnterpriseDb,
+  db: DynamicGroupDb,
   organizationId: string,
   groupId: string,
   options: DynamicGroupSyncOptions = {},
@@ -504,16 +1104,73 @@ export const previewDynamicGroup = (
         count: members.length,
         devices: members,
         evaluatedAt: now,
+        references: [],
       };
     }
 
     const rules = group.rules;
 
     if (!rules || rules.version !== 1)
-      return { groupId, kind: "dynamic", count: 0, devices: [], evaluatedAt: now };
+      return {
+        groupId,
+        kind: "dynamic",
+        count: 0,
+        devices: [],
+        evaluatedAt: now,
+        references: [],
+      };
 
     if (hasDynamicGroupConditions(rules) && dynamicGroupRulesProblem(rules) !== null)
-      return { groupId, kind: "dynamic", count: 0, devices: [], evaluatedAt: now };
+      return {
+        groupId,
+        kind: "dynamic",
+        count: 0,
+        devices: [],
+        evaluatedAt: now,
+        references: [],
+      };
+
+    const referenceIds = dynamicGroupRuleGroupIds(rules);
+    const plan = options.plan ?? (yield* loadDependencyPlan(db, organizationId));
+    const referenceGroups = referenceIds.length
+      ? yield* db
+          .select({ id: s.enterpriseGroup.id, name: s.enterpriseGroup.name })
+          .from(s.enterpriseGroup)
+          .where(
+            and(
+              eq(s.enterpriseGroup.organizationId, organizationId),
+              inArray(s.enterpriseGroup.id, [...referenceIds]),
+            ),
+          )
+      : [];
+    const groupMembership = yield* loadGroupMemberships(db, organizationId, referenceIds);
+    const referenceRows: DynamicGroupPreviewReference[] = referenceIds.map((id) => {
+      const referenced = referenceGroups.find((row) => row.id === id);
+      const problem = plan.problems.get(id);
+
+      return {
+        id,
+        name: referenced?.name ?? "Missing group",
+        count: groupMembership.get(id)?.members.size ?? 0,
+        problem:
+          problem?.message ?? (referenced ? null : "This group does not exist in the tenant."),
+      };
+    });
+
+    // A circular or missing reference means the preview cannot answer which
+    // devices match. Explain it rather than showing a misleading zero.
+    const previewProblem = plan.problems.get(groupId);
+
+    if (previewProblem)
+      return {
+        groupId,
+        kind: "dynamic",
+        count: 0,
+        devices: [],
+        evaluatedAt: now,
+        problem: previewProblem.message,
+        references: referenceRows,
+      };
 
     const declarations = yield* loadDeclarations(
       db,
@@ -522,17 +1179,28 @@ export const previewDynamicGroup = (
 
     const declarationsFor = declarationsByDevice(declarations);
 
-    const applications = applicationsByDevice(
-      yield* loadApplications(
-        db,
-        organizationId,
-        devices.map((device) => device.id),
-      ),
+    const applicationRows = yield* loadApplications(
+      db,
+      organizationId,
+      devices.map((device) => device.id),
     );
 
+    const userRows = yield* loadDeviceUsers(
+      db,
+      organizationId,
+      devices.map((device) => device.id),
+    );
+
+    const excluded = yield* loadDeviceExclusions(db, groupId);
+    const excludedUsers = yield* loadUserExclusions(db, groupId);
+
+    const applications = applicationsByDevice(applicationRows);
+    const users = usersByDevice(userRows);
     const matched: Array<{ id: string; name: string }> = [];
 
     for (const device of devices) {
+      if (excluded.has(device.id)) continue;
+
       const health = healthForDevice(
         device,
         declarationsFor.get(device.id) ?? [],
@@ -543,8 +1211,13 @@ export const previewDynamicGroup = (
       if (
         evaluateDynamicGroupRules(
           rules,
-          deviceSnapshot(device, health, applications.get(device.id) ?? []),
-          { now },
+          deviceSnapshot(
+            device,
+            health,
+            applications.get(device.id) ?? [],
+            withoutExcludedUsers(users.get(device.id) ?? [], excludedUsers),
+          ),
+          { now, deviceId: device.id, groupMembership },
         )
       )
         matched.push({ id: device.id, name: device.name });
@@ -558,5 +1231,7 @@ export const previewDynamicGroup = (
       count: matched.length,
       devices: matched,
       evaluatedAt: now,
+      problem: null,
+      references: referenceRows,
     };
   });

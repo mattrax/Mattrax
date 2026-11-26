@@ -1,16 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { Effect, Layer, Predicate } from "effect";
+import { ByteSize, Effect, Layer, Predicate } from "effect";
 import { HttpRouter } from "effect/http";
 import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { AppleMdmConfig } from "../config.js";
-import {
+import type {
   AppleDeviceEvent,
   CheckinScope,
   ManagementBackend,
-  ManagementManifest,
-  UnknownDevice,
 } from "@mattrax/management-backend";
-import { appleMdmRoutes } from "../handlers.js";
+import { ManagementManifest, UnknownDevice } from "@mattrax/management-backend";
+import { appleMdmRoutesWith } from "../handlers.js";
 import { buildAuthenticatePlist, mockManagementBackend } from "./helpers.js";
 
 const TEST_CONFIG = { origin: "https://test.mattrax.app", topic: "com.apple.mgmt.External.test" };
@@ -21,7 +20,10 @@ function expectScope(scope: CheckinScope | undefined): CheckinScope {
   return scope;
 }
 
-async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
+async function makeMdmHandler(
+  backendLayer: Layer.Layer<ManagementBackend>,
+  maxBodySize?: ByteSize.ByteSize,
+) {
   const serviceLayer = AppleMdmServiceLive.pipe(
     Layer.provideMerge(backendLayer),
     Layer.provideMerge(AppleMdmConfig.layer({ origin: TEST_CONFIG.origin })),
@@ -30,13 +32,45 @@ async function makeMdmHandler(backendLayer: Layer.Layer<ManagementBackend>) {
     ),
   );
 
-  const appLayer = appleMdmRoutes.pipe(Layer.provideMerge(serviceLayer));
+  const appLayer = appleMdmRoutesWith(maxBodySize).pipe(Layer.provideMerge(serviceLayer));
   const { handler } = HttpRouter.toWebHandler(appLayer);
 
   return handler;
 }
 
 describe("Apple MDM handlers", () => {
+  it("rejects an oversized chunked check-in before verification", async () => {
+    let deviceEvents = 0;
+    let pulledChunks = 0;
+    const backend = mockManagementBackend({
+      appleDeviceEvent: () =>
+        Effect.sync(() => {
+          deviceEvents += 1;
+        }),
+    });
+    const handler = await makeMdmHandler(backend, ByteSize.bytes(64));
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulledChunks += 1;
+        if (pulledChunks > 16) controller.close();
+        else controller.enqueue(new Uint8Array(16));
+      },
+    });
+
+    const response = await handler(
+      new Request("http://localhost/mdm/apple/mdm", {
+        method: "PUT",
+        body,
+        duplex: "half",
+        headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+      } as RequestInit),
+    );
+
+    expect(response.status).toBe(413);
+    expect(deviceEvents).toBe(0);
+    expect(pulledChunks).toBeLessThan(16);
+  });
+
   describe("enroll endpoint", () => {
     it("returns an enrollment profile plist", async () => {
       const backend = mockManagementBackend();
@@ -125,7 +159,7 @@ describe("Apple MDM handlers", () => {
 
       expect(match).not.toBeNull();
 
-      const decoded = Uint8Array.from(atob(match![1]!), (char) => char.charCodeAt(0));
+      const decoded = Uint8Array.from(atob(match![1]), (char) => char.charCodeAt(0));
       expect(new TextDecoder().decode(decoded)).toContain("com.mattrax.ade.profile-1");
     });
 
@@ -395,6 +429,40 @@ describe("Apple MDM handlers", () => {
       expect(event && "_tag" in event ? event._tag : null).toBe("TokenUpdate");
     });
 
+    it("rejects a user-channel GetBootstrapToken before reading escrow", async () => {
+      let bootstrapReads = 0;
+      const backend = mockManagementBackend({
+        getAppleBootstrapToken: () =>
+          Effect.sync(() => {
+            bootstrapReads += 1;
+            return btoa("dummy-bootstrap-token");
+          }),
+      });
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>MessageType</key><string>GetBootstrapToken</string>
+  <key>UDID</key><string>udid-user-bootstrap</string>
+  <key>UserID</key><string>FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF</string>
+  <key>UserShortName</key><string>victim@example.test</string>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm-checkin" },
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(bootstrapReads).toBe(0);
+    });
+
     it("polls the user channel for the user's own commands", async () => {
       let scope: CheckinScope | undefined;
 
@@ -486,6 +554,78 @@ describe("Apple MDM handlers", () => {
       );
 
       expect(response.status).toBe(200);
+    });
+
+    it("forwards top-level UserList and DeviceLocation keys to the backend", async () => {
+      const responses: Array<unknown> = [];
+
+      const backend = mockManagementBackend({
+        appleDeviceEvent: (_scope: CheckinScope, event: AppleDeviceEvent) =>
+          Effect.sync(() => {
+            responses.push(
+              Predicate.isTagged("CommandResult")(event) ? event.queryResponses : undefined,
+            );
+          }),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>UDID</key><string>udid-result-002</string>
+  <key>Status</key><string>Acknowledged</string>
+  <key>CommandUUID</key><string>cmd-users</string>
+  <key>Users</key>
+  <array>
+    <dict>
+      <key>UserName</key><string>mattrax-admin</string>
+      <key>UserGUID</key><string>11111111-AAAA-BBBB-CCCC-222222222222</string>
+    </dict>
+  </array>
+</dict>
+</plist>`;
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: plist,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(responses[0]).toMatchObject({
+        Users: [{ UserName: "mattrax-admin", UserGUID: "11111111-AAAA-BBBB-CCCC-222222222222" }],
+      });
+
+      const location = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>UDID</key><string>udid-result-002</string>
+  <key>Status</key><string>Acknowledged</string>
+  <key>CommandUUID</key><string>cmd-location</string>
+  <key>Latitude</key><real>-33.8688</real>
+  <key>Longitude</key><real>151.2093</real>
+  <key>HorizontalAccuracy</key><real>12</real>
+</dict>
+</plist>`;
+
+      await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: location,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
+
+      expect(responses[1]).toMatchObject({
+        Latitude: -33.8688,
+        Longitude: 151.2093,
+        HorizontalAccuracy: 12,
+      });
     });
   });
 
@@ -741,7 +881,7 @@ describe("Apple MDM handlers", () => {
       const backend = mockManagementBackend({
         appleManagementCheckin: () =>
           Effect.succeed(
-            ManagementManifest.members[1]!.make({
+            ManagementManifest.members[1].make({
               commandUUID: "cmd-rts",
               requestType: "EraseDevice",
               payload: {
@@ -777,6 +917,45 @@ describe("Apple MDM handlers", () => {
       expect(body).toContain("<string>EraseDevice</string>");
       expect(body).toContain("<key>WiFiProfileData</key><data>AQID</data>");
       expect(body).toContain("<key>BootstrapToken</key><data>BAUG</data>");
+    });
+  });
+
+  describe("PUT /mdm/apple/mdm - SetAutoAdminPassword payload", () => {
+    it("serializes passwordHash as plist data, not a string", async () => {
+      const hash = btoa("<plist><dict/></plist>");
+
+      const backend = mockManagementBackend({
+        appleManagementCheckin: () =>
+          Effect.succeed(
+            ManagementManifest.members[1].make({
+              commandUUID: "cmd-rotate",
+              requestType: "SetAutoAdminPassword",
+              payload: { GUID: "11111111-AAAA-BBBB-CCCC-222222222222", passwordHash: hash },
+            }),
+          ),
+      });
+
+      const handler = await makeMdmHandler(backend);
+
+      const response = await handler(
+        new Request("http://localhost/mdm/apple/mdm", {
+          method: "PUT",
+          body: `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>UDID</key><string>udid-rotate-001</string>
+</dict>
+</plist>`,
+          headers: { "Content-Type": "application/x-apple-aspen-mdm" },
+        }),
+      );
+
+      const body = await response.text();
+
+      expect(body).toContain("<string>SetAutoAdminPassword</string>");
+      expect(body).toContain("<key>passwordHash</key><data>");
+      expect(body).not.toContain(`<key>passwordHash</key><string>${hash}</string>`);
     });
   });
 

@@ -1,19 +1,9 @@
-import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { Effect, Option, Schema } from "effect";
+import { Config, Effect, FileSystem, Option, Path, Schema } from "effect";
+import { CliSecureFileStore } from "./secureFileStore.ts";
+import { CliFailure } from "./failure.ts";
 
-/** A handler-level failure that the CLI formats once, without a stack trace. */
-export class CliFailure extends Schema.TaggedError<CliFailure>()("CliFailure", {
-  message: Schema.String,
-  /** Extra guidance printed under the error. */
-  hint: Schema.optional(Schema.String),
-  /** Override the process exit code (defaults to 1). */
-  exitCode: Schema.optional(Schema.Number),
-  /** The handler already rendered the failure; do not print it twice. */
-  silent: Schema.optional(Schema.Boolean),
-}) {}
+export { CliFailure } from "./failure.ts";
 
 export const DEFAULT_ORIGIN = "https://e.mattrax.app";
 
@@ -59,15 +49,29 @@ const trimmed = (value: string | undefined): string | undefined => {
   return next ? next : undefined;
 };
 
-export const configPath = (env: Readonly<Record<string, string | undefined>> = process.env) => {
-  const override = trimmed(env.MATTRAX_CONFIG);
+export const environmentValue = (name: string): Effect.Effect<string | undefined, CliFailure> =>
+  Config.option(Config.String(name)).pipe(
+    Effect.map(Option.getOrUndefined),
+    Effect.mapError(
+      () =>
+        new CliFailure({
+          message: `Could not read ${name} from the environment.`,
+        }),
+    ),
+  );
 
-  if (override) return isAbsolute(override) ? override : resolve(override);
+export const configPath = Effect.gen(function* () {
+  const paths = yield* Path.Path;
+  const override = yield* environmentValue("MATTRAX_CONFIG");
+  const configHome = yield* environmentValue("XDG_CONFIG_HOME");
+  const value = trimmed(override);
 
-  const root = trimmed(env.XDG_CONFIG_HOME) ?? join(homedir(), ".config");
+  if (value) return paths.isAbsolute(value) ? value : paths.resolve(value);
 
-  return join(root, "mattrax", "config.json");
-};
+  const root = trimmed(configHome) ?? paths.join(homedir(), ".config");
+
+  return paths.join(root, "mattrax", "config.json");
+});
 
 /**
  * Accept an origin, a full dashboard URL or a URL ending in `/api` and return
@@ -133,7 +137,7 @@ export const redactToken = (token: string | undefined): string => {
  * request they rejected.
  */
 export const redactSecrets = (text: string): string =>
-  text.replace(/mtx_[A-Za-z0-9_-]{6,}/gu, (match) => redactToken(match));
+  text.replaceAll(/mtx_[A-Za-z0-9_-]{6,}/gu, (match) => redactToken(match));
 
 const parseJson = (text: string, label: string): Effect.Effect<Schema.Json, CliFailure> =>
   Effect.try({
@@ -148,18 +152,30 @@ const parseJson = (text: string, label: string): Effect.Effect<Schema.Json, CliF
 /** Read the stored token and origin. A missing file is not an error. */
 export const readStoredSettings = (
   path: string,
-): Effect.Effect<StoredSettings | undefined, CliFailure> =>
+): Effect.Effect<StoredSettings | undefined, CliFailure, FileSystem.FileSystem> =>
   Effect.gen(function* () {
-    if (!existsSync(path)) return undefined;
+    const fs = yield* FileSystem.FileSystem;
+    const exists = yield* fs.exists(path).pipe(
+      Effect.mapError(
+        () =>
+          new CliFailure({
+            message: `Could not read ${path}.`,
+            hint: "Check that the file exists and is readable by your user.",
+          }),
+      ),
+    );
 
-    const text = yield* Effect.tryPromise({
-      try: () => readFile(path, "utf8"),
-      catch: () =>
-        new CliFailure({
-          message: `Could not read ${path}.`,
-          hint: "Check that the file exists and is readable by your user.",
-        }),
-    });
+    if (!exists) return undefined;
+
+    const text = yield* fs.readFileString(path).pipe(
+      Effect.mapError(
+        () =>
+          new CliFailure({
+            message: `Could not read ${path}.`,
+            hint: "Check that the file exists and is readable by your user.",
+          }),
+      ),
+    );
 
     const parsed = yield* parseJson(text, path);
     const decoded = Schema.decodeUnknownOption(StoredSettings)(parsed);
@@ -246,54 +262,52 @@ export const resolveSettings = (
 export const writeStoredSettings = (
   path: string,
   settings: StoredSettings,
-): Effect.Effect<void, CliFailure> =>
+): Effect.Effect<void, CliFailure, FileSystem.FileSystem | Path.Path | CliSecureFileStore> =>
   Effect.gen(function* () {
-    const directory = dirname(path);
+    const fs = yield* FileSystem.FileSystem;
+    const paths = yield* Path.Path;
+    const store = yield* CliSecureFileStore;
+    const directory = paths.dirname(path);
 
-    yield* Effect.tryPromise({
-      try: () => mkdir(directory, { recursive: true, mode: 0o700 }),
-      catch: () =>
-        new CliFailure({
-          message: `Could not create ${directory}.`,
-        }),
-    });
+    yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 }).pipe(
+      Effect.mapError(
+        () =>
+          new CliFailure({
+            message: `Could not create ${directory}.`,
+          }),
+      ),
+    );
 
-    yield* Effect.tryPromise({
-      try: () =>
-        writeFile(path, `${JSON.stringify(settings, null, 2)}\n`, {
-          encoding: "utf8",
-          mode: 0o600,
-        }),
-      catch: () =>
-        new CliFailure({
-          message: `Could not write ${path}.`,
-        }),
-    });
-
-    // `mode` only applies when the file is created; an existing file may have
-    // been left world-readable by an older tool.
-    yield* Effect.tryPromise({
-      try: () => chmod(path, 0o600),
-      catch: () =>
-        new CliFailure({
-          message: `Could not set permissions on ${path}.`,
-        }),
-    });
+    yield* store.writePrivate(path, `${JSON.stringify(settings, null, 2)}\n`);
   });
 
 /** Remove the stored config. Returns false when there was nothing to delete. */
-export const removeStoredSettings = (path: string): Effect.Effect<boolean, CliFailure> =>
+export const removeStoredSettings = (
+  path: string,
+): Effect.Effect<boolean, CliFailure, FileSystem.FileSystem> =>
   Effect.gen(function* () {
-    if (!existsSync(path)) return false;
+    const fs = yield* FileSystem.FileSystem;
+    const exists = yield* fs.exists(path).pipe(
+      Effect.mapError(
+        () =>
+          new CliFailure({
+            message: `Could not remove ${path}.`,
+            hint: "Delete the file manually if it is owned by another user.",
+          }),
+      ),
+    );
 
-    yield* Effect.tryPromise({
-      try: () => unlink(path),
-      catch: () =>
-        new CliFailure({
-          message: `Could not remove ${path}.`,
-          hint: "Delete the file manually if it is owned by another user.",
-        }),
-    });
+    if (!exists) return false;
+
+    yield* fs.remove(path).pipe(
+      Effect.mapError(
+        () =>
+          new CliFailure({
+            message: `Could not remove ${path}.`,
+            hint: "Delete the file manually if it is owned by another user.",
+          }),
+      ),
+    );
 
     return true;
   });

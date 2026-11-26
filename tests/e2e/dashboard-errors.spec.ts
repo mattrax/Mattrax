@@ -19,7 +19,7 @@ test.describe("dashboard query failures", () => {
 
   test("a failed policy list shows an error instead of a blank page", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Policy Error Tenant");
-    await page.route("**/api/v1/tenants/*/policies", (route) =>
+    await page.route("**/api/v1/tenants/*/policies/search*", (route) =>
       route.fulfill({ status: 500, contentType: "application/json", body: '{"message":"boom"}' }),
     );
     await gotoHydrated(page, `/t/${tenant.id}/policies`);

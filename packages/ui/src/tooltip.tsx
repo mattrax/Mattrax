@@ -23,11 +23,7 @@ function TooltipTrigger(props: TooltipTriggerProps) {
 
   return (
     <TooltipTriggerPrimitive
-      render={
-        local.as === "span"
-          ? (partProps) => <span {...partProps} />
-          : undefined
-      }
+      render={local.as === "span" ? (partProps) => <span {...partProps} /> : undefined}
       {...others}
     />
   );
@@ -42,8 +38,8 @@ function TooltipContentBox(
     <TooltipContent
       sideOffset={8}
       class={cn(
-        "z-[80] max-w-64 rounded-[6px] border border-border bg-popover px-2 py-1.5 text-[11.5px] leading-4 text-popover-foreground shadow-popover outline-none",
-        "origin-[var(--ui-popup-transform-origin,top)] transition-[opacity,transform] duration-[var(--duration-hover)] ease-swift data-[starting-style]:translate-y-0.5 data-[starting-style]:opacity-0 data-[ending-style]:translate-y-0.5 data-[ending-style]:opacity-0",
+        "z-50 max-w-64 rounded-md border border-border bg-popover px-2 py-1.5 text-xs leading-4 text-popover-foreground shadow-popover outline-none",
+        "origin-(--ui-popup-transform-origin,top) transition duration-150 ease-out data-[starting-style]:translate-y-0.5 data-[starting-style]:opacity-0 data-[ending-style]:translate-y-0.5 data-[ending-style]:opacity-0",
         local.class,
       )}
       {...others}

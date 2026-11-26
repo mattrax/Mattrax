@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { Effect, Layer, Predicate, Schema } from "effect";
 import { AppleMdmService, AppleMdmServiceLive, AppleMdmTopic } from "../service.js";
 import { AppleMdmConfig } from "../config.js";
+import type { AppleDeviceEvent } from "@mattrax/management-backend";
 import {
-  AppleDeviceEvent,
   CheckinScope,
   ManagementBackend,
   ManagementManifest,
@@ -330,7 +330,7 @@ describe("AppleMdmService", () => {
         }),
       ).then(
         () => "resolved",
-        (error) => error,
+        (error: unknown) => error,
       );
 
       // The user channel must fail (400), unlike a device token for an unknown

@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { Effect } from "effect";
-import {
-  AzureGraphConsentRequired,
-  AzureGraphConsentRevocationFailed,
-} from "@mattrax/azure-graph";
+import { AzureGraphConsentRequired, AzureGraphConsentRevocationFailed } from "@mattrax/azure-graph";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { makeDb, request, runEffect, schema } from "./helpers.js";
 
@@ -21,10 +18,7 @@ const makeContext = (
     azureGraph?: {
       revokeDelegatedConsent: (
         tenantId: string,
-      ) => Effect.Effect<
-        Revocation,
-        AzureGraphConsentRequired | AzureGraphConsentRevocationFailed
-      >;
+      ) => Effect.Effect<Revocation, AzureGraphConsentRequired | AzureGraphConsentRevocationFailed>;
     };
     /** Omit the SSO row to exercise the "never linked" path. */
     linkedTenantId?: string | null;
@@ -121,7 +115,7 @@ describe("Entra consent revocation on unlink", () => {
     const { db, service, headers } = makeContext({
       // SAFETY: this test only reaches `revokeDelegatedConsent`; the fake omits
       // the rest of the Graph surface the service never calls here.
-      azureGraph: { revokeDelegatedConsent } as any,
+      azureGraph: { revokeDelegatedConsent },
     });
 
     const result = await runEffect(
@@ -156,7 +150,7 @@ describe("Entra consent revocation on unlink", () => {
       azureGraph: {
         revokeDelegatedConsent: () =>
           Effect.succeed({ servicePrincipalId: null, grantsRemoved: 0 }),
-      } as any,
+      },
     });
 
     const result = await runEffect(
@@ -181,7 +175,7 @@ describe("Entra consent revocation on unlink", () => {
               status: 403,
             }),
           ),
-      } as any,
+      },
     });
 
     const result = await runEffect(
@@ -243,7 +237,7 @@ describe("Entra consent revocation on unlink", () => {
     const { service, headers } = makeContext({
       // SAFETY: this test only asserts the fake is never called; it omits the
       // rest of the Graph surface, which the handler never reaches.
-      azureGraph: { revokeDelegatedConsent } as any,
+      azureGraph: { revokeDelegatedConsent },
     });
 
     const result = await runEffect(
@@ -262,7 +256,7 @@ describe("Entra consent revocation on unlink", () => {
     const { service, headers } = makeContext({
       // SAFETY: this test only asserts the fake is never called; it omits the
       // rest of the Graph surface, which the handler never reaches.
-      azureGraph: { revokeDelegatedConsent } as any,
+      azureGraph: { revokeDelegatedConsent },
       linkedTenantId: null,
     });
 
@@ -282,7 +276,7 @@ describe("Entra consent revocation on unlink", () => {
     const { db, service, headers } = makeContext({
       // SAFETY: this test only asserts the fake is never called; it omits the
       // rest of the Graph surface, which the handler never reaches.
-      azureGraph: { revokeDelegatedConsent } as any,
+      azureGraph: { revokeDelegatedConsent },
       verified: false,
     });
 
@@ -319,7 +313,7 @@ describe("Entra consent revocation on unlink", () => {
     const { db, service, headers } = makeContext({
       // SAFETY: this test only asserts the fake is never called; it omits the
       // rest of the Graph surface, which the handler never reaches.
-      azureGraph: { revokeDelegatedConsent } as any,
+      azureGraph: { revokeDelegatedConsent },
     });
 
     const result = await runEffect(
@@ -338,7 +332,7 @@ describe("Entra consent revocation on unlink", () => {
     const { db, service, headers } = makeContext({
       // SAFETY: this test only reaches `revokeDelegatedConsent`; the fake omits
       // the rest of the Graph surface the service never calls here.
-      azureGraph: { revokeDelegatedConsent: () => Effect.never } as any,
+      azureGraph: { revokeDelegatedConsent: () => Effect.never },
       timeoutMs: 20,
     });
 
@@ -368,10 +362,12 @@ describe("Entra consent revocation on unlink", () => {
               message: "Failed to remove delegated consent after 3 grants: HTTP 500",
               servicePrincipalId: "sp-1",
               grantsRemoved: 3,
+              phase: "delete",
+              resourceId: "grant-4",
               status: 500,
             }),
           ),
-      } as any,
+      },
     });
 
     const result = await runEffect(

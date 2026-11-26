@@ -61,12 +61,14 @@ export default defineConfig({
   /**
    * Shiki highlights fenced code blocks at build time. Rspress only ships the
    * TypeScript/JavaScript grammars by default; the SDK guide also uses shell,
-   * JSON, YAML and raw HTTP, so list them explicitly rather than letting an
-   * unknown language fall back to plain text.
+   * JSON, YAML and raw HTTP, and the self-hosting guide highlights its Caddyfile
+   * as nginx because Shiki has no Caddy grammar. List them explicitly; an
+   * unlisted language fails the lazy grammar load rather than falling back to
+   * plain text.
    */
   markdown: {
     shiki: {
-      langs: ["ts", "tsx", "js", "jsx", "bash", "json", "yaml", "http", "diff"],
+      langs: ["ts", "tsx", "js", "jsx", "bash", "json", "yaml", "http", "diff", "nginx"],
     },
   },
   themeConfig: {
@@ -103,6 +105,7 @@ export default defineConfig({
             { text: "What is Mattrax?", link: "/getting-started/" },
             { text: "Quick start", link: "/getting-started/quick-start" },
             { text: "Core concepts", link: "/getting-started/concepts" },
+            { text: "What alpha means", link: "/getting-started/alpha" },
           ],
         },
         {
@@ -143,10 +146,13 @@ export default defineConfig({
           collapsed: false,
           items: [
             { text: "Devices", link: "/manage/devices" },
+            { text: "OS versions", link: "/manage/os-versions" },
             { text: "Groups", link: "/manage/groups" },
             { text: "Policies", link: "/manage/policies" },
             { text: "Applications", link: "/manage/applications" },
+            { text: "Software catalogue", link: "/manage/software-catalogue" },
             { text: "Scripts", link: "/manage/scripts" },
+            { text: "Restricted software", link: "/manage/restricted-software" },
             { text: "AI agents and MCP", link: "/manage/mcp" },
             { text: "Security", link: "/manage/security" },
           ],
@@ -170,7 +176,9 @@ export default defineConfig({
             { text: "Configuration", link: "/operations/configuration" },
             { text: "Deployment", link: "/operations/deployment" },
             { text: "Monitoring", link: "/operations/monitoring" },
+            { text: "Bundle analysis", link: "/operations/bundle-analysis" },
             { text: "Backups", link: "/operations/backups" },
+            { text: "Move a deployment", link: "/operations/cutover" },
             { text: "Troubleshooting", link: "/operations/troubleshooting" },
           ],
         },
@@ -210,6 +218,7 @@ export default defineConfig({
             { text: "Threat model", link: "/reference/threat-model" },
             { text: "Production readiness", link: "/reference/production-readiness" },
             { text: "Policy catalogue", link: "/reference/policy-catalogue" },
+            { text: "CIS benchmark templates", link: "/reference/cis-templates" },
             { text: "Catalogue sources", link: "/reference/catalogue-sources" },
             { text: "Project history", link: "/reference/history" },
             { text: "Glossary", link: "/reference/glossary" },

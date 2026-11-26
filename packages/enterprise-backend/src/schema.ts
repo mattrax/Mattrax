@@ -1,4 +1,5 @@
-import { schema as coreSchema, type EnterpriseDb } from "@mattrax/enterprise-core";
+import { schema as coreSchema } from "@mattrax/enterprise-core";
+import type { EnterpriseDb } from "@mattrax/enterprise-core";
 
 /**
  * The enterprise schema is owned by `@mattrax/enterprise-core` so that the
@@ -23,6 +24,10 @@ export type EnterpriseEnrollment = typeof schema.enterpriseEnrollment.$inferSele
 export type EnterpriseGroup = typeof schema.enterpriseGroup.$inferSelect;
 
 export type EnterpriseGroupDevice = typeof schema.groupDevice.$inferSelect;
+
+export type EnterpriseGroupChildGroup = typeof schema.groupGroup.$inferSelect;
+
+export type EnterpriseGroupExclusion = typeof schema.groupExclusion.$inferSelect;
 
 export type EnterpriseGroupPolicy = typeof schema.groupPolicy.$inferSelect;
 

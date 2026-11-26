@@ -65,10 +65,7 @@ export function useCommands(source: Command[] | (() => Command[])) {
     () => (isCommandSource(source) ? source() : source),
     (list) => {
       const owned: StoredCommand[] = list.map((command) => ({ ...command, owner }));
-      setCommands((current) => [
-        ...current.filter((command) => command.owner !== owner),
-        ...owned,
-      ]);
+      setCommands((current) => [...current.filter((command) => command.owner !== owner), ...owned]);
     },
   );
   onCleanup(() => {

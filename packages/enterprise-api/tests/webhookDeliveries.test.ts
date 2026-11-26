@@ -6,9 +6,11 @@ import {
   EnterpriseNotFound,
   EnterprisePermissionDenied,
   EnterpriseUnauthorized,
-  type WebhookDeliveryDetail,
-  type WebhookDeliveryReplayResponse,
-  type WebhookDeliveriesResponse,
+} from "@mattrax/enterprise-domain";
+import type {
+  WebhookDeliveryDetail,
+  WebhookDeliveryReplayResponse,
+  WebhookDeliveriesResponse,
 } from "@mattrax/enterprise-domain";
 import { createEnterpriseService } from "@mattrax/enterprise-api";
 import { RequiredPermission } from "@mattrax/enterprise-identity";
@@ -385,11 +387,11 @@ describe("webhook delivery replay", () => {
     expect(result.delivery.id).not.toBe("d-1");
     expect(fetch).toHaveBeenCalledTimes(1);
 
-    const headers = new Headers(requests[0]!.headers);
+    const headers = new Headers(requests[0].headers);
     expect(headers.get("X-Mattrax-Delivery")).toBe("evt_original");
     expect(headers.get("X-Mattrax-Event")).toBe("device.enrolled");
 
-    const body = JSON.parse(String(requests[0]!.body));
+    const body = JSON.parse(String(requests[0].body));
     expect(body.id).toBe("evt_original");
 
     // The original row is untouched and the replay is a separate record.

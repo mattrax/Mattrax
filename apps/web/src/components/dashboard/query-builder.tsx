@@ -1,13 +1,17 @@
-import { DeviceCondition, DeviceQuery } from "@mattrax/enterprise-domain/client";
-import {
-  FilterBar,
-  type FilterCondition,
-  type FilterField,
-  type FilterOperator,
-} from "@mattrax/ui";
+import type { DeviceQuery } from "@mattrax/enterprise-domain/client";
+import { DeviceCondition } from "@mattrax/enterprise-domain/client";
+import { FilterBar } from "@mattrax/ui";
+import type { FilterCondition, FilterField, FilterOperator } from "@mattrax/ui";
 import { Match, Option, Schema } from "effect";
 import { createEffect, createSignal, Show } from "solid-js";
-import { Activity, Laptop, RefreshCw, ShieldCheck, SlidersHorizontal } from "~/components/ui/icons";
+import {
+  Activity,
+  Laptop,
+  RefreshCw,
+  ShieldCheck,
+  SlidersHorizontal,
+  UsersRound,
+} from "~/components/ui/icons";
 import { Input } from "~/components/ui/input";
 import { formatDeviceQueryText, parseDeviceQueryText } from "~/lib/enterprise";
 
@@ -23,6 +27,8 @@ type FieldDefinition = {
   defaultValue: string;
   options?: ReadonlyArray<FieldOption>;
   ops: ReadonlyArray<FieldOption>;
+  /** Allow a list of values (the group criterion names one or more groups). */
+  multiple?: boolean;
 };
 
 const textOps = [
@@ -215,14 +221,106 @@ export const QUERY_FIELDS: ReadonlyArray<FieldDefinition> = [
   },
 ];
 
-const fieldById = (id: string) => QUERY_FIELDS.find((field) => field.id === id) ?? QUERY_FIELDS[0]!;
+/**
+ * Conditions on the directory people linked to a device.
+ *
+ * They are only offered by the dynamic-group rule builder: a device table has
+ * no linked-user data, and the evaluator deliberately fails these conditions
+ * when `users` is undefined rather than sweeping every device into a `ne` rule.
+ *
+ * A device matches a positive condition when **any** linked user matches; `is
+ * not` means **no** linked user matches. A device with no linked users matches
+ * no positive condition and satisfies `is not`.
+ */
+export const USER_QUERY_FIELDS: ReadonlyArray<FieldDefinition> = [
+  {
+    id: "userEmail",
+    label: "User email",
+    kind: "text",
+    defaultOp: "contains",
+    defaultValue: "",
+    ops: textOps,
+  },
+  {
+    id: "userDomain",
+    label: "User email domain",
+    kind: "text",
+    defaultOp: "eq",
+    defaultValue: "",
+    ops: textOps,
+  },
+  {
+    id: "userName",
+    label: "User display name",
+    kind: "text",
+    defaultOp: "contains",
+    defaultValue: "",
+    ops: textOps,
+  },
+  {
+    id: "userExternalId",
+    label: "User external id",
+    kind: "text",
+    defaultOp: "eq",
+    defaultValue: "",
+    ops: textOps,
+  },
+  {
+    id: "userSource",
+    label: "Identity provider",
+    kind: "select",
+    defaultOp: "eq",
+    defaultValue: "entra",
+    options: [
+      { value: "entra", label: "Microsoft Entra ID" },
+      { value: "google", label: "Google Workspace" },
+      { value: "scim", label: "SCIM directory" },
+      { value: "manual", label: "Local / manual" },
+    ],
+    ops: [
+      { value: "eq", label: "is" },
+      { value: "ne", label: "is not" },
+    ],
+  },
+];
 
-type Draft = { field: string; op: string; value: string };
+/**
+ * Membership in another device group. The select is inherently multi-value:
+ * `in` matches any listed group and `notIn` matches none. Group options are
+ * supplied by the caller because they are tenant data.
+ */
+export const GROUP_QUERY_FIELDS: ReadonlyArray<FieldDefinition> = [
+  {
+    id: "group",
+    label: "Group",
+    kind: "select",
+    defaultOp: "in",
+    defaultValue: "",
+    multiple: true,
+    ops: [
+      { value: "in", label: "is in any of" },
+      { value: "notIn", label: "is in none of" },
+    ],
+  },
+];
+
+const fieldById = (id: string, fields: ReadonlyArray<FieldDefinition> = QUERY_FIELDS) =>
+  fields.find((field) => field.id === id) ?? fields[0];
+
+type Draft = { field: string; op: string; value: string | ReadonlyArray<string> };
 
 /** Build a typed condition from the generic editor values. */
-export const draftToCondition = (draft: Draft): DeviceCondition => {
-  const field = fieldById(draft.field);
-  const value = field.kind === "number" ? Number(draft.value || 0) : draft.value;
+export const draftToCondition = (
+  draft: Draft,
+  fields: ReadonlyArray<FieldDefinition> = QUERY_FIELDS,
+): DeviceCondition => {
+  const field = fieldById(draft.field, fields);
+  const value =
+    field.kind === "number"
+      ? Number((Array.isArray(draft.value) ? draft.value[0] : draft.value) || 0)
+      : Array.isArray(draft.value)
+        ? [...draft.value]
+        : draft.value;
 
   const condition = Option.getOrUndefined(
     Schema.decodeUnknownOption(DeviceCondition)({
@@ -251,40 +349,78 @@ const fieldIcons = {
   enrolledDays: RefreshCw,
   application: SlidersHorizontal,
   osEdition: SlidersHorizontal,
+  group: UsersRound,
 } satisfies Partial<Record<string, typeof Activity>>;
 
-const filterFields: FilterField[] = QUERY_FIELDS.map((field) => ({
-  id: field.id,
-  label: field.label,
-  group: "Device",
-  // SAFETY: every id comes from QUERY_FIELDS, which is the only source of filterFields.
-  icon: fieldIcons[field.id as keyof typeof fieldIcons],
-  kind: field.kind,
-  options: field.options,
-  operators: field.ops.map<FilterOperator>((op) => ({ value: op.value, label: op.label })),
-  defaultOperator: field.defaultOp,
-  defaultValue: field.defaultValue || undefined,
-  placeholder: Match.value(field.id).pipe(
-    Match.when("osVersion", () => "14.4"),
-    Match.when("application", () => "com.apple.Safari"),
-    Match.orElse(() => "Value"),
-  ),
-}));
-
-const toFilterConditions = (query: DeviceQuery | null | undefined): FilterCondition[] =>
-  (query?.all ?? []).map((condition) => ({
-    field: condition.field,
-    operator: condition.op ?? fieldById(condition.field).defaultOp,
-    values:
-      condition.value === undefined || condition.value === "" ? [] : [String(condition.value)],
+const filterFieldsFor = (
+  fields: ReadonlyArray<FieldDefinition>,
+  groupOptions?: ReadonlyArray<FieldOption>,
+): FilterField[] =>
+  fields.map((field) => ({
+    id: field.id,
+    label: field.label,
+    group: field.id.startsWith("user")
+      ? "Directory user"
+      : field.id === "group"
+        ? "Group"
+        : "Device",
+    // SAFETY: every id comes from QUERY_FIELDS, USER_QUERY_FIELDS or
+    // GROUP_QUERY_FIELDS, the only sources of fields passed to this mapper; the
+    // icon map is partial and an unmapped id yields `undefined`, which
+    // FilterField permits.
+    icon: fieldIcons[field.id as keyof typeof fieldIcons],
+    kind: field.kind,
+    options: field.id === "group" ? groupOptions : field.options,
+    multiple: field.multiple,
+    operators: field.ops.map<FilterOperator>((op) => ({ value: op.value, label: op.label })),
+    defaultOperator: field.defaultOp,
+    defaultValue: field.defaultValue || undefined,
+    placeholder: Match.value(field.id).pipe(
+      Match.when("osVersion", () => "14.4"),
+      Match.when("application", () => "com.apple.Safari"),
+      Match.when("userEmail", () => "person@example.com"),
+      Match.when("userDomain", () => "example.com"),
+      Match.when("userName", () => "Alex Doe"),
+      Match.when("group", () => "Choose a group"),
+      Match.orElse(() => "Value"),
+    ),
   }));
 
-const toDeviceCondition = (condition: FilterCondition): DeviceCondition =>
-  draftToCondition({
+const deviceFilterFields = filterFieldsFor(QUERY_FIELDS);
+
+const toFilterConditions = (
+  query: DeviceQuery | null | undefined,
+  fields: ReadonlyArray<FieldDefinition> = QUERY_FIELDS,
+): FilterCondition[] =>
+  (query?.all ?? []).map((condition) => ({
     field: condition.field,
-    op: condition.operator,
-    value: condition.values[0] ?? "",
-  });
+    operator: condition.op ?? fieldById(condition.field, fields).defaultOp,
+    values:
+      condition.value === undefined || condition.value === ""
+        ? []
+        : Array.isArray(condition.value)
+          ? condition.value.map(String)
+          : [String(condition.value)],
+  }));
+
+const toDeviceCondition = (
+  condition: FilterCondition,
+  fields: ReadonlyArray<FieldDefinition>,
+): DeviceCondition => {
+  const field = fieldById(condition.field, fields);
+  const multi = field.kind === "select" && field.multiple === true;
+
+  return draftToCondition(
+    {
+      field: condition.field,
+      op: condition.operator,
+      value: multi
+        ? condition.values.filter((value) => value.trim() !== "")
+        : (condition.values[0] ?? ""),
+    },
+    fields,
+  );
+};
 
 /** The condition editor shared by device tables, dynamic groups and widgets. */
 export function DeviceQueryBuilder(props: {
@@ -293,10 +429,31 @@ export function DeviceQueryBuilder(props: {
   disabled?: boolean;
   compact?: boolean;
   /** Explain that a software widget filters the devices that reported apps. */
-  dataset?: "devices" | "software";
+  dataset?: "devices" | "software" | "users";
+  /**
+   * Offer conditions on the device's linked directory people. Only the
+   * dynamic-group builder sets this; device tables have no user data.
+   */
+  includeUserConditions?: boolean;
+  /**
+   * Offer the group criterion. Only the dynamic-group builder sets this, and
+   * only when the tenant's groups are available as options.
+   */
+  groupOptions?: ReadonlyArray<FieldOption>;
+  /** The group being edited: it cannot reference itself. */
+  excludeGroupId?: string;
 }) {
+  const groupOptions = () =>
+    props.groupOptions?.filter((option) => option.value !== props.excludeGroupId);
+
+  const fields = () => [
+    ...QUERY_FIELDS,
+    ...(props.includeUserConditions ? USER_QUERY_FIELDS : []),
+    ...(groupOptions() !== undefined ? GROUP_QUERY_FIELDS : []),
+  ];
+
   const update = (conditions: FilterCondition[]) => {
-    const all = conditions.map(toDeviceCondition);
+    const all = conditions.map((condition) => toDeviceCondition(condition, fields()));
     const any = props.query?.any ?? [];
     const none = props.query?.none ?? [];
 
@@ -327,30 +484,38 @@ export function DeviceQueryBuilder(props: {
     <div class={props.compact ? "space-y-2" : "space-y-3"}>
       <Show when={!props.compact}>
         <div class="flex flex-wrap items-center gap-2">
-          <p class="text-[12.5px] font-medium text-foreground">Match devices</p>
-          <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-[10.5px] text-muted-foreground">
+          <p class="text-xs font-medium text-foreground">Match devices</p>
+          <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-muted-foreground">
             all conditions
           </span>
         </div>
       </Show>
 
-      <Show when={props.dataset === "software" && toFilterConditions(props.query).length === 0}>
-        <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+      <Show
+        when={
+          props.dataset === "software" && toFilterConditions(props.query, fields()).length === 0
+        }
+      >
+        <p class="text-xs leading-relaxed text-muted-foreground">
           Every installed application reported by the fleet is included until you filter devices.
         </p>
       </Show>
 
       <FilterBar
-        fields={filterFields}
-        conditions={toFilterConditions(props.query)}
+        fields={
+          props.includeUserConditions || groupOptions() !== undefined
+            ? filterFieldsFor(fields(), groupOptions())
+            : deviceFilterFields
+        }
+        conditions={toFilterConditions(props.query, fields())}
         onChange={update}
         label="Filter devices"
         disabled={props.disabled}
       />
 
       <details class="group">
-        <summary class="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md px-1 py-0.5 text-[11px] text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30">
-          <span class="transition-transform duration-[var(--duration-hover)] group-open:rotate-90">
+        <summary class="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md px-1 py-0.5 text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30">
+          <span class="transition-transform duration-150 group-open:rotate-90">
             ›
           </span>
           Edit as text
@@ -358,7 +523,7 @@ export function DeviceQueryBuilder(props: {
         <div class="mt-1.5 space-y-1">
           <Input
             id="device-query-text"
-            class="h-8 font-mono text-[11.5px]"
+            class="h-8"
             disabled={props.disabled}
             value={text()}
             placeholder="platform is apple and staleDays at least 14"
@@ -371,7 +536,7 @@ export function DeviceQueryBuilder(props: {
               }
             }}
           />
-          <p class="text-[10.5px] text-muted-foreground">
+          <p class="text-xs text-muted-foreground">
             Shareable syntax: <code class="font-mono">field operator value</code>, joined with{" "}
             <code class="font-mono">and</code>.
           </p>

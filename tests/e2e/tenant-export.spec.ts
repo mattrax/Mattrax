@@ -5,7 +5,7 @@ import { bootstrapTenant, gotoHydrated, stepUpGrant } from "./helpers";
 test.describe("tenant export and import", () => {
   test("downloads a bundle and imports it as a new tenant", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Bundle Tenant");
-    await gotoHydrated(page, `/t/${tenant.id}/settings`);
+    await gotoHydrated(page, `/t/${tenant.id}/settings/migration/export`);
 
     const exported = await page.request.get(`/api/v1/tenants/${tenant.id}/export`);
     expect(exported.ok()).toBe(true);
@@ -32,7 +32,7 @@ test.describe("tenant export and import", () => {
     const bundle: {
       version: number;
       tenant: { name: string; slug: string };
-    } = JSON.parse(await readFile(path!, "utf8"));
+    } = JSON.parse(await readFile(path, "utf8"));
 
     expect(bundle.version).toBe(1);
     expect(bundle.tenant.slug).toBe(tenant.slug);
@@ -64,12 +64,37 @@ test.describe("tenant export and import", () => {
     await expect(page).toHaveURL(/\/t\/[^/]+\/settings$/);
     await expect(page.getByText("Tenant profile")).toBeVisible();
   });
+
+  test("forwards the old General #restore anchor to the export tab", async ({ page }) => {
+    const tenant = await bootstrapTenant(page, "Restore Anchor");
+    await gotoHydrated(page, `/t/${tenant.slug}/settings#restore`);
+
+    await expect(page).toHaveURL(
+      new RegExp(`/t/${tenant.slug}/settings/migration/export#restore$`),
+    );
+    await expect(page.getByRole("heading", { name: "Migration", exact: true })).toBeVisible();
+
+    // The redirect is only useful if the import section actually reaches the
+    // top of the settings scrollport, not merely the URL.
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const section = document.getElementById("restore");
+          const pane = section?.closest(".settings-sections");
+
+          if (!section || !pane) return null;
+
+          return Math.round(section.getBoundingClientRect().top - pane.getBoundingClientRect().top);
+        }),
+      )
+      .toBeLessThan(160);
+  });
 });
 
 test.describe("tenant backups", () => {
   test("runs a manual backup, lists it and downloads an authenticated bundle", async ({ page }) => {
     const tenant = await bootstrapTenant(page, "Backup Tenant");
-    await gotoHydrated(page, `/t/${tenant.id}/settings`);
+    await gotoHydrated(page, `/t/${tenant.id}/settings/backups`);
     await expect(page.getByText("Automatic tenant backups")).toBeVisible();
 
     await page.getByRole("button", { name: "Back up now" }).click();

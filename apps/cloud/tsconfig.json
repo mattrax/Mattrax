@@ -48,6 +48,9 @@
     },
     {
       "path": "../../packages/crypto"
+    },
+    {
+      "path": "../../packages/google-workspace"
     }
   ],
   "include": [
@@ -57,6 +60,9 @@
     "*.stub.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/tests/**"
   ]
 }
