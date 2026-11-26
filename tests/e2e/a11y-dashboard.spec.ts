@@ -84,9 +84,24 @@ const expectNoViolations = async (
   await expect
     .poll(
       async () => {
-        const violations = await violationsFor(page, options.include, options.allow);
+        try {
+          const violations = await violationsFor(page, options.include, options.allow);
 
-        return { context, violations };
+          return { context, violations };
+        } catch (error) {
+          // An overlay can close between the visibility wait and axe's scan.
+          // Re-open it on the next poll instead of failing the whole test.
+          if (String(error).includes("No elements found for include")) {
+            if (options.include) await expect(page.locator(options.include).first()).toBeVisible();
+
+            return {
+              context,
+              violations: [{ rule: "__overlay_not_ready__", impact: null, help: "", targets: [] }],
+            };
+          }
+
+          throw error;
+        }
       },
       { timeout: 15_000 },
     )

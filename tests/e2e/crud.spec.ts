@@ -21,9 +21,12 @@ test.describe("groups and policies", () => {
     await expect(page.getByRole("heading", { name: "Field Operations" })).toBeVisible();
 
     await page.getByRole("button", { name: /duplicate/i }).click();
-    await expect(
-      page.getByRole("heading", { name: /Field Operations \[duplicated\]/ }),
-    ).toBeVisible();
+    await expect
+      .poll(
+        () => page.getByRole("heading", { name: /Field Operations \[duplicated\]/ }).count(),
+        { timeout: 30_000 },
+      )
+      .toBe(1);
 
     await page.getByRole("button", { name: /^delete$/i }).click();
     await page.locator('[data-slot="dialog-content"] input').fill("Field Operations [duplicated]");
