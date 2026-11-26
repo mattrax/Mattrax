@@ -5,6 +5,9 @@
  * Fetching it per request would make an upstream outage visible on every page
  * and would multiply requests to a third-party service, so the trimmed feed is
  * persisted in `software_update_feed` and reused for a cache window.
+ * Each service Layer also keeps the validated catalog in memory, so warm
+ * requests avoid the database read and schema decode. Expired entries are
+ * served stale while a single background refresh runs.
  *
  * Failure isolation is the important property here: this function never fails.
  * A timeout, a non-2xx response, malformed JSON, an invalid payload or a
@@ -40,11 +43,14 @@ export const DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS = 5_000;
 /** SOFA is ~350 KB today; cap the response so a bad mirror cannot exhaust memory. */
 export const MAX_SOFTWARE_UPDATE_FEED_BYTES = 4 * 1_024 * 1_024;
 
+/** Bound retained source URLs across both positive catalogs and failure cooldowns. */
+export const MAX_SOFTWARE_UPDATE_CACHE_URLS = 16;
+
 export type SoftwareUpdateCatalogState = {
   readonly catalog: MacOsUpdateCatalog | null;
   readonly sourceUrl: string;
   readonly available: boolean;
-  /** True when the catalog is older than the cache window and the refresh failed. */
+  /** True when serving a catalog older than the cache window. */
   readonly stale: boolean;
   readonly fetchedAt: string | null;
   /** Stable failure code; never an upstream body or a stack trace. */
@@ -62,20 +68,38 @@ export type LoadSoftwareUpdateCatalogOptions = {
   readonly disabled?: boolean;
   /** Injectable Effect client. Omit only for explicitly offline callers. */
   readonly httpClient?: HttpClient.HttpClient;
-  /** Per-layer in-flight refresh and failure memory. */
+  /** Request-lifetime hook for work that must outlive the response. */
+  readonly background?: SoftwareUpdateBackground["Service"]["run"];
+  /** Per-layer catalog, in-flight refresh and failure memory. */
   readonly cache?: SoftwareUpdateCache["Service"];
   /** Injectable clock so cache/cooldown boundaries are testable. */
   readonly now?: Date;
 };
 
 export type SoftwareUpdateFetchResult =
-  | { readonly ok: true; readonly catalog: MacOsUpdateCatalog }
+  | {
+      readonly ok: true;
+      readonly catalog: MacOsUpdateCatalog;
+      readonly cacheWriteFailed?: boolean;
+    }
   | { readonly ok: false; readonly error: string };
 
 type FailureCooldown = { readonly at: number; readonly error: string };
 
+type CachedSoftwareUpdateCatalog = {
+  readonly catalog: MacOsUpdateCatalog;
+  readonly fetchedAt: Date;
+};
+
+type SoftwareUpdateCacheEntry = {
+  readonly catalog?: CachedSoftwareUpdateCatalog;
+  readonly failure?: FailureCooldown;
+};
+
 /**
- * Refresh coalescing and failure memory belong to a Layer, not the module.
+ * Catalog, refresh coalescing and failure memory live in the service Layer.
+ * The default Layer shares one I/O-free instance across requests in an isolate;
+ * callers can still use make to build an isolated cache for tests.
  * Deferred shares the Effect result (including interruption) without leaving a
  * Promise behind or continuing an abandoned fetch for another waiter.
  */
@@ -86,14 +110,14 @@ export class SoftwareUpdateCache extends Context.Service<
       key: string,
       load: Effect.Effect<SoftwareUpdateFetchResult>,
     ) => Effect.Effect<SoftwareUpdateFetchResult>;
-    readonly failures: Ref.Ref<Map<string, FailureCooldown>>;
+    readonly entries: Ref.Ref<Map<string, SoftwareUpdateCacheEntry>>;
   }
 >()("@mattrax/enterprise-backend/SoftwareUpdateCache") {
   static readonly make = Effect.gen(function* () {
     const inFlight = yield* Ref.make(
       new Map<string, Deferred.Deferred<SoftwareUpdateFetchResult>>(),
     );
-    const failures = yield* Ref.make(new Map<string, FailureCooldown>());
+    const entries = yield* Ref.make(new Map<string, SoftwareUpdateCacheEntry>());
 
     const refresh = Effect.fnUntraced(function* (
       key: string,
@@ -127,11 +151,25 @@ export class SoftwareUpdateCache extends Context.Service<
       );
     });
 
-    return SoftwareUpdateCache.of({ refresh, failures });
+    return SoftwareUpdateCache.of({ refresh, entries });
   });
 
-  static readonly layer = Layer.effect(SoftwareUpdateCache, SoftwareUpdateCache.make);
+  // Ref and Deferred are I/O-free. Sharing this value keeps the positive cache
+  // alive when a host rebuilds Layers per request without retaining request DB
+  // or HTTP bindings across Worker invocation contexts.
+  static readonly layer = Layer.succeed(
+    SoftwareUpdateCache,
+    Effect.runSync(SoftwareUpdateCache.make),
+  );
 }
+
+/** Request-scoped host hook, backed by ctx.waitUntil on Cloudflare Workers. */
+export class SoftwareUpdateBackground extends Context.Service<
+  SoftwareUpdateBackground,
+  {
+    readonly run: (effect: Effect.Effect<unknown>) => void;
+  }
+>()("@mattrax/enterprise-backend/SoftwareUpdateBackground") {}
 
 class PayloadTooLarge extends Data.TaggedError("PayloadTooLarge")<{
   readonly reason: "payload_too_large";
@@ -268,6 +306,21 @@ const unavailableState = (
   error,
 });
 
+const catalogState = (
+  sourceUrl: string,
+  catalog: MacOsUpdateCatalog,
+  fetchedAt: Date | null,
+  stale = false,
+  error: string | null = null,
+): SoftwareUpdateCatalogState => ({
+  catalog,
+  sourceUrl,
+  available: true,
+  stale,
+  fetchedAt: iso(fetchedAt),
+  error,
+});
+
 const iso = (value: Date | null | undefined): string | null => (value ? value.toISOString() : null);
 
 const parseDate = (value: Date | string | null | undefined): Date | null => {
@@ -275,6 +328,59 @@ const parseDate = (value: Date | string | null | undefined): Date | null => {
   const date = value instanceof Date ? value : new Date(value);
 
   return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const failureCooldownActive = (
+  failure: FailureCooldown | undefined,
+  now: Date,
+  retryAfterFailureMs: number,
+): failure is FailureCooldown => {
+  if (!failure) return false;
+
+  const age = now.getTime() - failure.at;
+
+  return age >= 0 && age < retryAfterFailureMs;
+};
+
+const pruneExpiredFailures = (
+  current: Map<string, SoftwareUpdateCacheEntry>,
+  now: Date,
+  retryAfterFailureMs: number,
+) => {
+  let next: Map<string, SoftwareUpdateCacheEntry> | undefined;
+
+  for (const [key, entry] of current) {
+    if (!entry.failure || failureCooldownActive(entry.failure, now, retryAfterFailureMs)) continue;
+
+    next ??= new Map(current);
+
+    if (entry.catalog) next.set(key, { catalog: entry.catalog });
+    else next.delete(key);
+  }
+
+  return next ?? current;
+};
+
+/** Insertion-order eviction is deterministic and bounds catalogs plus failures together. */
+const putCacheEntry = (
+  current: Map<string, SoftwareUpdateCacheEntry>,
+  key: string,
+  entry: SoftwareUpdateCacheEntry,
+) => {
+  const next = new Map(current);
+  next.delete(key);
+
+  if (entry.catalog || entry.failure) next.set(key, entry);
+
+  while (next.size > MAX_SOFTWARE_UPDATE_CACHE_URLS) {
+    const oldest = next.keys().next().value;
+
+    if (oldest === undefined) break;
+
+    next.delete(oldest);
+  }
+
+  return next;
 };
 
 type FeedRow = {
@@ -303,9 +409,193 @@ export const loadSoftwareUpdateCatalog = (
     const retryAfterFailureMs = options.retryAfterFailureMs ?? DEFAULT_SOFTWARE_UPDATE_RETRY_MS;
     const timeoutMs = options.timeoutMs ?? DEFAULT_SOFTWARE_UPDATE_TIMEOUT_MS;
     const maxBytes = options.maxBytes ?? MAX_SOFTWARE_UPDATE_FEED_BYTES;
+    const httpClient = options.httpClient;
+    const background =
+      options.background ??
+      Option.getOrUndefined(yield* Effect.serviceOption(SoftwareUpdateBackground))?.run;
     const cache = options.cache ?? (yield* SoftwareUpdateCache.make);
 
     if (options.disabled) return unavailableState(sourceUrl, "feed_disabled");
+
+    yield* Ref.update(cache.entries, (current) =>
+      pruneExpiredFailures(current, now, retryAfterFailureMs),
+    );
+
+    const memoryEntry = (yield* Ref.get(cache.entries)).get(key);
+    const memoryCatalog = memoryEntry?.catalog;
+    const memoryAge = memoryCatalog
+      ? now.getTime() - memoryCatalog.fetchedAt.getTime()
+      : Number.POSITIVE_INFINITY;
+
+    if (memoryCatalog && memoryAge >= 0 && memoryAge < cacheTtlMs)
+      return catalogState(sourceUrl, memoryCatalog.catalog, memoryCatalog.fetchedAt);
+
+    /**
+     * Persist a failure without touching the last good payload. The insert
+     * path is safe on an empty table; the update fallback handles the case
+     * where the row exists but the insert's duplicate-key branch failed.
+     */
+    const persistFailure = (failureSourceUrl: string, failure: string) =>
+      Effect.gen(function* () {
+        yield* options.db
+          .insert(options.schema.softwareUpdateFeed)
+          .values({
+            id: SOFA_MACOS_FEED_ID,
+            sourceUrl: failureSourceUrl,
+            payload: null,
+            fetchedAt: null,
+            checkedAt: now,
+            lastError: failure.slice(0, 64),
+          })
+          .onDuplicateKeyUpdate({
+            set: {
+              checkedAt: now,
+              lastError: failure.slice(0, 64),
+            },
+          });
+      }).pipe(
+        Effect.catch(() =>
+          Effect.gen(function* () {
+            yield* options.db
+              .update(options.schema.softwareUpdateFeed)
+              .set({ checkedAt: now, lastError: failure.slice(0, 64) })
+              .where(eq(options.schema.softwareUpdateFeed.id, SOFA_MACOS_FEED_ID));
+          }).pipe(Effect.catch(() => Effect.void)),
+        ),
+      );
+
+    const rememberFailure = (error: string) =>
+      Ref.update(cache.entries, (current) => {
+        const pruned = pruneExpiredFailures(current, now, retryAfterFailureMs);
+        const existing = pruned.get(key);
+
+        return putCacheEntry(pruned, key, {
+          catalog: existing?.catalog,
+          failure: { at: now.getTime(), error },
+        });
+      });
+
+    // The whole refresh, including persistence and memory publication, runs
+    // behind the Layer's in-flight claim. Waiters therefore cannot duplicate a
+    // feed write after the owner finishes.
+    const refreshFeed = (
+      client: HttpClient.HttpClient,
+      previousSourceUrl: string,
+    ): Effect.Effect<SoftwareUpdateFetchResult> =>
+      Effect.gen(function* () {
+        yield* Ref.update(cache.entries, (current) =>
+          pruneExpiredFailures(current, now, retryAfterFailureMs),
+        );
+
+        const entry = (yield* Ref.get(cache.entries)).get(key);
+        const cached = entry?.catalog;
+        const cachedAge = cached
+          ? now.getTime() - cached.fetchedAt.getTime()
+          : Number.POSITIVE_INFINITY;
+
+        if (cached && cachedAge >= 0 && cachedAge < cacheTtlMs)
+          return { ok: true, catalog: cached.catalog } as const;
+
+        const pendingFailure = entry?.failure;
+
+        if (failureCooldownActive(pendingFailure, now, retryAfterFailureMs))
+          return { ok: false, error: pendingFailure.error } as const;
+
+        const result = yield* fetchFeed(client, sourceUrl, timeoutMs, maxBytes);
+
+        if (!result.ok) {
+          yield* rememberFailure(result.error);
+
+          // Preserve the source URL of an existing row on failure. An operator
+          // who switched mirrors should not lose the provenance of the cached
+          // payload just because the new URL was unavailable.
+          yield* persistFailure(previousSourceUrl, result.error);
+
+          return result;
+        }
+
+        const written = yield* Effect.gen(function* () {
+          yield* options.db
+            .insert(options.schema.softwareUpdateFeed)
+            .values({
+              id: SOFA_MACOS_FEED_ID,
+              sourceUrl,
+              payload: result.catalog,
+              fetchedAt: now,
+              checkedAt: now,
+              lastError: null,
+            })
+            .onDuplicateKeyUpdate({
+              set: {
+                sourceUrl,
+                payload: result.catalog,
+                fetchedAt: now,
+                checkedAt: now,
+                lastError: null,
+              },
+            });
+        }).pipe(
+          Effect.match({
+            onFailure: () => false,
+            onSuccess: () => true,
+          }),
+        );
+
+        if (!written) {
+          // The fetch succeeded but the cache write did not. Remember it so the
+          // next request in this layer does not immediately fetch again while
+          // the database is unhealthy.
+          yield* rememberFailure("cache_write_failed");
+          yield* persistFailure(previousSourceUrl, "cache_write_failed");
+
+          return { ok: true, catalog: result.catalog, cacheWriteFailed: true } as const;
+        }
+
+        yield* Ref.update(cache.entries, (current) => {
+          const pruned = pruneExpiredFailures(current, now, retryAfterFailureMs);
+
+          return putCacheEntry(pruned, key, {
+            catalog: { catalog: result.catalog, fetchedAt: now },
+          });
+        });
+
+        return { ok: true, catalog: result.catalog } as const;
+      });
+
+    const refresh = (client: HttpClient.HttpClient, previousSourceUrl: string) =>
+      cache.refresh(key, refreshFeed(client, previousSourceUrl));
+
+    if (memoryCatalog) {
+      const memoryFailure = memoryEntry?.failure;
+
+      if (failureCooldownActive(memoryFailure, now, retryAfterFailureMs))
+        return unavailableState(
+          sourceUrl,
+          memoryFailure.error,
+          memoryCatalog.catalog,
+          true,
+          iso(memoryCatalog.fetchedAt),
+        );
+
+      // A caller that supplies no client is explicitly offline (for example the
+      // in-process service used by unit tests). Never reach the network by
+      // accident: serve the last catalog as stale or report unknown.
+      if (!httpClient)
+        return unavailableState(
+          sourceUrl,
+          "feed_unavailable",
+          memoryCatalog.catalog,
+          true,
+          iso(memoryCatalog.fetchedAt),
+        );
+
+      const revalidate = refresh(httpClient, sourceUrl).pipe(Effect.catch(() => Effect.void));
+
+      if (background) background(revalidate);
+      else yield* Effect.forkDetach(revalidate);
+
+      return catalogState(sourceUrl, memoryCatalog.catalog, memoryCatalog.fetchedAt, true);
+    }
 
     // Drizzle's Effect client returns an Effect in production, while the
     // in-memory database used by the unit tests exposes the same builder as an
@@ -345,31 +635,27 @@ export const loadSoftwareUpdateCatalog = (
     const age = fetchedAt ? now.getTime() - fetchedAt.getTime() : Number.POSITIVE_INFINITY;
     const sinceAttempt = checkedAt ? now.getTime() - checkedAt.getTime() : Number.POSITIVE_INFINITY;
 
-    // A cache entry only satisfies this request when it came from the same
+    // A durable entry only satisfies this request when it came from the same
     // feed URL. Changing SOFA_FEED_URL must not keep serving the old mirror for
     // the remainder of its TTL.
-    if (catalog && row?.sourceUrl === sourceUrl && age >= 0 && age < cacheTtlMs)
-      return {
-        catalog,
-        sourceUrl,
-        available: true,
-        stale: false,
-        fetchedAt: iso(fetchedAt),
-        error: null,
-      };
+    if (catalog && row?.sourceUrl === sourceUrl && fetchedAt && age >= 0 && age < cacheTtlMs) {
+      yield* Ref.update(cache.entries, (current) => {
+        const pruned = pruneExpiredFailures(current, now, retryAfterFailureMs);
+
+        return putCacheEntry(pruned, key, { catalog: { catalog, fetchedAt } });
+      });
+
+      return catalogState(sourceUrl, catalog, fetchedAt);
+    }
 
     // A recent failure suppresses another attempt. Serve the last good catalog
     // if there is one; otherwise every macOS status stays unknown.
     if (lastError && sinceAttempt >= 0 && sinceAttempt < retryAfterFailureMs)
       return unavailableState(sourceUrl, lastError, catalog, catalog !== null, iso(fetchedAt));
 
-    const memoryFailure = (yield* Ref.get(cache.failures)).get(key);
+    const memoryFailure = (yield* Ref.get(cache.entries)).get(key)?.failure;
 
-    if (
-      memoryFailure &&
-      now.getTime() - memoryFailure.at >= 0 &&
-      now.getTime() - memoryFailure.at < retryAfterFailureMs
-    )
+    if (failureCooldownActive(memoryFailure, now, retryAfterFailureMs))
       return unavailableState(
         sourceUrl,
         memoryFailure.error,
@@ -381,7 +667,7 @@ export const loadSoftwareUpdateCatalog = (
     // A caller that supplies no client is explicitly offline (for example the
     // in-process service used by unit tests). Never reach the network by
     // accident: serve the last catalog as stale or report unknown.
-    if (!options.httpClient)
+    if (!httpClient)
       return unavailableState(
         sourceUrl,
         "feed_unavailable",
@@ -390,102 +676,12 @@ export const loadSoftwareUpdateCatalog = (
         iso(fetchedAt),
       );
 
-    /**
-     * Persist a failure without touching the last good payload. The insert
-     * path is safe on an empty table; the update fallback handles the case
-     * where the row exists but the insert's duplicate-key branch failed.
-     */
-    const persistFailure = (failureSourceUrl: string, failure: string) =>
-      Effect.gen(function* () {
-        yield* options.db
-          .insert(options.schema.softwareUpdateFeed)
-          .values({
-            id: SOFA_MACOS_FEED_ID,
-            sourceUrl: failureSourceUrl,
-            payload: null,
-            fetchedAt: null,
-            checkedAt: now,
-            lastError: failure.slice(0, 64),
-          })
-          .onDuplicateKeyUpdate({
-            set: {
-              sourceUrl: failureSourceUrl,
-              checkedAt: now,
-              lastError: failure.slice(0, 64),
-            },
-          });
-      }).pipe(
-        Effect.catch(() =>
-          Effect.gen(function* () {
-            yield* options.db
-              .update(options.schema.softwareUpdateFeed)
-              .set({ checkedAt: now, lastError: failure.slice(0, 64) })
-              .where(eq(options.schema.softwareUpdateFeed.id, SOFA_MACOS_FEED_ID));
-          }).pipe(Effect.catch(() => Effect.void)),
-        ),
-      );
+    const result = yield* refresh(httpClient, row?.sourceUrl ?? sourceUrl);
 
-    const result = yield* cache.refresh(
-      key,
-      fetchFeed(options.httpClient, sourceUrl, timeoutMs, maxBytes),
-    );
-
-    if (!result.ok) {
-      yield* Ref.update(cache.failures, (current) =>
-        new Map(current).set(key, {
-          at: now.getTime(),
-          error: result.error,
-        }),
-      );
-
-      // Preserve the source URL of an existing row on failure. An operator who
-      // switched mirrors should not lose the provenance of the cached payload
-      // just because the new URL was unavailable.
-      yield* persistFailure(row?.sourceUrl ?? sourceUrl, result.error);
-
+    if (!result.ok)
       return unavailableState(sourceUrl, result.error, catalog, catalog !== null, iso(fetchedAt));
-    }
 
-    const written = yield* Effect.gen(function* () {
-      yield* options.db
-        .insert(options.schema.softwareUpdateFeed)
-        .values({
-          id: SOFA_MACOS_FEED_ID,
-          sourceUrl,
-          payload: result.catalog,
-          fetchedAt: now,
-          checkedAt: now,
-          lastError: null,
-        })
-        .onDuplicateKeyUpdate({
-          set: {
-            sourceUrl,
-            payload: result.catalog,
-            fetchedAt: now,
-            checkedAt: now,
-            lastError: null,
-          },
-        });
-    }).pipe(
-      Effect.match({
-        onFailure: () => false,
-        onSuccess: () => true,
-      }),
-    );
-
-    if (!written) {
-      // The fetch succeeded but the cache write did not. Remember it so the
-      // next request in this layer does not immediately fetch again while
-      // the database is unhealthy.
-      yield* Ref.update(cache.failures, (current) =>
-        new Map(current).set(key, {
-          at: now.getTime(),
-          error: "cache_write_failed",
-        }),
-      );
-
-      yield* persistFailure(row?.sourceUrl ?? sourceUrl, "cache_write_failed");
-
+    if (result.cacheWriteFailed)
       return {
         catalog: result.catalog,
         sourceUrl,
@@ -494,23 +690,10 @@ export const loadSoftwareUpdateCatalog = (
         fetchedAt: iso(now),
         error: "cache_write_failed",
       };
-    }
 
-    yield* Ref.update(cache.failures, (current) => {
-      const next = new Map(current);
-      next.delete(key);
+    const refreshedAt = (yield* Ref.get(cache.entries)).get(key)?.catalog?.fetchedAt ?? now;
 
-      return next;
-    });
-
-    return {
-      catalog: result.catalog,
-      sourceUrl,
-      available: true,
-      stale: false,
-      fetchedAt: iso(now),
-      error: null,
-    };
+    return catalogState(sourceUrl, result.catalog, refreshedAt);
   }).pipe(Effect.catch(() => Effect.succeed(unavailableState(configuredUrl, "unexpected_error"))));
 
   // SAFETY: every database and network failure is caught above, and the Db

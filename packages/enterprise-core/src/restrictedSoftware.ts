@@ -18,7 +18,7 @@ import {
   restrictedSoftwareCapability,
   restrictedSoftwareScopeApplies,
 } from "@mattrax/enterprise-domain";
-import type { RestrictedSoftwarePlatform } from "@mattrax/enterprise-domain";
+import type { InventoryApplication, RestrictedSoftwarePlatform } from "@mattrax/enterprise-domain";
 import type { EnterpriseDb } from "./db.ts";
 import {
   restrictedSoftware,
@@ -34,6 +34,12 @@ type AssignmentRow = typeof restrictedSoftwareAssignment.$inferSelect;
 export type ResolvedRestrictedSoftwareRule = {
   readonly rule: RuleRow;
   readonly capability: ReturnType<typeof restrictedSoftwareCapability>;
+};
+
+/** Tenant rules and assignments shared by all devices in one policy sync. */
+export type RestrictedSoftwareRuleSet = {
+  readonly rules: ReadonlyArray<RuleRow>;
+  readonly assignments: ReadonlyArray<AssignmentRow>;
 };
 
 /**
@@ -84,7 +90,13 @@ const writeDeviceAudit = (
  */
 export const resolveRestrictedSoftwareForDevice = (
   db: EnterpriseDb,
-  input: { readonly organizationId: string; readonly deviceId: string },
+  input: {
+    readonly organizationId: string;
+    readonly deviceId: string;
+    readonly device?: typeof device.$inferSelect;
+    readonly groupIds?: ReadonlySet<string>;
+  },
+  preloaded?: RestrictedSoftwareRuleSet,
 ): Effect.Effect<
   {
     readonly device: typeof device.$inferSelect | null;
@@ -93,45 +105,60 @@ export const resolveRestrictedSoftwareForDevice = (
   unknown
 > =>
   Effect.gen(function* () {
-    const [row] = yield* db
-      .select()
-      .from(device)
-      .where(and(eq(device.id, input.deviceId), eq(device.organizationId, input.organizationId)))
-      .limit(1);
+    let row =
+      input.device?.id === input.deviceId && input.device.organizationId === input.organizationId
+        ? input.device
+        : undefined;
+
+    if (!row) {
+      const [found] = yield* db
+        .select()
+        .from(device)
+        .where(and(eq(device.id, input.deviceId), eq(device.organizationId, input.organizationId)))
+        .limit(1);
+      row = found;
+    }
 
     if (!row) return { device: null, rules: [] };
 
-    const rules = yield* db
-      .select()
-      .from(restrictedSoftware)
-      .where(
-        and(
-          eq(restrictedSoftware.organizationId, input.organizationId),
-          eq(restrictedSoftware.platform, row.proto),
-          eq(restrictedSoftware.enabled, true),
-        ),
-      );
+    const rules =
+      preloaded?.rules ??
+      (yield* db
+        .select()
+        .from(restrictedSoftware)
+        .where(
+          and(
+            eq(restrictedSoftware.organizationId, input.organizationId),
+            eq(restrictedSoftware.platform, row.proto),
+            eq(restrictedSoftware.enabled, true),
+          ),
+        ));
 
     if (rules.length === 0) return { device: row, rules: [] };
 
-    const assignments = yield* db
-      .select()
-      .from(restrictedSoftwareAssignment)
-      .where(
-        and(
-          eq(restrictedSoftwareAssignment.organizationId, input.organizationId),
-          inArray(
-            restrictedSoftwareAssignment.restrictedSoftwareId,
-            rules.map((rule) => rule.id),
+    const assignments =
+      preloaded?.assignments ??
+      (yield* db
+        .select()
+        .from(restrictedSoftwareAssignment)
+        .where(
+          and(
+            eq(restrictedSoftwareAssignment.organizationId, input.organizationId),
+            inArray(
+              restrictedSoftwareAssignment.restrictedSoftwareId,
+              rules.map((rule) => rule.id),
+            ),
           ),
-        ),
-      );
+        ));
 
-    const memberships = yield* db
-      .select({ groupId: groupDevice.groupId })
-      .from(groupDevice)
-      .where(eq(groupDevice.deviceId, input.deviceId));
-    const groupIds = new Set(memberships.map((membership) => membership.groupId));
+    const groupIds =
+      input.groupIds ??
+      new Set(
+        (yield* db
+          .select({ groupId: groupDevice.groupId })
+          .from(groupDevice)
+          .where(eq(groupDevice.deviceId, input.deviceId))).map((membership) => membership.groupId),
+      );
 
     const byRule = new Map<string, AssignmentRow[]>();
 
@@ -200,6 +227,10 @@ const enforcementFor = (
  * The unique `(rule, device)` row is the de-duplication boundary: a repeated
  * report refreshes `lastDetectedAt` and the occurrence count without producing
  * another violation event. A rule that stops matching resolves the open row.
+ * Callers reporting a fresh inventory can supply it to avoid reading the stored
+ * rows again. Rule and assignment changes omit it and use the saved inventory.
+ * Rescans also close stale violations when no rules apply, without reading the
+ * application inventory in that case.
  */
 export const reconcileRestrictedSoftwareForDevice = (
   db: EnterpriseDb,
@@ -207,6 +238,8 @@ export const reconcileRestrictedSoftwareForDevice = (
     readonly organizationId: string;
     readonly deviceId: string;
     readonly at: Date;
+    readonly applications?: ReadonlyArray<InventoryApplication>;
+    readonly rescan?: boolean;
   },
 ): Effect.Effect<
   {
@@ -220,18 +253,23 @@ export const reconcileRestrictedSoftwareForDevice = (
   Effect.gen(function* () {
     const resolved = yield* resolveRestrictedSoftwareForDevice(db, input);
     const deviceRow = resolved.device;
+    const rulesApply = resolved.rules.length > 0;
 
-    if (!deviceRow) return { detected: 0, reopened: 0, refreshed: 0, resolved: 0 };
+    if (!deviceRow || (!rulesApply && !input.rescan))
+      return { detected: 0, reopened: 0, refreshed: 0, resolved: 0 };
 
-    const applications = yield* db
-      .select()
-      .from(deviceApplication)
-      .where(
-        and(
-          eq(deviceApplication.deviceId, input.deviceId),
-          eq(deviceApplication.organizationId, input.organizationId),
-        ),
-      );
+    const applications = rulesApply
+      ? (input.applications ??
+        (yield* db
+          .select()
+          .from(deviceApplication)
+          .where(
+            and(
+              eq(deviceApplication.deviceId, input.deviceId),
+              eq(deviceApplication.organizationId, input.organizationId),
+            ),
+          )))
+      : [];
 
     const existing = yield* db
       .select()
@@ -377,8 +415,9 @@ export const reconcileRestrictedSoftwareForDevice = (
           status: "resolved",
           resolvedAt: input.at,
           updatedAt: input.at,
-          enforcementDetail:
-            prior.enforcementState === "failed"
+          enforcementDetail: !rulesApply
+            ? "No restricted-software rules currently apply to this device."
+            : prior.enforcementState === "failed"
               ? prior.enforcementDetail
               : "The application is no longer present in the device inventory.",
         })
@@ -404,7 +443,8 @@ export const reconcileRestrictedSoftwareForDevice = (
  * Re-evaluate one tenant, optionally limited to certain devices.
  *
  * Used after a rule or assignment change so existing inventory is judged
- * immediately rather than waiting for the next daily report.
+ * immediately rather than waiting for the next daily report. It also resolves
+ * stale violations for devices that no longer have an applicable rule.
  */
 export const reconcileRestrictedSoftwareForOrganization = (
   db: EnterpriseDb,
@@ -435,6 +475,7 @@ export const reconcileRestrictedSoftwareForOrganization = (
           organizationId: input.organizationId,
           deviceId: row.id,
           at: input.at,
+          rescan: true,
         }),
       { concurrency: 5, discard: true },
     );
@@ -516,18 +557,22 @@ export const markAndroidRestrictedSoftwarePolicyDelivered = (
   db: EnterpriseDb,
   input: {
     readonly organizationId: string;
-    readonly deviceId: string;
+    readonly deviceIds: ReadonlyArray<string>;
     readonly at: Date;
   },
 ): Effect.Effect<number, unknown> =>
   Effect.gen(function* () {
+    const deviceIds = [...new Set(input.deviceIds)];
+
+    if (deviceIds.length === 0) return 0;
+
     const violations = yield* db
       .select()
       .from(restrictedSoftwareViolation)
       .where(
         and(
           eq(restrictedSoftwareViolation.organizationId, input.organizationId),
-          eq(restrictedSoftwareViolation.deviceId, input.deviceId),
+          inArray(restrictedSoftwareViolation.deviceId, deviceIds),
           eq(restrictedSoftwareViolation.platform, "android"),
           eq(restrictedSoftwareViolation.status, "open"),
         ),
@@ -567,7 +612,7 @@ export const markAndroidRestrictedSoftwarePolicyDelivered = (
 
       yield* writeDeviceAudit(db, {
         organizationId: input.organizationId,
-        deviceId: input.deviceId,
+        deviceId: violation.deviceId,
         platform: "android",
         action: "restricted_software.enforced",
         violationId: violation.id,

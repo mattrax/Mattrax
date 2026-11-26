@@ -16,6 +16,7 @@
     "@cloudflare/oxlint-config": "catalog:",
     "@effect/tsgo": "catalog:",
     "@playwright/test": "catalog:",
+    "@shadcn/lint": "catalog:",
     "@types/node": "catalog:",
     "oxlint": "catalog:",
     "typescript": "catalog:",

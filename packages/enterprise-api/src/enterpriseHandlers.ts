@@ -52,7 +52,11 @@ import type {
   scriptAgentApi,
   scriptApi,
 } from "@mattrax/enterprise-domain";
-import { enterpriseDeviceHandoverApi } from "@mattrax/enterprise-domain";
+import {
+  enterpriseDeviceHandoverApi,
+  MOBILECONFIG_REQUEST_MAX_BYTES,
+  MobileconfigRequest,
+} from "@mattrax/enterprise-domain";
 import {
   applicationKey,
   EnterpriseBadRequest,
@@ -268,6 +272,16 @@ import type {
   CatalogueAddition,
 } from "@mattrax/enterprise-domain";
 import { restrictedSoftwareAgentResultRejection } from "@mattrax/enterprise-domain";
+import {
+  newRegistrationNonce,
+  readRegistrationNonce,
+  registrationNonceCookie,
+} from "@mattrax/enterprise-domain";
+import {
+  proveRegistrationEmail,
+  registrationAudience,
+  registrationTokenAttempted,
+} from "./registrationVerification.js";
 import { makeApplicationStoreService } from "./appStore.js";
 import {
   CATALOGUE_VERIFIED_AT,
@@ -391,9 +405,11 @@ import {
 } from "@mattrax/mdm-windows";
 import {
   LOGIN_ATTEMPT_LIST_LIMIT,
+  isTenantApplicationObjectKey,
   listLoginAttempts,
   loginAttemptEntry,
   normalizeEntityListQuery,
+  redactAuditObjectKeys,
 } from "@mattrax/enterprise-backend";
 import type {
   NormalizedEntityListQuery,
@@ -1132,11 +1148,84 @@ const decodeApplicationUpload = (content: string) =>
     return bytes;
   });
 
+type McpActivityDispatch = {
+  readonly request: HttpServerRequest;
+  readonly tenantId: string;
+  readonly method: string;
+  readonly permission: Permission;
+  readonly status: number;
+};
+
+type McpActivityObserver = (dispatch: McpActivityDispatch) => Effect.Effect<void>;
+
+const MCP_ACTIVITY_TOOL_MAX = 128;
+const MCP_ACTIVITY_METHOD_MAX = 16;
+const MCP_ACTIVITY_PATH_MAX = 512;
+
+const requestHeader = (request: unknown, name: string): string | undefined => {
+  if (!Predicate.isObject(request) || !("headers" in request)) return undefined;
+
+  const headers = request.headers;
+
+  if (headers instanceof Headers) return headers.get(name)?.trim() || undefined;
+  if (!Predicate.isObject(headers)) return undefined;
+
+  const value = name in headers ? headers[name] : undefined;
+  const text = Array.isArray(value) ? value[0] : value;
+
+  return typeof text === "string" ? text.trim() || undefined : undefined;
+};
+
+/**
+ * The success status the service actually returned. Most handlers resolve a
+ * domain value (HTTP 200); handlers that expose a status envelope carry the
+ * real 201/204/… value, and an explicit void result is the endpoint's 204.
+ */
+export const mcpActivityResponseStatus = (value: unknown): number => {
+  if (value === undefined) return 204;
+
+  const envelope = Schema.decodeUnknownOption(Schema.Struct({ status: Schema.Number }))(value);
+
+  return Option.isSome(envelope)
+    ? Math.max(100, Math.min(599, Math.trunc(envelope.value.status)))
+    : 200;
+};
+
+const mcpActivityErrorStatus = (error: unknown): number => {
+  const tag = Schema.is(Schema.Struct({ _tag: Schema.String }))(error) ? error._tag : "";
+
+  switch (tag) {
+    case "EnterpriseBadRequest":
+      return 400;
+    case "EnterpriseUnauthorized":
+      return 401;
+    case "EnterpriseForbidden":
+    case "EnterprisePermissionDenied":
+    case "StepUpRequired":
+      return 403;
+    case "EnterpriseNotFound":
+      return 404;
+    case "EnterpriseConflict":
+    case "EnterpriseLastTenantAccount":
+    case "EnterpriseTenantHasMembers":
+    case "ApprovalRequired":
+      return 409;
+    case "EnterpriseNotConfigured":
+      return 503;
+    case "EnterpriseUpstreamError":
+    case "EnterpriseStripeError":
+      return 502;
+    default:
+      return 500;
+  }
+};
+
 const wrapServiceErrors = <S extends object>(
   service: S,
   permissions = false,
   fallbackAnalytics?: EnterpriseAnalytics,
   diagnostics = makeEnterpriseErrorDiagnostics(),
+  observeMcpActivity?: McpActivityObserver,
 ): S =>
   new Proxy(service, {
     get(_target, property) {
@@ -1162,7 +1251,49 @@ const wrapServiceErrors = <S extends object>(
               })
             : result;
 
-        const withAnalytics = mapped.pipe(
+        // The gateway marker says "this dispatch came from the MCP tool
+        // surface". Keying only on the credential type would also label
+        // ordinary REST calls made with an API token as MCP tool calls and
+        // inflate the same action with unrelated traffic; direct API-token
+        // calls keep their own audit trail and are not MCP invocations. Every
+        // gateway-dispatched call still carries this marker.
+        const activity =
+          observeMcpActivity &&
+          permission &&
+          tenantId &&
+          requestHeader(args[0], "x-mattrax-mcp-authorization") !== undefined
+            ? {
+                observe: observeMcpActivity,
+                request: args[0] as HttpServerRequest,
+                tenantId,
+                method,
+                permission,
+              }
+            : undefined;
+        const withMcpActivity = activity
+          ? mapped.pipe(
+              Effect.tap((value) =>
+                activity.observe({
+                  request: activity.request,
+                  tenantId: activity.tenantId,
+                  method: activity.method,
+                  permission: activity.permission,
+                  status: mcpActivityResponseStatus(value),
+                }),
+              ),
+              Effect.tapError((error) =>
+                activity.observe({
+                  request: activity.request,
+                  tenantId: activity.tenantId,
+                  method: activity.method,
+                  permission: activity.permission,
+                  status: mcpActivityErrorStatus(error),
+                }),
+              ),
+            )
+          : mapped;
+
+        const withAnalytics = withMcpActivity.pipe(
           Effect.tap((value) =>
             Effect.gen(function* () {
               const provided = yield* Effect.serviceOption(EnterpriseAnalyticsService);
@@ -1368,6 +1499,45 @@ const brandingOrFail = (body: BrandingPayload) =>
 const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 const ok = { status: "ok" as const };
+
+/**
+ * A rate limit bounds requests per minute, not how many parses occupy the
+ * isolate at once. Mobileconfig parsing is CPU-bound, so this small gate keeps
+ * a burst from starving ordinary API work. Slots release in an ensuring block,
+ * including on failure or interruption.
+ */
+export const MOBILECONFIG_MAX_CONCURRENT = 2;
+
+export type ConcurrencyGate = {
+  readonly tryAcquire: () => (() => void) | undefined;
+  readonly active: () => number;
+};
+
+export const createConcurrencyGate = (limit: number): ConcurrencyGate => {
+  if (!Number.isSafeInteger(limit) || limit < 1)
+    throw new RangeError("Concurrency limit must be a positive integer");
+
+  let active = 0;
+
+  return {
+    tryAcquire: () => {
+      if (active >= limit) return undefined;
+
+      active += 1;
+      let released = false;
+
+      return () => {
+        if (released) return;
+
+        released = true;
+        active -= 1;
+      };
+    },
+    active: () => active,
+  };
+};
+
+const mobileconfigParses = createConcurrencyGate(MOBILECONFIG_MAX_CONCURRENT);
 
 const APPLE_PROFILE_WINDOW_MS = 60_000;
 
@@ -1587,6 +1757,95 @@ const readBoundedRequestBody = (
     return { ok: true, bytes };
   });
 
+/**
+ * Read a mobileconfig helper body before JSON parsing, with the raw byte cap
+ * enforced on the stream. The domain schema still caps the decoded string, and
+ * the backend keeps its own base64/plist limits for direct service callers.
+ *
+ * A null result means "too large" so the handler can answer 413 rather than
+ * turning a body-size problem into a generic validation error.
+ */
+const readMobileconfigPayload = (
+  request: HttpServerRequest,
+): Effect.Effect<{ mobileconfig: string } | null, EnterpriseBadRequest> =>
+  Effect.gen(function* () {
+    const declared = Number(request.headers["content-length"] ?? "");
+
+    if (Number.isFinite(declared) && declared > MOBILECONFIG_REQUEST_MAX_BYTES) return null;
+
+    const body = yield* readBoundedRequestBody(request, MOBILECONFIG_REQUEST_MAX_BYTES);
+
+    if (!body.ok || !body.bytes) {
+      if (body.reason === "too_large") return null;
+
+      return yield* Effect.fail(
+        new EnterpriseBadRequest({ message: "Could not read the mobileconfig request body." }),
+      );
+    }
+
+    let json: unknown;
+
+    try {
+      json = JSON.parse(new TextDecoder().decode(body.bytes));
+    } catch {
+      return yield* Effect.fail(
+        new EnterpriseBadRequest({ message: "The mobileconfig request body must be valid JSON." }),
+      );
+    }
+
+    return yield* Schema.decodeUnknownEffect(MobileconfigRequest)(json).pipe(
+      Effect.mapError(
+        () =>
+          new EnterpriseBadRequest({
+            message:
+              "The mobileconfig request must be a JSON object with a mobileconfig string of at most 8 MB.",
+          }),
+      ),
+    );
+  });
+
+/**
+ * Read a mobileconfig helper body under a parse slot. The slot covers the body
+ * read and the parse so concurrent parses stay bounded; refusals are plain JSON
+ * so a caller sees a retryable 429 (or a 413) instead of a validation error.
+ *
+ * Authentication happens inside the service (this handler layer has no auth
+ * context); the read is bounded and the edge limiter bounds anonymous callers.
+ */
+const runMobileconfigRequest = <A, E, R>(
+  request: HttpServerRequest,
+  run: (payload: { mobileconfig: string }) => Effect.Effect<A, E, R>,
+) =>
+  Effect.suspend(() => {
+    const release = mobileconfigParses.tryAcquire();
+
+    if (!release)
+      return Effect.succeed(
+        HttpServerResponse.jsonUnsafe(
+          {
+            error: "rate_limited",
+            message: "Too many mobileconfig requests are being parsed. Try again shortly.",
+          },
+          { status: 429 },
+        ),
+      );
+
+    return Effect.gen(function* () {
+      const payload = yield* readMobileconfigPayload(request);
+
+      if (payload === null)
+        return HttpServerResponse.jsonUnsafe(
+          {
+            error: "payload_too_large",
+            message: "The mobileconfig request body is too large.",
+          },
+          { status: 413 },
+        );
+
+      return yield* run(payload);
+    }).pipe(Effect.ensuring(Effect.sync(release)));
+  });
+
 const DEVICE_HANDOVER_PASSPHRASE_MIN_LENGTH = 12;
 
 const DEVICE_HANDOVER_REASON_MAX_LENGTH = 500;
@@ -1684,8 +1943,11 @@ const auditEntry = (entry: {
   deviceCertificateSerial: entry.deviceCertificateSerial ?? null,
   principalId: entry.principalId ?? null,
   protocol: entry.protocol ?? null,
-  // Drizzle types a `json` column as unknown; only valid JSON reaches a response.
-  metadata: Option.getOrNull(Schema.decodeUnknownOption(Schema.Json)(entry.metadata)),
+  // Object keys are not part of an audit read. Redacting here covers rows
+  // written before the import/backup writers sanitised their metadata.
+  metadata: Option.getOrNull(
+    Schema.decodeUnknownOption(Schema.Json)(redactAuditObjectKeys(entry.metadata)),
+  ),
   createdAt: iso(entry.createdAt),
 });
 
@@ -1739,12 +2001,17 @@ const webRequestFromRequest = (request: HttpServerRequest, origin: string) =>
     headers: headersFromRequest(request),
   });
 
+/** Authenticate with the original method, path and headers intact. */
+const requireUser = (auth: EnterpriseAuth["Service"], request: HttpServerRequest, origin: string) =>
+  auth.requireUser(webRequestFromRequest(request, origin));
+
 /** Require a recent step-up for a sensitive action. */
 const requireStepUp = (
   auth: EnterpriseAuth["Service"],
   request: HttpServerRequest,
+  origin: string,
   action: StepUpAction,
-) => auth.requireStepUp(request, action);
+) => auth.requireStepUp(webRequestFromRequest(request, origin), action);
 
 /** Map a cutover failure onto the HTTP error the API schema declares. */
 const cutoverFailure = (error: TenantCutoverError) => {
@@ -2210,7 +2477,10 @@ export const createEnterpriseService = ({
       ),
     portal: () => Effect.fail(notConfiguredBilling()),
     checkout: () => Effect.fail(notConfiguredBilling()),
-    invoices: () => Effect.fail(notConfiguredBilling()),
+    // The billing page renders "invoices appear once connected" for this
+    // deployment, so an empty page is the correct answer; failing here makes
+    // the page's data read throw into the error boundary.
+    invoices: () => Effect.succeed({ invoices: [] }),
     reportUsage: () => Effect.void,
     renameTenant: () => Effect.void,
     preflightTenantDeletion: () => Effect.void,
@@ -2331,13 +2601,32 @@ export const createEnterpriseService = ({
     organization: { readonly requireMfa: boolean },
   ) => !hasMfaFactor(user) && organization.requireMfa;
 
+  /**
+   * Account-scoped helpers still need a verified address: parsing a profile is
+   * not tenant data, but an unverified throw-away account must not use the API
+   * as a free parser either.
+   */
+  const requireVerifiedUser = (request: HttpServerRequest) =>
+    Effect.gen(function* () {
+      const { user } = yield* requireUser(auth, request, origin);
+
+      if (!user.emailVerified)
+        return yield* Effect.fail(
+          new EnterpriseForbidden({
+            message: "Verify your email address before using this endpoint.",
+          }),
+        );
+
+      return user;
+    });
+
   const requireTenant = (
     request: HttpServerRequest,
     tenantId: string,
     access: "read" | "write" | "delete" = "read",
   ) =>
     Effect.gen(function* () {
-      const { user, apiToken, oauth } = yield* auth.requireUser({ headers: request.headers });
+      const { user, apiToken, oauth } = yield* requireUser(auth, request, origin);
 
       // An unverified address cannot reach tenant data through either a
       // browser session or a bearer token. Tokens resolve to their owner's user
@@ -2384,13 +2673,7 @@ export const createEnterpriseService = ({
       const required = yield* Effect.serviceOption(RequiredPermission);
       const requiredPermission = Option.isSome(required) ? required.value.permission : undefined;
 
-      // Activity attribution is written by the MCP gateway for the caller's own
-      // tool call. It records that the read happened; it must not require the
-      // read grant itself, or a narrowed connection would lose its audit trail.
-      const isMcpActivity =
-        Option.isSome(required) && required.value.method === "recordMcpActivity";
-
-      if (credentialRestricted && credentialGrant && !isMcpActivity) {
+      if (credentialRestricted && credentialGrant) {
         if (requiredPermission && !credentialGrant.has(requiredPermission))
           return yield* Effect.fail(
             diagnoseError(
@@ -2454,11 +2737,7 @@ export const createEnterpriseService = ({
           },
         );
 
-      if (
-        !isMcpActivity &&
-        requiredPermission &&
-        !hasPermission(role.permissions, requiredPermission)
-      )
+      if (requiredPermission && !hasPermission(role.permissions, requiredPermission))
         return yield* Effect.fail(deny(requiredPermission));
 
       // Direct/internal calls without the method-level permission still need a
@@ -2597,7 +2876,10 @@ export const createEnterpriseService = ({
         .from(schema.memberScopeTag)
         .where(eq(schema.memberScopeTag.memberId, member.id));
 
-      if (tags.length === 0 || tags.some((row: { tagId: string }) => !ctx.scopeTagIds.has(row.tagId)))
+      if (
+        tags.length === 0 ||
+        tags.some((row: { tagId: string }) => !ctx.scopeTagIds.has(row.tagId))
+      )
         return yield* Effect.fail(
           new EnterpriseForbidden({
             message: "That member's scope is outside your own scope.",
@@ -4324,9 +4606,9 @@ export const createEnterpriseService = ({
       // channel can each hold the same request type without colliding on the
       // `(deviceId, dedupeKey)` unique index.
       const dedupeKey = yield* commandDedupeKeyEffect(
-          input.userId ? `user:${input.userId}:${input.requestType}` : input.requestType,
-          input.payload,
-        );
+        input.userId ? `user:${input.userId}:${input.requestType}` : input.requestType,
+        input.payload,
+      );
 
       const insertValues = {
         id,
@@ -6091,8 +6373,7 @@ export const createEnterpriseService = ({
 
         const status = rows.find(
           (row) =>
-            row.requestType === statusType &&
-            row.createdAt.getTime() >= exec.createdAt.getTime(),
+            row.requestType === statusType && row.createdAt.getTime() >= exec.createdAt.getTime(),
         );
         const value = status?.resultDetail?.replace(/^Status /, "").trim() ?? "";
         const terminal = windowsRotationTerminalOutcome(kind, value);
@@ -7098,9 +7379,9 @@ export const createEnterpriseService = ({
       // Remove the objects only after their rows are gone, so a failed delete
       // leaves an orphan rather than a row pointing at a missing file.
       for (const row of removed)
-        if (row.r2Key)
+        if (isTenantApplicationObjectKey(input.organizationId, row.r2Key))
           yield* effectiveR2
-            .delete(row.r2Key!)
+            .delete(row.r2Key)
             .pipe(
               catchCausePreservingInterrupts((cause) =>
                 Effect.logWarning(
@@ -8193,21 +8474,12 @@ export const createEnterpriseService = ({
       return groups;
     });
 
-  const loadAuditEntries = (
-    ctx: ScopeContext,
-    filters: AuditSearchFilters,
-    take: number,
-  ) =>
+  const loadAuditEntries = (ctx: ScopeContext, filters: AuditSearchFilters, take: number) =>
     Effect.gen(function* () {
       const rows = yield* db
         .select()
         .from(schema.auditLog)
-        .where(
-          and(
-            auditWhere(schema, ctx.organization.id, filters),
-            auditScopeCondition(db, ctx),
-          ),
-        )
+        .where(and(auditWhere(schema, ctx.organization.id, filters), auditScopeCondition(db, ctx)))
         .orderBy(...auditOrder(schema))
         .limit(take)
         .offset(filters.offset);
@@ -11128,14 +11400,14 @@ export const createEnterpriseService = ({
      */
     me: (request) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         return yield* mePayload(user);
       }),
     mcpContext: (request) =>
       Effect.gen(function* () {
-        const { user, apiToken, oauth } = yield* auth.requireUser({ headers: request.headers });
+        const { user, apiToken, oauth } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
         const me = yield* mePayload(user);
 
@@ -11188,7 +11460,7 @@ export const createEnterpriseService = ({
      */
     listAdminAccounts: (request, query) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
 
         yield* requirePlatformSuperadmin(user);
         yield* identifyUser(user);
@@ -11235,7 +11507,7 @@ export const createEnterpriseService = ({
      */
     patchAdminAccountSuperadmin: (request, accountId, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
 
         yield* requirePlatformSuperadmin(user);
         yield* identifyUser(user);
@@ -11356,7 +11628,7 @@ export const createEnterpriseService = ({
       }),
     bootstrap: (request) =>
       Effect.gen(function* () {
-        const { user, session } = yield* auth.requireUser({ headers: request.headers });
+        const { user, session } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         const me = yield* mePayload(user);
@@ -11428,7 +11700,7 @@ export const createEnterpriseService = ({
       }),
     updateMe: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         const body: { name?: string; image?: string | null; defaultTenantId?: string | null } =
@@ -11467,14 +11739,14 @@ export const createEnterpriseService = ({
       }),
     getAccountDeletion: (request) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         return yield* accountDeletionPreviewFor(user);
       }),
     deleteMe: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         // The typed address proves the person knows which account they are
@@ -11628,7 +11900,7 @@ export const createEnterpriseService = ({
       }).pipe(Effect.tapCause((cause) => Effect.logError(`deleteMe failed: ${String(cause)}`))),
     listAccountSessions: (request) =>
       Effect.gen(function* () {
-        const resolved = yield* auth.requireUser({ headers: request.headers });
+        const resolved = yield* requireUser(auth, request, origin);
         yield* identifyUser(resolved.user);
 
         return {
@@ -11637,7 +11909,7 @@ export const createEnterpriseService = ({
       }),
     listLoginAttempts: (request) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         const rows = yield* listLoginAttempts(db, user.id, LOGIN_ATTEMPT_LIST_LIMIT);
@@ -11646,7 +11918,7 @@ export const createEnterpriseService = ({
       }),
     revokeAccountSession: (request, sessionId) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
         const revoked = yield* revokeUserSession(db, user.id, sessionId);
 
@@ -11670,7 +11942,7 @@ export const createEnterpriseService = ({
      */
     revokeAllAccountSessions: (request) =>
       Effect.gen(function* () {
-        const { user } = yield* requireStepUp(auth, request, "sessions-revoke-all");
+        const { user } = yield* requireStepUp(auth, request, origin, "sessions-revoke-all");
 
         const { revoked } = yield* revokeAllUserSessions(db, user.id);
 
@@ -11691,7 +11963,7 @@ export const createEnterpriseService = ({
       }),
     searchAccountAuditLog: (request, query) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
         const filters = yield* normalizedAuditFilters(query);
 
@@ -11712,7 +11984,7 @@ export const createEnterpriseService = ({
       }),
     exportAccountAuditLog: (request, query) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
         const format = query.format ?? "csv";
 
@@ -11749,10 +12021,15 @@ export const createEnterpriseService = ({
         const address = clientAddress(request.headers);
 
         // Two independent windows: one per account and one per client, so
-        // neither a single mailbox nor a single host can drive a loop.
+        // neither a single mailbox nor a single host can drive a loop. A
+        // self-hosted deployment without a trusted address has no client
+        // identity: a shared `unknown` bucket would let one caller exhaust
+        // everyone else's recovery budget, so only the account window applies
+        // here. Both recovery POST routes are in SENSITIVE_AUTH_PATHS, so the
+        // edge auth bucket still bounds anonymous floods.
         const allowed =
           recoveryLimiter.allow(`account:${email}`) &&
-          recoveryLimiter.allow(`client:${address ?? "unknown"}`);
+          (address === null || recoveryLimiter.allow(`client:${address}`));
 
         if (!allowed)
           return yield* Effect.fail(
@@ -11775,7 +12052,10 @@ export const createEnterpriseService = ({
         // the only barrier for a 256-bit secret.
         const address = clientAddress(request.headers);
 
-        if (!recoveryLimiter.allow(`verify:${address ?? "unknown"}`))
+        // Unknown addresses share no bucket: proof tokens carry 256 bits of
+        // entropy, so skipping the per-client window is safer than letting a
+        // single caller lock every self-hosted recovery proof out.
+        if (address !== null && !recoveryLimiter.allow(`verify:${address}`))
           return yield* Effect.fail(
             new EnterpriseBadRequest({
               message: "Too many recovery attempts. Try again in an hour.",
@@ -11796,7 +12076,7 @@ export const createEnterpriseService = ({
     cancelEmailChange: (_request, payload) => auth.cancelEmailChange(payload),
     listTenants: (request) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         if (!user.emailVerified)
@@ -11811,7 +12091,7 @@ export const createEnterpriseService = ({
       }),
     createTenant: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         if (!user.emailVerified)
@@ -12112,7 +12392,7 @@ export const createEnterpriseService = ({
     downloadTenantBackup: (request, tenantId, backupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "read");
-        yield* requireStepUp(auth, request, "backup-download");
+        yield* requireStepUp(auth, request, origin, "backup-download");
 
         // Scoped lookup: an id from another tenant must look missing.
         const run = yield* db.query.backupRun.findFirst({
@@ -12153,7 +12433,7 @@ export const createEnterpriseService = ({
     pinTenantBackup: (request, tenantId, backupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "backup-pin");
+        yield* requireStepUp(auth, request, origin, "backup-pin");
 
         const run = yield* setBackupRetention(db, ctx.organization.id, backupId, "pinned", {
           accountId: ctx.account.id,
@@ -12165,7 +12445,7 @@ export const createEnterpriseService = ({
     unpinTenantBackup: (request, tenantId, backupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "backup-pin");
+        yield* requireStepUp(auth, request, origin, "backup-pin");
 
         const run = yield* setBackupRetention(db, ctx.organization.id, backupId, "default", {
           accountId: ctx.account.id,
@@ -12177,7 +12457,7 @@ export const createEnterpriseService = ({
     deleteTenantBackup: (request, tenantId, backupId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "backup-delete");
+        yield* requireStepUp(auth, request, origin, "backup-delete");
 
         yield* deleteBackupRun(db, storage, ctx.organization.id, backupId, {
           accountId: ctx.account.id,
@@ -12189,7 +12469,7 @@ export const createEnterpriseService = ({
     restoreTenantBackup: (request, tenantId, backupId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "backup-restore");
+        yield* requireStepUp(auth, request, origin, "backup-restore");
 
         // Restoring replaces the policy catalogue and the rest of the stored
         // configuration. It is covered by policy.delete so a tenant that
@@ -12215,7 +12495,7 @@ export const createEnterpriseService = ({
       }),
     importTenant: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         if (!user.emailVerified)
@@ -12855,7 +13135,7 @@ export const createEnterpriseService = ({
         // private keys, so it needs fresh proof of presence as well.
         const ctx = yield* requireTenant(request, tenantId, "read");
         yield* assertTenantWideRead(ctx, "tenant.export", "Tenant cutover export");
-        yield* requireStepUp(auth, request, "cutover-export");
+        yield* requireStepUp(auth, request, origin, "cutover-export");
 
         // A cutover archive is a superset of the plain export: it carries device
         // identities, the SCEP CA and escrowed secrets. It is governed by the
@@ -12892,7 +13172,7 @@ export const createEnterpriseService = ({
       }),
     previewTenantCutover: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         if (!user.emailVerified)
@@ -12940,7 +13220,7 @@ export const createEnterpriseService = ({
       }),
     importTenantCutover: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
 
         if (!user.emailVerified)
@@ -12950,7 +13230,7 @@ export const createEnterpriseService = ({
             }),
           );
 
-        yield* requireStepUp(auth, request, "cutover-import");
+        yield* requireStepUp(auth, request, origin, "cutover-import");
 
         let target: CutoverTarget = { kind: "new" };
 
@@ -13109,7 +13389,7 @@ export const createEnterpriseService = ({
     deleteTenant: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "delete");
-        yield* requireStepUp(auth, request, "tenant-delete");
+        yield* requireStepUp(auth, request, origin, "tenant-delete");
         const count = yield* memberCount(tenantId);
 
         // The explicit delete only accepts a solo tenant. Check that before
@@ -13342,7 +13622,7 @@ export const createEnterpriseService = ({
     linkDirectoryUserSso: (request, tenantId, directoryUserId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "sso-policy");
+        yield* requireStepUp(auth, request, origin, "sso-policy");
 
         const linked = yield* linkDirectoryUserToSso(db, {
           organizationId: ctx.organization.id,
@@ -13556,7 +13836,7 @@ export const createEnterpriseService = ({
     putGoogleDirectoryCredentials: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "sso-policy");
+        yield* requireStepUp(auth, request, origin, "sso-policy");
 
         const body: { serviceAccountJson: string; adminEmail: string; customer?: string } = payload;
         const adminEmail = normaliseAdminEmail(body.adminEmail);
@@ -13653,7 +13933,7 @@ export const createEnterpriseService = ({
     deleteGoogleDirectoryCredentials: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "sso-policy");
+        yield* requireStepUp(auth, request, origin, "sso-policy");
 
         const timestamp = now();
 
@@ -14079,14 +14359,14 @@ export const createEnterpriseService = ({
     patchTenantSecurity: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "tenant-mfa-policy");
+        yield* requireStepUp(auth, request, origin, "tenant-mfa-policy");
 
         return { requireMfa: yield* setTenantMfaPolicy(ctx, payload.requireMfa) };
       }),
     approveAccountRecovery: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "recovery-approve");
+        yield* requireStepUp(auth, request, origin, "recovery-approve");
 
         return yield* approveRecoveryRequest(
           { db, authSecret: authSecret ?? "", origin, email, branding },
@@ -14121,7 +14401,7 @@ export const createEnterpriseService = ({
     patchSsoConfig: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "sso-policy");
+        yield* requireStepUp(auth, request, origin, "sso-policy");
 
         const body: {
           enabled?: boolean;
@@ -14311,7 +14591,7 @@ export const createEnterpriseService = ({
     createScimToken: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "scim-token-create");
+        yield* requireStepUp(auth, request, origin, "scim-token-create");
 
         const body: { name: string; expiresAt?: string | null } = payload;
         const name = body.name.trim();
@@ -15619,8 +15899,7 @@ export const createEnterpriseService = ({
         return {
           tags: tags
             .filter(
-              (tag: typeof schema.scopeTag.$inferSelect) =>
-                !allowed || allowed.includes(tag.id),
+              (tag: typeof schema.scopeTag.$inferSelect) => !allowed || allowed.includes(tag.id),
             )
             .map((tag: typeof schema.scopeTag.$inferSelect) => ({
               id: tag.id,
@@ -15897,7 +16176,9 @@ export const createEnterpriseService = ({
             and(
               eq(schema.scopeTagAssignment.organizationId, ctx.organization.id),
               eq(schema.scopeTagAssignment.resourceType, query.resourceType),
-              resourceIds ? inArray(schema.scopeTagAssignment.resourceId, [...resourceIds]) : undefined,
+              resourceIds
+                ? inArray(schema.scopeTagAssignment.resourceId, [...resourceIds])
+                : undefined,
               allowed ? inArray(schema.scopeTagAssignment.tagId, [...allowed]) : undefined,
             ),
           );
@@ -15953,33 +16234,25 @@ export const createEnterpriseService = ({
             }),
           );
 
-        yield* assertResourcesScope(
-          ctx,
-          db,
-          body.resourceType,
-          resourceIds,
-          "This resource",
-        );
+        yield* assertResourcesScope(ctx, db, body.resourceType, resourceIds, "This resource");
 
         const at = now();
 
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
-            yield* tx
-              .delete(schema.scopeTagAssignment)
-              .where(
-                and(
-                  eq(schema.scopeTagAssignment.organizationId, ctx.organization.id),
-                  eq(schema.scopeTagAssignment.resourceType, body.resourceType),
-                  inArray(schema.scopeTagAssignment.resourceId, [...resourceIds]),
-                  // A scoped administrator only replaces the tags they can
-                  // see. Tags outside their scope stay attached, so editing a
-                  // shared resource cannot silently drop another region.
-                  ctx.scopeUnrestricted
-                    ? undefined
-                    : inArray(schema.scopeTagAssignment.tagId, [...ctx.scopeTagIds]),
-                ),
-              );
+            yield* tx.delete(schema.scopeTagAssignment).where(
+              and(
+                eq(schema.scopeTagAssignment.organizationId, ctx.organization.id),
+                eq(schema.scopeTagAssignment.resourceType, body.resourceType),
+                inArray(schema.scopeTagAssignment.resourceId, [...resourceIds]),
+                // A scoped administrator only replaces the tags they can
+                // see. Tags outside their scope stay attached, so editing a
+                // shared resource cannot silently drop another region.
+                ctx.scopeUnrestricted
+                  ? undefined
+                  : inArray(schema.scopeTagAssignment.tagId, [...ctx.scopeTagIds]),
+              ),
+            );
 
             if (tagIds.length > 0)
               yield* tx.insert(schema.scopeTagAssignment).values(
@@ -16383,7 +16656,7 @@ export const createEnterpriseService = ({
       }),
     acceptInvitation: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
         yield* identifyUser(user);
         const body: { token: string } = payload;
 
@@ -16544,14 +16817,17 @@ export const createEnterpriseService = ({
               : [];
 
             if (!existing && invitedTags.length > 0)
-              yield* tx.insert(schema.memberScopeTag).ignore().values(
-                invitedTags.map((tagId: string) => ({
-                  organizationId: invitation.organizationId,
-                  memberId,
-                  tagId,
-                  createdAt: acceptedAt,
-                })),
-              );
+              yield* tx
+                .insert(schema.memberScopeTag)
+                .ignore()
+                .values(
+                  invitedTags.map((tagId: string) => ({
+                    organizationId: invitation.organizationId,
+                    memberId,
+                    tagId,
+                    createdAt: acceptedAt,
+                  })),
+                );
 
             for (const siblingId of siblingIds)
               yield* tx
@@ -17140,7 +17416,7 @@ export const createEnterpriseService = ({
       }),
     acceptTenantOwnershipTransfer: (request, payload) =>
       Effect.gen(function* () {
-        const { user } = yield* auth.requireUser({ headers: request.headers });
+        const { user } = yield* requireUser(auth, request, origin);
 
         if (!user.emailVerified)
           return yield* Effect.fail(
@@ -17694,9 +17970,7 @@ export const createEnterpriseService = ({
 
                 if (
                   targetTags.length === 0 ||
-                  targetTags.some(
-                    (row: { tagId: string }) => !ctx.scopeTagIds.has(row.tagId),
-                  )
+                  targetTags.some((row: { tagId: string }) => !ctx.scopeTagIds.has(row.tagId))
                 ) {
                   failed.push({ id: accountId, reason: "forbidden" });
                   continue;
@@ -18589,7 +18863,7 @@ export const createEnterpriseService = ({
         // Starting a rotation changes the root that new identities chain to.
         // It is staged and non-destructive, but it is still a security-relevant
         // change that needs fresh proof of presence.
-        yield* requireStepUp(auth, request, "scep-ca-rotate");
+        yield* requireStepUp(auth, request, origin, "scep-ca-rotate");
         const organizationId = ctx.organization.id;
         const rotatedAt = now();
 
@@ -18638,7 +18912,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         // Importing a CA replaces the root every device identity chains to.
-        yield* requireStepUp(auth, request, "scep-ca-import");
+        yield* requireStepUp(auth, request, origin, "scep-ca-import");
         const organizationId = ctx.organization.id;
 
         const material = yield* importScepCa({
@@ -18838,7 +19112,7 @@ export const createEnterpriseService = ({
         const domains = yield* appleByodDomainOptions(organizationId);
         const requestedDomain =
           payload.domain === undefined
-            ? existing?.domain ?? null
+            ? (existing?.domain ?? null)
             : payload.domain === null
               ? null
               : normalizeAppleByodDomain(payload.domain);
@@ -18897,8 +19171,8 @@ export const createEnterpriseService = ({
           hardwareValidationRequired:
             payload.hardwareValidationRequired ?? existing?.hardwareValidationRequired ?? true,
           // A different domain or flow has not been checked or validated yet.
-          validatedAt: domainChanged ? null : existing?.validatedAt ?? null,
-          hardwareValidatedAt: domainChanged ? null : existing?.hardwareValidatedAt ?? null,
+          validatedAt: domainChanged ? null : (existing?.validatedAt ?? null),
+          hardwareValidatedAt: domainChanged ? null : (existing?.hardwareValidatedAt ?? null),
           updatedAt: timestamp,
         };
 
@@ -18931,8 +19205,7 @@ export const createEnterpriseService = ({
           where: { organizationId },
         });
         const domains = yield* appleByodDomainOptions(organizationId);
-        const domain =
-          normalizeAppleByodDomain(payload.domain) ?? config?.domain ?? null;
+        const domain = normalizeAppleByodDomain(payload.domain) ?? config?.domain ?? null;
 
         if (!domain || !domains.some((option) => option.domain === domain))
           return yield* Effect.fail(
@@ -19535,7 +19808,7 @@ export const createEnterpriseService = ({
     collectDeviceAttribute: (request, tenantId, deviceId, attributeId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-run");
+        yield* requireStepUp(auth, request, origin, "script-run");
 
         if (!ctx.organization.scriptsEnabled)
           return yield* Effect.fail(
@@ -20460,7 +20733,7 @@ export const createEnterpriseService = ({
           // record Google holds, so it needs tenant-delete permission and the
           // same recent proof of possession as a wipe.
           const ctx = yield* requireTenant(request, tenantId, "delete");
-          yield* requireStepUp(auth, request, "android-disconnect");
+          yield* requireStepUp(auth, request, origin, "android-disconnect");
 
           const result = yield* mapAndroidFailure(
             disconnectAndroidEnterprise({
@@ -20748,8 +21021,7 @@ export const createEnterpriseService = ({
         // A scoped administrator may only delete devices they can see. Checked
         // before the rows are read so a mixed batch is refused before any
         // secret is revoked or any row is removed.
-        if (!ctx.scopeUnrestricted)
-          yield* assertResourcesScope(ctx, db, "device", ids, "Device");
+        if (!ctx.scopeUnrestricted) yield* assertResourcesScope(ctx, db, "device", ids, "Device");
 
         // Resolve the rows first: revocation also has to match certificates
         // recorded against the legacy `dmIdentifier`, not just the row id.
@@ -20908,7 +21180,7 @@ export const createEnterpriseService = ({
         // permission, a fresh step-up and a recorded reason. Deleting the
         // device is permanent, so this is the only supported recovery path.
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "device-handover");
+        yield* requireStepUp(auth, request, origin, "device-handover");
         const body: {
           readonly ids: ReadonlyArray<string>;
 
@@ -21262,11 +21534,7 @@ export const createEnterpriseService = ({
     listDevicePreRegistrations: (request, tenantId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId);
-        yield* assertTenantWideRead(
-          ctx,
-          "devices.read",
-          "Device pre-registrations",
-        );
+        yield* assertTenantWideRead(ctx, "devices.read", "Device pre-registrations");
 
         const rows = yield* db
           .select()
@@ -21747,7 +22015,7 @@ export const createEnterpriseService = ({
     patchScriptSettings: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-change");
+        yield* requireStepUp(auth, request, origin, "script-change");
 
         if (ctx.organization.scriptsEnabled !== payload.enabled) {
           yield* db
@@ -21801,9 +22069,7 @@ export const createEnterpriseService = ({
             ),
           );
 
-        const visibleIds = new Set(
-          visible.map((row: { resourceId: string }) => row.resourceId),
-        );
+        const visibleIds = new Set(visible.map((row: { resourceId: string }) => row.resourceId));
 
         return {
           ...result,
@@ -21870,7 +22136,7 @@ export const createEnterpriseService = ({
     patchScript: (request, tenantId, scriptId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-change");
+        yield* requireStepUp(auth, request, origin, "script-change");
 
         yield* assertResourceScope(ctx, db, "script", scriptId, "This script");
 
@@ -21953,7 +22219,7 @@ export const createEnterpriseService = ({
     deleteScript: (request, tenantId, scriptId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-change");
+        yield* requireStepUp(auth, request, origin, "script-change");
 
         yield* assertResourceScope(ctx, db, "script", scriptId, "This script");
 
@@ -22027,7 +22293,7 @@ export const createEnterpriseService = ({
     patchScriptAssignments: (request, tenantId, scriptId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-change");
+        yield* requireStepUp(auth, request, origin, "script-change");
 
         yield* assertResourceScope(ctx, db, "script", scriptId, "This script");
 
@@ -22085,7 +22351,7 @@ export const createEnterpriseService = ({
     runScript: (request, tenantId, scriptId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "script-run");
+        yield* requireStepUp(auth, request, origin, "script-run");
 
         if (!ctx.organization.scriptsEnabled)
           return yield* Effect.fail(
@@ -22279,7 +22545,7 @@ export const createEnterpriseService = ({
     createRestrictedSoftware: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "restricted-software-change");
+        yield* requireStepUp(auth, request, origin, "restricted-software-change");
 
         const result = yield* createRestrictedSoftware(
           db,
@@ -22304,7 +22570,7 @@ export const createEnterpriseService = ({
     patchRestrictedSoftware: (request, tenantId, ruleId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "restricted-software-change");
+        yield* requireStepUp(auth, request, origin, "restricted-software-change");
 
         const precondition = yield* preconditionFromRequest(request, payload.expectedUpdatedAt);
         const result = yield* updateRestrictedSoftware(
@@ -22369,7 +22635,7 @@ export const createEnterpriseService = ({
     deleteRestrictedSoftware: (request, tenantId, ruleId) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "restricted-software-change");
+        yield* requireStepUp(auth, request, origin, "restricted-software-change");
 
         const devices = yield* restrictedSoftwareDeviceIds(db, ctx.organization.id, ruleId);
         const result = yield* deleteRestrictedSoftware(db, ctx.organization.id, ruleId);
@@ -22388,7 +22654,7 @@ export const createEnterpriseService = ({
     patchRestrictedSoftwareAssignments: (request, tenantId, ruleId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "restricted-software-change");
+        yield* requireStepUp(auth, request, origin, "restricted-software-change");
 
         const before = yield* restrictedSoftwareDeviceIds(db, ctx.organization.id, ruleId);
         const result = yield* patchRestrictedSoftwareAssignments(
@@ -22785,7 +23051,7 @@ export const createEnterpriseService = ({
             "set-lock-screen-message",
           ].includes(action)
         )
-          yield* requireStepUp(auth, request, "device-command");
+          yield* requireStepUp(auth, request, origin, "device-command");
 
         // Fresh Start's data-retention choice is explicit and validated before
         // any approval or command is recorded. A missing value is never
@@ -24504,7 +24770,7 @@ export const createEnterpriseService = ({
           return yield* Effect.gen(function* () {
             // Deleting the Google Enterprise record is destructive, so it
             // demands the same recent step-up proof as the /action commands.
-            yield* requireStepUp(auth, request, "device-command");
+            yield* requireStepUp(auth, request, origin, "device-command");
 
             // Deleting the Google Enterprise device resource removes Android
             // Device Policy and its work data, then moves the row to
@@ -24633,7 +24899,9 @@ export const createEnterpriseService = ({
           { concurrency: "unbounded" },
         );
 
-        const inventoryCertificates = Schema.is(Schema.Array(Schema.Json))(device.managedCertificates)
+        const inventoryCertificates = Schema.is(Schema.Array(Schema.Json))(
+          device.managedCertificates,
+        )
           ? device.managedCertificates.flatMap((entry) => {
               if (!Schema.is(Schema.JsonObject)(entry)) return [];
               const identifier = entry["identifier"];
@@ -24650,9 +24918,7 @@ export const createEnterpriseService = ({
                   fingerprintSha256: Schema.is(Schema.String)(entry["fingerprintSha256"])
                     ? entry["fingerprintSha256"]
                     : null,
-                  notAfter: Schema.is(Schema.String)(entry["notAfter"])
-                    ? entry["notAfter"]
-                    : null,
+                  notAfter: Schema.is(Schema.String)(entry["notAfter"]) ? entry["notAfter"] : null,
                   source: "apple-inventory" as const,
                 },
               ];
@@ -24683,10 +24949,9 @@ export const createEnterpriseService = ({
                 .where(
                   and(
                     eq(schema.policyCertificateMaterial.organizationId, ctx.organization.id),
-                    inArray(
-                      schema.policyCertificateMaterial.policyId,
-                      [...new Set(certificateConfigurations.map((entry) => entry.policyId))],
-                    ),
+                    inArray(schema.policyCertificateMaterial.policyId, [
+                      ...new Set(certificateConfigurations.map((entry) => entry.policyId)),
+                    ]),
                   ),
                 )
             : [];
@@ -25036,7 +25301,7 @@ export const createEnterpriseService = ({
     patchTenantOsPolicy: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "device-command");
+        yield* requireStepUp(auth, request, origin, "device-command");
 
         const existing = yield* loadOsPolicyRules(ctx.organization.id);
         const timestamp = now();
@@ -26602,7 +26867,7 @@ export const createEnterpriseService = ({
         });
 
         if (prepared.some((entry) => entry.material))
-          yield* requireStepUp(auth, request, "certificate-upload");
+          yield* requireStepUp(auth, request, origin, "certificate-upload");
 
         // Validate before the insert: a rejected kind must not leave an empty
         // policy behind, and an import saves the policy and its settings as one
@@ -26811,16 +27076,16 @@ export const createEnterpriseService = ({
         });
 
         if (prepared.some((entry) => entry.material))
-          yield* requireStepUp(auth, request, "certificate-upload");
+          yield* requireStepUp(auth, request, origin, "certificate-upload");
 
         // Validate the whole patch before mutating anything so a bad
         // configuration cannot leave the policy half-updated.
         const finalKinds = [
           ...new Set([...existingScopes.keys(), ...prepared.map((entry) => entry.kind)]),
-        ].filter((kind) => !configurations.some(([removed, data]) => removed === kind && data === null));
-        const finalScopes = Object.fromEntries(
-          finalKinds.map((kind) => [kind, scopeFor(kind)]),
+        ].filter(
+          (kind) => !configurations.some(([removed, data]) => removed === kind && data === null),
         );
+        const finalScopes = Object.fromEntries(finalKinds.map((kind) => [kind, scopeFor(kind)]));
 
         yield* validatePolicyConfigurations({
           organizationId: ctx.organization.id,
@@ -27465,9 +27730,7 @@ export const createEnterpriseService = ({
         // Material rows are not versioned with the configuration snapshot. A
         // rollback that claims an old certificate would leave the current PFX
         // in place and silently deliver the wrong identity, so refuse it.
-        const identityEntries = entries.filter(([kind]) =>
-          parseCertificateConfigurationKind(kind),
-        );
+        const identityEntries = entries.filter(([kind]) => parseCertificateConfigurationKind(kind));
 
         if (identityEntries.length > 0) {
           const materialRows = yield* db
@@ -27481,9 +27744,7 @@ export const createEnterpriseService = ({
 
             if (!parsed || parsed.type === "trusted-root") continue;
             const material = materialByKind.get(kind);
-            const wanted = Schema.is(Schema.JsonObject)(data)
-              ? data["materialSha256"]
-              : undefined;
+            const wanted = Schema.is(Schema.JsonObject)(data) ? data["materialSha256"] : undefined;
 
             if (material && wanted === material.materialSha256) continue;
 
@@ -29444,7 +29705,7 @@ export const createEnterpriseService = ({
               for (const key of [
                 ...installerRows.flatMap((row) => (row.r2Key ? [row.r2Key] : [])),
                 ...(existing.r2Key ? [existing.r2Key] : []),
-              ])
+              ].filter((key) => isTenantApplicationObjectKey(ctx.organization.id, key)))
                 yield* r2
                   .delete(key)
                   .pipe(
@@ -29983,7 +30244,14 @@ export const createEnterpriseService = ({
           // or a store listing. The selected installer already matched the
           // device's platform, OS version and reported capabilities.
           if (installer.source === "upload") {
-            if (!installer.r2Key || !installer.sha256 || !installer.fileName) {
+            // A manifest must not be signed for a key outside this tenant, even
+            // if the row predates key validation.
+            if (
+              !installer.r2Key ||
+              !installer.sha256 ||
+              !installer.fileName ||
+              !isTenantApplicationObjectKey(ctx.organization.id, installer.r2Key)
+            ) {
               skipped += groupDevices.length;
               reasons.push("Upload the installer before installing this application.");
               continue;
@@ -30592,7 +30860,11 @@ export const createEnterpriseService = ({
             })
             .where(eq(schema.applicationInstaller.id, primary.id));
 
-          if (primary.r2Key && primary.r2Key !== key) yield* r2.delete(primary.r2Key);
+          if (
+            primary.r2Key !== key &&
+            isTenantApplicationObjectKey(ctx.organization.id, primary.r2Key)
+          )
+            yield* r2.delete(primary.r2Key);
         } else {
           const at = now();
 
@@ -30620,7 +30892,11 @@ export const createEnterpriseService = ({
 
         yield* syncLegacyApplicationInstaller(ctx.organization.id, applicationId);
 
-        if (existing?.r2Key && existing.r2Key !== key) yield* r2.delete(existing.r2Key);
+        if (
+          existing?.r2Key !== key &&
+          isTenantApplicationObjectKey(ctx.organization.id, existing?.r2Key)
+        )
+          yield* r2.delete(existing.r2Key);
         yield* audit(ctx, "application.uploaded", "application", applicationId, {
           fileName: body.fileName,
           sha256,
@@ -30648,7 +30924,7 @@ export const createEnterpriseService = ({
 
         yield* assertResourceScope(ctx, db, "application", applicationId, "This application");
 
-        if (app.sha256 !== sha256 || !app.r2Key)
+        if (app.sha256 !== sha256 || !isTenantApplicationObjectKey(ctx.organization.id, app.r2Key))
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Application file not found" }),
           );
@@ -30722,7 +30998,11 @@ export const createEnterpriseService = ({
           })
           .where(eq(schema.applicationInstaller.id, installer.id));
 
-        if (installer.r2Key && installer.r2Key !== key) yield* r2.delete(installer.r2Key);
+        if (
+          installer.r2Key !== key &&
+          isTenantApplicationObjectKey(ctx.organization.id, installer.r2Key)
+        )
+          yield* r2.delete(installer.r2Key);
 
         yield* syncLegacyApplicationInstaller(ctx.organization.id, applicationId);
         yield* audit(ctx, "application.uploaded", "application", applicationId, {
@@ -30757,7 +31037,11 @@ export const createEnterpriseService = ({
           )
           .limit(1);
 
-        if (!installer || installer.sha256 !== sha256 || !installer.r2Key)
+        if (
+          !installer ||
+          installer.sha256 !== sha256 ||
+          !isTenantApplicationObjectKey(ctx.organization.id, installer.r2Key)
+        )
           return yield* Effect.fail(
             new EnterpriseNotFound({ message: "Application file not found" }),
           );
@@ -30872,8 +31156,12 @@ export const createEnterpriseService = ({
 
         return { id: newId };
       }),
-    extractMobileconfig: (payload) =>
+    extractMobileconfig: (request, payload) =>
       Effect.gen(function* () {
+        // Defence in depth: the HTTP handler authenticates and gates before
+        // buffering, but a direct service caller must still be verified.
+        yield* requireVerifiedUser(request);
+
         const body: { mobileconfig: string } = payload;
 
         return yield* Effect.tryPromise({
@@ -30884,8 +31172,10 @@ export const createEnterpriseService = ({
             }),
         });
       }),
-    previewMobileconfig: (payload) =>
+    previewMobileconfig: (request, payload) =>
       Effect.gen(function* () {
+        yield* requireVerifiedUser(request);
+
         const body: { mobileconfig: string } = payload;
 
         return yield* Effect.tryPromise({
@@ -33025,7 +33315,7 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
-        yield* requireStepUp(auth, request, "recovery-key-reveal");
+        yield* requireStepUp(auth, request, origin, "recovery-key-reveal");
 
         const reasonProblem = windowsSecretReasonProblem(query?.reason);
 
@@ -33330,7 +33620,7 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
-        yield* requireStepUp(auth, request, "recovery-key-reveal");
+        yield* requireStepUp(auth, request, origin, "recovery-key-reveal");
 
         const reasonProblem = windowsSecretReasonProblem(query?.reason);
 
@@ -33726,6 +34016,53 @@ export const createEnterpriseService = ({
             },
           };
 
+        const requestTime = now();
+        const [archive] = yield* db
+          .select()
+          .from(schema.deviceDiagnosticsArchive)
+          .where(
+            and(
+              eq(schema.deviceDiagnosticsArchive.id, archiveId),
+              eq(schema.deviceDiagnosticsArchive.status, "pending"),
+            ),
+          )
+          .limit(1);
+
+        if (!archive || archive.expiresAt.getTime() <= requestTime.getTime()) return unauthorized;
+
+        const valid = yield* Effect.promise(() =>
+          verifyScopedToken(
+            authSecret,
+            WINDOWS_DIAGNOSTICS_UPLOAD_SCOPE,
+            `${archive.organizationId}:${archive.id}:${archive.deviceId}`,
+            token,
+            requestTime.getTime(),
+          ),
+        );
+
+        if (!valid) return unauthorized;
+
+        const archiveDeviceId = archive.deviceId;
+
+        const [device] = yield* db
+          .select({
+            id: schema.device.id,
+            status: schema.device.status,
+            proto: schema.device.proto,
+          })
+          .from(schema.device)
+          .where(
+            and(
+              eq(schema.device.id, archiveDeviceId),
+              eq(schema.device.organizationId, archive.organizationId),
+            ),
+          )
+          .limit(1);
+
+        if (!device || device.status !== "enrolled" || device.proto !== "win") return unauthorized;
+
+        // The scoped token is proved before the first body pull. Keep the
+        // streaming cap as defence in depth for authenticated uploads.
         const bounded = yield* readBoundedRequestBody(request, windowsDiagnosticsMaxBytes);
 
         if (!bounded.ok)
@@ -33763,50 +34100,6 @@ export const createEnterpriseService = ({
             status: 400 as const,
             body: { status: "error" as const, error: "The upload is not a ZIP archive." },
           };
-
-        const [archive] = yield* db
-          .select()
-          .from(schema.deviceDiagnosticsArchive)
-          .where(
-            and(
-              eq(schema.deviceDiagnosticsArchive.id, archiveId),
-              eq(schema.deviceDiagnosticsArchive.status, "pending"),
-            ),
-          )
-          .limit(1);
-
-        if (!archive || archive.expiresAt.getTime() <= now().getTime()) return unauthorized;
-
-        const valid = yield* Effect.promise(() =>
-          verifyScopedToken(
-            authSecret,
-            WINDOWS_DIAGNOSTICS_UPLOAD_SCOPE,
-            `${archive.organizationId}:${archive.id}:${archive.deviceId}`,
-            token,
-            now().getTime(),
-          ),
-        );
-
-        if (!valid) return unauthorized;
-
-        const archiveDeviceId = archive.deviceId;
-
-        const [device] = yield* db
-          .select({
-            id: schema.device.id,
-            status: schema.device.status,
-            proto: schema.device.proto,
-          })
-          .from(schema.device)
-          .where(
-            and(
-              eq(schema.device.id, archiveDeviceId),
-              eq(schema.device.organizationId, archive.organizationId),
-            ),
-          )
-          .limit(1);
-
-        if (!device || device.status !== "enrolled" || device.proto !== "win") return unauthorized;
 
         const digest = yield* sha256Hex(bytesToArrayBuffer(bytes));
         const r2Key = `diagnostics/${archive.organizationId}/${archiveDeviceId}/${archive.id}.zip`;
@@ -33895,7 +34188,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
         yield* assertResourceScope(ctx, db, "device", deviceId, "This device");
-        yield* requireStepUp(auth, request, "recovery-key-reveal");
+        yield* requireStepUp(auth, request, origin, "recovery-key-reveal");
 
         if (!authSecret)
           return yield* Effect.fail(
@@ -33965,7 +34258,7 @@ export const createEnterpriseService = ({
         if (!device)
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
-        yield* requireStepUp(auth, request, "recovery-key-reveal");
+        yield* requireStepUp(auth, request, origin, "recovery-key-reveal");
 
         if (!authSecret)
           return yield* Effect.fail(
@@ -34030,7 +34323,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(new EnterpriseNotFound({ message: "Device not found" }));
 
         yield* assertResourceScope(ctx, db, "device", deviceId, "This device");
-        yield* requireStepUp(auth, request, "recovery-key-reveal");
+        yield* requireStepUp(auth, request, origin, "recovery-key-reveal");
 
         if (!authSecret)
           return yield* Effect.fail(
@@ -34220,9 +34513,7 @@ export const createEnterpriseService = ({
               (() => {
                 const devices = scopedResourceIds(db, ctx, "device");
 
-                return devices
-                  ? inArray(schema.deviceApplication.deviceId, devices)
-                  : undefined;
+                return devices ? inArray(schema.deviceApplication.deviceId, devices) : undefined;
               })(),
             ),
           );
@@ -34821,7 +35112,7 @@ export const createEnterpriseService = ({
     billingPortal: (request, tenantId, payload) =>
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
-        yield* requireStepUp(auth, request, "billing-portal");
+        yield* requireStepUp(auth, request, origin, "billing-portal");
 
         const body: { returnUrl: string } = payload;
 
@@ -34840,7 +35131,7 @@ export const createEnterpriseService = ({
         const ctx = yield* requireTenant(request, tenantId, "write");
         // Checkout changes the plan, so it needs the same step-up as opening
         // the portal.
-        yield* requireStepUp(auth, request, "billing-portal");
+        yield* requireStepUp(auth, request, origin, "billing-portal");
 
         const usage = yield* billingUsageForOrganization(db, ctx.organization.id, ctx.account.id);
 
@@ -34866,7 +35157,7 @@ export const createEnterpriseService = ({
       }),
     requestEmailVerification: (request) =>
       auth.requestEmailVerification(webRequestFromRequest(request, origin)),
-    requestRegistrationCode: (_request, payload) =>
+    requestRegistrationCode: (request, payload) =>
       Effect.gen(function* () {
         const address = payload.email.trim().toLowerCase();
         const name = payload.name.trim();
@@ -34902,6 +35193,76 @@ export const createEnterpriseService = ({
             }),
           );
 
+        // Email Verification API (progressive enhancement). The browser fills a
+        // hidden token only when its mailbox provider can vouch for the address.
+        // The nonce must be the one this browser was issued, and verification
+        // must succeed: a token's mere presence is never evidence.
+        const publicOriginHeader = headerValue(request.headers, "x-mattrax-public-origin");
+        const audience = registrationAudience(origin, publicOriginHeader, request.url);
+        const sessionNonce = readRegistrationNonce(headerValue(request.headers, "cookie"));
+        const proof = {
+          email: address,
+          audience,
+          token: payload.token?.trim() || undefined,
+          nonce: payload.nonce?.trim() || undefined,
+          sessionNonce,
+        };
+        const tokenAttempted = registrationTokenAttempted(proof);
+        // Every attempt consumes the binding: the response rotates the cookie
+        // and hands the page the new nonce, so the old value cannot be replayed.
+        const rotatedNonce = tokenAttempted ? newRegistrationNonce() : undefined;
+        const nonceHeaders = rotatedNonce
+          ? { "set-cookie": registrationNonceCookie(rotatedNonce, audience.startsWith("https:")) }
+          : {};
+
+        if (tokenAttempted && (yield* proveRegistrationEmail(proof))) {
+          const code = generateEmailCode();
+          const codeHash = yield* emailCodeHash(authSecret, `register:${address}`, code);
+          const grant = registrationGrant();
+          const now = new Date();
+          const expiresAt = new Date(now.getTime() + EMAIL_CODE_TTL_MS);
+
+          yield* db
+            .insert(schema.registrationVerification)
+            .values({
+              email: address,
+              name,
+              codeHash,
+              grant,
+              attempts: 0,
+              expiresAt,
+              verifiedAt: now,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .onDuplicateKeyUpdate({
+              set: {
+                name,
+                codeHash,
+                grant,
+                attempts: 0,
+                expiresAt,
+                verifiedAt: now,
+                updatedAt: now,
+              },
+            });
+
+          // One transaction, one state: the row is verified and no code was
+          // sent, so the client goes straight to the passkey ceremony.
+          return HttpApiSchema.withHeaders({
+            body: {
+              status: "ok" as const,
+              emailSent: false,
+              verified: true,
+              grant,
+              ...(rotatedNonce === undefined ? {} : { nonce: rotatedNonce }),
+            },
+            headers: nonceHeaders,
+          });
+        }
+
+        // EVP did not verify (or was not attempted): the emailed code is the
+        // fallback, so this is the first point that needs a mailer.
         if (!email)
           return yield* Effect.fail(
             new EnterpriseNotConfigured({
@@ -34976,15 +35337,24 @@ export const createEnterpriseService = ({
             to: address,
             from: DEFAULT_EMAIL_FROM,
             subject: "Your Mattrax verification code",
-            text: `Your Mattrax verification code is ${code}.\n\nIt expires in 15 minutes. Enter it on the sign-up page to finish creating your account.`,
+            // The digits stand alone on their own line so a mail client's
+            // "Copy code" heuristic can lift them without punctuation.
+            text: `Your Mattrax verification code is:\n\n${code}\n\nIt expires in 15 minutes. Enter it on the sign-up page to finish creating your account.`,
             html: verificationHtml,
+            // WebOTP's desktop/mobile-mail parallel: clients that understand
+            // the header can offer the code without parsing the body.
+            headers: { "OTP-Token": code },
           },
         });
 
-        return {
-          status: "ok" as const,
-          emailSent: outcome === "queued" || outcome === "duplicate" || outcome === "delivered",
-        };
+        return HttpApiSchema.withHeaders({
+          body: {
+            status: "ok" as const,
+            emailSent: outcome === "queued" || outcome === "duplicate" || outcome === "delivered",
+            ...(rotatedNonce === undefined ? {} : { nonce: rotatedNonce }),
+          },
+          headers: nonceHeaders,
+        });
       }),
     verifyRegistrationCode: (_request, payload) =>
       Effect.gen(function* () {
@@ -35051,35 +35421,30 @@ export const createEnterpriseService = ({
       auth.listMcpConnections(webRequestFromRequest(request, origin)),
     revokeMcpConnection: (request, connectionId) =>
       auth.revokeMcpConnection(webRequestFromRequest(request, origin), connectionId),
-    recordMcpActivity: (request, tenantId, payload) =>
-      Effect.gen(function* () {
-        const ctx = yield* requireTenant(request, tenantId);
-
-        // Only an issued MCP credential (OAuth connection or account API key)
-        // may attribute activity to a tool call. A browser session or a
-        // read-only token must not be able to forge audit entries; the write
-        // scope is enforced in `requireUser`.
-        if (ctx.credential?.type !== "oauth" && ctx.credential?.type !== "api_token")
-          return yield* Effect.fail(
-            new EnterpriseForbidden({ message: "MCP activity requires an MCP credential." }),
-          );
-
-        const body: {
-          tool?: string;
-          method?: string;
-          path?: string;
-          status?: number;
-        } = payload;
-
-        yield* audit(ctx, "mcp.tool_called", "mcp", null, {
-          tool: body.tool ?? null,
-          method: body.method ?? null,
-          path: body.path ?? null,
-          status: body.status ?? null,
-        });
-
-        return ok;
-      }),
+    /**
+     * Rollout-window shim. While supported gateways may still be on the
+     * previous image, this route deliberately answers 403 instead of
+     * accepting caller-authored metadata; the new API records the same
+     * `mcp.tool_called` entry from the authenticated dispatch. Remove this
+     * method (and the domain endpoint) once no supported gateway posts here —
+     * i.e. after the next major release or a release cycle with the derived
+     * path live on every deployment.
+     */
+    recordMcpActivity: (
+      _request: HttpServerRequest,
+      _tenantId: string,
+      _payload: {
+        readonly tool: string;
+        readonly method: string;
+        readonly path: string;
+        readonly status: number;
+      },
+    ) =>
+      Effect.fail(
+        new EnterpriseForbidden({
+          message: "MCP activity is derived from authenticated dispatched calls.",
+        }),
+      ),
     createApiToken: (request, payload) =>
       Effect.gen(function* () {
         const webRequest = webRequestFromRequest(request, origin);
@@ -35089,20 +35454,26 @@ export const createEnterpriseService = ({
         // before it writes the token.
         const resolved = yield* auth.requireStepUp(webRequest, "api-token-create");
 
+        // OAuth connections are delegated MCP credentials, never an account
+        // login. Keep this decision at the endpoint as well as in auth so no
+        // URL spelling can turn one into a long-lived account API token.
+        if (resolved.oauth)
+          return yield* Effect.fail(
+            diagnoseError(
+              new EnterpriseForbidden({
+                message: "MCP tokens cannot manage account settings.",
+              }),
+              { code: "mcp_account_scope", reason: "api_token_create" },
+            ),
+          );
+
         const credential = resolved.apiToken
           ? {
               type: "api_token" as const,
               id: resolved.apiToken.id,
               name: resolved.apiToken.name,
             }
-          : resolved.oauth
-            ? {
-                type: "oauth" as const,
-                id: resolved.oauth.connectionId,
-                name: resolved.oauth.clientName,
-                clientId: resolved.oauth.clientId,
-              }
-            : undefined;
+          : undefined;
         const scopes = [...(payload.permissions ?? payload.scopes ?? [])].sort((left, right) =>
           String(left).localeCompare(String(right)),
         );
@@ -35214,7 +35585,7 @@ export const createEnterpriseService = ({
      */
     removeAccountPasskey: (request, credentialId) =>
       Effect.gen(function* () {
-        const { user } = yield* requireStepUp(auth, request, "passkey-remove");
+        const { user } = yield* requireStepUp(auth, request, origin, "passkey-remove");
 
         const credential = yield* db
           .select({ credentialId: schema.authPasskeyCredentials.credentialId })
@@ -35375,7 +35746,7 @@ export const createEnterpriseService = ({
 
         // Removing an MDM profile is a device command, so it needs the same
         // recent proof as any other destructive device action.
-        yield* requireStepUp(auth, request, "device-command");
+        yield* requireStepUp(auth, request, origin, "device-command");
 
         const result = yield* issueMigrationUnenrol(
           db,
@@ -35494,7 +35865,50 @@ export const createEnterpriseService = ({
       auth.completeStepUpPasskey(webRequestFromRequest(request, origin), payload),
   } satisfies Record<string, (...args: Array<Dynamic>) => Effect.Effect<Dynamic, Dynamic, Dynamic>>;
 
-  return wrapServiceErrors(service, true, analytics, diagnostics);
+  const observeMcpActivity: McpActivityObserver = (dispatch) =>
+    Effect.gen(function* () {
+      if (dispatch.method === "recordMcpActivity") return;
+
+      const path = new URL(dispatch.request.url, origin).pathname;
+      const tenant = /^\/api\/v1\/tenants\/([^/]+)(?:\/|$)/.exec(path)?.[1];
+
+      if (tenant === undefined) return;
+
+      let pathTenant: string;
+
+      try {
+        pathTenant = decodeURIComponent(tenant);
+      } catch {
+        return;
+      }
+
+      if (pathTenant !== dispatch.tenantId) return;
+
+      const httpMethod = dispatch.request.method.toUpperCase();
+      const access =
+        httpMethod === "DELETE"
+          ? "delete"
+          : httpMethod === "GET" || httpMethod === "HEAD"
+            ? "read"
+            : "write";
+      const ctx = yield* requireTenant(dispatch.request, dispatch.tenantId, access).pipe(
+        Effect.provideService(RequiredPermission, {
+          permission: dispatch.permission,
+          method: dispatch.method,
+        }),
+      );
+
+      if (ctx.credential?.type !== "oauth" && ctx.credential?.type !== "api_token") return;
+
+      yield* audit(ctx, "mcp.tool_called", "mcp", null, {
+        tool: dispatch.method.slice(0, MCP_ACTIVITY_TOOL_MAX),
+        method: httpMethod.slice(0, MCP_ACTIVITY_METHOD_MAX),
+        path: path.slice(0, MCP_ACTIVITY_PATH_MAX),
+        status: Math.max(100, Math.min(599, Math.trunc(dispatch.status))),
+      });
+    }).pipe(Effect.catchCause((cause) => Effect.logWarning("MCP activity audit failed", cause)));
+
+  return wrapServiceErrors(service, true, analytics, diagnostics, observeMcpActivity);
 };
 
 /** Device handover export and one-time download. */
@@ -35962,11 +36376,15 @@ export const enterpriseAttributeHandlers = (
         service.submitEnrollmentAnswers(params.id, payload),
       ),
     )
-    .handle("extractMobileconfig", ({ payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.extractMobileconfig(payload)),
+    .handleRaw("extractMobileconfig", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        runMobileconfigRequest(request, (payload) => service.extractMobileconfig(request, payload)),
+      ),
     )
-    .handle("previewMobileconfig", ({ payload }) =>
-      Effect.flatMap(EnterpriseService, (service) => service.previewMobileconfig(payload)),
+    .handleRaw("previewMobileconfig", ({ request }) =>
+      Effect.flatMap(EnterpriseService, (service) =>
+        runMobileconfigRequest(request, (payload) => service.previewMobileconfig(request, payload)),
+      ),
     )
     .handle("importDeviceAttributes", ({ request, params, payload }) =>
       Effect.flatMap(EnterpriseService, (service) =>

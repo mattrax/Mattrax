@@ -96,7 +96,9 @@ escrowed key: without one the action is rejected with an explanation.
 The bootstrap token is escrowed the same way. `device_apple.bootstrap_token` is
 retained only for legacy plaintext rows and is cleared on new writes. Device
 detail exposes `bootstrapTokenEscrowed` and `bootstrapTokenUpdatedAt`. A
-bootstrap-token rotation queues a fresh `SecurityInfo`.
+bootstrap-token rotation queues a fresh `SecurityInfo`. Device-channel reads require an
+enrolled/enrolling device and an active, unexpired, unrevoked SCEP certificate bound to that
+device; a user channel cannot read the bootstrap token.
 
 ## Activation Lock
 
@@ -215,9 +217,10 @@ The new password is generated with the same policy-compliant generator as ADE
 setup and hashed as a `SALTED-SHA512-PBKDF2` plist. It is sealed under
 `local_admin_password_pending` and queued as `SetAutoAdminPassword`. Only when
 the Mac acknowledges success does the pending value replace
-`local_admin_password` and move the rotation timestamp; a failure or erase
-discards it, so a reveal never shows a password the device never applied. The
-action requires a step-up grant and is audited without the password or hash.
+`local_admin_password` and move the rotation timestamp; a failure discards it, so a reveal never
+shows a password the device rejected. An erase acknowledgement does not discard pending or
+current escrow because it is not independent proof that the erase completed. The action requires
+a step-up grant and is audited without the password or hash.
 
 A tenant can opt in to scheduled rotation with `localAdminRotationDays` (30, 60
 or 90). Daily maintenance queues at most 25 rotations per tenant per run and
@@ -237,9 +240,13 @@ Before the erase, Mattrax also queues a `Settings` command with
 cannot re-enable Activation Lock after the wipe. This is an MDM setting rather
 than an erase key; Apple ignores it on unsupervised devices.
 
-A successful erase discards the escrowed recovery key, bypass code and Recovery
-Lock password for the device: the disk they protected no longer exists and the
-next setup generates a new bypass code.
+An `EraseDevice` acknowledgement is asserted by the device and is not independent proof
+that the erase completed. Mattrax records the command result but intentionally retains the
+escrowed recovery key, Activation Lock bypass code, Recovery Lock password, current and pending
+managed-local-admin passwords, and related erase-side state. Irreversible cleanup requires a
+future independent confirmed terminal-erase path; until one exists, retention fails closed and
+favors recovery over deletion. Devices removed through an independently confirmed lifecycle
+cleanup can still have their escrow removed with the device row.
 
 ## Inventory
 
@@ -249,16 +256,16 @@ The subscription is built per device because Apple does not silently ignore an
 item an OS does not know — the whole declaration is reported invalid. The base
 items are joined by the platform-specific ones the device's OS supports:
 
-| Item                             | macOS | iOS/iPadOS | Notes                        |
-| -------------------------------- | ----- | ---------- | ---------------------------- |
-| `passcode.is-present`            | —     | 16+        | macOS has no device passcode |
-| `passcode.is-compliant`          | —     | 16+        |                              |
-| `mdm.app`                        | —     | 16+        | MDM-installed apps only      |
-| `softwareupdate.install-state`   | 14+   | 17+        | tvOS 18.4+, visionOS 26+     |
-| `softwareupdate.pending-version` | 14+   | 17+        |                              |
-| `softwareupdate.failure-reason`  | 14+   | 17+        |                              |
+| Item                             | macOS | iOS/iPadOS | Notes                                          |
+| -------------------------------- | ----- | ---------- | ---------------------------------------------- |
+| `passcode.is-present`            | —     | 16+        | macOS has no device passcode                   |
+| `passcode.is-compliant`          | —     | 16+        |                                                |
+| `mdm.app`                        | —     | 16+        | MDM-installed apps only                        |
+| `softwareupdate.install-state`   | 14+   | 17+        | tvOS 18.4+, visionOS 26+                       |
+| `softwareupdate.pending-version` | 14+   | 17+        |                                                |
+| `softwareupdate.failure-reason`  | 14+   | 17+        |                                                |
 | `security.certificate.list`      | 14+   | 17+        | subject, identity flag, fingerprint and expiry |
-| `security.lockdown-mode`         | 27+   | 27+        | not reported before then     |
+| `security.lockdown-mode`         | 27+   | 27+        | not reported before then                       |
 
 The declaration's server token hashes the item list, so adding an item makes
 every affected device re-sync. A device that has not reported its OS version yet

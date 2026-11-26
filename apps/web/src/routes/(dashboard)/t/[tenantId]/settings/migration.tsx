@@ -4,7 +4,7 @@ import type { ParentProps } from "solid-js";
 import { LoadingState } from "@mattrax/ui";
 import { isServer } from "@solidjs/web";
 import { useNavigate } from "~/lib/navigation";
-import { SectionTabs } from "~/components/settings/section-tabs";
+import SectionTabs from "~/components/settings/section-tabs";
 import {
   activeMigrationTab,
   MIGRATION_TABS,

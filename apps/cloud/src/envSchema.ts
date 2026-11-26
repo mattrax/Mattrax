@@ -1,5 +1,6 @@
 import { DateTime, Option, Schema } from "effect";
 import { parseServicesUrl } from "@mattrax/cloud-services/services";
+import { parseTrustedPeerAddresses } from "./trustedPeer.js";
 
 const nonEmptyString = Schema.String.check(Schema.isMinLength(1));
 
@@ -216,6 +217,11 @@ const ApiEnvSchema = Schema.Struct({
    * the certificate comes from the mTLS handshake.
    */
   TRUST_DEVICE_IDENTITY_HEADERS: Schema.optional(nonEmptyString),
+  /**
+   * Comma-separated numeric addresses of proxies allowed to forward verified
+   * device identity. Required whenever trusted identity headers are enabled.
+   */
+  TRUSTED_DEVICE_IDENTITY_PEERS: Schema.optional(nonEmptyString),
   /** Trust `x-forwarded-for`/`x-real-ip`; set only behind a stripping proxy. */
   TRUST_PROXY_HEADERS: Schema.optional(nonEmptyString),
   /**
@@ -334,6 +340,7 @@ const RawApiEnvSchema = Schema.Struct({
   WINDOWS_ORGANIZATION_ID: optionalString,
   WINDOWS_FEDERATED_AUDIENCE: optionalString,
   TRUST_DEVICE_IDENTITY_HEADERS: optionalString,
+  TRUSTED_DEVICE_IDENTITY_PEERS: optionalString,
   TRUST_PROXY_HEADERS: optionalString,
   MDM_AUDIT_CHECKIN_COALESCE_SECONDS: optionalString,
   SOFA_FEED_URL: optionalString,
@@ -370,7 +377,7 @@ export const resolveApiEnv = (source: unknown) => {
   const rawEnv = Schema.decodeUnknownSync(RawApiEnvSchema)(source);
 
   // For now this is only used for runtime validation, so transformations aren't safe.
-  return Schema.decodeUnknownSync(ApiEnvSchema)({
+  const env = Schema.decodeUnknownSync(ApiEnvSchema)({
     // Keep the hosted default so existing deployments that have not set the
     // newly-configurable secret keep working. Local dev overrides it via
     // `.dev.vars`; whitelabel deployments set their own origin.
@@ -451,6 +458,7 @@ export const resolveApiEnv = (source: unknown) => {
     WINDOWS_ORGANIZATION_ID: emptyStringAsUndefined(rawEnv.WINDOWS_ORGANIZATION_ID),
     WINDOWS_FEDERATED_AUDIENCE: emptyStringAsUndefined(rawEnv.WINDOWS_FEDERATED_AUDIENCE),
     TRUST_DEVICE_IDENTITY_HEADERS: emptyStringAsUndefined(rawEnv.TRUST_DEVICE_IDENTITY_HEADERS),
+    TRUSTED_DEVICE_IDENTITY_PEERS: trimmedStringAsUndefined(rawEnv.TRUSTED_DEVICE_IDENTITY_PEERS),
     TRUST_PROXY_HEADERS: emptyStringAsUndefined(rawEnv.TRUST_PROXY_HEADERS),
     MDM_AUDIT_CHECKIN_COALESCE_SECONDS: emptyStringAsUndefined(
       rawEnv.MDM_AUDIT_CHECKIN_COALESCE_SECONDS,
@@ -486,4 +494,13 @@ export const resolveApiEnv = (source: unknown) => {
     MATTRAX_METRICS: emptyStringAsUndefined(rawEnv.MATTRAX_METRICS),
     MATTRAX_METRICS_TOKEN: emptyStringAsUndefined(rawEnv.MATTRAX_METRICS_TOKEN),
   });
+
+  const trustedPeers = parseTrustedPeerAddresses(env.TRUSTED_DEVICE_IDENTITY_PEERS);
+
+  if (env.TRUST_DEVICE_IDENTITY_HEADERS === "1" && trustedPeers.size === 0)
+    throw new Error(
+      "TRUSTED_DEVICE_IDENTITY_PEERS is required when TRUST_DEVICE_IDENTITY_HEADERS=1",
+    );
+
+  return env;
 };

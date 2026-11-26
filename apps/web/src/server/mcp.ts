@@ -235,43 +235,6 @@ export const fetchMcpApi = (
     return { status: response.status, ok: isOk(response.status), contentType, data };
   });
 
-export const recordMcpActivity = (
-  authorization: string,
-  tenantId: string,
-  entry: { tool: string; method: string; path: string; status: number },
-): Effect.Effect<void, never, ApiClient> =>
-  Effect.gen(function* () {
-    const client = yield* ApiClient;
-    const response = yield* client
-      .execute(
-        HttpClientRequest.post(
-          `${API_BASE}/api/v1/tenants/${encodeURIComponent(tenantId)}/mcp/activity`,
-          {
-            headers: {
-              authorization,
-              "x-mattrax-mcp-authorization": authorization,
-              "content-type": "application/json",
-            },
-            body: HttpBody.jsonUnsafe(entry),
-          },
-        ),
-      )
-      .pipe(Effect.catch((error) => Effect.succeed(error)));
-
-    if (response instanceof Error) {
-      yield* Effect.sync(() => console.error("MCP activity recording failed", response));
-
-      return;
-    }
-
-    yield* client.discard(response).pipe(Effect.catch(() => Effect.void));
-
-    if (!isOk(response.status))
-      yield* Effect.sync(() =>
-        console.error(`MCP activity recording failed with status ${response.status}`),
-      );
-  });
-
 const queryString = (value: Schema.Json | undefined) => {
   if (!isJsonObject(value)) return "";
   const params = new URLSearchParams();
@@ -465,12 +428,6 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
 
         return Effect.gen(function* () {
           const result = yield* fetchMcpApi(authorization, path);
-          yield* recordMcpActivity(authorization, tenantId, {
-            tool: "search",
-            method: "GET",
-            path,
-            status: result.status,
-          });
 
           if (!result.ok)
             return yield* Effect.fail(
@@ -515,12 +472,6 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
 
         return Effect.gen(function* () {
           const result = yield* fetchMcpApi(authorization, path, { method: "POST", body });
-          yield* recordMcpActivity(authorization, tenantId, {
-            tool: "query_data",
-            method: "POST",
-            path,
-            status: result.status,
-          });
 
           if (!result.ok)
             return yield* Effect.fail(
@@ -547,15 +498,6 @@ const buildTools = (authorization: string, me: MeResponse, methods: ReadonlyArra
         if (body !== undefined) init.body = body;
 
         const result = yield* fetchMcpApi(authorization, `${path}${query}`, init);
-        const tenantId = isString(params.tenantId) ? params.tenantId : undefined;
-
-        if (tenantId)
-          yield* recordMcpActivity(authorization, tenantId, {
-            tool: name,
-            method: endpoint.method,
-            path,
-            status: result.status,
-          });
 
         if (!result.ok)
           return yield* Effect.fail(

@@ -32,7 +32,8 @@
     "@mattrax/plist": "workspace:*",
     "@mattrax/scep": "workspace:*",
     "drizzle-orm": "catalog:",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "email-verification-api": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

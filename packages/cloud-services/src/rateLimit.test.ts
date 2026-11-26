@@ -23,6 +23,12 @@ describe("rate limit rule selection", () => {
     expect(rateLimitRuleFor(request("/api/v1/recoverySignIn", { method: "POST" }))?.bucket).toBe(
       "auth",
     );
+    expect(rateLimitRuleFor(request("/api/v1/account/recovery", { method: "POST" }))?.bucket).toBe(
+      "auth",
+    );
+    expect(
+      rateLimitRuleFor(request("/api/v1/account/recovery/verify", { method: "POST" }))?.bucket,
+    ).toBe("auth");
     expect(rateLimitRuleFor(request("/api/v1/sso/azure/callback", { method: "GET" }))?.bucket).toBe(
       "auth",
     );
@@ -57,6 +63,17 @@ describe("rate limit rule selection", () => {
       "auth",
     );
     expect(rateLimitRuleFor(request("/api/oauth/token", { method: "GET" }))).toBeUndefined();
+    // Profile helpers parse caller-supplied documents; they get their own
+    // bucket rather than the generic MDM/enrollment allowance.
+    expect(
+      rateLimitRuleFor(request("/api/v1/policy/preview-mobileconfig", { method: "POST" }))?.bucket,
+    ).toBe("policy");
+    expect(
+      rateLimitRuleFor(request("/api/v1/policy/extract-mobileconfig", { method: "POST" }))?.bucket,
+    ).toBe("policy");
+    expect(
+      rateLimitRuleFor(request("/api/v1/policy/preview-mobileconfig", { method: "GET" })),
+    ).toBeUndefined();
   });
 
   it("normalises paths before matching so an equivalent spelling cannot bypass a rule", () => {
@@ -114,6 +131,7 @@ describe("rate limit bindings from env", () => {
       RATE_LIMITER_SCIM: limiter,
       RATE_LIMITER_BILLING: limiter,
       RATE_LIMITER_SCEP: limiter,
+      RATE_LIMITER_POLICY: limiter,
     });
 
     expect(Object.keys(bindings).sort()).toEqual([
@@ -121,6 +139,7 @@ describe("rate limit bindings from env", () => {
       "billing",
       "enrollment",
       "mdm",
+      "policy",
       "scep",
       "scim",
     ]);

@@ -214,7 +214,7 @@ export function Faq() {
                 <details>
                   <summary>
                     {item.question}
-                    <ChevronDown class="disclosure-chevron size-3.5" aria-hidden="true" />
+                    <span class="disclosure-chevron"><ChevronDown class="size-3.5" aria-hidden="true" /></span>
                   </summary>
                   <div class="lx-faq__answer">
                     <p>{item.answer}</p>
@@ -271,7 +271,7 @@ export function Closing() {
               }
             >
               {(action) => (
-                <Button as="a" href={action().href} size="lg" class="h-10 px-5">
+                <Button as="a" href={action().href} size="lg" class="h-10">
                   {action().label}
                   <ArrowRight class="size-3.5" />
                 </Button>
@@ -283,7 +283,7 @@ export function Closing() {
               href="mailto:hello@mattrax.app?subject=Mattrax%20for%20our%20fleet"
               variant="outline"
               size="lg"
-              class="h-10 px-5"
+              class="h-10"
             >
               Talk to us
             </Button>

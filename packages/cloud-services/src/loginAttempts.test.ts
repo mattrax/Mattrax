@@ -25,6 +25,10 @@ const requestWith = async (
   rows: Array<Schema.Json>,
   response: Effect.Effect<HttpServerResponse.HttpServerResponse, unknown>,
   path: string,
+  headers: Record<string, string> = {
+    "user-agent": chrome,
+    "x-mattrax-client-address": "203.0.113.8",
+  },
 ): Promise<Response> => {
   const db = {
     insert: () => ({
@@ -59,7 +63,7 @@ const requestWith = async (
           handler(
             new Request(`http://localhost${path}`, {
               method: "POST",
-              headers: { "user-agent": chrome, "cf-connecting-ip": "203.0.113.8" },
+              headers,
             }),
           ),
         ),
@@ -73,6 +77,32 @@ const request = (rows: Array<Schema.Json>, body: Schema.Json, path: string) =>
   requestWith(rows, HttpServerResponse.json(body), path);
 
 describe("login attempt observer", () => {
+  it("stores no address when only spoofable forwarding headers are present", async () => {
+    const rows: Array<Schema.Json> = [];
+    const body = {
+      _tag: "Success",
+      value: {
+        _tag: "Authenticated",
+        session: {
+          subjectId: "account-1",
+          claims: { email: "owner@example.com" },
+          assurance: { method: "passkey" },
+        },
+      },
+    };
+
+    await requestWith(rows, HttpServerResponse.json(body), "/api/v1/completePasskeySignIn", {
+      "user-agent": chrome,
+      "cf-connecting-ip": "203.0.113.200",
+      "x-forwarded-for": "203.0.113.201",
+      "x-real-ip": "203.0.113.202",
+    });
+
+    await waitForRows(rows, 1);
+
+    expect(rows).toMatchObject([{ accountId: "account-1", ip: null }]);
+  });
+
   it("records a completed session without changing the response", async () => {
     const rows: Array<Schema.Json> = [];
 

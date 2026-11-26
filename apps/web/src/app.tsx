@@ -14,7 +14,7 @@ import type { ParentProps } from "solid-js";
 import { pageRoutes } from "virtual:file-routes";
 import { LoadingState } from "@mattrax/ui";
 import { PageErrorFallback } from "~/components/error-boundary";
-import { GlobalErrorBanner } from "~/components/global-error-banner";
+import GlobalErrorBanner from "~/components/global-error-banner";
 import { NewVersionNotice } from "~/components/new-version-notice";
 import { installSkewProtection } from "~/lib/skew-protection";
 import { installTheme } from "~/lib/theme";

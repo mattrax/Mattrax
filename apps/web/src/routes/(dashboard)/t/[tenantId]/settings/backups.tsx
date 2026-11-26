@@ -6,7 +6,7 @@ import { TenantExportEnvelope } from "@mattrax/enterprise-domain/client";
 import { createSignal, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -17,7 +17,7 @@ import {
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
 import { useTenantProfileDraft } from "~/components/settings/tenant-profile-draft";
-import { StatusChip } from "~/components/settings/status-chip";
+import StatusChip from "~/components/settings/status-chip";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { BackupRunInfo } from "~/lib/enterprise";
 import {
@@ -95,16 +95,25 @@ export default function BackupsSettingsPage() {
     startedAt: string;
   } | null>(null);
 
+  /**
+   * Solid Query v6 calls `onMutate` without forwarding its return value to
+   * `onError`, so a rollback closure has to live beside the mutation.
+   * Keeping the promise preserves the helper's cancel-then-snapshot order.
+   */
+  let pendingPinRestore: Promise<() => void> | undefined;
+
   const pinBackup = useMutation(() => ({
+    // The failure renders inline beside the table, so the global toast would
+    // repeat the same message.
+    meta: { inlineError: true },
     mutationFn: (run: { id: string; retention: string }) =>
       run.retention === "pinned"
         ? enterprise.unpinTenantBackup(params.tenantId, run.id)
         : enterprise.pinTenantBackup(params.tenantId, run.id),
-    onMutate: async (run) => {
+    onMutate: (run) => {
       const pinned = run.retention !== "pinned";
       setBackupActionError(null);
-
-      return optimisticallyUpdateCollection(
+      pendingPinRestore = optimisticallyUpdateCollection(
         qc,
         enterpriseKeys.backups(params.tenantId),
         "backups",
@@ -114,14 +123,20 @@ export default function BackupsSettingsPage() {
           ),
       );
     },
-    onSuccess: () => void refetchBackups(),
-    onError: (error, _variables, restore) => {
-      restore?.();
+    onSuccess: () => {
+      pendingPinRestore = undefined;
+      void refetchBackups();
+    },
+    onError: (error) => {
+      const restore = pendingPinRestore;
+      pendingPinRestore = undefined;
+      void restore?.then((revert) => revert());
       setBackupActionError(error);
     },
   }));
 
   const removeBackup = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (id: string) => enterprise.deleteTenantBackup(params.tenantId, id),
     onMutate: async (id) => {
       setBackupActionError(null);
@@ -144,6 +159,7 @@ export default function BackupsSettingsPage() {
   }));
 
   const restoreBackup = useMutation(() => ({
+    meta: { inlineError: true },
     mutationFn: (input: { id: string; confirm: string }) =>
       enterprise.restoreTenantBackup(params.tenantId, input.id, input.confirm),
     onMutate: () => setBackupActionError(null),
@@ -263,7 +279,7 @@ export default function BackupsSettingsPage() {
 
           <Show when={latestBackup()}>
             {(latest) => (
-              <div class="mt-4 rounded-lg border border-border bg-surface p-3 text-[13px]">
+              <div class="mt-4 rounded-lg border border-border bg-surface p-3 text-xs">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                   <span class="text-muted-foreground">
                     Last backup:{" "}
@@ -306,8 +322,8 @@ export default function BackupsSettingsPage() {
 
           <Show when={(backups.data?.backups ?? []).length > 0}>
             <div class="mt-4 overflow-x-auto rounded-lg border border-border">
-              <table class="w-full min-w-[34rem] text-left text-xs">
-                <thead class="border-b border-border bg-surface text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              <table class="w-full min-w-136 text-left text-xs">
+                <thead class="border-b border-border bg-surface text-xs uppercase tracking-widest text-muted-foreground">
                   <tr>
                     <th class="px-3 py-2 font-medium">Started</th>
                     <th class="px-3 py-2 font-medium">Trigger</th>
@@ -318,7 +334,7 @@ export default function BackupsSettingsPage() {
                 </thead>
                 <tbody class="divide-y divide-border">
                   {(backups.data?.backups ?? []).slice(0, 8).map((run) => (
-                    <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-surface">
+                    <tr class="transition-colors duration-150 ease-swift hover:bg-surface">
                       <td class="whitespace-nowrap px-3 py-2 text-muted-foreground">
                         {new Date(run.startedAt).toLocaleString()}
                       </td>
@@ -337,7 +353,7 @@ export default function BackupsSettingsPage() {
                           {run.status}
                         </StatusChip>
                         <Show when={run.retention === "pinned"}>
-                          <span class="ml-1 text-[11px] font-medium text-warning-foreground">
+                          <span class="ml-1 text-xs font-medium text-warning-foreground">
                             pinned
                           </span>
                         </Show>
@@ -353,16 +369,18 @@ export default function BackupsSettingsPage() {
                       <td class="px-3 py-2 text-right">
                         <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
                           <Show when={run.status === "succeeded"}>
-                            <button
+                            <Button
                               type="button"
-                              class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
+                              variant="link"
+                              size="xs"
                               onClick={() => void downloadBackup(run.id)}
                             >
                               Download
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="button"
-                              class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
+                              variant="link"
+                              size="xs"
                               disabled={!canWrite()}
                               onClick={() => {
                                 setBackupActionError(null);
@@ -372,27 +390,29 @@ export default function BackupsSettingsPage() {
                               }}
                             >
                               Restore
-                            </button>
+                            </Button>
                           </Show>
                           <Show when={run.status !== "running"}>
-                            <button
+                            <Button
                               type="button"
-                              class="text-xs font-medium text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
+                              variant="link"
+                              size="xs"
                               disabled={!canWrite()}
                               onClick={() => pinBackup.mutate(run)}
                             >
                               {run.retention === "pinned" ? "Unpin" : "Pin"}
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                               type="button"
-                              class="text-xs font-medium text-destructive underline decoration-destructive/30 underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-destructive"
+                              variant="link"
+                              size="xs"
                               disabled={!canWrite()}
                               onClick={() =>
                                 setDeleteBackupTarget({ id: run.id, startedAt: run.startedAt })
                               }
                             >
-                              Delete
-                            </button>
+                              <span class="text-destructive">Delete</span>
+                            </Button>
                           </Show>
                         </div>
                       </td>
@@ -409,7 +429,7 @@ export default function BackupsSettingsPage() {
             Runs older than the configured retention window are deleted automatically. Pin a run to
             keep it until you unpin it. To restore into a separate tenant instead,{" "}
             <a
-              class="text-foreground underline decoration-border underline-offset-2 transition-colors duration-[var(--duration-hover)] ease-swift hover:decoration-foreground"
+              class="text-foreground underline decoration-border underline-offset-2 transition-colors duration-150 ease-swift hover:decoration-foreground"
               href={`${exportBase()}#restore`}
             >
               import a bundle from Migration

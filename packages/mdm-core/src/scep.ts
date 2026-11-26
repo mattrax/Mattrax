@@ -187,9 +187,33 @@ export class ScepRepositoryLive extends ScepRepository {
           );
         }
 
+        const challengeId = yield* Effect.tryPromise({
+          try: () => scepChallengeId(challenge),
+          catch: (cause) =>
+            new ScepError({
+              message: "Failed to hash SCEP challenge",
+              reason: "internal",
+              cause,
+            }),
+        });
+
+        // Load the enrollment and challenge reference together, before the
+        // challenge is consumed. The conditional UPDATE below remains the
+        // single-use claim; this read must never be used to authorize issuance.
         const [enrollment] = yield* db
-          .select()
+          .select({
+            id: schema.enterpriseEnrollment.id,
+            organizationId: schema.enterpriseEnrollment.organizationId,
+            byodEnrollmentId: schema.scepChallenge.byodEnrollmentId,
+          })
           .from(schema.enterpriseEnrollment)
+          .leftJoin(
+            schema.scepChallenge,
+            and(
+              eq(schema.scepChallenge.id, challengeId),
+              eq(schema.scepChallenge.enrollmentId, schema.enterpriseEnrollment.id),
+            ),
+          )
           .where(eq(schema.enterpriseEnrollment.id, verification.enrollmentId))
           .limit(1)
           .pipe(
@@ -222,16 +246,6 @@ export class ScepRepositoryLive extends ScepRepository {
         // can observe `affectedRows === 1`. A missing, expired, already-used or
         // other-tenant row is reported exactly like an invalid challenge so the
         // response does not distinguish the failure modes.
-        const challengeId = yield* Effect.tryPromise({
-          try: () => scepChallengeId(challenge),
-          catch: (cause) =>
-            new ScepError({
-              message: "Failed to hash SCEP challenge",
-              reason: "internal",
-              cause,
-            }),
-        });
-
         const consumed = yield* db
           .update(schema.scepChallenge)
           .set({ consumedAt: new Date() })
@@ -251,18 +265,12 @@ export class ScepRepositoryLive extends ScepRepository {
           );
         }
 
-        const [storedChallenge] = yield* db
-          .select({ byodEnrollmentId: schema.scepChallenge.byodEnrollmentId })
-          .from(schema.scepChallenge)
-          .where(eq(schema.scepChallenge.id, challengeId))
-          .limit(1);
-
         // Authenticated tenant id becomes the issued certificate's OU. It is
         // never derived from attacker-controlled CSR content.
         return {
           organizationalUnit: enrollment.organizationId,
           enrollmentId: enrollment.id,
-          referenceId: storedChallenge?.byodEnrollmentId ?? undefined,
+          referenceId: enrollment.byodEnrollmentId ?? undefined,
         };
       }).pipe(
         Effect.mapError((cause) =>

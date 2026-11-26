@@ -5,7 +5,9 @@ test.describe("account", () => {
   test("updates the profile and manages API tokens", async ({ page }) => {
     await bootstrapTenant(page, "Account Tenant");
     await gotoHydrated(page, "/account");
-    await expect(page.getByText("Active sessions")).toBeVisible();
+    // The section heading, not "No active sessions were found" in the
+    // pre-fetch state: `getByText` matches substrings case-insensitively.
+    await expect(page.getByRole("heading", { name: "Active sessions" })).toBeVisible();
     await expect(page.getByText("This session")).toBeVisible();
 
     const name = page.locator("#name");

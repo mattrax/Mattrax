@@ -110,6 +110,7 @@ export const realtimeInvalidationKeys = (
           // rather than a fan-out over ids.
           ["enterprise", "device-health", tenantId] as const,
           ["enterprise", "item", tenantId, "device"] as const,
+          enterpriseKeys.entitySummaryPrefix(tenantId, "device"),
           ["enterprise", "device-activity", tenantId] as const,
           ["enterprise", "device-applications", tenantId] as const,
           ["enterprise", "device-effective-policy", tenantId] as const,
@@ -122,6 +123,7 @@ export const realtimeInvalidationKeys = (
           // Prefix: covers the device detail, its commands, groups and any
           // other per-device query under `item`.
           enterpriseKeys.item(tenantId, "device", deviceId),
+          enterpriseKeys.entitySummary(tenantId, "device", deviceId),
           enterpriseKeys.deviceActivity(tenantId, deviceId),
           enterpriseKeys.deviceApplications(tenantId, deviceId),
           enterpriseKeys.deviceEffectivePolicy(tenantId, deviceId),
@@ -140,6 +142,7 @@ export const realtimeInvalidationKeys = (
       return [
         enterpriseKeys.deviceSearchPrefix(tenantId),
         enterpriseKeys.listPrefix(tenantId, "device"),
+        enterpriseKeys.entitySummaryPrefix(tenantId, "device"),
         enterpriseKeys.deviceHealthSummary(tenantId),
         // Fleet/dashboard widgets are cached under these two prefixes.
         ["enterprise", "dashboard-query", tenantId] as const,

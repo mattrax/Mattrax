@@ -833,7 +833,10 @@ export const retryFailedWebhookDeliveries = (
     ),
   );
 
-/** Delete delivery rows older than the retention window. Returns the count. */
+/** Maximum delivery rows changed by one retention statement. */
+const WEBHOOK_DELIVERY_PRUNE_BATCH = 500;
+
+/** Delete delivery rows older than the retention window in bounded batches. */
 export const pruneWebhookDeliveries = (
   db: Db["Service"],
   options: { readonly now?: Date; readonly retentionDays?: number } = {},
@@ -844,16 +847,18 @@ export const pruneWebhookDeliveries = (
     if (retentionDays <= 0) return 0;
     const now = options.now ?? new Date();
     const cutoff = new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1000);
+    let deleted = 0;
 
-    const stale = yield* db
-      .select({ id: s.webhookDelivery.id })
-      .from(s.webhookDelivery)
-      .where(lt(s.webhookDelivery.createdAt, cutoff));
+    while (true) {
+      const result = yield* db
+        .delete(s.webhookDelivery)
+        .where(lt(s.webhookDelivery.createdAt, cutoff))
+        .limit(WEBHOOK_DELIVERY_PRUNE_BATCH);
+      const affectedRows = Number(result.affectedRows);
 
-    if (stale.length === 0) return 0;
-    yield* db.delete(s.webhookDelivery).where(lt(s.webhookDelivery.createdAt, cutoff));
-
-    return stale.length;
+      deleted += affectedRows;
+      if (affectedRows < WEBHOOK_DELIVERY_PRUNE_BATCH) return deleted;
+    }
   }).pipe(recoverBestEffort<number>(() => Effect.succeed(0)));
 
 export const WEBHOOK_DELIVERY_TIMEOUT_MS = DEFAULT_TIMEOUT_MS;

@@ -11,7 +11,7 @@ import {
 import type { StepUpAction, StepUpMethod } from "@mattrax/enterprise-domain";
 import { Data, DateTime, Effect, Layer, Option, Predicate, Redacted, Schema } from "effect";
 import { Schema as AuthSchema } from "@yielded/auth";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import { Db } from "@mattrax/enterprise-core";
 import { schema } from "../schema.ts";
 import { signToken, TokenError, verifyToken } from "@mattrax/enterprise-tokens";
@@ -296,103 +296,125 @@ export const stepUpServiceLayer = () =>
               );
 
             const record = snapshot?.record;
+            const envelope = record?.secret;
 
-            if (!record?.secret) return false;
+            if (!record || !envelope) return false;
 
             const now = yield* DateTime.now;
 
             const nowMillis = DateTime.toEpochMillis(now);
             const nowDate = DateTime.toDate(now);
 
-            const [state] = yield* db
-              .select()
-              .from(schema.stepUpTotpState)
-              .where(eq(schema.stepUpTotpState.subjectId, subjectId))
-              .limit(1);
-
-            if (state?.lockedUntil && state.lockedUntil.getTime() > nowDate.getTime()) return false;
-
-            const step = yield* Effect.acquireUseRelease(
-              totpCryptography.decryptSecret(
-                {
-                  moduleId: TOTP_MODULE_ID,
-                  subjectId: record.subjectId,
-                  credentialId: record.credentialId,
-                  revision: record.revision,
-                },
-                record.secret,
-              ),
-              (secret) =>
-                totpCryptography.matchCode(
-                  secret,
-                  code.trim(),
-                  nowMillis,
-                  TOTP_POLICY.clockSkewSteps,
-                ),
-              (secret) => Effect.sync(() => secret.fill(0)),
-            ).pipe(
-              Effect.catch((error) =>
-                unavailable(
-                  "Authenticator verification is unavailable right now",
-                  "cryptography",
-                  true,
-                  error,
-                ),
-              ),
-            );
-
-            const failed = () =>
+            return yield* db.transaction((tx) =>
               Effect.gen(function* () {
-                const failures = (state?.failures ?? 0) + 1;
-
-                const lockedUntil =
-                  failures >= 5 ? new Date(nowDate.getTime() + 15 * 60 * 1000) : null;
-
-                yield* db
+                // Materialize the row before taking the lock. SELECT ... FOR
+                // UPDATE cannot lock a gap for a subject that has never
+                // failed, so a locking upsert closes the first-attempt race.
+                yield* tx
                   .insert(schema.stepUpTotpState)
                   .values({
                     subjectId,
                     lastAcceptedStep: 0,
-                    failures,
-                    lockedUntil,
+                    failures: 0,
+                    lockedUntil: null,
                     updatedAt: nowDate,
                   })
-                  .onDuplicateKeyUpdate({ set: { failures, lockedUntil, updatedAt: nowDate } });
+                  .onDuplicateKeyUpdate({
+                    // A no-op upsert takes the exclusive row lock. Unlike
+                    // INSERT IGNORE, it cannot leave duplicate-key shared
+                    // locks that deadlock with the FOR UPDATE below.
+                    set: { subjectId: sql`${schema.stepUpTotpState.subjectId}` },
+                  });
 
-                return false;
-              });
+                const [state] = yield* tx
+                  .select()
+                  .from(schema.stepUpTotpState)
+                  .where(eq(schema.stepUpTotpState.subjectId, subjectId))
+                  .limit(1)
+                  .for("update");
 
-            if (step === null) return yield* failed();
+                if (!state) return false;
+                if (state.lockedUntil && state.lockedUntil.getTime() > nowDate.getTime())
+                  return false;
 
-            // Accept each time-step once per account. The conditional update
-            // makes two concurrent guesses at the same step resolve to one
-            // winner.
-            const claimed = yield* db
-              .update(schema.stepUpTotpState)
-              .set({ lastAcceptedStep: step, failures: 0, lockedUntil: null, updatedAt: nowDate })
-              .where(
-                and(
-                  eq(schema.stepUpTotpState.subjectId, subjectId),
-                  lt(schema.stepUpTotpState.lastAcceptedStep, step),
-                ),
-              );
+                // Keep the lock from the admission check through the guess
+                // and its state write. Concurrent failures are serialized, so
+                // no more than five guesses can run before lockout.
+                const secret = yield* totpCryptography
+                  .decryptSecret(
+                    {
+                      moduleId: TOTP_MODULE_ID,
+                      subjectId: record.subjectId,
+                      credentialId: record.credentialId,
+                      revision: record.revision,
+                    },
+                    envelope,
+                  )
+                  .pipe(
+                    Effect.catch((error) =>
+                      unavailable(
+                        "Authenticator verification is unavailable right now",
+                        "cryptography",
+                        true,
+                        error,
+                      ),
+                    ),
+                  );
 
-            if (claimed.affectedRows === 0) {
-              // No row existed when it was read; claim the first step by
-              // inserting. A concurrent request that inserted first makes this
-              // a no-op, which is a replay.
-              const inserted = yield* db.insert(schema.stepUpTotpState).ignore().values({
-                subjectId,
-                lastAcceptedStep: step,
-                failures: 0,
-                lockedUntil: null,
-                updatedAt: nowDate,
-              });
+                const step = yield* Effect.acquireUseRelease(
+                  Effect.succeed(secret),
+                  (secret) =>
+                    totpCryptography.matchCode(
+                      secret,
+                      code.trim(),
+                      nowMillis,
+                      TOTP_POLICY.clockSkewSteps,
+                    ),
+                  (decrypted) => Effect.sync(() => decrypted.fill(0)),
+                ).pipe(
+                  Effect.catch((error) =>
+                    unavailable(
+                      "Authenticator verification is unavailable right now",
+                      "cryptography",
+                      true,
+                      error,
+                    ),
+                  ),
+                );
 
-              if (inserted.affectedRows === 0) return false;
-            }
+                if (step === null) {
+                  const failures = state.failures + 1;
+                  const lockedUntil =
+                    failures >= 5 ? new Date(nowDate.getTime() + 15 * 60 * 1000) : null;
 
-            return true;
+                  yield* tx
+                    .update(schema.stepUpTotpState)
+                    .set({ failures, lockedUntil, updatedAt: nowDate })
+                    .where(eq(schema.stepUpTotpState.subjectId, subjectId));
+
+                  return false;
+                }
+
+                // Accept each time-step once per account. The row lock
+                // serializes the replay check with failure accounting.
+                const claimed = yield* tx
+                  .update(schema.stepUpTotpState)
+                  .set({
+                    lastAcceptedStep: step,
+                    failures: 0,
+                    lockedUntil: null,
+                    updatedAt: nowDate,
+                  })
+                  .where(
+                    and(
+                      eq(schema.stepUpTotpState.subjectId, subjectId),
+                      lt(schema.stepUpTotpState.lastAcceptedStep, step),
+                    ),
+                  );
+
+                return claimed.affectedRows > 0;
+              }),
+            );
           }).pipe(
             Effect.catch((error) =>
               error instanceof StepUpUnavailable
