@@ -1,6 +1,5 @@
 import { Context, Effect, Layer, Option, Predicate, Schema } from "effect";
 import {
-  FetchHttpClient,
   HttpClient,
   HttpClientError,
   HttpClientRequest,
@@ -36,13 +35,19 @@ const asApiError = (cause: unknown): ApiError => {
   });
 };
 
-const serviceBindingClient = (
+/**
+ * The Worker proxy must return redirects to the browser instead of following
+ * them. An API POST such as OAuth consent answers with a 302 to the client's
+ * callback; following it here would replay a streamed request body against the
+ * external origin, which fails and turns the redirect into a gateway error.
+ */
+const webFetchClient = (
   fetch: (request: Request) => Promise<Response>,
 ): HttpClient.HttpClient =>
   HttpClient.make((request, _url, signal) =>
     Effect.flatMap(HttpClientRequest.toWeb(request, { signal }), (webRequest) =>
       Effect.tryPromise({
-        try: () => fetch(webRequest),
+        try: () => fetch(new Request(webRequest, { redirect: "manual" })),
         catch: (cause) =>
           new HttpClientError.HttpClientError({
             reason: new HttpClientError.TransportError({ request, cause }),
@@ -73,7 +78,7 @@ const forwardingLayer = (apiUrl: string): Layer.Layer<HttpClient.HttpClient> =>
         );
       })(client),
     ),
-  ).pipe(Layer.provide(FetchHttpClient.layer));
+  ).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, webFetchClient(fetch))));
 
 const deploymentLayer = (bindings: DeploymentBindings): Layer.Layer<ApiClient> => {
   if (bindings.API_URL)
@@ -86,7 +91,7 @@ const deploymentLayer = (bindings: DeploymentBindings): Layer.Layer<ApiClient> =
 
     return Layer.succeed(
       ApiClient,
-      makeService(serviceBindingClient((request) => api.fetch(request))),
+      makeService(webFetchClient((request) => api.fetch(request))),
     );
   }
 

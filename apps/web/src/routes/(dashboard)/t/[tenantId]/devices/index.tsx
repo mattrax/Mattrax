@@ -27,8 +27,8 @@ import {
   usePresenceNow,
 } from "~/components/mdm/common";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
-import { EntityHoverCard } from "~/components/entity-hover-card";
-import { EntityActions } from "~/components/mdm/entity-actions";
+import EntityHoverCard from "~/components/entity-hover-card";
+import EntityActions from "~/components/mdm/entity-actions";
 import { MdmTable } from "~/components/mdm/table";
 import type { MdmColumn, MdmSortState } from "~/components/mdm/table";
 import { Button } from "~/components/ui/button";
@@ -112,7 +112,7 @@ function DevicesTableSkeleton() {
       <span role="status" class="sr-only">
         Loading rows…
       </span>
-      <For each={[0, 1, 2, 3, 4, 5]}>{() => <Skeleton class="h-9 rounded-none" />}</For>
+      <For each={[0, 1, 2, 3, 4, 5]}>{() => <Skeleton class="h-9" />}</For>
     </div>
   );
 }
@@ -230,33 +230,6 @@ const responseFailure = async (response: Response, fallback: string) => {
   return new Error(presentation.tag ? presentation.message : fallback);
 };
 
-const FILTER_PARAM_KEYS = [
-  "q",
-  "status",
-  "proto",
-  "groupId",
-  "staleDays",
-  "health",
-  "push",
-  "lostMode",
-  "localAccount",
-  "setup",
-  "notSeenSince",
-  "activation",
-  "attributeKey",
-  "attributeValue",
-  "sort",
-  "direction",
-  "query",
-  "page",
-  "columns",
-  "pageSize",
-  "view",
-] as const;
-
-/** `setSearchParams` merges, so every known key must be sent (empty deletes). */
-const emptyFilterParams = () => Object.fromEntries(FILTER_PARAM_KEYS.map((key) => [key, ""]));
-
 type HealthReason = { code: string; label: string; severity: string };
 
 const statusMeta = {
@@ -298,8 +271,8 @@ function DeviceStatusTag(props: { status: string }) {
   const meta = () => (isStatus(props.status) ? statusMeta[props.status] : statusMeta.unenrolled);
 
   return (
-    <Badge variant={meta().variant} dot={meta().dot} class="capitalize">
-      {props.status}
+    <Badge variant={meta().variant} dot={meta().dot}>
+      <span class="capitalize">{props.status}</span>
     </Badge>
   );
 }
@@ -316,21 +289,22 @@ function DeviceHealthTag(props: { level: string; reasons?: ReadonlyArray<HealthR
   return (
     <Show when={(props.reasons ?? []).length > 0} fallback={badge()}>
       <Tooltip>
-        <TooltipTrigger
-          as="span"
-          tabindex={0}
-          class="inline-flex cursor-default rounded-[5px] outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          aria-label={`Health ${meta().label}. ${(props.reasons ?? [])
-            .map((reason) => reason.label)
-            .join("; ")}`}
-        >
-          {badge()}
-        </TooltipTrigger>
+        <span class="inline-flex cursor-default rounded-xs outline-none focus-within:outline-none focus-within:ring-2 focus-within:ring-ring/40">
+          <TooltipTrigger
+            as="span"
+            tabindex={0}
+            aria-label={`Health ${meta().label}. ${(props.reasons ?? [])
+              .map((reason) => reason.label)
+              .join("; ")}`}
+          >
+            {badge()}
+          </TooltipTrigger>
+        </span>
         <TooltipContent>
-          <p class="text-[11px] font-medium">
+          <p class="text-xs font-medium">
             Why {meta().label === "MIA" ? "MIA" : meta().label.toLowerCase()}
           </p>
-          <ul class="mt-1 space-y-0.5 text-[11.5px]">
+          <ul class="mt-1 space-y-0.5 text-xs">
             <For each={props.reasons ?? []}>{(reason) => <li>{reason.label}</li>}</For>
           </ul>
         </TooltipContent>
@@ -597,6 +571,13 @@ export default function DevicesPage() {
   // would start a redundant navigation (and delay other settled work).
   let urlInitialised = false;
   let urlWriteTimer: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * The last search string this page wrote. A router write is asynchronous, so
+   * a control change made in the same window (typing while a sort write is in
+   * flight) would otherwise see its own older URL come back and revert the
+   * newer local value — which is how the controlled search box lost its text.
+   */
+
   onCleanup(() => clearTimeout(urlWriteTimer));
   createEffect(
     () => ({
@@ -628,7 +609,9 @@ export default function DevicesPage() {
         return;
       }
 
-      const next = emptyFilterParams();
+      // Only non-empty parameters go into the URL. Starting from every key
+      // with an empty value left `?query=&q=&…` behind when filters cleared.
+      const next: Record<string, string> = {};
 
       if (state.q) next.q = state.q;
 
@@ -670,11 +653,17 @@ export default function DevicesPage() {
 
       if (state.pageSize !== DEFAULT_PAGE_SIZE) next.pageSize = String(state.pageSize);
 
-      // Coalesce rapid control changes into one router write. Every
-      // `setSearchParams` is a navigation, and a burst of them trips the
-      // router's redirect guard.
+      // Mirror the controls with `replaceState`, not a router navigation.
+      // Search-param transitions can remount the route (resetting every
+      // control, including text typed while the write was queued) and are
+      // dropped if another transition is settling. The URL still reloads and
+      // links correctly; the page's signals are the source of truth.
       clearTimeout(urlWriteTimer);
-      urlWriteTimer = setTimeout(() => setSearchParams(next, { replace: true }), 150);
+      urlWriteTimer = setTimeout(() => {
+        const search = new URLSearchParams(next).toString();
+        const url = `${window.location.pathname}${search ? `?${search}` : ""}`;
+        window.history.replaceState(window.history.state, "", url);
+      }, 150);
     },
   );
 
@@ -707,6 +696,8 @@ export default function DevicesPage() {
   createEffect(
     urlFilters,
     (filters) => {
+      // Ignore the echo of our own router write: it may predate a keystroke
+      // that has not reached the URL yet, and applying it would discard it.
       // Reads of the controls are deliberately untracked: this effect must run
       // only when the URL changes, not on every keystroke. Reading them inside
       // the compute function would recreate the original feedback loop.
@@ -1181,7 +1172,7 @@ export default function DevicesPage() {
           <EntityHoverCard
             preview={{ kind: "device", device: row }}
             href={routes.tenant(params.tenantId).device(row.id)}
-            class="font-[540] text-foreground decoration-border underline-offset-2 hover:underline"
+            class="font-medium text-foreground decoration-border underline-offset-2 hover:underline"
           >
             {row.name}
           </EntityHoverCard>
@@ -1246,7 +1237,7 @@ export default function DevicesPage() {
       icon: HardDrive,
       search: (row) => row.serial,
       cell: (row) => (
-        <span class="font-mono text-[11.5px] text-muted-foreground">{row.serial ?? "Unknown"}</span>
+        <span class="font-mono text-xs text-muted-foreground">{row.serial ?? "Unknown"}</span>
       ),
     },
     {
@@ -1276,16 +1267,17 @@ export default function DevicesPage() {
 
         return (
           <Tooltip>
-            <TooltipTrigger
-              type="button"
-              class="inline-flex items-center rounded-md text-[12.5px] text-muted-foreground underline decoration-border decoration-dotted underline-offset-4 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-              aria-label={`${groups.length} group${groups.length === 1 ? "" : "s"}: ${names}`}
-            >
-              {groups.length} group{groups.length === 1 ? "" : "s"}
-            </TooltipTrigger>
+            <span class="inline-flex items-center rounded-md text-xs text-muted-foreground underline decoration-border decoration-dotted underline-offset-4 transition-colors hover:text-foreground focus-within:outline-none focus-within:ring-2 focus-within:ring-ring/40">
+              <TooltipTrigger
+                type="button"
+                aria-label={`${groups.length} group${groups.length === 1 ? "" : "s"}: ${names}`}
+              >
+                {groups.length} group{groups.length === 1 ? "" : "s"}
+              </TooltipTrigger>
+            </span>
             <TooltipContent>
-              <p class="text-[11px] font-medium">Groups</p>
-              <ul class="mt-1 space-y-0.5 text-[11.5px]">
+              <p class="text-xs font-medium">Groups</p>
+              <ul class="mt-1 space-y-0.5 text-xs">
                 <For each={groups}>{(group) => <li>{group.name}</li>}</For>
               </ul>
             </TooltipContent>
@@ -1347,6 +1339,13 @@ export default function DevicesPage() {
   const pageCount = () => Math.max(1, Math.ceil(total() / pageSize()));
 
   /**
+   * A brand-new tenant with no filters gets the empty state's call to action.
+   * The masthead repeats it, so showing both would put two identical
+   * "Enroll device" links on screen at once.
+   */
+  const emptyFleet = () => devices.isSuccess && !hasFilters() && total() === 0;
+
+  /**
    * Resolve every device the active filter matches. The table's "select all
    * matching" option hands the bulk bar this list; each id is still authorised
    * by the API when the action runs.
@@ -1402,7 +1401,7 @@ export default function DevicesPage() {
     setPage(0);
     // Write immediately as well as through the mirror effect so clearing is
     // reflected even if a signal happened to already hold an empty value.
-    setSearchParams(emptyFilterParams(), { replace: true });
+    window.history.replaceState(window.history.state, "", window.location.pathname);
   };
 
   const exportCsv = async () => {
@@ -1447,26 +1446,15 @@ export default function DevicesPage() {
           <>
             <div class="flex items-center divide-x divide-border overflow-hidden rounded-md border border-border bg-card">
               <Show when={can("devices.write")}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  class="h-7 rounded-none px-2.5 text-[12px]"
-                  onClick={openImport}
-                >
+                <Button variant="ghost" size="sm" onClick={openImport}>
                   Import CSV
                 </Button>
               </Show>
-              <Button
-                variant="ghost"
-                size="sm"
-                class="h-7 rounded-none px-2.5 text-[12px]"
-                onClick={exportCsv}
-                disabled={exporting()}
-              >
+              <Button variant="ghost" size="sm" onClick={exportCsv} disabled={exporting()}>
                 {exporting() ? "Exporting…" : "Export CSV"}
               </Button>
             </div>
-            <Show when={can("enrollment.write") && (devices.isSuccess || hasFilters())}>
+            <Show when={can("enrollment.write") && !emptyFleet() && (devices.isSuccess || hasFilters())}>
               <Button
                 as="a"
                 href={routes.tenant(params.tenantId).settingsTab("enrollment")}
@@ -1487,7 +1475,7 @@ export default function DevicesPage() {
       <Show when={exportTruncated()}>
         <div
           role="status"
-          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/25 bg-warning/[0.07] px-3.5 py-2.5 text-[12.5px] text-warning-foreground"
+          class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/25 bg-warning/[0.07] px-3.5 py-2.5 text-xs text-warning-foreground"
         >
           <span>
             The export reached the {10_000}-row limit and was truncated. Narrow the filters to
@@ -1496,7 +1484,6 @@ export default function DevicesPage() {
           <Button
             variant="ghost"
             size="xs"
-            class="text-warning-foreground hover:bg-warning/10"
             onClick={() => setExportTruncated(false)}
           >
             Dismiss
@@ -1549,7 +1536,6 @@ export default function DevicesPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            class="h-7 rounded-full border-border bg-card px-2.5 text-[11.5px] text-muted-foreground"
                             aria-expanded={queryOpen() ? "true" : "false"}
                             onClick={() => setQueryOpen((value) => !value)}
                           >
@@ -1559,37 +1545,32 @@ export default function DevicesPage() {
                         }
                       >
                         <span class="inline-flex h-7 items-center rounded-full border border-border bg-card pl-1.5 pr-0.5">
-                          <button
-                            type="button"
-                            class="flex h-full items-center gap-1.5 rounded-full pr-1 text-[12px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/25"
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             aria-expanded={queryOpen() ? "true" : "false"}
                             onClick={() => setQueryOpen((value) => !value)}
                           >
-                            <SlidersHorizontal class="size-3.5 text-subtle-foreground" />
+                            <SlidersHorizontal class="size-3.5" />
                             <span class="text-muted-foreground">Query</span>
-                            <span class="font-[520] text-foreground">
+                            <span class="font-medium text-foreground">
                               {queryConditionCount()} condition
                               {queryConditionCount() === 1 ? "" : "s"}
                             </span>
-                          </button>
-                          <button
-                            type="button"
-                            class="flex size-5 shrink-0 items-center justify-center rounded-full text-subtle-foreground outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-xs"
                             aria-label="Clear advanced query"
                             title="Clear advanced query"
                             onClick={clearAdvancedQuery}
                           >
                             <X class="size-3" />
-                          </button>
+                          </Button>
                         </span>
                       </Show>
                       <Show when={hasFilters()}>
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          class="h-7 shrink-0 rounded-full px-2 text-[11.5px] text-muted-foreground"
-                          onClick={clearFilters}
-                        >
+                        <Button variant="ghost" size="xs" onClick={clearFilters}>
                           Clear filters
                         </Button>
                       </Show>
@@ -1599,7 +1580,7 @@ export default function DevicesPage() {
               }
               toolbar={
                 <Show when={queryOpen()}>
-                  <div class="animate-in rounded-xl border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-[var(--duration-popover)] ease-swift">
+                  <div class="animate-in rounded-xl border border-border bg-card p-3 motion-reduce:animate-none fade-in-0 slide-in-from-top-1 duration-160 ease-swift">
                     <DeviceQueryBuilder
                       compact
                       query={deviceQuery()}
@@ -1608,7 +1589,7 @@ export default function DevicesPage() {
                         setPage(0);
                       }}
                     />
-                    <p class="mt-2 text-[10.5px] text-muted-foreground">
+                    <p class="mt-2 text-xs text-muted-foreground">
                       The URL reproduces this filtered view.
                     </p>
                   </div>
@@ -1622,7 +1603,7 @@ export default function DevicesPage() {
                   <span
                     role="status"
                     aria-live="polite"
-                    class="text-[12px] tabular-nums text-muted-foreground"
+                    class="text-xs tabular-nums text-muted-foreground"
                   >
                     Page {page() + 1} of {pageCount()}
                     <Show when={total() > 0}>
@@ -1707,7 +1688,7 @@ export default function DevicesPage() {
       />
 
       <Dialog open={importOpen()} onOpenChange={(open) => !open && closeImport()}>
-        <DialogContent class="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogContent class="max-h-5/6 max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Import pre-registered devices</DialogTitle>
             <DialogDescription>
@@ -1765,8 +1746,8 @@ export default function DevicesPage() {
 
                     <Show when={parsed().rows.length > 0}>
                       <div class="max-h-64 overflow-auto rounded-lg border border-border">
-                        <table class="w-full text-left text-[12.5px]">
-                          <thead class="sticky top-0 z-10 border-b border-border bg-popover text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                        <table class="w-full text-left text-xs">
+                          <thead class="sticky top-0 z-10 border-b border-border bg-popover text-xs uppercase tracking-widest text-muted-foreground">
                             <tr>
                               <th class="px-3 py-2 font-medium">Serial</th>
                               <th class="px-3 py-2 font-medium">Name</th>
@@ -1778,7 +1759,7 @@ export default function DevicesPage() {
                           <tbody class="divide-y divide-border">
                             <For each={parsed().rows.slice(0, 20)}>
                               {(row) => (
-                                <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover">
+                                <tr class="transition-colors duration-140 ease-swift hover:bg-hover">
                                   <td class="px-3 py-2 font-mono text-xs">{row.serial}</td>
                                   <td class="px-3 py-2">{row.name ?? "—"}</td>
                                   <td class="px-3 py-2">{row.assetTag ?? "—"}</td>
@@ -1835,15 +1816,15 @@ export default function DevicesPage() {
                     <div class="text-2xl font-semibold text-success-foreground">
                       {result().created}
                     </div>
-                    <div class="text-[11px] text-success-foreground">Created</div>
+                    <div class="text-xs text-success-foreground">Created</div>
                   </div>
                   <div class="rounded-lg border border-border bg-surface p-3">
                     <div class="text-2xl font-semibold text-foreground">{result().updated}</div>
-                    <div class="text-[11px] text-muted-foreground">Updated</div>
+                    <div class="text-xs text-muted-foreground">Updated</div>
                   </div>
                   <div class="rounded-lg border border-destructive/25 bg-destructive/10 p-3">
                     <div class="text-2xl font-semibold text-destructive">{result().failed}</div>
-                    <div class="text-[11px] text-destructive">Failed</div>
+                    <div class="text-xs text-destructive">Failed</div>
                   </div>
                 </div>
                 <Show when={result().failed > 0}>

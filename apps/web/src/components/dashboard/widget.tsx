@@ -10,11 +10,12 @@ import { For, Show, createContext, createMemo, createSignal, useContext } from "
 import type { JSX } from "@solidjs/web";
 import { isServer } from "@solidjs/web";
 import { relativeTime } from "~/components/mdm/common";
-import { Markdown } from "~/components/dashboard/markdown";
+import Markdown from "~/components/dashboard/markdown";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import type { DashboardWidget } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
+import { Button } from "~/components/ui/button";
 
 const CHART_COLORS = [
   "var(--chart-1)",
@@ -58,6 +59,14 @@ const isWeakKey = (value: unknown): value is object =>
  * Widget config is immutable JSON: a new version arrives as a new object.
  * Cache the decoded value so the batch provider and widget view can share it.
  */
+/** Read query data only after success so pending async values never suspend during render. */
+function settledQueryData<T>(query: {
+  readonly isSuccess: boolean;
+  readonly data: T | undefined;
+}): T | undefined {
+  return query.isSuccess ? query.data : undefined;
+}
+
 export const createDashboardWidgetConfigResolver = (
   decode: (config: unknown) => Option.Option<QueryConfig>,
 ) => {
@@ -203,7 +212,7 @@ const cellValue = (row: DashboardQueryRow, column: string, dataset: string | und
       <span class="block min-w-0">
         <span class="block truncate font-medium text-foreground">{row.name}</span>
         <Show when={isString(row.bundleId)}>
-          <span class="block max-w-[28ch] truncate font-mono text-[10.5px] text-muted-foreground">
+          <span class="block max-w-56 truncate font-mono text-xs text-muted-foreground">
             {row.bundleId}
           </span>
         </Show>
@@ -345,7 +354,9 @@ export function DashboardWidgetBatchProvider(props: {
 
     return {
       get data() {
-        return batch()?.data?.results[offset];
+        const current = batch();
+
+        return current ? settledQueryData(current)?.results[offset] : undefined;
       },
       get pending() {
         return batch()?.isPending ?? true;
@@ -407,7 +418,7 @@ export function DashboardWidgetView(props: {
     enabled: !isServer && !props.batch && props.widget.type !== "markdown",
   }));
 
-  const data = () => props.batch?.data ?? result.data;
+  const data = () => props.batch?.data ?? settledQueryData(result);
   const pending = () => props.batch?.pending ?? result.isPending;
   const error = () => props.batch?.error ?? result.error;
   const retry = () => (props.batch ? props.batch.retry() : void result.refetch());
@@ -427,20 +438,20 @@ export function DashboardWidgetView(props: {
         <Show
           when={!error()}
           fallback={
-            <div class="rounded-lg border border-destructive/20 bg-destructive/[0.05] p-3 text-[11.5px]">
+            <div class="rounded-lg border border-destructive/20 bg-destructive/[0.05] p-3 text-xs">
               <p class="font-medium text-destructive">
                 {errorPresentation(raisedFailure(error())).title}
               </p>
               <p class="mt-0.5 text-muted-foreground">
                 {errorPresentation(raisedFailure(error())).message}
               </p>
-              <button
+              <Button
                 type="button"
-                class="mt-2 rounded border border-border px-2 py-1 text-[10.5px] text-foreground transition-[color,background-color,border-color] duration-[var(--duration-hover)] ease-swift hover:border-border-strong hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+                class="mt-2"
                 onClick={() => retry()}
               >
                 Try again
-              </button>
+              </Button>
             </div>
           }
         >
@@ -450,13 +461,13 @@ export function DashboardWidgetView(props: {
                 when={props.widget.type !== "stat"}
                 fallback={
                   <div class="flex h-full flex-col justify-center">
-                    <p class="text-[30px] font-semibold leading-none tracking-[-0.04em] tabular-nums text-foreground">
+                    <p class="text-3xl font-semibold leading-none tracking-tighter tabular-nums text-foreground">
                       {data().total}
                     </p>
-                    <p class="mt-1.5 text-[11px] text-muted-foreground">
+                    <p class="mt-1.5 text-xs text-muted-foreground">
                       {config().label ?? datasetNoun(dataset())}
                     </p>
-                    <p class="mt-0.5 text-[10.5px] text-muted-foreground">
+                    <p class="mt-0.5 text-xs text-muted-foreground">
                       {datasetCaption(dataset())}
                     </p>
                   </div>
@@ -469,7 +480,7 @@ export function DashboardWidgetView(props: {
                   <Show
                     when={data().rows.length > 0}
                     fallback={
-                      <div class="flex h-full items-center justify-center text-[11.5px] text-muted-foreground">
+                      <div class="flex h-full items-center justify-center text-xs text-muted-foreground">
                         No rows match this query.
                       </div>
                     }
@@ -502,9 +513,9 @@ function WidgetTable(props: {
   return (
     <>
       <div class="overflow-x-auto" aria-busy={props.pending ? "true" : undefined}>
-        <table class="w-full text-[11.5px]">
+        <table class="w-full text-xs">
           <caption class="sr-only">{datasetRowsLabel(props.dataset)} matching this widget</caption>
-          <thead class="text-left text-[9.5px] uppercase tracking-[0.1em] text-muted-foreground">
+          <thead class="text-left text-xs uppercase tracking-widest text-muted-foreground">
             <tr>
               <For each={props.columns}>
                 {(column) => (
@@ -518,10 +529,10 @@ function WidgetTable(props: {
           <tbody class="divide-y divide-border">
             <For each={props.rows}>
               {(row) => (
-                <tr class="transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover">
+                <tr class="transition-colors duration-150 ease-swift hover:bg-hover">
                   <For each={props.columns}>
                     {(column) => (
-                      <td class="max-w-[24ch] px-1.5 py-1.5 text-muted-foreground">
+                      <td class="max-w-48 px-1.5 py-1.5 text-muted-foreground">
                         {cellValue(row, column, props.dataset)}
                       </td>
                     )}
@@ -532,7 +543,7 @@ function WidgetTable(props: {
           </tbody>
         </table>
       </div>
-      <p role="status" class="mt-1.5 text-[10px] text-muted-foreground">
+      <p role="status" class="mt-1.5 text-xs text-muted-foreground">
         {props.rows.length} of {props.total} rows
       </p>
     </>
@@ -567,23 +578,23 @@ function PieBuckets(props: {
     <Show
       when={props.buckets.length > 0}
       fallback={
-        <div class="flex h-full items-center justify-center text-[11.5px] text-muted-foreground">
+        <div class="flex h-full items-center justify-center text-xs text-muted-foreground">
           No data to chart.
         </div>
       }
     >
       <div class="flex h-full flex-wrap items-center gap-4">
         <div
-          class="relative size-28 shrink-0 rounded-full"
+          class="relative size-28 shrink-0 rounded-full bg-(--chart-bg)"
           style={{
-            background: `conic-gradient(${gradient()})`,
+            "--chart-bg": `conic-gradient(${gradient()})`,
           }}
           role="img"
           aria-label={props.buckets.map((bucket) => `${bucket.label}: ${bucket.value}`).join(", ")}
         >
-          <div class="absolute inset-[18%] flex flex-col items-center justify-center rounded-full bg-card">
-            <span class="text-[18px] font-semibold leading-none tabular-nums">{props.total}</span>
-            <span class="mt-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
+          <div class="absolute inset-1/4 flex flex-col items-center justify-center rounded-full bg-card">
+            <span class="text-lg font-semibold leading-none tabular-nums">{props.total}</span>
+            <span class="mt-0.5 text-xs uppercase tracking-wide text-muted-foreground">
               total
             </span>
           </div>
@@ -591,10 +602,10 @@ function PieBuckets(props: {
         <div class="min-w-0 flex-1 space-y-1.5">
           <For each={slices()}>
             {(slice) => (
-              <div class="flex items-center gap-2 text-[11px]">
+              <div class="flex items-center gap-2 text-xs">
                 <span
-                  class="size-2 shrink-0 rounded-full"
-                  style={{ "background-color": slice.color }}
+                  class="size-2 shrink-0 rounded-full bg-(--chart-color)"
+                  style={{ "--chart-color": slice.color }}
                   aria-hidden="true"
                 />
                 <span class="min-w-0 flex-1 truncate text-muted-foreground">{slice.label}</span>

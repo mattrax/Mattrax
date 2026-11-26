@@ -15,10 +15,10 @@ import {
   relativeTime,
   SkeletonRows,
 } from "~/components/mdm/common";
-import { PolicyProgressBar } from "~/components/mdm/policy-progress";
+import PolicyProgressBar from "~/components/mdm/policy-progress";
 import { MdmTable } from "~/components/mdm/table";
 import type { MdmColumn } from "~/components/mdm/table";
-import { PolicyViewTabs } from "~/components/mdm/policy-view-tabs";
+import PolicyViewTabs from "~/components/mdm/policy-view-tabs";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
@@ -54,7 +54,7 @@ const columns: MdmColumn<DeviceRow>[] = [
     cell: (row) => (
       <span class="flex min-w-0 flex-col">
         <span class="truncate font-medium text-foreground">{row.name}</span>
-        <span class="truncate text-[11px] text-muted-foreground">
+        <span class="truncate text-xs text-muted-foreground">
           {platformLabel(row.platform)}
         </span>
       </span>
@@ -94,10 +94,10 @@ const columns: MdmColumn<DeviceRow>[] = [
     cell: (row) => (
       <Show
         when={row.lastEvidenceAt}
-        fallback={<span class="text-[11.5px] text-muted-foreground">No report</span>}
+        fallback={<span class="text-xs text-muted-foreground">No report</span>}
       >
         {(value) => (
-          <span class="text-[11.5px] text-muted-foreground" title={formatDate(value())}>
+          <span class="text-xs text-muted-foreground" title={formatDate(value())}>
             {relativeTime(value())}
           </span>
         )}
@@ -108,9 +108,9 @@ const columns: MdmColumn<DeviceRow>[] = [
   {
     id: "reason",
     header: "Detail",
-    class: "max-w-[360px]",
+    class: "max-w-90",
     cell: (row) => (
-      <span class="text-[11.5px] leading-relaxed text-muted-foreground">{row.reason}</span>
+      <span class="text-xs leading-relaxed text-muted-foreground">{row.reason}</span>
     ),
     search: (row) => row.reason,
   },
@@ -242,10 +242,10 @@ export default function PolicyDeploymentPage() {
         }
         actions={
           <div class="flex flex-wrap items-center gap-2">
-            <label class="flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+            <label class="flex items-center gap-1.5 text-xs text-muted-foreground">
               Version
               <select
-                class="h-8 rounded-md border border-input bg-background px-2 text-[12.5px] text-foreground"
+                class="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
                 value={requestedVersion()}
                 onChange={(event) => selectVersion(event.currentTarget.value)}
               >
@@ -286,7 +286,7 @@ export default function PolicyDeploymentPage() {
               <Show
                 when={(deployments.data?.deployments.length ?? 0) > 0}
                 fallback={
-                  <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+                  <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-xs text-muted-foreground">
                     No deployments yet. Save the policy to create version 1 and start tracking
                     delivery.
                   </p>
@@ -310,7 +310,7 @@ export default function PolicyDeploymentPage() {
                 <div class="space-y-3">
                   <PolicyProgressBar segments={segments()} />
 
-                  <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-muted-foreground">
+                  <div class="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
                     <For each={segments()}>
                       {(segment) => (
                         <span class="inline-flex items-center gap-1.5">
@@ -325,7 +325,7 @@ export default function PolicyDeploymentPage() {
                     </For>
                   </div>
 
-                  <p class="text-[12px] leading-relaxed text-muted-foreground">
+                  <p class="text-xs leading-relaxed text-muted-foreground">
                     {data().counts.scoped === 0
                       ? "This policy's assignments match no devices right now."
                       : applicable() > 0
@@ -352,7 +352,7 @@ export default function PolicyDeploymentPage() {
                 title="Devices"
                 description="Action-needed first, then by device name."
                 actions={
-                  <Badge variant="outline" class="tabular-nums text-muted-foreground">
+                  <Badge variant="outline">
                     {rangeLabel()}
                   </Badge>
                 }
@@ -368,14 +368,14 @@ export default function PolicyDeploymentPage() {
                   storageKey="policy-deployment-devices"
                   caption="Devices in this policy deployment"
                   empty={
-                    <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-[12.5px] text-muted-foreground">
+                    <p class="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-5 text-xs text-muted-foreground">
                       No device is in this policy's scope. Assign it to a device, a group or a
                       directory user to start a deployment.
                     </p>
                   }
                   footer={
                     <div class="flex items-center justify-between gap-2">
-                      <p class="text-[11.5px] tabular-nums text-muted-foreground">{rangeLabel()}</p>
+                      <p class="text-xs tabular-nums text-muted-foreground">{rangeLabel()}</p>
                       <div class="flex items-center gap-1.5">
                         <Button
                           size="sm"

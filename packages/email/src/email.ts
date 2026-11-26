@@ -32,6 +32,15 @@ export type OutboundEmailMessage = {
   readonly text?: string;
   readonly html?: string;
   readonly attachments?: ReadonlyArray<EmailAttachment>;
+  /**
+   * Extra MIME headers, used by transports that can express them (SMTP).
+   *
+   * The verification code email sets `OTP-Token`, Resend's parallel to
+   * WebOTP's origin-bound SMS format, so desktop and mobile mail clients can
+   * offer the code without the inbox being the only source. Provider bindings
+   * that cannot carry custom headers simply ignore this field.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
 };
 
 /**

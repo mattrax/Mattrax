@@ -1,8 +1,8 @@
 import { Show } from "solid-js";
 import { cn } from "./lib/cn";
 import { splitProps } from "./lib/solid";
-import { DotMatrix } from "./dot-matrix";
-import type { DotMatrixPattern, DotMatrixState } from "./dot-matrix";
+import DotMatrix from "./dot-matrix";
+import type { DotMatrixPattern, DotMatrixSize, DotMatrixState } from "./dot-matrix";
 
 export type LoadingStateProps = {
   label: string;
@@ -12,7 +12,7 @@ export type LoadingStateProps = {
   /** Extra line under the label, e.g. "214 of 512 devices". */
   detail?: string;
   pattern?: DotMatrixPattern;
-  size?: number;
+  size?: DotMatrixSize;
   class?: string;
 };
 
@@ -21,7 +21,7 @@ export type LoadingStateProps = {
  * optional monospace progress detail. Use it for cold loads, background jobs
  * and long-running saves instead of a bare "Loading…" string.
  */
-function LoadingState(props: LoadingStateProps) {
+export default function LoadingState(props: LoadingStateProps) {
   const [local] = splitProps(props, [
     "label",
     "state",
@@ -55,10 +55,10 @@ function LoadingState(props: LoadingStateProps) {
         size={local.size ?? 18}
       />
       <span class="min-w-0">
-        <span class="block text-[12px] font-[500] leading-4 text-foreground">{local.label}</span>
+        <span class="block text-xs font-medium leading-4 text-foreground">{local.label}</span>
         <Show when={detail()}>
           {(line) => (
-            <span class="block font-mono text-[10.5px] leading-4 tabular-nums text-muted-foreground">
+            <span class="block font-mono text-xs leading-4 tabular-nums text-muted-foreground">
               {line()}
             </span>
           )}
@@ -67,5 +67,3 @@ function LoadingState(props: LoadingStateProps) {
     </div>
   );
 }
-
-export { LoadingState };

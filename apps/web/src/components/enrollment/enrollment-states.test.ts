@@ -2,13 +2,13 @@ import { createComponent } from "solid-js";
 import { renderToString } from "@solidjs/web";
 import { describe, expect, it } from "vitest";
 import type { EnrollmentResponse } from "~/lib/enterprise";
-import { EnrollmentDetails } from "./enrollment-details";
+import EnrollmentDetails from "./enrollment-details";
 import {
   EnrollmentDeviceLimitNotice,
   EnrollmentLinkProblem,
   EnrollmentNotice,
 } from "./enrollment-feedback";
-import { EnrollmentPasswordInput } from "./enrollment-password-input";
+import EnrollmentPasswordInput from "./enrollment-password-input";
 import { deviceLimitCardDescription } from "~/lib/enrollment-presentation";
 
 const authenticated = (
@@ -36,7 +36,6 @@ describe("enrollment password progressive enhancement", () => {
         id: "enrollment-password",
         name: "code",
         autocomplete: "off",
-        class: "h-12 pr-12",
         required: true,
       }),
     );
@@ -46,9 +45,9 @@ describe("enrollment password progressive enhancement", () => {
     expect(html).toContain("required");
     expect(html).not.toContain("aria-pressed");
     expect(html).not.toContain("aria-controls");
-    // The reveal control and its padding must not drop the caller's sizing.
+    // Sizing stays on the primitive as a static class; spacing is owned by the
+    // design system, not composed into the input by the client-only reveal.
     expect(html).toContain("h-12");
-    expect(html).toContain("pr-12");
     expect(html).not.toContain("Show password");
     expect(html).not.toContain("<button");
   });

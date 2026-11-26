@@ -5,6 +5,7 @@ import { Button } from "~/components/ui/button";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
+import { Input } from "~/components/ui/input";
 
 export type ScopeTagResourceType =
   | "device"
@@ -57,13 +58,13 @@ export function ScopeTagSelect(props: {
       disabled={props.disabled}
       aria-describedby={props.hint ? "scope-tag-select-hint" : undefined}
     >
-      <legend class="text-[12px] font-medium text-foreground">
+      <legend class="text-xs font-medium text-foreground">
         {props.legend ?? "Scope tags"}
       </legend>
       <Show
         when={(tags.data?.tags.length ?? 0) > 0}
         fallback={
-          <p class="rounded-lg border border-border bg-surface px-3 py-2 text-[11.5px] leading-relaxed text-muted-foreground">
+          <p class="rounded-lg border border-border bg-surface px-3 py-2 text-xs leading-relaxed text-muted-foreground">
             <Show
               when={!tags.isPending}
               fallback={<>Loading scope tags…</>}
@@ -82,22 +83,22 @@ export function ScopeTagSelect(props: {
               return (
                 <label
                   class={cn(
-                    "flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-[12px] transition-colors duration-[var(--duration-hover)] ease-swift",
+                    "flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-xs transition-colors duration-150 ease-swift",
                     checked()
-                      ? "border-ring/50 bg-selected text-foreground"
+                      ? "border-ring/50 bg-active text-foreground"
                       : "border-border bg-surface text-muted-foreground hover:bg-hover",
                   )}
                 >
-                  <input
+                  <Input
                     type="checkbox"
-                    class="mt-0.5 size-3.5 accent-[var(--color-primary)]"
+                    class="mt-0.5 size-3.5"
                     checked={checked()}
                     onChange={() => toggle(tag.id)}
                   />
                   <span class="min-w-0">
                     <span class="block truncate font-medium text-foreground">{tag.name}</span>
                     <Show when={tag.description}>
-                      <span class="mt-0.5 block text-[11px] leading-snug text-muted-foreground">
+                      <span class="mt-0.5 block text-xs leading-snug text-muted-foreground">
                         {tag.description}
                       </span>
                     </Show>
@@ -108,7 +109,7 @@ export function ScopeTagSelect(props: {
           </For>
         </div>
       </Show>
-      <p id="scope-tag-select-hint" class="text-[11px] leading-relaxed text-muted-foreground">
+      <p id="scope-tag-select-hint" class="text-xs leading-relaxed text-muted-foreground">
         {props.hint ??
           "Only administrators whose role covers these tags can see the resource. An untagged resource is visible to every administrator in the tenant."}
       </p>
@@ -135,7 +136,7 @@ export function ScopeTagBadges(props: {
       <div class={cn("flex flex-wrap items-center gap-1", props.class)}>
         <For each={names()}>
           {(name) => (
-            <Badge variant="secondary" class="max-w-40 truncate">
+            <Badge variant="secondary" class="max-w-40">
               {name}
             </Badge>
           )}
@@ -162,9 +163,14 @@ export function ScopeTagAssignmentEditor(props: {
 }) {
   const qc = useQueryClient();
   const { can } = useCan();
-  const current = useQuery(() =>
-    enterpriseQueries.scopeTagAssignments(props.tenantId, props.resourceType, props.resourceIds),
-  );
+  // The assignment read needs scope_tags.read. A role without it still has to
+  // open the resource, so skip the request rather than failing the page with a
+  // forbidden error from a card the operator cannot use.
+  const readable = () => can("scope_tags.read");
+  const current = useQuery(() => ({
+    ...enterpriseQueries.scopeTagAssignments(props.tenantId, props.resourceType, props.resourceIds),
+    enabled: readable(),
+  }));
   const [selected, setSelected] = createSignal<Array<string> | null>(null);
   const [saveError, setSaveError] = createSignal<unknown>();
   const ids = createMemo(() => [...new Set(props.resourceIds)]);
@@ -195,6 +201,13 @@ export function ScopeTagAssignmentEditor(props: {
   });
 
   const noun = () => resourceNoun[props.resourceType];
+
+  if (!readable())
+    return (
+      <p class={cn("rounded-lg border border-border bg-surface p-3 text-xs text-muted-foreground", props.class)}>
+        Your role cannot view this resource's scope tags.
+      </p>
+    );
 
   return (
     <div class={cn("space-y-3", props.class)}>
@@ -237,17 +250,17 @@ export function ScopeTagAssignmentEditor(props: {
           {props.saveLabel ?? "Save tags"}
         </Button>
         <Show when={current.isError}>
-          <span class="text-[11px] text-destructive">
+          <span class="text-xs text-destructive">
             Could not load the current tags. Reload before saving.
           </span>
         </Show>
         <Show when={saveError()}>
-          <span role="alert" class="text-[11px] text-destructive">
+          <span role="alert" class="text-xs text-destructive">
             Could not save the tags. Try again.
           </span>
         </Show>
         <Show when={current.data?.assignments.length === 0}>
-          <span class="text-[11px] text-muted-foreground">
+          <span class="text-xs text-muted-foreground">
             {props.resourceIds.length === 1 ? "This" : "These"} {noun()}
             {props.resourceIds.length === 1 ? " is" : "s are"} currently untagged and tenant-wide.
           </span>

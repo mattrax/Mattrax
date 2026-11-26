@@ -6,9 +6,9 @@ export default function Page() {
   return (
     <main class="mx-auto max-w-2xl px-8 py-20 w-full">
       <div class="mb-14">
-        <p class="text-xs text-stone-400 uppercase tracking-[0.2em] mb-4">Legal</p>
-        <h1 class="text-5xl font-light tracking-tight text-stone-900 mb-4">Terms of Service</h1>
-        <p class="text-sm text-stone-400">Last updated {LAST_UPDATED}</p>
+        <p class="text-xs text-muted-foreground uppercase tracking-widest mb-4">Legal</p>
+        <h1 class="text-5xl font-light tracking-tight text-foreground mb-4">Terms of Service</h1>
+        <p class="text-sm text-muted-foreground">Last updated {LAST_UPDATED}</p>
       </div>
 
       <div class="space-y-12">
@@ -65,14 +65,14 @@ function TermsSection(props: { title: string; withSeparator?: boolean; children:
     <div>
       <div
         aria-hidden="true"
-        class={props.withSeparator ? "mb-12 h-px w-full bg-stone-100" : "hidden"}
+        class={props.withSeparator ? "mb-12 h-px w-full bg-shell" : "hidden"}
       />
-      <h2 class="text-lg font-semibold text-stone-900 mb-4">{props.title}</h2>
+      <h2 class="text-lg font-semibold text-foreground mb-4">{props.title}</h2>
       <ul class="space-y-3">{props.children}</ul>
     </div>
   );
 }
 
 function TermsParagraph(props: { text: string }) {
-  return <li class="text-stone-500 text-sm leading-relaxed">{props.text}</li>;
+  return <li class="text-subtle-foreground text-sm leading-relaxed">{props.text}</li>;
 }
