@@ -5,7 +5,7 @@ import { createSignal, For, Show } from "solid-js";
 import type { ScopeTag } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "~/components/ui/button";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -31,7 +31,7 @@ export const route = {
 };
 
 const textareaClass =
-  "min-h-20 w-full rounded-lg border border-input bg-transparent p-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 dark:bg-input/30";
+  "min-h-20 w-full rounded-lg border border-input bg-transparent p-2.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 export default function ScopeTagsPage() {
   const params = useParams();
@@ -157,7 +157,7 @@ export default function ScopeTagsPage() {
           title="Tags in this tenant"
           description="Delete a tag only after removing it from every administrator; tags on resources are removed when the tag is deleted."
           actions={
-            <span class="text-[11.5px] tabular-nums text-muted-foreground">
+            <span class="text-xs tabular-nums text-muted-foreground">
               {tags.data?.tags.length ?? 0} tag{tags.data?.tags.length === 1 ? "" : "s"}
             </span>
           }
@@ -175,8 +175,8 @@ export default function ScopeTagsPage() {
               when={(tags.data?.tags.length ?? 0) > 0}
               fallback={
                 <div class="px-4 py-10 text-center sm:px-5">
-                  <p class="text-[13px] font-medium text-foreground">No scope tags yet</p>
-                  <p class="mx-auto mt-1 max-w-md text-[12px] leading-relaxed text-muted-foreground">
+                  <p class="text-xs font-medium text-foreground">No scope tags yet</p>
+                  <p class="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
                     Tags are optional. Without one, every administrator sees every resource. Create
                     a tag to delegate a region or team without splitting the tenant.
                   </p>
@@ -189,18 +189,18 @@ export default function ScopeTagsPage() {
                     <li class="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-5">
                       <div class="min-w-0">
                         <div class="flex flex-wrap items-center gap-2">
-                          <h3 class="truncate text-[13px] font-medium text-foreground">
+                          <h3 class="truncate text-xs font-medium text-foreground">
                             {tag.name}
                           </h3>
-                          <span class="rounded-full border border-border px-2 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">
+                          <span class="rounded-full border border-border px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
                             {tag.resourceCount} resource{tag.resourceCount === 1 ? "" : "s"}
                           </span>
-                          <span class="rounded-full border border-border px-2 py-0.5 text-[10.5px] tabular-nums text-muted-foreground">
+                          <span class="rounded-full border border-border px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
                             {tag.memberCount} administrator{tag.memberCount === 1 ? "" : "s"}
                           </span>
                         </div>
                         <Show when={tag.description}>
-                          <p class="mt-1 max-w-2xl text-[12px] leading-relaxed text-muted-foreground">
+                          <p class="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
                             {tag.description}
                           </p>
                         </Show>
@@ -219,11 +219,10 @@ export default function ScopeTagsPage() {
                           type="button"
                           size="sm"
                           variant="outline"
-                          class="text-destructive"
                           disabled={!can("scope_tags.write")}
                           onClick={() => setDeleting(tag)}
                         >
-                          Delete
+                          <span class="text-destructive">Delete</span>
                         </Button>
                       </div>
                     </li>
@@ -235,7 +234,7 @@ export default function ScopeTagsPage() {
         </Panel>
 
         <Dialog open={editing() !== null} onOpenChange={(open) => !open && setEditing(null)}>
-          <DialogContent class="max-w-md rounded-lg p-6">
+          <DialogContent class="max-w-md">
             <DialogHeader>
               <DialogTitle>Edit scope tag</DialogTitle>
               <DialogDescription>

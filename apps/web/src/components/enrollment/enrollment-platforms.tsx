@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import { createSignal, For, Match, Show, Switch } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { getRequestEvent, isServer } from "@solidjs/web";
-import { QrCode } from "~/components/mdm/qr-code";
+import QrCode from "~/components/mdm/qr-code";
 import { Button } from "~/components/ui/button";
 import { Input, Label } from "~/components/ui/input";
 import {
@@ -42,7 +42,7 @@ import { EnrollmentNotice, EnrollmentStatus, EnrollmentSteps } from "./enrollmen
 type AuthenticatedEnrollment = Extract<EnrollmentResponse, { authenticated: true }>;
 type PlatformValue = PlatformEnrollment | WindowsEnrollment | AndroidEnrollment;
 
-export function EnrollmentOptions(props: {
+export default function EnrollmentOptions(props: {
   id: string | undefined;
   code: string;
   brandColor: string;
@@ -234,8 +234,8 @@ function TabButton(props: {
   const label = () => enrollmentPlatformLabel(props.platform);
 
   return (
-    <button
-      ref={props.ref}
+    <Button
+      ref={(element: HTMLButtonElement | HTMLAnchorElement) => props.ref?.(element as HTMLButtonElement)}
       type="button"
       role="tab"
       id={"enrollment-tab-" + props.platform}
@@ -246,12 +246,8 @@ function TabButton(props: {
       tabindex={props.active ? 0 : -1}
       data-available={props.available ? "true" : "false"}
       onClick={props.onSelect}
-      class={
-        "flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-2 py-2 text-sm font-medium outline-none transition-[background-color,border-color,color,box-shadow] duration-[var(--duration-hover)] ease-swift focus-visible:ring-[3px] focus-visible:ring-ring/30 motion-safe:active:scale-[0.985] " +
-        (props.active
-          ? "border border-border bg-card text-foreground shadow-sm"
-          : "border border-transparent text-muted-foreground hover:bg-hover hover:text-foreground")
-      }
+      variant={props.active ? "outline" : "ghost"}
+      class="min-h-14"
     >
       <span class="flex items-center gap-1.5">
         <PlatformIcon platform={props.platform} />
@@ -266,13 +262,13 @@ function TabButton(props: {
       >
         <Show
           when={props.available}
-          fallback={<CircleAlert class="size-3 text-muted-foreground" />}
+          fallback={<CircleAlert class="size-3" />}
         >
-          <CheckCircle2 class="size-3 text-success" />
+          <CheckCircle2 class="size-3" />
         </Show>
         {props.available ? "Ready" : "Unavailable"}
       </span>
-    </button>
+    </Button>
   );
 }
 
@@ -338,8 +334,8 @@ function ApplePane(props: {
         href={downloadUrl()}
         class="min-h-12 w-full"
         style={{
-          "background-color": props.brandColor,
-          color: accessibleBrandForeground(props.brandColor),
+          "--enroll-button-bg": props.brandColor,
+          "--enroll-button-fg": accessibleBrandForeground(props.brandColor),
         }}
       >
         Install Apple profile
@@ -458,7 +454,7 @@ function WindowsPane(props: { windows: WindowsEnrollment; supportEmail: string }
       <Show when={autopilot?.configured}>
         <div class="rounded-xl border border-info/30 bg-info/10 p-4">
           <div class="flex items-start gap-3">
-            <Info class="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
+            <Info class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <div>
               <p class="text-sm font-medium text-foreground">Autopilot is ready for this tenant</p>
               <p class="mt-1 text-xs leading-5 text-muted-foreground">

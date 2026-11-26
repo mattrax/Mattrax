@@ -1,9 +1,9 @@
 import { Title } from "@solidjs/meta";
-import { BrandLogo } from "~/components/brand-logo";
+import BrandLogo from "~/components/brand-logo";
 import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { createSignal, onSettled, Show } from "solid-js";
-import { MfaPending } from "~/components/mfa-pending";
+import MfaPending from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
 import { errorMessage } from "~/lib/errors";
 import { ssoFailureMessage } from "~/lib/sso-completion";
@@ -79,13 +79,13 @@ export default function SsoCompletePage() {
             </div>
           }
         >
-          <h1 class="text-xl font-semibold text-stone-900">
+          <h1 class="text-xl font-semibold text-foreground">
             {error() ? "Sign-in failed" : "Signing you in"}
           </h1>
           <p
             role={error() ? "alert" : "status"}
             aria-live={error() ? "assertive" : "polite"}
-            class="mt-2 text-sm text-stone-500"
+            class="mt-2 text-sm text-subtle-foreground"
           >
             {error() ?? "Finishing single sign-on…"}
           </p>

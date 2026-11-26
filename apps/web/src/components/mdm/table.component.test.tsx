@@ -57,7 +57,7 @@ const createMediaQueryList = (query: string): MediaQueryList => {
   return media;
 };
 
-/** Browser APIs the table touches, with animation frames disabled (no-animation path). */
+/** Browser APIs the table touches. Frame callbacks never run, so no animation starts. */
 const installTableGlobals = () => {
   const mediaQueries = new Map<string, MediaQueryList>();
 
@@ -72,8 +72,10 @@ const installTableGlobals = () => {
     return media;
   });
   vi.stubGlobal("ResizeObserver", ResizeObserverMock);
-  vi.stubGlobal("requestAnimationFrame", undefined);
-  vi.stubGlobal("cancelAnimationFrame", undefined);
+  // The Checkbox indicator schedules its check animation through these APIs.
+  // No-op spies keep it from starting while leaving the APIs callable.
+  vi.stubGlobal("requestAnimationFrame", vi.fn(() => 1));
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
 
   return { mediaQueries, matchMedia };
 };
@@ -155,11 +157,15 @@ describe("MdmTable cleanup ownership", () => {
     expect(rowObserver).toBeDefined();
     expect(viewportObserver).toBeDefined();
 
+    // The primitive wires the change handler to the button; the native input is
+    // only a hidden form proxy, so clicking it never toggles selection.
     const checkbox = firstRow.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    checkbox.click();
+    const checkboxButton = firstRow.querySelector<HTMLButtonElement>('button[role="checkbox"]')!;
+    checkboxButton.click();
     firstRow.focus();
     flush();
 
+    expect(checkboxButton.getAttribute("aria-checked")).toBe("true");
     expect(checkbox.checked).toBe(true);
     expect(container.textContent).toContain("1 selected");
     expect(document.activeElement).toBe(firstRow);
@@ -178,8 +184,8 @@ describe("MdmTable cleanup ownership", () => {
     setColumns(makeColumns(1));
     flush();
 
-    // Columns use a fixed width and are not observed; shrinking to one column
-    // turns the virtualised column model off instead.
+    // Virtualised columns use a fixed width, so there is no column observer;
+    // the table leaves column virtualisation entirely for a narrow set.
     expect(container.querySelector('[data-columns-virtualized="true"]')).toBeNull();
     expect(checkbox.checked).toBe(true);
     expect(document.activeElement).toBe(firstRow);
@@ -258,9 +264,9 @@ describe("MdmTable cleanup ownership", () => {
     expect(container.querySelector('[data-virtualized="true"]')).not.toBeNull();
     expect(container.querySelector('[data-columns-virtualized="true"]')).not.toBeNull();
 
-    // Virtualised columns use a fixed width, so only the viewport and row
-    // observers exist; both are live on this first render and none has been
-    // disconnected by a rerender, so the counts below belong to dispose alone.
+    // The viewport and row observers are live on this first render; none has
+    // been disconnected by a rerender, so the counts below belong to the
+    // dispose call alone. (Columns use a fixed width, so no column observer.)
     const observers = [...ResizeObserverMock.instances];
     expect(observers.length).toBeGreaterThanOrEqual(2);
 

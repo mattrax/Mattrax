@@ -1,5 +1,6 @@
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
+import { Checkbox } from "@mattrax/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { toast } from "~/components/toast";
 import {
@@ -355,8 +356,8 @@ export default function SoftwareCatalogueTitlePage() {
                   }
                 />
 
-                <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
-                  <div class="space-y-5">
+                <div class="grid gap-5 lg:grid-cols-4 lg:items-start">
+                  <div class="space-y-5 lg:col-span-3">
                     <Panel title="Supported platforms">
                       <div class="flex flex-wrap gap-1.5">
                         <For each={current().platforms}>
@@ -382,7 +383,7 @@ export default function SoftwareCatalogueTitlePage() {
                               <li class="space-y-2 px-4 py-3.5">
                                 <div class="flex flex-wrap items-start justify-between gap-2">
                                   <div class="min-w-0">
-                                    <p class="text-[13px] font-[560] text-foreground">
+                                    <p class="text-xs font-semibold text-foreground">
                                       {label(PLATFORM_LABELS, method.target)}
                                       <span
                                         class="mx-1.5 text-muted-foreground/50"
@@ -392,7 +393,7 @@ export default function SoftwareCatalogueTitlePage() {
                                       </span>
                                       {label(KIND_LABELS, method.kind)}
                                     </p>
-                                    <p class="mt-0.5 font-mono text-[10.5px] text-muted-foreground">
+                                    <p class="mt-0.5 font-mono text-xs text-muted-foreground">
                                       {methodReference(method)}
                                     </p>
                                   </div>
@@ -404,7 +405,7 @@ export default function SoftwareCatalogueTitlePage() {
                                   </div>
                                 </div>
                                 <Show when={method.note}>
-                                  <p class="max-w-3xl text-[12px] leading-5 text-muted-foreground">
+                                  <p class="max-w-3xl text-xs leading-5 text-muted-foreground">
                                     {method.note}
                                   </p>
                                 </Show>
@@ -413,13 +414,13 @@ export default function SoftwareCatalogueTitlePage() {
                                     method.kind === "apple-pkg" || method.kind === "windows-msi"
                                   }
                                 >
-                                  <p class="max-w-3xl rounded-md border border-warning/25 bg-warning/[0.06] px-2.5 py-1.5 text-[11.5px] leading-5 text-warning-foreground">
+                                  <p class="max-w-3xl rounded-md border border-warning/25 bg-warning/[0.06] px-2.5 py-1.5 text-xs leading-5 text-warning-foreground">
                                     {vendorUrlCaveat(method.kind)}
                                   </p>
                                 </Show>
                                 <Show when={method.url}>
                                   <a
-                                    class="inline-flex items-center gap-1 text-[11.5px] font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                                    class="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
                                     href={method.url}
                                     target="_blank"
                                     rel="noreferrer"
@@ -437,12 +438,12 @@ export default function SoftwareCatalogueTitlePage() {
 
                     <Show when={current().notes}>
                       <Panel title="Notes and limits">
-                        <div class="flex gap-2.5">
+                        <div class="flex gap-2.5 text-muted-foreground">
                           <Info
-                            class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                            class="mt-0.5 size-4 shrink-0"
                             aria-hidden="true"
                           />
-                          <p class="text-[12.5px] leading-5 text-muted-foreground">
+                          <p class="text-xs leading-5 text-muted-foreground">
                             {current().notes}
                           </p>
                         </div>
@@ -459,12 +460,12 @@ export default function SoftwareCatalogueTitlePage() {
                         <Show
                           when={current().deployments.some((method) => selectable(method))}
                           fallback={
-                            <div class="flex gap-2.5 rounded-lg border border-border bg-surface px-3 py-2.5">
+                            <div class="flex gap-2.5 rounded-lg border border-border bg-surface px-3 py-2.5 text-muted-foreground">
                               <CircleAlert
-                                class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                                class="mt-0.5 size-4 shrink-0"
                                 aria-hidden="true"
                               />
-                              <p class="text-[12px] leading-5 text-muted-foreground">
+                              <p class="text-xs leading-5 text-muted-foreground">
                                 No method for this title can be deployed by Mattrax yet. The vendor
                                 links and identifiers are recorded for when the delivery path lands
                                 (issue 568 and issue 589).
@@ -488,20 +489,19 @@ export default function SoftwareCatalogueTitlePage() {
                                         (canSelect() ? "" : " opacity-60")
                                       }
                                     >
-                                      <input
-                                        type="checkbox"
-                                        class="mt-0.5 size-4 shrink-0 rounded border-input accent-brand"
+                                      <Checkbox
+                                        class="mt-0.5"
                                         checked={checked()}
                                         disabled={!canSelect()}
-                                        onChange={() => toggle(method.id)}
+                                        onCheckedChange={() => toggle(method.id)}
                                       />
                                       <span class="min-w-0 flex-1">
-                                        <span class="block text-[12.5px] font-medium text-foreground">
+                                        <span class="block text-xs font-medium text-foreground">
                                           {label(PLATFORM_LABELS, method.target)} ·{" "}
                                           {label(KIND_LABELS, method.kind)}
                                           {isAdded() ? " · already added" : ""}
                                         </span>
-                                        <span class="mt-0.5 block text-[11.5px] text-muted-foreground">
+                                        <span class="mt-0.5 block text-xs text-muted-foreground">
                                           {state.status === "unsupported"
                                             ? state.reason
                                             : state.label}
@@ -513,7 +513,7 @@ export default function SoftwareCatalogueTitlePage() {
                                         <div>
                                           <label
                                             for={"product-code-" + method.id}
-                                            class="mb-1 block text-[11px] font-medium text-muted-foreground"
+                                            class="mb-1 block text-xs font-medium text-muted-foreground"
                                           >
                                             MSI ProductCode
                                           </label>
@@ -532,7 +532,7 @@ export default function SoftwareCatalogueTitlePage() {
                                         <div>
                                           <label
                                             for={"installer-version-" + method.id}
-                                            class="mb-1 block text-[11px] font-medium text-muted-foreground"
+                                            class="mb-1 block text-xs font-medium text-muted-foreground"
                                           >
                                             Installer version
                                           </label>
@@ -548,7 +548,7 @@ export default function SoftwareCatalogueTitlePage() {
                                             }
                                           />
                                         </div>
-                                        <p class="text-[11px] leading-4 text-muted-foreground">
+                                        <p class="text-xs leading-4 text-muted-foreground">
                                           {vendorUrlCaveat(method.kind)}
                                         </p>
                                       </div>
@@ -572,7 +572,7 @@ export default function SoftwareCatalogueTitlePage() {
                           >
                             {add.isPending ? "Adding…" : "Add selected methods"}
                           </Button>
-                          <p class="mt-2 text-[11px] leading-4 text-muted-foreground">
+                          <p class="mt-2 text-xs leading-4 text-muted-foreground">
                             This creates catalogue entries only. Assign them to groups or devices,
                             or install them, from My applications.
                           </p>
@@ -589,22 +589,21 @@ export default function SoftwareCatalogueTitlePage() {
                                 <Show
                                   when={!addition.pending}
                                   fallback={
-                                    <span class="inline-flex min-w-0 items-center gap-1.5 text-[12.5px] font-medium text-muted-foreground">
+                                    <span class="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
                                       <span class="size-1.5 shrink-0 animate-pulse rounded-full bg-brand" />
                                       <span class="truncate">{addition.name} · adding…</span>
                                     </span>
                                   }
                                 >
                                   <a
-                                    class="inline-flex min-w-0 items-center gap-1.5 text-[12.5px] font-medium hover:underline"
+                                    class="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium hover:underline"
                                     href={routes
                                       .tenant(params.tenantId)
                                       .application(addition.applicationId)}
                                   >
-                                    <CheckCircle2
-                                      class="size-3.5 shrink-0 text-success"
-                                      aria-hidden="true"
-                                    />
+                                    <span class="text-success">
+                                      <CheckCircle2 class="size-3.5 shrink-0" aria-hidden="true" />
+                                    </span>
                                     <span class="truncate">{addition.name}</span>
                                   </a>
                                 </Show>

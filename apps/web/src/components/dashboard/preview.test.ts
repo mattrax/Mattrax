@@ -17,7 +17,7 @@ vi.mock("~/components/ui/icons", () => ({
   LayoutDashboard: () => null,
 }));
 
-import { DashboardPreview } from "./preview";
+import DashboardPreview from "./preview";
 
 const widget = (index: number): DashboardWidget => ({
   id: `widget-${index}`,

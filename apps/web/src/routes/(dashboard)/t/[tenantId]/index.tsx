@@ -14,11 +14,11 @@ import {
   PageTitle,
 } from "@mattrax/ui";
 import { ErrorText, QueryError } from "~/components/mdm/common";
-import { MigrationBanner } from "~/components/migration-banner";
-import { MissingDevicesBanner } from "~/components/missing-devices-banner";
-import { OnboardingChecklist } from "~/components/onboarding-checklist";
-import { SoftwareUpdatesBanner } from "~/components/software-updates-banner";
-import { OsComplianceSummary } from "~/components/os-compliance-summary";
+import MigrationBanner from "~/components/migration-banner";
+import MissingDevicesBanner from "~/components/missing-devices-banner";
+import OnboardingChecklist from "~/components/onboarding-checklist";
+import SoftwareUpdatesBanner from "~/components/software-updates-banner";
+import OsComplianceSummary from "~/components/os-compliance-summary";
 import {
   DashboardWidgetBatchProvider,
   DashboardWidgetView,
@@ -80,16 +80,16 @@ const previewWidgets = (): DashboardWidget[] => {
  * design system intentionally leaves the chart slots to the page. */
 const chartRamp = {
   "--chart-1": "var(--foreground)",
-  "--chart-2": "color-mix(in oklab, var(--foreground) 62%, var(--background))",
-  "--chart-3": "color-mix(in oklab, var(--foreground) 42%, var(--background))",
-  "--chart-4": "color-mix(in oklab, var(--foreground) 26%, var(--background))",
-  "--chart-5": "color-mix(in oklab, var(--foreground) 14%, var(--background))",
+  "--chart-2": "var(--muted-foreground)",
+  "--chart-3": "var(--subtle-foreground)",
+  "--chart-4": "var(--border-strong)",
+  "--chart-5": "var(--border)",
 };
 
 function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: string }) {
   return (
     <DashboardWidgetBatchProvider widgets={props.widgets} tenantId={props.tenantId}>
-      <div class="dashboard-grid min-[901px]:[grid-auto-rows:56px]" style={chartRamp}>
+      <div class="dashboard-grid" style={chartRamp}>
         <For each={props.widgets}>
           {(widget) => {
             const batchFor = useDashboardWidgetBatch();
@@ -97,22 +97,24 @@ function WidgetGrid(props: { widgets: ReadonlyArray<DashboardWidget>; tenantId: 
             return (
               <article
                 class={cn(
-                  "dashboard-widget flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-card",
+                  "dashboard-widget col-start-(--widget-col-start) col-end-(--widget-col-end) row-start-(--widget-row-start) row-end-(--widget-row-end) flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-card",
                   `dashboard-widget-${widget.type}`,
                   // Stat widgets are rendered by the shared widget view; on the
                   // overview they follow the design system's compact metric scale.
                   widget.type === "stat" &&
-                    "[&_p.tabular-nums]:text-[19px] [&_p.tabular-nums]:font-[560] [&_p.tabular-nums]:tracking-[-0.025em]",
+                    "[&_p.tabular-nums]:text-lg [&_p.tabular-nums]:font-semibold [&_p.tabular-nums]:tracking-tight",
                 )}
                 style={{
-                  "grid-column": `${widget.x + 1} / span ${widget.w}`,
-                  "grid-row": `${widget.y + 1} / span ${widget.h}`,
+                  "--widget-col-start": widget.x + 1,
+                  "--widget-col-end": widget.x + widget.w + 1,
+                  "--widget-row-start": widget.y + 1,
+                  "--widget-row-end": widget.y + widget.h + 1,
                 }}
               >
                 <header class="px-0.5 pb-2">
-                  <h2 class="truncate text-[12.5px] font-[500] text-foreground">{widget.title}</h2>
+                  <h2 class="truncate text-xs font-medium text-foreground">{widget.title}</h2>
                   <Show when={widget.type !== "stat"}>
-                    <p class="truncate text-[10px] capitalize text-subtle-foreground">
+                    <p class="truncate text-xs capitalize text-subtle-foreground">
                       {widget.type === "markdown"
                         ? "Markdown"
                         : `${widget.type} · ${String(
@@ -156,13 +158,13 @@ function OverviewHeader(props: {
 
   return (
     <>
-      <PageHeader class="gap-3 border-0 pb-0">
+      <PageHeader>
         <PageHeaderBody>
           <div class="label-caps mb-1.5">Overview</div>
           <div class="flex flex-wrap items-center gap-2">
-            <PageTitle class="text-[21px] font-[560] tracking-[-0.026em]">{props.name}</PageTitle>
+            <PageTitle>{props.name}</PageTitle>
             <Show when={props.isDefault}>
-              <Badge variant="secondary" class="gap-1">
+              <Badge variant="secondary">
                 <Star class="size-3" />
                 Default
               </Badge>
@@ -171,7 +173,7 @@ function OverviewHeader(props: {
               <Badge variant="outline">Built-in preview</Badge>
             </Show>
           </div>
-          <PageDescription class="mt-1 max-w-2xl text-[12.5px] leading-5">
+          <PageDescription class="mt-1 max-w-2xl">
             {props.description?.trim() ||
               "Shared live views of your fleet. Create a dashboard to make this page your own."}
           </PageDescription>
@@ -238,46 +240,48 @@ function LoadedOverview(props: {
   const { can } = useCan();
 
   return (
-    <Page class="dashboard-reveal gap-5">
-      <OverviewHeader
-        name={dashboard.data?.name ?? props.summary.name}
-        description={dashboard.data?.description ?? props.summary.description}
-        isDefault={dashboard.data?.isDefault ?? props.summary.isDefault}
-        dashboardId={props.summary.id}
-        tenantId={props.tenantId}
-        create={props.create}
-        creating={props.creating}
-        error={props.error}
-      />
-      <MigrationBanner tenantId={props.tenantId} />
-      <MissingDevicesBanner tenantId={props.tenantId} />
-      <SoftwareUpdatesBanner tenantId={props.tenantId} />
-      <OnboardingChecklist tenantId={props.tenantId} />
-      <OsComplianceSummary tenantId={props.tenantId} />
-      <QueryError error={dashboard.error} onRetry={() => void dashboard.refetch()} />
-      <Show
-        when={(dashboard.data?.widgets.length ?? 0) > 0}
-        fallback={
-          <UIEmptyState
-            class="py-10"
-            title="This dashboard is empty"
-            description="Add widgets from the dashboard editor to share tables, charts and notes."
-            action={
-              <Show when={can("dashboards.write")}>
-                <Button
-                  as="a"
-                  href={routes.tenant(props.tenantId).dashboard(props.summary.id, { edit: "1" })}
-                  size="sm"
-                >
-                  Edit dashboard
-                </Button>
-              </Show>
-            }
-          />
-        }
-      >
-        <WidgetGrid widgets={dashboard.data?.widgets ?? []} tenantId={props.tenantId} />
-      </Show>
+    <Page>
+      <div class="dashboard-reveal flex flex-col gap-5">
+        <OverviewHeader
+          name={dashboard.data?.name ?? props.summary.name}
+          description={dashboard.data?.description ?? props.summary.description}
+          isDefault={dashboard.data?.isDefault ?? props.summary.isDefault}
+          dashboardId={props.summary.id}
+          tenantId={props.tenantId}
+          create={props.create}
+          creating={props.creating}
+          error={props.error}
+        />
+        <MigrationBanner tenantId={props.tenantId} />
+        <MissingDevicesBanner tenantId={props.tenantId} />
+        <SoftwareUpdatesBanner tenantId={props.tenantId} />
+        <OnboardingChecklist tenantId={props.tenantId} />
+        <OsComplianceSummary tenantId={props.tenantId} />
+        <QueryError error={dashboard.error} onRetry={() => void dashboard.refetch()} />
+        <Show
+          when={(dashboard.data?.widgets.length ?? 0) > 0}
+          fallback={
+            <UIEmptyState
+              class="my-10"
+              title="This dashboard is empty"
+              description="Add widgets from the dashboard editor to share tables, charts and notes."
+              action={
+                <Show when={can("dashboards.write")}>
+                  <Button
+                    as="a"
+                    href={routes.tenant(props.tenantId).dashboard(props.summary.id, { edit: "1" })}
+                    size="sm"
+                  >
+                    Edit dashboard
+                  </Button>
+                </Show>
+              }
+            />
+          }
+        >
+          <WidgetGrid widgets={dashboard.data?.widgets ?? []} tenantId={props.tenantId} />
+        </Show>
+      </div>
     </Page>
   );
 }
@@ -292,31 +296,33 @@ function PreviewOverview(props: {
   const { can } = useCan();
 
   return (
-    <Page class="dashboard-reveal gap-5">
-      <OverviewHeader
-        name="Fleet overview"
-        preview
-        tenantId={props.tenantId}
-        create={props.create}
-        creating={props.creating}
-        error={props.error}
-      />
-      <MigrationBanner tenantId={props.tenantId} />
-      <MissingDevicesBanner tenantId={props.tenantId} />
-      <SoftwareUpdatesBanner tenantId={props.tenantId} />
-      <OnboardingChecklist tenantId={props.tenantId} />
-      <OsComplianceSummary tenantId={props.tenantId} />
-      <WidgetGrid widgets={widgets()} tenantId={props.tenantId} />
-      <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border-strong bg-card px-3.5 py-3">
-        <p class="text-[12px] text-muted-foreground">
-          This is the built-in overview. Create a dashboard to add widgets, write team notes and
-          share a layout with everyone.
-        </p>
-        <Show when={can("dashboards.write")}>
-          <Button size="sm" disabled={props.creating} onClick={props.create}>
-            {props.creating ? "Creating…" : "Create from this layout"}
-          </Button>
-        </Show>
+    <Page>
+      <div class="dashboard-reveal flex flex-col gap-5">
+        <OverviewHeader
+          name="Fleet overview"
+          preview
+          tenantId={props.tenantId}
+          create={props.create}
+          creating={props.creating}
+          error={props.error}
+        />
+        <MigrationBanner tenantId={props.tenantId} />
+        <MissingDevicesBanner tenantId={props.tenantId} />
+        <SoftwareUpdatesBanner tenantId={props.tenantId} />
+        <OnboardingChecklist tenantId={props.tenantId} />
+        <OsComplianceSummary tenantId={props.tenantId} />
+        <WidgetGrid widgets={widgets()} tenantId={props.tenantId} />
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-border-strong bg-card px-3.5 py-3">
+          <p class="text-xs text-muted-foreground">
+            This is the built-in overview. Create a dashboard to add widgets, write team notes and
+            share a layout with everyone.
+          </p>
+          <Show when={can("dashboards.write")}>
+            <Button size="sm" disabled={props.creating} onClick={props.create}>
+              {props.creating ? "Creating…" : "Create from this layout"}
+            </Button>
+          </Show>
+        </div>
       </div>
     </Page>
   );

@@ -29,8 +29,8 @@ vi.mock("~/lib/sso-start", () => ({
   startOrganisationSso: state.startSso,
   redirectToProvider: state.redirect,
 }));
-vi.mock("~/components/mfa-pending", () => ({ MfaPending: () => <div>MFA required</div> }));
-vi.mock("~/components/brand-logo", () => ({ BrandLogo: () => null }));
+vi.mock("~/components/mfa-pending", () => ({ default: () => <div>MFA required</div> }));
+vi.mock("~/components/brand-logo", () => ({ default: () => null }));
 vi.mock("~/components/ui/icons", () => ({ KeyRound: () => null }));
 
 import LoginPage from "./login";

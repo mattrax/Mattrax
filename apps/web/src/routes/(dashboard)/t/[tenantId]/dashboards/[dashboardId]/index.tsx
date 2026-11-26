@@ -13,7 +13,7 @@ import {
 } from "~/components/dashboard/widget";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
 import { Badge } from "~/components/ui/badge";
-import { ConfirmDialog } from "~/components/ui/confirm-dialog";
+import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { toast } from "~/components/toast";
 import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
 import { Button } from "~/components/ui/button";
@@ -35,7 +35,7 @@ import { preloadPage } from "~/lib/page-data";
 import { queryClient as appQueryClient } from "~/lib/query-client";
 import { cn } from "~/lib/utils";
 import { useCan } from "~/lib/permissions";
-import { PinDashboardButton } from "~/components/pin-dashboard-button";
+import PinDashboardButton from "~/components/pin-dashboard-button";
 import { routes } from "~/lib/routes";
 import { resolveTenantId } from "~/lib/tenant";
 import { createDashboardLayoutResolver } from "./dashboard-layout";
@@ -53,6 +53,12 @@ export const route = {
     ]);
   },
 };
+
+/** Static grid placement utilities for dashboard widgets (12 columns, 24 rows). */
+const columnStartClasses = ["", ...Array.from({ length: 12 }, (_, index) => "col-start-" + (index + 1))];
+const columnSpanClasses = ["", ...Array.from({ length: 12 }, (_, index) => "col-span-" + (index + 1))];
+const rowStartClasses = ["", ...Array.from({ length: 24 }, (_, index) => "row-start-" + (index + 1))];
+const rowSpanClasses = ["", ...Array.from({ length: 24 }, (_, index) => "row-span-" + (index + 1))];
 
 type MutableJsonObject = { [key: string]: Schema.Json };
 
@@ -711,22 +717,22 @@ export default function DashboardPage() {
         <div class="min-w-0">
           <a
             href={`/t/${params.tenantId}/dashboards`}
-            class="text-[11.5px] text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:text-foreground"
+            class="text-xs text-muted-foreground transition-colors duration-150 ease-swift hover:text-foreground"
           >
             ← Dashboards
           </a>
           <div class="mt-1 flex flex-wrap items-center gap-2">
-            <h1 class="truncate text-[19px] font-semibold tracking-[-0.02em]">
+            <h1 class="truncate text-lg font-semibold tracking-tight">
               {settledQueryData(dashboard)?.name ?? "Dashboard"}
             </h1>
             <Show when={settledQueryData(dashboard)?.isDefault}>
-              <Badge variant="secondary" class="gap-1">
+              <Badge variant="secondary">
                 <Star class="size-3" />
                 Overview
               </Badge>
             </Show>
           </div>
-          <p class="mt-1 max-w-2xl text-[12.5px] text-muted-foreground">
+          <p class="mt-1 max-w-2xl text-xs text-muted-foreground">
             {settledQueryData(dashboard)?.description?.trim() ||
               "A shared view of your fleet. Widgets run live queries and can be arranged on the grid."}
           </p>
@@ -791,13 +797,13 @@ export default function DashboardPage() {
               aria-label="Dashboard name"
               value={name()}
               onInput={(event) => setName(event.currentTarget.value)}
-              class="h-7 min-w-[10rem] flex-1"
+              class="h-7 min-w-40 flex-1"
             />
             <Input
               aria-label="Dashboard description"
               value={description()}
               onInput={(event) => setDescription(event.currentTarget.value)}
-              class="h-7 min-w-[14rem] flex-[2]"
+              class="h-7 min-w-56 flex-1"
               placeholder="What this dashboard is for"
             />
             <Button
@@ -807,13 +813,13 @@ export default function DashboardPage() {
             >
               {saveSettings.isPending ? "Saving…" : "Save details"}
             </Button>
-            <span class="hidden text-[10.5px] text-muted-foreground sm:inline">
+            <span class="hidden text-xs text-muted-foreground sm:inline">
               Drag to move · corner to resize
             </span>
             <Button
               size="xs"
               variant="ghost"
-              class="ml-auto text-muted-foreground hover:text-destructive"
+              class="ml-auto"
               disabled={removeDashboard.isPending}
               onClick={() => setConfirmDeleteDashboard(true)}
             >
@@ -821,7 +827,7 @@ export default function DashboardPage() {
             </Button>
           </div>
           <Show when={settingsError()}>
-            <p role="alert" class="mt-1.5 text-[12px] text-destructive">
+            <p role="alert" class="mt-1.5 text-xs text-destructive">
               {settingsError()}
             </p>
           </Show>
@@ -850,8 +856,8 @@ export default function DashboardPage() {
         when={widgets().length > 0}
         fallback={
           <div class="flex min-h-48 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-surface px-6 text-center">
-            <p class="text-[13px] font-medium">This dashboard is empty</p>
-            <p class="mt-1 text-[12px] text-muted-foreground">
+            <p class="text-xs font-medium">This dashboard is empty</p>
+            <p class="mt-1 text-xs text-muted-foreground">
               Add a table, pie chart, count or markdown note.
             </p>
             <Button size="sm" class="mt-3" onClick={openCreate}>
@@ -875,31 +881,35 @@ export default function DashboardPage() {
                 return (
                   <article
                     class={cn(
-                      "dashboard-widget group relative flex min-h-0 flex-col rounded-lg border border-border bg-card p-3 shadow-[var(--card-highlight)] transition-[border-color,box-shadow] duration-[var(--duration-hover)] ease-swift",
+                      "dashboard-widget group relative flex min-h-0 flex-col rounded-lg border border-border bg-card p-3 shadow-card transition duration-150 ease-swift",
                       `dashboard-widget-${widget.type}`,
+                      columnStartClasses[position().x],
+                      columnSpanClasses[position().w],
+                      rowStartClasses[position().y],
+                      rowSpanClasses[position().h],
                       editing() && "hover:border-border-strong",
                     )}
-                    style={{
-                      "grid-column": `${position().x + 1} / span ${position().w}`,
-                      "grid-row": `${position().y + 1} / span ${position().h}`,
-                    }}
                   >
                     <header class="flex min-w-0 items-start gap-1.5 px-0.5 pb-2">
                       <Show when={editing()}>
-                        <button
-                          type="button"
-                          aria-label={`Move ${widget.title}`}
-                          class="dashboard-drag-handle -ml-1 mt-0.5 flex size-7 cursor-grab touch-none items-center justify-center rounded text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 active:cursor-grabbing active:bg-hover"
-                          onPointerDown={(event) => startDrag(event, widget, "move")}
-                        >
-                          <GripVertical class="size-3.5" />
-                        </button>
+                        <span class="dashboard-drag-handle flex">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Move ${widget.title}`}
+                            class="-ml-1 mt-0.5 cursor-grab touch-none active:cursor-grabbing"
+                            onPointerDown={(event: PointerEvent) => startDrag(event, widget, "move")}
+                          >
+                            <GripVertical class="size-3.5" />
+                          </Button>
+                        </span>
                       </Show>
                       <div class="min-w-0 flex-1">
-                        <h2 class="truncate text-[12.5px] font-medium text-foreground">
+                        <h2 class="truncate text-xs font-medium text-foreground">
                           {widget.title}
                         </h2>
-                        <p class="truncate text-[10px] capitalize text-muted-foreground">
+                        <p class="truncate text-xs capitalize text-muted-foreground">
                           {widget.type === "markdown"
                             ? "Markdown"
                             : `${widget.type} · ${String(widgetConfig(widget).dataset ?? "devices")}`}
@@ -919,7 +929,7 @@ export default function DashboardPage() {
                             size="xs"
                             variant="ghost"
                             aria-label={`Remove ${widget.title}`}
-                            class="min-h-9 min-w-9 text-muted-foreground hover:text-destructive sm:min-h-0 sm:min-w-0"
+                            class="min-h-9 min-w-9 sm:min-h-0 sm:min-w-0"
                             disabled={removeWidget.isPending}
                             onClick={() => setRemoveWidgetTarget(widget)}
                           >
@@ -936,12 +946,16 @@ export default function DashboardPage() {
                       />
                     </div>
                     <Show when={editing()}>
-                      <button
-                        type="button"
-                        aria-label={`Resize ${widget.title}`}
-                        class="dashboard-resize-handle absolute bottom-1 right-1 size-4 cursor-nwse-resize touch-none rounded-sm border-b border-r border-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-                        onPointerDown={(event) => startDrag(event, widget, "resize")}
-                      />
+                      <span class="dashboard-resize-handle">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label={`Resize ${widget.title}`}
+                          class="absolute bottom-1 right-1 cursor-nwse-resize touch-none"
+                          onPointerDown={(event: PointerEvent) => startDrag(event, widget, "resize")}
+                        />
+                      </span>
                     </Show>
                   </article>
                 );
@@ -952,7 +966,7 @@ export default function DashboardPage() {
       </Show>
 
       <Dialog open={editorOpen()} onOpenChange={setEditorOpen}>
-        <DialogContent class="max-w-2xl rounded-xl border border-border bg-card p-5">
+        <DialogContent class="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingWidget() ? "Edit widget" : "Add widget"}</DialogTitle>
             <DialogDescription>
@@ -960,11 +974,11 @@ export default function DashboardPage() {
             </DialogDescription>
           </DialogHeader>
           <div class="space-y-3">
-            <div class="grid gap-2 sm:grid-cols-[140px_minmax(0,1fr)]">
+            <div class="grid gap-2 sm:grid-cols-2">
               <label>
-                <span class="mb-1 block text-[11px] font-medium text-muted-foreground">Type</span>
+                <span class="mb-1 block text-xs font-medium text-muted-foreground">Type</span>
                 <select
-                  class="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                   value={draft().type}
                   onChange={(event) => {
                     const type = Option.getOrUndefined(decodeWidgetType(event.currentTarget.value));
@@ -979,7 +993,7 @@ export default function DashboardPage() {
                 </select>
               </label>
               <label>
-                <span class="mb-1 block text-[11px] font-medium text-muted-foreground">Title</span>
+                <span class="mb-1 block text-xs font-medium text-muted-foreground">Title</span>
                 <Input
                   class="h-8"
                   value={draft().title}
@@ -992,11 +1006,11 @@ export default function DashboardPage() {
 
             <Show when={draft().type === "markdown"}>
               <label class="block">
-                <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+                <span class="mb-1 block text-xs font-medium text-muted-foreground">
                   Markdown
                 </span>
                 <textarea
-                  class="min-h-48 w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  class="min-h-48 w-full rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                   value={configString(draft().config, "markdown") ?? ""}
                   onInput={(event) =>
                     setDraft((value) => ({
@@ -1005,7 +1019,7 @@ export default function DashboardPage() {
                     }))
                   }
                 />
-                <span class="mt-1 block text-[10.5px] text-muted-foreground">
+                <span class="mt-1 block text-xs text-muted-foreground">
                   Supports headings, lists, links, images, bold/italic and fenced code.
                 </span>
               </label>
@@ -1014,11 +1028,11 @@ export default function DashboardPage() {
             <Show when={draft().type !== "markdown"}>
               <div class="grid gap-2 sm:grid-cols-2">
                 <label>
-                  <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+                  <span class="mb-1 block text-xs font-medium text-muted-foreground">
                     Dataset
                   </span>
                   <select
-                    class="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                    class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                     value={dataset()}
                     onChange={(event) => {
                       const nextDataset = Option.getOrUndefined(
@@ -1058,11 +1072,11 @@ export default function DashboardPage() {
                 </label>
                 <Show when={draft().type === "pie"}>
                   <label>
-                    <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+                    <span class="mb-1 block text-xs font-medium text-muted-foreground">
                       Group by
                     </span>
                     <select
-                      class="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                      class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                       value={configString(draft().config, "dimension") ?? "platform"}
                       onChange={(event) =>
                         setDraft((value) => ({
@@ -1079,7 +1093,7 @@ export default function DashboardPage() {
                 </Show>
                 <Show when={draft().type === "stat"}>
                   <label>
-                    <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+                    <span class="mb-1 block text-xs font-medium text-muted-foreground">
                       Caption
                     </span>
                     <Input
@@ -1102,11 +1116,11 @@ export default function DashboardPage() {
                 fallback={
                   <div class="rounded-lg border border-border bg-surface p-2.5">
                     <label class="block">
-                      <span class="mb-1 block text-[11px] font-medium text-muted-foreground">
+                      <span class="mb-1 block text-xs font-medium text-muted-foreground">
                         Directory filter
                       </span>
                       <select
-                        class="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                        class="h-8 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                         value={configUserStatus(draft().config)}
                         onChange={(event) => {
                           const status = event.currentTarget.value;
@@ -1124,7 +1138,7 @@ export default function DashboardPage() {
                         <option value="disabled">Inactive only</option>
                       </select>
                     </label>
-                    <p class="mt-1.5 text-[11px] text-muted-foreground">
+                    <p class="mt-1.5 text-xs text-muted-foreground">
                       The tenant directory, including people who have never signed in. Inactive
                       people are accounts an administrator disabled.
                     </p>
@@ -1149,7 +1163,7 @@ export default function DashboardPage() {
 
               <Show when={draft().type === "table"}>
                 <div>
-                  <span class="mb-1.5 block text-[11px] font-medium text-muted-foreground">
+                  <span class="mb-1.5 block text-xs font-medium text-muted-foreground">
                     Columns
                   </span>
                   <div class="flex flex-wrap gap-1.5">
@@ -1158,19 +1172,15 @@ export default function DashboardPage() {
                         const checked = () => configColumns(draft().config).includes(id);
 
                         return (
-                          <button
+                          <Button
                             type="button"
+                            size="xs"
+                            variant={checked() ? "secondary" : "ghost"}
                             aria-pressed={checked() ? "true" : "false"}
                             onClick={() => toggleColumn(id)}
-                            class={cn(
-                              "rounded-full border px-2.5 py-1 text-[11px] transition-[color,background-color,border-color] duration-[var(--duration-hover)] ease-swift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-                              checked()
-                                ? "border-border bg-hover text-foreground hover:border-border-strong"
-                                : "border-border text-muted-foreground hover:bg-hover hover:text-foreground",
-                            )}
                           >
                             {label}
-                          </button>
+                          </Button>
                         );
                       }}
                     </For>
@@ -1180,7 +1190,7 @@ export default function DashboardPage() {
             </Show>
 
             <Show when={formError()}>
-              <p role="alert" class="text-[12px] text-destructive">
+              <p role="alert" class="text-xs text-destructive">
                 {formError()}
               </p>
             </Show>
@@ -1200,8 +1210,8 @@ export default function DashboardPage() {
       </Dialog>
 
       <section class="rounded-xl border border-border bg-card p-4">
-        <h2 class="text-[12.5px] font-medium text-foreground">Scope tags</h2>
-        <p class="mb-3 mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+        <h2 class="text-xs font-medium text-foreground">Scope tags</h2>
+        <p class="mb-3 mt-1 text-xs leading-relaxed text-muted-foreground">
           Limit which delegated administrators can see and edit this dashboard. Its widgets are
           tenant-wide queries, so a scoped administrator cannot run them yet.
         </p>
@@ -1212,7 +1222,7 @@ export default function DashboardPage() {
         />
       </section>
 
-      <p class="text-[11px] text-muted-foreground">
+      <p class="text-xs text-muted-foreground">
         Shared with everyone in this tenant.
         <Show when={settledQueryData(dashboard)?.updatedAt}>
           {" "}

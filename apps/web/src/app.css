@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "@mattrax/ui/styles.css";
+/* The landing page's `lx-*` selectors live here so the Tailwind theme graph
+   knows them; they are real CSS classes, not generated utilities. */
+@import "./landing.css";
 /* The Latin subset is served from `public/` and preloaded by the document, so
    the first paint already uses the real metrics. Do not import the fontsource
    CSS as well: its `swap` faces would race this `optional` face and reintroduce
