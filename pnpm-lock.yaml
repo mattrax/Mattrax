@@ -1182,7 +1182,7 @@ snapshots:
 				},
 				"effect": {
 					"specifier": "^4.1.4",
-					"version": "4.1.4",
+					"version": "4.1.5",
 				},
 				"foldkit": {
 					"specifier": "^0.170.0",
@@ -6938,7 +6938,7 @@ snapshots:
 				},
 				"@effect/platform-node": {
 					"specifier": "^4.1.4",
-					"version": "4.1.4",
+					"version": "4.1.5",
 					"optional": true,
 				},
 				"@types/react": {
@@ -6947,7 +6947,7 @@ snapshots:
 				},
 				"effect": {
 					"specifier": "^4.1.4",
-					"version": "4.1.4",
+					"version": "4.1.5",
 				},
 				"vite": {
 					"specifier": "^7.0.0 || ^8.0.0",
