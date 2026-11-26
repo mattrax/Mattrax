@@ -610,8 +610,6 @@ jobs:
         run: |
           cat > /tmp/start-mysql.sh <<'SCRIPT'
           set -euo pipefail
-          printf '[mysqld]\nmysql_native_password=ON\n' |
-            sudo tee /etc/mysql/mysql.conf.d/zz-ci-native.cnf >/dev/null
           if ! sudo systemctl start mysql.service; then
             sudo systemctl status mysql.service || true
             sudo journalctl -xeu mysql.service || true
@@ -632,8 +630,8 @@ jobs:
           fi
           mysql -uroot -proot <<'SQL'
           CREATE DATABASE IF NOT EXISTS mattraxe;
-          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
-          ALTER USER 'mattrax'@'%' IDENTIFIED WITH mysql_native_password BY 'mattrax';
+          CREATE USER IF NOT EXISTS 'mattrax'@'%' IDENTIFIED BY 'mattrax';
+          ALTER USER 'mattrax'@'%' IDENTIFIED BY 'mattrax';
           GRANT ALL ON mattraxe.* TO 'mattrax'@'%';
           SQL
           if [ "${SCHEMA_CACHE_HIT:-false}" = "true" ]; then
