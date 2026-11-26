@@ -26,7 +26,7 @@ const attributeOptionLabel = (type: string, option: string) => {
  * device when it appears. Questions are validated by the API exactly as the
  * dashboard validates device values.
  */
-export function EnrollmentDetails(props: {
+export default function EnrollmentDetails(props: {
   id: string | undefined;
   code: string;
   enrollment: Extract<EnrollmentResponse, { authenticated: true }>;
@@ -251,7 +251,7 @@ export function EnrollmentDetails(props: {
                 id={`enrollment-question-${question.key}`}
                 name={`answers[${question.key}]`}
                 required={question.required}
-                class="h-12 w-full rounded-md border border-input bg-card px-3 text-base text-foreground outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20 aria-invalid:border-destructive sm:text-sm"
+                class="h-12 w-full rounded-md border border-input bg-card px-3 text-base text-foreground outline-none transition-all focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 aria-invalid:border-destructive sm:text-sm"
                 value={answers()[question.key] ?? ""}
                 aria-invalid={questionErrors()[question.key] ? "true" : undefined}
                 aria-describedby={questionDescription(question.key)}

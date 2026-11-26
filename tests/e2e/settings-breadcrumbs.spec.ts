@@ -73,7 +73,7 @@ test.describe("settings breadcrumbs", () => {
       await expect(breadcrumb.getByRole("link")).toHaveCount(0);
     } finally {
       releaseMe();
-      await Promise.allSettled([...continuing]);
+      await Promise.allSettled(continuing);
       await page.unroute(mePath);
     }
 

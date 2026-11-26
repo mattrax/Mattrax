@@ -151,7 +151,7 @@ export default function TenantLayout(props: ParentProps) {
       when={tenant()}
       fallback={
         <div class="flex flex-1 items-center justify-center py-24">
-          <p role="status" class="text-[12px] text-muted-foreground">
+          <p role="status" class="text-xs text-muted-foreground">
             Opening tenant…
           </p>
         </div>
@@ -165,7 +165,7 @@ export default function TenantLayout(props: ParentProps) {
               <Show when={firstReadable()}>
                 {(href) => (
                   <a
-                    class="rounded-lg bg-primary px-3 py-1.5 text-[12.5px] font-medium text-primary-foreground"
+                    class="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground"
                     href={href()}
                   >
                     Open a section you can access

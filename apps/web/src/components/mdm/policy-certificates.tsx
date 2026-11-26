@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 import { For, Show, createSignal } from "solid-js";
-import { NativeSelect } from "@mattrax/ui";
+import { NativeSelect , Checkbox } from "@mattrax/ui";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -157,20 +157,20 @@ export function CertificateEditor(props: {
             {text(row(kind).certificatePem) ? "Replace leaf certificate" : "Select leaf certificate"}
           </Button>
           <Show when={text(row(kind).materialSha256) && !text(row(kind).pfx)}>
-            <Badge variant="outline" class="border-success/30 bg-success/10">
+            <Badge variant="success">
               Sealed at rest
             </Badge>
           </Show>
         </div>
-        <p class="text-[11px] leading-relaxed text-muted-foreground">
+        <p class="text-xs leading-relaxed text-muted-foreground">
           The PFX and password are sealed with the deployment secret and never returned by the
           API. The leaf certificate supplies the expiry Mattrax shows; it must match the PFX.
         </p>
         <Show when={text(row(kind).fileName)}>
-          <p class="font-mono text-[11px] text-muted-foreground">{text(row(kind).fileName)}</p>
+          <p class="font-mono text-xs text-muted-foreground">{text(row(kind).fileName)}</p>
         </Show>
         <div class="grid gap-2 sm:grid-cols-2">
-          <label class="space-y-1 text-[12px]">
+          <label class="space-y-1 text-xs">
             <span class="font-medium text-foreground/90">PFX password</span>
             <Input
               type="password"
@@ -181,7 +181,7 @@ export function CertificateEditor(props: {
             />
           </label>
           <Show when={kind.startsWith("mttx.windows")}>
-            <label class="space-y-1 text-[12px]">
+            <label class="space-y-1 text-xs">
               <span class="font-medium text-foreground/90">Windows key storage</span>
               <NativeSelect
                 value={text(row(kind).keyLocation) || "tpm-preferred"}
@@ -201,19 +201,18 @@ export function CertificateEditor(props: {
             (text(row(kind).keyLocation) === "software" || !text(row(kind).keyLocation))
           }
         >
-          <label class="flex items-center gap-2 text-[12px]">
-            <input
-              type="checkbox"
-              class="size-4 accent-[var(--brand-solid)]"
+          <label class="flex items-center gap-2 text-xs">
+            <Checkbox
+              class="size-4"
               checked={bool(row(kind).exportable)}
-              onChange={(event) => update(kind, { exportable: event.currentTarget.checked })}
+              onCheckedChange={(checked) => update(kind, { exportable: checked === true })}
             />
             <span>Allow the private key to be exported (software storage only)</span>
           </label>
         </Show>
         <Show when={pkcsKinds.has(kind)}>
           <div class="grid gap-2 sm:grid-cols-2">
-            <label class="space-y-1 text-[12px]">
+            <label class="space-y-1 text-xs">
               <span class="font-medium text-foreground/90">Certificate template</span>
               <Input
                 placeholder="Mattrax-WiFi"
@@ -221,7 +220,7 @@ export function CertificateEditor(props: {
                 onInput={(event) => update(kind, { template: event.currentTarget.value })}
               />
             </label>
-            <label class="space-y-1 text-[12px]">
+            <label class="space-y-1 text-xs">
               <span class="font-medium text-foreground/90">Subject name format</span>
               <Input
                 placeholder="CN={{device.name}}"
@@ -229,7 +228,7 @@ export function CertificateEditor(props: {
                 onInput={(event) => update(kind, { subjectNameFormat: event.currentTarget.value })}
               />
             </label>
-            <label class="space-y-1 text-[12px]">
+            <label class="space-y-1 text-xs">
               <span class="font-medium text-foreground/90">Key usage</span>
               <Input
                 placeholder="digitalSignature,keyEncipherment"
@@ -237,7 +236,7 @@ export function CertificateEditor(props: {
                 onInput={(event) => update(kind, { keyUsage: event.currentTarget.value })}
               />
             </label>
-            <label class="space-y-1 text-[12px]">
+            <label class="space-y-1 text-xs">
               <span class="font-medium text-foreground/90">Enterprise CA (name or FQDN)</span>
               <Input
                 placeholder="Corp-Issuing-CA"
@@ -249,7 +248,7 @@ export function CertificateEditor(props: {
                 }
               />
             </label>
-            <label class="space-y-1 text-[12px]">
+            <label class="space-y-1 text-xs">
               <span class="font-medium text-foreground/90">CA / NDES URL (recorded)</span>
               <Input
                 placeholder="https://ndes.example.com/certsrv/mscep/"
@@ -261,7 +260,7 @@ export function CertificateEditor(props: {
                 }
               />
             </label>
-            <label class="space-y-1 text-[12px]">
+            <label class="space-y-1 text-xs">
               <span class="font-medium text-foreground/90">Validity (days)</span>
               <Input
                 type="number"
@@ -275,7 +274,7 @@ export function CertificateEditor(props: {
                 }}
               />
             </label>
-            <label class="space-y-1 text-[12px]">
+            <label class="space-y-1 text-xs">
               <span class="font-medium text-foreground/90">Renewal threshold (%)</span>
               <Input
                 type="number"
@@ -290,7 +289,7 @@ export function CertificateEditor(props: {
               />
             </label>
           </div>
-          <p class="text-[11px] leading-relaxed text-muted-foreground">
+          <p class="text-xs leading-relaxed text-muted-foreground">
             Mattrax does not contact the CA or NDES: issue the PKCS#12 with your enterprise
             connector, then upload it here. Renewal metadata is reported, not automatic.
           </p>
@@ -343,18 +342,18 @@ export function CertificateEditor(props: {
 
   return (
     <div class="space-y-4">
-      <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+      <p class="text-xs leading-relaxed text-muted-foreground">
         Certificates are delivered on the device channel unless the card is marked as user scope.
         A trusted root is the prerequisite for SCEP, PKCS and S/MIME trust.
       </p>
-      <Show when={error()}>{(message) => <p class="text-[12px] text-destructive">{message()}</p>}</Show>
+      <Show when={error()}>{(message) => <p class="text-xs text-destructive">{message()}</p>}</Show>
       <For each={cards}>
         {(card) => (
           <details class="rounded-lg border border-border" open={Boolean(props.config[card.kind])}>
             <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5">
               <span class="min-w-0 flex-1">
-                <span class="block text-[13px] font-medium text-foreground">{card.title}</span>
-                <span class="block text-[11px] leading-relaxed text-muted-foreground">
+                <span class="block text-xs font-medium text-foreground">{card.title}</span>
+                <span class="block text-xs leading-relaxed text-muted-foreground">
                   {card.detail}
                 </span>
               </span>
@@ -399,10 +398,10 @@ export function MailEditor(props: {
 
   const serverFields = (key: "incoming" | "outgoing", label: string) => (
     <div class="space-y-2 rounded-lg border border-border bg-muted/10 p-3">
-      <p class="text-[12px] font-medium text-foreground">{label}</p>
+      <p class="text-xs font-medium text-foreground">{label}</p>
       <div class="grid gap-2 sm:grid-cols-2">
         <Show when={key === "incoming"}>
-          <label class="space-y-1 text-[12px]">
+          <label class="space-y-1 text-xs">
             <span>Protocol</span>
             <NativeSelect
               value={text(server(key).serverType) || "IMAP"}
@@ -415,7 +414,7 @@ export function MailEditor(props: {
             </NativeSelect>
           </label>
         </Show>
-        <label class="space-y-1 text-[12px]">
+        <label class="space-y-1 text-xs">
           <span>Host name</span>
           <Input
             placeholder={key === "incoming" ? "imap.example.com" : "smtp.example.com"}
@@ -423,7 +422,7 @@ export function MailEditor(props: {
             onInput={(event) => updateServer(key, { hostName: event.currentTarget.value })}
           />
         </label>
-        <label class="space-y-1 text-[12px]">
+        <label class="space-y-1 text-xs">
           <span>Authentication</span>
           <NativeSelect
             value={text(server(key).authenticationMethod) || "None"}
@@ -438,14 +437,14 @@ export function MailEditor(props: {
             <option value="HTTPMD5">HTTP-MD5</option>
           </NativeSelect>
         </label>
-        <label class="space-y-1 text-[12px]">
+        <label class="space-y-1 text-xs">
           <span>Username</span>
           <Input
             value={text(server(key).username)}
             onInput={(event) => updateServer(key, { username: event.currentTarget.value })}
           />
         </label>
-        <p class="text-[11px] leading-relaxed text-muted-foreground sm:col-span-2">
+        <p class="text-xs leading-relaxed text-muted-foreground sm:col-span-2">
           Passwords are not stored in policy JSON. Use SSO/None, a custom mobileconfig, or an
           identity-based setup.
         </p>
@@ -455,13 +454,13 @@ export function MailEditor(props: {
 
   return (
     <div class="space-y-4">
-      <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+      <p class="text-xs leading-relaxed text-muted-foreground">
         An Apple Mail account with optional S/MIME signing and encryption. S/MIME references a PKCS
         or imported PFX identity from this policy. Mail passwords are never stored in policy JSON;
         use SSO/None, a custom mobileconfig, or an identity-based mail setup.
       </p>
       <div class="grid gap-2 sm:grid-cols-2">
-        <label class="space-y-1 text-[12px]">
+        <label class="space-y-1 text-xs">
           <span class="font-medium text-foreground/90">Account name</span>
           <Input
             placeholder="Work Mail"
@@ -469,7 +468,7 @@ export function MailEditor(props: {
             onInput={(event) => update({ visibleName: event.currentTarget.value })}
           />
         </label>
-        <label class="space-y-1 text-[12px]">
+        <label class="space-y-1 text-xs">
           <span class="font-medium text-foreground/90">Email address</span>
           <Input
             type="email"
@@ -482,7 +481,7 @@ export function MailEditor(props: {
       {serverFields("incoming", "Incoming server")}
       {serverFields("outgoing", "Outgoing server")}
       <div class="space-y-3 rounded-lg border border-border p-3">
-        <p class="text-[12px] font-medium text-foreground">S/MIME</p>
+        <p class="text-xs font-medium text-foreground">S/MIME</p>
         <For
           each={[
             ["signing", "Sign messages"],
@@ -491,18 +490,17 @@ export function MailEditor(props: {
         >
           {([key, label]) => (
             <div class="space-y-2 rounded-lg border border-border/60 p-2.5">
-              <label class="flex items-center gap-2 text-[12px]">
-                <input
-                  type="checkbox"
-                  class="size-4 accent-[var(--brand-solid)]"
+              <label class="flex items-center gap-2 text-xs">
+                <Checkbox
+                  class="size-4"
                   checked={bool(direction(key).enabled)}
-                  onChange={(event) =>
-                    updateDirection(key, { enabled: event.currentTarget.checked })
+                  onCheckedChange={(checked) =>
+                    updateDirection(key, { enabled: checked === true })
                   }
                 />
                 <span>{label}</span>
               </label>
-              <label class="space-y-1 text-[12px]">
+              <label class="space-y-1 text-xs">
                 <span>Identity certificate kind</span>
                 <Input
                   placeholder="mttx.apple.pfx.default"
@@ -513,37 +511,34 @@ export function MailEditor(props: {
                 />
               </label>
               <Show when={key === "encryption"}>
-                <label class="flex items-center gap-2 text-[12px]">
-                  <input
-                    type="checkbox"
-                    class="size-4 accent-[var(--brand-solid)]"
+                <label class="flex items-center gap-2 text-xs">
+                  <Checkbox
+                    class="size-4"
                     checked={bool(direction(key).encryptByDefault)}
-                    onChange={(event) =>
-                      updateDirection(key, { encryptByDefault: event.currentTarget.checked })
+                    onCheckedChange={(checked) =>
+                      updateDirection(key, { encryptByDefault: checked === true })
                     }
                   />
                   <span>Encrypt by default</span>
                 </label>
               </Show>
-              <div class="flex flex-wrap gap-3 text-[12px]">
+              <div class="flex flex-wrap gap-3 text-xs">
                 <label class="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    class="size-4 accent-[var(--brand-solid)]"
+                  <Checkbox
+                    class="size-4"
                     checked={bool(direction(key).userOverrideable)}
-                    onChange={(event) =>
-                      updateDirection(key, { userOverrideable: event.currentTarget.checked })
+                    onCheckedChange={(checked) =>
+                      updateDirection(key, { userOverrideable: checked === true })
                     }
                   />
                   <span>User can turn it off</span>
                 </label>
                 <label class="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    class="size-4 accent-[var(--brand-solid)]"
+                  <Checkbox
+                    class="size-4"
                     checked={bool(direction(key).identityUserOverrideable)}
-                    onChange={(event) =>
-                      updateDirection(key, { identityUserOverrideable: event.currentTarget.checked })
+                    onCheckedChange={(checked) =>
+                      updateDirection(key, { identityUserOverrideable: checked === true })
                     }
                   />
                   <span>User can choose an identity</span>
@@ -559,7 +554,7 @@ export function MailEditor(props: {
         </Button>
       </div>
       <Show when={text(row().visibleName) || text(row().emailAddress)}>
-        <p class="text-[11px] leading-relaxed text-muted-foreground">
+        <p class="text-xs leading-relaxed text-muted-foreground">
           Device-scoped mail accounts are supported on iPhone/iPadOS. macOS requires the user
           channel; configure scope in the JSON section if needed.
         </p>

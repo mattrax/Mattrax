@@ -58,6 +58,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  Checkbox,
   CheckboxField,
   NativeSelect,
   Tabs,
@@ -111,7 +112,7 @@ import {
 } from "~/lib/device-apple-users";
 import { appleUserIdentitySourceLabel } from "~/lib/device-apple-users";
 import type { AppleUserActionName } from "@mattrax/enterprise-domain/client";
-import { Markdown } from "~/components/dashboard/markdown";
+import Markdown from "~/components/dashboard/markdown";
 import {
   commandStatusTone,
   isActiveCommandStatus,
@@ -131,7 +132,7 @@ import { toast } from "~/components/toast";
 import { ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { deviceRestrictedSoftwareQueryEnabled } from "~/lib/restricted-software-query";
 import { SoftwareUpdateTag } from "~/components/software-update-badge";
-import { OsComplianceTag } from "~/components/os-compliance-badge";
+import OsComplianceTag from "~/components/os-compliance-badge";
 import {
   decodeSoftwareUpdate,
   isMacOsUpdateTracked,
@@ -188,12 +189,8 @@ const chipVariants: Record<ChipTone, "success" | "warning" | "destructive" | "br
     muted: "outline",
   };
 
-function Chip(props: { tone?: ChipTone; class?: string; children: JSX.Element }) {
-  return (
-    <Badge variant={chipVariants[props.tone ?? "muted"]} class={props.class}>
-      {props.children}
-    </Badge>
-  );
+function Chip(props: { tone?: ChipTone; children: JSX.Element }) {
+  return <Badge variant={chipVariants[props.tone ?? "muted"]}>{props.children}</Badge>;
 }
 
 /** Certificate/enrollment faults block a device; policy and check-in ones degrade it. */
@@ -224,17 +221,17 @@ function DeviceStatusTag(props: { status: string }) {
   const meta = () => (isStatus(props.status) ? statusMeta[props.status] : statusMeta.unenrolled);
 
   return (
-    <Badge variant={meta().variant} dot={meta().dot} class="capitalize">
-      {props.status}
+    <Badge variant={meta().variant} dot={meta().dot}>
+      <span class="capitalize">{props.status}</span>
     </Badge>
   );
 }
 
-function DeviceHealthTag(props: { level: string; class?: string }) {
+function DeviceHealthTag(props: { level: string }) {
   const meta = () => (isHealthLevel(props.level) ? healthMeta[props.level] : healthMeta.unknown);
 
   return (
-    <Badge variant={meta().variant} dot={meta().dot} class={props.class}>
+    <Badge variant={meta().variant} dot={meta().dot}>
       {meta().label}
     </Badge>
   );
@@ -266,7 +263,9 @@ function DetailCard(props: {
           <CardAction>{props.action}</CardAction>
         </Show>
       </CardHeader>
-      <CardContent class={props.flush ? "px-0 pb-0 pt-3" : "pt-3"}>{props.children}</CardContent>
+      <CardContent>
+        <div class={props.flush ? "-mx-4 -my-4" : undefined}>{props.children}</div>
+      </CardContent>
     </Card>
   );
 }
@@ -275,8 +274,8 @@ function DetailCard(props: {
 function MetaRow(props: { label: string; children: JSX.Element }) {
   return (
     <div class="flex items-baseline justify-between gap-4 border-b border-border py-2 last:border-0">
-      <dt class="shrink-0 text-[12px] text-muted-foreground">{props.label}</dt>
-      <dd class="min-w-0 break-words text-right text-[12.5px] text-foreground">{props.children}</dd>
+      <dt class="shrink-0 text-xs text-muted-foreground">{props.label}</dt>
+      <dd class="min-w-0 break-words text-right text-xs text-foreground">{props.children}</dd>
     </div>
   );
 }
@@ -447,7 +446,7 @@ function WindowsSecurityCard(props: {
           <div class="space-y-4">
             <div>
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <h3 class="text-[12.5px] font-medium text-foreground">Windows LAPS</h3>
+                <h3 class="text-xs font-medium text-foreground">Windows LAPS</h3>
                 <Chip
                   tone={
                     state().laps.passwordExpired
@@ -491,13 +490,13 @@ function WindowsSecurityCard(props: {
               </dl>
               <Show when={state().laps.reason}>
                 {(reason) => (
-                  <p class="mt-2 rounded-lg bg-surface p-2.5 text-[11.5px] text-muted-foreground">
+                  <p class="mt-2 rounded-lg bg-surface p-2.5 text-xs text-muted-foreground">
                     {reason()}
                   </p>
                 )}
               </Show>
               <Show when={state().laps.lastError}>
-                {(error) => <p class="mt-2 text-[11.5px] text-warning">{error()}</p>}
+                {(error) => <p class="mt-2 text-xs text-warning">{error()}</p>}
               </Show>
               <div class="mt-2 flex flex-wrap gap-2">
                 <Show when={props.canReveal && state().laps.retrievable}>
@@ -518,7 +517,7 @@ function WindowsSecurityCard(props: {
                 </Show>
                 <Show when={state().laps.resetStatus}>
                   {(status) => (
-                    <span class="text-[11px] text-muted-foreground">Reset status: {status()}</span>
+                    <span class="text-xs text-muted-foreground">Reset status: {status()}</span>
                   )}
                 </Show>
               </div>
@@ -527,7 +526,7 @@ function WindowsSecurityCard(props: {
 
             <div class="border-t border-border pt-4">
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <h3 class="text-[12.5px] font-medium text-foreground">BitLocker recovery</h3>
+                <h3 class="text-xs font-medium text-foreground">BitLocker recovery</h3>
                 <Chip
                   tone={
                     !state().bitlocker.encrypted
@@ -546,7 +545,7 @@ function WindowsSecurityCard(props: {
               </div>
               <Show when={state().bitlocker.reason}>
                 {(reason) => (
-                  <p class="mt-2 rounded-lg bg-surface p-2.5 text-[11.5px] text-muted-foreground">
+                  <p class="mt-2 rounded-lg bg-surface p-2.5 text-xs text-muted-foreground">
                     {reason()}
                   </p>
                 )}
@@ -554,7 +553,7 @@ function WindowsSecurityCard(props: {
               <Show
                 when={state().bitlocker.keys.length > 0}
                 fallback={
-                  <p class="mt-2 text-[11.5px] text-muted-foreground">
+                  <p class="mt-2 text-xs text-muted-foreground">
                     No recovery key is stored in Microsoft Entra ID. The device must be encrypted,
                     Entra joined or hybrid joined, and configured to back up BitLocker recovery
                     information to Entra.
@@ -564,10 +563,10 @@ function WindowsSecurityCard(props: {
                 <ul class="mt-2 divide-y divide-border rounded-lg border border-border">
                   <For each={state().bitlocker.keys}>
                     {(key) => (
-                      <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[11.5px]">
+                      <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
                         <span class="min-w-0">
                           <span class="block font-medium text-foreground">{key.volumeType}</span>
-                          <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
+                          <span class="block truncate font-mono text-xs text-muted-foreground">
                             key {key.keyId} · {key.keyType} · captured {formatDate(key.capturedAt)}
                           </span>
                         </span>
@@ -577,7 +576,7 @@ function WindowsSecurityCard(props: {
                               ? "Stale · " + key.ageDays + "d"
                               : key.ageDays + "d"}
                           </Chip>
-                          <span class="text-[10.5px] text-muted-foreground" title={key.source}>
+                          <span class="text-xs text-muted-foreground" title={key.source}>
                             {key.keyAvailable ? "cached" : "fetch on reveal"}
                           </span>
                           <Show when={props.canReveal}>
@@ -621,19 +620,19 @@ function WindowsSecurityCard(props: {
                 </Show>
                 <Show when={state().bitlocker.rotationStatus}>
                   {(status) => (
-                    <span class="text-[11px] text-muted-foreground">Status: {status()}</span>
+                    <span class="text-xs text-muted-foreground">Status: {status()}</span>
                   )}
                 </Show>
                 <Show when={state().bitlocker.lastRotationAt}>
                   {(at) => (
-                    <span class="text-[11px] text-muted-foreground">
+                    <span class="text-xs text-muted-foreground">
                       Key replaced {formatDate(at())}
                     </span>
                   )}
                 </Show>
                 <Show when={state().bitlocker.lastSyncedAt}>
                   {(at) => (
-                    <span class="text-[11px] text-muted-foreground">
+                    <span class="text-xs text-muted-foreground">
                       Entra key list {formatDate(at())}
                     </span>
                   )}
@@ -644,7 +643,7 @@ function WindowsSecurityCard(props: {
 
             <div class="border-t border-border pt-4">
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <h3 class="text-[12.5px] font-medium text-foreground">Diagnostic archives</h3>
+                <h3 class="text-xs font-medium text-foreground">Diagnostic archives</h3>
                 <Show when={props.canCommand && settledQueryData(diagnostics)?.supported}>
                   <Button
                     variant="outline"
@@ -671,7 +670,7 @@ function WindowsSecurityCard(props: {
                   <Show
                     when={list().archives.length > 0}
                     fallback={
-                      <p class="mt-2 text-[11.5px] text-muted-foreground">
+                      <p class="mt-2 text-xs text-muted-foreground">
                         {list().supported
                           ? "No diagnostic archives have been requested. Collection runs quietly and expires after 24 hours."
                           : (list().reason ??
@@ -682,7 +681,7 @@ function WindowsSecurityCard(props: {
                     <ul class="mt-2 divide-y divide-border rounded-lg border border-border">
                       <For each={list().archives}>
                         {(archive) => (
-                          <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[11.5px]">
+                          <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
                             <span>
                               <span class="block font-medium text-foreground">
                                 {formatDate(archive.requestedAt)}
@@ -731,7 +730,7 @@ function WindowsSecurityCard(props: {
             <Show when={revealed()}>
               {(value) => (
                 <div class="rounded-lg border border-warning/30 bg-warning/[0.07] p-3">
-                  <p class="whitespace-pre-wrap break-all font-mono text-[11.5px] text-foreground">
+                  <p class="whitespace-pre-wrap break-all font-mono text-xs text-foreground">
                     {value()}
                   </p>
                   <Button
@@ -752,17 +751,17 @@ function WindowsSecurityCard(props: {
   );
 }
 
-function DeviceGlyph(props: { proto: string; class?: string }) {
+function DeviceGlyph(props: { proto: string }) {
   return (
     <Show
       when={props.proto === "apple"}
       fallback={
-        <Show when={props.proto === "win"} fallback={<Smartphone class={props.class} />}>
-          <MonitorSmartphone class={props.class} />
+        <Show when={props.proto === "win"} fallback={<Smartphone class="size-9 sm:size-12" />}>
+          <MonitorSmartphone class="size-9 sm:size-12" />
         </Show>
       }
     >
-      <Laptop class={props.class} />
+      <Laptop class="size-9 sm:size-12" />
     </Show>
   );
 }
@@ -796,7 +795,7 @@ function DeviceArtwork(props: { proto: string; modelIdentifier?: string | null; 
           loaded() ? "opacity-0" : "opacity-100"
         }`}
       >
-        <DeviceGlyph proto={props.proto} class="size-9 sm:size-12" />
+        <DeviceGlyph proto={props.proto} />
       </span>
       <Show when={failed() ? undefined : url()}>
         {(src) => (
@@ -856,7 +855,7 @@ function AbmPanel(props: {
       title="Apple Business Manager"
       description="Automated Device Enrollment state for this serial."
     >
-      <div class="space-y-3 text-[12.5px]">
+      <div class="space-y-3 text-xs">
         <Show
           when={configured() && settledQueryData(abmDevice)}
           fallback={
@@ -884,30 +883,30 @@ function AbmPanel(props: {
           {(abm) => (
             <>
               <div class="flex flex-wrap items-center gap-2">
-                <Chip tone="muted" class="capitalize">
-                  {abm().enrollmentState.toLowerCase()}
+                <Chip tone="muted">
+                  <span class="capitalize">{abm().enrollmentState.toLowerCase()}</span>
                 </Chip>
-                <Chip tone="muted" class="capitalize">
-                  profile {abm().profileStatus}
+                <Chip tone="muted">
+                  <span class="capitalize">profile {abm().profileStatus}</span>
                 </Chip>
                 <Show when={abm().deviceFamily}>
-                  <span class="text-[11px] text-muted-foreground">{abm().deviceFamily}</span>
+                  <span class="text-xs text-muted-foreground">{abm().deviceFamily}</span>
                 </Show>
                 <Show when={abm().os}>
-                  <span class="text-[11px] text-muted-foreground">{abm().os}</span>
+                  <span class="text-xs text-muted-foreground">{abm().os}</span>
                 </Show>
               </div>
               <Show when={abm().assignedProfileUuid}>
-                <p class="break-all font-mono text-[11px] text-muted-foreground">
+                <p class="break-all font-mono text-xs text-muted-foreground">
                   ADE profile {abm().assignedProfileUuid}
                 </p>
               </Show>
               <Show when={abm().assignedServerId}>
-                <p class="break-all font-mono text-[11px] text-muted-foreground">
+                <p class="break-all font-mono text-xs text-muted-foreground">
                   MDM server {abm().assignedServerId}
                 </p>
               </Show>
-              <p class="text-[11px] text-muted-foreground">
+              <p class="text-xs text-muted-foreground">
                 Last ABM update {formatDate(abm().lastSeenAt)}
               </p>
               <div class="flex flex-wrap gap-2">
@@ -934,7 +933,7 @@ function AbmPanel(props: {
               </div>
               <Show when={props.adeUrl()}>
                 {(url) => (
-                  <p class="break-all rounded-md bg-surface p-2 font-mono text-[11px] text-muted-foreground">
+                  <p class="break-all rounded-md bg-surface p-2 font-mono text-xs text-muted-foreground">
                     {url()}
                   </p>
                 )}
@@ -2095,7 +2094,7 @@ function DeviceDetailContent() {
         label: "Serial number",
         value: device.serial ? (
           <span class="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span class="font-mono text-[12px]">{device.serial}</span>
+            <span class="font-mono text-xs">{device.serial}</span>
             <Show when={warranty}>
               {(href) => (
                 <>
@@ -2128,7 +2127,7 @@ function DeviceDetailContent() {
             return (
               <span class="flex flex-col items-start gap-1">
                 <SoftwareUpdateTag info={info} />
-                <span class="text-[11px] text-muted-foreground">{softwareUpdateReason(info!)}</span>
+                <span class="text-xs text-muted-foreground">{softwareUpdateReason(info!)}</span>
               </span>
             );
 
@@ -2145,7 +2144,7 @@ function DeviceDetailContent() {
                     ? `${ddm.pending} pending`
                     : "Update pending"}
               </Badge>
-              <span class="text-[11px] text-muted-foreground">
+              <span class="text-xs text-muted-foreground">
                 {ddm.failed
                   ? ddm.failureCount > 1
                     ? `Apple reports the last update failed ${ddm.failureCount} times.`
@@ -2173,7 +2172,7 @@ function DeviceDetailContent() {
               <Show when={activationDetail()}>
                 {(detail) => (
                   <span
-                    class="text-[11px] text-muted-foreground"
+                    class="text-xs text-muted-foreground"
                     title="Installed edition, licence channel and sample time reported by mattraxd"
                   >
                     {detail()}
@@ -2626,13 +2625,13 @@ function DeviceDetailContent() {
         fallback={
           <Show when={device.isError} fallback={<PageSkeleton rows={8} />}>
             <Card>
-              <CardContent class="py-4">
+              <CardContent>
                 <div class="flex flex-col items-start gap-3">
                   <div class="min-w-0">
-                    <p class="text-[13px] font-medium text-foreground">
+                    <p class="text-xs font-medium text-foreground">
                       This device could not be loaded
                     </p>
-                    <p class="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+                    <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                       It may have been deleted, or you may not have access to it.
                     </p>
                   </div>
@@ -2668,12 +2667,12 @@ function DeviceDetailContent() {
                 <DeviceArtwork proto={row()!.proto} modelIdentifier={row()!.modelIdentifier} />
                 <div class="min-w-0 pt-0.5">
                   <PageBreadcrumbs title={row()!.name} />
-                  <h1 class="truncate text-[21px] font-[580] leading-[1.15] tracking-[-0.028em] text-foreground sm:text-[24px]">
+                  <h1 class="truncate text-xl font-semibold leading-tight tracking-tight text-foreground sm:text-2xl">
                     {row()!.name}
                   </h1>
                   <Show when={row()!.model}>
                     {(model) => (
-                      <p class="mt-1 truncate text-[12.5px] leading-5 text-muted-foreground">
+                      <p class="mt-1 truncate text-xs leading-5 text-muted-foreground">
                         {model()}
                       </p>
                     )}
@@ -2741,9 +2740,9 @@ function DeviceDetailContent() {
                     onClick={() => sync.mutate()}
                     disabled={sync.isPending || row()!.status !== "enrolled"}
                   >
-                    <RefreshCw
-                      class={`size-3.5 ${sync.isPending ? "animate-spin motion-reduce:animate-none" : ""}`}
-                    />
+                    <span class={sync.isPending ? "animate-spin motion-reduce:animate-none" : undefined}>
+                      <RefreshCw class="size-3.5" />
+                    </span>
                   </Button>
                 </Show>
                 <Show when={writable()}>
@@ -2777,7 +2776,7 @@ function DeviceDetailContent() {
             {(info) => (
               <div
                 role="status"
-                class="flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/[0.06] px-3.5 py-3 text-[12.5px] leading-relaxed text-warning-foreground"
+                class="flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/[0.06] px-3.5 py-3 text-xs leading-relaxed text-warning-foreground"
               >
                 <CircleAlert class="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <div class="min-w-0 flex-1">
@@ -2800,7 +2799,7 @@ function DeviceDetailContent() {
                         href={href()}
                         target="_blank"
                         rel="noopener noreferrer"
-                        class="mt-2 inline-flex text-[12px] font-medium text-brand underline decoration-brand/30 underline-offset-2 hover:decoration-brand"
+                        class="mt-2 inline-flex text-xs font-medium text-brand underline decoration-brand/30 underline-offset-2 hover:decoration-brand"
                       >
                         Security details
                       </a>
@@ -2815,7 +2814,7 @@ function DeviceDetailContent() {
             onValueChange={(value) => {
               if (value === "overview" || value === "scope") setTab(value);
             }}
-            class="flex flex-col gap-4"
+            class="flex flex-col"
           >
             <TabsList aria-label="Device sections" class="self-start">
               <TabsTab value="overview">Overview</TabsTab>
@@ -2823,14 +2822,17 @@ function DeviceDetailContent() {
             </TabsList>
 
             <TabsPanel value="overview">
-              <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
+              <div
+              class="grid items-start gap-4 lg:grid-cols-(--overview-grid)"
+              style={{ "--overview-grid": "minmax(0,1fr) minmax(0,360px)" }}
+            >
                 <div class="min-w-0 space-y-4">
                   <DetailCard
                     flush
                     title="Overview"
                     description="Identity, hardware and management facts reported by the device."
                   >
-                    <table class="w-full text-[12.5px]">
+                    <table class="w-full text-xs">
                       <caption class="sr-only">Device inventory</caption>
                       <tbody class="divide-y divide-border">
                         <For each={overviewRows()}>
@@ -2838,7 +2840,7 @@ function DeviceDetailContent() {
                             <tr>
                               <th
                                 scope="row"
-                                class="w-[42%] px-4 py-2.5 text-left align-top text-[12px] font-medium text-muted-foreground sm:w-[208px]"
+                                class="w-2/5 px-4 py-2.5 text-left align-top text-xs font-medium text-muted-foreground sm:w-52"
                               >
                                 {entry.label}
                               </th>
@@ -2934,7 +2936,7 @@ function DeviceDetailContent() {
                         </MetaRow>
                       </dl>
                       <Show when={row()!.awaitingConfiguration}>
-                        <p class="rounded-lg bg-warning/[0.07] p-3 text-[12.5px] text-warning">
+                        <p class="rounded-lg bg-warning/[0.07] p-3 text-xs text-warning">
                           <strong class="font-medium">Setup is not complete.</strong> The device is
                           held at the Remote Management pane until its local administrator and
                           declarations are applied. Mattrax sends <code>DeviceConfigured</code>{" "}
@@ -2942,7 +2944,7 @@ function DeviceDetailContent() {
                         </p>
                       </Show>
                       <Show when={row()!.proto === "apple" && !row()!.recoveryKeyEscrowed}>
-                        <p class="rounded-lg bg-warning/[0.07] p-3 text-[12.5px] text-warning">
+                        <p class="rounded-lg bg-warning/[0.07] p-3 text-xs text-warning">
                           <strong class="font-medium">
                             No FileVault recovery key is escrowed.
                           </strong>{" "}
@@ -2952,7 +2954,7 @@ function DeviceDetailContent() {
                         </p>
                       </Show>
                       <Show when={row()!.proto === "apple" && !row()!.bootstrapTokenEscrowed}>
-                        <p class="rounded-lg bg-warning/[0.07] p-3 text-[12.5px] text-warning">
+                        <p class="rounded-lg bg-warning/[0.07] p-3 text-xs text-warning">
                           <strong class="font-medium">No bootstrap token is escrowed.</strong>{" "}
                           Secure-token operations such as granting a user a Secure Token or
                           authorising some software updates may prompt for an administrator.
@@ -2965,7 +2967,7 @@ function DeviceDetailContent() {
                         <Show
                           when={capabilityLabels().length > 0}
                           fallback={
-                            <p class="mt-1 text-[12.5px] text-muted-foreground">
+                            <p class="mt-1 text-xs text-muted-foreground">
                               No capabilities have been reported yet.
                             </p>
                           }
@@ -2973,7 +2975,7 @@ function DeviceDetailContent() {
                           <div class="mt-2 flex max-h-40 flex-wrap gap-1.5 overflow-auto">
                             <For each={capabilityLabels()}>
                               {(capability) => (
-                                <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] text-muted-foreground">
+                                <span class="rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-muted-foreground">
                                   {capability}
                                 </span>
                               )}
@@ -2982,7 +2984,7 @@ function DeviceDetailContent() {
                         </Show>
                       </div>
                       <Show when={!row()!.inventoryUpdatedAt}>
-                        <p class="text-[11px] text-muted-foreground">
+                        <p class="text-xs text-muted-foreground">
                           Security and inventory values are filled in the next time the device
                           reports its DDM status items.
                         </p>
@@ -3016,7 +3018,7 @@ function DeviceDetailContent() {
                           <Show
                             when={failures().failures.length > 0}
                             fallback={
-                              <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
+                              <p class="px-4 py-6 text-xs text-muted-foreground sm:px-5">
                                 No failures recorded.
                               </p>
                             }
@@ -3024,14 +3026,11 @@ function DeviceDetailContent() {
                             <ul class="divide-y divide-border">
                               <For each={failures().failures}>
                                 {(failure) => (
-                                  <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
+                                  <li class="px-4 py-2.5 text-xs sm:px-5">
                                     <div class="flex items-center justify-between gap-2">
                                       <span class="flex min-w-0 items-center gap-1.5">
-                                        <Chip
-                                          tone={windowsFailureTone(failure.phase)}
-                                          class="uppercase tracking-wide"
-                                        >
-                                          {failure.phase}
+                                        <Chip tone={windowsFailureTone(failure.phase)}>
+                                          <span class="uppercase tracking-wide">{failure.phase}</span>
                                         </Chip>
                                         <strong
                                           class="min-w-0 truncate font-medium text-foreground"
@@ -3117,7 +3116,7 @@ function DeviceDetailContent() {
                       <Show
                         when={appNames().length > 0}
                         fallback={
-                          <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
+                          <p class="px-4 py-6 text-xs text-muted-foreground sm:px-5">
                             No installed applications have been reported yet. Apple devices are
                             refreshed daily; Android devices report on every status notification and
                             Windows devices daily.
@@ -3127,12 +3126,12 @@ function DeviceDetailContent() {
                         <ul class="max-h-96 divide-y divide-border overflow-auto">
                           <For each={appNames()}>
                             {(application) => (
-                              <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-[12.5px] sm:px-5">
+                              <li class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-xs sm:px-5">
                                 <span class="min-w-0 flex-1">
                                   <span class="block truncate font-medium text-foreground">
                                     {application.name ?? application.bundleId}
                                   </span>
-                                  <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
+                                  <span class="block truncate font-mono text-xs text-muted-foreground">
                                     {application.bundleId}
                                     <Show when={application.publisher}>
                                       {" · "}
@@ -3140,7 +3139,7 @@ function DeviceDetailContent() {
                                     </Show>
                                   </span>
                                 </span>
-                                <span class="flex shrink-0 flex-wrap items-center justify-end gap-1.5 text-[11px]">
+                                <span class="flex shrink-0 flex-wrap items-center justify-end gap-1.5 text-xs">
                                   <span class="tabular-nums text-muted-foreground">
                                     {application.version ?? application.shortVersion ?? "—"}
                                   </span>
@@ -3176,7 +3175,7 @@ function DeviceDetailContent() {
                       <Show
                         when={settledQueryData(restrictedSoftware)!.violations.length > 0}
                         fallback={
-                          <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
+                          <p class="px-4 py-6 text-xs text-muted-foreground sm:px-5">
                             No restricted software has been detected on this device.
                           </p>
                         }
@@ -3184,7 +3183,7 @@ function DeviceDetailContent() {
                         <ul class="divide-y divide-border">
                           <For each={settledQueryData(restrictedSoftware)!.violations}>
                             {(violation) => (
-                              <li class="px-4 py-3 text-[12.5px] sm:px-5">
+                              <li class="px-4 py-3 text-xs sm:px-5">
                                 <div class="flex flex-wrap items-center justify-between gap-2">
                                   <span class="min-w-0">
                                     <a
@@ -3193,11 +3192,11 @@ function DeviceDetailContent() {
                                     >
                                       {violation.ruleName}
                                     </a>
-                                    <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
+                                    <span class="block truncate font-mono text-xs text-muted-foreground">
                                       {violation.matchedBundleId}
                                     </span>
                                   </span>
-                                  <span class="flex shrink-0 items-center gap-1.5 text-[11px]">
+                                  <span class="flex shrink-0 items-center gap-1.5 text-xs">
                                     <Chip
                                       tone={
                                         violation.enforcementState === "enforced"
@@ -3219,7 +3218,7 @@ function DeviceDetailContent() {
                                   </span>
                                 </div>
                                 <Show when={violation.enforcementDetail}>
-                                  <p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                                  <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                                     {violation.enforcementDetail}
                                   </p>
                                 </Show>
@@ -3230,15 +3229,15 @@ function DeviceDetailContent() {
                       </Show>
                       <Show when={settledQueryData(restrictedSoftware)!.rules.length > 0}>
                         <div class="border-t border-border px-4 py-3 sm:px-5">
-                          <p class="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                             Applicable rules
                           </p>
                           <ul class="mt-2 space-y-1.5">
                             <For each={settledQueryData(restrictedSoftware)!.rules}>
                               {(rule) => (
-                                <li class="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+                                <li class="flex flex-wrap items-center justify-between gap-2 text-xs">
                                   <span class="min-w-0 truncate text-foreground">{rule.name}</span>
-                                  <span class="text-[11px] text-muted-foreground">
+                                  <span class="text-xs text-muted-foreground">
                                     {rule.enforcement.label}
                                   </span>
                                 </li>
@@ -3272,7 +3271,7 @@ function DeviceDetailContent() {
                             {android().securityPatchLevel ?? "Not reported"}
                           </MetaRow>
                           <MetaRow label="Applied policy">
-                            <span class="break-all font-mono text-[11px]">
+                            <span class="break-all font-mono text-xs">
                               {android().appliedPolicyName ?? "Not reported"}
                             </span>
                           </MetaRow>
@@ -3285,14 +3284,14 @@ function DeviceDetailContent() {
                               : formatBytes(android().totalRam)}
                           </MetaRow>
                           <MetaRow label="Enrollment token">
-                            <span class="break-all font-mono text-[11px]">
+                            <span class="break-all font-mono text-xs">
                               {android().enrollmentTokenName ?? "Not reported"}
                             </span>
                           </MetaRow>
                         </dl>
                         <Show when={android().disabledReason}>
                           {(reason) => (
-                            <p class="mt-3 rounded-lg bg-warning/[0.07] p-3 text-[12.5px] text-warning">
+                            <p class="mt-3 rounded-lg bg-warning/[0.07] p-3 text-xs text-warning">
                               {reason()}
                             </p>
                           )}
@@ -3308,7 +3307,7 @@ function DeviceDetailContent() {
                             title="Apple Business Manager"
                             description="Automated Device Enrollment state for this serial."
                           >
-                            <p class="text-[12.5px] text-muted-foreground">
+                            <p class="text-xs text-muted-foreground">
                               This serial is not in the tenant's Apple Business Manager inventory.
                               Upload an ABM credential and sync devices in Settings → Management.
                             </p>
@@ -3334,13 +3333,13 @@ function DeviceDetailContent() {
                       >
                         <dl class="grid gap-x-6 sm:grid-cols-2">
                           <MetaRow label="Autopilot serial">
-                            <span class="font-mono text-[11px]">{autopilot().serial}</span>
+                            <span class="font-mono text-xs">{autopilot().serial}</span>
                           </MetaRow>
                           <MetaRow label="Group tag">{autopilot().groupTag ?? "None"}</MetaRow>
                           <MetaRow label="Profile state">{autopilot().profileStatus}</MetaRow>
                           <MetaRow label="Enrollment state">{autopilot().enrollmentState}</MetaRow>
                           <MetaRow label="Entra device id">
-                            <span class="break-all font-mono text-[11px]">
+                            <span class="break-all font-mono text-xs">
                               {autopilot().azureAdDeviceId ?? "Not joined yet"}
                             </span>
                           </MetaRow>
@@ -3350,7 +3349,7 @@ function DeviceDetailContent() {
                               : "Never"}
                           </MetaRow>
                         </dl>
-                        <p class="mt-3 text-[11px] text-muted-foreground">
+                        <p class="mt-3 text-xs text-muted-foreground">
                           Autopilot profile and enrollment state are read from Microsoft Graph.
                           Manage imports and profiles in Settings → Management.
                         </p>
@@ -3374,22 +3373,19 @@ function DeviceDetailContent() {
                       <Show
                         when={activityEvents().length > 0}
                         fallback={
-                          <p class="px-4 py-6 text-[12.5px] text-muted-foreground sm:px-5">
+                          <p class="px-4 py-6 text-xs text-muted-foreground sm:px-5">
                             No activity has been recorded for this device yet.
                           </p>
                         }
                       >
-                        <ul class="max-h-[26rem] divide-y divide-border overflow-auto">
+                        <ul class="max-h-104 divide-y divide-border overflow-auto">
                           <For each={activityEvents()}>
                             {(event) => (
-                              <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
+                              <li class="px-4 py-2.5 text-xs sm:px-5">
                                 <div class="flex items-center justify-between gap-2">
                                   <span class="flex min-w-0 items-center gap-1.5">
-                                    <Chip
-                                      tone={activityTone(event.kind)}
-                                      class="uppercase tracking-wide"
-                                    >
-                                      {event.kind}
+                                    <Chip tone={activityTone(event.kind)}>
+                                      <span class="uppercase tracking-wide">{event.kind}</span>
                                     </Chip>
                                     <strong class="truncate font-medium text-foreground">
                                       {event.title}
@@ -3413,20 +3409,20 @@ function DeviceDetailContent() {
                         </ul>
                       </Show>
                       <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2.5 sm:px-5">
-                        <span class="text-[11px] tabular-nums text-muted-foreground">
+                        <span class="text-xs tabular-nums text-muted-foreground">
                           {activityEvents().length}
                           {activity.hasNextPage ? "+" : ""} event
                           {activityEvents().length === 1 ? "" : "s"}
                         </span>
                         <Show when={activity.isFetchNextPageError}>
-                          <span role="status" class="text-[11px] text-destructive">
+                          <span role="status" class="text-xs text-destructive">
                             Could not load older activity. Try again.
                           </span>
                         </Show>
                         <Show
                           when={activity.hasNextPage}
                           fallback={
-                            <span class="text-[11px] text-muted-foreground">
+                            <span class="text-xs text-muted-foreground">
                               All older activity is loaded.
                             </span>
                           }
@@ -3465,7 +3461,7 @@ function DeviceDetailContent() {
                         <ul class="max-h-72 divide-y divide-border overflow-auto">
                           <For each={visibleCommands()}>
                             {(historyItem) => (
-                              <li class="px-4 py-2.5 text-[11.5px] sm:px-5">
+                              <li class="px-4 py-2.5 text-xs sm:px-5">
                                 <div class="flex items-center justify-between gap-2">
                                   <strong class="min-w-0 truncate font-medium text-foreground">
                                     {WINDOWS_COMMAND_REQUEST_LABELS.get(historyItem.requestType) ??
@@ -3503,7 +3499,7 @@ function DeviceDetailContent() {
                           </For>
                         </ul>
                         <div class="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2.5 sm:px-5">
-                          <span class="text-[11px] tabular-nums text-muted-foreground">
+                          <span class="text-xs tabular-nums text-muted-foreground">
                             {visibleCommands().length} of {commandRows().length}
                             {commandHistoryTruncated() ? "+" : ""} command
                             {commandRows().length === 1 ? "" : "s"}
@@ -3518,7 +3514,7 @@ function DeviceDetailContent() {
                             </Button>
                           </Show>
                           <Show when={commandHistoryTruncated()}>
-                            <p class="basis-full text-[11px] text-muted-foreground">
+                            <p class="basis-full text-xs text-muted-foreground">
                               Showing the newest {COMMAND_FETCH_LIMIT} commands for this device.
                             </p>
                           </Show>
@@ -3549,7 +3545,7 @@ function DeviceDetailContent() {
                       <div class="space-y-4">
                         <div class="space-y-4">
                           <div class="space-y-2">
-                            <p class="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
+                            <p class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                               Last seen{" "}
                               {formatDeviceDate(settledQueryData(health)?.health.lastSeenAt)}
                               <Show when={settledQueryData(health)?.health.level === "missing"}>
@@ -3567,7 +3563,7 @@ function DeviceDetailContent() {
                             <Show
                               when={(settledQueryData(health)?.health.reasons.length ?? 0) > 0}
                               fallback={
-                                <p class="text-[12.5px] text-success">
+                                <p class="text-xs text-success">
                                   No compliance or inventory issues detected.
                                 </p>
                               }
@@ -3575,7 +3571,7 @@ function DeviceDetailContent() {
                               <ul class="space-y-1.5">
                                 <For each={settledQueryData(health)?.health.reasons ?? []}>
                                   {(reason) => (
-                                    <li class="flex items-start gap-2 text-[12.5px]">
+                                    <li class="flex items-start gap-2 text-xs">
                                       <span
                                         class={Match.value(reason.severity).pipe(
                                           Match.when(
@@ -3622,14 +3618,14 @@ function DeviceDetailContent() {
                             <Show
                               when={declarationIssues().length > 0}
                               fallback={
-                                <p class="text-[12.5px] text-muted-foreground">
+                                <p class="text-xs text-muted-foreground">
                                   No failing declarations.
                                 </p>
                               }
                             >
                               <For each={declarationIssues()}>
                                 {(declaration) => (
-                                  <div class="rounded-md bg-surface p-2 text-[11.5px]">
+                                  <div class="rounded-md bg-surface p-2 text-xs">
                                     <div class="flex items-center justify-between gap-2">
                                       <strong class="min-w-0 truncate font-medium">
                                         {declaration.identifier}
@@ -3682,7 +3678,7 @@ function DeviceDetailContent() {
                           <Show
                             when={certificates().length > 0}
                             fallback={
-                              <p class="text-[12.5px] text-muted-foreground">
+                              <p class="text-xs text-muted-foreground">
                                 No device-scoped SCEP identity is recorded. Apple SCEP identities
                                 are tenant-scoped and cannot be revoked per device.
                               </p>
@@ -3691,7 +3687,7 @@ function DeviceDetailContent() {
                             <ul class="divide-y divide-border">
                               <For each={certificates()}>
                                 {(certificate) => (
-                                  <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-[11.5px]">
+                                  <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-xs">
                                     <span class="min-w-0 break-all font-mono">
                                       {certificate.serial}
                                     </span>
@@ -3729,7 +3725,7 @@ function DeviceDetailContent() {
                         >
                           <div class="space-y-2 border-t border-border pt-3">
                             <p class="label-caps">Managed certificates</p>
-                            <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+                            <p class="text-xs leading-relaxed text-muted-foreground">
                               Apple reports managed certificates and their expiry. Windows has no
                               certificate inventory, so an entry marked Policy material is what the
                               policy delivers rather than device evidence.
@@ -3741,12 +3737,12 @@ function DeviceDetailContent() {
                                 )}
                               >
                                 {(certificate) => (
-                                  <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-[11.5px]">
+                                  <li class="flex flex-wrap items-center justify-between gap-2 p-2 text-xs">
                                     <span class="min-w-0 flex-1">
                                       <span class="block truncate font-medium text-foreground">
                                         {certificate.subject}
                                       </span>
-                                      <span class="block truncate font-mono text-[10.5px] text-muted-foreground">
+                                      <span class="block truncate font-mono text-xs text-muted-foreground">
                                         {certificate.identifier}
                                       </span>
                                     </span>
@@ -3808,12 +3804,12 @@ function DeviceDetailContent() {
                               </MetaRow>
                             </dl>
                             <Show when={settledQueryData(health)?.push.lastError}>
-                              <p class="rounded-lg bg-destructive/[0.07] p-2 text-[11.5px] text-destructive">
+                              <p class="rounded-lg bg-destructive/[0.07] p-2 text-xs text-destructive">
                                 {settledQueryData(health)?.push.lastError}
                               </p>
                             </Show>
                             <Show when={settledQueryData(health)?.push.invalidToken}>
-                              <p class="text-[11.5px] text-destructive">
+                              <p class="text-xs text-destructive">
                                 Apple rejected this device token. The device must re-enroll before
                                 it can receive pushes again.
                               </p>
@@ -3843,7 +3839,7 @@ function DeviceDetailContent() {
                       <Show
                         when={lockScreenSupported()}
                         fallback={
-                          <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+                          <p class="text-xs leading-relaxed text-muted-foreground">
                             Apple's shared-device lock screen profile is only available on
                             supervised iPhone and iPad devices. It is not available on macOS, tvOS,
                             Android, Windows or Apple User Enrollment (BYOD) devices.
@@ -3852,7 +3848,7 @@ function DeviceDetailContent() {
                       >
                         <div class="space-y-4">
                           <Show when={!canCommand()}>
-                            <p class="flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-2.5 text-[11.5px] leading-relaxed text-muted-foreground">
+                            <p class="flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-2.5 text-xs leading-relaxed text-muted-foreground">
                               <CircleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                               <span>
                                 Applying a message requires the devices.command permission. You can
@@ -3861,21 +3857,21 @@ function DeviceDetailContent() {
                             </p>
                           </Show>
                           <div class="rounded-xl border border-border bg-surface/70 p-4 text-center">
-                            <p class="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                            <p class="text-xs uppercase tracking-widest text-muted-foreground">
                               {row()!.name}
                             </p>
-                            <p class="mt-3 min-h-10 whitespace-pre-line text-[13px] leading-relaxed text-foreground">
+                            <p class="mt-3 min-h-10 whitespace-pre-line text-xs leading-relaxed text-foreground">
                               {lockScreenMessage().trim() || "No lock screen message"}
                             </p>
                             <Show when={lockScreenIncludeAssetTag() && row()!.assetTag?.trim()}>
-                              <p class="mt-3 font-mono text-[11px] text-muted-foreground">
+                              <p class="mt-3 font-mono text-xs text-muted-foreground">
                                 Asset tag {row()!.assetTag}
                               </p>
                             </Show>
                           </div>
 
                           <Show when={row()!.lockScreenMessageSource === "policy"}>
-                            <p class="text-[11.5px] text-muted-foreground">
+                            <p class="text-xs text-muted-foreground">
                               Using the default from{" "}
                               <span class="font-medium text-foreground">
                                 {row()!.lockScreenPolicyName ?? "an assigned policy"}
@@ -3886,7 +3882,7 @@ function DeviceDetailContent() {
 
                           <Show when={lockScreenProblem()}>
                             {(problem) => (
-                              <p class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] p-2.5 text-[11.5px] leading-relaxed text-warning-foreground">
+                              <p class="flex items-start gap-2 rounded-lg border border-warning/25 bg-warning/[0.07] p-2.5 text-xs leading-relaxed text-warning-foreground">
                                 <CircleAlert class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                                 <span>{problem()}</span>
                               </p>
@@ -3964,7 +3960,7 @@ function DeviceDetailContent() {
                             </Show>
                             <Show when={latestLockScreenCommand()}>
                               {(entry) => (
-                                <span class="ml-auto flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                                <span class="ml-auto flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                                   <span>Delivery</span>
                                   <Chip
                                     tone={commandStatusTone(
@@ -3983,7 +3979,7 @@ function DeviceDetailContent() {
 
                           <Show when={row()!.appliedLockScreenMessage}>
                             {(applied) => (
-                              <div class="space-y-1 border-t border-border pt-3 text-[11.5px] text-muted-foreground">
+                              <div class="space-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
                                 <p>
                                   Last installed <span class="text-foreground">{applied()}</span>
                                   <Show when={row()!.appliedLockScreenAssetTag}>
@@ -4024,7 +4020,7 @@ function DeviceDetailContent() {
                     <Show
                       when={row()!.notes?.trim()}
                       fallback={
-                        <p class="text-[12.5px] text-muted-foreground">
+                        <p class="text-xs text-muted-foreground">
                           No notes. Add a note from Edit details.
                         </p>
                       }
@@ -4047,7 +4043,7 @@ function DeviceDetailContent() {
                     description="User-assigned policies follow these directory users to this device."
                   >
                     <div class="space-y-3">
-                      <p class="rounded-md bg-surface px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
+                      <p class="rounded-md bg-surface px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                         Device-scoped settings in a user-assigned policy stay on the device channel
                         and affect every user on this device. User-scoped settings are delivered
                         only to a linked, verified Apple user channel below. Windows applies device
@@ -4069,7 +4065,7 @@ function DeviceDetailContent() {
                             (user) => !user.disabled,
                           )}
                           fallback={
-                            <p class="text-[12.5px] text-muted-foreground">
+                            <p class="text-xs text-muted-foreground">
                               No directory users. Sync Entra or SCIM first.
                             </p>
                           }
@@ -4081,21 +4077,19 @@ function DeviceDetailContent() {
                               )}
                             >
                               {(user) => (
-                                <label class="flex items-center gap-2.5 px-2.5 py-1.5 text-[13px] transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-muted/30">
-                                  <input
-                                    type="checkbox"
+                                <label class="flex items-center gap-2.5 px-2.5 py-1.5 text-xs transition-colors duration-140 ease-swift hover:bg-muted/30">
+                                  <Checkbox
                                     checked={selectedUsers().has(user.id)}
                                     disabled={!writable()}
-                                    onChange={() => toggleUser(user.id)}
-                                    class="size-3.5 rounded border-border"
+                                    onCheckedChange={() => toggleUser(user.id)}
                                   />
                                   <span class="min-w-0 flex-1">
                                     <span class="block truncate text-foreground">{user.name}</span>
-                                    <span class="block truncate text-[11px] text-muted-foreground">
+                                    <span class="block truncate text-xs text-muted-foreground">
                                       {user.email}
                                     </span>
                                   </span>
-                                  <Badge variant="outline" class="shrink-0 text-[10px]">
+                                  <Badge variant="outline" class="shrink-0">
                                     {user.source}
                                   </Badge>
                                 </label>
@@ -4109,7 +4103,7 @@ function DeviceDetailContent() {
                         {(text) => (
                           <p
                             role="status"
-                            class="rounded-lg bg-success/[0.07] px-3 py-2 text-[12.5px] text-success"
+                            class="rounded-lg bg-success/[0.07] px-3 py-2 text-xs text-success"
                           >
                             {text()}
                           </p>
@@ -4133,14 +4127,14 @@ function DeviceDetailContent() {
                           <div class="flex flex-wrap items-center justify-between gap-2">
                             <span class="label-caps">Apple user channels</span>
                             <Show when={settledQueryData(appleUsers)}>
-                              <Badge variant="outline" class="shrink-0 text-[10px]">
+                              <Badge variant="outline" class="shrink-0">
                                 {appleUserEnrollmentLabel(
                                   settledQueryData(appleUsers)?.enrollmentMode,
                                 )}
                               </Badge>
                             </Show>
                           </div>
-                          <p class="text-[11px] leading-relaxed text-muted-foreground">
+                          <p class="text-xs leading-relaxed text-muted-foreground">
                             Every macOS or Shared iPad login Apple manages over the user channel. A
                             channel is created when the user signs in and authenticates with the
                             device's MDM identity. Link a channel to a directory person to deliver
@@ -4161,7 +4155,7 @@ function DeviceDetailContent() {
                             <Show
                               when={(settledQueryData(appleUsers)?.users.length ?? 0) > 0}
                               fallback={
-                                <p class="text-[12.5px] text-muted-foreground">
+                                <p class="text-xs text-muted-foreground">
                                   No user channels yet. A channel appears after the next user signs
                                   in to this Mac or Shared iPad.
                                 </p>
@@ -4173,18 +4167,18 @@ function DeviceDetailContent() {
                                     <div class="flex flex-wrap items-start gap-2 px-2.5 py-2">
                                       <div class="min-w-0 flex-1">
                                         <span class="flex items-center gap-1.5">
-                                          <span class="truncate text-[13px] text-foreground">
+                                          <span class="truncate text-xs text-foreground">
                                             {appleUserDisplayName(user)}
                                           </span>
                                           <Chip tone="muted">
                                             {appleUserBindingLabel(user.binding)}
                                           </Chip>
                                         </span>
-                                        <span class="block truncate text-[11px] text-muted-foreground">
+                                        <span class="block truncate text-xs text-muted-foreground">
                                           {appleUserLoginName(user)} · Last check-in{" "}
                                           {user.lastSeenAt ? formatDate(user.lastSeenAt) : "never"}
                                         </span>
-                                        <span class="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                                        <span class="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                                           <Show
                                             when={user.identity}
                                             fallback={
@@ -4206,7 +4200,7 @@ function DeviceDetailContent() {
                                           </Show>
                                         </span>
                                         <NativeSelect
-                                          class="mt-1.5 h-7 max-w-[19rem] text-[11.5px]"
+                                          class="mt-1.5 h-7 max-w-76"
                                           value={user.identity?.userId ?? ""}
                                           aria-label={`Directory identity for ${appleUserDisplayName(user)}`}
                                           disabled={
@@ -4238,7 +4232,7 @@ function DeviceDetailContent() {
                                             )}
                                           </For>
                                         </NativeSelect>
-                                        <span class="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                                        <span class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                                           <Chip tone={appleUserPushTone(user.push)}>
                                             {appleUserPushLabel(user.push)}
                                           </Chip>
@@ -4292,14 +4286,14 @@ function DeviceDetailContent() {
                             {(text) => (
                               <p
                                 role="status"
-                                class="rounded-lg bg-success/[0.07] px-3 py-2 text-[12.5px] text-success"
+                                class="rounded-lg bg-success/[0.07] px-3 py-2 text-xs text-success"
                               >
                                 {text()}
                               </p>
                             )}
                           </Show>
                           <Show when={!writable()}>
-                            <p class="text-[11px] text-muted-foreground">
+                            <p class="text-xs text-muted-foreground">
                               Your role can view user channels but not wake them or queue a profile
                               refresh.
                             </p>
@@ -4322,7 +4316,7 @@ function DeviceDetailContent() {
                     >
                       <div class="space-y-3">
                         <Show when={lostMode()?.enabled}>
-                          <div class="rounded-lg bg-warning/[0.07] px-3 py-2 text-[12.5px] text-warning">
+                          <div class="rounded-lg bg-warning/[0.07] px-3 py-2 text-xs text-warning">
                             This device is in Lost Mode
                             {lostMode()?.acknowledgedAt
                               ? ` since ${formatDeviceDate(lostMode()!.acknowledgedAt!)}`
@@ -4332,15 +4326,15 @@ function DeviceDetailContent() {
                           <Show
                             when={lostMode()?.location}
                             fallback={
-                              <p class="text-[12px] text-muted-foreground">
+                              <p class="text-xs text-muted-foreground">
                                 No location has been reported yet. Apple sends it from a separate
                                 location request after Lost Mode is acknowledged.
                               </p>
                             }
                           >
                             {(location) => (
-                              <div class="space-y-1 rounded-lg bg-surface px-3 py-2 text-[12.5px]">
-                                <p class="font-[540] text-foreground">
+                              <div class="space-y-1 rounded-lg bg-surface px-3 py-2 text-xs">
+                                <p class="font-medium text-foreground">
                                   {location().latitude.toFixed(5)},{" "}
                                   {location().longitude.toFixed(5)}
                                 </p>
@@ -4353,7 +4347,7 @@ function DeviceDetailContent() {
                                     : ""}
                                 </p>
                                 <a
-                                  class="text-[12px] text-primary underline underline-offset-2"
+                                  class="text-xs text-primary underline underline-offset-2"
                                   href={`https://maps.apple.com/?ll=${location().latitude},${location().longitude}&q=${location().latitude},${location().longitude}`}
                                   target="_blank"
                                   rel="noreferrer"
@@ -4417,7 +4411,7 @@ function DeviceDetailContent() {
                           </Show>
                           <Show when={lostMode()?.enabled && supports("stop-lost-mode")}>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
                               class="col-span-2"
                               disabled={command.isPending}
@@ -4443,7 +4437,7 @@ function DeviceDetailContent() {
                     >
                       <div class="space-y-3">
                         <div class="flex items-center justify-between gap-2">
-                          <p class="text-[11.5px] text-muted-foreground">
+                          <p class="text-xs text-muted-foreground">
                             {appleState()?.localAccountsUpdatedAt
                               ? `Last refreshed ${formatDeviceDate(appleState()!.localAccountsUpdatedAt!)}`
                               : "Never refreshed"}
@@ -4479,7 +4473,7 @@ function DeviceDetailContent() {
                         <Show
                           when={localAccounts().length > 0}
                           fallback={
-                            <p class="text-[12px] text-muted-foreground">
+                            <p class="text-xs text-muted-foreground">
                               No local accounts reported yet.
                             </p>
                           }
@@ -4487,9 +4481,9 @@ function DeviceDetailContent() {
                           <div class="divide-y divide-border rounded-lg border border-border">
                             <For each={localAccounts()}>
                               {(account) => (
-                                <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-[12.5px]">
+                                <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
                                   <div>
-                                    <p class="font-[540] text-foreground">
+                                    <p class="font-medium text-foreground">
                                       {account.username}
                                       <Show when={account.isManaged}>
                                         <Badge variant="secondary" class="ml-2">
@@ -4502,7 +4496,7 @@ function DeviceDetailContent() {
                                         </Badge>
                                       </Show>
                                     </p>
-                                    <p class="text-[11.5px] text-muted-foreground">
+                                    <p class="text-xs text-muted-foreground">
                                       {account.fullName ?? "No full name"}
                                       {account.uid !== null && account.uid !== undefined
                                         ? ` · UID ${account.uid}`
@@ -4510,7 +4504,7 @@ function DeviceDetailContent() {
                                       {account.guid ? ` · ${account.guid}` : ""}
                                     </p>
                                   </div>
-                                  <div class="text-right text-[11.5px] text-muted-foreground">
+                                  <div class="text-right text-xs text-muted-foreground">
                                     <p>
                                       {account.hasSecureToken === true
                                         ? "SecureToken"
@@ -4600,7 +4594,7 @@ function DeviceDetailContent() {
                               page. */}
                           <Show when={supports("reset-password")}>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
                               class="col-span-2"
                               disabled={command.isPending}
@@ -4618,7 +4612,7 @@ function DeviceDetailContent() {
                           </Show>
                           <Show when={supports("request-device-info")}>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
                               class="col-span-2"
                               disabled={command.isPending}
@@ -4629,9 +4623,9 @@ function DeviceDetailContent() {
                           </Show>
                           <Show when={supports("clear-app-data")}>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
-                              class="col-span-2 border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/[0.07] hover:text-destructive"
+                              class="col-span-2"
                               disabled={command.isPending}
                               onClick={() => {
                                 if (
@@ -4647,9 +4641,9 @@ function DeviceDetailContent() {
                           </Show>
                           <Show when={supports("relinquish-ownership")}>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
-                              class="col-span-2 border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/[0.07] hover:text-destructive"
+                              class="col-span-2"
                               disabled={command.isPending}
                               onClick={() => {
                                 if (
@@ -4665,9 +4659,9 @@ function DeviceDetailContent() {
                           </Show>
                           <Show when={supports("return-to-service")}>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
-                              class="col-span-2 border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/[0.07] hover:text-destructive"
+                              class="col-span-2"
                               disabled={command.isPending}
                               onClick={() => {
                                 if (
@@ -4683,7 +4677,7 @@ function DeviceDetailContent() {
                           </Show>
                           <Show when={supports("fresh-start")}>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
                               class="col-span-2"
                               disabled={command.isPending}
@@ -4704,9 +4698,9 @@ function DeviceDetailContent() {
                           </Show>
                           <Show when={supports("fresh-start")}>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
-                              class="col-span-2 border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/[0.07] hover:text-destructive"
+                              class="col-span-2"
                               disabled={command.isPending}
                               onClick={() => {
                                 if (
@@ -4725,7 +4719,7 @@ function DeviceDetailContent() {
                           </Show>
                           <Show when={supports("collect-diagnostics")}>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
                               class="col-span-2"
                               disabled={command.isPending}
@@ -4736,9 +4730,9 @@ function DeviceDetailContent() {
                           </Show>
                           <Show when={supports("wipe")}>
                             <Button
-                              variant="outline"
+                              variant="destructive"
                               size="sm"
-                              class="col-span-2 border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/[0.07] hover:text-destructive"
+                              class="col-span-2"
                               disabled={command.isPending}
                               onClick={() => {
                                 if (
@@ -4757,7 +4751,7 @@ function DeviceDetailContent() {
                           <Field label="Install app from manifest URL">
                             <div class="flex gap-2">
                               <Input
-                                class="h-7 text-[12px]"
+                                class="h-7"
                                 value={manifestUrl()}
                                 placeholder="https://example.com/manifest.plist"
                                 onInput={(event) => setManifestUrl(event.currentTarget.value)}
@@ -4780,10 +4774,10 @@ function DeviceDetailContent() {
                         </Show>
                         <Show when={supports("schedule-os-update")}>
                           <div class="rounded-lg border border-border p-3">
-                            <p class="text-[12.5px] font-medium text-foreground">
+                            <p class="text-xs font-medium text-foreground">
                               OS update command
                             </p>
-                            <p class="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                            <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                               Sends Apple's <code class="font-mono">ScheduleOSUpdate</code>
                               command. It runs on the next check-in and may restart the device.
                               Apple has no absolute deadline; <em>Install later</em> lets the user
@@ -4860,7 +4854,7 @@ function DeviceDetailContent() {
                         </Show>
                         <Show when={lockPin()}>
                           {(pin) => (
-                            <p class="rounded-lg bg-warning/[0.07] p-3 text-[12.5px] text-warning">
+                            <p class="rounded-lg bg-warning/[0.07] p-3 text-xs text-warning">
                               Device lock PIN: <strong class="font-mono">{pin()}</strong>
                             </p>
                           )}
@@ -4874,7 +4868,10 @@ function DeviceDetailContent() {
             </TabsPanel>
 
             <TabsPanel value="scope">
-              <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+              <div
+              class="grid items-start gap-4 lg:grid-cols-(--scope-grid)"
+              style={{ "--scope-grid": "minmax(0,380px) minmax(0,1fr)" }}
+            >
                 <DetailCard
                   title="Groups"
                   description="Direct membership and the dynamic groups whose rules currently include this device."
@@ -4895,7 +4892,7 @@ function DeviceDetailContent() {
                         <Show
                           when={data().resolved}
                           fallback={
-                            <div class="space-y-2 rounded-lg bg-warning/[0.07] p-3 text-[12.5px] text-warning">
+                            <div class="space-y-2 rounded-lg bg-warning/[0.07] p-3 text-xs text-warning">
                               <p>
                                 This device was not returned by the tenant search index, so its
                                 group membership could not be resolved.
@@ -4913,7 +4910,7 @@ function DeviceDetailContent() {
                           <Show
                             when={membershipRows().length > 0}
                             fallback={
-                              <p class="text-[12.5px] text-muted-foreground">
+                              <p class="text-xs text-muted-foreground">
                                 No group includes this device. Add it to a manual group below.
                               </p>
                             }
@@ -4921,7 +4918,7 @@ function DeviceDetailContent() {
                             <ul class="divide-y divide-border">
                               <For each={membershipRows()}>
                                 {(group) => (
-                                  <li class="flex items-start justify-between gap-3 rounded-md p-2.5 transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover">
+                                  <li class="flex items-start justify-between gap-3 rounded-md p-2.5 transition-colors duration-140 ease-swift hover:bg-hover">
                                     <div class="min-w-0">
                                       <a
                                         class="font-medium text-foreground hover:underline"
@@ -4940,7 +4937,7 @@ function DeviceDetailContent() {
                                             </Chip>
                                           )}
                                         </Show>
-                                        <span class="text-[11px] text-muted-foreground">
+                                        <span class="text-xs text-muted-foreground">
                                           {membershipDescription(group.kind)}
                                         </span>
                                       </div>
@@ -4985,7 +4982,7 @@ function DeviceDetailContent() {
                         <Show
                           when={joinableGroups().length > 0}
                           fallback={
-                            <p class="border-t border-border pt-3 text-[12px] text-muted-foreground">
+                            <p class="border-t border-border pt-3 text-xs text-muted-foreground">
                               Every manual group already includes this device.
                             </p>
                           }
@@ -4996,7 +4993,7 @@ function DeviceDetailContent() {
                             </label>
                             <NativeSelect
                               id="device-group-select"
-                              class="h-7 text-[12px]"
+                              class="h-7"
                               disabled={membershipBusy()}
                               value={selectedGroupId()}
                               onChange={(event) => setSelectedGroupId(event.currentTarget.value)}
@@ -5026,7 +5023,7 @@ function DeviceDetailContent() {
                   title="Effective policy"
                   description="Policies and setting kinds that resolve for this device right now."
                   action={
-                    <span class="text-[11px] tabular-nums text-muted-foreground">
+                    <span class="text-xs tabular-nums text-muted-foreground">
                       {resolved()?.configurations.length ?? 0} resolved kinds
                     </span>
                   }
@@ -5046,7 +5043,7 @@ function DeviceDetailContent() {
                       <Show
                         when={(resolved()?.policies.length ?? 0) > 0}
                         fallback={
-                          <p class="text-[12.5px] text-muted-foreground">
+                          <p class="text-xs text-muted-foreground">
                             No policy resolves for this device. Assign an included policy directly
                             or through a group.
                           </p>
@@ -5059,7 +5056,7 @@ function DeviceDetailContent() {
                           <ul class="divide-y divide-border">
                             <For each={resolved()?.policies ?? []}>
                               {(policy) => (
-                                <li class="space-y-1 p-3 text-[12.5px]">
+                                <li class="space-y-1 p-3 text-xs">
                                   <div class="flex flex-wrap items-center justify-between gap-2">
                                     <a
                                       class="min-w-0 font-medium text-foreground hover:underline"
@@ -5074,7 +5071,7 @@ function DeviceDetailContent() {
                                       <Chip tone="muted">priority {policy.priority}</Chip>
                                     </span>
                                   </div>
-                                  <p class="text-[11.5px] text-muted-foreground">
+                                  <p class="text-xs text-muted-foreground">
                                     {policy.kinds.length} setting
                                     {policy.kinds.length === 1 ? "" : "s"} ·{" "}
                                     {scopeLabel(policy.scope)}
@@ -5093,7 +5090,7 @@ function DeviceDetailContent() {
                       <Show
                         when={(resolved()?.configurations.length ?? 0) > 0}
                         fallback={
-                          <p class="text-[12.5px] text-muted-foreground">
+                          <p class="text-xs text-muted-foreground">
                             No resolved setting kinds are reported for this device yet.
                           </p>
                         }
@@ -5105,9 +5102,9 @@ function DeviceDetailContent() {
                           <ul class="divide-y divide-border">
                             <For each={resolved()?.configurations ?? []}>
                               {(configuration) => (
-                                <li class="space-y-1 p-3 text-[12.5px]">
+                                <li class="space-y-1 p-3 text-xs">
                                   <div class="flex flex-wrap items-center justify-between gap-2">
-                                    <span class="min-w-0 font-mono text-[11px] text-muted-foreground">
+                                    <span class="min-w-0 font-mono text-xs text-muted-foreground">
                                       {configuration.kind}
                                     </span>
                                     <span class="flex shrink-0 flex-wrap items-center gap-1.5">
@@ -5144,7 +5141,7 @@ function DeviceDetailContent() {
                           <ul class="mt-2 space-y-1">
                             <For each={resolved()?.overridden ?? []}>
                               {(override) => (
-                                <li class="rounded-lg bg-warning/[0.07] p-2 text-[11.5px] text-warning">
+                                <li class="rounded-lg bg-warning/[0.07] p-2 text-xs text-warning">
                                   <span class="font-medium">{override.policyName}</span> (
                                   {override.kind}) lost to {override.reason.replaceAll("-", " ")}.
                                 </li>
@@ -5163,8 +5160,8 @@ function DeviceDetailContent() {
                                 <li
                                   class={
                                     exclusion.effective
-                                      ? "rounded-lg bg-destructive/[0.07] p-2 text-[11.5px] text-destructive"
-                                      : "rounded-md bg-surface p-2 text-[11.5px] text-muted-foreground"
+                                      ? "rounded-lg bg-destructive/[0.07] p-2 text-xs text-destructive"
+                                      : "rounded-md bg-surface p-2 text-xs text-muted-foreground"
                                   }
                                 >
                                   <span class="font-medium">{exclusion.policyName}</span>{" "}
@@ -5200,10 +5197,10 @@ function DeviceDetailContent() {
           </DialogHeader>
           <Show when={confirmAction() === "delete" && escrowedSecretKinds().length > 0}>
             <div class="rounded-lg border border-warning/40 bg-warning/[0.07] p-3">
-              <p class="text-[12.5px] font-medium text-foreground">
+              <p class="text-xs font-medium text-foreground">
                 This device holds escrowed secrets
               </p>
-              <p class="mt-1 text-[12px] leading-relaxed text-muted-foreground">
+              <p class="mt-1 text-xs leading-relaxed text-muted-foreground">
                 Deleting destroys the {deviceHandoverSecretSummary(escrowedSecretKinds())}{" "}
                 permanently. After the delete there is no recovery path: the handover archive is the
                 only supported way to keep this material.
@@ -5211,7 +5208,7 @@ function DeviceDetailContent() {
               <Show
                 when={canHandover()}
                 fallback={
-                  <p class="mt-2 text-[12px] leading-relaxed text-destructive">
+                  <p class="mt-2 text-xs leading-relaxed text-destructive">
                     Your role cannot export escrowed secrets, so this delete is blocked. Ask a
                     tenant owner to grant the <span class="font-mono">devices.handover</span>{" "}
                     permission or perform the handover.
@@ -5232,7 +5229,7 @@ function DeviceDetailContent() {
             </div>
           </Show>
           <Show when={confirmAction() === "unenroll" && escrowedSecretKinds().length > 0}>
-            <p class="rounded-lg border border-border bg-surface p-3 text-[12px] leading-relaxed text-muted-foreground">
+            <p class="rounded-lg border border-border bg-surface p-3 text-xs leading-relaxed text-muted-foreground">
               Unenrolling keeps the escrowed {deviceHandoverSecretSummary(escrowedSecretKinds())} in
               Mattrax. If you are returning the hardware, use{" "}
               <span class="font-medium text-foreground">Hand over</span> first so the secrets leave
@@ -5240,7 +5237,7 @@ function DeviceDetailContent() {
             </p>
           </Show>
           <Show when={confirmAction() === "delete" && handoverImpact.isPending}>
-            <p class="text-[12px] text-muted-foreground">Checking for escrowed secrets…</p>
+            <p class="text-xs text-muted-foreground">Checking for escrowed secrets…</p>
           </Show>
           <Show when={confirmAction() === "delete" && handoverImpact.error}>
             <ErrorText error={handoverImpact.error} />
@@ -5460,14 +5457,14 @@ function DeviceDetailContent() {
               <Field label="Notes" hint="Markdown is supported.">
                 <Textarea
                   disabled={!writable()}
-                  class="min-h-40 text-[12.5px]"
+                  class="min-h-40"
                   value={notes()}
                   onInput={(event) => setNotes(event.currentTarget.value)}
                 />
               </Field>
               <ErrorText error={save.error} />
             </div>
-            <SheetFooter class="border-t border-border">
+            <SheetFooter>
               <div class="flex justify-end gap-2">
                 <Button
                   type="button"
@@ -5647,7 +5644,7 @@ function DeviceAttributesPanel(props: {
       <Show
         when={visible().length > 0}
         fallback={
-          <p class="px-4 py-4 text-[12.5px] text-muted-foreground">
+          <p class="px-4 py-4 text-xs text-muted-foreground">
             {definitions.isPending ? (
               "Loading attributes…"
             ) : (
@@ -5681,15 +5678,18 @@ function DeviceAttributesPanel(props: {
               };
 
               return (
-                <div class="grid gap-1.5 px-4 py-2.5 sm:grid-cols-[220px_minmax(0,1fr)] sm:items-start sm:gap-4">
+                <div
+                class="grid gap-1.5 px-4 py-2.5 sm:grid-cols-(--definition-grid) sm:items-start sm:gap-4"
+                style={{ "--definition-grid": "220px minmax(0,1fr)" }}
+              >
                   <div class="min-w-0">
-                    <p class="text-[12.5px] font-medium text-foreground">{definition.label}</p>
-                    <p class="font-mono text-[10.5px] text-muted-foreground">{definition.key}</p>
+                    <p class="text-xs font-medium text-foreground">{definition.label}</p>
+                    <p class="font-mono text-xs text-muted-foreground">{definition.key}</p>
                     <Show when={definition.required}>
-                      <p class="text-[10.5px] text-warning">Required</p>
+                      <p class="text-xs text-warning">Required</p>
                     </Show>
                     <Show when={definition.source !== "manual"}>
-                      <p class="text-[10.5px] text-muted-foreground">
+                      <p class="text-xs text-muted-foreground">
                         {definition.source === "script"
                           ? "Script-sourced · read-only"
                           : "Directory (no connector yet)"}
@@ -5702,12 +5702,12 @@ function DeviceAttributesPanel(props: {
                       fallback={
                         <>
                           <div class="min-w-0 flex-1 space-y-0.5">
-                            <p class="text-[12px] text-foreground">
+                            <p class="text-xs text-foreground">
                               {value() || (
                                 <span class="text-muted-foreground">No value collected yet</span>
                               )}
                             </p>
-                            <p class="text-[10.5px] text-muted-foreground">
+                            <p class="text-xs text-muted-foreground">
                               From script
                               {definition.scriptName ? ` · ${definition.scriptName}` : ""}
                               {collectionState()?.lastCollectedAt
@@ -5715,7 +5715,7 @@ function DeviceAttributesPanel(props: {
                                 : " · not collected yet"}
                             </p>
                             <Show when={collectionState()?.lastError}>
-                              <p class="text-[10.5px] text-destructive">
+                              <p class="text-xs text-destructive">
                                 {collectionState()!.lastError}
                               </p>
                             </Show>
@@ -5751,7 +5751,7 @@ function DeviceAttributesPanel(props: {
                         when={definition.type === "select" || definition.type === "boolean"}
                         fallback={
                           <Input
-                            class="h-7 text-[12px]"
+                            class="h-7"
                             type={attributeInputType(definition.type)}
                             aria-label={definition.label}
                             disabled={!props.writable}
@@ -5761,7 +5761,7 @@ function DeviceAttributesPanel(props: {
                         }
                       >
                         <NativeSelect
-                          class="h-7 text-[12px]"
+                          class="h-7"
                           aria-label={definition.label}
                           disabled={!props.writable}
                           value={value()}
@@ -5787,7 +5787,7 @@ function DeviceAttributesPanel(props: {
                         <Button
                           variant="ghost"
                           size="xs"
-                          class="shrink-0 text-muted-foreground"
+                          class="shrink-0"
                           onClick={() => {
                             setDraft({ ...draft(), [definition.key]: "" });
                             setCleared({ ...cleared(), [definition.key]: true });
@@ -5798,7 +5798,7 @@ function DeviceAttributesPanel(props: {
                         </Button>
                       </Show>
                       <Show when={isCleared()}>
-                        <span class="pt-1.5 text-[10.5px] text-warning">Cleared</span>
+                        <span class="pt-1.5 text-xs text-warning">Cleared</span>
                       </Show>
                     </Show>
                   </div>

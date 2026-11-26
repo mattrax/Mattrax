@@ -34,18 +34,14 @@ export const route = {
   },
 };
 
-const statusTone = (status: string | null | undefined) => {
+const statusVariant = (status: string | null | undefined) => {
   switch (status) {
     case "succeeded":
-      return "border-success/30 text-success";
+      return "success";
     case "failed":
-      return "border-destructive/30 text-destructive";
-    case "queued":
-    case "sent":
-    case "running":
-      return "border-border text-muted-foreground";
+      return "destructive";
     default:
-      return "border-border text-muted-foreground";
+      return "outline";
   }
 };
 
@@ -104,7 +100,7 @@ export default function ScriptsPage() {
             <span class="text-muted-foreground/60"> · {row.trigger.intervalSeconds}s</span>
           </Show>
           <Show when={row.trigger.type === "cron" && row.trigger.cronExpression}>
-            <span class="font-mono text-[11.5px] text-muted-foreground/60">
+            <span class="font-mono text-xs text-muted-foreground/60">
               {" "}
               · {row.trigger.cronExpression}
             </span>
@@ -115,7 +111,7 @@ export default function ScriptsPage() {
     {
       header: "Runs as",
       cell: (row: ScriptInfo) => (
-        <span class="font-mono text-[12px] text-muted-foreground">
+        <span class="font-mono text-xs text-muted-foreground">
           {row.language} · {row.runAs}
         </span>
       ),
@@ -134,10 +130,10 @@ export default function ScriptsPage() {
             when={row.lastRunStatus}
             fallback={<span class="text-muted-foreground">Never</span>}
           >
-            <Badge variant="outline" class={statusTone(row.lastRunStatus)}>
+            <Badge variant={statusVariant(row.lastRunStatus)}>
               {row.lastRunStatus}
             </Badge>
-            <span class="text-[11.5px] text-muted-foreground">{relativeTime(row.lastRunAt)}</span>
+            <span class="text-xs text-muted-foreground">{relativeTime(row.lastRunAt)}</span>
           </Show>
         </div>
       ),
@@ -191,7 +187,7 @@ export default function ScriptsPage() {
               </Show>
             }
           >
-            <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+            <p class="text-xs leading-relaxed text-muted-foreground">
               Existing execution history is retained until its retention window expires. Enabling
               scripts again re-delivers the currently assigned scripts on each device's next
               check-in.
@@ -252,7 +248,7 @@ export default function ScriptsPage() {
           />
         </Show>
 
-        <p class="text-[11.5px] leading-relaxed text-muted-foreground">
+        <p class="text-xs leading-relaxed text-muted-foreground">
           Apple devices receive scripts as <code class="font-mono">com.mattrax.script</code>{" "}
           profiles executed by mattraxd. Windows uses the same binary because Windows MDM has no
           arbitrary-script channel. Android Management API exposes no script command, so Android

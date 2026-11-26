@@ -23,6 +23,7 @@ import { useTenantPermissions } from "~/lib/permissions";
 import { supportUrl } from "~/lib/support-config-store";
 import { cn } from "~/lib/utils";
 import { resolveTenantId } from "~/lib/tenant";
+import { Button } from "~/components/ui/button";
 
 /**
  * The in-product onboarding path for a new tenant.
@@ -43,7 +44,7 @@ function settledQueryData<T>(query: {
   return query.isSuccess ? query.data : undefined;
 }
 
-export function OnboardingChecklist(props: { tenantId: string }) {
+export default function OnboardingChecklist(props: { tenantId: string }) {
   const { can, canAny, known, tenant } = useTenantPermissions();
   const session = authClient.useSession();
   const queryClient = useQueryClient();
@@ -222,26 +223,29 @@ export function OnboardingChecklist(props: { tenantId: string }) {
           </span>
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
-              <h2 id="onboarding-title" class="text-[13px] font-[560] text-foreground">
+              <h2 id="onboarding-title" class="text-xs font-semibold text-foreground">
                 Get started
               </h2>
-              <Badge variant="secondary" class="tabular-nums">
-                {progress().done} of {progress().total} done
-              </Badge>
+              <span class="tabular-nums">
+                <Badge variant="secondary">
+                  {progress().done} of {progress().total} done
+                </Badge>
+              </span>
             </div>
-            <p class="mt-0.5 text-[12px] leading-5 text-muted-foreground">
+            <p class="mt-0.5 text-xs leading-5 text-muted-foreground">
               The short path from an empty tenant to a managed fleet.
             </p>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-xs"
             aria-label="Dismiss the Get started checklist"
-            class="rounded p-1 text-muted-foreground transition-colors duration-[var(--duration-hover)] ease-swift hover:bg-hover hover:text-foreground disabled:opacity-50"
             disabled={dismiss.isPending}
             onClick={() => dismiss.mutate()}
           >
             <X class="size-3.5" />
-          </button>
+          </Button>
         </div>
 
         <ol class="mt-3 grid gap-1.5 sm:grid-cols-2">
@@ -251,7 +255,7 @@ export function OnboardingChecklist(props: { tenantId: string }) {
                 <a
                   href={step.href}
                   class={cn(
-                    "group flex items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors duration-[var(--duration-hover)] ease-swift",
+                    "group flex items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors duration-150 ease-swift",
                     step.done
                       ? "border-transparent bg-surface hover:bg-hover"
                       : "border-border hover:border-border-strong hover:bg-hover",
@@ -259,7 +263,7 @@ export function OnboardingChecklist(props: { tenantId: string }) {
                 >
                   <span
                     class={cn(
-                      "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full text-[9px] font-[600] tabular-nums",
+                      "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums",
                       step.done
                         ? "bg-foreground text-background"
                         : "border border-border-strong text-muted-foreground",
@@ -273,30 +277,30 @@ export function OnboardingChecklist(props: { tenantId: string }) {
                   <span class="min-w-0 flex-1">
                     <span
                       class={cn(
-                        "block truncate text-[12px] font-[500]",
+                        "block truncate text-xs font-medium",
                         step.done ? "text-muted-foreground line-through" : "text-foreground",
                       )}
                     >
                       {step.title}
                     </span>
-                    <span class="mt-0.5 block text-[11px] leading-4 text-muted-foreground">
+                    <span class="mt-0.5 block text-xs leading-4 text-muted-foreground">
                       {step.description}
                     </span>
                   </span>
-                  <ChevronRight class="mt-1 size-3 shrink-0 text-subtle-foreground transition-transform duration-[var(--duration-hover)] ease-swift group-hover:translate-x-0.5" />
+                  <ChevronRight class="mt-1 size-3 shrink-0 group-hover:translate-x-0.5" />
                 </a>
               </li>
             )}
           </For>
         </ol>
 
-        <p class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-2.5 text-[11px] text-muted-foreground">
+        <p class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-border pt-2.5 text-xs text-muted-foreground">
           <span>Stuck, or want a walkthrough?</span>
           <a
             href={supportUrl()}
             target={externalSupport() ? "_blank" : undefined}
             rel={externalSupport() ? "noopener" : undefined}
-            class="font-[500] text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground"
+            class="font-medium text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground"
           >
             Talk to us
           </a>
@@ -304,7 +308,7 @@ export function OnboardingChecklist(props: { tenantId: string }) {
           <a
             href="/docs/"
             target="_self"
-            class="inline-flex items-center gap-1 font-[500] text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground"
+            class="inline-flex items-center gap-1 font-medium text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-foreground"
           >
             <BookOpen class="size-3" aria-hidden="true" />
             Documentation

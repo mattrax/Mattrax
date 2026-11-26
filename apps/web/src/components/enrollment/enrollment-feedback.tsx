@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
-import { QrCode } from "~/components/mdm/qr-code";
+import QrCode from "~/components/mdm/qr-code";
 import { Button } from "~/components/ui/button";
 import { CheckCircle2, CircleAlert, Info } from "~/components/ui/icons";
 import { enrollmentLinkProblemCopy } from "~/lib/enrollment-presentation";
@@ -43,9 +43,9 @@ export function EnrollmentNotice(props: {
       <div class="flex items-start gap-3">
         <Show
           when={urgent()}
-          fallback={<Info class={`size-5 shrink-0 ${tone().icon}`} aria-hidden="true" />}
+          fallback={<span class={`shrink-0 ${tone().icon}`}><Info class="size-5" aria-hidden="true" /></span>}
         >
-          <CircleAlert class={`size-5 shrink-0 ${tone().icon}`} aria-hidden="true" />
+          <span class={`shrink-0 ${tone().icon}`}><CircleAlert class="size-5" aria-hidden="true" /></span>
         </Show>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-semibold text-foreground">{props.title}</p>
@@ -71,9 +71,9 @@ export function EnrollmentStatus(props: { available: boolean; label: string }) {
     >
       <Show
         when={props.available}
-        fallback={<CircleAlert class="size-3.5 text-muted-foreground" aria-hidden="true" />}
+        fallback={<CircleAlert class="size-3.5" aria-hidden="true" />}
       >
-        <CheckCircle2 class="size-3.5 text-success" aria-hidden="true" />
+        <CheckCircle2 class="size-3.5" aria-hidden="true" />
       </Show>
       {props.available ? `Ready to enroll` : `${props.label} unavailable`}
     </span>
@@ -126,7 +126,7 @@ export function EnrollmentQrPanel(props: { value: string; hasPassword: boolean }
       <div class="mt-4 flex justify-center">
         <QrCode value={props.value} label="QR code for this enrollment link" size={176} />
       </div>
-      <p class="mt-3 text-center text-[11px] leading-4 text-muted-foreground">
+      <p class="mt-3 text-center text-xs leading-4 text-muted-foreground">
         This QR code contains the enrollment link only.
         <Show when={props.hasPassword}> It does not include the enrollment password.</Show>
       </p>

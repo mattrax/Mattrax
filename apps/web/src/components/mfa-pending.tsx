@@ -3,23 +3,17 @@ import { Match as EffectMatch } from "effect";
 import { authClient } from "~/lib/auth";
 import { Button } from "~/components/ui/button";
 import { errorMessage } from "~/lib/errors";
+import { Input } from "~/components/ui/input";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
-const feedbackEnter = "motion-safe:animate-[mt-rise-in_160ms_var(--ease-swift)_both]";
-
-const modeButton = (active: boolean) =>
-  `rounded-md px-2.5 py-1.5 font-medium transition-colors duration-[var(--duration-hover)] ease-swift ${
-    active
-      ? "bg-primary text-primary-foreground"
-      : "border border-stone-300 text-stone-700 hover:bg-stone-100 hover:text-stone-900"
-  }`;
+const feedbackEnter = "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-150";
 
 /**
  * Completes a pending sign-in with an authenticator code or a one-time recovery
  * code. The pending credential stays in its httpOnly cookie; only the code is
  * sent to the API.
  */
-export function MfaPending(props: { email?: string; onComplete: () => void }) {
+export default function MfaPending(props: { email?: string; onComplete: () => void }) {
   const [mode, setMode] = createSignal<"totp" | "recovery" | "passkey">("totp");
   const [code, setCode] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
@@ -77,8 +71,8 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
 
   return (
     <div class="space-y-4">
-      <div class="rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm text-stone-600">
-        <p class="font-medium text-stone-900">Two-factor authentication required</p>
+      <div class="rounded-lg border border-border bg-page p-3 text-sm text-subtle-foreground">
+        <p class="font-medium text-foreground">Two-factor authentication required</p>
         <p class="mt-1">
           <Show when={props.email} fallback="Enter a code from your authenticator app to continue.">
             Enter a code from the authenticator app for <strong>{props.email}</strong>.
@@ -87,10 +81,11 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
       </div>
 
       <div role="group" aria-label="Verification method" class="flex gap-2 text-xs">
-        <button
+        <Button
           type="button"
           aria-pressed={mode() === "totp" ? "true" : "false"}
-          class={modeButton(mode() === "totp")}
+          variant={mode() === "totp" ? "default" : "outline"}
+          size="sm"
           onClick={() => {
             setMode("totp");
             setCode("");
@@ -98,11 +93,12 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
           }}
         >
           Authenticator code
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           aria-pressed={mode() === "recovery" ? "true" : "false"}
-          class={modeButton(mode() === "recovery")}
+          variant={mode() === "recovery" ? "default" : "outline"}
+          size="sm"
           onClick={() => {
             setMode("recovery");
             setCode("");
@@ -110,11 +106,12 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
           }}
         >
           Recovery code
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
           aria-pressed={mode() === "passkey" ? "true" : "false"}
-          class={modeButton(mode() === "passkey")}
+          variant={mode() === "passkey" ? "default" : "outline"}
+          size="sm"
           onClick={() => {
             setMode("passkey");
             setCode("");
@@ -122,7 +119,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
           }}
         >
           Passkey
-        </button>
+        </Button>
       </div>
 
       <p role="status" aria-live="polite" class="sr-only">
@@ -132,10 +129,10 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
       <form onSubmit={submit} class="space-y-3">
         <Show when={mode() !== "passkey"}>
           <div class="space-y-1.5">
-            <label for="mfa-code" class="text-sm font-medium text-stone-700">
+            <label for="mfa-code" class="text-sm font-medium text-muted-foreground">
               {mode() === "totp" ? "6-digit code" : "One-time recovery code"}
             </label>
-            <input
+            <Input
               id="mfa-code"
               aria-invalid={error() ? "true" : undefined}
               aria-describedby={error() ? "mfa-error" : undefined}
@@ -145,12 +142,12 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
               placeholder={mode() === "totp" ? "000000" : "xxxx-xxxx"}
               value={code()}
               onInput={(event) => setCode(event.currentTarget.value)}
-              class="w-full rounded-lg border border-input bg-card px-3 py-2 text-center text-lg tracking-[0.3em] text-foreground outline-none focus:border-ring focus:ring-2 focus:ring-ring/30 transition-colors"
+              class="w-full text-center"
             />
           </div>
         </Show>
         <Show when={mode() === "passkey"}>
-          <p class="text-sm text-stone-600">
+          <p class="text-sm text-subtle-foreground">
             Use the passkey saved on this device or a nearby device.
           </p>
         </Show>
@@ -161,7 +158,7 @@ export function MfaPending(props: { email?: string; onComplete: () => void }) {
             </p>
           )}
         </Show>
-        <Button type="submit" class="h-9 w-full text-sm" pending={pending()}>
+        <Button type="submit" class="h-9 w-full" pending={pending()}>
           {pending() ? "Verifying…" : mode() === "passkey" ? "Use passkey" : "Continue"}
         </Button>
       </form>
