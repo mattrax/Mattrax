@@ -117,15 +117,15 @@ const openMenu = async (page: Page, trigger: import("@playwright/test").Locator)
   await expect
     .poll(
       async () => {
-        if ((await page.locator('[data-slot="menu-content"]').count()) > 0) return 1;
+        if ((await trigger.getAttribute("aria-expanded").catch(() => null)) === "true") return true;
 
         await trigger.click();
 
-        return page.locator('[data-slot="menu-content"]').count();
+        return (await trigger.getAttribute("aria-expanded").catch(() => null)) === "true";
       },
       { timeout: 8_000 },
     )
-    .toBeGreaterThan(0);
+    .toBe(true);
 };
 
 const openPalette = async (page: Page) => {

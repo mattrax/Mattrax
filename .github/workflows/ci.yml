@@ -507,12 +507,14 @@ jobs:
     if: >-
       always() &&
       (needs.changes.result != 'success' || needs.changes.outputs.suites == 'true')
-    runs-on: ubuntu-latest
+    # The suite is CPU-bound. GitHub's arm64 image is a faster per-core host
+    # than the x64 runner while still running the whole suite as one shard.
+    runs-on: ubuntu-24.04-arm
     # Keep headroom for setup, artifacts and a retried failure.
     timeout-minutes: 30
     env:
       E2E_CHANNEL: bundled
-      E2E_WORKERS: 4
+      E2E_WORKERS: 6
       # Serve the production build rather than the dev server: a dashboard page
       # hydrates in ~70ms from built bundles against ~650ms in dev mode, and
       # every test loads several documents.

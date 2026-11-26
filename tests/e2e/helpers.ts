@@ -236,7 +236,11 @@ export async function signOut(page: Page) {
   await expect
     .poll(
       async () => {
-        if (page.url().includes("/login")) return true;
+        if (page.url().includes("/login")) {
+          const me = await page.request.get("/api/v1/me").catch(() => undefined);
+
+          if (me?.status() === 401) return true;
+        }
 
         const item = page.getByRole("menuitem", { name: /sign out/i });
 
@@ -254,6 +258,8 @@ export async function signOut(page: Page) {
       { timeout: 30_000 },
     )
     .toBe(true);
+
+  await expect(page.locator("#email")).toBeVisible({ timeout: 20_000 });
 }
 
 export async function createTenant(page: Page, name: string) {

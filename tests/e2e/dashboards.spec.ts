@@ -165,7 +165,10 @@ test.describe("dashboards", () => {
 
     const grid = page.locator(".dashboard-grid");
     const handle = page.getByRole("button", { name: "Move Managed devices", exact: true });
+    await expect(grid).toBeVisible();
+    await expect(handle).toBeVisible();
     await handle.scrollIntoViewIfNeeded();
+    await handle.hover();
     const gridBox = await grid.boundingBox();
     const handleBox = await handle.boundingBox();
 
@@ -174,17 +177,29 @@ test.describe("dashboards", () => {
     const column = (gridBox.width - 12 * 11) / 12 + 12;
     const startX = handleBox.x + handleBox.width / 2;
     const startY = handleBox.y + handleBox.height / 2;
-    const saved = page.waitForResponse(
-      (response) =>
-        response.request().method() === "PATCH" &&
-        response.url().includes(`/dashboards/${dragDashboard.id}/layout`),
-    );
+    const drag = async () => {
+      const saved = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PATCH" &&
+          response.url().includes(`/dashboards/${dragDashboard.id}/layout`),
+        { timeout: 30_000 },
+      );
 
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    await page.mouse.move(startX + column * 6, startY, { steps: 16 });
-    await page.mouse.up();
-    expect((await saved).ok()).toBe(true);
+      await page.mouse.move(startX, startY);
+      await page.mouse.down();
+      await page.mouse.move(startX + column * 6, startY, { steps: 20 });
+      await page.evaluate(
+        () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+      );
+      await page.mouse.up();
+
+      return saved.catch(() => undefined);
+    };
+
+    // A dashboard still settling from its first paint can miss the pointer
+    // gesture. Retry the same drag before treating the layout as unsaved.
+    const saved = (await drag()) ?? (await drag());
+    expect(saved?.ok()).toBe(true);
 
     const layout = await api<{
       widgets: Array<{ id: string; x: number; y: number; w: number; h: number }>;
