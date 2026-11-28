@@ -1,4 +1,4 @@
-import { AccountId, MemberId, SessionId, TenantId } from "@mattrax/crypto";
+import { AccountId, MemberId, TenantId } from "@mattrax/crypto";
 import { Permission } from "./rbac.js";
 import { Schema } from "effect";
 import { JsonRecord } from "./Errors.js";
@@ -143,7 +143,7 @@ export type MeResponse = typeof MeResponse.Type;
  * not read.
  */
 export const BootstrapSession = Schema.Struct({
-  sessionId: SessionId.schema,
+  sessionId: Schema.String,
   subjectId: Schema.String,
   claims: Schema.Struct({
     name: Schema.String,
