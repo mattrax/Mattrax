@@ -1,3 +1,4 @@
+import { DashboardId, ReportId } from "@mattrax/crypto";
 import { Option, Schema } from "effect";
 import { DeviceQuery } from "./deviceQuery.js";
 
@@ -407,7 +408,7 @@ export type PatchDashboardReportRequest = typeof PatchDashboardReportRequest.Typ
 
 export const DashboardReport = Schema.Struct({
   id: Schema.String,
-  dashboardId: Schema.String,
+  dashboardId: DashboardId.schema,
   name: Schema.String,
   frequency: DashboardReportFrequency,
   hourUtc: Schema.Number,
@@ -431,7 +432,7 @@ export type DashboardReportListResponse = typeof DashboardReportListResponse.Typ
 
 export const DashboardReportRun = Schema.Struct({
   id: Schema.String,
-  reportId: Schema.String,
+  reportId: ReportId.schema,
   reportName: Schema.String,
   format: DashboardReportFormat,
   period: Schema.String,

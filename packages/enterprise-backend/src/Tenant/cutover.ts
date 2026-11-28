@@ -28,7 +28,7 @@ import type {
   CutoverScepCertificate,
   CutoverScepTrustAnchor,
 } from "@mattrax/enterprise-domain";
-import { importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
+import { DeploymentId, TenantId, importPrivateKeyJwk, openSecret, pemEncode } from "@mattrax/crypto";
 import { describeScepCa, openCaPrivateKey } from "@mattrax/scep";
 import { buildTenantExport } from "./tenantExport.ts";
 import type { EnterpriseDb, EnterpriseOrganization } from "../schema.ts";
@@ -725,11 +725,11 @@ export const buildTenantCutover = (
     }
 
     const source: CutoverSource = {
-      tenantId: organization.id,
+      tenantId: TenantId.fromParam(organization.id),
       slug: organization.slug,
       name: organization.name,
       origin: normalizeOrigin(options.origin),
-      deploymentId: options.deploymentId,
+      deploymentId: DeploymentId.fromParam(options.deploymentId),
     };
 
     const payload: CutoverPayload = {
@@ -973,7 +973,7 @@ export const preflightTenantOriginSwitch = (
       currentOrigin,
       targetOrigin,
       hostnameChanged,
-      deploymentId: options.deploymentId,
+      deploymentId: DeploymentId.fromParam(options.deploymentId),
       items,
       steps: [
         {

@@ -1,3 +1,4 @@
+import { EndpointId } from "@mattrax/crypto";
 import { Effect, Option, Schema } from "effect";
 import { and, desc, eq, gt, gte, lt, or } from "drizzle-orm";
 import {
@@ -102,7 +103,7 @@ export const webhookDeliveryInfo = (
   >,
 ): WebhookDeliveryInfo => ({
   id: row.id,
-  endpointId: row.endpointId,
+  endpointId: EndpointId.fromParam(row.endpointId),
   event: row.event,
   eventId: row.eventId ?? null,
   status: row.status,

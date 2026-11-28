@@ -1,4 +1,4 @@
-import { ReportId } from "@mattrax/crypto";
+import { DashboardId, ReportId } from "@mattrax/crypto";
 import { Effect, Option, Schema } from "effect";
 import { and, asc, desc, eq, inArray, lt } from "drizzle-orm";
 import {
@@ -75,7 +75,7 @@ export type DashboardReportRunRow = typeof s.dashboardReportRun.$inferSelect;
 /** API projection of a report definition. */
 export const dashboardReportInfo = (row: DashboardReportRow): DashboardReport => ({
   id: row.id,
-  dashboardId: row.dashboardId,
+  dashboardId: DashboardId.fromParam(row.dashboardId),
   name: row.name,
   frequency: frequencyOf(row.frequency),
   hourUtc: row.hourUtc,
@@ -95,7 +95,7 @@ export const dashboardReportInfo = (row: DashboardReportRow): DashboardReport =>
 /** API projection of one run attempt. */
 export const dashboardReportRunInfo = (row: DashboardReportRunRow): DashboardReportRunInfo => ({
   id: row.id,
-  reportId: row.reportId,
+  reportId: ReportId.fromParam(row.reportId),
   reportName: row.reportName,
   format: formatOf(row.format),
   period: row.period,

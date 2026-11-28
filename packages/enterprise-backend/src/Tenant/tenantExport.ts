@@ -1,3 +1,4 @@
+import { GroupId } from "@mattrax/crypto";
 import { Effect, Option, Schema } from "effect";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
@@ -487,7 +488,7 @@ export const buildTenantExport = (
 
     const exportedUserGroupAssignments: TenantExportUserGroupAssignment[] = [
       ...userGroupAssignments,
-    ].map(([groupId, entry]) => ({ groupId, ...entry }));
+    ].map(([groupId, entry]) => ({ groupId: GroupId.fromParam(groupId), ...entry }));
 
     const exportedPolicies: TenantExportPolicy[] = policies.map((policy) => ({
       key: policy.id,

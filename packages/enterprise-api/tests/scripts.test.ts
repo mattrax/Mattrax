@@ -1,3 +1,4 @@
+import { RunId } from "@mattrax/crypto";
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import {
@@ -384,7 +385,7 @@ describe("agent sync and result ingestion", () => {
         db,
         { id: "device-1", organizationId: orgId },
         {
-          runId: queued.target.executionId,
+          runId: RunId.fromParam(queued.target.executionId),
           scriptId: id,
           trigger: "manual",
           exitCode: 0,
@@ -420,7 +421,7 @@ describe("agent sync and result ingestion", () => {
         db,
         { id: "device-1", organizationId: orgId },
         {
-          runId: queued.target.executionId,
+          runId: RunId.fromParam(queued.target.executionId),
           scriptId: id,
           trigger: "manual",
           exitCode: 0,
@@ -454,7 +455,7 @@ describe("agent sync and result ingestion", () => {
         db,
         { id: "device-1", organizationId: orgId },
         {
-          runId: "install-abc",
+          runId: RunId.fromParam("rn_install-abc"),
           scriptId: id,
           trigger: "install",
           exitCode: 1,
@@ -482,7 +483,7 @@ describe("agent sync and result ingestion", () => {
         db,
         { id: "device-1", organizationId: orgId },
         {
-          runId: "forged-run",
+          runId: RunId.fromParam("rn_forged-run"),
           scriptId: id,
           trigger: "interval",
           exitCode: 0,
@@ -508,7 +509,7 @@ describe("agent sync and result ingestion", () => {
       recordScriptAgentResult(
         db,
         { id: "device-1", organizationId: otherOrgId },
-        { runId: "x", scriptId: id, trigger: "manual", exitCode: 0, stdout: "", stderr: "" },
+        { runId: RunId.fromParam("rn_x"), scriptId: id, trigger: "manual", exitCode: 0, stdout: "", stderr: "" },
         now,
       ),
     );
@@ -522,7 +523,7 @@ describe("agent sync and result ingestion", () => {
         recordScriptAgentResult(
           db,
           { id: "device-1", organizationId: orgId },
-          { runId: "y", scriptId: id, trigger: "manual", exitCode: 0, stdout: "", stderr: "" },
+          { runId: RunId.fromParam("rn_y"), scriptId: id, trigger: "manual", exitCode: 0, stdout: "", stderr: "" },
           now,
         ),
       ),

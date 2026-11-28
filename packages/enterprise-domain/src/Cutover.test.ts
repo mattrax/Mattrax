@@ -1,3 +1,4 @@
+import { TenantId, DeploymentId } from "@mattrax/crypto";
 import { Schema } from "effect";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { CutoverPayload } from "./Cutover.js";
@@ -20,11 +21,11 @@ import {
 const iterations = 10_000;
 
 const source = {
-  tenantId: "tenant-1",
+  tenantId: TenantId.fromParam("tn_tenant-1"),
   slug: "acme",
   name: "Acme",
   origin: "https://mdm.example.com",
-  deploymentId: "dp_source",
+  deploymentId: DeploymentId.fromParam("dep_dp_source"),
 };
 
 const payload = (): CutoverPayload => ({

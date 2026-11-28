@@ -1,5 +1,5 @@
 import { Option, Schema } from "effect";
-import { PASSPHRASE_PBKDF2_ITERATIONS } from "@mattrax/crypto";
+import { DeploymentId, PASSPHRASE_PBKDF2_ITERATIONS, TenantId } from "@mattrax/crypto";
 import { NullableString } from "./Errors.js";
 import { TenantExportAuditEntry, TenantExportEnvelope } from "./Backup.js";
 
@@ -103,7 +103,7 @@ export const selectedCutoverSections = (
 };
 
 export const CutoverSource = Schema.Struct({
-  tenantId: Schema.String,
+  tenantId: TenantId.schema,
   slug: Schema.String,
   name: Schema.String,
   /** Canonical origin at export time. Devices have this baked into profiles. */
@@ -113,7 +113,7 @@ export const CutoverSource = Schema.Struct({
    * value is configured, so two independent deployments never share one by
    * accident.
    */
-  deploymentId: Schema.String,
+  deploymentId: DeploymentId.schema,
 });
 
 export type CutoverSource = typeof CutoverSource.Type;
@@ -433,7 +433,7 @@ export const CutoverPreview = Schema.Struct({
   target: Schema.optional(
     Schema.NullOr(
       Schema.Struct({
-        tenantId: Schema.String,
+        tenantId: TenantId.schema,
         slug: Schema.String,
         name: Schema.String,
       }),
@@ -469,7 +469,7 @@ export const CutoverImportRequest = Schema.Struct({
 export type CutoverImportRequest = typeof CutoverImportRequest.Type;
 
 export const CutoverImportResponse = Schema.Struct({
-  tenantId: Schema.String,
+  tenantId: TenantId.schema,
   slug: Schema.String,
   mode: Schema.Literals(["new", "existing"]),
   source: CutoverSource,
@@ -527,7 +527,7 @@ export const CutoverPreflightReport = Schema.Struct({
   currentOrigin: Schema.String,
   targetOrigin: Schema.String,
   hostnameChanged: Schema.Boolean,
-  deploymentId: Schema.String,
+  deploymentId: DeploymentId.schema,
   items: Schema.Array(CutoverPreflightItem),
   /**
    * The ordered runbook. Steps name the operation, not just the concept, so the

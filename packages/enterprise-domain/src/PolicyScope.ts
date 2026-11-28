@@ -1,3 +1,4 @@
+import { DeviceId, GroupId, PolicyId } from "@mattrax/crypto";
 import { Schema } from "effect";
 
 /**
@@ -73,7 +74,7 @@ export const PolicyScopeExclusion = Schema.Struct({
 export type PolicyScopeExclusion = typeof PolicyScopeExclusion.Type;
 
 export const PolicyScopeDevice = Schema.Struct({
-  deviceId: Schema.String,
+  deviceId: DeviceId.schema,
   deviceName: Schema.String,
   platform: Schema.String,
   /** Reported OS name and version, when inventory has arrived. */
@@ -100,7 +101,7 @@ export const PolicyOsVersion = Schema.Struct({
 });
 
 export const PolicyScopeSummary = Schema.Struct({
-  policyId: Schema.String,
+  policyId: PolicyId.schema,
   /** Platforms the policy's configurations target. */
   platforms: Schema.Array(Schema.String),
   /** Minimum supported OS per Apple family. */
@@ -119,7 +120,7 @@ export const PolicyScopeSummary = Schema.Struct({
 export type PolicyScopeSummary = typeof PolicyScopeSummary.Type;
 
 export const GroupScopePolicy = Schema.Struct({
-  policyId: Schema.String,
+  policyId: PolicyId.schema,
   policyName: Schema.String,
   mode: Schema.Literals(["include", "exclude"]),
   devices: Schema.Array(PolicyScopeDevice),
@@ -128,7 +129,7 @@ export const GroupScopePolicy = Schema.Struct({
 export type GroupScopePolicy = typeof GroupScopePolicy.Type;
 
 export const GroupScopeSummary = Schema.Struct({
-  groupId: Schema.String,
+  groupId: GroupId.schema,
   memberCount: Schema.Number,
   /** True when a per-policy device list (or the member set) hit the cap. */
   truncated: Schema.Boolean,

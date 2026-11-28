@@ -1,3 +1,4 @@
+import { AccountId, ApprovalId, AttributeId, ConnectionId, DashboardId, DeploymentId, GroupId, InstallerId, InvitationId, MigrationEntryId, MigrationId, PolicyId, ProfileId, ReportId, RoleId, SessionId, TagId, TenantId, TokenId, UserId, ViewId, WebhookDeliveryId, WebhookId, WidgetId } from "@mattrax/crypto";
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from "@tanstack/solid-query";
 import type { InfiniteData, QueryClient, QueryFunctionContext } from "@tanstack/solid-query";
 import type {
@@ -785,11 +786,39 @@ export const enterpriseKeys = {
     ["enterprise", "admin-accounts", query] as const,
 };
 
-const required = (value: RouteParam, name: string) => {
+const routeIdKinds = {
+  tenantId: TenantId,
+  accountId: AccountId,
+  dashboardId: DashboardId,
+  webhookId: WebhookId,
+  migrationId: MigrationId,
+  reportId: ReportId,
+  userId: UserId,
+  attributeId: AttributeId,
+  approvalId: ApprovalId,
+  viewId: ViewId,
+  widgetId: WidgetId,
+  entryId: MigrationEntryId,
+  deliveryId: WebhookDeliveryId,
+  invitationId: InvitationId,
+  tagId: TagId,
+  policyId: PolicyId,
+  roleId: RoleId,
+  connectionId: ConnectionId,
+  groupId: GroupId,
+  sessionId: SessionId,
+} as const;
+
+type RouteValue<N extends string> = N extends keyof typeof routeIdKinds
+  ? ReturnType<(typeof routeIdKinds)[N]["fromParam"]>
+  : string;
+
+const required = <N extends string>(value: RouteParam, name: N): RouteValue<N> => {
   if (!value) throw new EnterpriseBadRequest({ message: `Missing ${name}` });
 
   // Tenant routes carry the canonical slug; the API addresses tenants by id.
-  return name === "tenantId" ? (resolveTenantId(value) ?? value) : value;
+  const resolved = name === "tenantId" ? (resolveTenantId(value) ?? value) : value;
+  return resolved as RouteValue<N>;
 };
 
 const enterpriseRequestOrigin = (context: EnterpriseRequestContext = {}) => {
@@ -2734,7 +2763,7 @@ export const enterprise = {
   ) =>
     endpoint((api) =>
       api.deviceAppleUserAction({
-        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id"), userId },
+        params: { tenantId: required(tenantId, "tenantId"), id: required(id, "id"), userId: UserId.fromParam(userId) },
         payload: { action },
       }),
     ),
@@ -2749,9 +2778,9 @@ export const enterprise = {
         params: {
           tenantId: required(tenantId, "tenantId"),
           id: required(id, "id"),
-          userId: platformUserId,
+          userId: UserId.fromParam(platformUserId),
         },
-        payload: { userId },
+        payload: { userId: UserId.fromParam(userId) },
       }),
     ),
   unbindAppleUserIdentity: (tenantId: RouteParam, id: RouteParam, platformUserId: string) =>
@@ -2760,7 +2789,7 @@ export const enterprise = {
         params: {
           tenantId: required(tenantId, "tenantId"),
           id: required(id, "id"),
-          userId: platformUserId,
+          userId: UserId.fromParam(platformUserId),
         },
       }),
     ),
@@ -2916,7 +2945,7 @@ export const enterprise = {
         params: {
           tenantId: required(tenantId, "tenantId"),
           id: required(id, "id"),
-          installerId,
+          installerId: InstallerId.fromParam(installerId),
         },
         payload,
       }),
@@ -2932,7 +2961,7 @@ export const enterprise = {
         params: {
           tenantId: required(tenantId, "tenantId"),
           id: required(id, "id"),
-          installerId,
+          installerId: InstallerId.fromParam(installerId),
           sha256: required(sha256, "sha256"),
         },
       }),
@@ -3050,15 +3079,15 @@ export const enterprise = {
   ) =>
     endpoint((api) =>
       api.updateAutopilotProfile({
-        params: { tenantId: required(tenantId, "tenantId"), profileId },
+        params: { tenantId: required(tenantId, "tenantId"), profileId: ProfileId.fromParam(profileId) },
         payload,
       }),
     ),
   assignAutopilotProfile: (tenantId: RouteParam, profileId: string, groupId: string) =>
     endpoint((api) =>
       api.assignAutopilotProfile({
-        params: { tenantId: required(tenantId, "tenantId"), profileId },
-        payload: { groupId },
+        params: { tenantId: required(tenantId, "tenantId"), profileId: ProfileId.fromParam(profileId) },
+        payload: { groupId: GroupId.fromParam(groupId) },
       }),
     ),
   deletePolicies: (tenantId: RouteParam, ids: string[]) =>
@@ -3101,7 +3130,7 @@ export const enterprise = {
         params: {
           tenantId: required(tenantId, "tenantId"),
           id: required(id, "id"),
-          deploymentId,
+          deploymentId: DeploymentId.fromParam(deploymentId),
         },
       }),
     ),
@@ -3429,7 +3458,7 @@ export const enterprise = {
   revokeScimToken: (tenantId: RouteParam, tokenId: string) =>
     endpoint((api) =>
       api.revokeScimToken({
-        params: { tenantId: required(tenantId, "tenantId"), tokenId },
+        params: { tenantId: required(tenantId, "tenantId"), tokenId: TokenId.fromParam(tokenId) },
       }),
     ),
   listWebhooks: (tenantId: RouteParam) =>

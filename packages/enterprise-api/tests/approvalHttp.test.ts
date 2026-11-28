@@ -1,3 +1,4 @@
+import { RequestId } from "@mattrax/crypto";
 import { Effect, Layer } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 import { HttpApi, HttpApiBuilder } from "effect/http-api";
@@ -78,7 +79,7 @@ const makeHandler = (mode: Mode = {}) => {
                 code: "approval_required",
                 message:
                   "Approval request req-1 is pending. Another administrator must approve it.",
-                requestId: "req-1",
+                requestId: RequestId.fromParam("req_req-1"),
                 status: "pending",
               }),
             );
@@ -89,7 +90,7 @@ const makeHandler = (mode: Mode = {}) => {
             new ApprovalRequired({
               code: "approval_required",
               message: "Approval request req-1 is approved — retry with this approval.",
-              requestId: "req-1",
+              requestId: RequestId.fromParam("req_req-1"),
               status: "approved",
             }),
           );
@@ -117,7 +118,7 @@ const makeHandler = (mode: Mode = {}) => {
             new ApprovalRequired({
               code: "approval_required",
               message: "Approval request req-1 is pending. Another administrator must approve it.",
-              requestId: "req-1",
+              requestId: RequestId.fromParam("req_req-1"),
               status: "pending",
             }),
           );
@@ -203,7 +204,7 @@ describe("approval HTTP contract", () => {
     expect(body).toMatchObject({
       _tag: "ApprovalRequired",
       code: "approval_required",
-      requestId: "req-1",
+      requestId: RequestId.fromParam("req_req-1"),
       status: "pending",
     });
     expect(body.message).toContain("Approval request");
@@ -250,7 +251,7 @@ describe("approval HTTP contract", () => {
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toMatchObject({
       _tag: "ApprovalRequired",
-      requestId: "req-1",
+      requestId: RequestId.fromParam("req_req-1"),
       status: "approved",
     });
   });
@@ -297,7 +298,7 @@ describe("approval HTTP contract", () => {
       new Request("http://localhost/api/v1/account/api-tokens", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: "CI", tenantId: "org-1" }),
+        body: JSON.stringify({ name: "CI", tenantId: "tn_org-1" }),
       }),
     );
 

@@ -16,6 +16,7 @@
   "dependencies": {
     "@fontsource-variable/geist": "catalog:",
     "@kobalte/core": "catalog:",
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/ui": "workspace:*",
     "@paralleldrive/cuid2": "catalog:",

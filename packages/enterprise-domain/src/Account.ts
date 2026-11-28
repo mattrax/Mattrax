@@ -1,3 +1,4 @@
+import { TenantId } from "@mattrax/crypto";
 import { Schema } from "effect";
 import { AuditLogEntry } from "./Audit.js";
 import { AuditSearchResponse } from "./Audit.js";
@@ -8,7 +9,7 @@ import { CredentialScope, Permission } from "./rbac.js";
 export const AcceptInvitationRequest = Schema.Struct({ token: Schema.String });
 
 export const AcceptInvitationResponse = Schema.Struct({
-  tenantId: Schema.String,
+  tenantId: TenantId.schema,
   alreadyMember: Schema.Boolean,
 });
 

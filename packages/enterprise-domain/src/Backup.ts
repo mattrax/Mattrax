@@ -1,3 +1,4 @@
+import { BackupId, GroupId, TenantId } from "@mattrax/crypto";
 import { DynamicGroupKind } from "./dynamicGroups.js";
 import { DynamicGroupRules } from "./dynamicGroups.js";
 import { Schema } from "effect";
@@ -230,7 +231,7 @@ export const TenantExportDirectoryUser = Schema.Struct({
 export type TenantExportDirectoryUser = typeof TenantExportDirectoryUser.Type;
 
 export const TenantExportUserGroupAssignment = Schema.Struct({
-  groupId: Schema.String,
+  groupId: GroupId.schema,
   policyKeys: Schema.Array(Schema.String),
   excludedPolicyKeys: Schema.Array(Schema.String),
 });
@@ -299,7 +300,7 @@ export const BackupRestoreRequest = Schema.Struct({
 export type BackupRestoreRequest = typeof BackupRestoreRequest.Type;
 
 export const BackupRestoreResponse = Schema.Struct({
-  backupId: Schema.String,
+  backupId: BackupId.schema,
   /** Pinned snapshot taken immediately before the restore. */
   preRestoreBackupId: Schema.String,
   restoredAt: Schema.String,
@@ -397,7 +398,7 @@ export const TenantImportSkipped = Schema.Struct({
 export type TenantImportSkipped = typeof TenantImportSkipped.Type;
 
 export const TenantImportResponse = Schema.Struct({
-  tenantId: Schema.String,
+  tenantId: TenantId.schema,
   slug: Schema.String,
   counts: TenantImportCounts,
   skipped: TenantImportSkipped,

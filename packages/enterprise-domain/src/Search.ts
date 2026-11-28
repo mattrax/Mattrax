@@ -1,3 +1,4 @@
+import { GroupId } from "@mattrax/crypto";
 import { Option, Schema } from "effect";
 import { DeviceHealth } from "./Device.js";
 import { DeviceProtocol } from "./Device.js";
@@ -94,7 +95,7 @@ export type GroupPreviewReference = typeof GroupPreviewReference.Type;
  * builder is being edited.
  */
 export const GroupPreviewResponse = Schema.Struct({
-  groupId: Schema.String,
+  groupId: GroupId.schema,
   kind: GroupMembershipKind,
   count: Schema.Number,
   devices: Schema.Array(GroupRelation),

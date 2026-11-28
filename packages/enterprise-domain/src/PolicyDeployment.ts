@@ -1,3 +1,4 @@
+import { DeviceId, PolicyId } from "@mattrax/crypto";
 import { Schema } from "effect";
 import { PolicyDeliveryState } from "./Policy.js";
 
@@ -39,7 +40,7 @@ export const PolicyDeploymentPlatform = Schema.Literals(["apple", "windows", "an
 export type PolicyDeploymentPlatform = typeof PolicyDeploymentPlatform.Type;
 
 export const PolicyDeploymentDevice = Schema.Struct({
-  deviceId: Schema.String,
+  deviceId: DeviceId.schema,
   name: Schema.String,
   platform: PolicyDeploymentPlatform,
   status: PolicyDeploymentDeviceStatus,
@@ -79,7 +80,7 @@ export const PolicyDeploymentCounts = Schema.Struct({
 export type PolicyDeploymentCounts = typeof PolicyDeploymentCounts.Type;
 
 export const PolicyDeploymentProgressResponse = Schema.Struct({
-  policyId: Schema.String,
+  policyId: PolicyId.schema,
   version: Schema.Number,
   /** When this version was saved, or null if the row was removed. */
   createdAt: Schema.NullOr(Schema.String),

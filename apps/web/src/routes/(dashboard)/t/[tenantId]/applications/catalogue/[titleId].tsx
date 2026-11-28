@@ -1,3 +1,4 @@
+import { ApplicationId } from "@mattrax/crypto";
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Checkbox } from "@mattrax/ui";
@@ -210,7 +211,7 @@ export default function SoftwareCatalogueTitlePage() {
               return {
                 titleId: current.title.id,
                 methodId,
-                applicationId: "pending:" + methodId,
+                applicationId: ApplicationId.fromParam("pending:" + methodId),
                 name: current.title.name,
                 platform: method?.platform ?? ("apple" as const),
                 source:

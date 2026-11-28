@@ -1,3 +1,4 @@
+import { DeviceId, ExecutionId, RunId, ScriptId } from "@mattrax/crypto";
 import { Schema } from "effect";
 
 /**
@@ -659,8 +660,8 @@ export const RunScriptRequest = Schema.Struct({
 export type RunScriptRequest = typeof RunScriptRequest.Type;
 
 export const RunScriptTarget = Schema.Struct({
-  executionId: Schema.String,
-  deviceId: Schema.String,
+  executionId: ExecutionId.schema,
+  deviceId: DeviceId.schema,
   deviceName: Schema.String,
   /** Set when the device cannot run the script (platform, status). */
   skippedReason: Schema.optional(Schema.NullOr(Schema.String)),
@@ -678,9 +679,9 @@ export type RunScriptResponse = typeof RunScriptResponse.Type;
 
 export const ScriptExecutionInfo = Schema.Struct({
   id: Schema.String,
-  scriptId: Schema.String,
+  scriptId: ScriptId.schema,
   scriptName: Schema.String,
-  deviceId: Schema.String,
+  deviceId: DeviceId.schema,
   deviceName: Schema.String,
   trigger: ScriptTriggerType,
   status: ScriptExecutionStatus,
@@ -709,8 +710,8 @@ export type ScriptExecutionsResponse = typeof ScriptExecutionsResponse.Type;
 /** Result posted by the on-device agent. Output is capped again server-side. */
 export const ScriptAgentResultRequest = Schema.Struct({
   /** Agent-side run identity; retries reuse it and collapse to one row. */
-  runId: Schema.String,
-  scriptId: Schema.String,
+  runId: RunId.schema,
+  scriptId: ScriptId.schema,
   trigger: ScriptTriggerType,
   exitCode: Schema.optional(Schema.NullOr(Schema.Number)),
   stdout: Schema.optional(Schema.String),
@@ -727,7 +728,7 @@ export type ScriptAgentResultRequest = typeof ScriptAgentResultRequest.Type;
 
 export const ScriptAgentResultResponse = Schema.Struct({
   status: Schema.Literal("ok"),
-  executionId: Schema.String,
+  executionId: ExecutionId.schema,
   duplicate: Schema.Boolean,
 });
 

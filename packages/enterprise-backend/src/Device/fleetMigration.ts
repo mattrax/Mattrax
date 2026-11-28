@@ -1,4 +1,4 @@
-import { FleetMigrationId, MigrationEntryId } from "@mattrax/crypto";
+import { FleetMigrationId, MigrationEntryId, MigrationId } from "@mattrax/crypto";
 import { Effect } from "effect";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { schema as s } from "@mattrax/enterprise-core";
@@ -163,7 +163,7 @@ const entryInfo = (row: EntryRow, device: DeviceRow | undefined): FleetMigration
 
   return {
     id: row.id,
-    migrationId: row.migrationId,
+    migrationId: MigrationId.fromParam(row.migrationId),
     serial: row.serial,
     platform: platformOf(row.platform),
     status,

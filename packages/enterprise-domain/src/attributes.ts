@@ -1,3 +1,4 @@
+import { AttributeId, ExecutionId } from "@mattrax/crypto";
 import { Schema } from "effect";
 
 /**
@@ -457,7 +458,7 @@ export type DeviceAttributeCollectionResponse = typeof DeviceAttributeCollection
 export const CollectDeviceAttributeResponse = Schema.Struct({
   status: Schema.Literal("ok"),
   /** Queued execution the device will collect on its next poll. */
-  executionId: Schema.String,
+  executionId: ExecutionId.schema,
 });
 
 export type CollectDeviceAttributeResponse = typeof CollectDeviceAttributeResponse.Type;
@@ -505,7 +506,7 @@ export type EnrollmentQuestion = typeof EnrollmentQuestion.Type;
 export const EnrollmentQuestionRow = Schema.Struct({
   ...EnrollmentQuestion.fields,
   id: Schema.String,
-  attributeId: Schema.String,
+  attributeId: AttributeId.schema,
 });
 
 export type EnrollmentQuestionRow = typeof EnrollmentQuestionRow.Type;

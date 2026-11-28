@@ -60,7 +60,7 @@ const seedOrganization = (db: Db, org: EnterpriseOrganization) => {
     updatedAt: at,
   });
   db.store.enterprise_group.push({
-    id: "group-1",
+    id: "gr_group-1",
     organizationId: org.id,
     name: "Staff",
     notes: null,
@@ -71,7 +71,7 @@ const seedOrganization = (db: Db, org: EnterpriseOrganization) => {
     updatedAt: at,
   });
   db.store.policy.push({
-    id: "policy-1",
+    id: "pl_policy-1",
     organizationId: org.id,
     name: "Baseline",
     notes: null,
@@ -79,16 +79,16 @@ const seedOrganization = (db: Db, org: EnterpriseOrganization) => {
     createdAt: at,
     updatedAt: at,
   });
-  db.store.group_policy.push({ groupId: "group-1", policyId: "policy-1" });
+  db.store.group_policy.push({ groupId: "gr_group-1", policyId: "pl_policy-1" });
 };
 
 const buildSourceFixture = async () => {
   const db = makeDb();
-  const org = organization({ id: "org-source", slug: "acme" });
+  const org = organization({ id: "tn_org-source", slug: "acme" });
   seedOrganization(db, org);
   const owner = addAccount(db, "account-owner", "owner@example.com");
   db.store.member.push({
-    id: "member-owner",
+    id: "mb_member-owner",
     organizationId: org.id,
     accountId: owner.id,
     role: "owner",
@@ -99,7 +99,7 @@ const buildSourceFixture = async () => {
   });
 
   db.store.device.push({
-    id: "device-1",
+    id: "dv_device-1",
     organizationId: org.id,
     proto: "apple",
     status: "enrolled",
@@ -122,7 +122,7 @@ const buildSourceFixture = async () => {
     capabilities: null,
   });
   db.store.device_apple.push({
-    deviceId: "device-1",
+    deviceId: "dv_device-1",
     enrollmentId: null,
     enrollmentMode: "device",
     token: "PUSH-TOKEN",
@@ -136,12 +136,12 @@ const buildSourceFixture = async () => {
     declarationMode: "ddm",
     tokenUpdatedAt: at,
   });
-  db.store.group_device.push({ groupId: "group-1", deviceId: "device-1", source: "manual" });
-  db.store.device_policy.push({ deviceId: "device-1", policyId: "policy-1", mode: "include" });
+  db.store.group_device.push({ groupId: "gr_group-1", deviceId: "dv_device-1", source: "manual" });
+  db.store.device_policy.push({ deviceId: "dv_device-1", policyId: "pl_policy-1", mode: "include" });
 
   const sealedRecovery = await sealSecret(sourceSecret, "RECOVERY-KEY");
   db.store.device_secret.push({
-    deviceId: "device-1",
+    deviceId: "dv_device-1",
     organizationId: org.id,
     kind: "filevault_recovery_key",
     sealedValue: sealedRecovery,
@@ -179,7 +179,7 @@ const buildSourceFixture = async () => {
     serial: "cert-serial-1",
     organizationId: org.id,
     enrollmentId: org.id,
-    deviceId: "device-1",
+    deviceId: "dv_device-1",
     caFingerprintSha256: "a".repeat(64),
     notAfter: new Date("2027-01-01T00:00:00.000Z"),
     revokedAt: null,
@@ -187,7 +187,7 @@ const buildSourceFixture = async () => {
   });
 
   db.store.invitation.push({
-    id: "invitation-1",
+    id: "iv_invitation-1",
     organizationId: org.id,
     inviterId: owner.id,
     email: "newstarter@example.com",
@@ -204,7 +204,7 @@ const buildSourceFixture = async () => {
   });
 
   db.store.audit_log.push({
-    id: "audit-1",
+    id: "au_audit-1",
     organizationId: org.id,
     actorAccountId: owner.id,
     actorEmail: owner.email,
@@ -212,7 +212,7 @@ const buildSourceFixture = async () => {
     category: "mdm",
     action: "device.enrolled",
     targetType: "device",
-    targetId: "device-1",
+    targetId: "dv_device-1",
     metadata: { note: "first" },
     createdAt: at,
   });
@@ -230,7 +230,7 @@ const buildSourceFixture = async () => {
     buildTenantCutover(db, org, {
       passphrase,
       origin: sourceOrigin,
-      deploymentId: "dp_source",
+      deploymentId: "dep_dp_source",
       authSecret: sourceSecret,
       sections: { audit: true },
       now,
@@ -277,7 +277,7 @@ const seedConflictingTarget = () => {
   const org = seedTargetTenant(target);
 
   target.store.device.push({
-    id: "other-device",
+    id: "dv_other-device",
     organizationId: org.id,
     proto: "apple",
     status: "enrolled",
@@ -307,7 +307,7 @@ const seedTargetCa = (
   });
 };
 
-const actor = { accountId: "account-target", email: "target@example.com" };
+const actor = { accountId: "ac_account-target", email: "target@example.com" };
 
 const makeTarget = () => {
   const db = makeDb();
@@ -317,10 +317,10 @@ const makeTarget = () => {
 };
 
 const seedTargetTenant = (db: Db) => {
-  const org = organization({ id: "org-target", slug: "acme-target", name: "Target" });
+  const org = organization({ id: "tn_org-target", slug: "acme-target", name: "Target" });
   seedOrganization(db, org);
   db.store.member.push({
-    id: "member-target",
+    id: "mb_member-target",
     organizationId: org.id,
     accountId: actor.accountId,
     role: "owner",
@@ -341,7 +341,7 @@ describe("cutover export", () => {
       buildTenantCutover(db, org, {
         passphrase,
         origin: sourceOrigin,
-        deploymentId: "dp_source",
+        deploymentId: "dep_dp_source",
         authSecret: sourceSecret,
         sections: { members: false },
         now,
@@ -382,7 +382,7 @@ describe("cutover import", () => {
         confirm: "acme",
         target: { kind: "new" },
         actor,
-        targetDeploymentId: "dp_target",
+        targetDeploymentId: "dep_dp_target",
         targetOrigin,
         authSecret: targetSecret,
         allowCrossDeployment: true,
@@ -409,7 +409,7 @@ describe("cutover import", () => {
         confirm: "acme",
         target: { kind: "new" },
         actor,
-        targetDeploymentId: "dp_target",
+        targetDeploymentId: "dep_dp_target",
         targetOrigin,
         authSecret: targetSecret,
         allowCrossDeployment: true,
@@ -423,7 +423,7 @@ describe("cutover import", () => {
     expect(result.imported.certificates).toBe(1);
     expect(result.imported.auditEntries).toBe(1);
 
-    const device = target.store.device.find((row) => row.id === "device-1");
+    const device = target.store.device.find((row) => row.id === "dv_device-1");
     expect(device).toMatchObject({
       organizationId: result.tenantId,
       serial: "C02TEST",
@@ -431,10 +431,10 @@ describe("cutover import", () => {
       status: "enrolled",
     });
 
-    const apple = target.store.device_apple.find((row) => row.deviceId === "device-1");
+    const apple = target.store.device_apple.find((row) => row.deviceId === "dv_device-1");
     expect(apple).toMatchObject({ token: "PUSH-TOKEN", pushMagic: "PUSH-MAGIC" });
 
-    const secret = target.store.device_secret.find((row) => row.deviceId === "device-1");
+    const secret = target.store.device_secret.find((row) => row.deviceId === "dv_device-1");
     expect(await openSecret(targetSecret, String(secret?.sealedValue))).toBe("RECOVERY-KEY");
 
     const escrow = target.store.apple_fde_escrow_key.find(
@@ -460,7 +460,7 @@ describe("cutover import", () => {
 
     expect(certificate).toMatchObject({
       serial: "cert-serial-1",
-      deviceId: "device-1",
+      deviceId: "dv_device-1",
       enrollmentId: result.tenantId,
     });
 
@@ -472,7 +472,7 @@ describe("cutover import", () => {
     expect(group).toBeTruthy();
     expect(
       target.store.group_device.some(
-        (row) => row.groupId === group?.id && row.deviceId === "device-1",
+        (row) => row.groupId === group?.id && row.deviceId === "dv_device-1",
       ),
     ).toBe(true);
 
@@ -590,7 +590,7 @@ describe("cutover import", () => {
         confirm: "acme",
         target: { kind: "new" },
         actor,
-        targetDeploymentId: "dp_source",
+        targetDeploymentId: "dep_dp_source",
         targetOrigin: sourceOrigin,
         authSecret: targetSecret,
         now,
@@ -631,7 +631,7 @@ describe("cutover import", () => {
           confirm: "acme",
           target: { kind: "new" },
           actor,
-          targetDeploymentId: "dp_other",
+          targetDeploymentId: "dep_dp_other",
           targetOrigin,
           authSecret: targetSecret,
           now,
@@ -653,7 +653,7 @@ describe("cutover import", () => {
           confirm: "acme",
           target: { kind: "new" },
           actor,
-          targetDeploymentId: "dp_source",
+          targetDeploymentId: "dep_dp_source",
           targetOrigin,
           authSecret: targetSecret,
           now,
@@ -677,7 +677,7 @@ describe("cutover import", () => {
           confirm: "not-acme",
           target: { kind: "new" },
           actor,
-          targetDeploymentId: "dp_source",
+          targetDeploymentId: "dep_dp_source",
           targetOrigin,
           authSecret: targetSecret,
           now,
@@ -693,7 +693,7 @@ describe("cutover import", () => {
     const target = makeTarget();
     const org = seedTargetTenant(target);
     target.store.device.push({
-      id: "other-device",
+      id: "dv_other-device",
       organizationId: org.id,
       proto: "apple",
       status: "enrolled",
@@ -710,7 +710,7 @@ describe("cutover import", () => {
         archive: source.archive.body,
         passphrase,
         target: { kind: "existing", organization: org },
-        targetDeploymentId: "dp_source",
+        targetDeploymentId: "dep_dp_source",
         targetOrigin,
       }),
     );
@@ -738,7 +738,7 @@ describe("cutover import", () => {
           confirm: "acme",
           target: { kind: "existing", organization: org },
           actor,
-          targetDeploymentId: "dp_source",
+          targetDeploymentId: "dep_dp_source",
           targetOrigin,
           authSecret: targetSecret,
           replaceConfiguration: true,
@@ -759,7 +759,7 @@ describe("cutover import", () => {
         confirm: "acme",
         target: { kind: "existing", organization: org },
         actor,
-        targetDeploymentId: "dp_source",
+        targetDeploymentId: "dep_dp_source",
         targetOrigin,
         authSecret: targetSecret,
         replaceConfiguration: true,
@@ -769,7 +769,7 @@ describe("cutover import", () => {
     );
 
     expect(result.skipped.devices).toBe(1);
-    expect(target.store.device.find((row) => row.id === "other-device")).toBeTruthy();
+    expect(target.store.device.find((row) => row.id === "dv_other-device")).toBeTruthy();
   });
 
   it("keeps the target CA as a trust anchor", async () => {
@@ -786,7 +786,7 @@ describe("cutover import", () => {
         confirm: "acme",
         target: { kind: "existing", organization: org },
         actor,
-        targetDeploymentId: "dp_source",
+        targetDeploymentId: "dep_dp_source",
         targetOrigin,
         authSecret: targetSecret,
         replaceConfiguration: true,
@@ -817,7 +817,7 @@ describe("cutover import", () => {
         confirm: "acme",
         target: { kind: "existing", organization: org },
         actor,
-        targetDeploymentId: "dp_source",
+        targetDeploymentId: "dep_dp_source",
         targetOrigin,
         authSecret: targetSecret,
         replaceConfiguration: true,
@@ -854,7 +854,7 @@ describe("cutover preflight", () => {
       preflightTenantOriginSwitch(db, org, {
         currentOrigin: sourceOrigin,
         targetOrigin,
-        deploymentId: "dp_source",
+        deploymentId: "dep_dp_source",
       }),
     );
 
@@ -880,7 +880,7 @@ describe("cutover preflight", () => {
       preflightTenantOriginSwitch(db, org, {
         currentOrigin: sourceOrigin,
         targetOrigin: "https://mdm.example.com/",
-        deploymentId: "dp_source",
+        deploymentId: "dep_dp_source",
       }),
     );
 

@@ -1,3 +1,4 @@
+import { EndpointId } from "@mattrax/crypto";
 import { Schema } from "effect";
 
 /**
@@ -291,7 +292,7 @@ export type WebhookTestResponse = typeof WebhookTestResponse.Type;
 /** A bounded, secret-free delivery record shown in support tooling/tests. */
 const webhookDeliveryFields = {
   id: Schema.String,
-  endpointId: Schema.String,
+  endpointId: EndpointId.schema,
   event: Schema.String,
   /** Event id sent as `X-Mattrax-Delivery`; shared by retries and replays. */
   eventId: Schema.optional(NullableString),

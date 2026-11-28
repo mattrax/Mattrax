@@ -1,3 +1,4 @@
+import { MigrationId } from "@mattrax/crypto";
 import { Schema } from "effect";
 import { NullableString } from "./Errors.js";
 
@@ -635,7 +636,7 @@ export type FleetMigrationSummary = typeof FleetMigrationSummary.Type;
 
 export const FleetMigrationEntry = Schema.Struct({
   id: Schema.String,
-  migrationId: Schema.String,
+  migrationId: MigrationId.schema,
   serial: Schema.String,
   platform: FleetMigrationPlatform,
   status: FleetMigrationEntryStatus,

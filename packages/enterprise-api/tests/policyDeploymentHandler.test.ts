@@ -1,3 +1,4 @@
+import { DeviceId } from "@mattrax/crypto";
 import type { Schema } from "effect";
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
@@ -143,11 +144,11 @@ describe("getPolicyDeploymentDevices", () => {
 
     setSnapshot(context.db, policy.id, { "mttx.apple.declaration.files": { files: [] } });
 
-    for (const id of ["device-1", "device-2", "device-3"]) seedDevice(context.db, tenant.id, id);
+    for (const id of ["dv_device-1", "dv_device-2", "dv_device-3"]) seedDevice(context.db, tenant.id, id);
 
-    seedDevice(context.db, tenant.id, "win-1", { proto: "win" });
+    seedDevice(context.db, tenant.id, "dv_win-1", { proto: "win" });
 
-    for (const id of ["device-1", "device-2", "device-3", "win-1"])
+    for (const id of ["dv_device-1", "dv_device-2", "dv_device-3", "dv_win-1"])
       context.db.store.device_policy.push({
         deviceId: id,
         policyId: policy.id,
@@ -155,8 +156,8 @@ describe("getPolicyDeploymentDevices", () => {
         createdAt: new Date(),
       });
 
-    seedDeclaration(context.db, "device-1", policy.id + ":mttx.apple.declaration.files");
-    seedDeclaration(context.db, "device-2", policy.id + ":mttx.apple.declaration.files", {
+    seedDeclaration(context.db, "dv_device-1", policy.id + ":mttx.apple.declaration.files");
+    seedDeclaration(context.db, "dv_device-2", policy.id + ":mttx.apple.declaration.files", {
       valid: "invalid",
     });
 
@@ -188,8 +189,8 @@ describe("getPolicyDeploymentDevices", () => {
       },
     });
     expect(first.devices.map((device) => [device.deviceId, device.status])).toEqual([
-      ["device-2", "failed"],
-      ["device-3", "pending"],
+      ["dv_device-2", "failed"],
+      ["dv_device-3", "pending"],
     ]);
 
     const second = await runEffect(
@@ -203,8 +204,8 @@ describe("getPolicyDeploymentDevices", () => {
     );
 
     expect(second.devices.map((device) => [device.deviceId, device.status])).toEqual([
-      ["device-1", "delivered"],
-      ["win-1", "untracked"],
+      ["dv_device-1", "delivered"],
+      ["dv_win-1", "untracked"],
     ]);
     expect(second.nextOffset).toBeNull();
 
@@ -218,7 +219,7 @@ describe("getPolicyDeploymentDevices", () => {
       ),
     );
 
-    expect(all.devices.find((device) => device.deviceId === "win-1")).toMatchObject({
+    expect(all.devices.find((device) => device.deviceId === DeviceId.fromParam("dv_win-1"))).toMatchObject({
       status: "untracked",
       reason: "Windows does not report declaration status.",
     });
@@ -243,14 +244,14 @@ describe("getPolicyDeploymentDevices", () => {
       createdAt: new Date(),
     });
 
-    seedDevice(context.db, tenant.id, "device-1");
+    seedDevice(context.db, tenant.id, "dv_device-1");
     context.db.store.device_policy.push({
-      deviceId: "device-1",
+      deviceId: "dv_device-1",
       policyId: policy.id,
       mode: "include",
       createdAt: new Date(),
     });
-    seedDeclaration(context.db, "device-1", policy.id + ":mttx.apple.declaration.files");
+    seedDeclaration(context.db, "dv_device-1", policy.id + ":mttx.apple.declaration.files");
 
     const versionOne = await runEffect(
       context.service.getPolicyDeploymentDevices(
@@ -292,7 +293,7 @@ describe("getPolicyDeploymentDevices", () => {
       context.service.createGroup(request(context.headers), tenant.id, { name: "Fleet" }),
     );
 
-    seedDevice(context.db, tenant.id, "device-old");
+    seedDevice(context.db, tenant.id, "dv_device-old");
     seedDevice(context.db, tenant.id, "device-new");
 
     const now = new Date();
@@ -304,16 +305,16 @@ describe("getPolicyDeploymentDevices", () => {
       createdAt: now,
     });
     context.db.store.group_device.push(
-      { groupId: group.id, deviceId: "device-old", source: "manual" },
+      { groupId: group.id, deviceId: "dv_device-old", source: "manual" },
       { groupId: group.id, deviceId: "device-new", source: "manual" },
     );
     context.db.store.device_policy.push({
-      deviceId: "device-old",
+      deviceId: "dv_device-old",
       policyId: policy.id,
       mode: "exclude",
       createdAt: now,
     });
-    seedDeclaration(context.db, "device-old", policy.id + ":mttx.apple.declaration.files");
+    seedDeclaration(context.db, "dv_device-old", policy.id + ":mttx.apple.declaration.files");
 
     const result = await runEffect(
       context.service.getPolicyDeploymentDevices(
@@ -331,7 +332,7 @@ describe("getPolicyDeploymentDevices", () => {
       pending: 1,
       notInScope: 1,
     });
-    expect(result.devices.find((device) => device.deviceId === "device-old")).toMatchObject({
+    expect(result.devices.find((device) => device.deviceId === DeviceId.fromParam("dv_device-old"))).toMatchObject({
       status: "not-in-scope",
       reason: "No longer in the policy's scope, but still reports this version's declarations.",
     });
@@ -445,9 +446,9 @@ describe("getPolicyDeploymentDevices", () => {
 
     setSnapshot(context.db, policy.id, { "mttx.apple.device": { camera: false } });
 
-    seedDevice(context.db, tenant.id, "device-1", { declarationMode: "legacy" });
+    seedDevice(context.db, tenant.id, "dv_device-1", { declarationMode: "legacy" });
     context.db.store.device_policy.push({
-      deviceId: "device-1",
+      deviceId: "dv_device-1",
       policyId: policy.id,
       mode: "include",
       createdAt: new Date(),
@@ -455,7 +456,7 @@ describe("getPolicyDeploymentDevices", () => {
     context.db.store.device_command.push({
       id: "command-1",
       organizationId: tenant.id,
-      deviceId: "device-1",
+      deviceId: "dv_device-1",
       requestType: "InstallProfile",
       status: "succeeded",
       createdAt: new Date("2026-11-20T09:00:00.000Z"),
@@ -474,7 +475,7 @@ describe("getPolicyDeploymentDevices", () => {
 
     expect(result.state).toBe("not-tracked");
     expect(result.devices[0]).toMatchObject({
-      deviceId: "device-1",
+      deviceId: "dv_device-1",
       status: "untracked",
       lastEvidenceAt: "2026-11-20T09:00:00.000Z",
     });

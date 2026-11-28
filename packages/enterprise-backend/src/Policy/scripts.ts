@@ -1,4 +1,4 @@
-import { ExecutionId, ScriptId } from "@mattrax/crypto";
+import { DeviceId, ExecutionId, ScriptId } from "@mattrax/crypto";
 import { Effect, Option, Schema } from "effect";
 import { and, asc, desc, eq, inArray, lt } from "drizzle-orm";
 import { schema as s } from "@mattrax/enterprise-core";
@@ -877,7 +877,7 @@ export const runScript = (
     for (const device of candidates) {
       const result = yield* queueScriptRun(db, organizationId, script, device, userId, now);
 
-      targets.push(result.target);
+      targets.push({ ...result.target, executionId: ExecutionId.fromParam(result.target.executionId), deviceId: DeviceId.fromParam(result.target.deviceId) });
     }
 
     const queued = targets.filter((target) => !target.skippedReason).length;
@@ -890,9 +890,9 @@ const executionInfo = (
   names: { readonly scriptName: string; readonly deviceName: string },
 ): ScriptExecutionInfo => ({
   id: row.id,
-  scriptId: row.scriptId,
+  scriptId: ScriptId.fromParam(row.scriptId),
   scriptName: names.scriptName,
-  deviceId: row.deviceId,
+  deviceId: DeviceId.fromParam(row.deviceId),
   deviceName: names.deviceName,
   trigger: Schema.decodeUnknownSync(ScriptTriggerType)(row.triggerType),
   status: Schema.decodeUnknownSync(ScriptExecutionStatus)(row.status),

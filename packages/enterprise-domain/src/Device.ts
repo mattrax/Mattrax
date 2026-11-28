@@ -1,3 +1,4 @@
+import { ArchiveId, DeviceId, UserId } from "@mattrax/crypto";
 import { AppleUserActionName } from "./deviceActions.js";
 import { DeviceActionName } from "./deviceActions.js";
 import { DeviceAttributeValues } from "./attributes.js";
@@ -930,7 +931,7 @@ export const AppleUserIdentitySource = Schema.Literals([
 export type AppleUserIdentitySource = typeof AppleUserIdentitySource.Type;
 
 export const AppleUserDirectoryIdentity = Schema.Struct({
-  userId: Schema.String,
+  userId: UserId.schema,
   name: Schema.String,
   email: Schema.String,
   source: AppleUserIdentitySource,
@@ -943,7 +944,7 @@ export type AppleUserDirectoryIdentity = typeof AppleUserDirectoryIdentity.Type;
 
 export const BindAppleUserIdentityRequest = Schema.Struct({
   /** Directory user this channel belongs to. */
-  userId: Schema.String,
+  userId: UserId.schema,
 });
 
 export type BindAppleUserIdentityRequest = typeof BindAppleUserIdentityRequest.Type;
@@ -1002,7 +1003,7 @@ export const DevicePushHealthCounts = Schema.Struct({
 export type DevicePushHealthCounts = typeof DevicePushHealthCounts.Type;
 
 export const DevicePushFailure = Schema.Struct({
-  deviceId: Schema.String,
+  deviceId: DeviceId.schema,
   deviceName: Schema.String,
   at: Schema.String,
   error: Schema.optional(NullableString),
@@ -1288,7 +1289,7 @@ export const DeviceActionResponse = Schema.Struct({
   /** The diagnostic archive request created by `collect-diagnostics`. */
   diagnostics: Schema.optional(
     Schema.Struct({
-      archiveId: Schema.String,
+      archiveId: ArchiveId.schema,
       expiresAt: Schema.String,
     }),
   ),

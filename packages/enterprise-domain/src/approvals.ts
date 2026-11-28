@@ -1,3 +1,4 @@
+import { PolicyId } from "@mattrax/crypto";
 import { Schema } from "effect";
 import { BUILT_IN_TENANT_ROLES } from "./rbac.js";
 import type { BuiltInTenantRole } from "./rbac.js";
@@ -166,7 +167,7 @@ export const canonicalJson = (value: Schema.Json): string => {
 export const ApprovalPayloadBinding = Schema.Struct({
   action: ApprovalAction,
   /** The policy the caller must be following. */
-  policyId: Schema.String,
+  policyId: PolicyId.schema,
   /** The single resource the action names, when it has one. */
   resourceId: Schema.optional(Schema.NullOr(Schema.String)),
   /** Every device the action will touch, in canonical (sorted) order. */
@@ -190,7 +191,7 @@ export const approvalPayloadBinding = (input: {
   readonly details?: Schema.Json;
 }): ApprovalPayloadBinding => ({
   action: input.action,
-  policyId: input.policyId,
+  policyId: PolicyId.fromParam(input.policyId),
   resourceId: input.resourceId ?? null,
   targets: [...new Set(input.targets ?? [])].sort(),
   ...(input.details === undefined ? {} : { details: input.details }),

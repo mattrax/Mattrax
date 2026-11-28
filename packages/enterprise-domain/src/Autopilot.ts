@@ -1,3 +1,4 @@
+import { GroupId } from "@mattrax/crypto";
 import { Schema } from "effect";
 import { NullableString } from "./Errors.js";
 
@@ -143,7 +144,7 @@ export type UpdateAutopilotProfileRequest = typeof UpdateAutopilotProfileRequest
 
 export const AssignAutopilotProfileRequest = Schema.Struct({
   /** Entra group object id targeted by the Graph assignment. */
-  groupId: Schema.String,
+  groupId: GroupId.schema,
 });
 
 export type AssignAutopilotProfileRequest = typeof AssignAutopilotProfileRequest.Type;

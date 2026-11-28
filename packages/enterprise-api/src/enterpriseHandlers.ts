@@ -3407,7 +3407,10 @@ export const createEnterpriseService = ({
    * the archive publishes it, and a hash of AUTH_SECRET would be an offline
    * verifier for the deployment's master secret.
    */
-  const deploymentId = () => Effect.promise(() => deriveDeploymentId({ origin }));
+  const deploymentId = () =>
+    Effect.promise(() => deriveDeploymentId({ origin })).pipe(
+      Effect.map((value) => DeploymentId.fromParam(`dep_${value}`)),
+    );
 
   const audit = (
     ctx: {
@@ -6973,7 +6976,7 @@ export const createEnterpriseService = ({
   const rowCatalogueAddition = (row: EnterpriseApplication): CatalogueAddition => ({
     titleId: row.catalogueTitleId ?? "",
     methodId: row.catalogueMethodId ?? "",
-    applicationId: row.id,
+    applicationId: ApplicationId.fromParam(row.id),
     name: row.name,
     platform: row.platform,
     source: row.source,
@@ -10061,7 +10064,7 @@ export const createEnterpriseService = ({
         const list = byAccount.get(row.accountId) ?? [];
 
         list.push({
-          tenantId: row.tenantId,
+          tenantId: TenantId.fromParam(row.tenantId),
           tenantName: row.tenantName,
           tenantSlug: row.tenantSlug,
           role: row.role,
@@ -10461,7 +10464,7 @@ export const createEnterpriseService = ({
     return new ApprovalRequired({
       message,
       code: "approval_required",
-      requestId: row.id,
+      requestId: RequestId.fromParam(row.id),
       status,
     });
   };

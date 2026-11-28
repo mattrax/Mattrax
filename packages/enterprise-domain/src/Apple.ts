@@ -1,3 +1,4 @@
+import { DeviceId } from "@mattrax/crypto";
 import { Schema } from "effect";
 import { NullableString } from "./Errors.js";
 
@@ -197,7 +198,7 @@ export const VppReleaseResponse = Schema.Struct({
 export type VppReleaseResponse = typeof VppReleaseResponse.Type;
 
 export const VppAssignmentInfo = Schema.Struct({
-  deviceId: Schema.String,
+  deviceId: DeviceId.schema,
   serial: Schema.String,
   adamId: Schema.String,
   state: Schema.String,

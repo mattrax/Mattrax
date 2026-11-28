@@ -13,7 +13,7 @@ describe("policy scope contract", () => {
 
   it("decodes a detailed reverse-scope response", () => {
     const scope = decodePolicyScope({
-      policyId: "policy-1",
+      policyId: "pl_policy-1",
       platforms: ["apple"],
       apple: [{ family: "macOS", minimum: "14.0" }],
       windowsMinimum: null,
@@ -22,7 +22,7 @@ describe("policy scope contract", () => {
       truncated: false,
       devices: [
         {
-          deviceId: "device-1",
+          deviceId: "dv_device-1",
           deviceName: "Oscar's Mac",
           platform: "apple",
           deviceOs: "macOS 14.2",
@@ -35,7 +35,7 @@ describe("policy scope contract", () => {
           exclusions: [],
         },
         {
-          deviceId: "device-2",
+          deviceId: "dv_device-2",
           deviceName: "Studio",
           platform: "apple",
           deviceOs: "macOS 13.6",
@@ -56,7 +56,7 @@ describe("policy scope contract", () => {
           exclusions: [
             {
               reason: "group-exclude",
-              groupId: "group-1",
+              groupId: "gr_group-1",
               groupName: "Contractors",
               effective: true,
             },
@@ -74,21 +74,21 @@ describe("policy scope contract", () => {
 
   it("decodes a group scope response", () => {
     const group = Schema.decodeUnknownSync(GroupScopeSummary)({
-      groupId: "group-1",
+      groupId: "gr_group-1",
       memberCount: 1,
       truncated: false,
       policies: [
         {
-          policyId: "policy-1",
+          policyId: "pl_policy-1",
           policyName: "Security",
           mode: "include",
           devices: [
             {
-              deviceId: "device-1",
+              deviceId: "dv_device-1",
               deviceName: "Oscar's Mac",
               platform: "apple",
               channel: "user",
-              userId: "user-1",
+              userId: "usr_user-1",
               userName: "Oscar",
               status: "partial",
               reason: "os-unsupported",

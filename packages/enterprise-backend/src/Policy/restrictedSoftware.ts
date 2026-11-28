@@ -1,4 +1,4 @@
-import { RestrictedSoftwareId } from "@mattrax/crypto";
+import { DeviceId, RestrictedSoftwareId, RuleId } from "@mattrax/crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { Effect } from "effect";
 import {
@@ -598,13 +598,13 @@ const toViolation = (input: {
   readonly deviceName: string;
 }): RestrictedSoftwareViolationInfo => ({
   id: input.violation.id,
-  ruleId: input.violation.restrictedSoftwareId,
+  ruleId: RuleId.fromParam(input.violation.restrictedSoftwareId),
   ruleName: input.rule?.name ?? "Deleted rule",
   action: input.violation.action as RestrictedSoftwareViolationInfo["action"],
   platform: input.violation.platform,
   matchType: input.violation.matchType as RestrictedSoftwareViolationInfo["matchType"],
   matchValue: input.rule?.matchValue ?? input.violation.matchKey,
-  deviceId: input.violation.deviceId,
+  deviceId: DeviceId.fromParam(input.violation.deviceId),
   deviceName: input.deviceName,
   matchedBundleId: input.violation.matchedBundleId,
   applicationName: input.violation.applicationName,

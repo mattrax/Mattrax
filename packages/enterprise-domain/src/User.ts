@@ -1,3 +1,4 @@
+import { PolicyId } from "@mattrax/crypto";
 import { Schema } from "effect";
 import { DeviceProtocol, DeviceStatus } from "./Device.js";
 import { GroupRelation } from "./Group.js";
@@ -92,7 +93,7 @@ export type UserLinkedAccount = typeof UserLinkedAccount.Type;
  * attributed to the group, not to the person sitting at one of its devices.
  */
 export const UserPolicyAssignment = Schema.Struct({
-  policyId: Schema.String,
+  policyId: PolicyId.schema,
   policyName: Schema.String,
   priority: Schema.Number,
   /** True when the policy is assigned to the user directly. */
@@ -429,7 +430,7 @@ export const deriveUserPolicies = (input: {
     if (!item.directInclude && (included.length === 0 || excluded.length > 0)) continue;
 
     assignments.push({
-      policyId: item.policyId,
+      policyId: PolicyId.fromParam(item.policyId),
       policyName: item.policyName,
       priority: item.priority,
       direct: item.directInclude,

@@ -1,8 +1,7 @@
-import { ApplicationId } from "@mattrax/crypto";
+import { ApplicationId, openSecret, sealSecret } from "@mattrax/crypto";
 import { and, eq } from "drizzle-orm";
 import { Effect, Layer, Option, Predicate, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
-import { openSecret, sealSecret } from "@mattrax/crypto";
 import { parsePlist, PlistValue } from "@mattrax/plist";
 import { schema } from "@mattrax/enterprise-core";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";

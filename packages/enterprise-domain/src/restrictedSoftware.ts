@@ -1,3 +1,4 @@
+import { DeviceId, RuleId } from "@mattrax/crypto";
 import { Schema } from "effect";
 
 /**
@@ -541,13 +542,13 @@ export type PatchRestrictedSoftwareAssignmentsRequest =
 
 export const RestrictedSoftwareViolationInfo = Schema.Struct({
   id: Schema.String,
-  ruleId: Schema.String,
+  ruleId: RuleId.schema,
   ruleName: Schema.String,
   action: RestrictedSoftwareAction,
   platform: RestrictedSoftwarePlatform,
   matchType: RestrictedSoftwareMatchType,
   matchValue: Schema.String,
-  deviceId: Schema.String,
+  deviceId: DeviceId.schema,
   deviceName: Schema.String,
   matchedBundleId: Schema.String,
   applicationName: Schema.optional(Schema.NullOr(Schema.String)),
@@ -605,7 +606,7 @@ export type DeviceRestrictedSoftwareResponse = typeof DeviceRestrictedSoftwareRe
  * nothing to do. `detail` is bounded by the server before it is stored.
  */
 export const RestrictedSoftwareAgentResultRequest = Schema.Struct({
-  ruleId: Schema.String,
+  ruleId: RuleId.schema,
   action: RestrictedSoftwareAction,
   status: Schema.Literals(["succeeded", "failed", "skipped"]),
   detail: Schema.optional(Schema.NullOr(Schema.String)),

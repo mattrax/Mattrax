@@ -1,3 +1,4 @@
+import { RequestId } from "@mattrax/crypto";
 import { HttpApiSchema } from "effect/http-api";
 import { Context, Effect, Layer } from "effect";
 import { STEP_UP_ACTIONS } from "./stepUp.js";
@@ -39,7 +40,7 @@ export class EnterpriseForbidden extends Schema.TaggedError<EnterpriseForbidden>
 export class ApprovalRequired extends Schema.TaggedError<ApprovalRequired>()("ApprovalRequired", {
   message: Schema.String,
   code: Schema.optional(Schema.Literal("approval_required")),
-  requestId: Schema.String,
+  requestId: RequestId.schema,
   status: Schema.Literals(["pending", "approved"]),
 }) {}
 

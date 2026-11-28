@@ -1,3 +1,4 @@
+import { ApplicationId } from "@mattrax/crypto";
 import { Schema } from "effect";
 import { CatalogueCategory, CataloguePlatform, CatalogueTitle } from "@mattrax/software";
 import { ApplicationPlatform, ApplicationSource } from "./Application.js";
@@ -50,7 +51,7 @@ export type CataloguePlatformFacet = typeof CataloguePlatformFacet.Type;
 export const CatalogueAddition = Schema.Struct({
   titleId: Schema.String,
   methodId: Schema.String,
-  applicationId: Schema.String,
+  applicationId: ApplicationId.schema,
   name: Schema.String,
   platform: ApplicationPlatform,
   source: ApplicationSource,

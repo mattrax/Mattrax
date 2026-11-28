@@ -1,3 +1,4 @@
+import { DeviceId, PolicyId } from "@mattrax/crypto";
 import { Schema } from "effect";
 import type { DeviceRow } from "./Device.js";
 import { GroupPolicyRelation } from "./Group.js";
@@ -253,7 +254,7 @@ export type EffectivePolicyScope = typeof EffectivePolicyScope.Type;
 
 export const EffectivePolicyConfiguration = Schema.Struct({
   kind: Schema.String,
-  policyId: Schema.String,
+  policyId: PolicyId.schema,
   policyName: Schema.String,
   priority: Schema.Number,
   scope: EffectivePolicyScope,
@@ -269,7 +270,7 @@ export const EffectivePolicyConfiguration = Schema.Struct({
 export type EffectivePolicyConfiguration = typeof EffectivePolicyConfiguration.Type;
 
 export const EffectivePolicyContributor = Schema.Struct({
-  policyId: Schema.String,
+  policyId: PolicyId.schema,
   policyName: Schema.String,
   priority: Schema.Number,
   scope: EffectivePolicyScope,
@@ -297,7 +298,7 @@ export type EffectivePolicyOverrideReason = typeof EffectivePolicyOverrideReason
 
 export const EffectivePolicyOverride = Schema.Struct({
   kind: Schema.String,
-  policyId: Schema.String,
+  policyId: PolicyId.schema,
   policyName: Schema.String,
   priority: Schema.Number,
   scope: EffectivePolicyScope,
@@ -322,7 +323,7 @@ export const EffectivePolicyExclusionReason = Schema.Literals([
 export type EffectivePolicyExclusionReason = typeof EffectivePolicyExclusionReason.Type;
 
 export const EffectivePolicyExclusion = Schema.Struct({
-  policyId: Schema.String,
+  policyId: PolicyId.schema,
   policyName: Schema.String,
   scope: EffectivePolicyScope,
   groupId: Schema.NullOr(Schema.String),
@@ -339,7 +340,7 @@ export const EffectivePolicyExclusion = Schema.Struct({
 export type EffectivePolicyExclusion = typeof EffectivePolicyExclusion.Type;
 
 export const EffectivePolicyResponse = Schema.Struct({
-  deviceId: Schema.String,
+  deviceId: DeviceId.schema,
   configurations: Schema.Array(EffectivePolicyConfiguration),
   policies: Schema.Array(EffectivePolicyContributor),
   overridden: Schema.Array(EffectivePolicyOverride),

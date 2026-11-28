@@ -1,3 +1,4 @@
+import { AccountId } from "@mattrax/crypto";
 import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
@@ -767,7 +768,7 @@ export default function AdministratorsSettingsPage() {
 
       const failures: BulkFailure[] = result.failed.map((row) => ({
         id: row.id,
-        name: names.get(row.id) ?? row.id,
+        name: names.get(AccountId.fromParam(row.id)) ?? row.id,
         reason: bulkFailureReason(row.reason),
       }));
 

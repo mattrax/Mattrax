@@ -1,3 +1,4 @@
+import { DeviceId } from "@mattrax/crypto";
 import type {
   PolicyDeploymentCounts,
   PolicyDeploymentDevice,
@@ -129,7 +130,7 @@ const trackedRow = (args: {
   switch (delivery.status) {
     case "failed":
       return {
-        deviceId: device.id,
+        deviceId: DeviceId.fromParam(device.id),
         name: device.name,
         platform: "apple",
         status: "failed",
@@ -140,7 +141,7 @@ const trackedRow = (args: {
       };
     case "delivered":
       return {
-        deviceId: device.id,
+        deviceId: DeviceId.fromParam(device.id),
         name: device.name,
         platform: "apple",
         status: "delivered",
@@ -156,7 +157,7 @@ const trackedRow = (args: {
       };
     case "not-applicable":
       return {
-        deviceId: device.id,
+        deviceId: DeviceId.fromParam(device.id),
         name: device.name,
         platform: "apple",
         status: "not-applicable",
@@ -167,7 +168,7 @@ const trackedRow = (args: {
       };
     case "pending":
       return {
-        deviceId: device.id,
+        deviceId: DeviceId.fromParam(device.id),
         name: device.name,
         platform: "apple",
         status: "pending",
@@ -232,7 +233,7 @@ export const resolvePolicyDeployment = (
 
     if (platform !== "apple") {
       rows.push({
-        deviceId: device.id,
+        deviceId: DeviceId.fromParam(device.id),
         name: device.name,
         platform,
         status: "untracked",
@@ -251,7 +252,7 @@ export const resolvePolicyDeployment = (
       const installedAt = latestInstall(commandsByDevice.get(device.id) ?? []);
 
       rows.push({
-        deviceId: device.id,
+        deviceId: DeviceId.fromParam(device.id),
         name: device.name,
         platform: "apple",
         status: "untracked",
@@ -267,7 +268,7 @@ export const resolvePolicyDeployment = (
 
     if (configurations.length === 0) {
       rows.push({
-        deviceId: device.id,
+        deviceId: DeviceId.fromParam(device.id),
         name: device.name,
         platform: "apple",
         status: "not-applicable",
@@ -307,7 +308,7 @@ export const resolvePolicyDeployment = (
     });
 
     rows.push({
-      deviceId: device.id,
+      deviceId: DeviceId.fromParam(device.id),
       name: device.name,
       platform: platformOf(device.proto),
       status: "not-in-scope",

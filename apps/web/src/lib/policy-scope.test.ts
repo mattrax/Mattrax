@@ -1,3 +1,4 @@
+import { DeviceId, PolicyId } from "@mattrax/crypto";
 import { describe, expect, it } from "vitest";
 import type { PolicyScopeDevice } from "@mattrax/enterprise-domain/client";
 import {
@@ -13,7 +14,7 @@ import {
 } from "./policy-scope";
 
 const entry = (overrides: Partial<PolicyScopeDevice> = {}): PolicyScopeDevice => ({
-  deviceId: "device-1",
+  deviceId: DeviceId.fromParam("dv_device-1"),
   deviceName: "Oscar's Mac",
   platform: "apple",
   deviceOs: "macOS 14.2",
@@ -121,27 +122,27 @@ describe("policyScopeWarnings", () => {
       channels: ["device"],
       devices: [
         entry({
-          deviceId: "device-1",
+          deviceId: DeviceId.fromParam("dv_device-1"),
           status: "unsupported-os",
           reason: "os-unsupported",
           deviceOs: "macOS 13.6",
           unsupportedKinds: ["mttx.apple.certificate.cert"],
         }),
         entry({
-          deviceId: "device-1",
+          deviceId: DeviceId.fromParam("dv_device-1"),
           status: "unsupported-os",
           reason: "os-unsupported",
           deviceOs: "macOS 13.6",
           unsupportedKinds: ["mttx.apple.certificate.cert"],
         }),
-        entry({ deviceId: "device-2" }),
+        entry({ deviceId: DeviceId.fromParam("dv_device-2") }),
       ],
     });
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatchObject({
       kind: "unsupported-os",
-      deviceId: "device-1",
+      deviceId: DeviceId.fromParam("dv_device-1"),
       message: "macOS 13.6 does not support mttx.apple.certificate.cert (requires macOS 14.0+).",
     });
   });
@@ -153,7 +154,7 @@ describe("policyScopeWarnings", () => {
       channels: ["user"],
       devices: [
         entry({
-          deviceId: "device-2",
+          deviceId: DeviceId.fromParam("dv_device-2"),
           platform: "android",
           channel: "user",
           status: "wrong-scope",
@@ -172,7 +173,7 @@ describe("policyScopeCounts", () => {
       entry({ userId: "user-1", channel: "user", userName: "Oscar" }),
       entry({ userId: "user-2", channel: "user", userName: "Sam" }),
       entry({
-        deviceId: "device-2",
+        deviceId: DeviceId.fromParam("dv_device-2"),
         status: "overridden",
         reason: "higher-priority",
         kinds: [],
@@ -185,13 +186,13 @@ describe("policyScopeCounts", () => {
 
 describe("group scope helpers", () => {
   const policy = {
-    policyId: "policy-1",
+    policyId: PolicyId.fromParam("pl_policy-1"),
     policyName: "Security",
     mode: "include" as const,
     devices: [
-      entry({ deviceId: "device-1", status: "applies" as const }),
+      entry({ deviceId: DeviceId.fromParam("dv_device-1"), status: "applies" as const }),
       entry({
-        deviceId: "device-2",
+        deviceId: DeviceId.fromParam("dv_device-2"),
         status: "overridden" as const,
         reason: "higher-priority" as const,
         kinds: [],
@@ -200,7 +201,7 @@ describe("group scope helpers", () => {
   };
 
   it("lists only the devices the policy wins on", () => {
-    expect(groupScopeWinningDeviceIds(policy)).toEqual(["device-1"]);
+    expect(groupScopeWinningDeviceIds(policy)).toEqual(["dv_device-1"]);
   });
 
   it("lists the devices an exclude assignment blocks", () => {
@@ -209,11 +210,11 @@ describe("group scope helpers", () => {
         ...policy,
         mode: "exclude",
         devices: [
-          entry({ deviceId: "device-1", status: "excluded", reason: "group-exclude" }),
-          entry({ deviceId: "device-1", status: "excluded", reason: "group-exclude" }),
+          entry({ deviceId: DeviceId.fromParam("dv_device-1"), status: "excluded", reason: "group-exclude" }),
+          entry({ deviceId: DeviceId.fromParam("dv_device-1"), status: "excluded", reason: "group-exclude" }),
         ],
       }),
-    ).toEqual(["device-1"]);
+    ).toEqual(["dv_device-1"]);
   });
 
   it("marks an include that wins nowhere as inert", () => {

@@ -1,5 +1,4 @@
-import { AuditId, DeviceId, InvitationId, MemberId, ScepCaId, TenantId } from "@mattrax/crypto";
-import { newId } from "@mattrax/crypto";
+import { AuditId, DeviceId, InvitationId, MemberId, ScepCaId, TenantId, newId, sealSecret } from "@mattrax/crypto";
 import { Effect } from "effect";
 import { eq, inArray } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
@@ -15,7 +14,6 @@ import type {
   CutoverPayload,
   CutoverPreview,
 } from "@mattrax/enterprise-domain";
-import { sealSecret } from "@mattrax/crypto";
 import { describeScepCa, importScepCa, sealCaPrivateKey } from "@mattrax/scep";
 import {
   applyTenantBundle,
@@ -478,7 +476,7 @@ export const previewTenantCutover = (
       requirements: analysis.requirements,
       target: analysis.targetOrganization
         ? {
-            tenantId: analysis.targetOrganization.id,
+            tenantId: TenantId.fromParam(analysis.targetOrganization.id),
             slug: analysis.targetOrganization.slug,
             name: analysis.targetOrganization.name,
           }
@@ -1422,7 +1420,7 @@ export const importTenantCutover = (
     ];
 
     return {
-      tenantId: written.organizationId,
+      tenantId: TenantId.fromParam(written.organizationId),
       slug: written.slug,
       mode,
       source: payload.source,

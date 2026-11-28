@@ -1,3 +1,4 @@
+import { EnrollmentId } from "@mattrax/crypto";
 import { EnrollmentQuestion } from "./attributes.js";
 import { HttpApiSchema } from "effect/http-api";
 import { Schema } from "effect";
@@ -102,7 +103,7 @@ export type EnrollmentAttemptOutcome = typeof EnrollmentAttemptOutcome.Type;
 
 export const EnrollmentAttempt = Schema.Struct({
   id: Schema.String,
-  enrollmentId: Schema.String,
+  enrollmentId: EnrollmentId.schema,
   platform: EnrollmentAttemptPlatform,
   outcome: EnrollmentAttemptOutcome,
   detail: Schema.optional(NullableString),

@@ -1,3 +1,4 @@
+import { RunId, ScriptId } from "@mattrax/crypto";
 import { describe, expect, it } from "vitest";
 import { Effect } from "effect";
 import type { ScriptAgentResultRequest } from "@mattrax/enterprise-domain";
@@ -81,7 +82,7 @@ const attribute = (
   required: false,
   visibility: "visible",
   source: "script",
-  scriptId: script.id,
+  scriptId: ScriptId.fromParam(script.id),
   scriptOutputKey: null,
   sortOrder: 0,
   createdAt: now,
@@ -160,7 +161,7 @@ const seed = (extras: SeedExtras = {}) =>
     script: extras.scripts ? [...extras.scripts] : [script],
     script_assignment: [
       {
-        scriptId: script.id,
+        scriptId: ScriptId.fromParam(script.id),
         organizationId: orgId,
         targetType: "device",
         targetId: device.id,
@@ -220,8 +221,8 @@ const report = (db: any, stdout: string, overrides: Partial<ScriptAgentResultReq
       db,
       device,
       {
-        runId: "run-1",
-        scriptId: script.id,
+        runId: RunId.fromParam("rn_run-1"),
+        scriptId: ScriptId.fromParam(script.id),
         trigger: "manual",
         exitCode: 0,
         stdout,
@@ -269,7 +270,7 @@ describe("script attribute collection", () => {
 
     expect(audit.metadata).toMatchObject({
       source: "script",
-      scriptId: script.id,
+      scriptId: ScriptId.fromParam(script.id),
       executionId: result.executionId,
       written: ["agent_version", "antivirus"],
     });
@@ -374,14 +375,14 @@ describe("script attribute collection", () => {
         type: "boolean",
         options: null,
         source: "script",
-        scriptId: script.id,
+        scriptId: ScriptId.fromParam(script.id),
         scriptOutputKey: "filevault",
       }),
     );
 
     expect(created).toMatchObject({
       source: "script",
-      scriptId: script.id,
+      scriptId: ScriptId.fromParam(script.id),
       scriptOutputKey: "filevault",
       scriptName: "Security inventory",
     });
@@ -406,7 +407,7 @@ describe("script attribute collection", () => {
 
     expect(antivirus).toMatchObject({
       source: "script",
-      scriptId: script.id,
+      scriptId: ScriptId.fromParam(script.id),
       scriptName: "Security inventory",
     });
     expect(note).toMatchObject({ source: "manual", scriptId: null });
@@ -425,7 +426,7 @@ describe("collect now", () => {
     expect(result.executionId).toBeTruthy();
     expect(db.store.script_execution).toHaveLength(1);
     expect(db.store.script_execution[0]).toMatchObject({
-      scriptId: script.id,
+      scriptId: ScriptId.fromParam(script.id),
       deviceId: device.id,
       triggerType: "manual",
       status: "queued",
@@ -565,7 +566,7 @@ describe("attribute binding edits", () => {
             attributeId: "attr-antivirus",
             organizationId: orgId,
             source: "script",
-            scriptId: script.id,
+            scriptId: ScriptId.fromParam(script.id),
             lastCollectedAt: now,
             lastError: null,
             lastErrorAt: null,
@@ -610,7 +611,7 @@ describe("attribute binding edits", () => {
       service
         .patchAttribute(request(headers), orgId, "attr-note", {
           source: "script",
-          scriptId: script.id,
+          scriptId: ScriptId.fromParam(script.id),
         })
         .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );
@@ -631,7 +632,7 @@ describe("attribute binding edits", () => {
           type: "boolean",
           options: null,
           source: "script",
-          scriptId: script.id,
+          scriptId: ScriptId.fromParam(script.id),
         })
         .pipe(Effect.catch((error: any) => Effect.succeed(error))),
     );

@@ -1,3 +1,4 @@
+import { TenantId } from "@mattrax/crypto";
 import { Schema } from "effect";
 
 /**
@@ -63,7 +64,7 @@ export const normalizeAdminAccountsQuery = (
 };
 
 export const AdminAccountMembership = Schema.Struct({
-  tenantId: Schema.String,
+  tenantId: TenantId.schema,
   tenantName: Schema.String,
   tenantSlug: Schema.String,
   /** Stored built-in role key, retained for links and compatibility. */

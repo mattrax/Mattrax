@@ -1,3 +1,4 @@
+import { AccountId, MemberId, SessionId, TenantId } from "@mattrax/crypto";
 import { Permission } from "./rbac.js";
 import { Schema } from "effect";
 import { JsonRecord } from "./Errors.js";
@@ -142,7 +143,7 @@ export type MeResponse = typeof MeResponse.Type;
  * not read.
  */
 export const BootstrapSession = Schema.Struct({
-  sessionId: Schema.String,
+  sessionId: SessionId.schema,
   subjectId: Schema.String,
   claims: Schema.Struct({
     name: Schema.String,
@@ -213,8 +214,8 @@ export const PatchTenantRequest = Schema.Struct({
 export const TenantListResponse = Schema.Struct({ tenants: Schema.Array(TenantInfo) });
 
 export const TenantAccount = Schema.Struct({
-  memberId: Schema.String,
-  accountId: Schema.String,
+  memberId: MemberId.schema,
+  accountId: AccountId.schema,
   name: Schema.String,
   email: Schema.String,
   /** Built-in role key; retained even when a custom role is assigned. */
@@ -461,7 +462,7 @@ export const AcceptTenantOwnershipTransferRequest = Schema.Struct({
 export type AcceptTenantOwnershipTransferRequest = typeof AcceptTenantOwnershipTransferRequest.Type;
 
 export const AcceptTenantOwnershipTransferResponse = Schema.Struct({
-  tenantId: Schema.String,
+  tenantId: TenantId.schema,
 });
 
 export type AcceptTenantOwnershipTransferResponse =
