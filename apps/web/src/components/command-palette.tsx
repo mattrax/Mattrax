@@ -22,7 +22,7 @@ import {
   ShieldCheck,
   User,
   UsersRound,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { authClient } from "~/lib/auth";
 import {
   chord,

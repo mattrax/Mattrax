@@ -16,7 +16,7 @@ import {
 import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { CheckCircle2, CircleAlert, Info } from "~/components/ui/icons";
+import { CheckCircle2, CircleAlert, Info } from "~/components/ui/app-icons";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";

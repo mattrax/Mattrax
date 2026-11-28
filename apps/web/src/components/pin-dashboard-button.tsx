@@ -1,6 +1,6 @@
 import { Show } from "solid-js";
 import { Button } from "@mattrax/ui";
-import { Pin } from "~/components/ui/icons";
+import { Pin } from "~/components/ui/app-icons";
 import { isDashboardPinned, togglePinnedDashboard } from "~/lib/pinned-dashboards";
 import { cn } from "~/lib/utils";
 

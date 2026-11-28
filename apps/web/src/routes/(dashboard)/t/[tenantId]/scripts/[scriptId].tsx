@@ -23,7 +23,7 @@ import { Checkbox } from "@mattrax/ui";
 import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
-import { ChevronDown } from "~/components/ui/icons";
+import { ChevronDown } from "~/components/ui/app-icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type {
   ScriptAssignmentsResponse,

@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@mattrax/ui";
-import { Check, Info, ShieldCheck } from "~/components/ui/icons";
+import { Check, Info, ShieldCheck } from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import { Progress , Checkbox } from "@mattrax/ui";
 import { loadCollection } from "~/lib/policy-designer/catalog";

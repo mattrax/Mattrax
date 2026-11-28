@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { ChevronDown, Globe, Plus, RotateCcw, Search } from "~/components/ui/icons";
+import { ChevronDown, Globe, Plus, RotateCcw, Search } from "~/components/ui/app-icons";
 import { flagOf, regionName } from "~/components/region-label";
 import { clampZoom, rotateByDrag, rotateByKey } from "~/components/region-globe";
 import { isSubmitEnter } from "~/lib/ime";

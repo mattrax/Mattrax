@@ -31,7 +31,7 @@ import {
   DialogTitle,
 } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { CheckCircle2, CircleAlert, Plus, RotateCcw } from "~/components/ui/icons";
+import { CheckCircle2, CircleAlert, Plus, RotateCcw } from "~/components/ui/app-icons";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import {

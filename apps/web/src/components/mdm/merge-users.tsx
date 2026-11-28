@@ -14,7 +14,7 @@ import {
 } from "@mattrax/ui";
 import { Badge } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { GitMerge, Search } from "~/components/ui/icons";
+import { GitMerge, Search } from "~/components/ui/app-icons";
 import { toast } from "~/components/toast";
 import { EmptyState, ErrorText } from "./common";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";

@@ -2,7 +2,7 @@ import { createSignal, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import QrCode from "~/components/mdm/qr-code";
 import { Button } from "@mattrax/ui";
-import { CircleAlert, ShieldCheck } from "~/components/ui/icons";
+import { CircleAlert, ShieldCheck } from "~/components/ui/app-icons";
 import { authClient } from "~/lib/auth";
 import { errorMessage } from "~/lib/errors";
 import { cn } from "~/lib/utils";

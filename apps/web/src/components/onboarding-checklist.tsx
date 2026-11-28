@@ -3,7 +3,7 @@ import type { TenantOnboardingState } from "@mattrax/enterprise-domain/client";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
 import { Badge } from "@mattrax/ui";
-import { BookOpen, Check, ChevronRight, Sparkles, X } from "~/components/ui/icons";
+import { BookOpen, Check, ChevronRight, Sparkles, X } from "~/components/ui/app-icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import {
   deriveOnboardingSteps,

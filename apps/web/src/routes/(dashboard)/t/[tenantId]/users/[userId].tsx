@@ -21,7 +21,7 @@ import {
   ShieldCheck,
   User as UserIcon,
   UsersRound,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { Card, CardContent } from "@mattrax/ui";
 import { enterpriseQueries } from "~/lib/enterprise";
 import type { UserDetail, UserPolicyAssignment, UserGroupRef } from "~/lib/enterprise";

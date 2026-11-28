@@ -10,7 +10,7 @@ import PolicyViewTabs from "~/components/mdm/policy-view-tabs";
 import StaleWriteBanner from "~/components/stale-write-banner";
 import { Checkbox, LoadingState } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
-import { ArrowLeft } from "~/components/ui/icons";
+import { ArrowLeft } from "~/components/ui/app-icons";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";

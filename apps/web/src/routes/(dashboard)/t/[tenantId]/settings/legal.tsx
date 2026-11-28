@@ -5,7 +5,7 @@ import { createMemo, createSignal, For, Show } from "solid-js";
 import { Option, Schema } from "effect";
 import { ErrorText, Field, Panel } from "~/components/mdm/common";
 import { LoadingState } from "@mattrax/ui";
-import { ChevronDown } from "~/components/ui/icons";
+import { ChevronDown } from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";

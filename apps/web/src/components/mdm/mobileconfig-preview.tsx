@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/solid-query";
 import { Option, Schema } from "effect";
 import { createEffect, For, Show } from "solid-js";
 import { Badge } from "@mattrax/ui";
-import { CircleAlert } from "~/components/ui/icons";
+import { CircleAlert } from "~/components/ui/app-icons";
 import DocumentationLink from "~/components/mdm/documentation-link";
 import { enterprise } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";

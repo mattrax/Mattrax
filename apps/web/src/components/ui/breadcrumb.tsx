@@ -1,6 +1,6 @@
 import { splitProps } from "~/lib/solid";
 import type { ComponentProps } from "@solidjs/web";
-import { ChevronRight, Ellipsis } from "~/components/ui/icons";
+import { ChevronRight, Ellipsis } from "~/components/ui/app-icons";
 import { cn } from "~/lib/utils";
 
 type BreadcrumbProps = ComponentProps<"nav">;

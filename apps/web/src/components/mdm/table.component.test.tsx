@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { installGlobals } from "../../../../../packages/config/testing/globals.ts";
 import { asFake, recorder } from "../../../../../packages/config/testing/recorder.ts";
 import { NavigateContext } from "~/lib/navigation";
-import { MdmTable } from "./table";
-import type { MdmColumn } from "./table";
+import { MdmTable } from "./entity-table";
+import type { MdmColumn } from "./entity-table";
 
 type Row = { id: string; name: string };
 

@@ -19,7 +19,7 @@ import {
   RotateCcw,
   ShieldCheck,
   Smartphone,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type {
   AndroidEnterpriseInfo,

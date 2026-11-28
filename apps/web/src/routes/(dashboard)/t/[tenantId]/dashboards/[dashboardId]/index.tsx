@@ -25,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@mattrax/ui";
-import { BookOpen, GripVertical, Plus, Star, X } from "~/components/ui/icons";
+import { BookOpen, GripVertical, Plus, Star, X } from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { DashboardWidget, DashboardWidgetType } from "~/lib/enterprise";

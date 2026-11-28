@@ -1,7 +1,7 @@
 import { Option, Schema } from "effect";
 import { For, Show, createMemo } from "solid-js";
 import { useDashboardWidgetBatch } from "~/components/dashboard/widget";
-import { LayoutDashboard } from "~/components/ui/icons";
+import { LayoutDashboard } from "~/components/ui/app-icons";
 import type { DashboardQueryResponse, DashboardWidget } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
 

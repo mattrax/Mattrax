@@ -1,6 +1,6 @@
 import { For, Show } from "solid-js";
 import { installStorySteps } from "~/lib/landing-motion";
-import { Eyebrow, SectionLink } from "./primitives";
+import { Eyebrow, SectionLink } from "./section-primitives";
 
 const steps = [
   {

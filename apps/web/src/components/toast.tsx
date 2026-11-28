@@ -2,7 +2,7 @@ import { Portal } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
 import { createSignal, For, Show } from "solid-js";
 import { Button } from "@mattrax/ui";
-import { CheckCircle2, CircleAlert, Info, TriangleAlert, X } from "~/components/ui/icons";
+import { CheckCircle2, CircleAlert, Info, TriangleAlert, X } from "~/components/ui/app-icons";
 import { cn } from "~/lib/utils";
 
 export type ToastTone = "success" | "warning" | "error" | "info";

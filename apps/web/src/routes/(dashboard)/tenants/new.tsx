@@ -4,7 +4,7 @@ import { createSignal } from "solid-js";
 import { ErrorText, Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { Button } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { ArrowLeft } from "~/components/ui/icons";
+import { ArrowLeft } from "~/components/ui/app-icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { rememberTenantAlias } from "~/lib/tenant";
 import {

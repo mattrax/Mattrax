@@ -1,5 +1,5 @@
 import { For } from "solid-js";
-import { Eyebrow } from "./primitives";
+import { Eyebrow } from "./section-primitives";
 
 const signals = [
   { label: "FileVault", value: 96 },

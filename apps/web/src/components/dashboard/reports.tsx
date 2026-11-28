@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { ArrowUpRight, BookOpen, Download, Plus, X } from "~/components/ui/icons";
+import { ArrowUpRight, BookOpen, Download, Plus, X } from "~/components/ui/app-icons";
 import { Panel, QueryError, relativeTime } from "~/components/mdm/common";
 import { toast } from "~/components/toast";
 import { downloadBlob } from "~/lib/download";

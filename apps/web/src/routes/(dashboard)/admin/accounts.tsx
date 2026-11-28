@@ -16,7 +16,7 @@ import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { Input } from "@mattrax/ui";
-import { ShieldCheck, UsersRound } from "~/components/ui/icons";
+import { ShieldCheck, UsersRound } from "~/components/ui/app-icons";
 import { toast } from "~/components/toast";
 import { AccessDenied } from "~/lib/permissions";
 import { authClient } from "~/lib/auth";

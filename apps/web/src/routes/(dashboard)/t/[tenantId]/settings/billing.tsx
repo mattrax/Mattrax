@@ -16,7 +16,7 @@ import {
   Download,
   HardDrive,
   MonitorSmartphone,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { enterprise, enterpriseQueries } from "~/lib/enterprise";
 import { billingUsageRemaining, billingUsageState } from "~/lib/billing-usage";
 import type { BillingUsageState } from "~/lib/billing-usage";

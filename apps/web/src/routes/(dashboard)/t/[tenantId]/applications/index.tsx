@@ -13,13 +13,13 @@ import {
   relativeTime,
 } from "~/components/mdm/common";
 import ApplicationViewTabs from "~/components/mdm/application-view-tabs";
-import { MdmTable } from "~/components/mdm/table";
-import type { MdmSortState } from "~/components/mdm/table";
+import { MdmTable } from "~/components/mdm/entity-table";
+import type { MdmSortState } from "~/components/mdm/entity-table";
 import { Button } from "@mattrax/ui";
 import { EntityQueryBar, formatEntityQuery, parseEntityQuery } from "~/components/mdm/entity-query";
 import type { EntityCondition, EntityField } from "~/components/mdm/entity-query";
 import { Badge } from "@mattrax/ui";
-import { Package } from "~/components/ui/icons";
+import { Package } from "~/components/ui/app-icons";
 import { enterpriseQueries } from "~/lib/enterprise";
 import type { ApplicationRow } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";

@@ -25,7 +25,7 @@ import {
   ChevronsUpDown,
   RefreshCw,
   Search as SearchIcon,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { Checkbox, EmptyState, Kbd, LoadingState, Skeleton } from "@mattrax/ui";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@mattrax/ui";
 import { announce } from "~/components/toast";

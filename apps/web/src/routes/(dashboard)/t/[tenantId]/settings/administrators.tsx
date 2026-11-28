@@ -21,7 +21,7 @@ import {
   DialogTitle,
 } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { UsersRound } from "~/components/ui/icons";
+import { UsersRound } from "~/components/ui/app-icons";
 import EntityHoverCard from "~/components/entity-hover-card";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";

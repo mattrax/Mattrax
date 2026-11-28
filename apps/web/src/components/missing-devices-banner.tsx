@@ -3,7 +3,7 @@ import { DEVICE_MISSING_AFTER_DAYS } from "@mattrax/enterprise-domain/client";
 import { isServer } from "@solidjs/web";
 import { createSignal, Show } from "solid-js";
 import { Button } from "@mattrax/ui";
-import { CircleAlert, X } from "~/components/ui/icons";
+import { CircleAlert, X } from "~/components/ui/app-icons";
 import { missingDeviceCount } from "~/lib/device-health";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import {

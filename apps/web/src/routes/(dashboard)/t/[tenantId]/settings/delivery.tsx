@@ -6,7 +6,7 @@ import { Panel, QueryError, relativeTime } from "~/components/mdm/common";
 import { LoadingState } from "@mattrax/ui";
 import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
-import { CheckCircle2, CircleAlert, MonitorSmartphone } from "~/components/ui/icons";
+import { CheckCircle2, CircleAlert, MonitorSmartphone } from "~/components/ui/app-icons";
 import { enterpriseQueries } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";

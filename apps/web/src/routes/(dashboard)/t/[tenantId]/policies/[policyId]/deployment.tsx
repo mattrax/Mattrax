@@ -16,8 +16,8 @@ import {
   SkeletonRows,
 } from "~/components/mdm/common";
 import PolicyProgressBar from "~/components/mdm/policy-progress";
-import { MdmTable } from "~/components/mdm/table";
-import type { MdmColumn } from "~/components/mdm/table";
+import { MdmTable } from "~/components/mdm/entity-table";
+import type { MdmColumn } from "~/components/mdm/entity-table";
 import PolicyViewTabs from "~/components/mdm/policy-view-tabs";
 import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";

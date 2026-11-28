@@ -1,7 +1,7 @@
 import { useLocation } from "@solidjs/router";
 import { createEffect, Show } from "solid-js";
 import { Button } from "@mattrax/ui";
-import { RefreshCw } from "~/components/ui/icons";
+import { RefreshCw } from "~/components/ui/app-icons";
 import {
   dismissDeploymentNotice,
   markDeploymentNoticeShown,

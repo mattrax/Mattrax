@@ -46,7 +46,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Wifi,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import StaleWriteBanner from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";

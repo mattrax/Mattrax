@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
   Skeleton,
 } from "@mattrax/ui";
-import { LogOut } from "~/components/ui/icons";
+import { LogOut } from "~/components/ui/app-icons";
 
 type DropdownUser = {
   name?: string | null;

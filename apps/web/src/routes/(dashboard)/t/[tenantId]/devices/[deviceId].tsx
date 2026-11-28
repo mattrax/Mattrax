@@ -55,7 +55,7 @@ import {
   MonitorSmartphone,
   Settings as SettingsIcon,
   Smartphone,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { enterpriseKeys, entitySummaryPlaceholder } from "~/lib/enterprise";
 import type { DeviceApplication } from "~/lib/enterprise";
 import {

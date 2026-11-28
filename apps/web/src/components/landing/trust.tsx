@@ -1,7 +1,7 @@
 import { Check } from "@mattrax/ui";
 import { For, createSignal } from "solid-js";
 import { Button } from "@mattrax/ui";
-import { Eyebrow, SectionLink } from "./primitives";
+import { Eyebrow, SectionLink } from "./section-primitives";
 
 const proofPoints = [
   "Passkeys and optional TOTP. No password fallback to phish.",

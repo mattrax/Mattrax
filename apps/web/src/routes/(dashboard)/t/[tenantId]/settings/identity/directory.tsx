@@ -11,7 +11,7 @@ import { Checkbox, IndeterminateBar, LoadingState } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
-import { ArrowUpRight, RotateCcw } from "~/components/ui/icons";
+import { ArrowUpRight, RotateCcw } from "~/components/ui/app-icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { bulkFailureReason, bulkReport, runBulkBatches } from "~/lib/bulk-members";
 import type { BulkFailure } from "~/lib/bulk-members";

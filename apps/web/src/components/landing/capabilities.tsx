@@ -2,7 +2,7 @@ import { For, Show, createSignal } from "solid-js";
 import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
 import { installHoldProgress } from "~/lib/landing-motion";
-import { Eyebrow, SectionLink } from "./primitives";
+import { Eyebrow, SectionLink } from "./section-primitives";
 
 const capabilities = [
   {

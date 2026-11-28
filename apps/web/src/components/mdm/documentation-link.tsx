@@ -1,5 +1,5 @@
 import { Button } from "@mattrax/ui";
-import { ArrowUpRight, BookOpen } from "~/components/ui/icons";
+import { ArrowUpRight, BookOpen } from "~/components/ui/app-icons";
 
 /**
  * A documentation link to a vendor's site.

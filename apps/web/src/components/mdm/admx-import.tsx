@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@mattrax/ui";
-import { CircleAlert, Info, TriangleAlert } from "~/components/ui/icons";
+import { CircleAlert, Info, TriangleAlert } from "~/components/ui/app-icons";
 import {
   admxPolicySelection,
   loadAdmxCatalogueIndex,

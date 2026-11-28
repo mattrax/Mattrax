@@ -42,25 +42,7 @@ export default {
     "design-system/no-boolean-variants": "error",
     "design-system/no-cross-surface-imports": "error",
     "design-system/no-deprecated": "error",
-    // The web app intentionally keeps thin shims that mirror shared primitive names.
-    "design-system/no-duplicate-primitives": [
-      "error",
-      {
-        allow: [
-          "badge",
-          "button",
-          "card",
-          "dialog",
-          "icons",
-          "input",
-          "passwordinput",
-          "primitives",
-          "sheet",
-          "table",
-          "tooltip",
-        ],
-      },
-    ],
+    "design-system/no-duplicate-primitives": "error",
     "design-system/no-important": "error",
     "design-system/no-inline-style": "error",
     "design-system/no-raw-values": "error",

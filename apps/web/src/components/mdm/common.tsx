@@ -39,7 +39,7 @@ import {
   MonitorSmartphone,
   Smartphone,
   TabletSmartphone,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { Skeleton } from "@mattrax/ui";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@mattrax/ui";
 import { buildBreadcrumbs } from "~/lib/breadcrumbs";

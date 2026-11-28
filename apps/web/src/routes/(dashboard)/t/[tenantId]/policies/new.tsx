@@ -7,7 +7,7 @@ import type { CisTemplateOutcome } from "~/components/mdm/cis-template-dialog";
 import { ErrorText, Field, Page, PageHeader, Panel } from "~/components/mdm/common";
 import { Button } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { ShieldCheck } from "~/components/ui/icons";
+import { ShieldCheck } from "~/components/ui/app-icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import { AccessDenied, useCan } from "~/lib/permissions";
 import { ScopeTagSelect } from "~/components/scope-tags/scope-tag-select";

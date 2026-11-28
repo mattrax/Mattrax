@@ -1,6 +1,6 @@
 import type { JSX } from "@solidjs/web";
 import { Show } from "solid-js";
-import { CircleAlert } from "~/components/ui/icons";
+import { CircleAlert } from "~/components/ui/app-icons";
 import { cn } from "~/lib/utils";
 
 /**

@@ -1,7 +1,7 @@
 import { Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { Button } from "@mattrax/ui";
-import { CircleAlert } from "~/components/ui/icons";
+import { CircleAlert } from "~/components/ui/app-icons";
 import { newErrorReference } from "~/lib/error-reference";
 import type { ErrorReference } from "~/lib/error-reference";
 import { errorPresentation, raisedFailure } from "~/lib/errors";

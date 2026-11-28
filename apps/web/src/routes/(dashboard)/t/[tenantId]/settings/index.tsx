@@ -17,7 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@mattrax/ui";
-import { TriangleAlert } from "~/components/ui/icons";
+import { TriangleAlert } from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import { flagOf, regionName } from "~/components/region-label";
 import { useTenantProfileDraft } from "~/components/settings/tenant-profile-draft";

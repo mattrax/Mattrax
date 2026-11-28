@@ -6,7 +6,7 @@ import { Input } from "@mattrax/ui";
 import { createSignal, onCleanup, onSettled, Show, untrack } from "solid-js";
 import MfaPending from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";
-import { KeyRound } from "~/components/ui/icons";
+import { KeyRound } from "~/components/ui/app-icons";
 import { redirectToProvider, startOrganisationSso } from "~/lib/sso-start";
 import { conditionalPasskeyAvailable, passkeySignInFailureMessage } from "~/lib/passkey-sign-in";
 

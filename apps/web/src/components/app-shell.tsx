@@ -60,7 +60,7 @@ import {
   ShieldCheck,
   User,
   UsersRound,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { enterpriseKeys, meQueryOptions } from "~/lib/enterprise";
 import { installPinnedDashboards, pinnedDashboardsFor } from "~/lib/pinned-dashboards";
 import type { Permission } from "@mattrax/enterprise-domain/client";

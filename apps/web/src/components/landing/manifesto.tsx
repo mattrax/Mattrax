@@ -1,5 +1,5 @@
 import { For } from "solid-js";
-import { Eyebrow } from "./primitives";
+import { Eyebrow } from "./section-primitives";
 
 const claimWords = ["Any", "MDM", "can", "send", "a", "profile."];
 

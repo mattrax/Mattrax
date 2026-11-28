@@ -7,7 +7,7 @@ import Markdown from "~/components/dashboard/markdown";
 import * as handover from "~/components/mdm/device-handover-dialog";
 import EntityActions from "~/components/mdm/entity-actions";
 import * as common from "~/components/mdm/common";
-import * as table from "~/components/mdm/table";
+import * as table from "~/components/mdm/entity-table";
 import * as scopeTagSelect from "~/components/scope-tags/scope-tag-select";
 import OsComplianceTag from "~/components/os-compliance-badge";
 import * as softwareUpdate from "~/components/software-update-badge";

@@ -19,7 +19,7 @@ import EnrollmentPasswordInput from "~/components/enrollment/enrollment-password
 import { Button } from "@mattrax/ui";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@mattrax/ui";
 import { Label } from "@mattrax/ui";
-import { ChevronRight, KeyRound, ShieldCheck } from "~/components/ui/icons";
+import { ChevronRight, KeyRound, ShieldCheck } from "~/components/ui/app-icons";
 import type { EnrollmentResponse } from "~/lib/enterprise";
 import { lookupPublicEnrollment } from "~/lib/enrollment.server";
 import {

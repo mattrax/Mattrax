@@ -13,7 +13,7 @@ import {
   Monitor,
   Smartphone,
   TabletSmartphone,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import type {
   AndroidEnrollment,
   EnrollmentResponse,

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/solid-query";
 import { Show } from "solid-js";
 import { Button } from "@mattrax/ui";
-import { CircleAlert } from "~/components/ui/icons";
+import { CircleAlert } from "~/components/ui/app-icons";
 import { enterpriseQueries } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";

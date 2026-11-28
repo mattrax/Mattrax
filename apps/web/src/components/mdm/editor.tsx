@@ -17,7 +17,7 @@ import DocumentationLink from "~/components/mdm/documentation-link";
 import { NativeSelect , Checkbox } from "@mattrax/ui";
 import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
-import { ChevronDown } from "~/components/ui/icons";
+import { ChevronDown } from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import { CertificateEditor, MailEditor } from "~/components/mdm/policy-certificates";
 import StaleWriteBanner from "~/components/stale-write-banner";

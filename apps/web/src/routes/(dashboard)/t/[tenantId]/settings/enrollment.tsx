@@ -10,7 +10,7 @@ import QrCode from "~/components/mdm/qr-code";
 import { Button } from "@mattrax/ui";
 import { Checkbox, Switch } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
-import { CircleAlert, Info } from "~/components/ui/icons";
+import { CircleAlert, Info } from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import { PasswordInput } from "@mattrax/ui";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";

@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   Smartphone,
   UsersRound,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { healthLabel } from "~/lib/device-health";
 import type { DeviceRow, GroupRow, PolicyRow, TenantAccount } from "~/lib/enterprise";
 import {

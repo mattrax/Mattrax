@@ -5,7 +5,7 @@ import { createMemo, For, Show } from "solid-js";
 import { EmptyState, LoadingState, SegmentedProgress } from "@mattrax/ui";
 import { ErrorText, Panel, QueryError, formatDate } from "~/components/mdm/common";
 import { Button } from "@mattrax/ui";
-import { ArrowUpRight, HardDrive, Package, RefreshCw } from "~/components/ui/icons";
+import { ArrowUpRight, HardDrive, Package, RefreshCw } from "~/components/ui/app-icons";
 import { enterpriseQueries } from "~/lib/enterprise";
 import type { StorageCategory, StorageObject } from "~/lib/enterprise";
 import { formatBytes, formatShare, sharePercent } from "~/lib/format";

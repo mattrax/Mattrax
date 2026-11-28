@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import type { AppleByodConfigInfo } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Panel } from "~/components/mdm/common";
 import { Button } from "@mattrax/ui";
-import { Info } from "~/components/ui/icons";
+import { Info } from "~/components/ui/app-icons";
 import Chip from "~/components/settings/status-chip";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";

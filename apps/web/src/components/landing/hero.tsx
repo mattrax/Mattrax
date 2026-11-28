@@ -4,7 +4,7 @@ import { Button } from "@mattrax/ui";
 import { authClient } from "~/lib/auth";
 import { installHeroProgress } from "~/lib/landing-motion";
 import { publicPrimaryCta } from "~/lib/public-auth-cta";
-import { Eyebrow, NoJsStartFree } from "./primitives";
+import { Eyebrow, NoJsStartFree } from "./section-primitives";
 
 type Platform = "apple" | "windows" | "android";
 

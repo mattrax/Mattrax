@@ -24,7 +24,7 @@ import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { Input } from "@mattrax/ui";
-import { CircleAlert } from "~/components/ui/icons";
+import { CircleAlert } from "~/components/ui/app-icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { ApplicationRow, DeviceRow, GroupRow } from "~/lib/enterprise";
 import {

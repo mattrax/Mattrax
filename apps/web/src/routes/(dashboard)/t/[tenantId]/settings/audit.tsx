@@ -9,7 +9,7 @@ import { Badge, FilterBar, LoadingState } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { Search } from "~/components/ui/icons";
+import { Search } from "~/components/ui/app-icons";
 import { enterprise, enterpriseQueries } from "~/lib/enterprise";
 import type { AuditLogEntry, AuditSearchQuery } from "~/lib/enterprise";
 import {

@@ -41,7 +41,7 @@ import {
   ShieldCheck,
   TriangleAlert,
   X,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {

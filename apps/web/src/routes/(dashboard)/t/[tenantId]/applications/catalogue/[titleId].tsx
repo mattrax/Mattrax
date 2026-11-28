@@ -16,7 +16,7 @@ import {
 import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { ArrowUpRight, CheckCircle2, CircleAlert, Info, Package } from "~/components/ui/icons";
+import { ArrowUpRight, CheckCircle2, CircleAlert, Info, Package } from "~/components/ui/app-icons";
 import { formatCatalogueVerifiedAt } from "~/lib/catalogue-date";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { CatalogueDeployment, CatalogueTitleResponse } from "~/lib/enterprise";

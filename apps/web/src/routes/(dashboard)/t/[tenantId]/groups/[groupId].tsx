@@ -16,10 +16,10 @@ import {
 } from "~/components/mdm/common";
 import GroupRuleBuilder from "~/components/mdm/group-rules";
 import StaleWriteBanner from "~/components/stale-write-banner";
-import { MdmTable } from "~/components/mdm/table";
+import { MdmTable } from "~/components/mdm/entity-table";
 import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
-import { Info } from "~/components/ui/icons";
+import { Info } from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import {
   Dialog,

@@ -42,7 +42,7 @@ import {
   Plus,
   Search,
   Star,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { DashboardSummary } from "~/lib/enterprise";
 import { errorMessage } from "~/lib/errors";

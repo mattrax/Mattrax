@@ -6,7 +6,7 @@ import { readLastTenant } from "~/components/app-shell";
 import { resolveLandingTenant } from "~/lib/tenant";
 import { Page } from "~/components/mdm/common";
 import { Button, Card } from "@mattrax/ui";
-import { Sparkles } from "~/components/ui/icons";
+import { Sparkles } from "~/components/ui/app-icons";
 import { errorMessage } from "~/lib/errors";
 import { enterprise, meQueryOptions } from "~/lib/enterprise";
 import { authClient } from "~/lib/auth";

@@ -7,7 +7,7 @@ import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Button } from "@mattrax/ui";
 import { Switch } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
-import { ShieldCheck } from "~/components/ui/icons";
+import { ShieldCheck } from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { TenantSecuritySettings } from "~/lib/enterprise";

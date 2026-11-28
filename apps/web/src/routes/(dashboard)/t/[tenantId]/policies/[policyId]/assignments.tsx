@@ -17,7 +17,7 @@ import PolicyViewTabs from "~/components/mdm/policy-view-tabs";
 import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { Search } from "~/components/ui/icons";
+import { Search } from "~/components/ui/app-icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { DeviceRow } from "~/lib/enterprise";
 import { isPolicyEnabled, policyStatePresentation } from "~/lib/policy-delivery";

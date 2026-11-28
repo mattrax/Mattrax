@@ -2,7 +2,7 @@ import { For, Show } from "solid-js";
 import { cn } from "~/lib/utils";
 import { resolvedTheme, setThemePreference, themePreference, THEME_PREFERENCES } from "~/lib/theme";
 import type { ThemePreference } from "~/lib/theme";
-import { Monitor, Moon, Sun } from "~/components/ui/icons";
+import { Monitor, Moon, Sun } from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 
 const LABELS: Record<ThemePreference, string> = {

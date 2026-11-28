@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@mattrax/ui";
-import { CheckCircle2, TriangleAlert } from "~/components/ui/icons";
+import { CheckCircle2, TriangleAlert } from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import type { TenantProfileDraft } from "./tenant-profile-draft";
 

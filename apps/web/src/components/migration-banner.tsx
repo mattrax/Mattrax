@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { createSignal, Show } from "solid-js";
 import { Button } from "@mattrax/ui";
-import { ArrowRightLeft, X } from "~/components/ui/icons";
+import { ArrowRightLeft, X } from "~/components/ui/app-icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import {
   readMigrationBannerDismissed,

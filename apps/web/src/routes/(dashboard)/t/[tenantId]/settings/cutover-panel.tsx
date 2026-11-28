@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { CircleAlert, CheckCircle2, Download, ShieldCheck } from "~/components/ui/icons";
+import { CircleAlert, CheckCircle2, Download, ShieldCheck } from "~/components/ui/app-icons";
 import { useNavigate } from "~/lib/navigation";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import type { TenantDetail } from "~/lib/enterprise";

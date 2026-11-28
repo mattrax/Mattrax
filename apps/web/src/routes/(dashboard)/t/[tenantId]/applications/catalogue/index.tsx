@@ -13,7 +13,7 @@ import {
 import { Badge } from "@mattrax/ui";
 import { Button } from "@mattrax/ui";
 import { Input } from "@mattrax/ui";
-import { ArrowRightLeft, Package, Search, X } from "~/components/ui/icons";
+import { ArrowRightLeft, Package, Search, X } from "~/components/ui/app-icons";
 import { formatCatalogueVerifiedAt } from "~/lib/catalogue-date";
 import { enterpriseQueries } from "~/lib/enterprise";
 import type { CatalogueTitle } from "~/lib/enterprise";

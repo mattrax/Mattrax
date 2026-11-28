@@ -1,5 +1,5 @@
 import { For } from "solid-js";
-import { Eyebrow, SectionLink } from "./primitives";
+import { Eyebrow, SectionLink } from "./section-primitives";
 
 const platforms = [
   {

@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   UsersRound,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { Input } from "@mattrax/ui";
 import { formatDeviceQueryText, parseDeviceQueryText } from "~/lib/enterprise";
 

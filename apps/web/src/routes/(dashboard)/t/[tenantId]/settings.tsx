@@ -21,7 +21,7 @@ import {
   SlidersHorizontal,
   Tag,
   UsersRound,
-} from "~/components/ui/icons";
+} from "~/components/ui/app-icons";
 import { MIGRATION_MOVE_PERMISSIONS, settingsTabPermissions, useCan } from "~/lib/permissions";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {
