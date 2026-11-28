@@ -736,7 +736,7 @@ describe("email change ceremony", () => {
       email: "new@example.com",
       emailVerified: true,
     });
-    expect(db.store.account[0]!.authRevision).toMatch(/^[a-f0-9]{24}$/);
+    expect(db.store.account[0]!.authRevision).toMatch(/^rv_[a-f0-9]{24}$/);
     expect(db.store.account_email_change[0]!.consumedAt).toBeInstanceOf(Date);
     expect(db.store.account_audit_log.map((row: any) => row.action)).toContain(
       "account.email_change_completed",

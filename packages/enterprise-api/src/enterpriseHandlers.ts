@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { ApplicationId, ApplicationUninstallId, ApprovalId, ArchiveId, AttributeId, AuditId, CommandId, DashboardId, DeploymentId, EnrollmentId, GroupId, InstallerId, InvitationId, MemberId, PolicyId, PreRegistrationId, RegistrationId, ReportId, RequestId, RevisionId, RoleId, TagId, TenantId, TokenId, TransferId, ViewId, WebhookId, WidgetId } from "@mattrax/crypto";
 import {
   Cause,
   Context,
@@ -1498,7 +1498,6 @@ const brandingOrFail = (body: BrandingPayload) =>
         : new EnterpriseBadRequest({ message: "Invalid tenant branding" }),
   });
 
-const id = newId;
 
 const ok = { status: "ok" as const };
 
@@ -3018,7 +3017,7 @@ export const createEnterpriseService = ({
         .limit(1);
 
       const base = current?.version ?? 0;
-      const deploymentId = id();
+      const deploymentId = DeploymentId.make();
       const createdAt = now();
       let version = base + 1;
 
@@ -3450,7 +3449,7 @@ export const createEnterpriseService = ({
       if (ctx.rbac) Object.assign(enrichedMetadata, { rbac: ctx.rbac });
 
       yield* db.insert(schema.auditLog).values({
-        id: id(),
+        id: AuditId.make(),
         organizationId: ctx.organization.id,
         actorAccountId: ctx.account.id,
         actorEmail: ctx.account.email,
@@ -4049,7 +4048,7 @@ export const createEnterpriseService = ({
           new EnterpriseBadRequest({ message: "Could not encrypt the webhook signing secret" }),
       });
 
-      const webhookId = id();
+      const webhookId = WebhookId.make();
       const timestamp = now();
       yield* db.insert(schema.webhookEndpoint).values({
         id: webhookId,
@@ -4907,7 +4906,7 @@ export const createEnterpriseService = ({
           .where(eq(schema.applicationUninstall.id, existing.id));
       else
         yield* db.insert(schema.applicationUninstall).values({
-          id: id(),
+          id: ApplicationUninstallId.make(),
           createdAt: input.at,
           ...values,
         });
@@ -7350,7 +7349,7 @@ export const createEnterpriseService = ({
               ),
             );
         } else {
-          const installerId = id();
+          const installerId = InstallerId.make();
 
           keep.add(installerId);
           yield* db.insert(schema.applicationInstaller).values({
@@ -7456,7 +7455,7 @@ export const createEnterpriseService = ({
 
       if (existing) return existing;
       const timestamp = now();
-      const enrollment = { id: id(), organizationId, createdAt: timestamp, updatedAt: timestamp };
+      const enrollment = { id: EnrollmentId.make(), organizationId, createdAt: timestamp, updatedAt: timestamp };
       yield* db.insert(schema.enterpriseEnrollment).ignore().values(enrollment);
 
       return (
@@ -7811,7 +7810,7 @@ export const createEnterpriseService = ({
 
       if (duplicate || sameClient >= ENROLLMENT_ATTEMPT_PER_CLIENT_LIMIT) return;
       yield* db.insert(schema.enrollmentAttempt).values({
-        id: id(),
+        id: EnrollmentId.make(),
         organizationId: input.organizationId,
         enrollmentId: input.enrollmentId,
         platform: input.platform,
@@ -9035,7 +9034,7 @@ export const createEnterpriseService = ({
           const timestamp = now();
 
           yield* db.insert(schema.deviceCommand).values({
-            id: id(),
+            id: CommandId.make(),
             organizationId,
             deviceId: device.id,
             requestType: "WindowsUnenroll",
@@ -10840,7 +10839,7 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const requestId = id();
+        const requestId = RequestId.make();
         const expiresAt = new Date(at.getTime() + APPROVAL_REQUEST_TTL_MS);
 
         yield* db.insert(schema.approvalRequest).values({
@@ -10933,7 +10932,7 @@ export const createEnterpriseService = ({
         return yield* Effect.fail(approvalRequiredError(pending, received));
       }
 
-      const requestId = id();
+      const requestId = RequestId.make();
       const expiresAt = new Date(at.getTime() + APPROVAL_REQUEST_TTL_MS);
 
       yield* db.insert(schema.approvalRequest).values({
@@ -11943,7 +11942,7 @@ export const createEnterpriseService = ({
 
         yield* db
           .update(schema.account)
-          .set({ authRevision: id(), updatedAt: now() })
+          .set({ authRevision: RevisionId.make(), updatedAt: now() })
           .where(eq(schema.account.id, user.id));
 
         yield* recordAccountAudit(db, {
@@ -12120,7 +12119,7 @@ export const createEnterpriseService = ({
             ),
           );
         const branding = yield* brandingOrFail(body);
-        const tenantId = id();
+        const tenantId = TenantId.make();
         const timestamp = now();
         yield* db.insert(schema.organization).values({
           id: tenantId,
@@ -12136,7 +12135,7 @@ export const createEnterpriseService = ({
           updatedAt: timestamp,
         });
         yield* db.insert(schema.member).values({
-          id: id(),
+          id: MemberId.make(),
           organizationId: tenantId,
           accountId: user.id,
           role: "owner",
@@ -12882,7 +12881,7 @@ export const createEnterpriseService = ({
         yield* assertTenantCreationAllowed(user.id);
 
         const timestamp = now();
-        const tenantId = id();
+        const tenantId = TenantId.make();
 
         const result = yield* db.transaction((tx) =>
           Effect.gen(function* () {
@@ -12915,7 +12914,7 @@ export const createEnterpriseService = ({
               updatedAt: timestamp,
             });
             yield* tx.insert(schema.member).values({
-              id: id(),
+              id: MemberId.make(),
               organizationId: tenantId,
               accountId: user.id,
               role: "owner",
@@ -12938,7 +12937,7 @@ export const createEnterpriseService = ({
             const policyIdByKey = new Map<string, string>();
 
             for (const policy of policies) {
-              const policyId = id();
+              const policyId = PolicyId.make();
               policyIdByKey.set(policy.key, policyId);
               yield* tx.insert(schema.policy).values({
                 id: policyId,
@@ -12969,7 +12968,7 @@ export const createEnterpriseService = ({
               }
 
               yield* tx.insert(schema.policyDeployment).values({
-                id: id(),
+                id: DeploymentId.make(),
                 organizationId: tenantId,
                 policyId,
                 version: 1,
@@ -12988,7 +12987,7 @@ export const createEnterpriseService = ({
             const groupIdByKey = new Map<string, string>();
 
             for (const group of groups) {
-              const groupId = id();
+              const groupId = GroupId.make();
               groupIdByKey.set(group.key, groupId);
               yield* tx.insert(schema.enterpriseGroup).values({
                 id: groupId,
@@ -13018,7 +13017,7 @@ export const createEnterpriseService = ({
             const applicationIdByKey = new Map<string, string>();
 
             for (const application of applications) {
-              const applicationId = id();
+              const applicationId = ApplicationId.make();
               applicationIdByKey.set(application.key, applicationId);
               yield* tx.insert(schema.application).values({
                 id: applicationId,
@@ -13068,7 +13067,7 @@ export const createEnterpriseService = ({
               if (row.consumedDeviceKey) continue;
 
               yield* tx.insert(schema.devicePreRegistration).values({
-                id: id(),
+                id: PreRegistrationId.make(),
                 organizationId: tenantId,
                 serial: importString(row.serial, 255)!,
                 name: importString(row.name, 255),
@@ -13082,7 +13081,7 @@ export const createEnterpriseService = ({
             }
 
             yield* tx.insert(schema.auditLog).values({
-              id: id(),
+              id: AuditId.make(),
               organizationId: tenantId,
               actorAccountId: user.id,
               actorEmail: user.email,
@@ -14613,7 +14612,7 @@ export const createEnterpriseService = ({
           .replace(/=+$/, "")}`;
 
         const tokenHash = yield* sha256Hex(bytesToArrayBuffer(new TextEncoder().encode(raw)));
-        const scimId = id();
+        const scimId = TokenId.make();
         yield* db.insert(schema.scimToken).values({
           id: scimId,
           organizationId: ctx.organization.id,
@@ -15024,7 +15023,7 @@ export const createEnterpriseService = ({
           );
 
         const at = now();
-        const policyId = id();
+        const policyId = PolicyId.make();
 
         yield* db.insert(schema.approvalPolicy).values({
           id: policyId,
@@ -15345,7 +15344,7 @@ export const createEnterpriseService = ({
               );
 
             yield* tx.insert(schema.approvalDecision).values({
-              id: id(),
+              id: ApprovalId.make(),
               organizationId: ctx.organization.id,
               requestId: row.id,
               approverAccountId: ctx.account.id,
@@ -15511,7 +15510,7 @@ export const createEnterpriseService = ({
               );
 
             yield* tx.insert(schema.approvalDecision).values({
-              id: id(),
+              id: ApprovalId.make(),
               organizationId: ctx.organization.id,
               requestId: row.id,
               approverAccountId: ctx.account.id,
@@ -15696,7 +15695,7 @@ export const createEnterpriseService = ({
           return yield* Effect.fail(
             new EnterpriseConflict({ message: "A role with that name already exists" }),
           );
-        const roleId = id();
+        const roleId = RoleId.make();
         const timestamp = now();
         yield* db.insert(schema.tenantRole).values({
           id: roleId,
@@ -15962,7 +15961,7 @@ export const createEnterpriseService = ({
             new EnterpriseConflict({ message: "A scope tag with that name already exists" }),
           );
 
-        const tagId = id();
+        const tagId = TagId.make();
         const at = now();
 
         yield* db.insert(schema.scopeTag).values({
@@ -16586,7 +16585,7 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const invitationId = id();
+        const invitationId = InvitationId.make();
         const timestamp = now();
         const expiresAt = new Date(timestamp.getTime() + INVITATION_TTL_MS);
         const rawToken = newOneTimeToken();
@@ -16789,7 +16788,7 @@ export const createEnterpriseService = ({
                 ),
               );
 
-            const memberId = existing?.id ?? id();
+            const memberId = existing?.id ?? MemberId.make();
 
             if (!existing)
               yield* tx.insert(schema.member).ignore().values({
@@ -17206,7 +17205,7 @@ export const createEnterpriseService = ({
         const acceptUrl = ownershipTransferUrl(origin, rawToken);
         const timestamp = now();
         const expiresAt = new Date(timestamp.getTime() + OWNERSHIP_TRANSFER_TTL_MS);
-        const transferId = id();
+        const transferId = TransferId.make();
         let expiredTransferIds: string[] = [];
 
         yield* db.transaction((tx) =>
@@ -19064,7 +19063,7 @@ export const createEnterpriseService = ({
       Effect.gen(function* () {
         const ctx = yield* requireTenant(request, tenantId, "write");
         const existing = yield* getOrCreateEnrollment(ctx.organization.id);
-        const newId = id();
+        const newId = EnrollmentId.make();
         const timestamp = now();
 
         // Rotate by replacing the row, not by updating its primary key:
@@ -19347,7 +19346,7 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const attributeId = id();
+        const attributeId = AttributeId.make();
 
         yield* db.insert(schema.attributeDefinition).values({
           id: attributeId,
@@ -19652,7 +19651,7 @@ export const createEnterpriseService = ({
             );
 
           rows.push({
-            id: id(),
+            id: AuditId.make(),
             attributeId: definition.id,
             prompt,
             required: question.required ?? null,
@@ -20123,7 +20122,7 @@ export const createEnterpriseService = ({
               yield* tx
                 .insert(schema.enrollmentAnswer)
                 .values({
-                  id: id(),
+                  id: AuditId.make(),
                   organizationId: enrollment.organizationId,
                   enrollmentId: enrollment.id,
                   serial,
@@ -21257,7 +21256,7 @@ export const createEnterpriseService = ({
           authSecret,
         });
 
-        const archiveId = id();
+        const archiveId = ArchiveId.make();
         const expiresAt = new Date(at.getTime() + DEVICE_HANDOVER_TTL_MS);
         // Session ids are random, so two exports on the same day never collide
         // in a Downloads folder. The archive id is already public in the URL.
@@ -21719,7 +21718,7 @@ export const createEnterpriseService = ({
               };
             remainingCapacity -= 1;
 
-            const registrationId = id();
+            const registrationId = RegistrationId.make();
             yield* db.insert(schema.devicePreRegistration).values({
               id: registrationId,
               organizationId: ctx.organization.id,
@@ -26005,7 +26004,7 @@ export const createEnterpriseService = ({
         yield* assertResourcesScope(ctx, db, "group", body.childGroups ?? [], "A group");
         if (kind === "dynamic")
           yield* assertDynamicGroupReferences(ctx.organization.id, null, rules);
-        const groupId = id();
+        const groupId = GroupId.make();
         yield* db.insert(schema.enterpriseGroup).values({
           id: groupId,
           organizationId: ctx.organization.id,
@@ -26722,7 +26721,7 @@ export const createEnterpriseService = ({
         yield* assertResourceScope(ctx, db, "group", groupId, "This group");
 
         const body: { name?: string } = payload;
-        const newId = id();
+        const newId = GroupId.make();
         const kind = source.kind ?? "manual";
         yield* db.insert(schema.enterpriseGroup).values({
           id: newId,
@@ -26853,7 +26852,7 @@ export const createEnterpriseService = ({
         const escrowFingerprint =
           configurations.length > 0 ? yield* tenantEscrowFingerprint(ctx.organization.id) : null;
 
-        const policyId = id();
+        const policyId = PolicyId.make();
         const prepared = yield* preparePolicyConfigurations({
           policyId,
           entries: configurations,
@@ -29057,7 +29056,7 @@ export const createEnterpriseService = ({
             continue;
           }
 
-          const applicationId = id();
+          const applicationId = ApplicationId.make();
           const at = now();
 
           // The unique index on (organization, title, method) arbitrates a
@@ -29335,7 +29334,7 @@ export const createEnterpriseService = ({
           );
 
         const primary = yield* normaliseInstaller(inputs[0]);
-        const applicationId = id();
+        const applicationId = ApplicationId.make();
         const at = now();
 
         yield* db.insert(schema.application).values({
@@ -30864,7 +30863,7 @@ export const createEnterpriseService = ({
           const at = now();
 
           yield* db.insert(schema.applicationInstaller).values({
-            id: id(),
+            id: InstallerId.make(),
             organizationId: ctx.organization.id,
             applicationId,
             platform: existing?.platform ?? "apple",
@@ -31099,7 +31098,7 @@ export const createEnterpriseService = ({
         yield* assertResourceScope(ctx, db, "policy", policyId, "This policy");
 
         const body: { name?: string } = payload;
-        const newId = id();
+        const newId = PolicyId.make();
         yield* db.insert(schema.policy).values({
           id: newId,
           organizationId: ctx.organization.id,
@@ -31785,7 +31784,7 @@ export const createEnterpriseService = ({
             new EnterpriseConflict({ message: "You already have a view with that name." }),
           );
 
-        const viewId = id();
+        const viewId = ViewId.make();
         const timestamp = now();
         yield* db.insert(schema.deviceView).values({
           id: viewId,
@@ -31920,7 +31919,7 @@ export const createEnterpriseService = ({
         if (viewId !== null) {
           const timestamp = now();
           yield* db.insert(schema.deviceViewDefault).values({
-            id: id(),
+            id: ViewId.make(),
             organizationId: ctx.organization.id,
             accountId: ctx.account.id,
             viewId,
@@ -32003,7 +32002,7 @@ export const createEnterpriseService = ({
           .where(eq(schema.dashboard.organizationId, ctx.organization.id))
           .limit(1);
 
-        const dashboardId = id();
+        const dashboardId = DashboardId.make();
         const timestamp = now();
         yield* db.insert(schema.dashboard).values({
           id: dashboardId,
@@ -32025,7 +32024,7 @@ export const createEnterpriseService = ({
                 const layout = normalizeWidgetLayout(widget);
 
                 return {
-                  id: id(),
+                  id: DashboardId.make(),
                   organizationId: ctx.organization.id,
                   dashboardId,
                   type: widget.type,
@@ -32156,7 +32155,7 @@ export const createEnterpriseService = ({
           );
         const type = Schema.decodeUnknownSync(DashboardWidgetType)(body.type);
         const layout = normalizeWidgetLayout(body);
-        const widgetId = id();
+        const widgetId = WidgetId.make();
         const timestamp = now();
         yield* db.insert(schema.dashboardWidget).values({
           id: widgetId,
@@ -32433,7 +32432,7 @@ export const createEnterpriseService = ({
           );
 
         const timestamp = now();
-        const reportId = id();
+        const reportId = ReportId.make();
 
         const values = {
           id: reportId,
@@ -35618,7 +35617,7 @@ export const createEnterpriseService = ({
             }),
           );
 
-        const revision = id();
+        const revision = RevisionId.make();
         yield* db.transaction((tx) =>
           Effect.gen(function* () {
             yield* tx

@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { DeviceId } from "@mattrax/crypto";
 import { and, desc, eq, inArray, like, lt } from "drizzle-orm";
 import { Data, Effect, Option, Result, Schema } from "effect";
 import { Digest } from "effect/crypto";
@@ -187,7 +187,7 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 const now = () => new Date();
 
-const id = newId;
+const id = () => DeviceId.make();
 
 const iso = (value: Date | null | undefined) =>
   value == null ? null : (value instanceof Date ? value : new Date(value)).toISOString();

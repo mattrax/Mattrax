@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { InventoryRequestId } from "@mattrax/crypto";
 /**
  * Apple installed-application inventory scheduling.
  *
@@ -146,7 +146,7 @@ export const refreshAppleApplicationInventory = (
           );
 
           return {
-            id: newId(),
+            id: InventoryRequestId.make(),
             organizationId: device.organizationId,
             deviceId: device.id,
             requestType: APPLE_APPLICATION_INVENTORY_REQUEST_TYPE,

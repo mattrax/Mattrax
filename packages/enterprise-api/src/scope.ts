@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { AuditId } from "@mattrax/crypto";
 import { and, eq, inArray, or } from "drizzle-orm";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 import { Effect } from "effect";
@@ -153,7 +153,7 @@ export const assertResourceScope = (
       const { auditLog } = schema;
 
       yield* db.insert(auditLog).values({
-        id: newId(),
+        id: AuditId.make(),
         organizationId: ctx.organization.id,
         actorAccountId: ctx.account.id,
         actorEmail: ctx.account.email,

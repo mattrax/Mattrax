@@ -1,3 +1,4 @@
+import { AuditId, DeviceId, InvitationId, MemberId, ScepCaId, TenantId } from "@mattrax/crypto";
 import { newId } from "@mattrax/crypto";
 import { Effect } from "effect";
 import { eq, inArray } from "drizzle-orm";
@@ -614,7 +615,7 @@ export const importTenantCutover = (
             slug = organization.slug;
           } else {
             slug = analysis.resolvedSlug;
-            const id = newId();
+            const id = TenantId.make();
 
             // Re-check inside the write: preview ran outside it, so another
             // import could have claimed the slug in between.
@@ -646,7 +647,7 @@ export const importTenantCutover = (
             });
 
             yield* tx.insert(schema.member).values({
-              id: newId(),
+              id: MemberId.make(),
               organizationId: id,
               accountId: options.actor.accountId,
               role: "owner",
@@ -714,7 +715,7 @@ export const importTenantCutover = (
             let deviceId = bySerial?.id ?? device.key;
             const idTaken = targetIds.has(deviceId);
 
-            if (!bySerial && idTaken) deviceId = newId();
+            if (!bySerial && idTaken) deviceId = DeviceId.make();
 
             // Ids are random, but a collision with another tenant would make
             // the primary key fail after expensive work. Check it cheaply.
@@ -725,7 +726,7 @@ export const importTenantCutover = (
                 .where(eq(schema.device.id, deviceId))
                 .limit(1);
 
-              if (elsewhere) deviceId = newId();
+              if (elsewhere) deviceId = DeviceId.make();
             }
 
             deviceIdByKey.set(device.key, deviceId);
@@ -987,7 +988,7 @@ export const importTenantCutover = (
 
               if (previous)
                 yield* tx.insert(schema.scepCaTrust).ignore().values({
-                  id: newId(),
+                  id: ScepCaId.make(),
                   organizationId,
                   certPem: existingCa.certPem,
                   fingerprintSha256: previous.fingerprintSha256,
@@ -1037,7 +1038,7 @@ export const importTenantCutover = (
               // Keep the target CA signing, but trust the source CA so every
               // imported identity still authenticates on check-in and renewal.
               yield* tx.insert(schema.scepCaTrust).ignore().values({
-                id: newId(),
+                id: ScepCaId.make(),
                 organizationId,
                 certPem: payload.scepCa.certPem,
                 fingerprintSha256: sourceDescription.fingerprintSha256,
@@ -1059,7 +1060,7 @@ export const importTenantCutover = (
               // No signing CA is available, but the certificate alone is
               // enough to validate every imported identity's mTLS connection.
               yield* tx.insert(schema.scepCaTrust).ignore().values({
-                id: newId(),
+                id: ScepCaId.make(),
                 organizationId,
                 certPem: payload.scepCa.certPem,
                 fingerprintSha256: sourceDescription.fingerprintSha256,
@@ -1083,7 +1084,7 @@ export const importTenantCutover = (
               .insert(schema.scepCaTrust)
               .ignore()
               .values({
-                id: newId(),
+                id: ScepCaId.make(),
                 organizationId,
                 certPem: anchor.certPem,
                 fingerprintSha256: anchor.fingerprintSha256,
@@ -1228,7 +1229,7 @@ export const importTenantCutover = (
 
             if (accountId) {
               yield* tx.insert(schema.member).values({
-                id: newId(),
+                id: MemberId.make(),
                 organizationId,
                 accountId,
                 role: resolved.role,
@@ -1251,7 +1252,7 @@ export const importTenantCutover = (
 
             invitedEmails.add(email);
             yield* tx.insert(schema.invitation).values({
-              id: newId(),
+              id: InvitationId.make(),
               organizationId,
               inviterId: options.actor.accountId,
               email: member.email,
@@ -1301,7 +1302,7 @@ export const importTenantCutover = (
             );
 
             yield* tx.insert(schema.invitation).values({
-              id: newId(),
+              id: InvitationId.make(),
               organizationId,
               inviterId: options.actor.accountId,
               email: invitation.email,
@@ -1330,7 +1331,7 @@ export const importTenantCutover = (
             }
 
             yield* tx.insert(schema.auditLog).values({
-              id: newId(),
+              id: AuditId.make(),
               organizationId,
               actorAccountId: null,
               actorEmail: entry.actorEmail ?? null,
@@ -1351,7 +1352,7 @@ export const importTenantCutover = (
           }
 
           yield* tx.insert(schema.auditLog).values({
-            id: newId(),
+            id: AuditId.make(),
             organizationId,
             actorAccountId: options.actor.accountId,
             actorEmail: options.actor.email,

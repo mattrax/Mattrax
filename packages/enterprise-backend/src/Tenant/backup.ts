@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { AuditId, BackupId } from "@mattrax/crypto";
 import type { Schema } from "effect";
 import { Data, Effect } from "effect";
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
@@ -18,7 +18,6 @@ export const BACKUP_ERROR_MAX_LENGTH = 500;
 
 const day = 24 * 60 * 60 * 1000;
 
-const id = newId;
 
 const chunk = <T>(values: ReadonlyArray<T>, size: number): T[][] => {
   const chunks: T[][] = [];
@@ -143,7 +142,7 @@ const recordAudit = (
 ): Effect.Effect<void, never> =>
   Effect.gen(function* () {
     yield* db.insert(schema.auditLog).values({
-      id: id(),
+      id: AuditId.make(),
       organizationId,
       actorAccountId: actor?.accountId ?? null,
       actorEmail: actor?.email ?? null,
@@ -181,7 +180,7 @@ export const runTenantBackup = (
   Effect.gen(function* () {
     const startedAt = options.now ?? new Date();
     const retention = options.retention ?? "default";
-    const runId = id();
+    const runId = BackupId.make();
 
     yield* db.insert(schema.backupRun).values({
       id: runId,

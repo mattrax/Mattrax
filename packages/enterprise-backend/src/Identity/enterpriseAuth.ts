@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { EmailChangeId, RevisionId, TokenId } from "@mattrax/crypto";
 import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { Cause, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect";
 import {
@@ -1134,7 +1134,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const tokenHash = yield* sha256(raw);
 
           const item = {
-            id: newId(),
+            id: TokenId.make(),
             accountId: user.id,
             name,
             tokenPrefix: raw.slice(0, 12),
@@ -1250,7 +1250,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const now = DateTime.toDate(yield* DateTime.now);
           const confirmToken = randomToken();
           const cancelToken = randomToken();
-          const changeId = newId();
+          const changeId = EmailChangeId.make();
 
           // One live request per account: a new request supersedes any pending
           // one, which also invalidates its links.
@@ -1633,7 +1633,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           if (user.email.toLowerCase() !== pending.oldEmail.toLowerCase())
             return yield* Effect.fail(invalid);
 
-          const revision = newId();
+          const revision = RevisionId.make();
 
           yield* db
             .transaction((tx) =>

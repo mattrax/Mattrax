@@ -699,6 +699,7 @@ snapshots:
 		"packages/directory-sync": {
 			"name": "@mattrax/directory-sync",
 			"dependencies": {
+				"@mattrax/crypto": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"drizzle-orm": "catalog:",
 				"effect": "catalog:",

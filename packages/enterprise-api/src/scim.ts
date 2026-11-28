@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { GroupId, UserId } from "@mattrax/crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { Context, DateTime, Effect, Layer, Option, Schema } from "effect";
 import type { HttpServerRequest } from "effect/http";
@@ -65,7 +65,6 @@ const sha256 = (value: string) =>
     );
   });
 
-const id = newId;
 
 const now = () => DateTime.now.pipe(Effect.map(DateTime.toDate));
 
@@ -313,7 +312,7 @@ const createUser = (ctx: ScimContext, body: typeof ScimUserPayload.Type) =>
           );
         }
 
-        const userId = id();
+        const userId = UserId.make();
 
         yield* tx.insert(schema.user).values({
           id: userId,
@@ -565,7 +564,7 @@ const createGroup = (ctx: ScimContext, body: typeof ScimGroupPayload.Type) =>
     if (!name) return scimError(400, "displayName is required");
 
     const members = Array.isArray(body.members) ? body.members : [];
-    const groupId = id();
+    const groupId = GroupId.make();
 
     const result = yield* db.transaction((tx) =>
       Effect.gen(function* () {

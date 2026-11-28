@@ -9,6 +9,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "drizzle-orm": "catalog:",
     "effect": "catalog:"

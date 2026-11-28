@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { RecoveryId, RevisionId } from "@mattrax/crypto";
 import { Auth, Schema as AuthSchema, Sessions } from "@yielded/auth";
 import { AuthCredentialCommandCollector } from "@yielded/auth/Operations";
 import type { AuthInvocation } from "@yielded/auth/Operations";
@@ -87,7 +87,6 @@ const sha256 = (value: string) =>
 
 const tokenHash = (value: string) => sha256(value);
 
-const randomId = newId;
 
 const linkFor = (origin: string, path: string, token: string) =>
   `${origin}${path}?token=${encodeURIComponent(token)}`;
@@ -225,7 +224,7 @@ export const requestAccountRecovery = (
     const approvalToken = approvalOrganizationId ? randomRecoveryToken() : null;
 
     yield* deps.db.insert(schema.accountRecovery).values({
-      id: randomId(),
+      id: RecoveryId.make(),
       accountId: user.id,
       email: user.email,
       status: "pending_proof",
@@ -673,7 +672,7 @@ export const redeemRecoveryToken = (
 
     if (!user || user.disabled || !recoveryEmailMatches(record, user)) return undefined;
 
-    const revision = randomId();
+    const revision = RevisionId.make();
 
     const redeemed = yield* db.transaction((tx) =>
       Effect.gen(function* () {

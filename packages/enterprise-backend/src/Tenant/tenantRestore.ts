@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { ApplicationId, AuditId, DeploymentId, DirectoryUserId, GroupId, InstallerId, PolicyId, PreRegistrationId } from "@mattrax/crypto";
 import { Data, Effect, Option, Schema } from "effect";
 import { eq, inArray } from "drizzle-orm";
 import {
@@ -868,7 +868,7 @@ export const applyTenantBundle = (
       const policyIdByKey = new Map<string, string>();
 
       for (const policy of bundle.policies) {
-        const policyId = newId();
+        const policyId = PolicyId.make();
         policyIdByKey.set(policy.key, policyId);
         yield* tx.insert(schema.policy).values({
           id: policyId,
@@ -897,7 +897,7 @@ export const applyTenantBundle = (
         }
 
         yield* tx.insert(schema.policyDeployment).values({
-          id: newId(),
+          id: DeploymentId.make(),
           organizationId: organization.id,
           policyId,
           version: 1,
@@ -918,7 +918,7 @@ export const applyTenantBundle = (
 
       // Ids are generated up front so a rule can reference a group that is
       // inserted later in the same backup.
-      for (const group of bundle.groups) groupIdByKey.set(group.key, newId());
+      for (const group of bundle.groups) groupIdByKey.set(group.key, GroupId.make());
 
       for (const group of bundle.groups) {
         const groupId = groupIdByKey.get(group.key)!;
@@ -1013,7 +1013,7 @@ export const applyTenantBundle = (
       }
 
       for (const user of directoryUsersToCreate.values()) {
-        const id = newId();
+        const id = DirectoryUserId.make();
         yield* tx.insert(schema.user).values({
           id,
           organizationId: organization.id,
@@ -1238,7 +1238,7 @@ export const applyTenantBundle = (
       let applicationsWithoutFiles = 0;
 
       for (const application of bundle.applications) {
-        const applicationId = newId();
+        const applicationId = ApplicationId.make();
         applicationIdByKey.set(application.key, applicationId);
 
         // A bundle can only reference objects this tenant owns. Restore and
@@ -1309,7 +1309,7 @@ export const applyTenantBundle = (
           if (installer.source === "upload" && installerR2Key === null) missingObject = true;
 
           yield* tx.insert(schema.applicationInstaller).values({
-            id: newId(),
+            id: InstallerId.make(),
             organizationId: organization.id,
             applicationId,
             platform: installer.platform,
@@ -1442,7 +1442,7 @@ export const applyTenantBundle = (
         if (row.consumedDeviceKey && !consumedDeviceId) continue;
 
         yield* tx.insert(schema.devicePreRegistration).values({
-          id: newId(),
+          id: PreRegistrationId.make(),
           organizationId: organization.id,
           serial: row.serial,
           name: row.name,
@@ -1608,7 +1608,7 @@ export const restoreTenantFromBackup = (
 
     yield* Effect.gen(function* () {
       yield* db.insert(schema.auditLog).values({
-        id: newId(),
+        id: AuditId.make(),
         organizationId: organization.id,
         actorAccountId: options.actor.accountId,
         actorEmail: options.actor.email,

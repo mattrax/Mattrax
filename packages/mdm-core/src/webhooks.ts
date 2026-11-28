@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { WebhookDeliveryId, WebhookEventId } from "@mattrax/crypto";
 import { Cause, Data, Effect, identity, Layer, Option, Result, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest } from "effect/http";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
@@ -85,7 +85,7 @@ const RETENTION_DAYS = 30;
 
 const MAX_ATTEMPTS = 3;
 
-const newEventId = () => `evt_${newId()}`;
+const newEventId = () => WebhookEventId.make();
 
 const truncate = (value: string, max = MAX_ERROR_LENGTH) =>
   value.length <= max ? value : `${value.slice(0, max - 1)}…`;
@@ -366,7 +366,7 @@ const recordDelivery = (
   },
 ) =>
   Effect.gen(function* () {
-    const id = `whd_${newId()}`;
+    const id = WebhookDeliveryId.make();
 
     yield* db.insert(s.webhookDelivery).values({
       id,
@@ -448,7 +448,7 @@ export const enqueueWebhookEvent = (
       matching,
       (endpoint) =>
         Effect.gen(function* () {
-          const id = `whd_${newId()}`;
+          const id = WebhookDeliveryId.make();
           yield* db.insert(s.webhookDelivery).values({
             id,
             endpointId: endpoint.id,

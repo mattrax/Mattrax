@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { ApplicationId } from "@mattrax/crypto";
 import { and, eq } from "drizzle-orm";
 import { Effect, Layer, Option, Predicate, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
@@ -893,7 +893,7 @@ export const syncVppAssets = (input: {
 
       if (!catalogueEntry) {
         yield* input.db.insert(schema.application).values({
-          id: newId(),
+          id: ApplicationId.make(),
           organizationId: input.organizationId,
           name,
           platform: "apple",

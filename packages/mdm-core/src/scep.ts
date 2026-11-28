@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { ScepCaId } from "@mattrax/crypto";
 import { Effect, Layer, Option, Schema } from "effect";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
@@ -529,7 +529,7 @@ export class ScepRepositoryLive extends ScepRepository {
               .insert(schema.scepCaTrust)
               .ignore()
               .values({
-                id: newId(),
+                id: ScepCaId.make(),
                 organizationId: scope.organizationId,
                 certPem: previousRow.certPem,
                 fingerprintSha256: previous.fingerprintSha256,

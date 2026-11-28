@@ -1,3 +1,4 @@
+import { GroupId, UserId } from "@mattrax/crypto";
 import { Data, Effect } from "effect";
 import { and, eq, inArray } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
@@ -10,7 +11,6 @@ import type {
   DirectoryUserRecord,
 } from "./provider.js";
 
-const newId = () => crypto.randomUUID();
 
 /** Guards a runaway provider that never clears its next cursor. */
 export const DIRECTORY_SYNC_MAX_PAGES = 1000;
@@ -165,7 +165,7 @@ export const applyUserPage = (
 
       if (!existing) {
         yield* database.insert(schema.user).values({
-          id: newId(),
+          id: UserId.make(),
           organizationId,
           name,
           email,
@@ -253,7 +253,7 @@ export const applyGroupPage = (
       let groupId = existing?.id;
 
       if (!groupId) {
-        groupId = newId();
+        groupId = GroupId.make();
         yield* database.insert(schema.userGroup).values({
           id: groupId,
           organizationId,

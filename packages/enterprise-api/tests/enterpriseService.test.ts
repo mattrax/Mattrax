@@ -7113,7 +7113,7 @@ describe("device pre-registration", () => {
         name: "Alice Mac",
         assetTag: "AT-1",
         notes: "Front desk",
-        groupId: expect.stringMatching(/^[0-9a-f]{24}$/),
+        groupId: expect.stringMatching(/^gr_[0-9a-f]{24}$/),
         consumedDeviceId: null,
       },
     ]);

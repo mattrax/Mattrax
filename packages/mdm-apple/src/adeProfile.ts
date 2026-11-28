@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { AdeEnrollmentId } from "@mattrax/crypto";
 import { Effect, Schema } from "effect";
 import { eq } from "drizzle-orm";
 import { schema as s } from "@mattrax/enterprise-core";
@@ -33,7 +33,7 @@ export const getOrCreateEnterpriseEnrollment = (
     if (existing) return existing;
 
     const timestamp = new Date();
-    const enrollment = { id: newId(), organizationId, createdAt: timestamp, updatedAt: timestamp };
+    const enrollment = { id: AdeEnrollmentId.make(), organizationId, createdAt: timestamp, updatedAt: timestamp };
 
     yield* db.insert(s.enterpriseEnrollment).ignore().values(enrollment);
 

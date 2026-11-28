@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { CommandId, DeviceId, TokenId } from "@mattrax/crypto";
 import { Cause, Effect, Layer, Match, Option, Predicate, Schema } from "effect";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import {
@@ -230,8 +230,6 @@ export const OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID = "C6A1E9D4-3B72-4F58-8E0A-7
  * items from `statusItems.ts`; this export is the always-present subset.
  */
 export const DEVICE_INFORMATION_STATUS_ITEMS = DEVICE_INFORMATION_BASE_STATUS_ITEMS;
-
-const id = newId;
 
 /**
  * A serial-only Apple re-enrollment may reclaim a row the tenant already owns
@@ -5175,7 +5173,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     existingByUdid.dmIdentityFingerprint !== identityFingerprint)
                 )
                   return yield* Effect.fail(new UnknownDevice());
-                const deviceId = existing?.id ?? id();
+                const deviceId = existing?.id ?? DeviceId.make();
 
                 const preRegistrationMetadata: Partial<typeof s.device.$inferInsert> = {};
 
@@ -5287,7 +5285,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                     pushMagic: null,
                     topic: null,
                     unlockToken: null,
-                    deviceToken: id() + id(),
+                    deviceToken: TokenId.make() + TokenId.make(),
                     tokenUpdatedAt: null,
                   })
                   .onDuplicateKeyUpdate({
@@ -5298,7 +5296,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       pushMagic: null,
                       topic: null,
                       unlockToken: null,
-                      deviceToken: id() + id(),
+                      deviceToken: TokenId.make() + TokenId.make(),
                       tokenUpdatedAt: null,
                     },
                   });
@@ -5348,7 +5346,7 @@ export class ManagementBackendEnterpriseLive extends ManagementBackend {
                       const at = now();
 
                       yield* db.insert(s.deviceCommand).values({
-                        id: id(),
+                        id: CommandId.make(),
                         organizationId,
                         deviceId,
                         requestType,

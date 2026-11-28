@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { LoginAttemptId } from "@mattrax/crypto";
 import { Effect, Option, Predicate, Schema } from "effect";
 import { desc, eq, inArray, lt } from "drizzle-orm";
 import type { EnterpriseDb } from "@mattrax/enterprise-core";
@@ -49,7 +49,7 @@ export const LOGIN_ATTEMPT_IP_LIMIT = 64;
 
 export const LOGIN_ATTEMPT_EMAIL_LIMIT = 320;
 
-const loginAttemptId = newId;
+const loginAttemptId = () => LoginAttemptId.make();
 
 const bounded = (value: string | null | undefined, limit: number): string | null => {
   if (value === null || value === undefined) return null;

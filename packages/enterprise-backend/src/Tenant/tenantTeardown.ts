@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { JobId } from "@mattrax/crypto";
 import { Data, Effect, Match } from "effect";
 import { and, eq, lte, or } from "drizzle-orm";
 import { isUniqueViolationForConstraint, schema } from "@mattrax/enterprise-core";
@@ -256,7 +256,7 @@ export const teardownTenant = (
 
       jobId = existing.id;
     } else {
-      jobId = newId();
+      jobId = JobId.make();
 
       // The unique organization index is the cross-request claim for a new
       // job. A duplicate insert means another request won the race.

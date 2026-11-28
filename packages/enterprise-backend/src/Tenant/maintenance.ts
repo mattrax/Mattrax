@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { AuditId } from "@mattrax/crypto";
 import { Cause, Effect, Exit, Option, Schema } from "effect";
 import { and, asc, count, eq, gt, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
@@ -409,7 +409,7 @@ export const VPP_CLIENT_LOAD_FAILED =
 const describeFailure = (cause: unknown): string =>
   cause instanceof Error ? `${cause.name}: ${cause.message}` : String(cause);
 
-const id = newId;
+const id = () => AuditId.make();
 
 /** Audit action recorded once per organisation per threshold per day. */
 export const CREDENTIAL_ALERT_ACTION = "credentials.expiry_warning";

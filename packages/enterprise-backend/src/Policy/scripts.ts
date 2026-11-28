@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { ExecutionId, ScriptId } from "@mattrax/crypto";
 import { Effect, Option, Schema } from "effect";
 import { and, asc, desc, eq, inArray, lt } from "drizzle-orm";
 import { schema as s } from "@mattrax/enterprise-core";
@@ -442,7 +442,7 @@ export const createScript = (
 
     if ("problem" in built) return built;
 
-    const id = newId();
+    const id = ScriptId.make();
 
     yield* db.insert(s.script).values({
       id,
@@ -776,7 +776,7 @@ export const queueScriptRun = (
         },
       };
 
-    const executionId = newId();
+    const executionId = ExecutionId.make();
 
     yield* db
       .insert(s.scriptExecution)
@@ -1183,7 +1183,7 @@ export const recordScriptAgentResult = (
 
         const executionId = claimedRow
           ? input.runId
-          : newId();
+          : ExecutionId.make();
 
         const values = {
           status,

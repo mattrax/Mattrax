@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { DeviceId } from "@mattrax/crypto";
 import { Cause, Effect, Option, Predicate, Schema } from "effect";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { DN } from "./ldapjs-dn.js";
@@ -979,7 +979,7 @@ export const createWindowsBackend = (options: WindowsBackendOptions): WindowsBac
       });
     });
 
-  const newDeviceId = newId;
+  const newDeviceId = () => DeviceId.make();
 
   const insertDevice = (input: {
     readonly id: string;

@@ -1,4 +1,4 @@
-import { newId } from "@mattrax/crypto";
+import { AuditId, ViolationId } from "@mattrax/crypto";
 /**
  * Restricted-software evaluation against the installed-application inventory.
  *
@@ -50,9 +50,8 @@ export type RestrictedSoftwareRuleSet = {
 const appleDeviceIsMac = (row: { readonly osEdition?: string | null }): boolean =>
   row.osEdition?.toLowerCase().includes("macos") ?? false;
 
-const auditId = newId;
+const auditId = () => AuditId.make();
 
-const violationId = newId;
 
 const writeDeviceAudit = (
   db: EnterpriseDb,
@@ -299,7 +298,7 @@ export const reconcileRestrictedSoftwareForDevice = (
       const enforcement = enforcementFor(rule.platform, rule.action, deviceRow);
 
       if (!prior) {
-        const id = violationId();
+        const id = ViolationId.make();
 
         yield* db.insert(restrictedSoftwareViolation).values({
           id,
