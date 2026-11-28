@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { and, asc, eq, gte, isNull, lte } from "drizzle-orm";
 import { DEFAULT_BRAND_COLOR } from "@mattrax/enterprise-domain";
 import { Context, Effect, Layer, Option, Ref, Schema } from "effect";
@@ -138,7 +139,7 @@ const resolveReplyTo = (
     return address === value.email.trim() ? value : address;
   });
 
-const auditId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const auditId = newId;
 
 /**
  * Clear a claim only if it is still ours. A conditional unset keeps a lost

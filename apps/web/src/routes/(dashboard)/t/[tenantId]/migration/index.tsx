@@ -14,9 +14,9 @@ import {
   formatDate,
 } from "~/components/mdm/common";
 import { Checkbox, Progress } from "@mattrax/ui";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { FleetMigrationSummary } from "~/lib/enterprise";

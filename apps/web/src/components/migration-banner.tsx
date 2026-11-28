@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/solid-query";
 import { isServer } from "@solidjs/web";
 import { createSignal, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { ArrowRightLeft, X } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import {

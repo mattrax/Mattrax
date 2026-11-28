@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { Effect } from "effect";
 import {
@@ -367,7 +368,7 @@ export const createRestrictedSoftware = (
     if (duplicate.length > 0)
       return { problem: "A rule for this identifier already exists on this platform." };
 
-    const id = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+    const id = newId();
 
     yield* db.insert(s.restrictedSoftware).values({
       id,

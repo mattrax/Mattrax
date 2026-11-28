@@ -1,4 +1,4 @@
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 
 /**
  * The six-digit code input shared by sign-up and the standalone verification

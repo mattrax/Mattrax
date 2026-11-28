@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Auth, Schema as AuthSchema, Sessions } from "@yielded/auth";
 import { AuthCredentialCommandCollector } from "@yielded/auth/Operations";
 import type { AuthInvocation } from "@yielded/auth/Operations";
@@ -86,7 +87,7 @@ const sha256 = (value: string) =>
 
 const tokenHash = (value: string) => sha256(value);
 
-const randomId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const randomId = newId;
 
 const linkFor = (origin: string, path: string, token: string) =>
   `${origin}${path}?token=${encodeURIComponent(token)}`;

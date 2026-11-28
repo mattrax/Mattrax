@@ -16,7 +16,7 @@ import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import type { DashboardWidget } from "~/lib/enterprise";
 import { cn } from "~/lib/utils";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 
 const CHART_COLORS = [
   "var(--chart-1)",

@@ -29,9 +29,9 @@ import {
 } from "solid-js";
 import { isServer } from "@solidjs/web";
 import type { JSX } from "@solidjs/web";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import {
   Card,
   CardAction,

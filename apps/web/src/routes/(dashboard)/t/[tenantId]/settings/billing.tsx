@@ -6,8 +6,8 @@ import { useMutation, useQuery } from "@tanstack/solid-query";
 import { createEffect, createUniqueId, For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
-import { LoadingState } from "~/components/ui";
-import { Button } from "~/components/ui/button";
+import { LoadingState } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import {
   ArrowUpRight,
   Building2,

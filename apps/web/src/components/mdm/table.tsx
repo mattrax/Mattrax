@@ -10,7 +10,7 @@ import {
 } from "solid-js";
 import { useNavigate } from "~/lib/navigation";
 import type { JSX } from "@solidjs/web";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -18,8 +18,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "~/components/ui/dropdown-menu";
-import { Input } from "~/components/ui/input";
+} from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import {
   ChevronDown,
   ChevronsUpDown,
@@ -27,7 +27,7 @@ import {
   Search as SearchIcon,
 } from "~/components/ui/icons";
 import { Checkbox, EmptyState, Kbd, LoadingState, Skeleton } from "@mattrax/ui";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@mattrax/ui";
 import { announce } from "~/components/toast";
 import { chord, sequence, useCommands } from "~/lib/commands";
 import { applyRangeSelection, shouldOfferAllMatching } from "~/lib/table-selection";

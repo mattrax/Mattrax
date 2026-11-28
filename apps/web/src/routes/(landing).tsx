@@ -2,7 +2,7 @@ import { useLocation } from "@solidjs/router";
 import { raisedFailure } from "~/lib/errors";
 import { Errored, Show } from "solid-js";
 import type { ParentProps } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import BrandLogo from "~/components/brand-logo";
 import { PageErrorFallback } from "~/components/error-boundary";
 import UserDropdown from "~/components/user-dropdown";

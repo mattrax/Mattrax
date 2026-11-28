@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Data, Effect, Option, Schema } from "effect";
 import { eq, inArray } from "drizzle-orm";
 import {
@@ -708,7 +709,6 @@ export const parseTenantRestoreBundle = (
     ),
   );
 
-const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 const hashJson = (value: Schema.Json) =>
   Effect.promise(() =>

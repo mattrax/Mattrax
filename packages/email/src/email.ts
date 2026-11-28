@@ -137,7 +137,6 @@ export const formatEmailAddress = (address: EmailAddress): string => {
   return `"${name.replaceAll(/(["\\])/g, String.raw`\$1`)}" <${address.email}>`;
 };
 
-/** Normalise Reply-To into the bare or named form provider APIs accept. */
 export const replyToAddress = (replyTo: EmailReplyTo): EmailAddress =>
   Schema.is(Schema.String)(replyTo)
     ? { name: DEFAULT_EMAIL_FROM.name, email: replyTo }

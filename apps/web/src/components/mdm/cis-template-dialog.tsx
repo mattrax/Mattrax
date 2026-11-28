@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -8,9 +8,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 import { Check, Info, ShieldCheck } from "~/components/ui/icons";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import { Progress , Checkbox } from "@mattrax/ui";
 import { loadCollection } from "~/lib/policy-designer/catalog";
 import type { Collection, PlatformId } from "~/lib/policy-designer/catalog";

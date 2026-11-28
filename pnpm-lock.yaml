@@ -442,6 +442,7 @@ snapshots:
 				"@mattrax/azure-graph": "workspace:*",
 				"@mattrax/azure-oidc": "workspace:*",
 				"@mattrax/cloud-services": "workspace:*",
+				"@mattrax/crypto": "workspace:*",
 				"@mattrax/dm-apple": "workspace:*",
 				"@mattrax/dm-windows": "workspace:*",
 				"@mattrax/effect-stripe": "workspace:*",
@@ -648,6 +649,7 @@ snapshots:
 			"name": "@mattrax/cloud-services",
 			"dependencies": {
 				"@mattrax/azure-oidc": "workspace:*",
+				"@mattrax/crypto": "workspace:*",
 				"@mattrax/dm-android": "workspace:*",
 				"@mattrax/email": "workspace:*",
 				"@mattrax/enterprise-backend": "workspace:*",
@@ -869,6 +871,7 @@ snapshots:
 		"packages/enterprise-billing": {
 			"name": "@mattrax/enterprise-billing",
 			"dependencies": {
+				"@mattrax/crypto": "workspace:*",
 				"@mattrax/effect-stripe": "workspace:*",
 				"@mattrax/enterprise-core": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
@@ -886,6 +889,7 @@ snapshots:
 			"name": "@mattrax/enterprise-core",
 			"dependencies": {
 				"@effect/sql-mysql2": "catalog:",
+				"@mattrax/crypto": "workspace:*",
 				"@mattrax/enterprise-domain": "workspace:*",
 				"@mattrax/management-backend": "workspace:*",
 				"@yielded/auth": "catalog:",

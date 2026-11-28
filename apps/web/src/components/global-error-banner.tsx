@@ -2,7 +2,7 @@ import { Show } from "solid-js";
 import { errorPresentation } from "~/lib/errors";
 import { dismissGlobalError, globalError } from "~/lib/global-errors";
 import { CircleAlert, X } from "~/components/ui/icons";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 
 /**
  * Last-resort display for mutation failures. Individual forms still render

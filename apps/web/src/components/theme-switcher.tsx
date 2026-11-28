@@ -3,7 +3,7 @@ import { cn } from "~/lib/utils";
 import { resolvedTheme, setThemePreference, themePreference, THEME_PREFERENCES } from "~/lib/theme";
 import type { ThemePreference } from "~/lib/theme";
 import { Monitor, Moon, Sun } from "~/components/ui/icons";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 
 const LABELS: Record<ThemePreference, string> = {
   system: "System",

@@ -12,11 +12,11 @@ import {
   useDashboardWidgetBatch,
 } from "~/components/dashboard/widget";
 import { DeviceQueryBuilder } from "~/components/dashboard/query-builder";
-import { Badge } from "~/components/ui/badge";
+import { Badge } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { toast } from "~/components/toast";
 import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -24,9 +24,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 import { BookOpen, GripVertical, Plus, Star, X } from "~/components/ui/icons";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { DashboardWidget, DashboardWidgetType } from "~/lib/enterprise";
 import { errorMessage, raisedFailure } from "~/lib/errors";

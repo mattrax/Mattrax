@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Effect, Option, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { and, eq } from "drizzle-orm";
@@ -54,9 +55,9 @@ export const ensureCredential = (db: EnterpriseDb, subjectId: string) =>
       .insert(authCredentials)
       .ignore()
       .values({
-        credentialId: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
+        credentialId: newId(),
         subjectId,
-        revision: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
+        revision: newId(),
         active: true,
       });
   }).pipe(Effect.catch(() => Effect.void));
@@ -254,9 +255,9 @@ export const resolveSsoAccount = (input: {
     } else {
       if (!input.autoProvision) return yield* fail("provisioning_disabled", "unknown_account");
 
-      const accountId = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+      const accountId = newId();
       const timestamp = new Date();
-      const memberId = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+      const memberId = newId();
 
       yield* db.insert(schema.account).values({
         id: accountId,
@@ -265,7 +266,7 @@ export const resolveSsoAccount = (input: {
         emailVerified: true,
         image: null,
         disabled: false,
-        authRevision: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
+        authRevision: newId(),
         createdAt: timestamp,
         updatedAt: timestamp,
       });

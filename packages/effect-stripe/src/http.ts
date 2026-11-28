@@ -10,7 +10,6 @@ import {
 /** Stripe calls are usually sub-second; a hung one must not pin the request. */
 export const STRIPE_REQUEST_TIMEOUT_MS = 15_000;
 
-/** Retry transient failures at most twice after the initial attempt. */
 export const STRIPE_MAX_NETWORK_RETRIES = 2;
 
 const OptionalString = Schema.optional(Schema.NullOr(Schema.String));

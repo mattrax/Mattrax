@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Effect, Schema } from "effect";
 import { eq } from "drizzle-orm";
 import { schema as s } from "@mattrax/enterprise-core";
@@ -11,7 +12,6 @@ import { ScepError } from "@mattrax/scep";
 /** Default lifetime of the one-time challenge in an ADE/install profile. */
 export const ADE_ENROLLMENT_PROFILE_TTL_SECONDS = 60 * 60;
 
-const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 /**
  * The tenant's enrollment row, creating it when the tenant has never issued an

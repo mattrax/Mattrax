@@ -1,6 +1,5 @@
 import { Effect, Schema } from "effect";
 
-/** A token could not be encoded, verified or decoded. */
 export class TokenError extends Schema.TaggedError<TokenError>()("TokenError", {
   message: Schema.String,
   reason: Schema.Literals(["malformed", "invalid_signature", "invalid_payload", "crypto"]),

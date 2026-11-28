@@ -4,13 +4,13 @@ import { Option, Schema } from "effect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
-import { LoadingState } from "~/components/ui";
+import { LoadingState } from "@mattrax/ui";
 import SetupNotice from "~/components/settings/setup-notice";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { errorMessage, raisedFailure } from "~/lib/errors";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { Checkbox } from "@mattrax/ui";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import {
   Boxes,
   CheckCircle2,

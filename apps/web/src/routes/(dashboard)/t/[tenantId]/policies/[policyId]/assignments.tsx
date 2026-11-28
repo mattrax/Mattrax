@@ -14,9 +14,9 @@ import {
   QueryError,
 } from "~/components/mdm/common";
 import PolicyViewTabs from "~/components/mdm/policy-view-tabs";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { Search } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { DeviceRow } from "~/lib/enterprise";

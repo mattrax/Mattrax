@@ -13,8 +13,8 @@ import {
   Panel,
   formatDate,
 } from "~/components/mdm/common";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import {
   ArrowUpRight,
   Laptop,

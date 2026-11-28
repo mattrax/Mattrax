@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { Match } from "effect";
 import { createSignal, For, Show } from "solid-js";
 import { toast } from "~/components/toast";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -11,8 +11,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
+} from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { ErrorText } from "./common";
 import { DeviceHandoverDialog } from "./device-handover-dialog";
 import { useCan } from "~/lib/permissions";

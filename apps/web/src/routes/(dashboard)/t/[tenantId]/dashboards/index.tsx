@@ -13,7 +13,7 @@ import {
 } from "~/components/mdm/common";
 import { DashboardWidgetBatchProvider } from "~/components/dashboard/widget";
 import DashboardPreview from "~/components/dashboard/preview";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -22,7 +22,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,7 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@mattrax/ui";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import { ScopeTagSelect } from "~/components/scope-tags/scope-tag-select";
 import {
   ChevronDown,

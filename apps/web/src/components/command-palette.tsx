@@ -4,7 +4,7 @@ import { useNavigate } from "~/lib/navigation";
 import { Option, Schema } from "effect";
 import { useQuery } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, onCleanup, onSettled, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { useTenantRouteParams } from "~/lib/route-params";
 import { routes } from "~/lib/routes";
 import {
@@ -51,7 +51,7 @@ import {
 } from "~/components/settings/settings-tabs";
 import type { SettingsTabId } from "~/components/settings/settings-tabs";
 import { cn } from "~/lib/utils";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 
 const RECENTS_KEY = "mattrax:recents";
 

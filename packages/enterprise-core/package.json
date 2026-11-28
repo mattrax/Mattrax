@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@effect/sql-mysql2": "catalog:",
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",
     "@mattrax/management-backend": "workspace:*",
     "@yielded/auth": "catalog:",

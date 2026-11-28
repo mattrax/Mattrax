@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import type { TenantOnboardingState } from "@mattrax/enterprise-domain/client";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
-import { Badge } from "~/components/ui/badge";
+import { Badge } from "@mattrax/ui";
 import { BookOpen, Check, ChevronRight, Sparkles, X } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import {
@@ -24,7 +24,7 @@ import type { TenantPermissionsApi } from "~/lib/permissions";
 import { supportUrl } from "~/lib/support-config-store";
 import { cn } from "~/lib/utils";
 import { resolveTenantId } from "~/lib/tenant";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 
 /**
  * The in-product onboarding path for a new tenant.

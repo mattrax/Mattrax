@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Data, Effect, Option, Schema } from "effect";
 import { and, eq, isNull } from "drizzle-orm";
 import { HttpRouter, HttpServerResponse } from "effect/http";
@@ -458,7 +459,7 @@ const applySubscription = (input: ApplySubscriptionInput) =>
         return yield* Effect.fail(fail("Stripe subscription is no longer current for this tenant"));
     } else {
       yield* input.db.insert(schema.subscription).values({
-        id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
+        id: newId(),
         ...values,
         entitlementRevision: 1,
         createdAt: input.now,

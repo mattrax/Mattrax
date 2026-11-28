@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { and, eq, inArray, or } from "drizzle-orm";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 import { Effect } from "effect";
@@ -25,7 +26,6 @@ export type ScopeContext = {
   readonly userAgent?: string | null;
 };
 
-const newId = () => globalThis.crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 /**
  * Refuse a surface that can only be computed tenant-wide.

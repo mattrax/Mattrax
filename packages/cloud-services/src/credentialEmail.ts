@@ -1,6 +1,5 @@
 import type { CredentialExpiryNotification } from "@mattrax/enterprise-backend";
 
-/** Sender used by every transactional email in the hosted Cloud app. */
 export const CREDENTIAL_EMAIL_FROM = "hello@mattrax.cloud";
 
 export type CredentialExpiryEmail = {

@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import type { Schema } from "effect";
 import { Data, Effect } from "effect";
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
@@ -17,7 +18,7 @@ export const BACKUP_ERROR_MAX_LENGTH = 500;
 
 const day = 24 * 60 * 60 * 1000;
 
-const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const id = newId;
 
 const chunk = <T>(values: ReadonlyArray<T>, size: number): T[][] => {
   const chunks: T[][] = [];

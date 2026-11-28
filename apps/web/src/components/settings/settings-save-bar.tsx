@@ -2,7 +2,7 @@ import { Portal } from "@solidjs/web";
 import { DotMatrix } from "@mattrax/ui";
 import { createSignal, Show } from "solid-js";
 import { ErrorText } from "~/components/mdm/common";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -10,9 +10,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 import { CheckCircle2, TriangleAlert } from "~/components/ui/icons";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import type { TenantProfileDraft } from "./tenant-profile-draft";
 
 /** One explicit save point for the tenant profile, shared by every settings pane. */

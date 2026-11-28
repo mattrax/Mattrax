@@ -19,7 +19,7 @@ import {
   QueryError,
 } from "~/components/mdm/common";
 import OsComplianceTag from "~/components/os-compliance-badge";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { toast } from "~/components/toast";

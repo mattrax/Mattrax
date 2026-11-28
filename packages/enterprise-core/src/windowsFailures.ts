@@ -15,7 +15,6 @@ import type { WindowsFailurePhase as CanonicalWindowsFailurePhase } from "@mattr
 import type { EnterpriseDb } from "./db.ts";
 import { windowsFailure } from "./schema.ts";
 
-/** Where in the Windows protocol a request failed. */
 export type WindowsFailurePhase = CanonicalWindowsFailurePhase;
 
 type Equal<Left, Right> =

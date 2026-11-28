@@ -1,6 +1,6 @@
 import { ArrowRight } from "@mattrax/ui";
 import { For, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { authClient } from "~/lib/auth";
 import { installHeroProgress } from "~/lib/landing-motion";
 import { publicPrimaryCta } from "~/lib/public-auth-cta";

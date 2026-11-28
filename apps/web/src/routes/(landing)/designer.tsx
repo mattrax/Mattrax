@@ -1,5 +1,5 @@
 import { lazy, Loading } from "solid-js";
-import { LoadingState } from "~/components/ui";
+import { LoadingState } from "@mattrax/ui";
 
 const LazyPolicyDesigner = lazy(() => import("~/components/mdm/policy-designer"));
 

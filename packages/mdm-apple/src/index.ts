@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Cause, Effect, Layer, Match, Option, Predicate, Schema } from "effect";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import {
@@ -230,7 +231,7 @@ export const OS_UPDATE_ENFORCEMENT_CONFIGURATION_ID = "C6A1E9D4-3B72-4F58-8E0A-7
  */
 export const DEVICE_INFORMATION_STATUS_ITEMS = DEVICE_INFORMATION_BASE_STATUS_ITEMS;
 
-const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const id = newId;
 
 /**
  * A serial-only Apple re-enrollment may reclaim a row the tenant already owns

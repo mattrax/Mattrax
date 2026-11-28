@@ -30,6 +30,7 @@
     "@mattrax/azure-graph": "workspace:*",
     "@mattrax/azure-oidc": "workspace:*",
     "@mattrax/cloud-services": "workspace:*",
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/dm-apple": "workspace:*",
     "@mattrax/dm-windows": "workspace:*",
     "@mattrax/effect-stripe": "workspace:*",

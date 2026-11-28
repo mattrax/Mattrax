@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@mattrax/ui";
-import { Badge } from "~/components/ui/badge";
+import { Badge } from "@mattrax/ui";
 import {
   Breadcrumb,
   BreadcrumbEllipsis,
@@ -30,7 +30,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "~/components/ui/breadcrumb";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import {
   CheckCircle2,
   ChevronRight,
@@ -40,8 +40,8 @@ import {
   Smartphone,
   TabletSmartphone,
 } from "~/components/ui/icons";
-import Skeleton from "~/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { Skeleton } from "@mattrax/ui";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@mattrax/ui";
 import { buildBreadcrumbs } from "~/lib/breadcrumbs";
 import { errorPresentation, raisedFailure } from "~/lib/errors";
 import { cn } from "~/lib/utils";

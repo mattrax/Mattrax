@@ -15,8 +15,8 @@ import {
   relativeTime,
 } from "~/components/mdm/common";
 import { toast } from "~/components/toast";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { ScriptInfo } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";

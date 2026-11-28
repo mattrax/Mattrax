@@ -1,11 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
 import { cn } from "~/lib/utils";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 
 export type ScopeTagResourceType =
   | "device"

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/solid-query";
 import { DEVICE_MISSING_AFTER_DAYS } from "@mattrax/enterprise-domain/client";
 import { isServer } from "@solidjs/web";
 import { createSignal, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { CircleAlert, X } from "~/components/ui/icons";
 import { missingDeviceCount } from "~/lib/device-health";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";

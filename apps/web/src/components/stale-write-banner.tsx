@@ -1,4 +1,4 @@
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 
 /**
  * Inline resolution for a 412 conflict. The editor keeps its draft; the

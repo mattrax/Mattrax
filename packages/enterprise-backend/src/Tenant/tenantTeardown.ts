@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Data, Effect, Match } from "effect";
 import { and, eq, lte, or } from "drizzle-orm";
 import { isUniqueViolationForConstraint, schema } from "@mattrax/enterprise-core";
@@ -138,7 +139,6 @@ export type TenantTeardownOptions = {
   readonly now?: () => Date;
 };
 
-const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 /**
  * MySQL reports the unique organization index as `ER_DUP_ENTRY`/1062. Losing

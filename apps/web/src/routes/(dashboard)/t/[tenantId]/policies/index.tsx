@@ -15,10 +15,10 @@ import { EntityQueryBar, formatEntityQuery, parseEntityQuery } from "~/component
 import type { EntityCondition, EntityField } from "~/components/mdm/entity-query";
 import { MdmTable } from "~/components/mdm/table";
 import type { MdmSortState } from "~/components/mdm/table";
-import { Button } from "~/components/ui/button";
-import { Badge } from "~/components/ui/badge";
+import { Button } from "@mattrax/ui";
+import { Badge } from "@mattrax/ui";
 import { ShieldCheck } from "~/components/ui/icons";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@mattrax/ui";
 import { enterprise } from "~/lib/enterprise";
 import type { PolicyRow } from "~/lib/enterprise";
 import {

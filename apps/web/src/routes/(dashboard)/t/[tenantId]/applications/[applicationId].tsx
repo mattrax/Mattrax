@@ -20,10 +20,10 @@ import {
   QueryError,
   relativeTime,
 } from "~/components/mdm/common";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import { CircleAlert } from "~/components/ui/icons";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import type { ApplicationRow, DeviceRow, GroupRow } from "~/lib/enterprise";

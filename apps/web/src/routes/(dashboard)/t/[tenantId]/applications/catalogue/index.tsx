@@ -10,9 +10,9 @@ import {
   Panel,
   QueryError,
 } from "~/components/mdm/common";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { ArrowRightLeft, Package, Search, X } from "~/components/ui/icons";
 import { formatCatalogueVerifiedAt } from "~/lib/catalogue-date";
 import { enterpriseQueries } from "~/lib/enterprise";

@@ -2,7 +2,7 @@ import { Badge } from "@mattrax/ui";
 import type { JSX } from "@solidjs/web";
 import { Show } from "solid-js";
 import type { OsComplianceInfo } from "@mattrax/enterprise-domain/client";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@mattrax/ui";
 import { osComplianceLabel, osComplianceReasonText, osComplianceTone } from "~/lib/os-compliance";
 
 /**

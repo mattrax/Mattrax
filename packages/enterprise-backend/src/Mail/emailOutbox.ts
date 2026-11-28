@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { and, asc, eq, inArray, isNull, lt, lte, or } from "drizzle-orm";
 import { Effect, Option, Schema } from "effect";
 import { ACCOUNT_AUDIT } from "../Account/accountAudit.ts";
@@ -111,7 +112,7 @@ export type EnqueueEmailInput = {
 
 export type EnqueueEmailOutcome = "queued" | "duplicate" | "failed";
 
-const outboxId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const outboxId = newId;
 
 /**
  * One-line, secret-free failure description. Provider adapters only ever throw

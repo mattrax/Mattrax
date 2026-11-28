@@ -1,9 +1,9 @@
 import type { ComponentProps } from "@solidjs/web";
 import { isServer } from "@solidjs/web";
 import { createSignal, isHydrating, onHydrationEnd, Show } from "solid-js";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import { Eye, EyeOff } from "~/components/ui/icons";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 
 type EnrollmentPasswordInputProps = Omit<ComponentProps<"input">, "type">;
 

@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Effect } from "effect";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { schema as s } from "@mattrax/enterprise-core";
@@ -57,7 +58,7 @@ type ExecutionRow = typeof s.scriptExecution.$inferSelect;
 
 const iso = (value: Date | null | undefined) => (value ? value.toISOString() : null);
 
-const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const id = newId;
 
 // SAFETY: both columns are SQL enums, so every stored value is one of the
 // literals; the casts only restore the type the column enum erases.

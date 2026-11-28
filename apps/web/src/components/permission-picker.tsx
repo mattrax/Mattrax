@@ -1,8 +1,8 @@
 import { For } from "solid-js";
 import { PERMISSIONS, PERMISSION_GROUPS } from "@mattrax/enterprise-domain/client";
 import type { Permission } from "@mattrax/enterprise-domain/client";
-import { Input } from "~/components/ui/input";
-import { Button } from "~/components/ui/button";
+import { Input } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 
 type Level = "none" | "read" | "write";
 

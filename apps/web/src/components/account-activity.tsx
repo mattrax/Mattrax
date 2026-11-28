@@ -4,8 +4,8 @@ import type { InfiniteData } from "@tanstack/solid-query";
 import { Option, Schema } from "effect";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { ErrorText, Panel } from "~/components/mdm/common";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 import type {
   AccountAuditEntry,

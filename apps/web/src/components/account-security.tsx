@@ -1,12 +1,12 @@
 import { createSignal, For, onSettled, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import QrCode from "~/components/mdm/qr-code";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { CircleAlert, ShieldCheck } from "~/components/ui/icons";
 import { authClient } from "~/lib/auth";
 import { errorMessage } from "~/lib/errors";
 import { cn } from "~/lib/utils";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 
 const inputClass =
   "h-9 w-full min-w-0";

@@ -8,8 +8,8 @@ import {
   Checkbox,
 } from "@mattrax/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { ErrorText, Field, Panel } from "~/components/mdm/common";
 import type { ScriptEnvironmentEntry, ScriptTrigger } from "@mattrax/enterprise-domain/client";
 import {

@@ -58,9 +58,4 @@ export const loadCertificateMaterials = (
     return materials;
   });
 
-/** Convenience accessor used by the delivery paths. */
-export const materialForConfiguration = (
-  materials: ReadonlyMap<string, PolicyCertificateMaterial>,
-  entry: CertificateMaterialEntry,
-): PolicyCertificateMaterial | null =>
-  materials.get(certificateMaterialKey(entry.policyId, entry.kind)) ?? null;
+

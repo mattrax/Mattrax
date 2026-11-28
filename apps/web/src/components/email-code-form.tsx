@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, onSettled, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import EmailCodeField from "~/components/email-code-field";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 

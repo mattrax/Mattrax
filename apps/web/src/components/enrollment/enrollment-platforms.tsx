@@ -3,8 +3,8 @@ import { createSignal, For, Match, Show, Switch } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import { getRequestEvent, isServer } from "@solidjs/web";
 import QrCode from "~/components/mdm/qr-code";
-import { Button } from "~/components/ui/button";
-import { Input, Label } from "~/components/ui/input";
+import { Button } from "@mattrax/ui";
+import { Input, Label } from "@mattrax/ui";
 import {
   ChevronRight,
   CircleAlert,

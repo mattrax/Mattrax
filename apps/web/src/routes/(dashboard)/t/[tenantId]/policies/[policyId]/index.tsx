@@ -25,11 +25,11 @@ import MobileconfigPreview from "~/components/mdm/mobileconfig-preview";
 import PolicyProgressBar from "~/components/mdm/policy-progress";
 import PolicyViewTabs from "~/components/mdm/policy-view-tabs";
 import { ScopeTagAssignmentEditor } from "~/components/scope-tags/scope-tag-select";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
-import { Input } from "~/components/ui/input";
-import PasswordInput from "~/components/ui/password-input";
+import { Input } from "@mattrax/ui";
+import { PasswordInput } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +37,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 import {
   Activity,
   ChevronDown,

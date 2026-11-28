@@ -3,7 +3,7 @@ import type { JSX } from "@solidjs/web";
 import { Show } from "solid-js";
 import type { SoftwareUpdateInfo } from "@mattrax/enterprise-domain/client";
 import { softwareUpdateReason } from "@mattrax/enterprise-domain/client";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@mattrax/ui";
 import { softwareUpdateLabel } from "~/lib/software-updates";
 
 const tone = (info: SoftwareUpdateInfo) => {

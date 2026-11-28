@@ -1,4 +1,4 @@
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 
 export default function Page() {
   return (

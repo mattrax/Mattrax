@@ -7,7 +7,7 @@ import { Match } from "effect";
 import { createSignal, onSettled, Show } from "solid-js";
 import EmailCodeForm from "~/components/email-code-form";
 import { authClient } from "~/lib/auth";
-import { Spinner } from "~/components/ui";
+import { Spinner } from "@mattrax/ui";
 
 const primaryLink =
   "inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors duration-(--duration-hover) ease-swift hover:bg-primary/90";

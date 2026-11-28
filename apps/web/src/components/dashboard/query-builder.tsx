@@ -12,7 +12,7 @@ import {
   SlidersHorizontal,
   UsersRound,
 } from "~/components/ui/icons";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import { formatDeviceQueryText, parseDeviceQueryText } from "~/lib/enterprise";
 
 type FieldKind = "text" | "number" | "select";

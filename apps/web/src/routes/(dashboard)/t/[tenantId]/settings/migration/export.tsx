@@ -10,7 +10,7 @@ import {
 } from "@mattrax/enterprise-domain/client";
 import type { TenantImportRequest, TenantImportResponse } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { Checkbox } from "@mattrax/ui";
 import {
   Dialog,
@@ -19,7 +19,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 import { useTenantProfileDraft } from "~/components/settings/tenant-profile-draft";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { preloadSettingsPage } from "~/components/settings/preload";

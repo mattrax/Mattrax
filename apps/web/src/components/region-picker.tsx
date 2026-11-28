@@ -4,8 +4,8 @@ import { Effect, Schema } from "effect";
 import { CatalogueService, runCatalogue } from "~/lib/catalogue-service";
 import { Portal } from "@solidjs/web";
 import { createMemo, createSignal, For, onSettled, Show } from "solid-js";
-import { LoadingState } from "~/components/ui";
-import { Button } from "~/components/ui/button";
+import { LoadingState } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -13,8 +13,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
+} from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { ChevronDown, Globe, Plus, RotateCcw, Search } from "~/components/ui/icons";
 import { flagOf, regionName } from "~/components/region-label";
 import { clampZoom, rotateByDrag, rotateByKey } from "~/components/region-globe";

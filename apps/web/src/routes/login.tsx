@@ -1,8 +1,8 @@
 import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import BrandLogo from "~/components/brand-logo";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { createSignal, onCleanup, onSettled, Show, untrack } from "solid-js";
 import MfaPending from "~/components/mfa-pending";
 import { authClient } from "~/lib/auth";

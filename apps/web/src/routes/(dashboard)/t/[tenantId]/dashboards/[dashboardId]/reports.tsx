@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/solid-query";
 import { Show } from "solid-js";
 import { Page, PageHeader, QueryError, relativeTime } from "~/components/mdm/common";
 import DashboardReportsPanel from "~/components/dashboard/reports";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { enterpriseQueries } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";

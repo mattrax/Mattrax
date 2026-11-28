@@ -1,4 +1,4 @@
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { ErrorText } from "~/components/mdm/common";
 import {
   Dialog,
@@ -7,7 +7,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 
 /**
  * Shared destructive confirmation. Native `window.confirm` is blocking,

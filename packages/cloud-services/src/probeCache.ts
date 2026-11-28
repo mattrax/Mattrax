@@ -15,9 +15,7 @@
  * TTL observes recovery.
  */
 export type ProbeCache<T> = {
-  /** Run `probe`, or return the memoised result from the last TTL window. */
   get(probe: () => Promise<T>): Promise<T>;
-  /** Drop the memo (tests and explicit invalidation). */
   clear(): void;
 };
 

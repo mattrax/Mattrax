@@ -12,7 +12,7 @@ import {
 } from "solid-js";
 import { Match, Option, Schema } from "effect";
 import type { MdmColumn, MdmSortState } from "~/components/mdm/table";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { Badge, EmptyState, FilterBar, Skeleton } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import {

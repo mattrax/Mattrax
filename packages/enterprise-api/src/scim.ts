@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { Context, DateTime, Effect, Layer, Option, Schema } from "effect";
 import type { HttpServerRequest } from "effect/http";
@@ -64,7 +65,7 @@ const sha256 = (value: string) =>
     );
   });
 
-const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const id = newId;
 
 const now = () => DateTime.now.pipe(Effect.map(DateTime.toDate));
 

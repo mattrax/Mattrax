@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "~/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@mattrax/ui";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { isPasskeyCancellation, performStepUp } from "~/lib/step-up";
 import {
@@ -10,8 +10,8 @@ import {
   stepUpActionLabel,
 } from "~/lib/step-up-bus";
 import type { StepUpMethod } from "~/lib/step-up-bus";
-import { Input } from "~/components/ui/input";
-import { Button } from "~/components/ui/button";
+import { Input } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
 const feedbackEnter = "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-150";

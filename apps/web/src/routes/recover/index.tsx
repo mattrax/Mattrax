@@ -1,8 +1,8 @@
 import { Title } from "@solidjs/meta";
 import BrandLogo from "~/components/brand-logo";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
-import { Spinner } from "~/components/ui";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
+import { Spinner } from "@mattrax/ui";
 import { useSearchParams } from "@solidjs/router";
 import { useNavigate } from "~/lib/navigation";
 import { isServer } from "@solidjs/web";

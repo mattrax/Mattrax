@@ -2,7 +2,6 @@ import { Effect, Layer } from "effect";
 import { checkWith, RateLimiter } from "./rateLimit.js";
 import type { ConsumeRateLimit, RateLimitOutcome } from "./rateLimit.js";
 
-/** Counters for one window; the reset instant is an epoch millisecond. */
 type Counter = { count: number; resetAt: number };
 
 export type RateLimitStore = Map<string, Counter>;

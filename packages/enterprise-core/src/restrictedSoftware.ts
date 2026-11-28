@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 /**
  * Restricted-software evaluation against the installed-application inventory.
  *
@@ -49,9 +50,9 @@ export type RestrictedSoftwareRuleSet = {
 const appleDeviceIsMac = (row: { readonly osEdition?: string | null }): boolean =>
   row.osEdition?.toLowerCase().includes("macos") ?? false;
 
-const auditId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const auditId = newId;
 
-const violationId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const violationId = newId;
 
 const writeDeviceAudit = (
   db: EnterpriseDb,

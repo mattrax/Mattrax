@@ -9,6 +9,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/effect-stripe": "workspace:*",
     "@mattrax/enterprise-core": "workspace:*",
     "@mattrax/enterprise-domain": "workspace:*",

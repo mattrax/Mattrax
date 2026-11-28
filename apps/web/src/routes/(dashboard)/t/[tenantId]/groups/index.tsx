@@ -8,7 +8,7 @@ import { EntityQueryBar, formatEntityQuery, parseEntityQuery } from "~/component
 import type { EntityCondition, EntityField } from "~/components/mdm/entity-query";
 import { MdmTable } from "~/components/mdm/table";
 import type { MdmSortState } from "~/components/mdm/table";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { UsersRound } from "~/components/ui/icons";
 import { enterprise } from "~/lib/enterprise";
 import type { GroupRow } from "~/lib/enterprise";

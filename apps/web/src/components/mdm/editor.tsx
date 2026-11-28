@@ -15,10 +15,10 @@ import {
 import { ErrorText, Page, PageHeader, Panel, QueryError } from "~/components/mdm/common";
 import DocumentationLink from "~/components/mdm/documentation-link";
 import { NativeSelect , Checkbox } from "@mattrax/ui";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import { ChevronDown } from "~/components/ui/icons";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import { CertificateEditor, MailEditor } from "~/components/mdm/policy-certificates";
 import StaleWriteBanner from "~/components/stale-write-banner";
 import { toast } from "~/components/toast";

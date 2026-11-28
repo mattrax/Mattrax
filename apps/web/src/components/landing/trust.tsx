@@ -1,6 +1,6 @@
 import { Check } from "@mattrax/ui";
 import { For, createSignal } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { Eyebrow, SectionLink } from "./primitives";
 
 const proofPoints = [

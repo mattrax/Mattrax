@@ -7,7 +7,7 @@ import { createEffect, createSignal, lazy, Loading, onSettled, Show } from "soli
 import type { JSX } from "@solidjs/web";
 import { DEFAULT_BRAND_COLOR, normalizeBrandColor } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { Checkbox } from "@mattrax/ui";
 import {
   Dialog,
@@ -16,9 +16,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 import { TriangleAlert } from "~/components/ui/icons";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import { flagOf, regionName } from "~/components/region-label";
 import { useTenantProfileDraft } from "~/components/settings/tenant-profile-draft";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";

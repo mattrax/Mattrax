@@ -1,7 +1,7 @@
 import { useParams } from "@solidjs/router";
 import { useMutation } from "@tanstack/solid-query";
 import { createSignal, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -9,8 +9,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
+} from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { Textarea } from "@mattrax/ui";
 import { toast } from "~/components/toast";
 import { ErrorText } from "./common";

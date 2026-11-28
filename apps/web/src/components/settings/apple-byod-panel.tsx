@@ -2,12 +2,12 @@ import { createEffect, createSignal, For, Show } from "solid-js";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import type { AppleByodConfigInfo } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Panel } from "~/components/mdm/common";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { Info } from "~/components/ui/icons";
 import Chip from "~/components/settings/status-chip";
 import { toast } from "~/components/toast";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 
 const copy = async (value: string | undefined, label: string) => {
   if (!value) return;

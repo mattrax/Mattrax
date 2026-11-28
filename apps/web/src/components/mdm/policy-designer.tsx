@@ -13,8 +13,8 @@ import {
   Show,
   untrack,
 } from "solid-js";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import AdmxImportDialog from "~/components/mdm/admx-import";
 import CisTemplateDialog from "~/components/mdm/cis-template-dialog";
 import type { CisTemplateOutcome } from "~/components/mdm/cis-template-dialog";
@@ -26,7 +26,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 import {
   ArrowLeft,
   Check,
@@ -42,7 +42,7 @@ import {
   TriangleAlert,
   X,
 } from "~/components/ui/icons";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 import { useUnsavedChanges } from "~/lib/unsaved-changes";
 import {
   Sheet,
@@ -50,7 +50,7 @@ import {
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "~/components/ui/sheet";
+} from "@mattrax/ui";
 import { authClient } from "~/lib/auth";
 import { chord, useCommands } from "~/lib/commands";
 import type { Command } from "~/lib/commands";

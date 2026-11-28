@@ -16,9 +16,9 @@ import {
 } from "~/components/enrollment/enrollment-feedback";
 import EnrollmentOptions from "~/components/enrollment/enrollment-platforms";
 import EnrollmentPasswordInput from "~/components/enrollment/enrollment-password-input";
-import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import Label from "~/components/ui/label";
+import { Button } from "@mattrax/ui";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@mattrax/ui";
+import { Label } from "@mattrax/ui";
 import { ChevronRight, KeyRound, ShieldCheck } from "~/components/ui/icons";
 import type { EnrollmentResponse } from "~/lib/enterprise";
 import { lookupPublicEnrollment } from "~/lib/enrollment.server";

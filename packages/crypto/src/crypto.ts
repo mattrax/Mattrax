@@ -1,5 +1,8 @@
 import { Data, Effect } from "effect";
 
+/** Compact opaque identifier for rows and external references. */
+export const newId = (): string => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+
 const ALGORITHM: RsaHashedKeyGenParams = {
   name: "RSASSA-PKCS1-v1_5",
   hash: "SHA-256",

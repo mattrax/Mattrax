@@ -1,6 +1,6 @@
 import { ArrowRight, Check, ChevronDown } from "@mattrax/ui";
 import { For, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { authClient } from "~/lib/auth";
 import { publicPrimaryCta } from "~/lib/public-auth-cta";
 import { faqStructuredData } from "~/lib/site";

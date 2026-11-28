@@ -3,7 +3,7 @@ import { useParams } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show, createMemo, createSignal, createUniqueId } from "solid-js";
 import { isServer } from "@solidjs/web";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -11,9 +11,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Badge } from "~/components/ui/badge";
-import { Input } from "~/components/ui/input";
+} from "@mattrax/ui";
+import { Badge } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { GitMerge, Search } from "~/components/ui/icons";
 import { toast } from "~/components/toast";
 import { EmptyState, ErrorText } from "./common";

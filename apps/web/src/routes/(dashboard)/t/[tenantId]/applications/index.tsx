@@ -15,10 +15,10 @@ import {
 import ApplicationViewTabs from "~/components/mdm/application-view-tabs";
 import { MdmTable } from "~/components/mdm/table";
 import type { MdmSortState } from "~/components/mdm/table";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { EntityQueryBar, formatEntityQuery, parseEntityQuery } from "~/components/mdm/entity-query";
 import type { EntityCondition, EntityField } from "~/components/mdm/entity-query";
-import { Badge } from "~/components/ui/badge";
+import { Badge } from "@mattrax/ui";
 import { Package } from "~/components/ui/icons";
 import { enterpriseQueries } from "~/lib/enterprise";
 import type { ApplicationRow } from "~/lib/enterprise";

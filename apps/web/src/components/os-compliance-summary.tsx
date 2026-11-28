@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/solid-query";
 import { Show } from "solid-js";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { enterpriseQueries } from "~/lib/enterprise";
 import { useCan } from "~/lib/permissions";
 import { routes } from "~/lib/routes";

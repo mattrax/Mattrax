@@ -12,13 +12,15 @@ export const PlatformEnrollment = Schema.Union([
 export type PlatformEnrollment = typeof PlatformEnrollment.Type;
 
 /** How devices enrolled from this tenant are provisioned. */
-export const AndroidProvisioningMode = Schema.Literals([
+export const ANDROID_PROVISIONING_MODES = [
   "work-profile",
   "fully-managed",
   "dedicated",
-]);
+] as const;
 
-export type AndroidProvisioningMode = typeof AndroidProvisioningMode.Type;
+export const AndroidProvisioningMode = Schema.Literals(ANDROID_PROVISIONING_MODES);
+
+export type AndroidProvisioningMode = (typeof ANDROID_PROVISIONING_MODES)[number];
 
 /** Android Enterprise signup/delivery state exposed to administrators. */
 export const AndroidEnterpriseStatus = Schema.Literals(["pending", "active", "error", "disabled"]);

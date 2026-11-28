@@ -5,7 +5,7 @@ import { Schema } from "effect";
 import { TenantExportEnvelope } from "@mattrax/enterprise-domain/client";
 import { createSignal, Show } from "solid-js";
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -14,8 +14,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
+} from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { useTenantProfileDraft } from "~/components/settings/tenant-profile-draft";
 import StatusChip from "~/components/settings/status-chip";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";

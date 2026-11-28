@@ -4,7 +4,7 @@ import { useNavigate } from "~/lib/navigation";
 import { isServer } from "@solidjs/web";
 import { createSignal, onSettled, Show } from "solid-js";
 import { authClient } from "~/lib/auth";
-import { Spinner } from "~/components/ui";
+import { Spinner } from "@mattrax/ui";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 
 /**

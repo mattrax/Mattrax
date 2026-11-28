@@ -19,8 +19,8 @@ import PolicyProgressBar from "~/components/mdm/policy-progress";
 import { MdmTable } from "~/components/mdm/table";
 import type { MdmColumn } from "~/components/mdm/table";
 import PolicyViewTabs from "~/components/mdm/policy-view-tabs";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import {
   policyDeploymentDevicePresentation,

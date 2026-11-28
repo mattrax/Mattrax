@@ -6,8 +6,8 @@ import {
   DashboardReportFrequency as ReportFrequencySchema,
 } from "@mattrax/enterprise-domain/client";
 import type { JSX } from "@solidjs/web";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -16,8 +16,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
+} from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { ArrowUpRight, BookOpen, Download, Plus, X } from "~/components/ui/icons";
 import { Panel, QueryError, relativeTime } from "~/components/mdm/common";
 import { toast } from "~/components/toast";

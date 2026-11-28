@@ -7,8 +7,8 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import { ErrorText, Panel, QueryError } from "~/components/mdm/common";
 import { Badge, FilterBar, LoadingState } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { Search } from "~/components/ui/icons";
 import { enterprise, enterpriseQueries } from "~/lib/enterprise";
 import type { AuditLogEntry, AuditSearchQuery } from "~/lib/enterprise";

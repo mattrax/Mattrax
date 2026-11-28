@@ -13,9 +13,9 @@ import {
   Panel,
   QueryError,
 } from "~/components/mdm/common";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { ArrowUpRight, CheckCircle2, CircleAlert, Info, Package } from "~/components/ui/icons";
 import { formatCatalogueVerifiedAt } from "~/lib/catalogue-date";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";

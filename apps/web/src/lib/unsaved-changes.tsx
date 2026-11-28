@@ -1,7 +1,7 @@
 import { useBeforeLeave } from "@solidjs/router";
 import { createSignal, onSettled } from "solid-js";
 import type { JSX } from "@solidjs/web";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 
 type PendingChange = { readonly run: () => void };
 

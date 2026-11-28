@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Effect } from "effect";
 import { eq, inArray } from "drizzle-orm";
 import { schema } from "@mattrax/enterprise-core";
@@ -53,7 +54,6 @@ export type CutoverImportOptions = {
 const fail = (reason: TenantCutoverError["reason"], message: string) =>
   new TenantCutoverError({ reason, message });
 
-const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 type BuiltInRole = "owner" | "admin" | "member" | "auditor";
 

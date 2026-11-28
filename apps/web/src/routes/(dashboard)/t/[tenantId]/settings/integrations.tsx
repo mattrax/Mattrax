@@ -21,7 +21,7 @@ import { Checkbox, FilterBar } from "@mattrax/ui";
 import type { FilterCondition, FilterField } from "@mattrax/ui";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
 import SectionTabs from "~/components/settings/section-tabs";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -29,8 +29,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
+} from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { CheckCircle2, CircleAlert, Plus, RotateCcw } from "~/components/ui/icons";
 import { errorMessage, raisedFailure } from "~/lib/errors";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";

@@ -1,7 +1,7 @@
 import { For, Show } from "solid-js";
 import type { JSX } from "@solidjs/web";
 import QrCode from "~/components/mdm/qr-code";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { CheckCircle2, CircleAlert, Info } from "~/components/ui/icons";
 import { enrollmentLinkProblemCopy } from "~/lib/enrollment-presentation";
 import type {

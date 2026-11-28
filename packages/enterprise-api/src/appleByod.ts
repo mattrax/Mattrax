@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Effect, Layer, Stream } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 import { and, eq, gt, isNull } from "drizzle-orm";
@@ -310,7 +311,7 @@ export const appleByodRoutes = Layer.mergeAll(
       // start the web-authentication session. Expired rows are inert and are
       // left for operational cleanup rather than failing this request.
       const timestamp = new Date();
-      const id = crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+      const id = newId();
 
       yield* db.insert(schema.appleByodEnrollment).values({
         id,

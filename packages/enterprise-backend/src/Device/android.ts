@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { and, desc, eq, inArray, like, lt } from "drizzle-orm";
 import { Data, Effect, Option, Result, Schema } from "effect";
 import { Digest } from "effect/crypto";
@@ -25,11 +26,16 @@ import {
 import type { EnterpriseDb, PlanLimitsConfig } from "@mattrax/enterprise-core";
 import {
   ANDROID_OS_UPDATE_CONFIGURATION_KIND,
+  ANDROID_PROVISIONING_MODES,
   androidSystemUpdatePolicy,
   osPolicyRuleFromRow,
   selectInstaller,
   shouldApplyReportedName,
 } from "@mattrax/enterprise-domain";
+import type { AndroidProvisioningMode } from "@mattrax/enterprise-domain";
+
+export { ANDROID_PROVISIONING_MODES };
+export type { AndroidProvisioningMode };
 
 /** Command notification statuses mapped to the device command lifecycle. */
 const COMMAND_STATUS_OUTCOME = new Map<string | undefined, "succeeded" | "failed" | "sent">([
@@ -121,10 +127,6 @@ export const ANDROID_NOTIFICATION_TYPES = ["ENROLLMENT", "STATUS_REPORT", "COMMA
  * `managementMode`, so a mode that a device ignores is visible rather than
  * silently assumed.
  */
-export const ANDROID_PROVISIONING_MODES = ["work-profile", "fully-managed", "dedicated"] as const;
-
-export type AndroidProvisioningMode = (typeof ANDROID_PROVISIONING_MODES)[number];
-
 export const DEFAULT_ANDROID_PROVISIONING_MODE: AndroidProvisioningMode = "work-profile";
 
 /** The AMAPI `allowPersonalUsage` value for a provisioning mode. */
@@ -185,7 +187,7 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 const now = () => new Date();
 
-const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const id = newId;
 
 const iso = (value: Date | null | undefined) =>
   value == null ? null : (value instanceof Date ? value : new Date(value)).toISOString();

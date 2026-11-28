@@ -19,12 +19,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Badge } from "~/components/ui/badge";
+} from "@mattrax/ui";
+import { Badge } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
-import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
-import Skeleton from "~/components/ui/skeleton";
+import { Button } from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
+import { Skeleton } from "@mattrax/ui";
 import { authClient } from "~/lib/auth";
 import { enterprise, enterpriseKeys, enterpriseQueries, meQueryOptions } from "~/lib/enterprise";
 import type { McpConnectionInfo } from "~/lib/enterprise";

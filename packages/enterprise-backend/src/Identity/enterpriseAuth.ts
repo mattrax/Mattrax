@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { and, desc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { Cause, DateTime, Effect, Layer, Option, Redacted, Schema } from "effect";
 import {
@@ -220,7 +221,6 @@ export const normalizeCredentialScopes = (
   return ["read", "write"];
 };
 
-const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 const randomToken = (prefix = "") =>
   `${prefix}${btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
@@ -1134,7 +1134,7 @@ export const makeEnterpriseAuthLive = (options: EnterpriseAuthOptions) =>
           const tokenHash = yield* sha256(raw);
 
           const item = {
-            id: crypto.randomUUID().replaceAll("-", "").slice(0, 24),
+            id: newId(),
             accountId: user.id,
             name,
             tokenPrefix: raw.slice(0, 12),

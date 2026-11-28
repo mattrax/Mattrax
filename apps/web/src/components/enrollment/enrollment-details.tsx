@@ -1,6 +1,6 @@
 import { createSignal, For, Show } from "solid-js";
-import { Button } from "~/components/ui/button";
-import { Input, Label } from "~/components/ui/input";
+import { Button } from "@mattrax/ui";
+import { Input, Label } from "@mattrax/ui";
 import { EnrollmentNotice } from "./enrollment-feedback";
 import type { EnrollmentResponse } from "~/lib/enterprise";
 import { submitPublicEnrollmentAnswers } from "~/lib/enrollment.server";

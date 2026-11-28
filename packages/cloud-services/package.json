@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@mattrax/azure-oidc": "workspace:*",
+    "@mattrax/crypto": "workspace:*",
     "@mattrax/dm-android": "workspace:*",
     "@mattrax/email": "workspace:*",
     "@mattrax/enterprise-backend": "workspace:*",

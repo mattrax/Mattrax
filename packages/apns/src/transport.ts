@@ -33,9 +33,6 @@ export type ApnsPushTransport = {
   readonly push: (request: ApnsPushRequest) => Effect.Effect<void, ApnsError>;
 };
 
-export const apnsDeviceUrl = (pushToken: string) =>
-  `${APNS_PRODUCTION_ENDPOINT}/3/device/${pushToken}`;
-
 export const apnsHeaders = (topic: string) => ({
   "apns-topic": topic,
   "apns-push-type": "mdm",

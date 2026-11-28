@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { createSignal, For, Show } from "solid-js";
 import type { ScopeTag } from "@mattrax/enterprise-domain/client";
 import { ErrorText, Field, Panel, QueryError } from "~/components/mdm/common";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
 import {
   Dialog,
@@ -13,8 +13,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
+} from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { AccessDenied, ReadOnlyNotice, useCan } from "~/lib/permissions";
 import { preloadPage } from "~/lib/page-data";

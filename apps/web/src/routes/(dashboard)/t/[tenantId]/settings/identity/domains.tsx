@@ -3,7 +3,7 @@ import type { RoutePreloadFuncArgs } from "@solidjs/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/solid-query";
 import { For, Show } from "solid-js";
 import { ErrorText, Panel } from "~/components/mdm/common";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";
 import { preloadPage } from "~/lib/page-data";
 import { queryClient } from "~/lib/query-client";

@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Effect, Layer, Option, Schema } from "effect";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { Db, schema } from "@mattrax/enterprise-core";
@@ -64,7 +65,6 @@ export type ScepRepositoryOptions = {
  */
 type ScepDatabase = Pick<Db["Service"], "select" | "insert" | "update">;
 
-const newId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
 
 export type IssueScepChallengeOptions = {
   readonly enrollmentId: string;

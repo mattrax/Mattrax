@@ -1,16 +1,13 @@
 import { Cause, Context, Data, Effect, Exit, Layer, Option, Schema } from "effect";
-import {
-  HttpStripeClient,
+import { HttpStripeClient, verifyStripeSignature } from "./http.ts";
+export {
   STRIPE_MAX_NETWORK_RETRIES,
   STRIPE_REQUEST_TIMEOUT_MS,
-  verifyStripeSignature,
 } from "./http.ts";
 import type { StripeClientConfig, StripeClientLike, StripeWebhookEvent } from "./http.ts";
 
 export {
   HttpStripeClient,
-  STRIPE_MAX_NETWORK_RETRIES,
-  STRIPE_REQUEST_TIMEOUT_MS,
   verifyStripeSignature,
   type StripeClientConfig,
   type StripeClientLike,
@@ -422,7 +419,4 @@ export const verifyStripeWebhookSignature = (
 ): Effect.Effect<StripeWebhookEvent, StripeError> =>
   verifyStripeSignature(payload, signature, secret).pipe(Effect.mapError(toStripeError));
 
-export const STRIPE_DEFAULTS = {
-  timeout: STRIPE_REQUEST_TIMEOUT_MS,
-  maxNetworkRetries: STRIPE_MAX_NETWORK_RETRIES,
-} as const;
+

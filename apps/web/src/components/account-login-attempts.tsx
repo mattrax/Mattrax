@@ -10,7 +10,7 @@ import type {
 } from "@mattrax/enterprise-domain/client";
 import { For, Show } from "solid-js";
 import { ErrorText, Panel } from "~/components/mdm/common";
-import { Badge } from "~/components/ui/badge";
+import { Badge } from "@mattrax/ui";
 import { enterprise, enterpriseKeys } from "~/lib/enterprise";
 
 const METHOD_LABELS: Record<LoginAttemptMethod, string> = {

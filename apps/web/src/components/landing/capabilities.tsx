@@ -1,6 +1,6 @@
 import { For, Show, createSignal } from "solid-js";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import { installHoldProgress } from "~/lib/landing-motion";
 import { Eyebrow, SectionLink } from "./primitives";
 

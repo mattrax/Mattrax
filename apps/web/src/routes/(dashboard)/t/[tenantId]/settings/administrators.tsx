@@ -8,7 +8,7 @@ import { toast } from "~/components/toast";
 import { errorMessage } from "~/lib/errors";
 import { bulkFailureReason, bulkReport, runBulkBatches, rolePatch } from "~/lib/bulk-members";
 import type { BulkFailure } from "~/lib/bulk-members";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { Checkbox, FilterBar } from "@mattrax/ui";
 import type { FilterField } from "@mattrax/ui";
 import ConfirmDialog from "~/components/ui/confirm-dialog";
@@ -19,8 +19,8 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
+} from "@mattrax/ui";
+import { Input } from "@mattrax/ui";
 import { UsersRound } from "~/components/ui/icons";
 import EntityHoverCard from "~/components/entity-hover-card";
 import { authClient } from "~/lib/auth";

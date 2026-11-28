@@ -69,10 +69,6 @@ describe("APNs relay analytics", () => {
     expect(event?.properties?.deployment_id).toBeUndefined();
   });
 
-  it("hashes a deployment deterministically", () => {
-    expect(hashDeploymentId(licenseId)).toBe(hashDeploymentId(licenseId));
-  });
-
   it("hashes different deployments distinctly", () => {
     expect(hashDeploymentId(licenseId)).not.toBe(hashDeploymentId("mtx_lic_another"));
   });

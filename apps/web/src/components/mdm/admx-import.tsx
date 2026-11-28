@@ -2,8 +2,8 @@ import { Checkbox } from "@mattrax/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import type { AdmxBundle, AdmxCatalogueIndex } from "@mattrax/enterprise-domain/admx";
 import { parseAdmxBundle } from "@mattrax/enterprise-domain/admx";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "~/components/ui/dialog";
+} from "@mattrax/ui";
 import { CircleAlert, Info, TriangleAlert } from "~/components/ui/icons";
 import {
   admxPolicySelection,

@@ -22,16 +22,19 @@ export type DeviceFileVaultStatus = typeof DeviceFileVaultStatus.Type;
  * Escrowed secret kinds a device handover archive can contain. The order is
  * stable so the dashboard and audit metadata render it consistently.
  */
-export const DeviceHandoverSecretKind = Schema.Literals([
+export const DEVICE_HANDOVER_SECRET_KINDS = [
   "filevault_recovery_key",
   "activation_lock_bypass_code",
   "recovery_lock_password",
   "local_admin_password",
   "bootstrap_token",
+  /** A JSON array of escrowed BitLocker keys; the archive is passphrase-sealed. */
   "bitlocker_recovery_key",
-]);
+] as const;
 
-export type DeviceHandoverSecretKind = typeof DeviceHandoverSecretKind.Type;
+export const DeviceHandoverSecretKind = Schema.Literals(DEVICE_HANDOVER_SECRET_KINDS);
+
+export type DeviceHandoverSecretKind = (typeof DEVICE_HANDOVER_SECRET_KINDS)[number];
 
 /**
  * Android Management API state that does not apply to Apple or Windows.

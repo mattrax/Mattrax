@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import {
   Cause,
   Context,
@@ -232,6 +233,8 @@ import {
   APPLICATION_UNINSTALL_DEADLINE_MS,
   sameApplicationBundle,
 } from "@mattrax/enterprise-domain";
+import { DEVICE_HANDOVER_SECRET_KINDS } from "@mattrax/enterprise-domain";
+import type { DeviceHandoverSecretKind } from "@mattrax/enterprise-domain";
 import type {
   AttributeSource,
   DevicePreRegistrationImportResponse,
@@ -1495,7 +1498,7 @@ const brandingOrFail = (body: BrandingPayload) =>
         : new EnterpriseBadRequest({ message: "Invalid tenant branding" }),
   });
 
-const id = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const id = newId;
 
 const ok = { status: "ok" as const };
 
@@ -1608,18 +1611,6 @@ const safeFilename = (value: string) =>
  * rather than "every device_secret row" so a future kind cannot leave the
  * deployment until it is deliberately added here and covered by the docs.
  */
-const DEVICE_HANDOVER_SECRET_KINDS = [
-  "filevault_recovery_key",
-  "activation_lock_bypass_code",
-  "recovery_lock_password",
-  "local_admin_password",
-  "bootstrap_token",
-  /** A JSON array of escrowed BitLocker keys; the archive is passphrase-sealed. */
-  "bitlocker_recovery_key",
-] as const;
-
-type DeviceHandoverSecretKind = (typeof DEVICE_HANDOVER_SECRET_KINDS)[number];
-
 const DEVICE_HANDOVER_SECRET_LABELS: Record<DeviceHandoverSecretKind, string> = {
   filevault_recovery_key: "FileVault recovery key",
   activation_lock_bypass_code: "Activation Lock bypass code",

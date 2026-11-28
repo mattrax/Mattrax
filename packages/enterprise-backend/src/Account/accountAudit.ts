@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Effect, Option, Result, Schema } from "effect";
 import { NetAddress } from "effect/net";
 import { and, desc, eq, gte, like, lt, lte, or } from "drizzle-orm";
@@ -63,7 +64,7 @@ export type AccountAuditInput = {
   readonly at?: Date;
 };
 
-const accountAuditId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const accountAuditId = newId;
 
 /**
  * The audit writer only needs `insert`, not the whole database handle. Narrowing

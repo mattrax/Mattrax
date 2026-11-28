@@ -1,3 +1,4 @@
+import { newId } from "@mattrax/crypto";
 import { Effect, Option, Schema } from "effect";
 import { and, asc, desc, eq, inArray, lt } from "drizzle-orm";
 import {
@@ -48,7 +49,7 @@ export const DASHBOARD_REPORT_RUN_RETENTION_DAYS = 180;
 
 const iso = (date: Date | null | undefined) => (date ? date.toISOString() : null);
 
-const reportId = () => crypto.randomUUID().replaceAll("-", "").slice(0, 24);
+const reportId = newId;
 
 const frequencyOf = (value: string): DashboardReportFrequency =>
   Schema.is(DashboardReportFrequency)(value) ? value : "daily";

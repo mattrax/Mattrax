@@ -1,7 +1,7 @@
 import { createEffect, createSignal, flush, For, onSettled, Show } from "solid-js";
 import { cn } from "~/lib/utils";
 import { activateSectionTabAnchor, sectionTabTarget } from "./section-tabs-nav";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 
 export type SectionTab = {
   readonly id: string;

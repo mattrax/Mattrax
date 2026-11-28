@@ -24,8 +24,8 @@ import {
   DashboardWidgetView,
   useDashboardWidgetBatch,
 } from "~/components/dashboard/widget";
-import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Badge } from "@mattrax/ui";
+import { Button } from "@mattrax/ui";
 import { Star } from "~/components/ui/icons";
 import { cn } from "~/lib/utils";
 import { enterprise, enterpriseKeys, enterpriseQueries } from "~/lib/enterprise";

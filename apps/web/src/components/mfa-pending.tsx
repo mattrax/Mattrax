@@ -1,9 +1,9 @@
 import { createSignal, Show } from "solid-js";
 import { Match as EffectMatch } from "effect";
 import { authClient } from "~/lib/auth";
-import { Button } from "~/components/ui/button";
+import { Button } from "@mattrax/ui";
 import { errorMessage } from "~/lib/errors";
-import { Input } from "~/components/ui/input";
+import { Input } from "@mattrax/ui";
 
 /** Inline alerts arrive with a short rise so the state change is legible. */
 const feedbackEnter = "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-150";
